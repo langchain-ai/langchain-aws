@@ -1,16 +1,14 @@
-# 🦜️🔗 LangChain {partner}
+# 🦜️🔗 LangChain 🤝 Amazon Web Services (AWS)
 
-This repository contains {n} packages with {partner} integrations with LangChain:
+This repository contains 1 package with AWS integrations with LangChain:
 
-- [langchain-{package}](https://pypi.org/project/langchain-{package}/) integrates [{product}}]({product_link}).
-{- ... if more packages}
+- [langchain-aws](https://pypi.org/project/langchain-aws/) integrates [AWS](https://aws.amazon.com).
 
 ## Initial Repo Checklist (Remove this section after completing)
 
 This setup assumes that the partner package is already split. For those instructions,
 see [these docs](https://python.langchain.com/docs/contributing/integrations#partner-packages).
 
-- [ ] Fill out the readme above (for folks that follow pypi link)
 - [ ] Copy package into /libs folder
 - [ ] Update these fields in /libs/*/pyproject.toml
 
