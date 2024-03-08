@@ -1,6 +1,6 @@
 # langchain-aws
 
-This package contains the LangChain integration with Bedrock
+This package contains the LangChain integration with Amazon Web Services (AWS)
 
 ## Installation
 
@@ -14,7 +14,7 @@ And you should configure credentials by setting the following environment variab
 
 ## Chat Models
 
-`ChatBedrock` class exposes chat models from Bedrock.
+`ChatBedrock` class exposes chat models from Amazon Bedrock.
 
 ```python
 from langchain_aws import ChatBedrock
