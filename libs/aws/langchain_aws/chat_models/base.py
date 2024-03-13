@@ -1,4 +1,5 @@
-"""Bedrock chat models."""
+"""Bedrock base chat models."""
+
 from typing import Any, AsyncIterator, Iterator, List, Optional
 
 from langchain_core.callbacks import (
@@ -9,31 +10,35 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
 
+from langchain_aws._language_models import _BaseBedrockLanguageModel
 
-class ChatBedrock(BaseChatModel):
-    """ChatBedrock chat model.
 
-    Example:
-        .. code-block:: python
+class _BaseBedrockChatModel(BaseChatModel, _BaseBedrockLanguageModel):
 
-            from langchain_core.messages import HumanMessage
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        """Return whether this model can be serialized by Langchain."""
+        return True
 
-            from langchain_aws import ChatBedrock
-
-            model = ChatBedrock()
-            model.invoke([HumanMessage(content="Come up with 10 names for a song about parrots.")])
-    """  # noqa: E501
-
-    @property
-    def _llm_type(self) -> str:
-        """Return type of chat model."""
-        return "chat-aws"
+    @classmethod
+    def get_lc_namespace(cls) -> List[str]:
+        """Get the namespace of the langchain object."""
+        return ["langchain", "chat_models", "bedrock"]
 
     def _generate(
         self,
         messages: List[BaseMessage],
         stop: Optional[List[str]] = None,
         run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        raise NotImplementedError
+
+    async def _agenerate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
         raise NotImplementedError
@@ -57,15 +62,4 @@ class ChatBedrock(BaseChatModel):
         run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
-        raise NotImplementedError
-
-    # TODO: Implement if __model_name__ supports async generation. Otherwise delete
-    # method.
-    async def _agenerate(
-        self,
-        messages: List[BaseMessage],
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
-        **kwargs: Any,
-    ) -> ChatResult:
         raise NotImplementedError
