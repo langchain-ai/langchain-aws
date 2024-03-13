@@ -3,7 +3,7 @@
 from typing import Any, AsyncIterator, Dict, Iterator, List, Mapping, Optional
 
 from langchain_core.language_models import BaseLanguageModel
-from langchain_core.pydantic_v1 import Field, root_validator
+from langchain_core.pydantic_v1 import Extra, Field, root_validator
 
 from langchain_aws._constants import AMAZON_BEDROCK_TRACE_KEY, GUARDRAILS_BODY_KEY
 from langchain_aws._session import BotoAuthMixin, get_client
@@ -71,6 +71,11 @@ class _BaseBedrockLanguageModel(BaseLanguageModel, BotoAuthMixin):
             if reason == "GUARDRAIL_INTERVENED":
                 ...Logic to handle guardrail intervention...
     """  # noqa: E501
+
+    class Config:
+        """Configuration for this pydantic object."""
+
+        extra = Extra.forbid
 
     @root_validator()
     def validate_environment(cls, values: Dict) -> Dict:

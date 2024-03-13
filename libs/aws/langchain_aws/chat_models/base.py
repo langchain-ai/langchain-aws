@@ -1,4 +1,4 @@
-"""Bedrock chat models."""
+"""Bedrock base chat models."""
 
 from typing import Any, AsyncIterator, Iterator, List, Optional
 
@@ -6,30 +6,24 @@ from langchain_core.callbacks import (
     AsyncCallbackManagerForLLMRun,
     CallbackManagerForLLMRun,
 )
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
 
-from langchain_aws.chat_models.base import _BaseBedrockChatModel
+from langchain_aws._language_models import _BaseBedrockLanguageModel
 
 
-class ChatBedrockAnthropic(_BaseBedrockChatModel):
-    """ChatBedrock chat model.
+class _BaseBedrockChatModel(BaseChatModel, _BaseBedrockLanguageModel):
 
-    Example:
-        .. code-block:: python
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        """Return whether this model can be serialized by Langchain."""
+        return True
 
-            from langchain_core.messages import HumanMessage
-
-            from langchain_aws import ChatBedrock
-
-            model = ChatBedrock()
-            model.invoke([HumanMessage(content="Come up with 10 names for a song about parrots.")])
-    """  # noqa: E501
-
-    @property
-    def _llm_type(self) -> str:
-        """Return type of chat model."""
-        return "aws-bedrock-anthropic-chat"
+    @classmethod
+    def get_lc_namespace(cls) -> List[str]:
+        """Get the namespace of the langchain object."""
+        return ["langchain", "chat_models", "bedrock"]
 
     def _generate(
         self,
