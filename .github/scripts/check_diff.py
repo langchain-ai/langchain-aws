@@ -2,7 +2,7 @@ import json
 import sys
 from typing import Dict
 
-LIB_DIRS = ["libs/{lib}"]
+LIB_DIRS = ["libs/aws"]
 
 if __name__ == "__main__":
     files = sys.argv[1:]
