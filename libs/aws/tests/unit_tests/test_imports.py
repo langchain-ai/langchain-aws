@@ -1,12 +1,9 @@
-from langchain_aws import __all__
+from langchain_aws import llms
+from tests.unit_tests import assert_all_importable
 
-EXPECTED_ALL = [
-    "BedrockLLM",
-    "ChatBedrock",
-    "BedrockVectorStore",
-    "BedrockEmbeddings",
-]
+EXPECTED_ALL_LLMS = ["SagemakerEndpoint"]
 
 
-def test_all_imports() -> None:
-    assert sorted(EXPECTED_ALL) == sorted(__all__)
+def test_imports() -> None:
+    assert sorted(llms.__all__) == sorted(EXPECTED_ALL_LLMS)
+    assert_all_importable(llms)

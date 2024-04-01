@@ -1,11 +1,3 @@
-from langchain_aws.chat_models import ChatBedrock
-from langchain_aws.embeddings import BedrockEmbeddings
-from langchain_aws.llms import BedrockLLM
-from langchain_aws.vectorstores import BedrockVectorStore
+from langchain_aws.llms import SagemakerEndpoint
 
-__all__ = [
-    "BedrockLLM",
-    "ChatBedrock",
-    "BedrockVectorStore",
-    "BedrockEmbeddings",
-]
+__all__ = ["SagemakerEndpoint"]
