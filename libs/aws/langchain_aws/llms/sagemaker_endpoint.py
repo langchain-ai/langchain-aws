@@ -1,12 +1,12 @@
 """Sagemaker InvokeEndpoint API."""
 import io
-import json
 import re
 from abc import abstractmethod
 from typing import Any, Dict, Generic, Iterator, List, Mapping, Optional, TypeVar, Union
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.llms import LLM
+from langchain_core.outputs import GenerationChunk
 from langchain_core.pydantic_v1 import Extra, root_validator
 
 INPUT_TYPE = TypeVar("INPUT_TYPE", bound=Union[str, List[str]])
@@ -304,6 +304,41 @@ class SagemakerEndpoint(LLM):
         """Return type of llm."""
         return "sagemaker_endpoint"
 
+    def _stream(
+        self,
+        prompt: str,
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> Iterator[GenerationChunk]:
+        _model_kwargs = self.model_kwargs or {}
+        _model_kwargs = {**_model_kwargs, **kwargs}
+        _endpoint_kwargs = self.endpoint_kwargs or {}
+
+        try:
+            resp = self.client.invoke_endpoint_with_response_stream(
+                EndpointName=self.endpoint_name,
+                Body=self.content_handler.transform_input(prompt, _model_kwargs),
+                ContentType=self.content_handler.content_type,
+                **_endpoint_kwargs,
+            )
+            iterator = LineIterator(resp["Body"])
+
+            for line in iterator:
+                text = self.content_handler.transform_output(line)
+
+                if stop is not None:
+                    text = enforce_stop_tokens(text, stop)
+
+                if text:
+                    chunk = GenerationChunk(text=text)
+                    yield chunk
+                    if run_manager:
+                        run_manager.on_llm_new_token(chunk.text)
+
+        except Exception as e:
+            raise ValueError(f"Error raised by streaming inference endpoint: {e}")
+
     def _call(
         self,
         prompt: str,
@@ -334,42 +369,24 @@ class SagemakerEndpoint(LLM):
         accepts = self.content_handler.accepts
 
         if self.streaming and run_manager:
-            try:
-                resp = self.client.invoke_endpoint_with_response_stream(
-                    EndpointName=self.endpoint_name,
-                    Body=body,
-                    ContentType=self.content_handler.content_type,
-                    **_endpoint_kwargs,
-                )
-                iterator = LineIterator(resp["Body"])
-                current_completion: str = ""
-                for line in iterator:
-                    resp = json.loads(line)
-                    resp_output = resp.get("outputs")[0]
-                    if stop is not None:
-                        # Uses same approach as below
-                        resp_output = enforce_stop_tokens(resp_output, stop)
-                    current_completion += resp_output
-                    run_manager.on_llm_new_token(resp_output)
-                return current_completion
-            except Exception as e:
-                raise ValueError(f"Error raised by streaming inference endpoint: {e}")
-        else:
-            try:
-                response = self.client.invoke_endpoint(
-                    EndpointName=self.endpoint_name,
-                    Body=body,
-                    ContentType=content_type,
-                    Accept=accepts,
-                    **_endpoint_kwargs,
-                )
-            except Exception as e:
-                raise ValueError(f"Error raised by inference endpoint: {e}")
+            completion: str = ""
+            for chunk in self._stream(prompt, stop, run_manager, **kwargs):
+                completion += chunk.text
+            return completion
 
-            text = self.content_handler.transform_output(response["Body"])
-            if stop is not None:
-                # This is a bit hacky, but I can't figure out a better way to enforce
-                # stop tokens when making calls to the sagemaker endpoint.
-                text = enforce_stop_tokens(text, stop)
+        try:
+            response = self.client.invoke_endpoint(
+                EndpointName=self.endpoint_name,
+                Body=body,
+                ContentType=content_type,
+                Accept=accepts,
+                **_endpoint_kwargs,
+            )
+        except Exception as e:
+            raise ValueError(f"Error raised by inference endpoint: {e}")
 
-            return text
+        text = self.content_handler.transform_output(response["Body"])
+        if stop is not None:
+            text = enforce_stop_tokens(text, stop)
+
+        return text
