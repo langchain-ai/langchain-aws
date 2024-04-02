@@ -1,5 +1,8 @@
 from typing import Any, Dict, List, Optional
 
+import boto3
+from botocore.client import Config
+from botocore.exceptions import UnknownServiceError
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.pydantic_v1 import BaseModel, root_validator
@@ -63,10 +66,6 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
             return values
 
         try:
-            import boto3
-            from botocore.client import Config
-            from botocore.exceptions import UnknownServiceError
-
             if values.get("credentials_profile_name"):
                 session = boto3.Session(profile_name=values["credentials_profile_name"])
             else:
