@@ -57,11 +57,8 @@ select = [
 ]
 
 [tool.mypy]
+ignore_missing_imports = "True"
 disallow_untyped_defs = "True"
-
-[[tool.mypy.overrides]]
-module = "boto3"
-ignore_missing_imports = true
 
 [tool.coverage.run]
 omit = ["tests/*"]
