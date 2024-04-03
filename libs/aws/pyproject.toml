@@ -20,6 +20,7 @@ optional = true
 
 [tool.poetry.group.test.dependencies]
 pytest = "^7.4.3"
+pytest-cov = "^4.1.0"
 syrupy = "^4.0.2"
 pytest-asyncio = "^0.23.2"
 
@@ -57,11 +58,8 @@ select = [
 ]
 
 [tool.mypy]
+ignore_missing_imports = "True"
 disallow_untyped_defs = "True"
-
-[[tool.mypy.overrides]]
-module = "boto3"
-ignore_missing_imports = true
 
 [tool.coverage.run]
 omit = ["tests/*"]
@@ -80,7 +78,7 @@ build-backend = "poetry.core.masonry.api"
 #
 # https://github.com/tophat/syrupy
 # --snapshot-warn-unused    Prints a warning on unused snapshots rather than fail the test suite.
-addopts = "--snapshot-warn-unused --strict-markers --strict-config --durations=5"
+addopts = "--snapshot-warn-unused --strict-markers --strict-config --durations=5 --cov=langchain_aws"
 # Registering custom markers.
 # https://docs.pytest.org/en/7.1.x/example/markers.html#registering-markers
 markers = [
