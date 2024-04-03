@@ -1,9 +1,15 @@
-from langchain_aws import llms
-from tests.unit_tests import assert_all_importable
+import glob
+import importlib
+from pathlib import Path
 
-EXPECTED_ALL_LLMS = ["SagemakerEndpoint"]
 
-
-def test_imports() -> None:
-    assert sorted(llms.__all__) == sorted(EXPECTED_ALL_LLMS)
-    assert_all_importable(llms)
+def test_importable_all() -> None:
+    for path in glob.glob("../langchain_aws/*"):
+        relative_path = Path(path).parts[-1]
+        if relative_path.endswith(".typed"):
+            continue
+        module_name = relative_path.split(".")[0]
+        module = importlib.import_module("langchain_aws." + module_name)
+        all_ = getattr(module, "__all__", [])
+        for cls_ in all_:
+            getattr(module, cls_)
