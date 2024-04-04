@@ -2,7 +2,6 @@
 from typing import Any, cast
 
 import pytest
-from langchain_core.callbacks import CallbackManager
 from langchain_core.messages import (
     AIMessageChunk,
     BaseMessage,
@@ -11,17 +10,17 @@ from langchain_core.messages import (
 )
 from langchain_core.outputs import ChatGeneration, LLMResult
 
-from langchain_aws.chat_models.bedrock import BedrockChat
+from langchain_aws.chat_models.bedrock import ChatBedrock
 from tests.callbacks import FakeCallbackHandler
 
 
 @pytest.fixture
-def chat() -> BedrockChat:
-    return BedrockChat(model_id="anthropic.claude-v2", model_kwargs={"temperature": 0})  # type: ignore[call-arg]
+def chat() -> ChatBedrock:
+    return ChatBedrock(model_id="anthropic.claude-v2", model_kwargs={"temperature": 0})  # type: ignore[call-arg]
 
 
 @pytest.mark.scheduled
-def test_chat_bedrock(chat: BedrockChat) -> None:
+def test_chat_bedrock(chat: ChatBedrock) -> None:
     """Test BedrockChat wrapper."""
     system = SystemMessage(content="You are a helpful assistant.")
     human = HumanMessage(content="Hello")
@@ -31,7 +30,7 @@ def test_chat_bedrock(chat: BedrockChat) -> None:
 
 
 @pytest.mark.scheduled
-def test_chat_bedrock_generate(chat: BedrockChat) -> None:
+def test_chat_bedrock_generate(chat: ChatBedrock) -> None:
     """Test BedrockChat wrapper with generate."""
     message = HumanMessage(content="Hello")
     response = chat.generate([[message], [message]])
@@ -45,7 +44,7 @@ def test_chat_bedrock_generate(chat: BedrockChat) -> None:
 
 
 @pytest.mark.scheduled
-def test_chat_bedrock_generate_with_token_usage(chat: BedrockChat) -> None:
+def test_chat_bedrock_generate_with_token_usage(chat: ChatBedrock) -> None:
     """Test BedrockChat wrapper with generate."""
     message = HumanMessage(content="Hello")
     response = chat.generate([[message], [message]])
@@ -62,7 +61,7 @@ def test_chat_bedrock_generate_with_token_usage(chat: BedrockChat) -> None:
 def test_chat_bedrock_streaming() -> None:
     """Test that streaming correctly invokes on_llm_new_token callback."""
     callback_handler = FakeCallbackHandler()
-    chat = BedrockChat(  # type: ignore[call-arg]
+    chat = ChatBedrock(  # type: ignore[call-arg]
         model_id="anthropic.claude-v2",
         streaming=True,
         callbacks=[callback_handler],
@@ -90,10 +89,9 @@ def test_chat_bedrock_streaming_generation_info() -> None:
             self.saved_things["generation"] = args[0]
 
     callback = _FakeCallback()
-    callback_manager = CallbackManager([callback])
-    chat = BedrockChat(  # type: ignore[call-arg]
+    chat = ChatBedrock(  # type: ignore[call-arg]
         model_id="anthropic.claude-v2",
-        callback_manager=callback_manager,
+        callbacks=[callback],
     )
     list(chat.stream("hi"))
     generation = callback.saved_things["generation"]
@@ -102,7 +100,7 @@ def test_chat_bedrock_streaming_generation_info() -> None:
 
 
 @pytest.mark.scheduled
-def test_bedrock_streaming(chat: BedrockChat) -> None:
+def test_bedrock_streaming(chat: ChatBedrock) -> None:
     """Test streaming tokens from OpenAI."""
 
     full = None
@@ -113,7 +111,7 @@ def test_bedrock_streaming(chat: BedrockChat) -> None:
 
 
 @pytest.mark.scheduled
-async def test_bedrock_astream(chat: BedrockChat) -> None:
+async def test_bedrock_astream(chat: ChatBedrock) -> None:
     """Test streaming tokens from OpenAI."""
 
     async for token in chat.astream("I'm Pickle Rick"):
@@ -121,7 +119,7 @@ async def test_bedrock_astream(chat: BedrockChat) -> None:
 
 
 @pytest.mark.scheduled
-async def test_bedrock_abatch(chat: BedrockChat) -> None:
+async def test_bedrock_abatch(chat: ChatBedrock) -> None:
     """Test streaming tokens from BedrockChat."""
     result = await chat.abatch(["I'm Pickle Rick", "I'm not Pickle Rick"])
     for token in result:
@@ -129,7 +127,7 @@ async def test_bedrock_abatch(chat: BedrockChat) -> None:
 
 
 @pytest.mark.scheduled
-async def test_bedrock_abatch_tags(chat: BedrockChat) -> None:
+async def test_bedrock_abatch_tags(chat: ChatBedrock) -> None:
     """Test batch tokens from BedrockChat."""
     result = await chat.abatch(
         ["I'm Pickle Rick", "I'm not Pickle Rick"], config={"tags": ["foo"]}
@@ -139,7 +137,7 @@ async def test_bedrock_abatch_tags(chat: BedrockChat) -> None:
 
 
 @pytest.mark.scheduled
-def test_bedrock_batch(chat: BedrockChat) -> None:
+def test_bedrock_batch(chat: ChatBedrock) -> None:
     """Test batch tokens from BedrockChat."""
     result = chat.batch(["I'm Pickle Rick", "I'm not Pickle Rick"])
     for token in result:
@@ -147,14 +145,14 @@ def test_bedrock_batch(chat: BedrockChat) -> None:
 
 
 @pytest.mark.scheduled
-async def test_bedrock_ainvoke(chat: BedrockChat) -> None:
+async def test_bedrock_ainvoke(chat: ChatBedrock) -> None:
     """Test invoke tokens from BedrockChat."""
     result = await chat.ainvoke("I'm Pickle Rick", config={"tags": ["foo"]})
     assert isinstance(result.content, str)
 
 
 @pytest.mark.scheduled
-def test_bedrock_invoke(chat: BedrockChat) -> None:
+def test_bedrock_invoke(chat: ChatBedrock) -> None:
     """Test invoke tokens from BedrockChat."""
     result = chat.invoke("I'm Pickle Rick", config=dict(tags=["foo"]))
     assert isinstance(result.content, str)
