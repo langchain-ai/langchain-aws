@@ -1,16 +1,13 @@
 # langchain-aws
 
-This package contains the LangChain integration with Bedrock
+This package contains the LangChain integrations with AWS.
 
 ## Installation
 
 ```bash
 pip install -U langchain-aws
 ```
-
-And you should configure credentials by setting the following environment variables:
-
-* TODO: fill this out
+All integrations in this package assume that you have the credentials setup to connect with AWS services.
 
 ## Chat Models
 
@@ -42,4 +39,18 @@ from langchain_aws import BedrockLLM
 
 llm = BedrockLLM()
 llm.invoke("The meaning of life is")
+```
+
+## Retrivers
+`AmazonKnowlegeBasesRetriever` class provides a retriever to connect with Amazon Knowlege Bases.
+
+```python
+from langchain_aws import AmazonKnowledgeBasesRetriever
+
+retriever = AmazonKnowledgeBasesRetriever(
+    knowledge_base_id="IAPJ4QPUEU",
+    retrieval_config={"vectorSearchConfiguration": {"numberOfResults": 4}},
+)
+
+retriever.get_relevant_documents(query="What is the meaning of life?")
 ```
