@@ -12,7 +12,7 @@ on:
       working-directory:
         required: true
         type: string
-        default: 'libs/'
+        default: 'libs/aws'
 
 env:
   PYTHON_VERSION: "3.11"
