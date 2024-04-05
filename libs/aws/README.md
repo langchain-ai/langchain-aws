@@ -41,7 +41,19 @@ llm = BedrockLLM()
 llm.invoke("The meaning of life is")
 ```
 
-## Retrivers
+## Retrievers
+`AmazonKendraRetriever` class provides a retriever to connect with Amazon Kendra.
+
+```python
+from langchain_aws import AmazonKendraRetriever
+
+retriever = AmazonKendraRetriever(
+    index_id="561be2b6d-9804c7e7-f6a0fbb8-5ccd350"
+)
+
+retriever.get_relevant_documents(query="What is the meaning of life?")
+```
+
 `AmazonKnowlegeBasesRetriever` class provides a retriever to connect with Amazon Knowlege Bases.
 
 ```python
