@@ -265,5 +265,5 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
           generateReleaseNotes: true
-          tag: ${{ inputs.working-directory }}/v${{ needs.build.outputs.version }}
+          tag: v${{ needs.build.outputs.version }}
           commit: main
