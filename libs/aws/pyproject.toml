@@ -23,6 +23,7 @@ pytest = "^7.4.3"
 pytest-cov = "^4.1.0"
 syrupy = "^4.0.2"
 pytest-asyncio = "^0.23.2"
+langchain-core = {git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/core"}
 
 [tool.poetry.group.codespell]
 optional = true
@@ -43,11 +44,13 @@ ruff = "^0.1.8"
 
 [tool.poetry.group.typing.dependencies]
 mypy = "^1.7.1"
+langchain-core = {git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/core"}
 
 [tool.poetry.group.dev]
 optional = true
 
 [tool.poetry.group.dev.dependencies]
+langchain-core = {git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/core"}
 
 [tool.ruff.lint]
 select = [
