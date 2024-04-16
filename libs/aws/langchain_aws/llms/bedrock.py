@@ -444,7 +444,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         _model_kwargs = self.model_kwargs or {}
         return {
             "model_id": self.model_id,
-            "provider": self.provider,
+            "provider": self._get_provider(),
             "stream": self.streaming,
             "guardrails": self.guardrails,
             **_model_kwargs,
