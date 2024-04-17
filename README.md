@@ -4,9 +4,9 @@ This repository provides LangChain components for various AWS services. It aims 
 
 ## Features
 
-- **LLM Classes**: Includes LLM classes for AWS services like Bedrock and SageMaker Endpoints, allowing you to leverage their language models within LangChain.
-- **Retrievers**: Supports retrievers for services like Amazon Kendra and Bedrock KnowledgeBases, enabling efficient retrieval of relevant information from these sources.
-- **Graphs**: Provides components for working with AWS Neptune graphs within LangChain.
+- **LLMs**: Includes LLM classes for AWS services like [Bedrock](https://aws.amazon.com/bedrock) and [SageMaker Endpoints](https://aws.amazon.com/sagemaker/deploy/), allowing you to leverage their language models within LangChain.
+- **Retrievers**: Supports retrievers for services like [Amazon Kendra](https://aws.amazon.com/kendra/) and [KnowledgeBases for Amazon Bedrock](https://aws.amazon.com/bedrock/knowledge-bases/), enabling efficient retrieval of relevant information from these sources in your RAG applications.
+- **Graphs**: Provides components for working with [AWS Neptune](https://aws.amazon.com/neptune/) graphs within LangChain.
 - **More to come**: This repository will continue to expand and offer additional components for various AWS services as development progresses.
 
 **Note**: This repository will replace all AWS integrations currently present in the `langchain-community` package. Users are encouraged to migrate to this repository as soon as possible.
@@ -27,7 +27,9 @@ Here's a simple example of how to use the `langchain-aws` package.
 from langchain_aws import BedrockLLM
 
 # Initialize the Bedrock LLM
-llm = BedrockLLM(model_id="anthropic.claude-v2:1")
+llm = BedrockLLM(
+    model_id="anthropic.claude-v2:1"
+)
 
 # Invoke the llm
 response = llm.invoke("Hello! How are you today?")
@@ -38,7 +40,7 @@ For more detailed usage examples and documentation, please refer to the [LangCha
 
 ## Contributing
 
-We welcome contributions to this project! Please follow the [contribution guide](.github/CONTRIBUTION.md) for instructions to setup the project for development and guidance on how to contribute effectively.
+We welcome contributions to this project! Please follow the [contribution guide](https://github.com/langchain-ai/langchain-aws/blob/main/.github/CONTRIBUTING.md) for instructions to setup the project for development and guidance on how to contribute effectively.
 
 ## License
 
