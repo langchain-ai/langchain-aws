@@ -1,7 +1,45 @@
 # 🦜️🔗 LangChain 🤝 Amazon Web Services (AWS)
 
-NOTE: This repository is a work-in-progress. Currently, the AWS integrations are in `langchain-community`.
+This repository provides LangChain components for various AWS services. It aims to replace and expand upon the existing LangChain AWS components found in the `langchain-community` package in the LangChain repository.
 
-This repository contains 1 package with AWS integrations with LangChain:
+## Features
 
-- [langchain-aws](https://pypi.org/project/langchain-aws/) integrates [AWS](https://aws.amazon.com).
+- **LLM Classes**: Includes LLM classes for AWS services like Bedrock and SageMaker Endpoints, allowing you to leverage their language models within LangChain.
+- **Retrievers**: Supports retrievers for services like Amazon Kendra and Bedrock KnowledgeBases, enabling efficient retrieval of relevant information from these sources.
+- **Graphs**: Provides components for working with AWS Neptune graphs within LangChain.
+- **More to come**: This repository will continue to expand and offer additional components for various AWS services as development progresses.
+
+**Note**: This repository will replace all AWS integrations currently present in the `langchain-community` package. Users are encouraged to migrate to this repository as soon as possible.
+
+## Installation
+
+You can install the `langchain-aws` package from PyPI.
+
+```bash
+pip install langchain-aws
+```
+
+## Usage
+
+Here's a simple example of how to use the `langchain-aws` package.
+
+```python
+from langchain_aws import BedrockLLM
+
+# Initialize the Bedrock LLM
+llm = BedrockLLM(model_id="anthropic.claude-v2:1")
+
+# Invoke the llm
+response = llm.invoke("Hello! How are you today?")
+print(response)
+```
+
+For more detailed usage examples and documentation, please refer to the [LangChain docs](https://python.langchain.com/docs/integrations/platforms/aws/).
+
+## Contributing
+
+We welcome contributions to this project! Please follow the [contribution guide](.github/CONTRIBUTION.md) for instructions to setup the project for development and guidance on how to contribute effectively.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
