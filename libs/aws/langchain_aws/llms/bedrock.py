@@ -81,16 +81,44 @@ def _human_assistant_format(input_text: str) -> str:
 
 def _stream_response_to_generation_chunk(
     stream_response: Dict[str, Any],
+    provider,
+    output_key,
+    messages_api
 ) -> GenerationChunk:
     """Convert a stream response to a generation chunk."""
-    if not stream_response["delta"]:
-        return GenerationChunk(text="")
-    return GenerationChunk(
-        text=stream_response["delta"]["text"],
-        generation_info=dict(
-            finish_reason=stream_response.get("stop_reason", None),
-        ),
-    )
+    if messages_api:
+        match stream_response.get("type"):
+            case "message_start":
+                usage_info = stream_response.get("message", {}).get("usage", None)
+                generation_info = {"usage": usage_info}
+                return GenerationChunk(text="", generation_info=generation_info)
+            case "content_block_delta": 
+                if not stream_response["delta"]:
+                    return GenerationChunk(text="")
+                return GenerationChunk(
+                    text=stream_response["delta"]["text"],
+                    generation_info=dict(
+                        stop_reason=stream_response.get("stop_reason", None),
+                    ),
+                )
+            case "message_delta":
+                usage_info = stream_response.get("usage", None)
+                stop_reason = stream_response.get("stop_reason")
+                generation_info = {"stop_reason": stop_reason, "usage": usage_info}
+                return GenerationChunk(text="", generation_info=generation_info)
+            case _:
+                return None
+    else:
+        # chunk obj format varies with provider
+        generation_info = {k:v for k, v in stream_response.items() if k != output_key}
+        return GenerationChunk(
+            text=(
+                stream_response[output_key]
+                if provider != "mistral"
+                else stream_response[output_key][0]["text"]
+            ),
+            generation_info=generation_info,
+        )
 
 
 class LLMInputOutputAdapter:
@@ -223,32 +251,12 @@ class LLMInputOutputAdapter:
             elif messages_api and (chunk_obj.get("type") == "content_block_stop"):
                 return
 
-            if messages_api and chunk_obj.get("type") in (
-                "message_start",
-                "content_block_start",
-                "content_block_delta",
-            ):
-                if chunk_obj.get("type") == "content_block_delta":
-                    chk = _stream_response_to_generation_chunk(chunk_obj)
-                    yield chk
-                else:
-                    continue
+
+            generation_chunk = _stream_response_to_generation_chunk(chunk_obj, provider=provider, output_key=output_key, messages_api=messages_api)
+            if generation_chunk:
+                yield generation_chunk
             else:
-                # chunk obj format varies with provider
-                yield GenerationChunk(
-                    text=(
-                        chunk_obj[output_key]
-                        if provider != "mistral"
-                        else chunk_obj[output_key][0]["text"]
-                    ),
-                    generation_info={
-                        GUARDRAILS_BODY_KEY: (
-                            chunk_obj.get(GUARDRAILS_BODY_KEY)
-                            if GUARDRAILS_BODY_KEY in chunk_obj
-                            else None
-                        ),
-                    },
-                )
+                continue
 
     @classmethod
     async def aprepare_output_stream(
