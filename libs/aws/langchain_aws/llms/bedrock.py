@@ -20,7 +20,7 @@ from langchain_core.callbacks import (
     CallbackManagerForLLMRun,
 )
 from langchain_core.language_models import LLM, BaseLanguageModel
-from langchain_core.outputs import GenerationChunk
+from langchain_core.outputs import Generation, GenerationChunk, LLMResult
 from langchain_core.pydantic_v1 import Extra, Field, root_validator
 from langchain_core.utils import get_from_dict_or_env
 
@@ -119,6 +119,37 @@ def _stream_response_to_generation_chunk(
             ),
             generation_info=generation_info,
         )
+    
+def _combine_generation_info_for_llm_result(generation_chunks: list[GenerationChunk], provider_stop_code) -> Dict[str, Any]:
+    """
+    Returns usage and stop reason information with the intent to pack into an LLMResult
+    Takes a list of GenerationChunks
+    If the messages api is being used, the generation_info from some of these chunks should contain "usage" keys
+    if not, the token counts should be found within "amazon-bedrock-invocationMetrics"
+    """
+    total_usage_info = {"input_tokens": 0, "output_tokens": 0}
+    stop_reason = ""
+    for chunk in generation_chunks:
+        if "usage" in chunk.generation_info:
+            usage_info = chunk.generation_info["usage"]
+            if "input_tokens" in usage_info:
+                total_usage_info["input_tokens"] += usage_info["input_tokens"]
+            if "output_tokens" in usage_info:
+                total_usage_info["output_tokens"] += usage_info["output_tokens"]
+        if "amazon-bedrock-invocationMetrics" in chunk.generation_info:
+            usage_info = chunk.generation_info["amazon-bedrock-invocationMetrics"]
+            if "inputTokenCount" in usage_info:
+                total_usage_info["input_tokens"] += usage_info["inputTokenCount"]
+            if "outputTokenCount" in usage_info:
+                total_usage_info["output_tokens"] += usage_info["outputTokenCount"]
+
+        if provider_stop_code is not None and provider_stop_code in chunk.generation_info:
+            # uses the last stop reason
+            stop_reason = chunk.generation_info[provider_stop_code]
+
+    total_usage_info["total_tokens"] = total_usage_info["input_tokens"] + total_usage_info["output_tokens"]
+
+    return {"usage": total_usage_info, "stop_reason": stop_reason}
 
 
 class LLMInputOutputAdapter:
@@ -349,6 +380,14 @@ class BedrockBase(BaseLanguageModel, ABC):
         "ai21": "stop_sequences",
         "cohere": "stop_sequences",
         "mistral": "stop_sequences",
+    }
+
+    provider_stream_completion_key_map: Mapping[str, str] = {
+        "anthropic": "stop_reason",
+        "amazon": "completionReason",
+        "ai21": "finishReason",
+        "cohere": "finish_reason",
+        "mistral": "stop_reason"
     }
 
     guardrails: Optional[Mapping[str, Any]] = {
@@ -674,15 +713,24 @@ class BedrockBase(BaseLanguageModel, ABC):
         except Exception as e:
             raise ValueError(f"Error raised by bedrock service: {e}")
 
+        provider_stop_code = self.provider_stream_completion_key_map.get(provider, "stop_reason")
+
+        all_chunks = []
         for chunk in LLMInputOutputAdapter.prepare_output_stream(
             provider, response, stop, True if messages else False
         ):
             yield chunk
+            all_chunks.append(chunk)
             # verify and raise callback error if any middleware intervened
             self._get_bedrock_services_signal(chunk.generation_info)  # type: ignore[arg-type]
 
             if run_manager is not None:
                 run_manager.on_llm_new_token(chunk.text, chunk=chunk)
+
+        
+        if run_manager is not None:
+            llm_output = _combine_generation_info_for_llm_result(all_chunks, provider_stop_code=provider_stop_code)
+            run_manager.on_llm_end(LLMResult(generations=[all_chunks], llm_output=llm_output))
 
     async def _aprepare_input_and_invoke_stream(
         self,
