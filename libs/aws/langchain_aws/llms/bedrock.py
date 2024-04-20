@@ -176,6 +176,7 @@ class LLMInputOutputAdapter:
                 "completion_tokens": completion_tokens,
                 "total_tokens": prompt_tokens + completion_tokens,
             },
+            "stop_reason": response_body["stop_reason"]
         }
 
     @classmethod
@@ -547,7 +548,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         try:
             response = self.client.invoke_model(**request_options)
 
-            text, body, usage_info = LLMInputOutputAdapter.prepare_output(
+            text, body, usage_info, stop_reason = LLMInputOutputAdapter.prepare_output(
                 provider, response
             ).values()
 
@@ -562,13 +563,20 @@ class BedrockBase(BaseLanguageModel, ABC):
         # such as when guardrails are triggered.
         services_trace = self._get_bedrock_services_signal(body)  # type: ignore[arg-type]
 
-        if services_trace.get("signal") and run_manager is not None:
-            run_manager.on_llm_error(
-                Exception(
-                    f"Error raised by bedrock service: {services_trace.get('reason')}"
-                ),
-                **services_trace,
-            )
+        if run_manager is not None:
+            if services_trace.get("signal"):
+                run_manager.on_llm_error(
+                    Exception(
+                        f"Error raised by bedrock service: {services_trace.get('reason')}"
+                    ),
+                    **services_trace,
+                )
+            
+            llm_output = {
+                "usage": usage_info,
+                "stop_reason": stop_reason
+            }
+            run_manager.on_llm_end(LLMResult[[Generation(text=text)]], llm_output=llm_output)
 
         return text, usage_info
 
