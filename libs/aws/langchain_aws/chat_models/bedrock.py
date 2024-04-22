@@ -380,7 +380,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         final_output = {}
         for output in llm_outputs:
             output = output or {}
-            usage = output.pop("usage", {})
+            usage = output.get("usage", {})
             for token_type, token_count in usage.items():
                 final_usage[token_type] += token_count
             final_output.update(output)
