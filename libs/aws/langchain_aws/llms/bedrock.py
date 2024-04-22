@@ -603,27 +603,27 @@ class BedrockBase(BaseLanguageModel, ABC):
         if stop is not None:
             text = enforce_stop_tokens(text, stop)
 
+        llm_output = {
+            "usage": usage_info,
+            "stop_reason": stop_reason
+        }
+
         # Verify and raise a callback error if any intervention occurs or a signal is
         # sent from a Bedrock service,
         # such as when guardrails are triggered.
         services_trace = self._get_bedrock_services_signal(body)  # type: ignore[arg-type]
 
-        if run_manager is not None:
-            if services_trace.get("signal"):
-                run_manager.on_llm_error(
-                    Exception(
-                        f"Error raised by bedrock service: {services_trace.get('reason')}"
-                    ),
-                    **services_trace,
-                )
+        if run_manager is not None and services_trace.get("signal"):
+            run_manager.on_llm_error(
+                Exception(
+                    f"Error raised by bedrock service: {services_trace.get('reason')}"
+                ),
+                **services_trace,
+            )
             
-            llm_output = {
-                "usage": usage_info,
-                "stop_reason": stop_reason
-            }
-            run_manager.on_llm_end(LLMResult[[Generation(text=text)]], llm_output=llm_output)
+            
 
-        return text, usage_info
+        return text, llm_output
 
     def _get_bedrock_services_signal(self, body: dict) -> dict:
         """
@@ -711,24 +711,15 @@ class BedrockBase(BaseLanguageModel, ABC):
         except Exception as e:
             raise ValueError(f"Error raised by bedrock service: {e}")
 
-        provider_stop_code = self.provider_stream_completion_key_map.get(provider, "stop_reason")
-
-        all_chunks = []
         for chunk in LLMInputOutputAdapter.prepare_output_stream(
             provider, response, stop, True if messages else False
         ):
             yield chunk
-            all_chunks.append(chunk)
             # verify and raise callback error if any middleware intervened
             self._get_bedrock_services_signal(chunk.generation_info)  # type: ignore[arg-type]
 
             if run_manager is not None:
                 run_manager.on_llm_new_token(chunk.text, chunk=chunk)
-
-        
-        if run_manager is not None:
-            llm_output = _combine_generation_info_for_llm_result(all_chunks, provider_stop_code=provider_stop_code)
-            run_manager.on_llm_end(LLMResult(generations=[all_chunks], llm_output=llm_output))
 
     async def _aprepare_input_and_invoke_stream(
         self,
@@ -902,17 +893,31 @@ class BedrockLLM(LLM, BedrockBase):
                 response = llm("Tell me a joke.")
         """
 
+        provider = self._get_provider()
+        provider_stop_reason_code = self.provider_stop_reason_key_map.get(provider, "stop_reason")
+
         if self.streaming:
+            all_chunks = []
             completion = ""
             for chunk in self._stream(
                 prompt=prompt, stop=stop, run_manager=run_manager, **kwargs
             ):
                 completion += chunk.text
+                all_chunks.append(chunk)
+
+            if run_manager is not None:
+                chunks_generation_info = [x.generation_info for x in all_chunks]
+                llm_output = _combine_generation_info_for_llm_result(chunks_generation_info, provider_stop_code=provider_stop_reason_code)
+                run_manager.on_llm_end(LLMResult(generations=[all_chunks], llm_output=llm_output))
+                
             return completion
 
-        text, _ = self._prepare_input_and_invoke(
+        text, llm_output = self._prepare_input_and_invoke(
             prompt=prompt, stop=stop, run_manager=run_manager, **kwargs
         )
+        if run_manager is not None:
+            run_manager.on_llm_end(LLMResult(generations=[[Generation(text=text)]], llm_output=llm_output))
+
         return text
 
     async def _astream(
@@ -966,13 +971,22 @@ class BedrockLLM(LLM, BedrockBase):
         if not self.streaming:
             raise ValueError("Streaming must be set to True for async operations. ")
 
+        provider = self._get_provider()
+        provider_stop_reason_code = self.provider_stop_reason_key_map.get(provider, "stop_reason")
+
         chunks = [
-            chunk.text
+            chunk
             async for chunk in self._astream(
                 prompt=prompt, stop=stop, run_manager=run_manager, **kwargs
             )
         ]
-        return "".join(chunks)
+
+        if run_manager is not None:
+                chunks_generation_info = [x.generation_info for x in chunks]
+                llm_output = _combine_generation_info_for_llm_result(chunks_generation_info, provider_stop_code=provider_stop_reason_code)
+                run_manager.on_llm_end(LLMResult(generations=[chunks], llm_output=llm_output))
+
+        return "".join([chunk.text for chunk in chunks])
 
     def get_num_tokens(self, text: str) -> int:
         if self._model_is_anthropic:
