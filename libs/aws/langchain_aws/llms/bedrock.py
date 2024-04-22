@@ -123,7 +123,7 @@ def _combine_generation_info_for_llm_result(
 ) -> Dict[str, Any]:
     """
     Returns usage and stop reason information with the intent to pack into an LLMResult
-    Takes a list of GenerationChunks
+    Takes a list of generation_info from GenerationChunks
     If the messages api is being used, the generation_info from some of these chunks should contain "usage" keys
     if not, the token counts should be found within "amazon-bedrock-invocationMetrics"
     """
