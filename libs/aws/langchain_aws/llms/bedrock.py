@@ -291,7 +291,7 @@ class LLMInputOutputAdapter:
 
     @classmethod
     async def aprepare_output_stream(
-        cls, provider: str, response: Any, stop: Optional[List[str]] = None
+        cls, provider: str, response: Any, stop: Optional[List[str]] = None, messages_api: bool = False
     ) -> AsyncIterator[GenerationChunk]:
         stream = response.get("body")
 
@@ -323,13 +323,11 @@ class LLMInputOutputAdapter:
             ):
                 return
 
-            yield GenerationChunk(
-                text=(
-                    chunk_obj[output_key]
-                    if provider != "mistral"
-                    else chunk_obj[output_key][0]["text"]
-                )
-            )
+            generation_chunk = _stream_response_to_generation_chunk(chunk_obj, provider=provider, output_key=output_key, messages_api=messages_api)
+            if generation_chunk:
+                yield generation_chunk
+            else:
+                continue
 
 
 class BedrockBase(BaseLanguageModel, ABC):
@@ -735,6 +733,8 @@ class BedrockBase(BaseLanguageModel, ABC):
     async def _aprepare_input_and_invoke_stream(
         self,
         prompt: str,
+        system: Optional[str] = None,
+        messages: Optional[List[Dict]] = None,
         stop: Optional[List[str]] = None,
         run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
         **kwargs: Any,
@@ -755,7 +755,11 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         params = {**_model_kwargs, **kwargs}
         input_body = LLMInputOutputAdapter.prepare_input(
-            provider=provider, prompt=prompt, model_kwargs=params
+            provider=provider,
+            prompt=prompt,
+            system=system,
+            messages=messages,
+            model_kwargs=params,
         )
         body = json.dumps(input_body)
 
@@ -770,7 +774,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         )
 
         async for chunk in LLMInputOutputAdapter.aprepare_output_stream(
-            provider, response, stop
+            provider, response, stop, True if messages else False
         ):
             yield chunk
             if run_manager is not None and asyncio.iscoroutinefunction(
