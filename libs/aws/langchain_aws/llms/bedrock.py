@@ -103,7 +103,7 @@ def _stream_response_to_generation_chunk(
                 )
             case "message_delta":
                 usage_info = stream_response.get("usage", None)
-                stop_reason = stream_response.get("stop_reason")
+                stop_reason = stream_response.get("delta", {}).get("stop_reason")
                 generation_info = {"stop_reason": stop_reason, "usage": usage_info}
                 return GenerationChunk(text="", generation_info=generation_info)
             case _:
