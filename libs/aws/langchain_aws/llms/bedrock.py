@@ -120,34 +120,34 @@ def _stream_response_to_generation_chunk(
             generation_info=generation_info,
         )
     
-def _combine_generation_info_for_llm_result(generation_chunks: list[GenerationChunk], provider_stop_code) -> Dict[str, Any]:
+def _combine_generation_info_for_llm_result(chunks_generation_info: list[Dict[str, Any]], provider_stop_code) -> Dict[str, Any]:
     """
     Returns usage and stop reason information with the intent to pack into an LLMResult
     Takes a list of GenerationChunks
     If the messages api is being used, the generation_info from some of these chunks should contain "usage" keys
     if not, the token counts should be found within "amazon-bedrock-invocationMetrics"
     """
-    total_usage_info = {"input_tokens": 0, "output_tokens": 0}
+    total_usage_info = {"prompt_tokens": 0, "completion_tokens": 0}
     stop_reason = ""
-    for chunk in generation_chunks:
-        if "usage" in chunk.generation_info:
-            usage_info = chunk.generation_info["usage"]
+    for generation_info in chunks_generation_info:
+        if "usage" in generation_info:
+            usage_info = generation_info["usage"]
             if "input_tokens" in usage_info:
-                total_usage_info["input_tokens"] += usage_info["input_tokens"]
+                total_usage_info["prompt_tokens"] += usage_info["input_tokens"]
             if "output_tokens" in usage_info:
-                total_usage_info["output_tokens"] += usage_info["output_tokens"]
-        if "amazon-bedrock-invocationMetrics" in chunk.generation_info:
-            usage_info = chunk.generation_info["amazon-bedrock-invocationMetrics"]
+                total_usage_info["completion_tokens"] += usage_info["output_tokens"]
+        if "amazon-bedrock-invocationMetrics" in generation_info:
+            usage_info = generation_info["amazon-bedrock-invocationMetrics"]
             if "inputTokenCount" in usage_info:
-                total_usage_info["input_tokens"] += usage_info["inputTokenCount"]
+                total_usage_info["prompt_tokens"] += usage_info["inputTokenCount"]
             if "outputTokenCount" in usage_info:
-                total_usage_info["output_tokens"] += usage_info["outputTokenCount"]
+                total_usage_info["completion_tokens"] += usage_info["outputTokenCount"]
 
-        if provider_stop_code is not None and provider_stop_code in chunk.generation_info:
+        if provider_stop_code is not None and provider_stop_code in generation_info:
             # uses the last stop reason
-            stop_reason = chunk.generation_info[provider_stop_code]
+            stop_reason = generation_info[provider_stop_code]
 
-    total_usage_info["total_tokens"] = total_usage_info["input_tokens"] + total_usage_info["output_tokens"]
+    total_usage_info["total_tokens"] = total_usage_info["prompt_tokens"] + total_usage_info["completion_tokens"]
 
     return {"usage": total_usage_info, "stop_reason": stop_reason}
 
