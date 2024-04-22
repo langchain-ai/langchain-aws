@@ -54,7 +54,7 @@ retriever = AmazonKendraRetriever(
 retriever.get_relevant_documents(query="What is the meaning of life?")
 ```
 
-`AmazonKnowlegeBasesRetriever` class provides a retriever to connect with Amazon Knowlege Bases.
+`AmazonKnowledgeBasesRetriever` class provides a retriever to connect with Amazon Knowledge Bases.
 
 ```python
 from langchain_aws import AmazonKnowledgeBasesRetriever

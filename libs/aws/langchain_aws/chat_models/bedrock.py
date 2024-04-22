@@ -18,7 +18,10 @@ from langchain_core.messages import (
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.pydantic_v1 import Extra
 
-from langchain_aws.llms.bedrock import BedrockBase, _combine_generation_info_for_llm_result
+from langchain_aws.llms.bedrock import (
+    BedrockBase,
+    _combine_generation_info_for_llm_result,
+)
 from langchain_aws.utils import (
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
@@ -321,7 +324,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             **kwargs,
         ):
             delta = chunk.text
-            yield ChatGenerationChunk(message=AIMessageChunk(content=delta, response_metadata=chunk.generation_info))
+            yield ChatGenerationChunk(
+                message=AIMessageChunk(
+                    content=delta, response_metadata=chunk.generation_info
+                )
+            )
 
     def _generate(
         self,
@@ -332,13 +339,17 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     ) -> ChatResult:
         completion = ""
         llm_output: Dict[str, Any] = {}
-        provider_stop_reason_code = self.provider_stop_reason_key_map.get(self._get_provider(), "stop_reason")
+        provider_stop_reason_code = self.provider_stop_reason_key_map.get(
+            self._get_provider(), "stop_reason"
+        )
         if self.streaming:
             response_metadata: list[Dict[str, Any]] = []
             for chunk in self._stream(messages, stop, run_manager, **kwargs):
                 completion += chunk.text
                 response_metadata.append(chunk.message.response_metadata)
-            llm_output = _combine_generation_info_for_llm_result(response_metadata, provider_stop_reason_code)
+            llm_output = _combine_generation_info_for_llm_result(
+                response_metadata, provider_stop_reason_code
+            )
         else:
             provider = self._get_provider()
             prompt, system, formatted_messages = None, None, None
@@ -369,9 +380,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         return ChatResult(
             generations=[
                 ChatGeneration(
-                    message=AIMessage(
-                        content=completion, additional_kwargs=llm_output
-                    )
+                    message=AIMessage(content=completion, additional_kwargs=llm_output)
                 )
             ],
             llm_output=llm_output,

@@ -80,10 +80,7 @@ def _human_assistant_format(input_text: str) -> str:
 
 
 def _stream_response_to_generation_chunk(
-    stream_response: Dict[str, Any],
-    provider,
-    output_key,
-    messages_api
+    stream_response: Dict[str, Any], provider, output_key, messages_api
 ) -> GenerationChunk:
     """Convert a stream response to a generation chunk."""
     if messages_api:
@@ -92,7 +89,7 @@ def _stream_response_to_generation_chunk(
                 usage_info = stream_response.get("message", {}).get("usage", None)
                 generation_info = {"usage": usage_info}
                 return GenerationChunk(text="", generation_info=generation_info)
-            case "content_block_delta": 
+            case "content_block_delta":
                 if not stream_response["delta"]:
                     return GenerationChunk(text="")
                 return GenerationChunk(
@@ -110,7 +107,7 @@ def _stream_response_to_generation_chunk(
                 return None
     else:
         # chunk obj format varies with provider
-        generation_info = {k:v for k, v in stream_response.items() if k != output_key}
+        generation_info = {k: v for k, v in stream_response.items() if k != output_key}
         return GenerationChunk(
             text=(
                 stream_response[output_key]
@@ -119,8 +116,11 @@ def _stream_response_to_generation_chunk(
             ),
             generation_info=generation_info,
         )
-    
-def _combine_generation_info_for_llm_result(chunks_generation_info: list[Dict[str, Any]], provider_stop_code) -> Dict[str, Any]:
+
+
+def _combine_generation_info_for_llm_result(
+    chunks_generation_info: list[Dict[str, Any]], provider_stop_code
+) -> Dict[str, Any]:
     """
     Returns usage and stop reason information with the intent to pack into an LLMResult
     Takes a list of GenerationChunks
@@ -147,7 +147,9 @@ def _combine_generation_info_for_llm_result(chunks_generation_info: list[Dict[st
             # uses the last stop reason
             stop_reason = generation_info[provider_stop_code]
 
-    total_usage_info["total_tokens"] = total_usage_info["prompt_tokens"] + total_usage_info["completion_tokens"]
+    total_usage_info["total_tokens"] = (
+        total_usage_info["prompt_tokens"] + total_usage_info["completion_tokens"]
+    )
 
     return {"usage": total_usage_info, "stop_reason": stop_reason}
 
@@ -235,7 +237,7 @@ class LLMInputOutputAdapter:
                 "completion_tokens": completion_tokens,
                 "total_tokens": prompt_tokens + completion_tokens,
             },
-            "stop_reason": response_body["stop_reason"]
+            "stop_reason": response_body["stop_reason"],
         }
 
     @classmethod
@@ -282,8 +284,12 @@ class LLMInputOutputAdapter:
             elif messages_api and (chunk_obj.get("type") == "message_stop"):
                 return
 
-
-            generation_chunk = _stream_response_to_generation_chunk(chunk_obj, provider=provider, output_key=output_key, messages_api=messages_api)
+            generation_chunk = _stream_response_to_generation_chunk(
+                chunk_obj,
+                provider=provider,
+                output_key=output_key,
+                messages_api=messages_api,
+            )
             if generation_chunk:
                 yield generation_chunk
             else:
@@ -291,7 +297,11 @@ class LLMInputOutputAdapter:
 
     @classmethod
     async def aprepare_output_stream(
-        cls, provider: str, response: Any, stop: Optional[List[str]] = None, messages_api: bool = False
+        cls,
+        provider: str,
+        response: Any,
+        stop: Optional[List[str]] = None,
+        messages_api: bool = False,
     ) -> AsyncIterator[GenerationChunk]:
         stream = response.get("body")
 
@@ -323,7 +333,12 @@ class LLMInputOutputAdapter:
             ):
                 return
 
-            generation_chunk = _stream_response_to_generation_chunk(chunk_obj, provider=provider, output_key=output_key, messages_api=messages_api)
+            generation_chunk = _stream_response_to_generation_chunk(
+                chunk_obj,
+                provider=provider,
+                output_key=output_key,
+                messages_api=messages_api,
+            )
             if generation_chunk:
                 yield generation_chunk
             else:
@@ -385,7 +400,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         "amazon": "completionReason",
         "ai21": "finishReason",
         "cohere": "finish_reason",
-        "mistral": "stop_reason"
+        "mistral": "stop_reason",
     }
 
     guardrails: Optional[Mapping[str, Any]] = {
@@ -603,10 +618,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         if stop is not None:
             text = enforce_stop_tokens(text, stop)
 
-        llm_output = {
-            "usage": usage_info,
-            "stop_reason": stop_reason
-        }
+        llm_output = {"usage": usage_info, "stop_reason": stop_reason}
 
         # Verify and raise a callback error if any intervention occurs or a signal is
         # sent from a Bedrock service,
@@ -620,8 +632,6 @@ class BedrockBase(BaseLanguageModel, ABC):
                 ),
                 **services_trace,
             )
-            
-            
 
         return text, llm_output
 
@@ -894,7 +904,9 @@ class BedrockLLM(LLM, BedrockBase):
         """
 
         provider = self._get_provider()
-        provider_stop_reason_code = self.provider_stop_reason_key_map.get(provider, "stop_reason")
+        provider_stop_reason_code = self.provider_stop_reason_key_map.get(
+            provider, "stop_reason"
+        )
 
         if self.streaming:
             all_chunks = []
@@ -907,16 +919,22 @@ class BedrockLLM(LLM, BedrockBase):
 
             if run_manager is not None:
                 chunks_generation_info = [x.generation_info for x in all_chunks]
-                llm_output = _combine_generation_info_for_llm_result(chunks_generation_info, provider_stop_code=provider_stop_reason_code)
-                run_manager.on_llm_end(LLMResult(generations=[all_chunks], llm_output=llm_output))
-                
+                llm_output = _combine_generation_info_for_llm_result(
+                    chunks_generation_info, provider_stop_code=provider_stop_reason_code
+                )
+                run_manager.on_llm_end(
+                    LLMResult(generations=[all_chunks], llm_output=llm_output)
+                )
+
             return completion
 
         text, llm_output = self._prepare_input_and_invoke(
             prompt=prompt, stop=stop, run_manager=run_manager, **kwargs
         )
         if run_manager is not None:
-            run_manager.on_llm_end(LLMResult(generations=[[Generation(text=text)]], llm_output=llm_output))
+            run_manager.on_llm_end(
+                LLMResult(generations=[[Generation(text=text)]], llm_output=llm_output)
+            )
 
         return text
 
@@ -972,7 +990,9 @@ class BedrockLLM(LLM, BedrockBase):
             raise ValueError("Streaming must be set to True for async operations. ")
 
         provider = self._get_provider()
-        provider_stop_reason_code = self.provider_stop_reason_key_map.get(provider, "stop_reason")
+        provider_stop_reason_code = self.provider_stop_reason_key_map.get(
+            provider, "stop_reason"
+        )
 
         chunks = [
             chunk
@@ -982,9 +1002,13 @@ class BedrockLLM(LLM, BedrockBase):
         ]
 
         if run_manager is not None:
-                chunks_generation_info = [x.generation_info for x in chunks]
-                llm_output = _combine_generation_info_for_llm_result(chunks_generation_info, provider_stop_code=provider_stop_reason_code)
-                run_manager.on_llm_end(LLMResult(generations=[chunks], llm_output=llm_output))
+            chunks_generation_info = [x.generation_info for x in chunks]
+            llm_output = _combine_generation_info_for_llm_result(
+                chunks_generation_info, provider_stop_code=provider_stop_reason_code
+            )
+            run_manager.on_llm_end(
+                LLMResult(generations=[chunks], llm_output=llm_output)
+            )
 
         return "".join([chunk.text for chunk in chunks])
 
