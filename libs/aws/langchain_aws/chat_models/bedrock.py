@@ -321,7 +321,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             **kwargs,
         ):
             delta = chunk.text
-            yield ChatGenerationChunk(message=AIMessageChunk(content=delta))
+            yield ChatGenerationChunk(message=AIMessageChunk(content=delta, response_metadata=chunk.generation_info))
 
     def _generate(
         self,
