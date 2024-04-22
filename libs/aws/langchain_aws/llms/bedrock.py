@@ -279,7 +279,7 @@ class LLMInputOutputAdapter:
             ):
                 return
 
-            elif messages_api and (chunk_obj.get("type") == "content_block_stop"):
+            elif messages_api and (chunk_obj.get("type") == "message_stop"):
                 return
 
 
