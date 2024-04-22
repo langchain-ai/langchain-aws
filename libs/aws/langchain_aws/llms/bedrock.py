@@ -380,7 +380,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         "mistral": "stop_sequences",
     }
 
-    provider_stream_completion_key_map: Mapping[str, str] = {
+    provider_stop_reason_key_map: Mapping[str, str] = {
         "anthropic": "stop_reason",
         "amazon": "completionReason",
         "ai21": "finishReason",
