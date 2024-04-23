@@ -80,8 +80,8 @@ def _human_assistant_format(input_text: str) -> str:
 
 
 def _stream_response_to_generation_chunk(
-    stream_response: Dict[str, Any], provider, output_key, messages_api
-) -> GenerationChunk:
+    stream_response: Dict[str, Any], provider: str, output_key: str, messages_api: bool
+) -> GenerationChunk | None:
     """Convert a stream response to a generation chunk."""
     if messages_api:
         msg_type = stream_response.get("type")
@@ -119,7 +119,7 @@ def _stream_response_to_generation_chunk(
 
 
 def _combine_generation_info_for_llm_result(
-    chunks_generation_info: list[Dict[str, Any]], provider_stop_code
+    chunks_generation_info: list[Dict[str, Any]], provider_stop_code: str
 ) -> Dict[str, Any]:
     """
     Returns usage and stop reason information with the intent to pack into an LLMResult
@@ -910,7 +910,7 @@ class BedrockLLM(LLM, BedrockBase):
         )
 
         if self.streaming:
-            all_chunks = []
+            all_chunks: list[GenerationChunk] = []
             completion = ""
             for chunk in self._stream(
                 prompt=prompt, stop=stop, run_manager=run_manager, **kwargs
@@ -919,12 +919,20 @@ class BedrockLLM(LLM, BedrockBase):
                 all_chunks.append(chunk)
 
             if run_manager is not None:
-                chunks_generation_info = [x.generation_info for x in all_chunks]
+                chunks_generation_info = [
+                    chunk.generation_info
+                    for chunk in all_chunks
+                    if chunk.generation_info is not None
+                ]
                 llm_output = _combine_generation_info_for_llm_result(
                     chunks_generation_info, provider_stop_code=provider_stop_reason_code
                 )
+                all_generations = [
+                    Generation(text=chunk.text, generation_info=chunk.generation_info)
+                    for chunk in all_chunks
+                ]
                 run_manager.on_llm_end(
-                    LLMResult(generations=[all_chunks], llm_output=llm_output)
+                    LLMResult(generations=[all_generations], llm_output=llm_output)
                 )
 
             return completion
@@ -1003,12 +1011,20 @@ class BedrockLLM(LLM, BedrockBase):
         ]
 
         if run_manager is not None:
-            chunks_generation_info = [x.generation_info for x in chunks]
+            chunks_generation_info = [
+                chunk.generation_info
+                for chunk in chunks
+                if chunk.generation_info is not None
+            ]
             llm_output = _combine_generation_info_for_llm_result(
                 chunks_generation_info, provider_stop_code=provider_stop_reason_code
             )
-            run_manager.on_llm_end(
-                LLMResult(generations=[chunks], llm_output=llm_output)
+            generations = [
+                Generation(text=chunk.text, generation_info=chunk.generation_info)
+                for chunk in chunks
+            ]
+            await run_manager.on_llm_end(
+                LLMResult(generations=[generations], llm_output=llm_output)
             )
 
         return "".join([chunk.text for chunk in chunks])
