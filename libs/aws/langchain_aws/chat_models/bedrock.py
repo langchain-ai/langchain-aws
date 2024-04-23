@@ -328,6 +328,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 message=AIMessageChunk(
                     content=delta, response_metadata=chunk.generation_info
                 )
+                if chunk.generation_info is not None
+                else AIMessageChunk(content=delta)
             )
 
     def _generate(
