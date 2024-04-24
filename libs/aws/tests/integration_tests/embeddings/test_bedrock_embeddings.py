@@ -7,9 +7,7 @@ from langchain_aws import BedrockEmbeddings
 
 @pytest.fixture
 def bedrock_embeddings() -> BedrockEmbeddings:
-    return BedrockEmbeddings(
-        model_id="amazon.titan-embed-text-v1"
-    )
+    return BedrockEmbeddings(model_id="amazon.titan-embed-text-v1")
 
 
 @pytest.mark.scheduled
