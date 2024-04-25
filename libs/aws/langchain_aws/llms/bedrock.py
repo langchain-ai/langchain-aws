@@ -12,6 +12,7 @@ from typing import (
     Mapping,
     Optional,
     Tuple,
+    Union,
 )
 
 from langchain_core._api.deprecation import deprecated
@@ -81,7 +82,7 @@ def _human_assistant_format(input_text: str) -> str:
 
 def _stream_response_to_generation_chunk(
     stream_response: Dict[str, Any], provider: str, output_key: str, messages_api: bool
-) -> GenerationChunk | None:
+) -> Union[GenerationChunk, None]:
     """Convert a stream response to a generation chunk."""
     if messages_api:
         msg_type = stream_response.get("type")
@@ -119,7 +120,7 @@ def _stream_response_to_generation_chunk(
 
 
 def _combine_generation_info_for_llm_result(
-    chunks_generation_info: list[Dict[str, Any]], provider_stop_code: str
+    chunks_generation_info: List[Dict[str, Any]], provider_stop_code: str
 ) -> Dict[str, Any]:
     """
     Returns usage and stop reason information with the intent to pack into an LLMResult
@@ -910,7 +911,7 @@ class BedrockLLM(LLM, BedrockBase):
         )
 
         if self.streaming:
-            all_chunks: list[GenerationChunk] = []
+            all_chunks: List[GenerationChunk] = []
             completion = ""
             for chunk in self._stream(
                 prompt=prompt, stop=stop, run_manager=run_manager, **kwargs
