@@ -345,7 +345,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             self._get_provider(), "stop_reason"
         )
         if self.streaming:
-            response_metadata: list[Dict[str, Any]] = []
+            response_metadata: List[Dict[str, Any]] = []
             for chunk in self._stream(messages, stop, run_manager, **kwargs):
                 completion += chunk.text
                 response_metadata.append(chunk.message.response_metadata)
