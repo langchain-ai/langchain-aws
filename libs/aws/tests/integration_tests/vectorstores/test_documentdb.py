@@ -11,7 +11,7 @@ from langchain_openai.embeddings import OpenAIEmbeddings
 from motor.core import AgnosticCollection
 from pymongo.collection import Collection
 
-from langchain_aws.vectorstores.documentdb_new import (
+from langchain_aws.vectorstores.documentdb import (
     DocumentDBSimilarityType,
     DocumentDBVectorSearch,
 )
