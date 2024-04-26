@@ -345,7 +345,7 @@ class BedrockBase(BaseLanguageModel, ABC):
     guardrails: Optional[Mapping[str, Any]] = {
         "trace": None,
         "guardrailIdentifier": None,
-        "guardrailVersion": None
+        "guardrailVersion": None,
     }
     """
     An optional dictionary to configure guardrails for Bedrock.
@@ -446,9 +446,9 @@ class BedrockBase(BaseLanguageModel, ABC):
             "model_id": self.model_id,
             "provider": self._get_provider(),
             "stream": self.streaming,
-            "trace": self.guardrails.get('trace'),
-            "guardrailIdentifier": self.guardrails.get('guardrailIdentifier'),
-            "guardrailVersion": self.guardrails.get('guardrailVersion'),
+            "trace": self.guardrails.get("trace"),  # type: ignore[union-attr]
+            "guardrailIdentifier": self.guardrails.get("guardrailIdentifier", None),  # type: ignore[union-attr]
+            "guardrailVersion": self.guardrails.get("guardrailVersion", None),  # type: ignore[union-attr]
             **_model_kwargs,
         }
 
@@ -488,9 +488,9 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         except KeyError as e:
             raise TypeError(
-                "Guardrails must be a dictionary with 'guardrailIdentifier' and 'guardrailVersion' keys."
+                "Guardrails must be a dictionary with 'guardrailIdentifier'  \
+                and 'guardrailVersion' keys."
             ) from e
-
 
     def _prepare_input_and_invoke(
         self,
@@ -525,8 +525,12 @@ class BedrockBase(BaseLanguageModel, ABC):
         }
 
         if self._guardrails_enabled:
-            request_options["guardrailIdentifier"] = self.guardrails.get("guardrailIdentifier")
-            request_options["guardrailVersion"] = self.guardrails.get("guardrailVersion")
+            request_options["guardrailIdentifier"] = self.guardrails.get(  # type: ignore[union-attr]
+                "guardrailIdentifier", ""
+            )
+            request_options["guardrailVersion"] = self.guardrails.get(  # type: ignore[union-attr]
+                "guardrailVersion", ""
+            )
             if self.guardrails.get("trace"):  # type: ignore[union-attr]
                 request_options["trace"] = "ENABLED"
 
@@ -631,8 +635,12 @@ class BedrockBase(BaseLanguageModel, ABC):
         }
 
         if self._guardrails_enabled:
-            request_options["guardrailIdentifier"] = self.guardrails.get("guardrailIdentifier")
-            request_options["guardrailVersion"] = self.guardrails.get("guardrailVersion")
+            request_options["guardrailIdentifier"] = self.guardrails.get(  # type: ignore[union-attr]
+                "guardrailIdentifier", ""
+            )
+            request_options["guardrailVersion"] = self.guardrails.get(  # type: ignore[union-attr]
+                "guardrailVersion", ""
+            )
             if self.guardrails.get("trace"):  # type: ignore[union-attr]
                 request_options["trace"] = "ENABLED"
 
