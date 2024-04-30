@@ -50,22 +50,22 @@ def convert_messages_to_prompt_llama(messages: List[BaseMessage]) -> str:
 def _convert_one_message_to_text_llama3(message: BaseMessage) -> str:
     if isinstance(message, ChatMessage):
         message_text = (
-            f"<|begin_of_text|><|start_header_id|>{message.role}"
+            f"<|start_header_id|>{message.role}"
             f"<|end_header_id|>{message.content}<|eot_id|>"
         )
     elif isinstance(message, HumanMessage):
         message_text = (
-            f"<|begin_of_text|><|start_header_id|>user"
+            f"<|start_header_id|>user"
             f"<|end_header_id|>{message.content}<|eot_id|>"
         )
     elif isinstance(message, AIMessage):
         message_text = (
-            f"<|begin_of_text|><|start_header_id|>assistant"
+            f"<|start_header_id|>assistant"
             f"<|end_header_id|>{message.content}<|eot_id|>"
         )
     elif isinstance(message, SystemMessage):
         message_text = (
-            f"<|begin_of_text|><|start_header_id|>system"
+            f"<|start_header_id|>system"
             f"<|end_header_id|>{message.content}<|eot_id|>"
         )
     else:
@@ -78,7 +78,8 @@ def convert_messages_to_prompt_llama3(messages: List[BaseMessage]) -> str:
     """Convert a list of messages to a prompt for llama."""
 
     return "\n".join(
-        [_convert_one_message_to_text_llama3(message) for message in messages]
+        ["<|begin_of_text|>"]
+        + [_convert_one_message_to_text_llama3(message) for message in messages]
         + ["<|start_header_id|>assistant<|end_header_id|>\n\n"]
     )
 
