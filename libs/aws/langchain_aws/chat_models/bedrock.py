@@ -55,8 +55,7 @@ def _convert_one_message_to_text_llama3(message: BaseMessage) -> str:
         )
     elif isinstance(message, HumanMessage):
         message_text = (
-            f"<|start_header_id|>user"
-            f"<|end_header_id|>{message.content}<|eot_id|>"
+            f"<|start_header_id|>user" f"<|end_header_id|>{message.content}<|eot_id|>"
         )
     elif isinstance(message, AIMessage):
         message_text = (
@@ -65,8 +64,7 @@ def _convert_one_message_to_text_llama3(message: BaseMessage) -> str:
         )
     elif isinstance(message, SystemMessage):
         message_text = (
-            f"<|start_header_id|>system"
-            f"<|end_header_id|>{message.content}<|eot_id|>"
+            f"<|start_header_id|>system" f"<|end_header_id|>{message.content}<|eot_id|>"
         )
     else:
         raise ValueError(f"Got unknown type {message}")
