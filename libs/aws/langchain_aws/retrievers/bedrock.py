@@ -120,6 +120,9 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
                     metadata={
                         "location": result["location"],
                         "score": result["score"] if "score" in result else 0,
+                        "source_metadata": (
+                            result["metadata"] if "metadata" in result else None
+                        ),
                     },
                 )
             )

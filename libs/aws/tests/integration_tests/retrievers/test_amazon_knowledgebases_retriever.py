@@ -34,6 +34,12 @@ def test_get_relevant_documents(retriever, mock_client) -> None:  # type: ignore
                 "score": 0.8,
             },
             {"content": {"text": "This is the third result."}, "location": "location3"},
+            {
+                "content": {"text": "This is the fourth result."},
+                "location": "location4",
+                "score": 0.4,
+                "metadata": {"url": "http://example.com", "title": "Example Title"},
+            },
         ]
     }
     mock_client.retrieve.return_value = response
@@ -43,19 +49,30 @@ def test_get_relevant_documents(retriever, mock_client) -> None:  # type: ignore
     expected_documents = [
         Document(
             page_content="This is the first result.",
-            metadata={"location": "location1", "score": 0.9},
+            metadata={"location": "location1", "score": 0.9, "source_metadata": None},
         ),
         Document(
             page_content="This is the second result.",
-            metadata={"location": "location2", "score": 0.8},
+            metadata={"location": "location2", "score": 0.8, "source_metadata": None},
         ),
         Document(
             page_content="This is the third result.",
-            metadata={"location": "location3", "score": 0.0},
+            metadata={"location": "location3", "score": 0.0, "source_metadata": None},
+        ),
+        Document(
+            page_content="This is the fourth result.",
+            metadata={
+                "location": "location4",
+                "score": 0.4,
+                "source_metadata": {
+                    "url": "http://example.com",
+                    "title": "Example Title",
+                },
+            },
         ),
     ]
 
-    documents = retriever.get_relevant_documents(query)
+    documents = retriever.invoke(query)
 
     assert documents == expected_documents
 
