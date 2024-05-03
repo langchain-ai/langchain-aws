@@ -1,11 +1,25 @@
 import re
 from collections import defaultdict
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union, cast
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterator,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+    cast,
+)
 
 from langchain_core._api.deprecation import deprecated
 from langchain_core.callbacks import (
     CallbackManagerForLLMRun,
 )
+from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
@@ -16,8 +30,11 @@ from langchain_core.messages import (
     SystemMessage,
 )
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from langchain_core.pydantic_v1 import Extra
+from langchain_core.pydantic_v1 import BaseModel, Extra
+from langchain_core.runnables import Runnable
+from langchain_core.tools import BaseTool
 
+from langchain_aws.function_calling import convert_to_anthropic_tool, get_system_message
 from langchain_aws.llms.bedrock import BedrockBase
 from langchain_aws.utils import (
     get_num_tokens_anthropic,
@@ -264,6 +281,8 @@ _message_type_lookups = {"human": "user", "ai": "assistant"}
 class ChatBedrock(BaseChatModel, BedrockBase):
     """A chat model that uses the Bedrock API."""
 
+    system_prompt_with_tools: str = ""
+
     @property
     def _llm_type(self) -> str:
         """Return type of chat model."""
@@ -307,6 +326,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             system, formatted_messages = ChatPromptAdapter.format_messages(
                 provider, messages
             )
+            if self.system_prompt_with_tools:
+                if system:
+                    system = self.system_prompt_with_tools + f"\n{system}"
+                else:
+                    system = self.system_prompt_with_tools
         else:
             prompt = ChatPromptAdapter.convert_messages_to_prompt(
                 provider=provider, messages=messages
@@ -345,6 +369,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 system, formatted_messages = ChatPromptAdapter.format_messages(
                     provider, messages
                 )
+                if self.system_prompt_with_tools:
+                    if system:
+                        system = self.system_prompt_with_tools + f"\n{system}"
+                    else:
+                        system = self.system_prompt_with_tools
             else:
                 prompt = ChatPromptAdapter.convert_messages_to_prompt(
                     provider=provider, messages=messages
@@ -398,6 +427,42 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             return get_token_ids_anthropic(text)
         else:
             return super().get_token_ids(text)
+
+    def set_system_prompt_with_tools(self, xml_tools_system_prompt: str) -> None:
+        """Workaround to bind. Sets the system prompt with tools"""
+        self.system_prompt_with_tools = xml_tools_system_prompt
+
+    def bind_tools(
+        self,
+        tools: Sequence[Union[Dict[str, Any], Type[BaseModel], Callable, BaseTool]],
+        *,
+        tool_choice: Optional[Union[dict, str, Literal["auto", "none"], bool]] = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, BaseMessage]:
+        """Bind tool-like objects to this chat model.
+
+        Assumes model has a tool calling API.
+
+        Args:
+            tools: A list of tool definitions to bind to this chat model.
+                Can be  a dictionary, pydantic model, callable, or BaseTool. Pydantic
+                models, callables, and BaseTools will be automatically converted to
+                their schema dictionary representation.
+            tool_choice: Which tool to require the model to call.
+                Must be the name of the single provided function or
+                "auto" to automatically determine which function to call
+                (if any), or a dict of the form:
+                {"type": "function", "function": {"name": <<tool_name>>}}.
+            **kwargs: Any additional parameters to pass to the
+                :class:`~langchain.runnable.Runnable` constructor.
+        """
+        provider = self._get_provider()
+
+        if provider == "anthropic":
+            formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
+            system_formatted_tools = get_system_message(formatted_tools)
+            self.set_system_prompt_with_tools(system_formatted_tools)
+        return self
 
 
 @deprecated(since="0.1.0", removal="0.2.0", alternative="ChatBedrock")
