@@ -12,6 +12,7 @@ from langchain_core.outputs import ChatGeneration, LLMResult
 
 from langchain_aws.chat_models.bedrock import ChatBedrock
 from tests.callbacks import FakeCallbackHandler
+from langchain_core.pydantic_v1 import BaseModel, Field
 
 
 @pytest.fixture
@@ -156,5 +157,80 @@ def test_bedrock_invoke(chat: ChatBedrock) -> None:
     """Test invoke tokens from BedrockChat."""
     result = chat.invoke("I'm Pickle Rick", config=dict(tags=["foo"]))
     assert isinstance(result.content, str)
-    assert "usage" in result.additional_kwargs  # type: ignore[attr-defined]
-    assert result.additional_kwargs["usage"]["prompt_tokens"] == 13  # type: ignore[attr-defined]
+    assert "usage" in result.additional_kwargs 
+    assert result.additional_kwargs["usage"]["prompt_tokens"] == 13 
+
+@pytest.mark.scheduled
+def test_bedrock_anthropic_function_call_invoke_with_system(chat: ChatBedrock) -> None:
+    class GetWeather(BaseModel):
+        location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+
+    llm_with_tools = chat.bind_tools([GetWeather])
+
+    messages = [
+        SystemMessage(
+            content="anwser only in french"
+        ),
+        HumanMessage(
+            content="what is the weather like in San Francisco"
+        )
+    ]
+
+    response = llm_with_tools.invoke(messages)
+    assert isinstance(response, BaseMessage)
+    assert isinstance(response.content, str)
+    
+@pytest.mark.scheduled
+def test_bedrock_anthropic_function_call_invoke_without_system(chat: ChatBedrock) -> None:
+    class GetWeather(BaseModel):
+        location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+
+    llm_with_tools = chat.bind_tools([GetWeather])
+
+    messages = [
+        HumanMessage(
+            content="what is the weather like in San Francisco"
+        )
+    ]
+
+    response = llm_with_tools.invoke(messages)
+    assert isinstance(response, BaseMessage)
+    assert isinstance(response.content, str)
+
+@pytest.mark.scheduled
+async def test_bedrock_anthropic_function_call_invoke_with_system_astream(chat: ChatBedrock) -> None:
+    class GetWeather(BaseModel):
+        location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+
+    llm_with_tools = chat.bind_tools([GetWeather])
+
+    messages = [
+        SystemMessage(
+            content="anwser only in french"
+        ),
+        HumanMessage(
+            content="what is the weather like in San Francisco"
+        )
+    ]
+
+    for chunk in llm_with_tools.stream(messages):
+        assert isinstance(chunk.content, str)
+
+@pytest.mark.scheduled
+async def test_bedrock_anthropic_function_call_invoke_without_system_astream(chat: ChatBedrock) -> None:
+    class GetWeather(BaseModel):
+        location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+
+    llm_with_tools = chat.bind_tools([GetWeather])
+
+    messages = [
+        HumanMessage(
+            content="what is the weather like in San Francisco"
+        )
+    ]
+
+    full = None
+    for token in llm_with_tools.stream("I'm Pickle Rick"):
+        full = token if full is None else full + token 
+        assert isinstance(token.content, str)
+    assert isinstance(cast(AIMessageChunk, full).content, str)

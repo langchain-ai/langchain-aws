@@ -462,7 +462,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
             system_formatted_tools = get_system_message(formatted_tools)
             self.set_system_prompt_with_tools(system_formatted_tools)
-            # llm_with_tools = self.bind(tools=system_formatted_tools, **kwargs)
         return self
 
 
