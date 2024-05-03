@@ -343,9 +343,9 @@ class BedrockBase(BaseLanguageModel, ABC):
     }
 
     guardrails: Optional[Mapping[str, Any]] = {
-        "id": None,
-        "version": None,
-        "trace": False,
+        "trace": None,
+        "guardrailIdentifier": None,
+        "guardrailVersion": None,
     }
     """
     An optional dictionary to configure guardrails for Bedrock.
@@ -446,7 +446,9 @@ class BedrockBase(BaseLanguageModel, ABC):
             "model_id": self.model_id,
             "provider": self._get_provider(),
             "stream": self.streaming,
-            "guardrails": self.guardrails,
+            "trace": self.guardrails.get("trace"),  # type: ignore[union-attr]
+            "guardrailIdentifier": self.guardrails.get("guardrailIdentifier", None),  # type: ignore[union-attr]
+            "guardrailVersion": self.guardrails.get("guardrailVersion", None),  # type: ignore[union-attr]
             **_model_kwargs,
         }
 
@@ -480,31 +482,15 @@ class BedrockBase(BaseLanguageModel, ABC):
         try:
             return (
                 isinstance(self.guardrails, dict)
-                and bool(self.guardrails["id"])
-                and bool(self.guardrails["version"])
+                and bool(self.guardrails["guardrailIdentifier"])
+                and bool(self.guardrails["guardrailVersion"])
             )
 
         except KeyError as e:
             raise TypeError(
-                "Guardrails must be a dictionary with 'id' and 'version' keys."
+                "Guardrails must be a dictionary with 'guardrailIdentifier'  \
+                and 'guardrailVersion' keys."
             ) from e
-
-    def _get_guardrails_canonical(self) -> Dict[str, Any]:
-        """
-        The canonical way to pass in guardrails to the bedrock service
-        adheres to the following format:
-
-        "amazon-bedrock-guardrailDetails": {
-            "guardrailId": "string",
-            "guardrailVersion": "string"
-        }
-        """
-        return {
-            "amazon-bedrock-guardrailDetails": {
-                "guardrailId": self.guardrails.get("id"),  # type: ignore[union-attr]
-                "guardrailVersion": self.guardrails.get("version"),  # type: ignore[union-attr]
-            }
-        }
 
     def _prepare_input_and_invoke(
         self,
@@ -519,8 +505,7 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         provider = self._get_provider()
         params = {**_model_kwargs, **kwargs}
-        if self._guardrails_enabled:
-            params.update(self._get_guardrails_canonical())
+
         input_body = LLMInputOutputAdapter.prepare_input(
             provider=provider,
             model_kwargs=params,
@@ -540,7 +525,12 @@ class BedrockBase(BaseLanguageModel, ABC):
         }
 
         if self._guardrails_enabled:
-            request_options["guardrail"] = "ENABLED"
+            request_options["guardrailIdentifier"] = self.guardrails.get(  # type: ignore[union-attr]
+                "guardrailIdentifier", ""
+            )
+            request_options["guardrailVersion"] = self.guardrails.get(  # type: ignore[union-attr]
+                "guardrailVersion", ""
+            )
             if self.guardrails.get("trace"):  # type: ignore[union-attr]
                 request_options["trace"] = "ENABLED"
 
@@ -628,9 +618,6 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         params = {**_model_kwargs, **kwargs}
 
-        if self._guardrails_enabled:
-            params.update(self._get_guardrails_canonical())
-
         input_body = LLMInputOutputAdapter.prepare_input(
             provider=provider,
             prompt=prompt,
@@ -648,7 +635,12 @@ class BedrockBase(BaseLanguageModel, ABC):
         }
 
         if self._guardrails_enabled:
-            request_options["guardrail"] = "ENABLED"
+            request_options["guardrailIdentifier"] = self.guardrails.get(  # type: ignore[union-attr]
+                "guardrailIdentifier", ""
+            )
+            request_options["guardrailVersion"] = self.guardrails.get(  # type: ignore[union-attr]
+                "guardrailVersion", ""
+            )
             if self.guardrails.get("trace"):  # type: ignore[union-attr]
                 request_options["trace"] = "ENABLED"
 
