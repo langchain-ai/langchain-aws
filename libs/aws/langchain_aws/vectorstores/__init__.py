@@ -18,32 +18,6 @@ and retrieve the data that are 'most similar' to the embedded query.
 
     Embeddings, Document
 """  # noqa: E501
-
-import importlib
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from langchain_core.vectorstores import (
-        VectorStore,  # noqa: F401
-    )
-
-    from langchain_aws.vectorstores.documentdb import (
-        DocumentDBVectorSearch,  # noqa: F401
-    )
-__all__ = [
-    "DocumentDBVectorSearch",
-]
-
-_module_lookup = {
-    "DocumentDBVectorSearch": "langchain_community.vectorstores.documentdb",
-}
-
-
-def __getattr__(name: str) -> Any:
-    if name in _module_lookup:
-        module = importlib.import_module(_module_lookup[name])
-        return getattr(module, name)
-    raise AttributeError(f"module {__name__} has no attribute {name}")
-
-
-__all__ = list(_module_lookup.keys())
+from langchain_aws.vectorstores.documentdb import (
+    DocumentDBVectorSearch,  # noqa: F401
+)
