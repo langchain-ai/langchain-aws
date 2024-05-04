@@ -59,7 +59,7 @@ def embedding_openai() -> Any:
 """
 This is how to run the integration tests:
 
-cd libs/community
+cd libs/aws
 make test TEST_FILE=tests/integration_tests/vectorstores/test_documentdb.py
 
 NOTE: You will first need to follow the contributor setup steps:

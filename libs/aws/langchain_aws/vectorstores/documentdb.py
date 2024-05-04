@@ -54,8 +54,8 @@ class DocumentDBVectorSearch(VectorStore):
     Example:
         . code-block:: python
 
-            from langchain_community.vectorstores import DocumentDBVectorSearch
-            from langchain_community.embeddings.openai import OpenAIEmbeddings
+            from langchain_aws.vectorstores import DocumentDBVectorSearch
+            from langchain_aws.embeddings.openai import OpenAIEmbeddings
             from pymongo import MongoClient
 
             mongo_client = MongoClient("<YOUR-CONNECTION-STRING>")

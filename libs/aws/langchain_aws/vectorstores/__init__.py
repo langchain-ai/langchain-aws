@@ -18,6 +18,4 @@ and retrieve the data that are 'most similar' to the embedded query.
 
     Embeddings, Document
 """  # noqa: E501
-from langchain_aws.vectorstores.documentdb import (
-    DocumentDBVectorSearch,  # noqa: F401
-)
+from langchain_aws.vectorstores.documentdb import DocumentDBVectorSearch  # noqa: F401
