@@ -1,8 +1,11 @@
+# type: ignore
+
 from unittest.mock import MagicMock
 
 import pytest
-from langchain_community.retrievers import AmazonKnowledgeBasesRetriever
 from langchain_core.documents import Document
+
+from langchain_aws.retrievers import AmazonKnowledgeBasesRetriever
 
 
 @pytest.fixture
