@@ -130,6 +130,10 @@ class LLMInputOutputAdapter:
                 input_body["prompt"] = _human_assistant_format(prompt)
                 if "max_tokens_to_sample" not in input_body:
                     input_body["max_tokens_to_sample"] = 1024
+        elif provider == "cohere":
+            if messages:
+                input_body["chat_history"] = messages['chat_history']
+                input_body["message"] = messages['message']
         elif provider in ("ai21", "cohere", "meta", "mistral"):
             input_body["prompt"] = prompt
         elif provider == "amazon":
@@ -151,6 +155,9 @@ class LLMInputOutputAdapter:
             elif "content" in response_body:
                 content = response_body.get("content")
                 text = content[0].get("text")
+        elif provider == "cohere":
+            response_body = json.loads(response.get("body").read().decode())
+            text = response_body.get("text")
         else:
             response_body = json.loads(response.get("body").read())
 

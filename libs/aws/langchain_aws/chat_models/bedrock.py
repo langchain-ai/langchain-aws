@@ -131,7 +131,6 @@ def convert_messages_to_prompt_mistral(messages: List[BaseMessage]) -> str:
         [_convert_one_message_to_text_mistral(message) for message in messages]
     )
 
-
 def _format_image(image_url: str) -> Dict:
     """
     Formats an image of format data:image/jpeg;base64,{b64_string}
@@ -235,6 +234,46 @@ def _format_anthropic_messages(
         )
     return system, formatted_messages
 
+def _format_cohere_messages(
+    messages: List[BaseMessage],
+) -> Tuple[Optional[str], List[Dict]]:
+    """Format messages for cohere."""
+
+    """
+    {'message': content}
+    """
+
+    system: Optional[str] = None
+    chat_history: List = []
+    formatted_messages: Dict = {}
+    for i, message in enumerate(messages):
+        if message.type == "system":
+            if i != 0:
+                raise ValueError("System message must be at beginning of message list.")
+            if not isinstance(message.content, str):
+                raise ValueError(
+                    "System message must be a string, "
+                    f"instead was: {type(message.content)}"
+                )
+            chat_history.append({'role':'CHATBOT', 'message': message.content})
+            continue
+
+        if not isinstance(message.content, str):
+            # populate content
+            content = []
+            for item in message.content:
+                if isinstance(item, str):
+                    content.append(
+                        {
+                            "type": "text",
+                            "text": item,
+                        }
+                    )
+        else:
+            content = message.content
+
+        formatted_messages = {'message': content, 'chat_history': chat_history}
+    return system, formatted_messages
 
 class ChatPromptAdapter:
     """Adapter class to prepare the inputs from Langchain to prompt format
@@ -269,7 +308,8 @@ class ChatPromptAdapter:
     ) -> Tuple[Optional[str], List[Dict]]:
         if provider == "anthropic":
             return _format_anthropic_messages(messages)
-
+        elif provider == "cohere":
+            return _format_cohere_messages(messages)
         raise NotImplementedError(
             f"Provider {provider} not supported for format_messages"
         )
@@ -374,6 +414,10 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                         system = self.system_prompt_with_tools + f"\n{system}"
                     else:
                         system = self.system_prompt_with_tools
+            elif provider == "cohere":
+                system, formatted_messages = ChatPromptAdapter.format_messages(
+                    provider, messages
+                )
             else:
                 prompt = ChatPromptAdapter.convert_messages_to_prompt(
                     provider=provider, messages=messages
