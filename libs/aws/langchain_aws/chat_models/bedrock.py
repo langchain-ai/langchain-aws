@@ -255,7 +255,7 @@ def _format_cohere_messages(
                     "System message must be a string, "
                     f"instead was: {type(message.content)}"
                 )
-            chat_history.append({'role':'CHATBOT', 'message': message.content})
+            chat_history.append({'role':'USER', 'message': message.content})
             continue
 
         if not isinstance(message.content, str):
