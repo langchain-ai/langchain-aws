@@ -256,9 +256,10 @@ def _format_cohere_messages(
                     f"instead was: {type(message.content)}"
                 )
             chat_history.append({'role':'USER', 'message': message.content})
-        elif message.type == "assistant":
-            chat_history.append({'role':'CHATBT', 'message': message.content})
-        elif message.type == "user":
+            continue
+        elif message.type == "ai":
+            chat_history.append({'role':'CHATBOT', 'message': message.content})
+        elif message.type == "human":
             chat_history.append({'role':'USER', 'message': message.content})
     content = messages[-1].content
     formatted_messages = {'message': content, 'chat_history': chat_history}
