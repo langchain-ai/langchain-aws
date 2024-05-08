@@ -240,7 +240,7 @@ def _format_cohere_messages(
     """Format messages for cohere."""
 
     """
-    {'message': content}
+    {'message': content, 'chat_history': [{'role': 'USER or CHATBOT', 'message': message.content}]}
     """
 
     system: Optional[str] = None
@@ -256,23 +256,12 @@ def _format_cohere_messages(
                     f"instead was: {type(message.content)}"
                 )
             chat_history.append({'role':'USER', 'message': message.content})
-            continue
-
-        if not isinstance(message.content, str):
-            # populate content
-            content = []
-            for item in message.content:
-                if isinstance(item, str):
-                    content.append(
-                        {
-                            "type": "text",
-                            "text": item,
-                        }
-                    )
-        else:
-            content = message.content
-
-        formatted_messages = {'message': content, 'chat_history': chat_history}
+        elif message.type == "assistant":
+            chat_history.append({'role':'CHATBT', 'message': message.content})
+        elif message.type == "user":
+            chat_history.append({'role':'USER', 'message': message.content})
+    content = messages[-1].content
+    formatted_messages = {'message': content, 'chat_history': chat_history}
     return system, formatted_messages
 
 class ChatPromptAdapter:
