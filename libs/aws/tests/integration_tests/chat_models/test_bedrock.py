@@ -1,4 +1,5 @@
 """Test Bedrock chat model."""
+
 from typing import Any, cast
 
 import pytest
@@ -64,6 +65,22 @@ def test_chat_bedrock_streaming() -> None:
     callback_handler = FakeCallbackHandler()
     chat = ChatBedrock(  # type: ignore[call-arg]
         model_id="anthropic.claude-v2",
+        streaming=True,
+        callbacks=[callback_handler],
+        verbose=True,
+    )
+    message = HumanMessage(content="Hello")
+    response = chat([message])
+    assert callback_handler.llm_streams > 0
+    assert isinstance(response, BaseMessage)
+
+
+@pytest.mark.scheduled
+def test_chat_bedrock_streaming_llama3() -> None:
+    """Test that streaming correctly invokes on_llm_new_token callback."""
+    callback_handler = FakeCallbackHandler()
+    chat = ChatBedrock(  # type: ignore[call-arg]
+        model_id="meta.llama3-8b-instruct-v1:0",
         streaming=True,
         callbacks=[callback_handler],
         verbose=True,
