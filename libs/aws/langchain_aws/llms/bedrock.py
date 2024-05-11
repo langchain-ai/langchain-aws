@@ -131,9 +131,13 @@ class LLMInputOutputAdapter:
                 if "max_tokens_to_sample" not in input_body:
                     input_body["max_tokens_to_sample"] = 1024
         elif provider == "cohere":
+            # Command-R
             if messages:
                 input_body["chat_history"] = messages['chat_history']
                 input_body["message"] = messages['message']
+            # Command
+            else:
+                input_body["prompt"] = prompt
         elif provider in ("ai21", "cohere", "meta", "mistral"):
             input_body["prompt"] = prompt
         elif provider == "amazon":
