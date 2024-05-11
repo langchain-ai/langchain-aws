@@ -286,6 +286,12 @@ class ChatPromptAdapter:
                 human_prompt="\n\nUser:",
                 ai_prompt="\n\nBot:",
             )
+        elif provider == "cohere":
+            prompt = convert_messages_to_prompt_anthropic(
+                messages=messages,
+                human_prompt="\n\nUser:",
+                ai_prompt="\n\nBot:",
+            )
         else:
             raise NotImplementedError(
                 f"Provider {provider} model does not support chat."
@@ -405,8 +411,13 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     else:
                         system = self.system_prompt_with_tools
             elif provider == "cohere":
-                system, formatted_messages = ChatPromptAdapter.format_messages(
-                    provider, messages
+                if 'command-r' in self.model_id:
+                    system, formatted_messages = ChatPromptAdapter.format_messages(
+                        provider, messages
+                    )
+                else:
+                    prompt = ChatPromptAdapter.convert_messages_to_prompt(
+                    provider=provider, messages=messages
                 )
             else:
                 prompt = ChatPromptAdapter.convert_messages_to_prompt(

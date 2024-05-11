@@ -157,14 +157,17 @@ class LLMInputOutputAdapter:
                 text = content[0].get("text")
         elif provider == "cohere":
             response_body = json.loads(response.get("body").read().decode())
-            text = response_body.get("text")
+            if 'text' in response_body.keys():
+                # Command-R
+                text = response_body.get("text")
+            else:
+                # Command
+                text = response_body.get("generations")[0].get("text")
         else:
             response_body = json.loads(response.get("body").read())
 
             if provider == "ai21":
                 text = response_body.get("completions")[0].get("data").get("text")
-            elif provider == "cohere":
-                text = response_body.get("generations")[0].get("text")
             elif provider == "meta":
                 text = response_body.get("generation")
             elif provider == "mistral":
