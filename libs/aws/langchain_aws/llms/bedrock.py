@@ -138,7 +138,7 @@ class LLMInputOutputAdapter:
             # Command
             else:
                 input_body["prompt"] = prompt
-        elif provider in ("ai21", "cohere", "meta", "mistral"):
+        elif provider in ("ai21", "meta", "mistral"):
             input_body["prompt"] = prompt
         elif provider == "amazon":
             input_body = dict()
