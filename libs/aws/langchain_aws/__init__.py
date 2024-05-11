@@ -6,6 +6,7 @@ from langchain_aws.retrievers import (
     AmazonKendraRetriever,
     AmazonKnowledgeBasesRetriever,
 )
+from langchain_aws.vectorstores.documentdb import DocumentDBVectorSearch
 
 __all__ = [
     "Bedrock",
@@ -13,6 +14,7 @@ __all__ = [
     "BedrockLLM",
     "BedrockChat",
     "ChatBedrock",
+    "DocumentDBVectorSearch",
     "SagemakerEndpoint",
     "AmazonKendraRetriever",
     "AmazonKnowledgeBasesRetriever",
