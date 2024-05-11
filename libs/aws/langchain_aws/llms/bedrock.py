@@ -760,6 +760,12 @@ class BedrockLLM(LLM, BedrockBase):
                 "Please use `from langchain_community.chat_models import BedrockChat` "
                 "instead."
             )
+        if model_id.startswith("cohere.command-r"):
+            raise ValueError(
+                "Command R models are not supported by this LLM."
+                "Please use `from langchain_community.chat_models import BedrockChat` "
+                "instead."
+            )
         return super().validate_environment(values)
 
     @property
