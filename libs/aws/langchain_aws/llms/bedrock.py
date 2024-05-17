@@ -512,6 +512,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         prompt: Optional[str] = None,
         system: Optional[str] = None,
         messages: Optional[List[Dict]] = None,
+        chat_history: Optional[List[Dict]] = None,
         stop: Optional[List[str]] = None,
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
@@ -526,6 +527,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             model_kwargs=params,
             prompt=prompt,
             system=system,
+            chat_history=chat_history,
             messages=messages,
         )
         body = json.dumps(input_body)
