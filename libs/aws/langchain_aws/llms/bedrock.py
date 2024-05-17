@@ -526,6 +526,9 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         return self.model_id.split(".")[0]
 
+    def _get_model(self) -> str:
+        return self.model_id.split(".")[1]
+
     @property
     def _model_is_anthropic(self) -> bool:
         return self._get_provider() == "anthropic"
