@@ -240,7 +240,12 @@ def _format_cohere_messages(
     """Format messages for cohere."""
 
     """
-    {'message': content, 'chat_history': [{'role': 'USER or CHATBOT', 'message': message.content}]}
+    {
+        'message': content,
+        'chat_history': [
+            {'role': 'USER or CHATBOT', 'message': message.content}
+            ]
+    }
     """
 
     system: Optional[str] = None
