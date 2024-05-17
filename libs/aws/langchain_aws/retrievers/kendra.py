@@ -444,7 +444,7 @@ class AmazonKendraRetriever(BaseRetriever):
     def _filter_by_score_confidence(self, docs: List[Document]) -> List[Document]:
         """
         Filter out the records that have a score confidence
-        greater than the required threshold.
+        less than the required threshold.
         """
         if not self.min_score_confidence:
             return docs

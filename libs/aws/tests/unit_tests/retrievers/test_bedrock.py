@@ -55,3 +55,31 @@ def test_retriever_invoke(amazon_retriever, mock_client):
     }
     assert documents[2].page_content == "result3"
     assert documents[2].metadata == {"score": 0}
+
+
+def test_retriever_invoke_with_score(amazon_retriever, mock_client):
+    query = "test query"
+    mock_client.retrieve.return_value = {
+        "retrievalResults": [
+            {"content": {"text": "result1"}, "metadata": {"key": "value1"}},
+            {
+                "content": {"text": "result2"},
+                "metadata": {"key": "value2"},
+                "score": 1,
+                "location": "testLocation",
+            },
+            {"content": {"text": "result3"}},
+        ]
+    }
+
+    amazon_retriever.min_score_confidence = 0.6
+    documents = amazon_retriever.invoke(query, run_manager=None)
+
+    assert len(documents) == 1
+    assert isinstance(documents[0], Document)
+    assert documents[0].page_content == "result2"
+    assert documents[0].metadata == {
+        "score": 1,
+        "source_metadata": {"key": "value2"},
+        "location": "testLocation",
+    }
