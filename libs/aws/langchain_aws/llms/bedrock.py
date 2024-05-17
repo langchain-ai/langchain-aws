@@ -115,7 +115,7 @@ class LLMInputOutputAdapter:
         model_kwargs: Dict[str, Any],
         prompt: Optional[str] = None,
         system: Optional[str] = None,
-        chat_history: Optional[str] = None,
+        chat_history: Optional[List[Dict]] = None,
         messages: Optional[List[Dict]] = None,
     ) -> Dict[str, Any]:
         input_body = {**model_kwargs}
