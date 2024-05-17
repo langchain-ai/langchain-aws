@@ -111,6 +111,7 @@ def test_chat_bedrock_streaming_generation_info() -> None:
     chat = ChatBedrock(  # type: ignore[call-arg]
         model_id="anthropic.claude-v2",
         callbacks=[callback],
+        model_kwargs={"temperature": 0},
     )
     list(chat.stream("hi"))
     generation = callback.saved_things["generation"]
