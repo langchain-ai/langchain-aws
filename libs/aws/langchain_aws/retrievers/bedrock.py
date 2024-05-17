@@ -5,8 +5,9 @@ from botocore.client import Config
 from botocore.exceptions import UnknownServiceError
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
-from langchain_core.pydantic_v1 import BaseModel, root_validator
+from langchain_core.pydantic_v1 import BaseModel, Field, root_validator
 from langchain_core.retrievers import BaseRetriever
+from typing_extensions import Annotated
 
 
 class VectorSearchConfig(BaseModel, extra="allow"):  # type: ignore[call-arg]
@@ -59,6 +60,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
     endpoint_url: Optional[str] = None
     client: Any
     retrieval_config: RetrievalConfig
+    min_score_confidence: Annotated[Optional[float], Field(ge=0.0, le=1.0)]
 
     @root_validator(pre=True)
     def create_client(cls, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -103,6 +105,23 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
                 "profile name are valid."
             ) from e
 
+    def _filter_by_score_confidence(self, docs: List[Document]) -> List[Document]:
+        """
+        Filter out the records that have a score confidence
+        less than the required threshold.
+        """
+        if not self.min_score_confidence:
+            return docs
+        filtered_docs = [
+            item
+            for item in docs
+            if (
+                item.metadata.get("score") is not None
+                and item.metadata.get("score", 0.0) >= self.min_score_confidence
+            )
+        ]
+        return filtered_docs
+
     def _get_relevant_documents(
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun
     ) -> List[Document]:
@@ -127,4 +146,4 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
                 )
             )
 
-        return documents
+        return self._filter_by_score_confidence(docs=documents)
