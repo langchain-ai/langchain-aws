@@ -88,6 +88,16 @@ def _stream_response_to_generation_chunk(
         msg_type = stream_response.get("type")
         if msg_type == "message_start":
             usage_info = stream_response.get("message", {}).get("usage", None)
+            """
+            Sticking usage info for token counts into lists to 
+            deal with langchain_core.utils.merge_dicts incompatibility 
+            in which integers must be equal to be merged
+            as seen here: https://github.com/langchain-ai/langchain-aws/pull/20#issuecomment-2118166376
+            """
+            if "input_tokens" in usage_info:
+                usage_info["input_tokens"] = [usage_info["input_tokens"]]
+            if "output_tokens" in usage_info:
+                usage_info["output_tokens"] = [usage_info["output_tokens"]]
             generation_info = {"usage": usage_info}
             return GenerationChunk(text="", generation_info=generation_info)
         elif msg_type == "content_block_delta":
