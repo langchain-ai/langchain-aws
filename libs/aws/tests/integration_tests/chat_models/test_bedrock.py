@@ -170,7 +170,7 @@ def test_function_call_invoke_with_system(chat: ChatBedrock) -> None:
     llm_with_tools = chat.bind_tools([GetWeather])
 
     messages = [
-        SystemMessage(content="anwser only in french"),
+        SystemMessage(content="answer only in french"),
         HumanMessage(content="what is the weather like in San Francisco"),
     ]
 
@@ -222,7 +222,7 @@ async def test_function_call_invoke_with_system_astream(chat: ChatBedrock) -> No
     llm_with_tools = chat.bind_tools([GetWeather])
 
     messages = [
-        SystemMessage(content="anwser only in french"),
+        SystemMessage(content="answer only in french"),
         HumanMessage(content="what is the weather like in San Francisco"),
     ]
 
