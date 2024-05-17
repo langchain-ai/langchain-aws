@@ -115,6 +115,7 @@ class LLMInputOutputAdapter:
         model_kwargs: Dict[str, Any],
         prompt: Optional[str] = None,
         system: Optional[str] = None,
+        chat_history: Optional[str] = None,
         messages: Optional[List[Dict]] = None,
     ) -> Dict[str, Any]:
         input_body = {**model_kwargs}
@@ -132,9 +133,9 @@ class LLMInputOutputAdapter:
                     input_body["max_tokens_to_sample"] = 1024
         elif provider == "cohere":
             # Command-R
-            if messages:
-                input_body["chat_history"] = messages['chat_history']
-                input_body["message"] = messages['message']
+            if chat_history:
+                input_body["chat_history"] = chat_history
+                input_body["message"] = prompt
             # Command
             else:
                 input_body["prompt"] = prompt
@@ -161,7 +162,7 @@ class LLMInputOutputAdapter:
                 text = content[0].get("text")
         elif provider == "cohere":
             response_body = json.loads(response.get("body").read().decode())
-            if 'text' in response_body.keys():
+            if "text" in response_body.keys():
                 # Command-R
                 text = response_body.get("text")
             else:

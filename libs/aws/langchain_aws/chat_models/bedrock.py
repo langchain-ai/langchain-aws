@@ -131,6 +131,7 @@ def convert_messages_to_prompt_mistral(messages: List[BaseMessage]) -> str:
         [_convert_one_message_to_text_mistral(message) for message in messages]
     )
 
+
 def _format_image(image_url: str) -> Dict:
     """
     Formats an image of format data:image/jpeg;base64,{b64_string}
@@ -234,6 +235,7 @@ def _format_anthropic_messages(
         )
     return system, formatted_messages
 
+
 def _format_cohere_messages(
     messages: List[BaseMessage],
 ) -> Tuple[Optional[str], List[Dict]]:
@@ -241,16 +243,14 @@ def _format_cohere_messages(
 
     """
     {
-        'message': content,
-        'chat_history': [
-            {'role': 'USER or CHATBOT', 'message': message.content}
+        "message": content,
+        "chat_history": [
+            {"role": "USER or CHATBOT", "message": message.content}
             ]
     }
     """
-
-    system: Optional[str] = None
-    chat_history: List = []
-    formatted_messages: Dict = {}
+    content: Optional[str] = None
+    chat_history: List[Dict] = []
     for i, message in enumerate(messages):
         if message.type == "system":
             if i != 0:
@@ -260,15 +260,15 @@ def _format_cohere_messages(
                     "System message must be a string, "
                     f"instead was: {type(message.content)}"
                 )
-            chat_history.append({'role':'USER', 'message': message.content})
+            chat_history.append({"role": "USER", "message": message.content})
             continue
         elif message.type == "ai":
-            chat_history.append({'role':'CHATBOT', 'message': message.content})
+            chat_history.append({"role": "CHATBOT", "message": message.content})
         elif message.type == "human":
-            chat_history.append({'role':'USER', 'message': message.content})
-    content = messages[-1].content
-    formatted_messages = {'message': content, 'chat_history': chat_history}
-    return system, formatted_messages
+            chat_history.append({"role": "USER", "message": message.content})
+    content = str(messages[-1].content)
+    return content, chat_history
+
 
 class ChatPromptAdapter:
     """Adapter class to prepare the inputs from Langchain to prompt format
@@ -309,7 +309,15 @@ class ChatPromptAdapter:
     ) -> Tuple[Optional[str], List[Dict]]:
         if provider == "anthropic":
             return _format_anthropic_messages(messages)
-        elif provider == "cohere":
+        raise NotImplementedError(
+            f"Provider {provider} not supported for format_messages"
+        )
+
+    @classmethod
+    def format_cohere_message(
+        cls, provider: str, messages: List[BaseMessage]
+    ) -> Tuple[Optional[str], List[Dict]]:
+        if provider == "cohere":
             return _format_cohere_messages(messages)
         raise NotImplementedError(
             f"Provider {provider} not supported for format_messages"
@@ -403,7 +411,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 completion += chunk.text
         else:
             provider = self._get_provider()
-            prompt, system, formatted_messages = None, None, None
+            prompt, system, formatted_messages, chat_history = None, None, None, None
             params: Dict[str, Any] = {**kwargs}
 
             if provider == "anthropic":
@@ -416,14 +424,14 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     else:
                         system = self.system_prompt_with_tools
             elif provider == "cohere":
-                if 'command-r' in self.model_id:
-                    system, formatted_messages = ChatPromptAdapter.format_messages(
+                if "command-r" in self.model_id:
+                    prompt, chat_history = ChatPromptAdapter.format_cohere_message(
                         provider, messages
                     )
                 else:
                     prompt = ChatPromptAdapter.convert_messages_to_prompt(
-                    provider=provider, messages=messages
-                )
+                        provider=provider, messages=messages
+                    )
             else:
                 prompt = ChatPromptAdapter.convert_messages_to_prompt(
                     provider=provider, messages=messages
@@ -438,6 +446,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 run_manager=run_manager,
                 system=system,
                 messages=formatted_messages,
+                chat_history=chat_history,
                 **params,
             )
 
