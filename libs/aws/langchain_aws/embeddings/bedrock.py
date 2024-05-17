@@ -112,7 +112,9 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
         return values
 
-    def _embedding_func(self, text: str) -> List[float]:
+    def _embedding_func(
+        self, text: str, dim: int = 1024, norm: bool = True
+    ) -> List[float]:
         """Call out to Bedrock embedding endpoint."""
         # replace newlines, which can negatively affect performance.
         text = text.replace(os.linesep, " ")
@@ -128,6 +130,12 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         else:
             # includes common provider == "amazon"
             input_body["inputText"] = text
+
+            # v2 and beyond titan embeddings with changing dimensions
+            if "v1" not in self.model_id:
+                input_body["dimensions"] = dim
+                input_body["normalize"] = norm
+
         body = json.dumps(input_body)
 
         try:
@@ -155,7 +163,9 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         norm_emb = emb / np.linalg.norm(emb)
         return norm_emb.tolist()
 
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+    def embed_documents(
+        self, texts: List[str], dim: int = 1024, norm: bool = True
+    ) -> List[List[float]]:
         """Compute doc embeddings using a Bedrock model.
 
         Args:
@@ -166,7 +176,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         """
         results = []
         for text in texts:
-            response = self._embedding_func(text)
+            response = self._embedding_func(text, dim, norm)
 
             if self.normalize:
                 response = self._normalize_vector(response)
@@ -175,7 +185,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
         return results
 
-    def embed_query(self, text: str) -> List[float]:
+    def embed_query(self, text: str, dim: int = 1024, norm: bool = True) -> List[float]:
         """Compute query embeddings using a Bedrock model.
 
         Args:
@@ -184,7 +194,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         Returns:
             Embeddings for the text.
         """
-        embedding = self._embedding_func(text)
+        embedding = self._embedding_func(text, dim, norm)
 
         if self.normalize:
             return self._normalize_vector(embedding)
