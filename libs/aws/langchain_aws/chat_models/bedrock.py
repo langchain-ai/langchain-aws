@@ -67,6 +67,41 @@ def convert_messages_to_prompt_llama(messages: List[BaseMessage]) -> str:
     )
 
 
+def _convert_one_message_to_text_llama3(message: BaseMessage) -> str:
+    if isinstance(message, ChatMessage):
+        message_text = (
+            f"<|start_header_id|>{message.role}"
+            f"<|end_header_id|>{message.content}<|eot_id|>"
+        )
+    elif isinstance(message, HumanMessage):
+        message_text = (
+            f"<|start_header_id|>user" f"<|end_header_id|>{message.content}<|eot_id|>"
+        )
+    elif isinstance(message, AIMessage):
+        message_text = (
+            f"<|start_header_id|>assistant"
+            f"<|end_header_id|>{message.content}<|eot_id|>"
+        )
+    elif isinstance(message, SystemMessage):
+        message_text = (
+            f"<|start_header_id|>system" f"<|end_header_id|>{message.content}<|eot_id|>"
+        )
+    else:
+        raise ValueError(f"Got unknown type {message}")
+
+    return message_text
+
+
+def convert_messages_to_prompt_llama3(messages: List[BaseMessage]) -> str:
+    """Convert a list of messages to a prompt for llama."""
+
+    return "\n".join(
+        ["<|begin_of_text|>"]
+        + [_convert_one_message_to_text_llama3(message) for message in messages]
+        + ["<|start_header_id|>assistant<|end_header_id|>\n\n"]
+    )
+
+
 def _convert_one_message_to_text_anthropic(
     message: BaseMessage,
     human_prompt: str,
@@ -246,12 +281,15 @@ class ChatPromptAdapter:
 
     @classmethod
     def convert_messages_to_prompt(
-        cls, provider: str, messages: List[BaseMessage]
+        cls, provider: str, messages: List[BaseMessage], model: str
     ) -> str:
         if provider == "anthropic":
             prompt = convert_messages_to_prompt_anthropic(messages=messages)
         elif provider == "meta":
-            prompt = convert_messages_to_prompt_llama(messages=messages)
+            if "llama3" in model:
+                prompt = convert_messages_to_prompt_llama3(messages=messages)
+            else:
+                prompt = convert_messages_to_prompt_llama(messages=messages)
         elif provider == "mistral":
             prompt = convert_messages_to_prompt_mistral(messages=messages)
         elif provider == "amazon":
@@ -336,7 +374,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     system = self.system_prompt_with_tools
         else:
             prompt = ChatPromptAdapter.convert_messages_to_prompt(
-                provider=provider, messages=messages
+                provider=provider, messages=messages, model=self._get_model()
             )
 
         for chunk in self._prepare_input_and_invoke_stream(
@@ -392,7 +430,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                         system = self.system_prompt_with_tools
             else:
                 prompt = ChatPromptAdapter.convert_messages_to_prompt(
-                    provider=provider, messages=messages
+                    provider=provider, messages=messages, model=self._get_model()
                 )
 
             if stop:
