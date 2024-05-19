@@ -3,6 +3,7 @@
 from typing import Any, cast
 
 import pytest
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
     AIMessageChunk,
     BaseMessage,
@@ -236,3 +237,46 @@ async def test_function_call_invoke_without_system_astream(chat: ChatBedrock) ->
 
     for chunk in llm_with_tools.stream(messages):
         assert isinstance(chunk.content, str)
+
+
+@pytest.mark.scheduled
+def test_function_call_generate_with_system(chat: ChatBedrock) -> None:
+    class GetWeather(BaseModel):
+        location: str = Field(..., description="The city and state")
+
+    llm_with_tools: BaseChatModel = chat.bind_tools([GetWeather])
+
+    messages: list[list[BaseMessage]] = [
+        [
+            SystemMessage(content="anwser only in french"),
+            HumanMessage(content="what is the weather like in San Francisco"),
+        ]
+    ]
+
+    response = llm_with_tools.generate(messages)
+    assert isinstance(response, LLMResult)
+    for generations in response.generations:
+        for generation in generations:
+            assert isinstance(generation, ChatGeneration)
+            assert isinstance(generation.text, str)
+            assert generation.text == generation.message.content
+
+
+@pytest.mark.scheduled
+def test_function_call_generate_without_system(chat: ChatBedrock) -> None:
+    class GetWeather(BaseModel):
+        location: str = Field(..., description="The city and state")
+
+    llm_with_tools: BaseChatModel = chat.bind_tools([GetWeather])
+
+    messages: list[list[BaseMessage]] = [
+        [HumanMessage(content="what is the weather like in San Francisco")]
+    ]
+
+    response = llm_with_tools.generate(messages)
+    assert isinstance(response, LLMResult)
+    for generations in response.generations:
+        for generation in generations:
+            assert isinstance(generation, ChatGeneration)
+            assert isinstance(generation.text, str)
+            assert generation.text == generation.message.content
