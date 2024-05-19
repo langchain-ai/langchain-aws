@@ -1,6 +1,6 @@
 """Test Bedrock chat model."""
 
-from typing import Any, cast
+from typing import Any, List, cast
 
 import pytest
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -246,7 +246,7 @@ def test_function_call_generate_with_system(chat: ChatBedrock) -> None:
 
     llm_with_tools: BaseChatModel = chat.bind_tools([GetWeather])
 
-    messages: list[list[BaseMessage]] = [
+    messages: List[List[BaseMessage]] = [
         [
             SystemMessage(content="anwser only in french"),
             HumanMessage(content="what is the weather like in San Francisco"),
@@ -269,7 +269,7 @@ def test_function_call_generate_without_system(chat: ChatBedrock) -> None:
 
     llm_with_tools: BaseChatModel = chat.bind_tools([GetWeather])
 
-    messages: list[list[BaseMessage]] = [
+    messages: List[List[BaseMessage]] = [
         [HumanMessage(content="what is the weather like in San Francisco")]
     ]
 
