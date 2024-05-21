@@ -5,6 +5,7 @@ from uuid import UUID
 
 from langchain_core.callbacks import AsyncCallbackHandler, BaseCallbackHandler
 from langchain_core.messages import BaseMessage
+from langchain_core.outputs import LLMResult
 from langchain_core.pydantic_v1 import BaseModel
 
 
@@ -269,6 +270,29 @@ class FakeCallbackHandlerWithChatStart(FakeCallbackHandler):
     ) -> Any:
         assert all(isinstance(m, BaseMessage) for m in chain(*messages))
         self.on_chat_model_start_common()
+
+
+class FakeCallbackHandlerWithTokenCounts(FakeCallbackHandler):
+    input_token_count: int = 0
+    output_token_count: int = 0
+    stop_reason: Union[str, None] = None
+
+    def on_llm_end(
+        self,
+        response: LLMResult,
+        *,
+        run_id: UUID,
+        parent_run_id: Union[UUID, None] = None,
+        **kwargs: Any,
+    ) -> Any:
+        if response.llm_output is not None:
+            self.input_token_count += response.llm_output.get("usage", {}).get(
+                "prompt_tokens", None
+            )
+            self.output_token_count += response.llm_output.get("usage", {}).get(
+                "completion_tokens", None
+            )
+            self.stop_reason = response.llm_output.get("stop_reason", None)
 
 
 class FakeAsyncCallbackHandler(AsyncCallbackHandler, BaseFakeCallbackHandlerMixin):
