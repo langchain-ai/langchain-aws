@@ -257,7 +257,7 @@ class LLMInputOutputAdapter:
                 "completion_tokens": completion_tokens,
                 "total_tokens": prompt_tokens + completion_tokens,
             },
-            "stop_reason": response_body["stop_reason"],
+            "stop_reason": response_body.get("stop_reason"),
         }
 
     @classmethod
