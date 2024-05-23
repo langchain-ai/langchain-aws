@@ -3,6 +3,7 @@ from langchain_aws.llms.bedrock import (
     Bedrock,
     BedrockBase,
     BedrockLLM,
+    LLMInputOutputAdapter,
 )
 from langchain_aws.llms.sagemaker_endpoint import SagemakerEndpoint
 
@@ -11,5 +12,6 @@ __all__ = [
     "Bedrock",
     "BedrockBase",
     "BedrockLLM",
+    "LLMInputOutputAdapter",
     "SagemakerEndpoint",
 ]
