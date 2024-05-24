@@ -33,6 +33,7 @@ from langchain_aws.utils import (
 
 AMAZON_BEDROCK_TRACE_KEY = "amazon-bedrock-trace"
 GUARDRAILS_BODY_KEY = "amazon-bedrock-guardrailAssessment"
+GUARDRAILS_CONFIG_KEY = "amazon-bedrock-guardrailConfig"
 HUMAN_PROMPT = "\n\nHuman:"
 ASSISTANT_PROMPT = "\n\nAssistant:"
 ALTERNATION_ERROR = (
@@ -427,6 +428,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         "trace": None,
         "guardrailIdentifier": None,
         "guardrailVersion": None,
+        "guardrailConfig": None,
     }
     """
     An optional dictionary to configure guardrails for Bedrock.
@@ -439,21 +441,21 @@ class BedrockBase(BaseLanguageModel, ABC):
         Optional[Mapping[str, str]]: A mapping with 'id' and 'version' keys.
 
     Example:
-    llm = Bedrock(model_id="<model_id>", client=<bedrock_client>,
+    llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
                   model_kwargs={},
                   guardrails={
-                        "id": "<guardrail_id>",
-                        "version": "<guardrail_version>"})
+                        "guardrailIdentifier": "<guardrail_id>",
+                        "guardrailVersion": "<guardrail_version>"})
 
     To enable tracing for guardrails, set the 'trace' key to True and pass a callback handler to the
     'run_manager' parameter of the 'generate', '_call' methods.
 
     Example:
-    llm = Bedrock(model_id="<model_id>", client=<bedrock_client>,
+    llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
                   model_kwargs={},
                   guardrails={
-                        "id": "<guardrail_id>",
-                        "version": "<guardrail_version>",
+                        "guardrailIdentifier": "<guardrail_id>",
+                        "guardrailVersion": "<guardrail_version>",
                         "trace": True},
                 callbacks=[BedrockAsyncCallbackHandler()])
 
@@ -523,13 +525,15 @@ class BedrockBase(BaseLanguageModel, ABC):
     @property
     def _identifying_params(self) -> Dict[str, Any]:
         _model_kwargs = self.model_kwargs or {}
+        _guardrails = self.guardrails or {}
         return {
             "model_id": self.model_id,
             "provider": self._get_provider(),
             "stream": self.streaming,
-            "trace": self.guardrails.get("trace"),  # type: ignore[union-attr]
-            "guardrailIdentifier": self.guardrails.get("guardrailIdentifier", None),  # type: ignore[union-attr]
-            "guardrailVersion": self.guardrails.get("guardrailVersion", None),  # type: ignore[union-attr]
+            "trace": _guardrails.get("trace"),  # type: ignore[union-attr]
+            "guardrail_identifier": _guardrails.get("guardrailIdentifier", None),  # type: ignore[union-attr]
+            "guardrail_version": _guardrails.get("guardrailVersion", None),  # type: ignore[union-attr]
+            "guardrail_config": _guardrails.get("guardrailConfig", None),  # type: ignore[union-attr]
             **_model_kwargs,
         }
 
@@ -538,8 +542,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             return self.provider
         if self.model_id.startswith("arn"):
             raise ValueError(
-                "Model provider should be supplied when passing a model ARN as "
-                "model_id"
+                "Model provider should be supplied when passing a model ARN as model_id"
             )
 
         return self.model_id.split(".")[0]
@@ -572,8 +575,8 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         except KeyError as e:
             raise TypeError(
-                "Guardrails must be a dictionary with 'guardrailIdentifier'  \
-                and 'guardrailVersion' keys."
+                "Guardrails must be a dictionary with 'guardrailIdentifier' "
+                "and 'guardrailVersion' mandatory keys."
             ) from e
 
     def _prepare_input_and_invoke(
@@ -597,26 +600,32 @@ class BedrockBase(BaseLanguageModel, ABC):
             system=system,
             messages=messages,
         )
+
+        guardrails = {}
+        if self._guardrails_enabled:
+            guardrails["guardrailIdentifier"] = self.guardrails.get(  # type: ignore[union-attr]
+                "guardrailIdentifier", ""
+            )
+            guardrails["guardrailVersion"] = self.guardrails.get("guardrailVersion", "")  # type: ignore[union-attr]
+            if self.guardrails.get("trace") is not None:  # type: ignore[union-attr]
+                guardrails["trace"] = "ENABLED"
+
+            if self.guardrails.get("guardrailConfig") is not None:  # type: ignore[union-attr]
+                input_body[GUARDRAILS_CONFIG_KEY] = self.guardrails.get(  # type: ignore[union-attr]
+                    "guardrailConfig", ""
+                )
+
         body = json.dumps(input_body)
-        accept = "application/json"
-        contentType = "application/json"
 
         request_options = {
             "body": body,
             "modelId": self.model_id,
-            "accept": accept,
-            "contentType": contentType,
+            "accept": "application/json",
+            "contentType": "application/json",
         }
 
-        if self._guardrails_enabled:
-            request_options["guardrailIdentifier"] = self.guardrails.get(  # type: ignore[union-attr]
-                "guardrailIdentifier", ""
-            )
-            request_options["guardrailVersion"] = self.guardrails.get(  # type: ignore[union-attr]
-                "guardrailVersion", ""
-            )
-            if self.guardrails.get("trace"):  # type: ignore[union-attr]
-                request_options["trace"] = "ENABLED"
+        if guardrails:
+            request_options.update(guardrails)
 
         try:
             response = self.client.invoke_model(**request_options)
@@ -711,6 +720,21 @@ class BedrockBase(BaseLanguageModel, ABC):
             messages=messages,
             model_kwargs=params,
         )
+
+        guardrails = {}
+        if self._guardrails_enabled:
+            guardrails["guardrailIdentifier"] = self.guardrails.get(  # type: ignore[union-attr]
+                "guardrailIdentifier", ""
+            )
+            guardrails["guardrailVersion"] = self.guardrails.get("guardrailVersion", "")  # type: ignore[union-attr]
+            if self.guardrails.get("trace") is not None:  # type: ignore[union-attr]
+                guardrails["trace"] = "ENABLED"
+
+            if self.guardrails.get("guardrailConfig") is not None:  # type: ignore[union-attr]
+                input_body[GUARDRAILS_CONFIG_KEY] = self.guardrails.get(  # type: ignore[union-attr]
+                    "guardrailConfig", ""
+                )
+
         body = json.dumps(input_body)
 
         request_options = {
@@ -720,15 +744,8 @@ class BedrockBase(BaseLanguageModel, ABC):
             "contentType": "application/json",
         }
 
-        if self._guardrails_enabled:
-            request_options["guardrailIdentifier"] = self.guardrails.get(  # type: ignore[union-attr]
-                "guardrailIdentifier", ""
-            )
-            request_options["guardrailVersion"] = self.guardrails.get(  # type: ignore[union-attr]
-                "guardrailVersion", ""
-            )
-            if self.guardrails.get("trace"):  # type: ignore[union-attr]
-                request_options["trace"] = "ENABLED"
+        if guardrails:
+            request_options.update(guardrails)
 
         try:
             response = self.client.invoke_model_with_response_stream(**request_options)
