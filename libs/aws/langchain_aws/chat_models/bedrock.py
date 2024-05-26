@@ -484,7 +484,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     )
                 else:
                     prompt = ChatPromptAdapter.convert_messages_to_prompt(
-                        provider=provider, messages=messages
+                        provider=provider, messages=messages, model=self._get_model()
                     )
             else:
                 prompt = ChatPromptAdapter.convert_messages_to_prompt(
