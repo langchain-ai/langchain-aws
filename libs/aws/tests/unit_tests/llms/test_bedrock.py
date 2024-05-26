@@ -1,3 +1,5 @@
+# type:ignore
+
 import json
 from typing import AsyncGenerator, Dict
 from unittest.mock import MagicMock, patch
@@ -7,6 +9,7 @@ import pytest
 from langchain_aws import BedrockLLM
 from langchain_aws.llms.bedrock import (
     ALTERNATION_ERROR,
+    LLMInputOutputAdapter,
     _human_assistant_format,
 )
 
@@ -306,3 +309,141 @@ async def test_bedrock_async_streaming_call() -> None:
     assert chunks[0] == "nice"
     assert chunks[1] == " to meet"
     assert chunks[2] == " you"
+
+
+@pytest.fixture
+def mistral_response():
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {"outputs": [{"text": "This is the Mistral output text."}]}
+    ).encode()
+    response = dict(
+        body=body,
+        ResponseMetadata={
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "18",
+                "x-amzn-bedrock-output-token-count": "28",
+            }
+        },
+    )
+
+    return response
+
+
+@pytest.fixture
+def cohere_response():
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {"generations": [{"text": "This is the Cohere output text."}]}
+    ).encode()
+    response = dict(
+        body=body,
+        ResponseMetadata={
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "12",
+                "x-amzn-bedrock-output-token-count": "22",
+            }
+        },
+    )
+    return response
+
+
+@pytest.fixture
+def anthropic_response():
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {"completion": "This is the output text."}
+    ).encode()
+    response = dict(
+        body=body,
+        ResponseMetadata={
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "10",
+                "x-amzn-bedrock-output-token-count": "20",
+            }
+        },
+    )
+    return response
+
+
+@pytest.fixture
+def ai21_response():
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {"completions": [{"data": {"text": "This is the AI21 output text."}}]}
+    ).encode()
+    response = dict(
+        body=body,
+        ResponseMetadata={
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "15",
+                "x-amzn-bedrock-output-token-count": "25",
+            }
+        },
+    )
+    return response
+
+
+@pytest.fixture
+def response_with_stop_reason():
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {"completion": "This is the output text.", "stop_reason": "length"}
+    ).encode()
+    response = dict(
+        body=body,
+        ResponseMetadata={
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "10",
+                "x-amzn-bedrock-output-token-count": "20",
+            }
+        },
+    )
+    return response
+
+
+def test_prepare_output_for_mistral(mistral_response):
+    result = LLMInputOutputAdapter.prepare_output("mistral", mistral_response)
+    assert result["text"] == "This is the Mistral output text."
+    assert result["usage"]["prompt_tokens"] == 18
+    assert result["usage"]["completion_tokens"] == 28
+    assert result["usage"]["total_tokens"] == 46
+    assert result["stop_reason"] is None
+
+
+def test_prepare_output_for_cohere(cohere_response):
+    result = LLMInputOutputAdapter.prepare_output("cohere", cohere_response)
+    assert result["text"] == "This is the Cohere output text."
+    assert result["usage"]["prompt_tokens"] == 12
+    assert result["usage"]["completion_tokens"] == 22
+    assert result["usage"]["total_tokens"] == 34
+    assert result["stop_reason"] is None
+
+
+def test_prepare_output_with_stop_reason(response_with_stop_reason):
+    result = LLMInputOutputAdapter.prepare_output(
+        "anthropic", response_with_stop_reason
+    )
+    assert result["text"] == "This is the output text."
+    assert result["usage"]["prompt_tokens"] == 10
+    assert result["usage"]["completion_tokens"] == 20
+    assert result["usage"]["total_tokens"] == 30
+    assert result["stop_reason"] == "length"
+
+
+def test_prepare_output_for_anthropic(anthropic_response):
+    result = LLMInputOutputAdapter.prepare_output("anthropic", anthropic_response)
+    assert result["text"] == "This is the output text."
+    assert result["usage"]["prompt_tokens"] == 10
+    assert result["usage"]["completion_tokens"] == 20
+    assert result["usage"]["total_tokens"] == 30
+    assert result["stop_reason"] is None
+
+
+def test_prepare_output_for_ai21(ai21_response):
+    result = LLMInputOutputAdapter.prepare_output("ai21", ai21_response)
+    assert result["text"] == "This is the AI21 output text."
+    assert result["usage"]["prompt_tokens"] == 15
+    assert result["usage"]["completion_tokens"] == 25
+    assert result["usage"]["total_tokens"] == 40
+    assert result["stop_reason"] is None

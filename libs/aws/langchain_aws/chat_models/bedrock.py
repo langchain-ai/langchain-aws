@@ -35,7 +35,10 @@ from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 
 from langchain_aws.function_calling import convert_to_anthropic_tool, get_system_message
-from langchain_aws.llms.bedrock import BedrockBase
+from langchain_aws.llms.bedrock import (
+    BedrockBase,
+    _combine_generation_info_for_llm_result,
+)
 from langchain_aws.utils import (
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
@@ -61,6 +64,41 @@ def convert_messages_to_prompt_llama(messages: List[BaseMessage]) -> str:
 
     return "\n".join(
         [_convert_one_message_to_text_llama(message) for message in messages]
+    )
+
+
+def _convert_one_message_to_text_llama3(message: BaseMessage) -> str:
+    if isinstance(message, ChatMessage):
+        message_text = (
+            f"<|start_header_id|>{message.role}"
+            f"<|end_header_id|>{message.content}<|eot_id|>"
+        )
+    elif isinstance(message, HumanMessage):
+        message_text = (
+            f"<|start_header_id|>user" f"<|end_header_id|>{message.content}<|eot_id|>"
+        )
+    elif isinstance(message, AIMessage):
+        message_text = (
+            f"<|start_header_id|>assistant"
+            f"<|end_header_id|>{message.content}<|eot_id|>"
+        )
+    elif isinstance(message, SystemMessage):
+        message_text = (
+            f"<|start_header_id|>system" f"<|end_header_id|>{message.content}<|eot_id|>"
+        )
+    else:
+        raise ValueError(f"Got unknown type {message}")
+
+    return message_text
+
+
+def convert_messages_to_prompt_llama3(messages: List[BaseMessage]) -> str:
+    """Convert a list of messages to a prompt for llama."""
+
+    return "\n".join(
+        ["<|begin_of_text|>"]
+        + [_convert_one_message_to_text_llama3(message) for message in messages]
+        + ["<|start_header_id|>assistant<|end_header_id|>\n\n"]
     )
 
 
@@ -277,12 +315,15 @@ class ChatPromptAdapter:
 
     @classmethod
     def convert_messages_to_prompt(
-        cls, provider: str, messages: List[BaseMessage]
+        cls, provider: str, messages: List[BaseMessage], model: str
     ) -> str:
         if provider == "anthropic":
             prompt = convert_messages_to_prompt_anthropic(messages=messages)
         elif provider == "meta":
-            prompt = convert_messages_to_prompt_llama(messages=messages)
+            if "llama3" in model:
+                prompt = convert_messages_to_prompt_llama3(messages=messages)
+            else:
+                prompt = convert_messages_to_prompt_llama(messages=messages)
         elif provider == "mistral":
             prompt = convert_messages_to_prompt_mistral(messages=messages)
         elif provider == "amazon":
@@ -382,7 +423,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     system = self.system_prompt_with_tools
         else:
             prompt = ChatPromptAdapter.convert_messages_to_prompt(
-                provider=provider, messages=messages
+                provider=provider, messages=messages, model=self._get_model()
             )
 
         for chunk in self._prepare_input_and_invoke_stream(
@@ -394,7 +435,13 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             **kwargs,
         ):
             delta = chunk.text
-            yield ChatGenerationChunk(message=AIMessageChunk(content=delta))
+            yield ChatGenerationChunk(
+                message=AIMessageChunk(
+                    content=delta, response_metadata=chunk.generation_info
+                )
+                if chunk.generation_info is not None
+                else AIMessageChunk(content=delta)
+            )
 
     def _generate(
         self,
@@ -404,11 +451,18 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         **kwargs: Any,
     ) -> ChatResult:
         completion = ""
-        llm_output: Dict[str, Any] = {"model_id": self.model_id}
-        usage_info: Dict[str, Any] = {}
+        llm_output: Dict[str, Any] = {}
+        provider_stop_reason_code = self.provider_stop_reason_key_map.get(
+            self._get_provider(), "stop_reason"
+        )
         if self.streaming:
+            response_metadata: List[Dict[str, Any]] = []
             for chunk in self._stream(messages, stop, run_manager, **kwargs):
                 completion += chunk.text
+                response_metadata.append(chunk.message.response_metadata)
+            llm_output = _combine_generation_info_for_llm_result(
+                response_metadata, provider_stop_reason_code
+            )
         else:
             provider = self._get_provider()
             prompt, system, formatted_messages, chat_history = None, None, None, None
@@ -434,13 +488,13 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     )
             else:
                 prompt = ChatPromptAdapter.convert_messages_to_prompt(
-                    provider=provider, messages=messages
+                    provider=provider, messages=messages, model=self._get_model()
                 )
 
             if stop:
                 params["stop_sequences"] = stop
 
-            completion, usage_info = self._prepare_input_and_invoke(
+            completion, llm_output = self._prepare_input_and_invoke(
                 prompt=prompt,
                 stop=stop,
                 run_manager=run_manager,
@@ -450,14 +504,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 **params,
             )
 
-            llm_output["usage"] = usage_info
-
+        llm_output["model_id"] = self.model_id
         return ChatResult(
             generations=[
                 ChatGeneration(
-                    message=AIMessage(
-                        content=completion, additional_kwargs={"usage": usage_info}
-                    )
+                    message=AIMessage(content=completion, additional_kwargs=llm_output)
                 )
             ],
             llm_output=llm_output,
@@ -468,7 +519,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         final_output = {}
         for output in llm_outputs:
             output = output or {}
-            usage = output.pop("usage", {})
+            usage = output.get("usage", {})
             for token_type, token_count in usage.items():
                 final_usage[token_type] += token_count
             final_output.update(output)

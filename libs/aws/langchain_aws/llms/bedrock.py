@@ -12,6 +12,7 @@ from typing import (
     Mapping,
     Optional,
     Tuple,
+    Union,
 )
 
 from langchain_core._api.deprecation import deprecated
@@ -20,7 +21,7 @@ from langchain_core.callbacks import (
     CallbackManagerForLLMRun,
 )
 from langchain_core.language_models import LLM, BaseLanguageModel
-from langchain_core.outputs import GenerationChunk
+from langchain_core.outputs import Generation, GenerationChunk, LLMResult
 from langchain_core.pydantic_v1 import Extra, Field, root_validator
 from langchain_core.utils import get_from_dict_or_env
 
@@ -80,17 +81,97 @@ def _human_assistant_format(input_text: str) -> str:
 
 
 def _stream_response_to_generation_chunk(
-    stream_response: Dict[str, Any],
-) -> GenerationChunk:
+    stream_response: Dict[str, Any], provider: str, output_key: str, messages_api: bool
+) -> Union[GenerationChunk, None]:
     """Convert a stream response to a generation chunk."""
-    if not stream_response["delta"]:
-        return GenerationChunk(text="")
-    return GenerationChunk(
-        text=stream_response["delta"]["text"],
-        generation_info=dict(
-            finish_reason=stream_response.get("stop_reason", None),
-        ),
+    if messages_api:
+        msg_type = stream_response.get("type")
+        if msg_type == "message_start":
+            usage_info = stream_response.get("message", {}).get("usage", None)
+            usage_info = _nest_usage_info_token_counts(usage_info)
+            generation_info = {"usage": usage_info}
+            return GenerationChunk(text="", generation_info=generation_info)
+        elif msg_type == "content_block_delta":
+            if not stream_response["delta"]:
+                return GenerationChunk(text="")
+            return GenerationChunk(
+                text=stream_response["delta"]["text"],
+                generation_info=dict(
+                    stop_reason=stream_response.get("stop_reason", None),
+                ),
+            )
+        elif msg_type == "message_delta":
+            usage_info = stream_response.get("usage", None)
+            usage_info = _nest_usage_info_token_counts(usage_info)
+            stop_reason = stream_response.get("delta", {}).get("stop_reason")
+            generation_info = {"stop_reason": stop_reason, "usage": usage_info}
+            return GenerationChunk(text="", generation_info=generation_info)
+        else:
+            return None
+    else:
+        # chunk obj format varies with provider
+        generation_info = {k: v for k, v in stream_response.items() if k != output_key}
+        return GenerationChunk(
+            text=(
+                stream_response[output_key]
+                if provider != "mistral"
+                else stream_response[output_key][0]["text"]
+            ),
+            generation_info=generation_info,
+        )
+
+
+def _nest_usage_info_token_counts(usage_info: dict) -> dict:
+    """
+    Sticking usage info for token counts into lists to
+    deal with langchain_core.utils.merge_dicts incompatibility
+    in which integers must be equal to be merged
+    as seen here: https://github.com/langchain-ai/langchain-aws/pull/20#issuecomment-2118166376
+    """
+    if "input_tokens" in usage_info:
+        usage_info["input_tokens"] = [usage_info["input_tokens"]]
+    if "output_tokens" in usage_info:
+        usage_info["output_tokens"] = [usage_info["output_tokens"]]
+    return usage_info
+
+
+def _combine_generation_info_for_llm_result(
+    chunks_generation_info: List[Dict[str, Any]], provider_stop_code: str
+) -> Dict[str, Any]:
+    """
+    Returns usage and stop reason information with the intent to pack into an LLMResult
+    Takes a list of generation_info from GenerationChunks
+    If the messages api is being used,
+    the generation_info from some of these chunks should contain "usage" keys
+    if not, the token counts should be found within "amazon-bedrock-invocationMetrics"
+    """
+    total_usage_info = {"prompt_tokens": 0, "completion_tokens": 0}
+    stop_reason = ""
+    for generation_info in chunks_generation_info:
+        if "usage" in generation_info:
+            usage_info = generation_info["usage"]
+            if "input_tokens" in usage_info:
+                total_usage_info["prompt_tokens"] += sum(usage_info["input_tokens"])
+            if "output_tokens" in usage_info:
+                total_usage_info["completion_tokens"] += sum(
+                    usage_info["output_tokens"]
+                )
+        if "amazon-bedrock-invocationMetrics" in generation_info:
+            usage_info = generation_info["amazon-bedrock-invocationMetrics"]
+            if "inputTokenCount" in usage_info:
+                total_usage_info["prompt_tokens"] += usage_info["inputTokenCount"]
+            if "outputTokenCount" in usage_info:
+                total_usage_info["completion_tokens"] += usage_info["outputTokenCount"]
+
+        if provider_stop_code is not None and provider_stop_code in generation_info:
+            # uses the last stop reason
+            stop_reason = generation_info[provider_stop_code]
+
+    total_usage_info["total_tokens"] = (
+        total_usage_info["prompt_tokens"] + total_usage_info["completion_tokens"]
     )
+
+    return {"usage": total_usage_info, "stop_reason": stop_reason}
 
 
 class LLMInputOutputAdapter:
@@ -191,6 +272,7 @@ class LLMInputOutputAdapter:
                 "completion_tokens": completion_tokens,
                 "total_tokens": prompt_tokens + completion_tokens,
             },
+            "stop_reason": response_body.get("stop_reason"),
         }
 
     @classmethod
@@ -234,39 +316,27 @@ class LLMInputOutputAdapter:
             ):
                 return
 
-            elif messages_api and (chunk_obj.get("type") == "content_block_stop"):
+            elif messages_api and (chunk_obj.get("type") == "message_stop"):
                 return
 
-            if messages_api and chunk_obj.get("type") in (
-                "message_start",
-                "content_block_start",
-                "content_block_delta",
-            ):
-                if chunk_obj.get("type") == "content_block_delta":
-                    chk = _stream_response_to_generation_chunk(chunk_obj)
-                    yield chk
-                else:
-                    continue
+            generation_chunk = _stream_response_to_generation_chunk(
+                chunk_obj,
+                provider=provider,
+                output_key=output_key,
+                messages_api=messages_api,
+            )
+            if generation_chunk:
+                yield generation_chunk
             else:
-                # chunk obj format varies with provider
-                yield GenerationChunk(
-                    text=(
-                        chunk_obj[output_key]
-                        if provider != "mistral"
-                        else chunk_obj[output_key][0]["text"]
-                    ),
-                    generation_info={
-                        GUARDRAILS_BODY_KEY: (
-                            chunk_obj.get(GUARDRAILS_BODY_KEY)
-                            if GUARDRAILS_BODY_KEY in chunk_obj
-                            else None
-                        ),
-                    },
-                )
+                continue
 
     @classmethod
     async def aprepare_output_stream(
-        cls, provider: str, response: Any, stop: Optional[List[str]] = None
+        cls,
+        provider: str,
+        response: Any,
+        stop: Optional[List[str]] = None,
+        messages_api: bool = False,
     ) -> AsyncIterator[GenerationChunk]:
         stream = response.get("body")
 
@@ -298,13 +368,16 @@ class LLMInputOutputAdapter:
             ):
                 return
 
-            yield GenerationChunk(
-                text=(
-                    chunk_obj[output_key]
-                    if provider != "mistral"
-                    else chunk_obj[output_key][0]["text"]
-                )
+            generation_chunk = _stream_response_to_generation_chunk(
+                chunk_obj,
+                provider=provider,
+                output_key=output_key,
+                messages_api=messages_api,
             )
+            if generation_chunk:
+                yield generation_chunk
+            else:
+                continue
 
 
 class BedrockBase(BaseLanguageModel, ABC):
@@ -355,6 +428,14 @@ class BedrockBase(BaseLanguageModel, ABC):
         "ai21": "stop_sequences",
         "cohere": "stop_sequences",
         "mistral": "stop_sequences",
+    }
+
+    provider_stop_reason_key_map: Mapping[str, str] = {
+        "anthropic": "stop_reason",
+        "amazon": "completionReason",
+        "ai21": "finishReason",
+        "cohere": "finish_reason",
+        "mistral": "stop_reason",
     }
 
     guardrails: Optional[Mapping[str, Any]] = {
@@ -478,6 +559,9 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         return self.model_id.split(".")[0]
 
+    def _get_model(self) -> str:
+        return self.model_id.split(".")[1]
+
     @property
     def _model_is_anthropic(self) -> bool:
         return self._get_provider() == "anthropic"
@@ -554,7 +638,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         try:
             response = self.client.invoke_model(**request_options)
 
-            text, body, usage_info = LLMInputOutputAdapter.prepare_output(
+            text, body, usage_info, stop_reason = LLMInputOutputAdapter.prepare_output(
                 provider, response
             ).values()
 
@@ -564,12 +648,14 @@ class BedrockBase(BaseLanguageModel, ABC):
         if stop is not None:
             text = enforce_stop_tokens(text, stop)
 
+        llm_output = {"usage": usage_info, "stop_reason": stop_reason}
+
         # Verify and raise a callback error if any intervention occurs or a signal is
         # sent from a Bedrock service,
         # such as when guardrails are triggered.
         services_trace = self._get_bedrock_services_signal(body)  # type: ignore[arg-type]
 
-        if services_trace.get("signal") and run_manager is not None:
+        if run_manager is not None and services_trace.get("signal"):
             run_manager.on_llm_error(
                 Exception(
                     f"Error raised by bedrock service: {services_trace.get('reason')}"
@@ -577,7 +663,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 **services_trace,
             )
 
-        return text, usage_info
+        return text, llm_output
 
     def _get_bedrock_services_signal(self, body: dict) -> dict:
         """
@@ -680,6 +766,8 @@ class BedrockBase(BaseLanguageModel, ABC):
     async def _aprepare_input_and_invoke_stream(
         self,
         prompt: str,
+        system: Optional[str] = None,
+        messages: Optional[List[Dict]] = None,
         stop: Optional[List[str]] = None,
         run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
         **kwargs: Any,
@@ -700,7 +788,11 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         params = {**_model_kwargs, **kwargs}
         input_body = LLMInputOutputAdapter.prepare_input(
-            provider=provider, prompt=prompt, model_kwargs=params
+            provider=provider,
+            prompt=prompt,
+            system=system,
+            messages=messages,
+            model_kwargs=params,
         )
         body = json.dumps(input_body)
 
@@ -715,7 +807,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         )
 
         async for chunk in LLMInputOutputAdapter.aprepare_output_stream(
-            provider, response, stop
+            provider, response, stop, True if messages else False
         ):
             yield chunk
             if run_manager is not None and asyncio.iscoroutinefunction(
@@ -849,17 +941,47 @@ class BedrockLLM(LLM, BedrockBase):
                 response = llm("Tell me a joke.")
         """
 
+        provider = self._get_provider()
+        provider_stop_reason_code = self.provider_stop_reason_key_map.get(
+            provider, "stop_reason"
+        )
+
         if self.streaming:
+            all_chunks: List[GenerationChunk] = []
             completion = ""
             for chunk in self._stream(
                 prompt=prompt, stop=stop, run_manager=run_manager, **kwargs
             ):
                 completion += chunk.text
+                all_chunks.append(chunk)
+
+            if run_manager is not None:
+                chunks_generation_info = [
+                    chunk.generation_info
+                    for chunk in all_chunks
+                    if chunk.generation_info is not None
+                ]
+                llm_output = _combine_generation_info_for_llm_result(
+                    chunks_generation_info, provider_stop_code=provider_stop_reason_code
+                )
+                all_generations = [
+                    Generation(text=chunk.text, generation_info=chunk.generation_info)
+                    for chunk in all_chunks
+                ]
+                run_manager.on_llm_end(
+                    LLMResult(generations=[all_generations], llm_output=llm_output)
+                )
+
             return completion
 
-        text, _ = self._prepare_input_and_invoke(
+        text, llm_output = self._prepare_input_and_invoke(
             prompt=prompt, stop=stop, run_manager=run_manager, **kwargs
         )
+        if run_manager is not None:
+            run_manager.on_llm_end(
+                LLMResult(generations=[[Generation(text=text)]], llm_output=llm_output)
+            )
+
         return text
 
     async def _astream(
@@ -913,13 +1035,36 @@ class BedrockLLM(LLM, BedrockBase):
         if not self.streaming:
             raise ValueError("Streaming must be set to True for async operations. ")
 
+        provider = self._get_provider()
+        provider_stop_reason_code = self.provider_stop_reason_key_map.get(
+            provider, "stop_reason"
+        )
+
         chunks = [
-            chunk.text
+            chunk
             async for chunk in self._astream(
                 prompt=prompt, stop=stop, run_manager=run_manager, **kwargs
             )
         ]
-        return "".join(chunks)
+
+        if run_manager is not None:
+            chunks_generation_info = [
+                chunk.generation_info
+                for chunk in chunks
+                if chunk.generation_info is not None
+            ]
+            llm_output = _combine_generation_info_for_llm_result(
+                chunks_generation_info, provider_stop_code=provider_stop_reason_code
+            )
+            generations = [
+                Generation(text=chunk.text, generation_info=chunk.generation_info)
+                for chunk in chunks
+            ]
+            await run_manager.on_llm_end(
+                LLMResult(generations=[generations], llm_output=llm_output)
+            )
+
+        return "".join([chunk.text for chunk in chunks])
 
     def get_num_tokens(self, text: str) -> int:
         if self._model_is_anthropic:

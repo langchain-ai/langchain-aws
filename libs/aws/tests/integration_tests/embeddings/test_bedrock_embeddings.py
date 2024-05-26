@@ -73,3 +73,18 @@ def test_embed_query_normalized(bedrock_embeddings) -> None:
     bedrock_embeddings.normalize = True
     output = bedrock_embeddings.embed_query("foo walked to the market")
     assert np.isclose(np.linalg.norm(output), 1.0)
+
+
+@pytest.mark.scheduled
+def test_embed_query_with_size(bedrock_embeddings) -> None:
+    prompt_data = """Priority should be funding retirement through ROTH/IRA/401K 
+    over HSA extra. You need to fund your HSA for reasonable and expected medical 
+    expenses. 
+    """
+    embed_size = 256
+    normalize = True
+    embed_model = BedrockEmbeddings(model_id="amazon.titan-embed-text-v2:0")
+    response = embed_model.embed_documents([prompt_data], embed_size, normalize)
+    output = embed_model.embed_query(prompt_data, embed_size, False)
+    assert len(response[0]) == 256
+    assert len(output) == 256
