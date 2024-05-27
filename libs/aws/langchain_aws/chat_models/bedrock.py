@@ -195,11 +195,48 @@ def _format_image(image_url: str) -> Dict:
     }
 
 
+def _handle_anthropic_system_message(message: BaseMessage) -> Tuple[str, str]:
+    if not isinstance(message.content, str):
+        raise ValueError(
+            "System message must be a string, " f"instead was: {type(message.content)}"
+        )
+    return message.content, _message_type_lookups["human"]
+
+
+def _handle_anthropic_message(
+    message: BaseMessage,
+) -> Tuple[Union[str, List[Dict[str, str]]], str]:
+    role = _message_type_lookups[message.type]
+    if isinstance(message.content, str):
+        return message.content, role
+
+    assert isinstance(
+        message.content, list
+    ), "Anthropic message content must be str or list of dicts"
+
+    content: List[Dict[str, Any]] = []
+    for item in message.content:
+        if isinstance(item, str):
+            content.append({"type": "text", "text": item})
+        elif isinstance(item, dict):
+            if "type" not in item:
+                raise ValueError("Dict content item must have a type key")
+            if item["type"] == "image_url":
+                source = _format_image(item["image_url"]["url"])
+                content.append({"type": "image", "source": source})
+            else:
+                content.append(item)
+        else:
+            raise ValueError(
+                f"Content items must be str or dict, instead was: {type(item)}"
+            )
+    return content, role
+
+
 def _format_anthropic_messages(
     messages: List[BaseMessage],
-) -> Tuple[Optional[str], List[Dict]]:
+) -> Tuple[Optional[str], List[Dict[str, Any]]]:
     """Format messages for anthropic."""
-
     """
     [
         {
@@ -209,128 +246,24 @@ def _format_anthropic_messages(
         for m in messages
     ]
     """
-    system: Optional[str] = None
-    formatted_messages: List[Dict] = []
-
-    # do not enumerate when calling generate()
     if isinstance(messages, langchain_system.BaseMessage):
         if messages.type == "system":
-            if not isinstance(messages.content, str):
-                raise ValueError(
-                    "System message must be a string, "
-                    f"instead was: {type(messages.content)}"
-                )
-            system = messages.content
-            role = _message_type_lookups["human"]
-        else:
-            role = _message_type_lookups[messages.type]
-        content: Union[str, List[Dict]]
+            system, role = _handle_anthropic_system_message(messages)
+            return system, [{"role": role, "content": system}]
 
-        if not isinstance(messages.content, str):
-            # parse as dict
-            assert isinstance(
-                messages.content, list
-            ), "Anthropic message content must be str or list of dicts"
+        content, role = _handle_anthropic_message(messages)
+        return None, [{"role": role, "content": content}]
 
-            # populate content
-            content = []
-            for item in messages.content:
-                if isinstance(item, str):
-                    content.append(
-                        {
-                            "type": "text",
-                            "text": item,
-                        }
-                    )
-                elif isinstance(item, dict):
-                    if "type" not in item:
-                        raise ValueError("Dict content item must have a type key")
-                    if item["type"] == "image_url":
-                        # convert format
-                        source = _format_image(item["image_url"]["url"])
-                        content.append(
-                            {
-                                "type": "image",
-                                "source": source,
-                            }
-                        )
-                    else:
-                        content.append(item)
-                else:
-                    raise ValueError(
-                        f"Content items must be str or dict, instead was: {type(item)}"
-                    )
-        else:
-            content = messages.content
-
-        formatted_messages.append(
-            {
-                "role": role,
-                "content": content,
-            }
-        )
-    else:
-        for i, message in enumerate(messages):
-            if message.type == "system":
-                if i != 0:
-                    raise ValueError(
-                        "System message must be at beginning of message list."
-                    )
-                if not isinstance(message.content, str):
-                    raise ValueError(
-                        "System message must be a string, "
-                        f"instead was: {type(message.content)}"
-                    )
-                system = message.content
-                continue
-
-            role = _message_type_lookups[message.type]
-            message_content: Union[str, List[Dict]]
-
-            if not isinstance(message.content, str):
-                # parse as dict
-                assert isinstance(
-                    message.content, list
-                ), "Anthropic message content must be str or list of dicts"
-
-                # populate content
-                message_content = []
-                for item in message.content:
-                    if isinstance(item, str):
-                        message_content.append(
-                            {
-                                "type": "text",
-                                "text": item,
-                            }
-                        )
-                    elif isinstance(item, dict):
-                        if "type" not in item:
-                            raise ValueError("Dict content item must have a type key")
-                        if item["type"] == "image_url":
-                            # convert format
-                            source = _format_image(item["image_url"]["url"])
-                            message_content.append(
-                                {
-                                    "type": "image",
-                                    "source": source,
-                                }
-                            )
-                        else:
-                            message_content.append(item)
-                    else:
-                        raise ValueError(
-                            f"""Content items 
-                                must be str or dict, instead was: {type(item)}"""
-                        )
-            else:
-                message_content = message.content
-
-            formatted_messages.append(
-                {
-                    "role": role,
-                    "content": message_content,
-                }
-            )
+    system = None
+    formatted_messages = []
+    for i, message in enumerate(messages):
+        if message.type == "system":
+            if i != 0:
+                raise ValueError("System message must be at beginning of message list.")
+            system, _ = _handle_anthropic_system_message(message)
+            continue
+        content, role = _handle_anthropic_message(message)
+        formatted_messages.append({"role": role, "content": content})
     return system, formatted_messages
 
 
