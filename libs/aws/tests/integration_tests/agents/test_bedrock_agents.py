@@ -186,7 +186,7 @@ def test_run_chain_agent_executor_tools_invoke_create_delete():
             "trace_enabled": True
         }
         response = bedrock_agent.invoke_agent(invoke_agent_request)
-        assert isinstance(response, str)
+        assert isinstance(response, dict)
     finally:
         bedrock_agent.delete()
 
@@ -231,7 +231,7 @@ def test_run_chain_agent_executor_tools_invoke_multi_serial_actions():
             "trace_enabled": True
         }
         response = bedrock_agent.invoke_agent(invoke_agent_request)
-        assert isinstance(response, str)
+        assert isinstance(response, dict)
     finally:
         bedrock_agent.delete()
 
@@ -285,7 +285,7 @@ def test_run_chain_agent_executor_tools_invoke_multi_serial_actions_simplified()
     )
     try:
         response = bedrock_agent.invoke(agent_input="what is my mortgage rate for id AVC-1234")
-        assert isinstance(response, str)
+        assert isinstance(response, dict)
     finally:
         bedrock_agent.delete()
 
@@ -340,7 +340,7 @@ def test_run_chain_agent_executor_tools_invoke_multi_serial_actions_simplified_t
     )
     try:
         response = bedrock_agent.invoke(agent_input="what is my mortgage rate for id AVC-1234")
-        assert isinstance(response, str)
+        assert isinstance(response, dict)
     finally:
         bedrock_agent.delete()
 
@@ -365,7 +365,7 @@ def test_run_chain_agent_executor_tools_invoke_multi_serial_actions_structured_t
     )
     try:
         response = bedrock_agent.invoke(agent_input="what is my mortgage rate for id AVC-1234")
-        assert isinstance(response, str)
+        assert isinstance(response, dict)
     finally:
         bedrock_agent.delete()
 
@@ -458,7 +458,7 @@ def test_run_chain_agent_executor_tools_invoke_multi_serial_actions_structured_t
     )
     try:
         response = bedrock_agent.invoke(agent_input="what is my mortgage rate for id AVC-1234")
-        assert isinstance(response, str)
+        assert isinstance(response, dict)
     finally:
         bedrock_agent.delete()
 
@@ -492,7 +492,7 @@ def test_run_chain_agent_executor_tools_invoke_multi_serial_actions_structured_t
             agent_input="what is my mortgage rate for id AVC-1234",
             **{'session_state': agent_session_state}
         )
-        assert isinstance(response, str)
+        assert isinstance(response, dict)
     finally:
         bedrock_agent.delete()
 
