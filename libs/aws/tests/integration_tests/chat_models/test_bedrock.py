@@ -12,9 +12,10 @@ from langchain_core.messages import (
 )
 from langchain_core.outputs import ChatGeneration, LLMResult
 from langchain_core.pydantic_v1 import BaseModel, Field
+from langchain_core.runnables import RunnableConfig
 
 from langchain_aws.chat_models.bedrock import ChatBedrock
-from tests.callbacks import FakeCallbackHandler
+from tests.callbacks import FakeCallbackHandler, FakeCallbackHandlerWithTokenCounts
 
 
 @pytest.fixture
@@ -111,6 +112,7 @@ def test_chat_bedrock_streaming_generation_info() -> None:
     chat = ChatBedrock(  # type: ignore[call-arg]
         model_id="anthropic.claude-v2",
         callbacks=[callback],
+        model_kwargs={"temperature": 0},
     )
     list(chat.stream("hi"))
     generation = callback.saved_things["generation"]
@@ -187,13 +189,34 @@ def test_function_call_invoke_with_system(chat: ChatBedrock) -> None:
     llm_with_tools = chat.bind_tools([GetWeather])
 
     messages = [
-        SystemMessage(content="anwser only in french"),
+        SystemMessage(content="answer only in french"),
         HumanMessage(content="what is the weather like in San Francisco"),
     ]
 
     response = llm_with_tools.invoke(messages)
     assert isinstance(response, BaseMessage)
     assert isinstance(response.content, str)
+
+
+@pytest.mark.scheduled
+@pytest.mark.parametrize("streaming", [True, False])
+def test_chat_bedrock_token_callbacks(streaming: bool) -> None:
+    """
+    Test that streaming correctly invokes on_llm_end
+    and stores token counts and stop reason.
+    """
+    callback_handler = FakeCallbackHandlerWithTokenCounts()
+    chat = ChatBedrock(  # type: ignore[call-arg]
+        model_id="anthropic.claude-v2",
+        streaming=streaming,
+        verbose=True,
+    )
+    message = HumanMessage(content="Hello")
+    response = chat.invoke([message], RunnableConfig(callbacks=[callback_handler]))
+    assert callback_handler.input_token_count > 0
+    assert callback_handler.output_token_count > 0
+    assert callback_handler.stop_reason is not None
+    assert isinstance(response, BaseMessage)
 
 
 @pytest.mark.scheduled
@@ -218,7 +241,7 @@ async def test_function_call_invoke_with_system_astream(chat: ChatBedrock) -> No
     llm_with_tools = chat.bind_tools([GetWeather])
 
     messages = [
-        SystemMessage(content="anwser only in french"),
+        SystemMessage(content="answer only in french"),
         HumanMessage(content="what is the weather like in San Francisco"),
     ]
 

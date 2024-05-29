@@ -36,7 +36,10 @@ from langchain_core.pydantic_v1 import BaseModel, Extra
 from langchain_core.tools import BaseTool
 
 from langchain_aws.function_calling import convert_to_anthropic_tool, get_system_message
-from langchain_aws.llms.bedrock import BedrockBase
+from langchain_aws.llms.bedrock import (
+    BedrockBase,
+    _combine_generation_info_for_llm_result,
+)
 from langchain_aws.utils import (
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
@@ -379,7 +382,13 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             **kwargs,
         ):
             delta = chunk.text
-            yield ChatGenerationChunk(message=AIMessageChunk(content=delta))
+            yield ChatGenerationChunk(
+                message=AIMessageChunk(
+                    content=delta, response_metadata=chunk.generation_info
+                )
+                if chunk.generation_info is not None
+                else AIMessageChunk(content=delta)
+            )
 
     def _generate(
         self,
@@ -389,11 +398,18 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         **kwargs: Any,
     ) -> ChatResult:
         completion = ""
-        llm_output: Dict[str, Any] = {"model_id": self.model_id}
-        usage_info: Dict[str, Any] = {}
+        llm_output: Dict[str, Any] = {}
+        provider_stop_reason_code = self.provider_stop_reason_key_map.get(
+            self._get_provider(), "stop_reason"
+        )
         if self.streaming:
+            response_metadata: List[Dict[str, Any]] = []
             for chunk in self._stream(messages, stop, run_manager, **kwargs):
                 completion += chunk.text
+                response_metadata.append(chunk.message.response_metadata)
+            llm_output = _combine_generation_info_for_llm_result(
+                response_metadata, provider_stop_reason_code
+            )
         else:
             provider = self._get_provider()
             prompt, system, formatted_messages = None, None, None
@@ -416,7 +432,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             if stop:
                 params["stop_sequences"] = stop
 
-            completion, usage_info = self._prepare_input_and_invoke(
+            completion, llm_output = self._prepare_input_and_invoke(
                 prompt=prompt,
                 stop=stop,
                 run_manager=run_manager,
@@ -425,14 +441,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 **params,
             )
 
-            llm_output["usage"] = usage_info
-
+        llm_output["model_id"] = self.model_id
         return ChatResult(
             generations=[
                 ChatGeneration(
-                    message=AIMessage(
-                        content=completion, additional_kwargs={"usage": usage_info}
-                    )
+                    message=AIMessage(content=completion, additional_kwargs=llm_output)
                 )
             ],
             llm_output=llm_output,
@@ -443,7 +456,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         final_output = {}
         for output in llm_outputs:
             output = output or {}
-            usage = output.pop("usage", {})
+            usage = output.get("usage", {})
             for token_type, token_count in usage.items():
                 final_usage[token_type] += token_count
             final_output.update(output)
