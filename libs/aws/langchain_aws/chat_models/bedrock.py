@@ -35,7 +35,11 @@ from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResu
 from langchain_core.pydantic_v1 import BaseModel, Extra
 from langchain_core.tools import BaseTool
 
-from langchain_aws.function_calling import convert_to_anthropic_tool, get_system_message
+from langchain_aws.function_calling import (
+    convert_to_anthropic_tool,
+    get_system_message,
+    parse_tool_calls_from_xml,
+)
 from langchain_aws.llms.bedrock import (
     BedrockBase,
     _combine_generation_info_for_llm_result,
@@ -398,6 +402,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         **kwargs: Any,
     ) -> ChatResult:
         completion = ""
+        _called_function_token = "</function_calls>"
         llm_output: Dict[str, Any] = {}
         provider_stop_reason_code = self.provider_stop_reason_key_map.get(
             self._get_provider(), "stop_reason"
@@ -440,6 +445,14 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 messages=formatted_messages,
                 **params,
             )
+
+            if _called_function_token in completion and provider == "anthropic":
+                # format tool_calls parameter
+                tool_calls = parse_tool_calls_from_xml(completion)
+                llm_output["tool_calls"] = tool_calls
+                llm_output["stop_reason"] = "tool_use"
+            else:
+                llm_output["stop_reason"] = "end_turn"
 
         llm_output["model_id"] = self.model_id
         return ChatResult(

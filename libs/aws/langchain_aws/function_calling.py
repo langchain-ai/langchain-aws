@@ -137,3 +137,25 @@ def convert_to_anthropic_tool(
             description=formatted["description"],
             input_schema=formatted["parameters"],
         )
+
+
+def parse_tool_calls_from_xml(xml_str: str) -> List[Dict[Any, Any]]:
+    tool_calls: List[Dict[Any, Any]] = []
+    invokes = xml_str.split("<invoke>")[1:]
+    for invoke in invokes:
+        tool_name = invoke.split("<tool_name>")[1].split("</tool_name>")[0]
+        parameters_str = invoke.split("<parameters>")[1].split("</parameters>")[0]
+        parameters = {}
+        for param in parameters_str.split("<")[1:]:
+            # ignore closing tag
+            if ">\n" in param:
+                continue
+            tag, value = param.split(">")
+            tag = tag.strip()
+            value = value.split("</")[0]
+            parameters[tag] = value
+        tool_call = {
+            "function": {"name": tool_name, "arguments": parameters, "type": "function"}
+        }
+        tool_calls.append(tool_call)
+    return tool_calls

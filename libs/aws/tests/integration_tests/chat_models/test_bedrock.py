@@ -196,6 +196,8 @@ def test_function_call_invoke_with_system(chat: ChatBedrock) -> None:
     response = llm_with_tools.invoke(messages)
     assert isinstance(response, BaseMessage)
     assert isinstance(response.content, str)
+    assert response.response_metadata["stop_reason"] == "tool_use"
+    assert len(response.response_metadata["tool_calls"]) == 1
 
 
 @pytest.mark.scheduled
@@ -231,6 +233,7 @@ def test_function_call_invoke_without_system(chat: ChatBedrock) -> None:
     response = llm_with_tools.invoke(messages)
     assert isinstance(response, BaseMessage)
     assert isinstance(response.content, str)
+    assert response.response_metadata["stop_reason"] == "tool_use"
 
 
 @pytest.mark.scheduled
