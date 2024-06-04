@@ -405,18 +405,18 @@ def response_with_stop_reason():
 def test_prepare_output_for_mistral(mistral_response):
     result = LLMInputOutputAdapter.prepare_output("mistral", mistral_response)
     assert result["text"] == "This is the Mistral output text."
-    assert result["usage"]["prompt_tokens"] == 18
-    assert result["usage"]["completion_tokens"] == 28
-    assert result["usage"]["total_tokens"] == 46
+    assert result["token_usage"]["prompt_tokens"] == 18
+    assert result["token_usage"]["completion_tokens"] == 28
+    assert result["token_usage"]["total_tokens"] == 46
     assert result["stop_reason"] is None
 
 
 def test_prepare_output_for_cohere(cohere_response):
     result = LLMInputOutputAdapter.prepare_output("cohere", cohere_response)
     assert result["text"] == "This is the Cohere output text."
-    assert result["usage"]["prompt_tokens"] == 12
-    assert result["usage"]["completion_tokens"] == 22
-    assert result["usage"]["total_tokens"] == 34
+    assert result["token_usage"]["prompt_tokens"] == 12
+    assert result["token_usage"]["completion_tokens"] == 22
+    assert result["token_usage"]["total_tokens"] == 34
     assert result["stop_reason"] is None
 
 
@@ -425,25 +425,25 @@ def test_prepare_output_with_stop_reason(response_with_stop_reason):
         "anthropic", response_with_stop_reason
     )
     assert result["text"] == "This is the output text."
-    assert result["usage"]["prompt_tokens"] == 10
-    assert result["usage"]["completion_tokens"] == 20
-    assert result["usage"]["total_tokens"] == 30
+    assert result["token_usage"]["prompt_tokens"] == 10
+    assert result["token_usage"]["completion_tokens"] == 20
+    assert result["token_usage"]["total_tokens"] == 30
     assert result["stop_reason"] == "length"
 
 
 def test_prepare_output_for_anthropic(anthropic_response):
     result = LLMInputOutputAdapter.prepare_output("anthropic", anthropic_response)
     assert result["text"] == "This is the output text."
-    assert result["usage"]["prompt_tokens"] == 10
-    assert result["usage"]["completion_tokens"] == 20
-    assert result["usage"]["total_tokens"] == 30
+    assert result["token_usage"]["prompt_tokens"] == 10
+    assert result["token_usage"]["completion_tokens"] == 20
+    assert result["token_usage"]["total_tokens"] == 30
     assert result["stop_reason"] is None
 
 
 def test_prepare_output_for_ai21(ai21_response):
     result = LLMInputOutputAdapter.prepare_output("ai21", ai21_response)
     assert result["text"] == "This is the AI21 output text."
-    assert result["usage"]["prompt_tokens"] == 15
-    assert result["usage"]["completion_tokens"] == 25
-    assert result["usage"]["total_tokens"] == 40
+    assert result["token_usage"]["prompt_tokens"] == 15
+    assert result["token_usage"]["completion_tokens"] == 25
+    assert result["token_usage"]["total_tokens"] == 40
     assert result["stop_reason"] is None
