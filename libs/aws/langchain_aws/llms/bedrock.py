@@ -631,7 +631,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         if stop is not None:
             text = enforce_stop_tokens(text, stop)
 
-        llm_output = {"usage": usage_info, "stop_reason": stop_reason}
+        llm_output = {"usage": usage_info, "stop_reason": stop_reason, "model_id": self.model_id}
 
         # Verify and raise a callback error if any intervention occurs or a signal is
         # sent from a Bedrock service,
