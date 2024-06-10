@@ -417,32 +417,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
         extra = Extra.forbid
 
-    # def _format_anthropic_params(
-    #     self,
-    #     *,
-    #     messages: List[BaseMessage],
-    #     stop: Optional[List[str]] = None,
-    #     **kwargs: Dict,
-    # ) -> Dict:
-    #     # get system prompt if any
-    #     system, formatted_messages = _format_anthropic_messages(messages)
-    #     stop_sequences = stop or self.stop_sequences
-    #     rtn = {
-    #         "model": self.model,
-    #         "max_tokens": self.max_tokens,
-    #         "messages": formatted_messages,
-    #         "temperature": self.temperature,
-    #         "top_k": self.top_k,
-    #         "top_p": self.top_p,
-    #         "stop_sequences": stop_sequences,
-    #         "system": system,
-    #         **self.model_kwargs,
-    #         **kwargs,
-    #     }
-    #     rtn = {k: v for k, v in rtn.items() if v is not None}
-
-    #     return rtn
-
     def _stream(
         self,
         messages: List[BaseMessage],
