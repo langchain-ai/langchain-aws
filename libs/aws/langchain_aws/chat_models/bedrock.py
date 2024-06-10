@@ -29,12 +29,18 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
 )
+from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.pydantic_v1 import BaseModel, Extra
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 
-from langchain_aws.function_calling import convert_to_anthropic_tool, get_system_message
+from langchain_aws.function_calling import (
+    _lc_tool_calls_to_anthropic_tool_use_blocks,
+    convert_to_anthropic_tool,
+    get_system_message,
+    _tools_in_params,
+)
 from langchain_aws.llms.bedrock import (
     BedrockBase,
     _combine_generation_info_for_llm_result,
@@ -197,6 +203,42 @@ def _format_image(image_url: str) -> Dict:
     }
 
 
+def _merge_messages(
+    messages: Sequence[BaseMessage],
+) -> List[Union[SystemMessage, AIMessage, HumanMessage]]:
+    """Merge runs of human/tool messages into single human messages with content blocks."""  # noqa: E501
+    merged: list = []
+    for curr in messages:
+        curr = curr.copy(deep=True)
+        if isinstance(curr, ToolMessage):
+            if isinstance(curr.content, str):
+                curr = HumanMessage(  # type: ignore[misc]
+                    [
+                        {
+                            "type": "tool_result",
+                            "content": curr.content,
+                            "tool_use_id": curr.tool_call_id,
+                        }
+                    ]
+                )
+            else:
+                curr = HumanMessage(curr.content)  # type: ignore[misc]
+        last = merged[-1] if merged else None
+        if isinstance(last, HumanMessage) and isinstance(curr, HumanMessage):
+            if isinstance(last.content, str):
+                new_content: List = [{"type": "text", "text": last.content}]
+            else:
+                new_content = last.content
+            if isinstance(curr.content, str):
+                new_content.append({"type": "text", "text": curr.content})
+            else:
+                new_content.extend(curr.content)
+            last.content = new_content
+        else:
+            merged.append(curr)
+    return merged
+
+
 def _format_anthropic_messages(
     messages: List[BaseMessage],
 ) -> Tuple[Optional[str], List[Dict]]:
@@ -204,16 +246,18 @@ def _format_anthropic_messages(
 
     """
     [
-        {
-            "role": _message_type_lookups[m.type],
-            "content": [_AnthropicMessageContent(text=m.content).dict()],
-        }
-        for m in messages
-    ]
+                {
+                    "role": _message_type_lookups[m.type],
+                    "content": [_AnthropicMessageContent(text=m.content).dict()],
+                }
+                for m in messages
+            ]
     """
     system: Optional[str] = None
     formatted_messages: List[Dict] = []
-    for i, message in enumerate(messages):
+
+    merged_messages = _merge_messages(messages)
+    for i, message in enumerate(merged_messages):
         if message.type == "system":
             if i != 0:
                 raise ValueError("System message must be at beginning of message list.")
@@ -226,7 +270,7 @@ def _format_anthropic_messages(
             continue
 
         role = _message_type_lookups[message.type]
-        content: Union[str, List[Dict]]
+        content: Union[str, List]
 
         if not isinstance(message.content, str):
             # parse as dict
@@ -238,39 +282,58 @@ def _format_anthropic_messages(
             content = []
             for item in message.content:
                 if isinstance(item, str):
-                    content.append(
-                        {
-                            "type": "text",
-                            "text": item,
-                        }
-                    )
+                    content.append({"type": "text", "text": item})
                 elif isinstance(item, dict):
                     if "type" not in item:
                         raise ValueError("Dict content item must have a type key")
-                    if item["type"] == "image_url":
+                    elif item["type"] == "image_url":
                         # convert format
                         source = _format_image(item["image_url"]["url"])
-                        content.append(
-                            {
-                                "type": "image",
-                                "source": source,
-                            }
-                        )
+                        content.append({"type": "image", "source": source})
+                    elif item["type"] == "tool_use":
+                        # If a tool_call with the same id as a tool_use content block
+                        # exists, the tool_call is preferred.
+                        if isinstance(message, AIMessage) and item["id"] in [
+                            tc["id"] for tc in message.tool_calls
+                        ]:
+                            overlapping = [
+                                tc
+                                for tc in message.tool_calls
+                                if tc["id"] == item["id"]
+                            ]
+                            content.extend(
+                                _lc_tool_calls_to_anthropic_tool_use_blocks(overlapping)
+                            )
+                        else:
+                            item.pop("text", None)
+                            content.append(item)
+                    elif item["type"] == "text":
+                        text = item.get("text", "")
+                        # Only add non-empty strings for now as empty ones are not
+                        # accepted.
+                        # https://github.com/anthropics/anthropic-sdk-python/issues/461
+                        if text.strip():
+                            content.append({"type": "text", "text": text})
                     else:
                         content.append(item)
                 else:
                     raise ValueError(
                         f"Content items must be str or dict, instead was: {type(item)}"
                     )
+        elif isinstance(message, AIMessage) and message.tool_calls:
+            content = (
+                []
+                if not message.content
+                else [{"type": "text", "text": message.content}]
+            )
+            # Note: Anthropic can't have invalid tool calls as presently defined,
+            # since the model already returns dicts args not JSON strings, and invalid
+            # tool calls are those with invalid JSON for args.
+            content += _lc_tool_calls_to_anthropic_tool_use_blocks(message.tool_calls)
         else:
             content = message.content
 
-        formatted_messages.append(
-            {
-                "role": role,
-                "content": content,
-            }
-        )
+        formatted_messages.append({"role": role, "content": content})
     return system, formatted_messages
 
 
@@ -367,6 +430,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             system, formatted_messages = ChatPromptAdapter.format_messages(
                 provider, messages
             )
+            # use tools the new way with claude 3
+            if "claude-3" in self._get_model():
+                if _tools_in_params()
             if self.system_prompt_with_tools:
                 if system:
                     system = self.system_prompt_with_tools + f"\n{system}"
@@ -423,6 +489,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 system, formatted_messages = ChatPromptAdapter.format_messages(
                     provider, messages
                 )
+                # use tools the new way with claude 3
                 if self.system_prompt_with_tools:
                     if system:
                         system = self.system_prompt_with_tools + f"\n{system}"
@@ -436,7 +503,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             if stop:
                 params["stop_sequences"] = stop
 
-            completion, llm_output = self._prepare_input_and_invoke(
+            completion, tool_calls, llm_output = self._prepare_input_and_invoke(
                 prompt=prompt,
                 stop=stop,
                 run_manager=run_manager,
@@ -446,10 +513,18 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
 
         llm_output["model_id"] = self.model_id
+        if len(tool_calls) > 0:
+            msg = AIMessage(
+                content=completion,
+                additional_kwargs=llm_output,
+                tool_calls=cast(List[ToolCall], tool_calls),
+            )
+        else:
+            msg = AIMessage(content=completion, additional_kwargs=llm_output)
         return ChatResult(
             generations=[
                 ChatGeneration(
-                    message=AIMessage(content=completion, additional_kwargs=llm_output)
+                    message=msg,
                 )
             ],
             llm_output=llm_output,
@@ -511,6 +586,25 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
         if provider == "anthropic":
             formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
+
+            # true if the model is a claude 3 model
+            if "claude-3" in self._get_model():
+                if not tool_choice:
+                    pass
+                elif isinstance(tool_choice, dict):
+                    kwargs["tool_choice"] = tool_choice
+                elif isinstance(tool_choice, str) and tool_choice in ("any", "auto"):
+                    kwargs["tool_choice"] = {"type": tool_choice}
+                elif isinstance(tool_choice, str):
+                    kwargs["tool_choice"] = {"type": "tool", "name": tool_choice}
+                else:
+                    raise ValueError(
+                        f"Unrecognized 'tool_choice' type {tool_choice=}."
+                        f"Expected dict, str, or None."
+                    )
+                return self.bind(tools=formatted_tools, **kwargs)
+
+            # add tools to the system prompt, the old way
             system_formatted_tools = get_system_message(formatted_tools)
             self.set_system_prompt_with_tools(system_formatted_tools)
         return self
