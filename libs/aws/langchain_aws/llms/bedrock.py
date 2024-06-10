@@ -9,7 +9,6 @@ from typing import (
     Dict,
     Iterator,
     List,
-    Literal,
     Mapping,
     Optional,
     Tuple,
@@ -89,7 +88,6 @@ def _stream_response_to_generation_chunk(
     provider: str,
     output_key: str,
     messages_api: bool,
-    claude_3: bool = False,
 ) -> Union[GenerationChunk, None]:
     """Convert a stream response to a generation chunk."""
     if messages_api:
@@ -191,13 +189,6 @@ def extract_tool_calls(content: List[dict]) -> List[ToolCall]:
             ToolCall(name=block["name"], args=block["input"], id=block["id"])
         )
     return tool_calls
-
-
-class _AnthropicToolUse(TypedDict):
-    type: Literal["tool_use"]
-    name: str
-    input: dict
-    id: str
 
 
 class AnthropicTool(TypedDict):
@@ -305,7 +296,6 @@ class LLMInputOutputAdapter:
         cls,
         provider: str,
         response: Any,
-        claude_3: bool = False,
         stop: Optional[List[str]] = None,
         messages_api: bool = False,
     ) -> Iterator[GenerationChunk]:
@@ -350,7 +340,6 @@ class LLMInputOutputAdapter:
                 provider=provider,
                 output_key=output_key,
                 messages_api=messages_api,
-                claude_3=claude_3,
             )
             if generation_chunk:
                 yield generation_chunk
@@ -764,6 +753,13 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         params = {**_model_kwargs, **kwargs}
 
+        input_body = LLMInputOutputAdapter.prepare_input(
+            provider=provider,
+            prompt=prompt,
+            system=system,
+            messages=messages,
+            model_kwargs=params,
+        )
         if "claude-3" in self._get_model():
             if _tools_in_params(params):
                 input_body = LLMInputOutputAdapter.prepare_input(
@@ -774,14 +770,6 @@ class BedrockBase(BaseLanguageModel, ABC):
                     messages=messages,
                     tools=params["tools"],
                 )
-
-        input_body = LLMInputOutputAdapter.prepare_input(
-            provider=provider,
-            prompt=prompt,
-            system=system,
-            messages=messages,
-            model_kwargs=params,
-        )
         body = json.dumps(input_body)
 
         request_options = {
@@ -812,7 +800,6 @@ class BedrockBase(BaseLanguageModel, ABC):
             response,
             stop,
             True if messages else False,
-            claude_3=True if "claude-3" in self._get_model() else False,
         ):
             yield chunk
             # verify and raise callback error if any middleware intervened
@@ -880,7 +867,6 @@ class BedrockBase(BaseLanguageModel, ABC):
             response,
             stop,
             True if messages else False,
-            claude_3=True if "claude-3" in self._get_model() else False,
         ):
             yield chunk
             if run_manager is not None and asyncio.iscoroutinefunction(

@@ -1,3 +1,4 @@
+import json
 import re
 from collections import defaultdict
 from typing import (
@@ -37,9 +38,9 @@ from langchain_core.tools import BaseTool
 
 from langchain_aws.function_calling import (
     _lc_tool_calls_to_anthropic_tool_use_blocks,
+    _tools_in_params,
     convert_to_anthropic_tool,
     get_system_message,
-    _tools_in_params,
 )
 from langchain_aws.llms.bedrock import (
     BedrockBase,
@@ -416,6 +417,32 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
         extra = Extra.forbid
 
+    # def _format_anthropic_params(
+    #     self,
+    #     *,
+    #     messages: List[BaseMessage],
+    #     stop: Optional[List[str]] = None,
+    #     **kwargs: Dict,
+    # ) -> Dict:
+    #     # get system prompt if any
+    #     system, formatted_messages = _format_anthropic_messages(messages)
+    #     stop_sequences = stop or self.stop_sequences
+    #     rtn = {
+    #         "model": self.model,
+    #         "max_tokens": self.max_tokens,
+    #         "messages": formatted_messages,
+    #         "temperature": self.temperature,
+    #         "top_k": self.top_k,
+    #         "top_p": self.top_p,
+    #         "stop_sequences": stop_sequences,
+    #         "system": system,
+    #         **self.model_kwargs,
+    #         **kwargs,
+    #     }
+    #     rtn = {k: v for k, v in rtn.items() if v is not None}
+
+    #     return rtn
+
     def _stream(
         self,
         messages: List[BaseMessage],
@@ -426,13 +453,38 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         provider = self._get_provider()
         prompt, system, formatted_messages = None, None, None
 
+        if "claude-3" in self._get_model():
+            if _tools_in_params({**kwargs}):
+                result = self._generate(
+                    messages, stop=stop, run_manager=run_manager, **kwargs
+                )
+                message = result.generations[0].message
+                if isinstance(message, AIMessage) and message.tool_calls is not None:
+                    tool_call_chunks = [
+                        {
+                            "name": tool_call["name"],
+                            "args": json.dumps(tool_call["args"]),
+                            "id": tool_call["id"],
+                            "index": idx,
+                        }
+                        for idx, tool_call in enumerate(message.tool_calls)
+                    ]
+                    message_chunk = AIMessageChunk(
+                        content=message.content,
+                        tool_call_chunks=tool_call_chunks,  # type: ignore[arg-type]
+                        usage_metadata=message.usage_metadata,
+                    )
+                    yield ChatGenerationChunk(message=message_chunk)
+                else:
+                    yield cast(ChatGenerationChunk, result.generations[0])
+                return
         if provider == "anthropic":
             system, formatted_messages = ChatPromptAdapter.format_messages(
                 provider, messages
             )
             # use tools the new way with claude 3
-            if "claude-3" in self._get_model():
-                if _tools_in_params()
+            # if "claude-3" in self._get_model():
+            #     if _tools_in_params()
             if self.system_prompt_with_tools:
                 if system:
                     system = self.system_prompt_with_tools + f"\n{system}"
@@ -469,6 +521,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     ) -> ChatResult:
         completion = ""
         llm_output: Dict[str, Any] = {}
+        tool_calls: List[Dict[str, Any]] = []
         provider_stop_reason_code = self.provider_stop_reason_key_map.get(
             self._get_provider(), "stop_reason"
         )
@@ -477,6 +530,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             for chunk in self._stream(messages, stop, run_manager, **kwargs):
                 completion += chunk.text
                 response_metadata.append(chunk.message.response_metadata)
+                if "tool_calls" in chunk.message.additional_kwargs.keys():
+                    tool_calls = chunk.message.additional_kwargs["tool_calls"]
             llm_output = _combine_generation_info_for_llm_result(
                 response_metadata, provider_stop_reason_code
             )
