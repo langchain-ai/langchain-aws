@@ -4,6 +4,7 @@ from typing import Any, cast
 
 import pytest
 from langchain_core.messages import (
+    AIMessage,
     AIMessageChunk,
     BaseMessage,
     HumanMessage,
@@ -12,6 +13,7 @@ from langchain_core.messages import (
 from langchain_core.outputs import ChatGeneration, LLMResult
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import tool
 
 from langchain_aws.chat_models.bedrock import ChatBedrock
 from tests.callbacks import FakeCallbackHandler, FakeCallbackHandlerWithTokenCounts
@@ -195,6 +197,34 @@ def test_function_call_invoke_with_system(chat: ChatBedrock) -> None:
     response = llm_with_tools.invoke(messages)
     assert isinstance(response, BaseMessage)
     assert isinstance(response.content, str)
+
+
+@pytest.mark.scheduled
+def test_tool_use_call_invoke() -> None:
+    chat = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_kwargs={"temperature": 0.001},
+    )
+
+    class GetWeather(BaseModel):
+        location: str = Field(..., description="The city and state")
+
+    @tool(args_schema=GetWeather)
+    def get_weather(location: str) -> str:
+        """Useful for getting the weather in a location."""
+        return f"The weather in {location} is nice."
+
+    llm_with_tools = chat.bind_tools([get_weather])
+
+    messages = [HumanMessage(content="what is the weather like in San Francisco CA")]
+
+    response = llm_with_tools.invoke(messages)
+    assert isinstance(response, AIMessage)
+    assert "tool_calls" in response.__dict__.keys()
+    tool_calls = response.tool_calls
+    assert isinstance(tool_calls, list)
+    tool_name = tool_calls[0]["name"]
+    assert tool_name == "get_weather"
 
 
 @pytest.mark.scheduled
