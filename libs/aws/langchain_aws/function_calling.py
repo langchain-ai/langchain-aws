@@ -10,8 +10,10 @@ from typing import (
     Literal,
     Type,
     Union,
+    cast,
 )
 
+from langchain_core.messages.tool import ToolCall
 from langchain_core.pydantic_v1 import BaseModel
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
@@ -61,6 +63,35 @@ class AnthropicTool(TypedDict):
     name: str
     description: str
     input_schema: Dict[str, Any]
+
+
+def _tools_in_params(params: dict) -> bool:
+    return "tools" in params or (
+        "extra_body" in params and params["extra_body"].get("tools")
+    )
+
+
+class _AnthropicToolUse(TypedDict):
+    type: Literal["tool_use"]
+    name: str
+    input: dict
+    id: str
+
+
+def _lc_tool_calls_to_anthropic_tool_use_blocks(
+    tool_calls: List[ToolCall],
+) -> List[_AnthropicToolUse]:
+    blocks = []
+    for tool_call in tool_calls:
+        blocks.append(
+            _AnthropicToolUse(
+                type="tool_use",
+                name=tool_call["name"],
+                input=tool_call["args"],
+                id=cast(str, tool_call["id"]),
+            )
+        )
+    return blocks
 
 
 def _get_type(parameter: Dict[str, Any]) -> str:
