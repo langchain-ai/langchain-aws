@@ -1,5 +1,5 @@
 """Test Bedrock chat model."""
-
+import json
 from typing import Any, cast
 
 import pytest
@@ -13,7 +13,6 @@ from langchain_core.messages import (
 from langchain_core.outputs import ChatGeneration, LLMResult
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.runnables import RunnableConfig
-from langchain_core.tools import tool
 
 from langchain_aws.chat_models.bedrock import ChatBedrock
 from tests.callbacks import FakeCallbackHandler, FakeCallbackHandlerWithTokenCounts
@@ -21,7 +20,10 @@ from tests.callbacks import FakeCallbackHandler, FakeCallbackHandlerWithTokenCou
 
 @pytest.fixture
 def chat() -> ChatBedrock:
-    return ChatBedrock(model_id="anthropic.claude-v2", model_kwargs={"temperature": 0})  # type: ignore[call-arg]
+    return ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_kwargs={"temperature": 0},
+    )  # type: ignore[call-arg]
 
 
 @pytest.mark.scheduled
@@ -182,6 +184,65 @@ def test_bedrock_invoke(chat: ChatBedrock) -> None:
     assert result.additional_kwargs["usage"]["prompt_tokens"] == 13
 
 
+class GetWeather(BaseModel):
+    """Useful for getting the weather in a location."""
+
+    location: str = Field(..., description="The city and state")
+
+
+@pytest.mark.scheduled
+def test_tool_use_call_invoke() -> None:
+    chat = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_kwargs={"temperature": 0.001},
+    )  # type: ignore[call-arg]
+
+    llm_with_tools = chat.bind_tools([GetWeather])
+
+    messages = [HumanMessage(content="what is the weather like in San Francisco CA")]
+
+    response = llm_with_tools.invoke(messages)
+    assert isinstance(response, AIMessage)
+    assert isinstance(response.tool_calls, list)
+    assert len(response.tool_calls) == 1
+    tool_call = response.tool_calls[0]
+    assert tool_call["name"] == "GetWeather"
+    assert isinstance(tool_call["args"], dict)
+    assert "location" in tool_call["args"]
+
+    # Test streaming
+    first = True
+    for chunk in llm_with_tools.stream("what's the weather in san francisco, ca"):
+        if first:
+            gathered = chunk
+            first = False
+        else:
+            gathered = gathered + chunk  # type: ignore
+    assert isinstance(gathered, AIMessageChunk)
+    assert isinstance(gathered.tool_call_chunks, list)
+    assert len(gathered.tool_call_chunks) == 1
+    tool_call_chunk = gathered.tool_call_chunks[0]
+    assert tool_call_chunk["name"] == "GetWeather"
+    assert isinstance(tool_call_chunk["args"], str)
+    assert "location" in json.loads(tool_call_chunk["args"])
+
+
+@pytest.mark.parametrize("tool_choice", ["GetWeather", "auto", "any"])
+def test_anthropic_bind_tools_tool_choice(tool_choice: str) -> None:
+    chat = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_kwargs={"temperature": 0.001},
+    )  # type: ignore[call-arg]
+    chat_model_with_tools = chat.bind_tools([GetWeather], tool_choice=tool_choice)
+    response = chat_model_with_tools.invoke("what's the weather in ny and la")
+    assert isinstance(response, AIMessage)
+    assert response.tool_calls
+    tool_call = response.tool_calls[0]
+    assert tool_call["name"] == "GetWeather"
+    assert isinstance(tool_call["args"], dict)
+    assert "location" in tool_call["args"]
+
+
 @pytest.mark.scheduled
 def test_function_call_invoke_with_system(chat: ChatBedrock) -> None:
     class GetWeather(BaseModel):
@@ -197,34 +258,6 @@ def test_function_call_invoke_with_system(chat: ChatBedrock) -> None:
     response = llm_with_tools.invoke(messages)
     assert isinstance(response, BaseMessage)
     assert isinstance(response.content, str)
-
-
-@pytest.mark.scheduled
-def test_tool_use_call_invoke() -> None:
-    chat = ChatBedrock(
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
-        model_kwargs={"temperature": 0.001},
-    )  # type: ignore[call-arg]
-
-    class GetWeather(BaseModel):
-        location: str = Field(..., description="The city and state")
-
-    @tool(args_schema=GetWeather)
-    def get_weather(location: str) -> str:
-        """Useful for getting the weather in a location."""
-        return f"The weather in {location} is nice."
-
-    llm_with_tools = chat.bind_tools([get_weather])
-
-    messages = [HumanMessage(content="what is the weather like in San Francisco CA")]
-
-    response = llm_with_tools.invoke(messages)
-    assert isinstance(response, AIMessage)
-    assert "tool_calls" in response.__dict__.keys()
-    tool_calls = response.tool_calls
-    assert isinstance(tool_calls, list)
-    tool_name = tool_calls[0]["name"]
-    assert tool_name == "get_weather"
 
 
 @pytest.mark.scheduled
