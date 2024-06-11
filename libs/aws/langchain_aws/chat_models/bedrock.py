@@ -244,16 +244,6 @@ def _format_anthropic_messages(
     messages: List[BaseMessage],
 ) -> Tuple[Optional[str], List[Dict]]:
     """Format messages for anthropic."""
-
-    """
-    [
-                {
-                    "role": _message_type_lookups[m.type],
-                    "content": [_AnthropicMessageContent(text=m.content).dict()],
-                }
-                for m in messages
-            ]
-    """
     system: Optional[str] = None
     formatted_messages: List[Dict] = []
 
@@ -611,9 +601,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             **kwargs: Any additional parameters to pass to the
                 :class:`~langchain.runnable.Runnable` constructor.
         """
-        provider = self._get_provider()
-
-        if provider == "anthropic":
+        if self._get_provider() == "anthropic":
             formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
 
             # true if the model is a claude 3 model
@@ -632,10 +620,10 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                         f"Expected dict, str, or None."
                     )
                 return self.bind(tools=formatted_tools, **kwargs)
-
-            # add tools to the system prompt, the old way
-            system_formatted_tools = get_system_message(formatted_tools)
-            self.set_system_prompt_with_tools(system_formatted_tools)
+            else:
+                # add tools to the system prompt, the old way
+                system_formatted_tools = get_system_message(formatted_tools)
+                self.set_system_prompt_with_tools(system_formatted_tools)
         return self
 
 
