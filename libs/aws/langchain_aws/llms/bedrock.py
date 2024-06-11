@@ -624,6 +624,13 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         provider = self._get_provider()
         params = {**_model_kwargs, **kwargs}
+        input_body = LLMInputOutputAdapter.prepare_input(
+            provider=provider,
+            model_kwargs=params,
+            prompt=prompt,
+            system=system,
+            messages=messages,
+        )
         if "claude-3" in self._get_model():
             if _tools_in_params(params):
                 input_body = LLMInputOutputAdapter.prepare_input(
@@ -634,14 +641,6 @@ class BedrockBase(BaseLanguageModel, ABC):
                     messages=messages,
                     tools=params["tools"],
                 )
-        else:
-            input_body = LLMInputOutputAdapter.prepare_input(
-                provider=provider,
-                model_kwargs=params,
-                prompt=prompt,
-                system=system,
-                messages=messages,
-            )
         body = json.dumps(input_body)
         accept = "application/json"
         contentType = "application/json"

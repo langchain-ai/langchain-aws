@@ -1,6 +1,8 @@
 import json
 import re
+import warnings
 from collections import defaultdict
+from operator import itemgetter
 from typing import (
     Any,
     Callable,
@@ -33,10 +35,11 @@ from langchain_core.messages import (
 from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.pydantic_v1 import BaseModel, Extra
-from langchain_core.runnables import Runnable
+from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 
 from langchain_aws.function_calling import (
+    ToolsOutputParser,
     _lc_tool_calls_to_anthropic_tool_use_blocks,
     _tools_in_params,
     convert_to_anthropic_tool,
@@ -622,6 +625,142 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 system_formatted_tools = get_system_message(formatted_tools)
                 self.set_system_prompt_with_tools(system_formatted_tools)
         return self
+
+    def with_structured_output(
+        self,
+        schema: Union[Dict, Type[BaseModel]],
+        *,
+        include_raw: bool = False,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
+        """Model wrapper that returns outputs formatted to match the given schema.
+
+        Args:
+            schema: The output schema as a dict or a Pydantic class. If a Pydantic class
+                then the model output will be an object of that class. If a dict then
+                the model output will be a dict. With a Pydantic class the returned
+                attributes will be validated, whereas with a dict they will not be.
+            include_raw: If False then only the parsed structured output is returned. If
+                an error occurs during model output parsing it will be raised. If True
+                then both the raw model response (a BaseMessage) and the parsed model
+                response will be returned. If an error occurs during output parsing it
+                will be caught and returned as well. The final output is always a dict
+                with keys "raw", "parsed", and "parsing_error".
+
+        Returns:
+            A Runnable that takes any ChatModel input. The output type depends on
+            include_raw and schema.
+
+            If include_raw is True then output is a dict with keys:
+                raw: BaseMessage,
+                parsed: Optional[_DictOrPydantic],
+                parsing_error: Optional[BaseException],
+
+            If include_raw is False and schema is a Dict then the runnable outputs a Dict.
+            If include_raw is False and schema is a Type[BaseModel] then the runnable
+            outputs a BaseModel.
+
+        Example: Pydantic schema (include_raw=False):
+            .. code-block:: python
+
+                from langchain_aws.chat_models.bedrock import ChatBedrock
+                from langchain_core.pydantic_v1 import BaseModel
+
+                class AnswerWithJustification(BaseModel):
+                    '''An answer to the user question along with justification for the answer.'''
+                    answer: str
+                    justification: str
+
+                llm =ChatBedrock(
+                    model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+                    model_kwargs={"temperature": 0.001},
+                )  # type: ignore[call-arg]
+                structured_llm = llm.with_structured_output(AnswerWithJustification)
+
+                structured_llm.invoke("What weighs more a pound of bricks or a pound of feathers")
+
+                # -> AnswerWithJustification(
+                #     answer='They weigh the same',
+                #     justification='Both a pound of bricks and a pound of feathers weigh one pound. The weight is the same, but the volume or density of the objects may differ.'
+                # )
+
+        Example:  Pydantic schema (include_raw=True):
+            .. code-block:: python
+
+                from langchain_aws.chat_models.bedrock import ChatBedrock
+                from langchain_core.pydantic_v1 import BaseModel
+
+                class AnswerWithJustification(BaseModel):
+                    '''An answer to the user question along with justification for the answer.'''
+                    answer: str
+                    justification: str
+
+                llm =ChatBedrock(
+                    model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+                    model_kwargs={"temperature": 0.001},
+                )  # type: ignore[call-arg]
+                structured_llm = llm.with_structured_output(AnswerWithJustification, include_raw=True)
+
+                structured_llm.invoke("What weighs more a pound of bricks or a pound of feathers")
+                # -> {
+                #     'raw': AIMessage(content='', additional_kwargs={'tool_calls': [{'id': 'call_Ao02pnFYXD6GN1yzc0uXPsvF', 'function': {'arguments': '{"answer":"They weigh the same.","justification":"Both a pound of bricks and a pound of feathers weigh one pound. The weight is the same, but the volume or density of the objects may differ."}', 'name': 'AnswerWithJustification'}, 'type': 'function'}]}),
+                #     'parsed': AnswerWithJustification(answer='They weigh the same.', justification='Both a pound of bricks and a pound of feathers weigh one pound. The weight is the same, but the volume or density of the objects may differ.'),
+                #     'parsing_error': None
+                # }
+
+        Example: Dict schema (include_raw=False):
+            .. code-block:: python
+
+                from langchain_aws.chat_models.bedrock import ChatBedrock
+
+                schema = {
+                    "name": "AnswerWithJustification",
+                    "description": "An answer to the user question along with justification for the answer.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "answer": {"type": "string"},
+                            "justification": {"type": "string"},
+                        },
+                        "required": ["answer", "justification"]
+                    }
+                }
+                llm =ChatBedrock(
+                    model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+                    model_kwargs={"temperature": 0.001},
+                )  # type: ignore[call-arg]
+                structured_llm = llm.with_structured_output(schema)
+
+                structured_llm.invoke("What weighs more a pound of bricks or a pound of feathers")
+                # -> {
+                #     'answer': 'They weigh the same',
+                #     'justification': 'Both a pound of bricks and a pound of feathers weigh one pound. The weight is the same, but the volume and density of the two substances differ.'
+                # }
+
+        """  # noqa: E501
+        if "claude-3" not in self._get_model():
+            warnings.warn(
+                "Structured output is only supported for claude-3 models on Bedrock."
+            )
+        llm = self.bind_tools([schema], tool_choice="any")
+        if isinstance(schema, type) and issubclass(schema, BaseModel):
+            output_parser = ToolsOutputParser(
+                first_tool_only=True, pydantic_schemas=[schema]
+            )
+        else:
+            output_parser = ToolsOutputParser(first_tool_only=True, args_only=True)
+
+        if include_raw:
+            parser_assign = RunnablePassthrough.assign(
+                parsed=itemgetter("raw") | output_parser, parsing_error=lambda _: None
+            )
+            parser_none = RunnablePassthrough.assign(parsed=lambda _: None)
+            parser_with_fallback = parser_assign.with_fallbacks(
+                [parser_none], exception_key="parsing_error"
+            )
+            return RunnableMap(raw=llm) | parser_with_fallback
+        else:
+            return llm | output_parser
 
 
 @deprecated(since="0.1.0", removal="0.2.0", alternative="ChatBedrock")

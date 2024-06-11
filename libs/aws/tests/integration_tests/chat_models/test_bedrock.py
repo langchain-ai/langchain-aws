@@ -59,7 +59,7 @@ def test_chat_bedrock_generate_with_token_usage(chat: ChatBedrock) -> None:
     assert isinstance(response.llm_output, dict)
 
     usage = response.llm_output["usage"]
-    assert usage["prompt_tokens"] == 20
+    assert usage["prompt_tokens"] == 16
     assert usage["completion_tokens"] > 0
     assert usage["total_tokens"] > 0
 
@@ -181,7 +181,7 @@ def test_bedrock_invoke(chat: ChatBedrock) -> None:
     result = chat.invoke("I'm Pickle Rick", config=dict(tags=["foo"]))
     assert isinstance(result.content, str)
     assert "usage" in result.additional_kwargs
-    assert result.additional_kwargs["usage"]["prompt_tokens"] == 13
+    assert result.additional_kwargs["usage"]["prompt_tokens"] == 12
 
 
 class GetWeather(BaseModel):
