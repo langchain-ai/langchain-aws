@@ -190,6 +190,28 @@ class GetWeather(BaseModel):
     location: str = Field(..., description="The city and state")
 
 
+class AnswerWithJustification(BaseModel):
+    """An answer to the user question along with justification for the answer."""
+
+    answer: str
+    justification: str
+
+
+@pytest.mark.scheduled
+def test_structured_output() -> None:
+    chat = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_kwargs={"temperature": 0.001},
+    )  # type: ignore[call-arg]
+    structured_llm = chat.with_structured_output(AnswerWithJustification)
+
+    response = structured_llm.invoke(
+        "What weighs more a pound of bricks or a pound of feathers"
+    )
+
+    assert isinstance(response, AnswerWithJustification)
+
+
 @pytest.mark.scheduled
 def test_tool_use_call_invoke() -> None:
     chat = ChatBedrock(

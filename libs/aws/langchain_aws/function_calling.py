@@ -17,6 +17,7 @@ from typing import (
 from langchain_core.messages import ToolCall
 from langchain_core.output_parsers import BaseGenerationOutputParser
 from langchain_core.outputs import ChatGeneration, Generation
+from langchain_core.prompts.chat import AIMessage
 from langchain_core.pydantic_v1 import BaseModel
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
@@ -177,17 +178,13 @@ class ToolsOutputParser(BaseGenerationOutputParser):
         if not result or not isinstance(result[0], ChatGeneration):
             return None if self.first_tool_only else []
         message = result[0].message
-        if isinstance(message.content, str):
+        if len(message.content) > 0:
             tool_calls: List = []
         else:
-            content: List = message.content
-            _tool_calls = [dict(tc) for tc in extract_tool_calls(content)]
+            content = cast(AIMessage, message)
+            _tool_calls = [dict(tc) for tc in content.tool_calls]
             # Map tool call id to index
-            id_to_index = {
-                block["id"]: i
-                for i, block in enumerate(content)
-                if block["type"] == "tool_use"
-            }
+            id_to_index = {block["id"]: i for i, block in enumerate(_tool_calls)}
             tool_calls = [{**tc, "index": id_to_index[tc["id"]]} for tc in _tool_calls]
         if self.pydantic_schemas:
             tool_calls = [self._pydantic_parse(tc) for tc in tool_calls]
@@ -206,17 +203,6 @@ class ToolsOutputParser(BaseGenerationOutputParser):
             tool_call["name"]
         ]
         return cls_(**tool_call["args"])
-
-
-def extract_tool_calls(content: List[dict]) -> List[ToolCall]:
-    tool_calls = []
-    for block in content:
-        if block["type"] != "tool_use":
-            continue
-        tool_calls.append(
-            ToolCall(name=block["name"], args=block["input"], id=block["id"])
-        )
-    return tool_calls
 
 
 def convert_to_anthropic_tool(
