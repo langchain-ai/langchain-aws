@@ -2,6 +2,7 @@
 
 from typing import Any, Callable, Dict, Literal, Type, cast
 
+import boto3
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.pydantic_v1 import BaseModel, Field
@@ -373,7 +374,10 @@ class GetWeather(BaseModel):
 
 
 def test_anthropic_bind_tools_tool_choice() -> None:
-    chat_model = ChatBedrock(model_id="anthropic.claude-3-opus-20240229")  # type: ignore[call-arg]
+    chat_model = ChatBedrock(
+        model_id="anthropic.claude-3-opus-20240229",
+        client=boto3.Session().client("bedrock-runtime"),
+    )  # type: ignore[call-arg]
     chat_model_with_tools = chat_model.bind_tools(
         [GetWeather], tool_choice={"type": "tool", "name": "GetWeather"}
     )
