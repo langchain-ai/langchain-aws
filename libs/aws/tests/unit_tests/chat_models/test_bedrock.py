@@ -9,7 +9,10 @@ from langchain_core.runnables import RunnableBinding
 from langchain_core.tools import BaseTool
 
 from langchain_aws import ChatBedrock
-from langchain_aws.chat_models.bedrock import _merge_messages
+from langchain_aws.chat_models.bedrock import (
+    _format_anthropic_messages,
+    _merge_messages,
+)
 from langchain_aws.function_calling import convert_to_anthropic_tool
 
 
@@ -93,6 +96,165 @@ def test__merge_messages_mutation() -> None:
     actual = _merge_messages(messages)
     assert expected == actual
     assert messages == original_messages
+
+
+def test__format_anthropic_messages_with_tool_calls() -> None:
+    system = SystemMessage("fuzz")  # type: ignore[misc]
+    human = HumanMessage("foo")  # type: ignore[misc]
+    ai = AIMessage(  # type: ignore[misc]
+        "",
+        tool_calls=[{"name": "bar", "id": "1", "args": {"baz": "buzz"}}],
+    )
+    tool = ToolMessage(  # type: ignore[misc]
+        "blurb",
+        tool_call_id="1",
+    )
+    messages = [system, human, ai, tool]
+    expected = (
+        "fuzz",
+        [
+            {"role": "user", "content": "foo"},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "bar",
+                        "id": "1",
+                        "input": {"baz": "buzz"},
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "content": "blurb", "tool_use_id": "1"}
+                ],
+            },
+        ],
+    )
+    actual = _format_anthropic_messages(messages)
+    assert expected == actual
+
+
+def test__format_anthropic_messages_with_str_content_and_tool_calls() -> None:
+    system = SystemMessage("fuzz")  # type: ignore[misc]
+    human = HumanMessage("foo")  # type: ignore[misc]
+    # If content and tool_calls are specified and content is a string, then both are
+    # included with content first.
+    ai = AIMessage(  # type: ignore[misc]
+        "thought",
+        tool_calls=[{"name": "bar", "id": "1", "args": {"baz": "buzz"}}],
+    )
+    tool = ToolMessage("blurb", tool_call_id="1")  # type: ignore[misc]
+    messages = [system, human, ai, tool]
+    expected = (
+        "fuzz",
+        [
+            {"role": "user", "content": "foo"},
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "thought"},
+                    {
+                        "type": "tool_use",
+                        "name": "bar",
+                        "id": "1",
+                        "input": {"baz": "buzz"},
+                    },
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "content": "blurb", "tool_use_id": "1"}
+                ],
+            },
+        ],
+    )
+    actual = _format_anthropic_messages(messages)
+    assert expected == actual
+
+
+def test__format_anthropic_messages_with_list_content_and_tool_calls() -> None:
+    system = SystemMessage("fuzz")  # type: ignore[misc]
+    human = HumanMessage("foo")  # type: ignore[misc]
+    # If content and tool_calls are specified and content is a list, then content is
+    # preferred.
+    ai = AIMessage(  # type: ignore[misc]
+        [{"type": "text", "text": "thought"}],
+        tool_calls=[{"name": "bar", "id": "1", "args": {"baz": "buzz"}}],
+    )
+    tool = ToolMessage(  # type: ignore[misc]
+        "blurb",
+        tool_call_id="1",
+    )
+    messages = [system, human, ai, tool]
+    expected = (
+        "fuzz",
+        [
+            {"role": "user", "content": "foo"},
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "thought"}],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "content": "blurb", "tool_use_id": "1"}
+                ],
+            },
+        ],
+    )
+    actual = _format_anthropic_messages(messages)
+    assert expected == actual
+
+
+def test__format_anthropic_messages_with_tool_use_blocks_and_tool_calls() -> None:
+    """Show that tool_calls are preferred to tool_use blocks when both have same id."""
+    system = SystemMessage("fuzz")  # type: ignore[misc]
+    human = HumanMessage("foo")  # type: ignore[misc]
+    # NOTE: tool_use block in contents and tool_calls have different arguments.
+    ai = AIMessage(  # type: ignore[misc]
+        [
+            {"type": "text", "text": "thought"},
+            {
+                "type": "tool_use",
+                "name": "bar",
+                "id": "1",
+                "input": {"baz": "NOT_BUZZ"},
+            },
+        ],
+        tool_calls=[{"name": "bar", "id": "1", "args": {"baz": "BUZZ"}}],
+    )
+    tool = ToolMessage("blurb", tool_call_id="1")  # type: ignore[misc]
+    messages = [system, human, ai, tool]
+    expected = (
+        "fuzz",
+        [
+            {"role": "user", "content": "foo"},
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "thought"},
+                    {
+                        "type": "tool_use",
+                        "name": "bar",
+                        "id": "1",
+                        "input": {"baz": "BUZZ"},  # tool_calls value preferred.
+                    },
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "content": "blurb", "tool_use_id": "1"}
+                ],
+            },
+        ],
+    )
+    actual = _format_anthropic_messages(messages)
+    assert expected == actual
 
 
 @pytest.fixture()
