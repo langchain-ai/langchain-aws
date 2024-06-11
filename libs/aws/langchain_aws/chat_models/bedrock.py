@@ -1,6 +1,5 @@
 import json
 import re
-import warnings
 from collections import defaultdict
 from operator import itemgetter
 from typing import (
@@ -215,7 +214,12 @@ def _merge_messages(
     for curr in messages:
         curr = curr.copy(deep=True)
         if isinstance(curr, ToolMessage):
-            if isinstance(curr.content, str):
+            if isinstance(curr.content, list) and all(
+                isinstance(block, dict) and block.get("type") == "tool_result"
+                for block in curr.content
+            ):
+                curr = HumanMessage(curr.content)  # type: ignore[misc]
+            else:
                 curr = HumanMessage(  # type: ignore[misc]
                     [
                         {
@@ -225,8 +229,6 @@ def _merge_messages(
                         }
                     ]
                 )
-            else:
-                curr = HumanMessage(curr.content)  # type: ignore[misc]
         last = merged[-1] if merged else None
         if isinstance(last, HumanMessage) and isinstance(curr, HumanMessage):
             if isinstance(last.content, str):
@@ -373,7 +375,12 @@ class ChatPromptAdapter:
         )
 
 
-_message_type_lookups = {"human": "user", "ai": "assistant"}
+_message_type_lookups = {
+    "human": "user",
+    "ai": "assistant",
+    "AIMessageChunk": "assistant",
+    "HumanMessageChunk": "user",
+}
 
 
 class ChatBedrock(BaseChatModel, BedrockBase):
@@ -739,8 +746,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
         """  # noqa: E501
         if "claude-3" not in self._get_model():
-            warnings.warn(
-                "Structured output is only supported for claude-3 models on Bedrock."
+            ValueError(
+                f"Structured output is not supported for model {self._get_model()}"
             )
         llm = self.bind_tools([schema], tool_choice="any")
         if isinstance(schema, type) and issubclass(schema, BaseModel):
