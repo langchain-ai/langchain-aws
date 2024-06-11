@@ -446,9 +446,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             system, formatted_messages = ChatPromptAdapter.format_messages(
                 provider, messages
             )
-            # use tools the new way with claude 3
-            # if "claude-3" in self._get_model():
-            #     if _tools_in_params()
             if self.system_prompt_with_tools:
                 if system:
                     system = self.system_prompt_with_tools + f"\n{system}"
