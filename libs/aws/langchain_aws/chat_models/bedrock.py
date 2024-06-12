@@ -274,6 +274,40 @@ def _format_anthropic_messages(
     return system, formatted_messages
 
 
+def _format_cohere_messages(
+    messages: List[BaseMessage],
+) -> Tuple[Optional[str], List[Dict]]:
+    """Format messages for cohere."""
+
+    """
+    {
+        "message": content,
+        "chat_history": [
+            {"role": "USER or CHATBOT", "message": message.content}
+            ]
+    }
+    """
+    content: Optional[str] = None
+    chat_history: List[Dict] = []
+    for i, message in enumerate(messages):
+        if message.type == "system":
+            if i != 0:
+                raise ValueError("System message must be at beginning of message list.")
+            if not isinstance(message.content, str):
+                raise ValueError(
+                    "System message must be a string, "
+                    f"instead was: {type(message.content)}"
+                )
+            chat_history.append({"role": "USER", "message": message.content})
+            continue
+        elif message.type == "ai":
+            chat_history.append({"role": "CHATBOT", "message": message.content})
+        elif message.type == "human":
+            chat_history.append({"role": "USER", "message": message.content})
+    content = str(messages[-1].content)
+    return content, chat_history
+
+
 class ChatPromptAdapter:
     """Adapter class to prepare the inputs from Langchain to prompt format
     that Chat model expects.
@@ -298,6 +332,12 @@ class ChatPromptAdapter:
                 human_prompt="\n\nUser:",
                 ai_prompt="\n\nBot:",
             )
+        elif provider == "cohere":
+            prompt = convert_messages_to_prompt_anthropic(
+                messages=messages,
+                human_prompt="\n\nUser:",
+                ai_prompt="\n\nBot:",
+            )
         else:
             raise NotImplementedError(
                 f"Provider {provider} model does not support chat."
@@ -310,7 +350,16 @@ class ChatPromptAdapter:
     ) -> Tuple[Optional[str], List[Dict]]:
         if provider == "anthropic":
             return _format_anthropic_messages(messages)
+        raise NotImplementedError(
+            f"Provider {provider} not supported for format_messages"
+        )
 
+    @classmethod
+    def format_cohere_message(
+        cls, provider: str, messages: List[BaseMessage]
+    ) -> Tuple[Optional[str], List[Dict]]:
+        if provider == "cohere":
+            return _format_cohere_messages(messages)
         raise NotImplementedError(
             f"Provider {provider} not supported for format_messages"
         )
@@ -416,7 +465,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
         else:
             provider = self._get_provider()
-            prompt, system, formatted_messages = None, None, None
+            prompt, system, formatted_messages, chat_history = None, None, None, None
             params: Dict[str, Any] = {**kwargs}
 
             if provider == "anthropic":
@@ -428,6 +477,15 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                         system = self.system_prompt_with_tools + f"\n{system}"
                     else:
                         system = self.system_prompt_with_tools
+            elif provider == "cohere":
+                if "command-r" in self.model_id:
+                    prompt, chat_history = ChatPromptAdapter.format_cohere_message(
+                        provider, messages
+                    )
+                else:
+                    prompt = ChatPromptAdapter.convert_messages_to_prompt(
+                        provider=provider, messages=messages, model=self._get_model()
+                    )
             else:
                 prompt = ChatPromptAdapter.convert_messages_to_prompt(
                     provider=provider, messages=messages, model=self._get_model()
@@ -442,6 +500,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 run_manager=run_manager,
                 system=system,
                 messages=formatted_messages,
+                chat_history=chat_history,
                 **params,
             )
 

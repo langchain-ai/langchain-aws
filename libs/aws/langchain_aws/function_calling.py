@@ -1,4 +1,4 @@
-"""Methods for creating function specs in the style of Bedrock Functions 
+"""Methods for creating function specs in the style of Bedrock Functions
 for supported model providers"""
 
 import json

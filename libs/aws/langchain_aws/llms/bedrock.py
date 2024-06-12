@@ -196,6 +196,7 @@ class LLMInputOutputAdapter:
         model_kwargs: Dict[str, Any],
         prompt: Optional[str] = None,
         system: Optional[str] = None,
+        chat_history: Optional[List[Dict]] = None,
         messages: Optional[List[Dict]] = None,
     ) -> Dict[str, Any]:
         input_body = {**model_kwargs}
@@ -211,7 +212,15 @@ class LLMInputOutputAdapter:
                 input_body["prompt"] = _human_assistant_format(prompt)
                 if "max_tokens_to_sample" not in input_body:
                     input_body["max_tokens_to_sample"] = 1024
-        elif provider in ("ai21", "cohere", "meta", "mistral"):
+        elif provider == "cohere":
+            # Command-R
+            if chat_history:
+                input_body["chat_history"] = chat_history
+                input_body["message"] = prompt
+            # Command
+            else:
+                input_body["prompt"] = prompt
+        elif provider in ("ai21", "meta", "mistral"):
             input_body["prompt"] = prompt
         elif provider == "amazon":
             input_body = dict()
@@ -232,13 +241,19 @@ class LLMInputOutputAdapter:
             elif "content" in response_body:
                 content = response_body.get("content")
                 text = content[0].get("text")
+        elif provider == "cohere":
+            response_body = json.loads(response.get("body").read().decode())
+            if "text" in response_body.keys():
+                # Command-R
+                text = response_body.get("text")
+            else:
+                # Command
+                text = response_body.get("generations")[0].get("text")
         else:
             response_body = json.loads(response.get("body").read())
 
             if provider == "ai21":
                 text = response_body.get("completions")[0].get("data").get("text")
-            elif provider == "cohere":
-                text = response_body.get("generations")[0].get("text")
             elif provider == "meta":
                 text = response_body.get("generation")
             elif provider == "mistral":
@@ -581,6 +596,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         prompt: Optional[str] = None,
         system: Optional[str] = None,
         messages: Optional[List[Dict]] = None,
+        chat_history: Optional[List[Dict]] = None,
         stop: Optional[List[str]] = None,
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
@@ -595,6 +611,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             model_kwargs=params,
             prompt=prompt,
             system=system,
+            chat_history=chat_history,
             messages=messages,
         )
         body = json.dumps(input_body)
@@ -835,6 +852,12 @@ class BedrockLLM(LLM, BedrockBase):
         if model_id.startswith("anthropic.claude-3"):
             raise ValueError(
                 "Claude v3 models are not supported by this LLM."
+                "Please use `from langchain_community.chat_models import BedrockChat` "
+                "instead."
+            )
+        if model_id.startswith("cohere.command-r"):
+            raise ValueError(
+                "Command R models are not supported by this LLM."
                 "Please use `from langchain_community.chat_models import BedrockChat` "
                 "instead."
             )
