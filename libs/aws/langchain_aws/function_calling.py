@@ -8,10 +8,16 @@ from typing import (
     Dict,
     List,
     Literal,
+    Optional,
     Type,
     Union,
+    cast,
 )
 
+from langchain_core.messages import ToolCall
+from langchain_core.output_parsers import BaseGenerationOutputParser
+from langchain_core.outputs import ChatGeneration, Generation
+from langchain_core.prompts.chat import AIMessage
 from langchain_core.pydantic_v1 import BaseModel
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
@@ -61,6 +67,35 @@ class AnthropicTool(TypedDict):
     name: str
     description: str
     input_schema: Dict[str, Any]
+
+
+def _tools_in_params(params: dict) -> bool:
+    return "tools" in params or (
+        "extra_body" in params and params["extra_body"].get("tools")
+    )
+
+
+class _AnthropicToolUse(TypedDict):
+    type: Literal["tool_use"]
+    name: str
+    input: dict
+    id: str
+
+
+def _lc_tool_calls_to_anthropic_tool_use_blocks(
+    tool_calls: List[ToolCall],
+) -> List[_AnthropicToolUse]:
+    blocks = []
+    for tool_call in tool_calls:
+        blocks.append(
+            _AnthropicToolUse(
+                type="tool_use",
+                name=tool_call["name"],
+                input=tool_call["args"],
+                id=cast(str, tool_call["id"]),
+            )
+        )
+    return blocks
 
 
 def _get_type(parameter: Dict[str, Any]) -> str:
@@ -120,6 +155,54 @@ class ToolDescription(TypedDict):
 
     type: Literal["function"]
     function: FunctionDescription
+
+
+class ToolsOutputParser(BaseGenerationOutputParser):
+    first_tool_only: bool = False
+    args_only: bool = False
+    pydantic_schemas: Optional[List[Type[BaseModel]]] = None
+
+    class Config:
+        extra = "forbid"
+
+    def parse_result(self, result: List[Generation], *, partial: bool = False) -> Any:
+        """Parse a list of candidate model Generations into a specific format.
+
+        Args:
+            result: A list of Generations to be parsed. The Generations are assumed
+                to be different candidate outputs for a single model input.
+
+        Returns:
+            Structured output.
+        """
+        if not result or not isinstance(result[0], ChatGeneration):
+            return None if self.first_tool_only else []
+        message = result[0].message
+        if len(message.content) > 0:
+            tool_calls: List = []
+        else:
+            content = cast(AIMessage, message)
+            _tool_calls = [dict(tc) for tc in content.tool_calls]
+            # Map tool call id to index
+            id_to_index = {block["id"]: i for i, block in enumerate(_tool_calls)}
+            tool_calls = [{**tc, "index": id_to_index[tc["id"]]} for tc in _tool_calls]
+        if self.pydantic_schemas:
+            tool_calls = [self._pydantic_parse(tc) for tc in tool_calls]
+        elif self.args_only:
+            tool_calls = [tc["args"] for tc in tool_calls]
+        else:
+            pass
+
+        if self.first_tool_only:
+            return tool_calls[0] if tool_calls else None
+        else:
+            return [tool_call for tool_call in tool_calls]
+
+    def _pydantic_parse(self, tool_call: dict) -> BaseModel:
+        cls_ = {schema.__name__: schema for schema in self.pydantic_schemas or []}[
+            tool_call["name"]
+        ]
+        return cls_(**tool_call["args"])
 
 
 def convert_to_anthropic_tool(

@@ -12,6 +12,7 @@ from typing import (
     Mapping,
     Optional,
     Tuple,
+    TypedDict,
     Union,
 )
 
@@ -21,10 +22,12 @@ from langchain_core.callbacks import (
     CallbackManagerForLLMRun,
 )
 from langchain_core.language_models import LLM, BaseLanguageModel
+from langchain_core.messages import ToolCall
 from langchain_core.outputs import Generation, GenerationChunk, LLMResult
 from langchain_core.pydantic_v1 import Extra, Field, root_validator
 from langchain_core.utils import get_from_dict_or_env
 
+from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
     enforce_stop_tokens,
     get_num_tokens_anthropic,
@@ -81,7 +84,10 @@ def _human_assistant_format(input_text: str) -> str:
 
 
 def _stream_response_to_generation_chunk(
-    stream_response: Dict[str, Any], provider: str, output_key: str, messages_api: bool
+    stream_response: Dict[str, Any],
+    provider: str,
+    output_key: str,
+    messages_api: bool,
 ) -> Union[GenerationChunk, None]:
     """Convert a stream response to a generation chunk."""
     if messages_api:
@@ -174,6 +180,23 @@ def _combine_generation_info_for_llm_result(
     return {"usage": total_usage_info, "stop_reason": stop_reason}
 
 
+def extract_tool_calls(content: List[dict]) -> List[ToolCall]:
+    tool_calls = []
+    for block in content:
+        if block["type"] != "tool_use":
+            continue
+        tool_calls.append(
+            ToolCall(name=block["name"], args=block["input"], id=block["id"])
+        )
+    return tool_calls
+
+
+class AnthropicTool(TypedDict):
+    name: str
+    description: str
+    input_schema: Dict[str, Any]
+
+
 class LLMInputOutputAdapter:
     """Adapter class to prepare the inputs from Langchain to a format
     that LLM model expects.
@@ -197,10 +220,13 @@ class LLMInputOutputAdapter:
         prompt: Optional[str] = None,
         system: Optional[str] = None,
         messages: Optional[List[Dict]] = None,
+        tools: Optional[List[AnthropicTool]] = None,
     ) -> Dict[str, Any]:
         input_body = {**model_kwargs}
         if provider == "anthropic":
             if messages:
+                if tools:
+                    input_body["tools"] = tools
                 input_body["anthropic_version"] = "bedrock-2023-05-31"
                 input_body["messages"] = messages
                 if system:
@@ -225,16 +251,20 @@ class LLMInputOutputAdapter:
     @classmethod
     def prepare_output(cls, provider: str, response: Any) -> dict:
         text = ""
+        tool_calls = []
+        response_body = json.loads(response.get("body").read().decode())
+
         if provider == "anthropic":
-            response_body = json.loads(response.get("body").read().decode())
             if "completion" in response_body:
                 text = response_body.get("completion")
             elif "content" in response_body:
                 content = response_body.get("content")
-                text = content[0].get("text")
-        else:
-            response_body = json.loads(response.get("body").read())
+                if len(content) == 1 and content[0]["type"] == "text":
+                    text = content[0]["text"]
+                elif any(block["type"] == "tool_use" for block in content):
+                    tool_calls = extract_tool_calls(content)
 
+        else:
             if provider == "ai21":
                 text = response_body.get("completions")[0].get("data").get("text")
             elif provider == "cohere":
@@ -251,6 +281,7 @@ class LLMInputOutputAdapter:
         completion_tokens = int(headers.get("x-amzn-bedrock-output-token-count", 0))
         return {
             "text": text,
+            "tool_calls": tool_calls,
             "body": response_body,
             "usage": {
                 "prompt_tokens": prompt_tokens,
@@ -584,12 +615,15 @@ class BedrockBase(BaseLanguageModel, ABC):
         stop: Optional[List[str]] = None,
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> Tuple[
+        str,
+        List[dict],
+        Dict[str, Any],
+    ]:
         _model_kwargs = self.model_kwargs or {}
 
         provider = self._get_provider()
         params = {**_model_kwargs, **kwargs}
-
         input_body = LLMInputOutputAdapter.prepare_input(
             provider=provider,
             model_kwargs=params,
@@ -597,6 +631,16 @@ class BedrockBase(BaseLanguageModel, ABC):
             system=system,
             messages=messages,
         )
+        if "claude-3" in self._get_model():
+            if _tools_in_params(params):
+                input_body = LLMInputOutputAdapter.prepare_input(
+                    provider=provider,
+                    model_kwargs=params,
+                    prompt=prompt,
+                    system=system,
+                    messages=messages,
+                    tools=params["tools"],
+                )
         body = json.dumps(input_body)
         accept = "application/json"
         contentType = "application/json"
@@ -621,9 +665,13 @@ class BedrockBase(BaseLanguageModel, ABC):
         try:
             response = self.client.invoke_model(**request_options)
 
-            text, body, usage_info, stop_reason = LLMInputOutputAdapter.prepare_output(
-                provider, response
-            ).values()
+            (
+                text,
+                tool_calls,
+                body,
+                usage_info,
+                stop_reason,
+            ) = LLMInputOutputAdapter.prepare_output(provider, response).values()
 
         except Exception as e:
             raise ValueError(f"Error raised by bedrock service: {e}")
@@ -646,7 +694,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 **services_trace,
             )
 
-        return text, llm_output
+        return text, tool_calls, llm_output
 
     def _get_bedrock_services_signal(self, body: dict) -> dict:
         """
@@ -711,6 +759,16 @@ class BedrockBase(BaseLanguageModel, ABC):
             messages=messages,
             model_kwargs=params,
         )
+        if "claude-3" in self._get_model():
+            if _tools_in_params(params):
+                input_body = LLMInputOutputAdapter.prepare_input(
+                    provider=provider,
+                    model_kwargs=params,
+                    prompt=prompt,
+                    system=system,
+                    messages=messages,
+                    tools=params["tools"],
+                )
         body = json.dumps(input_body)
 
         request_options = {
@@ -737,7 +795,10 @@ class BedrockBase(BaseLanguageModel, ABC):
             raise ValueError(f"Error raised by bedrock service: {e}")
 
         for chunk in LLMInputOutputAdapter.prepare_output_stream(
-            provider, response, stop, True if messages else False
+            provider,
+            response,
+            stop,
+            True if messages else False,
         ):
             yield chunk
             # verify and raise callback error if any middleware intervened
@@ -770,13 +831,24 @@ class BedrockBase(BaseLanguageModel, ABC):
             _model_kwargs["stream"] = True
 
         params = {**_model_kwargs, **kwargs}
-        input_body = LLMInputOutputAdapter.prepare_input(
-            provider=provider,
-            prompt=prompt,
-            system=system,
-            messages=messages,
-            model_kwargs=params,
-        )
+        if "claude-3" in self._get_model():
+            if _tools_in_params(params):
+                input_body = LLMInputOutputAdapter.prepare_input(
+                    provider=provider,
+                    model_kwargs=params,
+                    prompt=prompt,
+                    system=system,
+                    messages=messages,
+                    tools=params["tools"],
+                )
+            else:
+                input_body = LLMInputOutputAdapter.prepare_input(
+                    provider=provider,
+                    prompt=prompt,
+                    system=system,
+                    messages=messages,
+                    model_kwargs=params,
+                )
         body = json.dumps(input_body)
 
         response = await asyncio.get_running_loop().run_in_executor(
@@ -790,7 +862,10 @@ class BedrockBase(BaseLanguageModel, ABC):
         )
 
         async for chunk in LLMInputOutputAdapter.aprepare_output_stream(
-            provider, response, stop, True if messages else False
+            provider,
+            response,
+            stop,
+            True if messages else False,
         ):
             yield chunk
             if run_manager is not None and asyncio.iscoroutinefunction(
@@ -951,7 +1026,7 @@ class BedrockLLM(LLM, BedrockBase):
 
             return completion
 
-        text, llm_output = self._prepare_input_and_invoke(
+        text, tool_calls, llm_output = self._prepare_input_and_invoke(
             prompt=prompt, stop=stop, run_manager=run_manager, **kwargs
         )
         if run_manager is not None:
