@@ -1,9 +1,10 @@
 """Test Bedrock chat model."""
-
+import json
 from typing import Any, cast
 
 import pytest
 from langchain_core.messages import (
+    AIMessage,
     AIMessageChunk,
     BaseMessage,
     HumanMessage,
@@ -19,7 +20,10 @@ from tests.callbacks import FakeCallbackHandler, FakeCallbackHandlerWithTokenCou
 
 @pytest.fixture
 def chat() -> ChatBedrock:
-    return ChatBedrock(model_id="anthropic.claude-v2", model_kwargs={"temperature": 0})  # type: ignore[call-arg]
+    return ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_kwargs={"temperature": 0},
+    )  # type: ignore[call-arg]
 
 
 @pytest.mark.scheduled
@@ -55,7 +59,7 @@ def test_chat_bedrock_generate_with_token_usage(chat: ChatBedrock) -> None:
     assert isinstance(response.llm_output, dict)
 
     usage = response.llm_output["usage"]
-    assert usage["prompt_tokens"] == 20
+    assert usage["prompt_tokens"] == 16
     assert usage["completion_tokens"] > 0
     assert usage["total_tokens"] > 0
 
@@ -177,7 +181,88 @@ def test_bedrock_invoke(chat: ChatBedrock) -> None:
     result = chat.invoke("I'm Pickle Rick", config=dict(tags=["foo"]))
     assert isinstance(result.content, str)
     assert "usage" in result.additional_kwargs
-    assert result.additional_kwargs["usage"]["prompt_tokens"] == 13
+    assert result.additional_kwargs["usage"]["prompt_tokens"] == 12
+
+
+class GetWeather(BaseModel):
+    """Useful for getting the weather in a location."""
+
+    location: str = Field(..., description="The city and state")
+
+
+class AnswerWithJustification(BaseModel):
+    """An answer to the user question along with justification for the answer."""
+
+    answer: str
+    justification: str
+
+
+@pytest.mark.scheduled
+def test_structured_output() -> None:
+    chat = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_kwargs={"temperature": 0.001},
+    )  # type: ignore[call-arg]
+    structured_llm = chat.with_structured_output(AnswerWithJustification)
+
+    response = structured_llm.invoke(
+        "What weighs more a pound of bricks or a pound of feathers"
+    )
+
+    assert isinstance(response, AnswerWithJustification)
+
+
+@pytest.mark.scheduled
+def test_tool_use_call_invoke() -> None:
+    chat = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_kwargs={"temperature": 0.001},
+    )  # type: ignore[call-arg]
+
+    llm_with_tools = chat.bind_tools([GetWeather])
+
+    messages = [HumanMessage(content="what is the weather like in San Francisco CA")]
+
+    response = llm_with_tools.invoke(messages)
+    assert isinstance(response, AIMessage)
+    assert isinstance(response.tool_calls, list)
+    assert len(response.tool_calls) == 1
+    tool_call = response.tool_calls[0]
+    assert tool_call["name"] == "GetWeather"
+    assert isinstance(tool_call["args"], dict)
+    assert "location" in tool_call["args"]
+
+    # Test streaming
+    first = True
+    for chunk in llm_with_tools.stream("what's the weather in san francisco, ca"):
+        if first:
+            gathered = chunk
+            first = False
+        else:
+            gathered = gathered + chunk  # type: ignore
+    assert isinstance(gathered, AIMessageChunk)
+    assert isinstance(gathered.tool_call_chunks, list)
+    assert len(gathered.tool_call_chunks) == 1
+    tool_call_chunk = gathered.tool_call_chunks[0]
+    assert tool_call_chunk["name"] == "GetWeather"
+    assert isinstance(tool_call_chunk["args"], str)
+    assert "location" in json.loads(tool_call_chunk["args"])
+
+
+@pytest.mark.parametrize("tool_choice", ["GetWeather", "auto", "any"])
+def test_anthropic_bind_tools_tool_choice(tool_choice: str) -> None:
+    chat = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_kwargs={"temperature": 0.001},
+    )  # type: ignore[call-arg]
+    chat_model_with_tools = chat.bind_tools([GetWeather], tool_choice=tool_choice)
+    response = chat_model_with_tools.invoke("what's the weather in ny and la")
+    assert isinstance(response, AIMessage)
+    assert response.tool_calls
+    tool_call = response.tool_calls[0]
+    assert tool_call["name"] == "GetWeather"
+    assert isinstance(tool_call["args"], dict)
+    assert "location" in tool_call["args"]
 
 
 @pytest.mark.scheduled
