@@ -19,7 +19,6 @@ from langchain_core._api.deprecation import deprecated
 from langchain_core.callbacks import (
     CallbackManagerForLLMRun,
 )
-from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
@@ -29,12 +28,18 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
 )
+from langchain_core.messages import (
+    system as langchain_system,
+)
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.pydantic_v1 import BaseModel, Extra
-from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 
-from langchain_aws.function_calling import convert_to_anthropic_tool, get_system_message
+from langchain_aws.function_calling import (
+    convert_to_anthropic_tool,
+    get_system_message,
+    parse_tool_calls_from_xml,
+)
 from langchain_aws.llms.bedrock import (
     BedrockBase,
     _combine_generation_info_for_llm_result,
@@ -197,11 +202,48 @@ def _format_image(image_url: str) -> Dict:
     }
 
 
+def _handle_anthropic_system_message(message: BaseMessage) -> Tuple[str, str]:
+    if not isinstance(message.content, str):
+        raise ValueError(
+            "System message must be a string, " f"instead was: {type(message.content)}"
+        )
+    return message.content, _message_type_lookups["human"]
+
+
+def _handle_anthropic_message(
+    message: BaseMessage,
+) -> Tuple[Union[str, List[Dict[str, str]]], str]:
+    role = _message_type_lookups[message.type]
+    if isinstance(message.content, str):
+        return message.content, role
+
+    assert isinstance(
+        message.content, list
+    ), "Anthropic message content must be str or list of dicts"
+
+    content: List[Dict[str, Any]] = []
+    for item in message.content:
+        if isinstance(item, str):
+            content.append({"type": "text", "text": item})
+        elif isinstance(item, dict):
+            if "type" not in item:
+                raise ValueError("Dict content item must have a type key")
+            if item["type"] == "image_url":
+                source = _format_image(item["image_url"]["url"])
+                content.append({"type": "image", "source": source})
+            else:
+                content.append(item)
+        else:
+            raise ValueError(
+                f"Content items must be str or dict, instead was: {type(item)}"
+            )
+    return content, role
+
+
 def _format_anthropic_messages(
     messages: List[BaseMessage],
-) -> Tuple[Optional[str], List[Dict]]:
+) -> Tuple[Optional[str], List[Dict[str, Any]]]:
     """Format messages for anthropic."""
-
     """
     [
         {
@@ -211,66 +253,24 @@ def _format_anthropic_messages(
         for m in messages
     ]
     """
-    system: Optional[str] = None
-    formatted_messages: List[Dict] = []
+    if isinstance(messages, langchain_system.BaseMessage):
+        if messages.type == "system":
+            system, role = _handle_anthropic_system_message(messages)
+            return system, [{"role": role, "content": system}]
+
+        content, role = _handle_anthropic_message(messages)
+        return None, [{"role": role, "content": content}]
+
+    system = None
+    formatted_messages = []
     for i, message in enumerate(messages):
         if message.type == "system":
             if i != 0:
                 raise ValueError("System message must be at beginning of message list.")
-            if not isinstance(message.content, str):
-                raise ValueError(
-                    "System message must be a string, "
-                    f"instead was: {type(message.content)}"
-                )
-            system = message.content
+            system, _ = _handle_anthropic_system_message(message)
             continue
-
-        role = _message_type_lookups[message.type]
-        content: Union[str, List[Dict]]
-
-        if not isinstance(message.content, str):
-            # parse as dict
-            assert isinstance(
-                message.content, list
-            ), "Anthropic message content must be str or list of dicts"
-
-            # populate content
-            content = []
-            for item in message.content:
-                if isinstance(item, str):
-                    content.append(
-                        {
-                            "type": "text",
-                            "text": item,
-                        }
-                    )
-                elif isinstance(item, dict):
-                    if "type" not in item:
-                        raise ValueError("Dict content item must have a type key")
-                    if item["type"] == "image_url":
-                        # convert format
-                        source = _format_image(item["image_url"]["url"])
-                        content.append(
-                            {
-                                "type": "image",
-                                "source": source,
-                            }
-                        )
-                    else:
-                        content.append(item)
-                else:
-                    raise ValueError(
-                        f"Content items must be str or dict, instead was: {type(item)}"
-                    )
-        else:
-            content = message.content
-
-        formatted_messages.append(
-            {
-                "role": role,
-                "content": content,
-            }
-        )
+        content, role = _handle_anthropic_message(message)
+        formatted_messages.append({"role": role, "content": content})
     return system, formatted_messages
 
 
@@ -402,6 +402,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         **kwargs: Any,
     ) -> ChatResult:
         completion = ""
+        _called_function_token = "</function_calls>"
         llm_output: Dict[str, Any] = {}
         provider_stop_reason_code = self.provider_stop_reason_key_map.get(
             self._get_provider(), "stop_reason"
@@ -444,6 +445,14 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 messages=formatted_messages,
                 **params,
             )
+
+            if _called_function_token in completion and provider == "anthropic":
+                # format tool_calls parameter
+                tool_calls = parse_tool_calls_from_xml(completion)
+                llm_output["tool_calls"] = tool_calls
+                llm_output["stop_reason"] = "tool_use"
+            else:
+                llm_output["stop_reason"] = "end_turn"
 
         llm_output["model_id"] = self.model_id
         return ChatResult(
@@ -489,7 +498,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         *,
         tool_choice: Optional[Union[dict, str, Literal["auto", "none"], bool]] = None,
         **kwargs: Any,
-    ) -> Runnable[LanguageModelInput, BaseMessage]:
+    ) -> BaseChatModel:
         """Bind tool-like objects to this chat model.
 
         Assumes model has a tool calling API.
