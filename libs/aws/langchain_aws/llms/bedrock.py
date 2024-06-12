@@ -89,7 +89,7 @@ def _stream_response_to_generation_chunk(
         if msg_type == "message_start":
             usage_info = stream_response.get("message", {}).get("usage", None)
             usage_info = _nest_usage_info_token_counts(usage_info)
-            generation_info = {"usage": usage_info}
+            generation_info = {"token_usage": usage_info}
             return GenerationChunk(text="", generation_info=generation_info)
         elif msg_type == "content_block_delta":
             if not stream_response["delta"]:
@@ -104,7 +104,7 @@ def _stream_response_to_generation_chunk(
             usage_info = stream_response.get("usage", None)
             usage_info = _nest_usage_info_token_counts(usage_info)
             stop_reason = stream_response.get("delta", {}).get("stop_reason")
-            generation_info = {"stop_reason": stop_reason, "usage": usage_info}
+            generation_info = {"stop_reason": stop_reason, "token_usage": usage_info}
             return GenerationChunk(text="", generation_info=generation_info)
         else:
             return None
@@ -171,7 +171,7 @@ def _combine_generation_info_for_llm_result(
         total_usage_info["prompt_tokens"] + total_usage_info["completion_tokens"]
     )
 
-    return {"usage": total_usage_info, "stop_reason": stop_reason}
+    return {"token_usage": total_usage_info, "stop_reason": stop_reason}
 
 
 class LLMInputOutputAdapter:
@@ -252,7 +252,7 @@ class LLMInputOutputAdapter:
         return {
             "text": text,
             "body": response_body,
-            "usage": {
+            "token_usage": {
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
                 "total_tokens": prompt_tokens + completion_tokens,
@@ -631,7 +631,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         if stop is not None:
             text = enforce_stop_tokens(text, stop)
 
-        llm_output = {"usage": usage_info, "stop_reason": stop_reason}
+        llm_output = {"token_usage": usage_info, "stop_reason": stop_reason}
 
         # Verify and raise a callback error if any intervention occurs or a signal is
         # sent from a Bedrock service,

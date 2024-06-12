@@ -286,10 +286,10 @@ class FakeCallbackHandlerWithTokenCounts(FakeCallbackHandler):
         **kwargs: Any,
     ) -> Any:
         if response.llm_output is not None:
-            self.input_token_count += response.llm_output.get("usage", {}).get(
+            self.input_token_count += response.llm_output.get("token_usage", {}).get(
                 "prompt_tokens", None
             )
-            self.output_token_count += response.llm_output.get("usage", {}).get(
+            self.output_token_count += response.llm_output.get("token_usage", {}).get(
                 "completion_tokens", None
             )
             self.stop_reason = response.llm_output.get("stop_reason", None)

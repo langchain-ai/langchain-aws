@@ -54,10 +54,10 @@ def test_chat_bedrock_generate_with_token_usage(chat: ChatBedrock) -> None:
     assert isinstance(response, LLMResult)
     assert isinstance(response.llm_output, dict)
 
-    usage = response.llm_output["usage"]
-    assert usage["prompt_tokens"] == 20
-    assert usage["completion_tokens"] > 0
-    assert usage["total_tokens"] > 0
+    token_usage = response.llm_output["token_usage"]
+    assert token_usage["prompt_tokens"] == 20
+    assert token_usage["completion_tokens"] > 0
+    assert token_usage["total_tokens"] > 0
 
 
 @pytest.mark.scheduled
@@ -176,8 +176,8 @@ def test_bedrock_invoke(chat: ChatBedrock) -> None:
     """Test invoke tokens from BedrockChat."""
     result = chat.invoke("I'm Pickle Rick", config=dict(tags=["foo"]))
     assert isinstance(result.content, str)
-    assert "usage" in result.additional_kwargs
-    assert result.additional_kwargs["usage"]["prompt_tokens"] == 13
+    assert "token_usage" in result.additional_kwargs
+    assert result.additional_kwargs["token_usage"]["prompt_tokens"] == 13
 
 
 @pytest.mark.scheduled

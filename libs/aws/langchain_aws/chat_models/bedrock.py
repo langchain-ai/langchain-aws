@@ -445,7 +445,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 **params,
             )
 
-        llm_output["model_id"] = self.model_id
+        llm_output["model_name"] = self.model_id
         return ChatResult(
             generations=[
                 ChatGeneration(
@@ -460,11 +460,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         final_output = {}
         for output in llm_outputs:
             output = output or {}
-            usage = output.get("usage", {})
-            for token_type, token_count in usage.items():
+            token_usage = output.get("usage", {})
+            for token_type, token_count in token_usage.items():
                 final_usage[token_type] += token_count
             final_output.update(output)
-        final_output["usage"] = final_usage
+        final_output["token_usage"] = final_usage
         return final_output
 
     def get_num_tokens(self, text: str) -> int:
