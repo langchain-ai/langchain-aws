@@ -468,7 +468,6 @@ class ChatBedrockConverse(BaseChatModel):
         if not toolConfig and tools:
             toolChoice = _format_tool_choice(toolChoice) if toolChoice else None
             toolConfig = {"tools": _format_tools(tools), "toolChoice": toolChoice}
-
         return _drop_none(
             {
                 "modelId": modelId or self.model_id,
@@ -667,7 +666,7 @@ def _anthropic_to_bedrock(
             bedrock_content.append(
                 {
                     "toolResult": {
-                        "toolUseId": block["toolUseId"],
+                        "toolUseId": block["tool_use_id"],
                         "content": _anthropic_to_bedrock(content),
                     }
                 }
