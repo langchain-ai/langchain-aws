@@ -657,7 +657,7 @@ def _anthropic_to_bedrock(
                 {
                     "toolUse": {
                         "toolUseId": block["id"],
-                        "input": block["input"],
+                        "input": _try_to_convert_to_dict(block["input"]),
                         "name": block["name"],
                     }
                 }
@@ -860,3 +860,13 @@ def _format_openai_image_url(image_url: str) -> Dict:
         "format": match.group("media_type"),
         "source": {"bytes": _b64str_to_bytes(match.group("data"))},
     }
+
+
+def _try_to_convert_to_dict(tool_use_input: Any) -> Any:
+    """Attempt to convert the toolUse.input to a dictionary."""
+    if isinstance(tool_use_input, str):
+        try:
+            return json.loads(tool_use_input)
+        except json.JSONDecodeError:
+            return tool_use_input
+    return tool_use_input
