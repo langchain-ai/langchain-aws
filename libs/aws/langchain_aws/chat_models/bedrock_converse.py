@@ -268,7 +268,7 @@ class ChatBedrockConverse(BaseChatModel):
     max_tokens: Optional[int] = None
     """Max tokens to generate."""
 
-    stop_sequences: Optional[List[str]] = Field(None, alias="stop")
+    stop_sequences: Optional[List[str]] = Field(default=None, alias="stop")
     """Stop generation if any of these substrings occurs."""
 
     temperature: Optional[float] = None
@@ -308,7 +308,7 @@ class ChatBedrockConverse(BaseChatModel):
     have an ARN associated with them.
     """
 
-    endpoint_url: Optional[str] = Field(None, alias="base_url")
+    endpoint_url: Optional[str] = Field(default=None, alias="base_url")
     """Needed if you don't want to default to us-east-1 endpoint"""
 
     config: Any = None
