@@ -20,6 +20,7 @@ class TestBedrockStandard(ChatModelUnitTests):
     def chat_model_params(self) -> dict:
         return {
             "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
+            "region_name": "us-west-1",
         }
 
     @pytest.mark.xfail()
