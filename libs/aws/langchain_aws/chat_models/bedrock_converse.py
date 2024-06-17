@@ -1,3 +1,4 @@
+import base64
 import json
 import re
 from operator import itemgetter
@@ -45,16 +46,220 @@ from langchain_aws.function_calling import ToolsOutputParser
 
 @beta()
 class ChatBedrockConverse(BaseChatModel):
-    """Chat model that uses the Bedrock converse API."""
+    """BedrockConverse chat model integration.
+
+    Setup:
+        To use Amazon Bedrock make sure you've gone through all the steps described
+        here: https://docs.aws.amazon.com/bedrock/latest/userguide/setting-up.html
+
+        Once that's completed, install the LangChain integration:
+
+        .. code-block:: bash
+
+            pip install -U langchain-aws
+
+    Key init args — completion params:
+        model: str
+            Name of BedrockConverse model to use.
+        temperature: float
+            Sampling temperature.
+        max_tokens: Optional[int]
+            Max number of tokens to generate.
+
+
+    Key init args — client params:
+        region_name: Optional[str]
+            AWS region to use, e.g. 'us-west-2'.
+        base_url: Optional[str]
+            Bedrock endpoint to use. Needed if you don't want to default to us-east-
+            1 endpoint.
+        credentials_profile_name: Optional[str]
+            The name of the profile in the ~/.aws/credentials or ~/.aws/config files.
+
+    See full list of supported init args and their descriptions in the params section.
+
+    # TODO: Replace with relevant init params.
+    Instantiate:
+        .. code-block:: python
+
+            from langchain_aws import ChatBedrockConverse
+
+            llm = ChatBedrockConverse(
+                model="anthropic.claude-3-sonnet-20240229-v1:0",
+                temperature=0,
+                max_tokens=None,
+                # other params...
+            )
+
+    Invoke:
+        .. code-block:: python
+
+            messages = [
+                ("system", "You are a helpful translator. Translate the user sentence to French."),
+                ("human", "I love programming."),
+            ]
+            llm.invoke(messages)
+
+        .. code-block:: python
+
+            AIMessage(content=[{'type': 'text', 'text': "J'aime la programmation."}], response_metadata={'ResponseMetadata': {'RequestId': '9ef1e313-a4c1-4f79-b631-171f658d3c0e', 'HTTPStatusCode': 200, 'HTTPHeaders': {'date': 'Sat, 15 Jun 2024 01:19:24 GMT', 'content-type': 'application/json', 'content-length': '205', 'connection': 'keep-alive', 'x-amzn-requestid': '9ef1e313-a4c1-4f79-b631-171f658d3c0e'}, 'RetryAttempts': 0}, 'stopReason': 'end_turn', 'metrics': {'latencyMs': 609}}, id='run-754e152b-2b41-4784-9538-d40d71a5c3bc-0', usage_metadata={'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36})
+
+    Stream:
+        .. code-block:: python
+
+            for chunk in llm.stream(messages):
+                print(chunk)
+
+        .. code-block:: python
+
+            AIMessageChunk(content=[], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'type': 'text', 'text': 'J', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'text': "'", 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'text': 'a', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'text': 'ime', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'text': ' la', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'text': ' programm', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'text': 'ation', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'text': '.', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[], response_metadata={'stopReason': 'end_turn'}, id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[], response_metadata={'metrics': {'latencyMs': 581}}, id='run-da3c2606-4792-440a-ac66-72e0d1f6d117', usage_metadata={'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36})
+
+        .. code-block:: python
+
+            stream = llm.stream(messages)
+            full = next(stream)
+            for chunk in stream:
+                full += chunk
+            full
+
+        .. code-block:: python
+
+            AIMessageChunk(content=[{'type': 'text', 'text': "J'aime la programmation.", 'index': 0}], response_metadata={'stopReason': 'end_turn', 'metrics': {'latencyMs': 554}}, id='run-56a5a5e0-de86-412b-9835-624652dc3539', usage_metadata={'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36})
+
+    Tool calling:
+        .. code-block:: python
+
+            from langchain_core.pydantic_v1 import BaseModel, Field
+
+            class GetWeather(BaseModel):
+                '''Get the current weather in a given location'''
+
+                location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+
+            class GetPopulation(BaseModel):
+                '''Get the current population in a given location'''
+
+                location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+
+            llm_with_tools = llm.bind_tools([GetWeather, GetPopulation])
+            ai_msg = llm_with_tools.invoke("Which city is hotter today and which is bigger: LA or NY?")
+            ai_msg.tool_calls
+
+        .. code-block:: python
+
+            [{'name': 'GetWeather',
+              'args': {'location': 'Los Angeles, CA'},
+              'id': 'tooluse_Mspi2igUTQygp-xbX6XGVw'},
+             {'name': 'GetWeather',
+              'args': {'location': 'New York, NY'},
+              'id': 'tooluse_tOPHiDhvR2m0xF5_5tyqWg'},
+             {'name': 'GetPopulation',
+              'args': {'location': 'Los Angeles, CA'},
+              'id': 'tooluse__gcY_klbSC-GqB-bF_pxNg'},
+             {'name': 'GetPopulation',
+              'args': {'location': 'New York, NY'},
+              'id': 'tooluse_-1HSoGX0TQCSaIg7cdFy8Q'}]
+
+        See ``ChatBedrockConverse.bind_tools()`` method for more.
+
+    Structured output:
+        .. code-block:: python
+
+            from typing import Optional
+
+            from langchain_core.pydantic_v1 import BaseModel, Field
+
+            class Joke(BaseModel):
+                '''Joke to tell user.'''
+
+                setup: str = Field(description="The setup of the joke")
+                punchline: str = Field(description="The punchline to the joke")
+                rating: Optional[int] = Field(description="How funny the joke is, from 1 to 10")
+
+            structured_llm = llm.with_structured_output(Joke)
+            structured_llm.invoke("Tell me a joke about cats")
+
+        .. code-block:: python
+
+            Joke(setup='What do you call a cat that gets all dressed up?', punchline='A purrfessional!', rating=7)
+
+        See ``ChatBedrockConverse.with_structured_output()`` for more.
+
+    Image input:
+        .. code-block:: python
+
+            import base64
+            import httpx
+            from langchain_core.messages import HumanMessage
+
+            image_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+            image_data = base64.b64encode(httpx.get(image_url).content).decode("utf-8")
+            message = HumanMessage(
+                content=[
+                    {"type": "text", "text": "describe the weather in this image"},
+                    {
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": "image/jpeg", "data": image_data},
+                    },
+                ],
+            )
+            ai_msg = llm.invoke([message])
+            ai_msg.content
+
+        .. code-block:: python
+
+            [{'type': 'text',
+              'text': 'The image depicts a sunny day with a partly cloudy sky. The sky is a brilliant blue color with scattered white clouds drifting across. The lighting and cloud patterns suggest pleasant, mild weather conditions. The scene shows an open grassy field or meadow, indicating warm temperatures conducive for vegetation growth. Overall, the weather portrayed in this scenic outdoor image appears to be sunny with some clouds, likely representing a nice, comfortable day.'}]
+
+    Token usage:
+        .. code-block:: python
+
+            ai_msg = llm.invoke(messages)
+            ai_msg.usage_metadata
+
+        .. code-block:: python
+
+            {'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36}
+
+    Response metadata
+        .. code-block:: python
+
+            ai_msg = llm.invoke(messages)
+            ai_msg.response_metadata
+
+        .. code-block:: python
+
+            {'ResponseMetadata': {'RequestId': '776a2a26-5946-45ae-859e-82dc5f12017c',
+              'HTTPStatusCode': 200,
+              'HTTPHeaders': {'date': 'Mon, 17 Jun 2024 01:37:05 GMT',
+               'content-type': 'application/json',
+               'content-length': '206',
+               'connection': 'keep-alive',
+               'x-amzn-requestid': '776a2a26-5946-45ae-859e-82dc5f12017c'},
+              'RetryAttempts': 0},
+             'stopReason': 'end_turn',
+             'metrics': {'latencyMs': 1290}}
+    """  # noqa: E501
 
     client: Any = Field(exclude=True)  #: :meta private:
 
     model_id: str = Field(alias="model")
     """Id of the model to call
     
-    e.g., ``"amazon.titan-text-express-v1"``. This is equivalent to the modelID property
-    in the list-foundation-models api. For custom and provisioned models, an ARN value 
-    is expected.
+    e.g., ``"anthropic.claude-3-sonnet-20240229-v1:0"``. This is equivalent to the 
+    modelID property in the list-foundation-models api. For custom and provisioned 
+    models, an ARN value is expected.
     """
 
     max_tokens: Optional[int] = None
@@ -94,9 +299,9 @@ class ChatBedrockConverse(BaseChatModel):
     provider: str = ""
     """The model provider, e.g., amazon, cohere, ai21, etc. 
     
-    When not supplied, provider is extracted from the first part of the model_id e.g. 
+    When not supplied, provider is extracted from the first part of the model_id, e.g. 
     'amazon' in 'amazon.titan-text-express-v1'. This value should be provided for model 
-    ids that do not have the provider in them, e.g., custom and provisioned models that 
+    ids that do not have the provider in them, like custom and provisioned models that 
     have an ARN associated with them.
     """
 
@@ -193,6 +398,8 @@ class ChatBedrockConverse(BaseChatModel):
         for event in response["stream"]:
             if message_chunk := _parse_stream_event(event):
                 yield ChatGenerationChunk(message=message_chunk)
+
+    # TODO: Add async support once there are async bedrock.converse methods.
 
     def bind_tools(
         self,
@@ -305,7 +512,7 @@ def _messages_to_bedrock(
             else:
                 curr = {"role": "user", "content": []}
 
-            # TODO: Add ToolMessage.status support.
+            # TODO: Add status once we have ToolMessage.status support.
             curr["content"].append(
                 {"toolResult": {"content": content, "toolUseID": msg.tool_call_id}}
             )
@@ -400,13 +607,26 @@ def _anthropic_to_bedrock(
     for block in _snake_to_camel_keys(content):
         if isinstance(block, str):
             bedrock_content.append({"text": block})
-        # assume block is already in bedrock format
+        # Assume block is already in bedrock format.
         elif "type" not in block:
             bedrock_content.append(block)
         elif block["type"] == "text":
             bedrock_content.append({"text": block["text"]})
         elif block["type"] == "image":
-            bedrock_content.append({"image": {}})
+            # Assume block is already in bedrock format.
+            if "image" in block:
+                bedrock_content.append(block)
+            else:
+                bedrock_content.append(
+                    {
+                        "image": {
+                            "format": block["source"]["mediaType"].split("/")[1],
+                            "source": {
+                                "bytes": _b64str_to_bytes(block["source"]["data"])
+                            },
+                        }
+                    }
+                )
         elif block["type"] == "tool_use":
             bedrock_content.append(
                 {
@@ -421,7 +641,7 @@ def _anthropic_to_bedrock(
             bedrock_content.append(
                 {
                     "toolResult": {
-                        "toolUseID": block["tool_use_id"],
+                        "toolUseID": block["toolUseId"],
                         "content": _anthropic_to_bedrock(content),
                     }
                 }
@@ -449,8 +669,7 @@ def _bedrock_to_anthropic(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]
                     "source": {
                         "media_type": f"image/{block['image']['format']}",
                         "type": "base64",
-                        # TODO: convert to b64 str
-                        "data": block["image"]["source"]["bytes"],
+                        "data": _bytes_to_b64_str(block["image"]["source"]["bytes"]),
                     },
                 }
             )
@@ -551,3 +770,11 @@ def _drop_none(obj: Any) -> Any:
         return new or None
     else:
         return obj
+
+
+def _b64str_to_bytes(base64_str: str) -> bytes:
+    return base64.b64decode(base64_str.encode("utf-8"))
+
+
+def _bytes_to_b64_str(bytes_: bytes) -> str:
+    return base64.b64encode(bytes_).decode("utf-8")
