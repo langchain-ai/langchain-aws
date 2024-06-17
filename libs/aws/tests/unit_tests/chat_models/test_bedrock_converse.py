@@ -1,11 +1,38 @@
 """Test chat model integration."""
 
-from typing import cast
+from typing import Type, cast
 
+import pytest
+from langchain_core.language_models import BaseChatModel
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.runnables import RunnableBinding
+from langchain_standard_tests.unit_tests import ChatModelUnitTests
 
 from langchain_aws import ChatBedrockConverse
+
+
+class TestBedrockStandard(ChatModelUnitTests):
+    @pytest.fixture
+    def chat_model_class(self) -> Type[BaseChatModel]:
+        return ChatBedrockConverse
+
+    @pytest.fixture
+    def chat_model_params(self) -> dict:
+        return {
+            "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
+        }
+
+    @pytest.mark.xfail()
+    def test_chat_model_init_api_key(
+        self, chat_model_class: Type[BaseChatModel], chat_model_params: dict
+    ) -> None:
+        super().test_chat_model_init_api_key(chat_model_class, chat_model_params)
+
+    @pytest.mark.xfail()
+    def test_chat_model_init_streaming(
+        self, chat_model_class: Type[BaseChatModel], chat_model_params: dict
+    ) -> None:
+        super().test_chat_model_init_streaming(chat_model_class, chat_model_params)
 
 
 class GetWeather(BaseModel):

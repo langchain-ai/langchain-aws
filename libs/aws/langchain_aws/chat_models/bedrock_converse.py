@@ -22,6 +22,7 @@ import boto3
 from langchain_core._api import beta
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
+from langchain_core.language_models.chat_models import LangSmithParams
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -475,6 +476,23 @@ class ChatBedrockConverse(BaseChatModel):
                 "additionalModelResponseFieldPaths": additionalModelResponseFieldPaths,
             }
         )
+
+    def _get_ls_params(
+        self, stop: Optional[List[str]] = None, **kwargs: Any
+    ) -> LangSmithParams:
+        """Get standard params for tracing."""
+        params = self._get_invocation_params(stop=stop, **kwargs)
+        ls_params = LangSmithParams(
+            ls_provider="amazon_bedrock",
+            ls_model_name=self.model_id,
+            ls_model_type="chat",
+            ls_temperature=params.get("temperature", self.temperature),
+        )
+        if ls_max_tokens := params.get("max_tokens", self.max_tokens):
+            ls_params["ls_max_tokens"] = ls_max_tokens
+        if ls_stop := stop or params.get("stop", None):
+            ls_params["ls_stop"] = ls_stop
+        return ls_params
 
     @property
     def _llm_type(self) -> str:
