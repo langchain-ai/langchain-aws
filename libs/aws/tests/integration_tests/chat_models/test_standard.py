@@ -10,67 +10,37 @@ from langchain_aws.chat_models.bedrock import ChatBedrock
 
 
 class TestBedrockStandard(ChatModelIntegrationTests):
-    @pytest.fixture
+    @property
     def chat_model_class(self) -> Type[BaseChatModel]:
         return ChatBedrock
 
-    @pytest.fixture
+    @property
     def chat_model_params(self) -> dict:
-        return {
-            "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
-        }
+        return {"model_id": "anthropic.claude-3-sonnet-20240229-v1:0"}
+
+    @property
+    def standard_chat_model_params(self) -> dict:
+        return {}
 
     @pytest.mark.xfail(reason="Not implemented.")
-    def test_usage_metadata(
-        self,
-        chat_model_class: Type[BaseChatModel],
-        chat_model_params: dict,
-    ) -> None:
-        super().test_usage_metadata(
-            chat_model_class,
-            chat_model_params,
-        )
+    def test_usage_metadata(self, model: BaseChatModel) -> None:
+        super().test_usage_metadata(model)
 
     @pytest.mark.xfail(reason="Not implemented.")
-    def test_stop_sequence(
-        self,
-        chat_model_class: Type[BaseChatModel],
-        chat_model_params: dict,
-    ) -> None:
-        super().test_stop_sequence(
-            chat_model_class,
-            chat_model_params,
-        )
+    def test_stop_sequence(self, model: BaseChatModel) -> None:
+        super().test_stop_sequence(model)
 
     @pytest.mark.xfail(reason="Not yet implemented.")
-    def test_tool_message_histories_string_content(
-        self,
-        chat_model_class: Type[BaseChatModel],
-        chat_model_params: dict,
-        chat_model_has_tool_calling: bool,
-    ) -> None:
-        super().test_tool_message_histories_string_content(
-            chat_model_class, chat_model_params, chat_model_has_tool_calling
-        )
+    def test_tool_message_histories_string_content(self, model: BaseChatModel) -> None:
+        super().test_tool_message_histories_string_content(model)
 
     @pytest.mark.xfail(reason="Not yet implemented.")
-    def test_tool_message_histories_list_content(
-        self,
-        chat_model_class: Type[BaseChatModel],
-        chat_model_params: dict,
-        chat_model_has_tool_calling: bool,
-    ) -> None:
-        super().test_tool_message_histories_list_content(
-            chat_model_class, chat_model_params, chat_model_has_tool_calling
-        )
+    def test_tool_message_histories_list_content(self, model: BaseChatModel) -> None:
+        super().test_tool_message_histories_list_content(model)
 
     @pytest.mark.xfail(reason="Not yet implemented.")
     def test_structured_few_shot_examples(
         self,
-        chat_model_class: Type[BaseChatModel],
-        chat_model_params: dict,
-        chat_model_has_tool_calling: bool,
+        model: BaseChatModel,
     ) -> None:
-        super().test_structured_few_shot_examples(
-            chat_model_class, chat_model_params, chat_model_has_tool_calling
-        )
+        super().test_structured_few_shot_examples(model)
