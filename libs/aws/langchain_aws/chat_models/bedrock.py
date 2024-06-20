@@ -37,6 +37,7 @@ from langchain_core.pydantic_v1 import BaseModel, Extra
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 
+from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 from langchain_aws.function_calling import (
     ToolsOutputParser,
     _lc_tool_calls_to_anthropic_tool_use_blocks,
@@ -387,6 +388,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     """A chat model that uses the Bedrock API."""
 
     system_prompt_with_tools: str = ""
+    beta_use_converse_api: bool = False
+    """Use the new Bedrock ``converse`` API which provides a standardized interface to 
+    all Bedrock models. Support still in beta. See ChatBedrockConverse docs for more."""
 
     @property
     def _llm_type(self) -> str:
@@ -424,6 +428,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
+        if self.beta_use_converse_api:
+            yield from self._as_converse._stream(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            )
+            return
         provider = self._get_provider()
         prompt, system, formatted_messages = None, None, None
 
@@ -490,6 +499,10 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
+        if self.beta_use_converse_api:
+            return self._as_converse._generate(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            )
         completion = ""
         llm_output: Dict[str, Any] = {}
         tool_calls: List[Dict[str, Any]] = []
@@ -608,6 +621,12 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             **kwargs: Any additional parameters to pass to the
                 :class:`~langchain.runnable.Runnable` constructor.
         """
+        if self.beta_use_converse_api:
+            if isinstance(tool_choice, bool):
+                tool_choice = "any" if tool_choice else None
+            return self._as_converse.bind_tools(
+                tools, tool_choice=tool_choice, **kwargs
+            )
         if self._get_provider() == "anthropic":
             formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
 
@@ -745,6 +764,10 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 # }
 
         """  # noqa: E501
+        if self.beta_use_converse_api:
+            return self._as_converse.with_structured_output(
+                schema, include_raw=include_raw, **kwargs
+            )
         if "claude-3" not in self._get_model():
             ValueError(
                 f"Structured output is not supported for model {self._get_model()}"
@@ -768,6 +791,23 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             return RunnableMap(raw=llm) | parser_with_fallback
         else:
             return llm | output_parser
+
+    @property
+    def _as_converse(self) -> ChatBedrockConverse:
+        kwargs = {
+            k: v
+            for k, v in (self.model_kwargs or {}).items()
+            if k in ("stop", "stop_sequences", "max_tokens", "temperature", "top_p")
+        }
+        return ChatBedrockConverse(
+            model=self.model_id,
+            region_name=self.region_name,
+            credentials_profile_name=self.credentials_profile_name,
+            config=self.config,
+            provider=self.provider or "",
+            base_url=self.endpoint_url,
+            **kwargs,
+        )
 
 
 @deprecated(since="0.1.0", removal="0.2.0", alternative="ChatBedrock")
