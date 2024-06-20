@@ -7,7 +7,6 @@ from abc import ABC
 from typing import Any, Callable, List, Tuple, Union, Optional, Dict
 
 from langchain.agents import BaseSingleActionAgent, AgentOutputParser
-from langchain_community.agents_bedrock.agent_client import bedrock_agent, bedrock_agent_runtime, iam, sts
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.callbacks.manager import (
     Callbacks,
@@ -17,6 +16,8 @@ from langchain_core.runnables import (
     Runnable,
 )
 from langchain_core.tools import Tool, tool
+
+from langchain_aws.agents.bedrock.agent_client import bedrock_agent, bedrock_agent_runtime, iam, sts
 
 _DEFAULT_ACTION_GROUP_NAME = 'DEFAULT_AG_'
 
@@ -45,6 +46,10 @@ def agent_tool(
         args[0].__doc__ = f"<agent_tool_doc>{args[0].__doc__}</agent_tool_doc>"
         return tool(*args)
 
+    if not action_group and not method:
+        action.__name__ = action.__name__ + "ActionGroup::" + action.__name__
+        action.__doc__ = f"<agent_tool_doc>{action.__doc__}</agent_tool_doc>"
+        return tool(action)
     return atool
 
 
@@ -416,11 +421,12 @@ class BedrockAgentManager:
                 action_group_detail = functions.get(action_group_name, {})
                 if action_group_detail:
                     action_group_detail.get('functionSchema', {}).get('functions', []) \
-                        .append(self._get_function_definition_json(
-                        function_description=function_description if function_description else function_name,
-                        function_name=function_name,
-                        function_parameters=function_parameters
-                    )
+                        .append(
+                        self._get_function_definition_json(
+                            function_description=function_description if function_description else function_name,
+                            function_name=function_name,
+                            function_parameters=function_parameters
+                        )
                     )
                 else:
                     functions[action_group_name] = {
@@ -600,7 +606,6 @@ class BedrockAgentBase(BaseSingleActionAgent, ABC):
 
         bedrock_agent_manager = BedrockAgentManager()
         self.agent_region = bedrock_agent_metadata.agent_region
-        self.name = bedrock_agent_metadata.agent_name
         self.output_parser = output_parser
         self.prompt_template = prompt_template
         self.trace_handler = trace_handler

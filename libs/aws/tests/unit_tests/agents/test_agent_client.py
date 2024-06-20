@@ -1,4 +1,4 @@
-from langchain_community.agents_bedrock.agent_client import (
+from langchain_aws.agents.bedrock.agent_client import (
     bedrock_agent,
     bedrock_agent_runtime,
     iam,

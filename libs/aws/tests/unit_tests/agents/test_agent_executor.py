@@ -1,8 +1,8 @@
 from unittest import mock
 
-from langchain_community.agents_bedrock.agent_base import agent_tool
-from langchain_community.agents_bedrock.agent_executor import BedrockAgentExecutor
-from langchain_community.agents_bedrock.bedrock_agent import BedrockAgent
+from langchain_aws.agents.bedrock.agent_base import agent_tool
+from langchain_aws.agents.bedrock.agent_executor import BedrockAgentExecutor
+from langchain_aws.agents.bedrock.bedrock_agent import BedrockAgent
 
 
 @agent_tool(

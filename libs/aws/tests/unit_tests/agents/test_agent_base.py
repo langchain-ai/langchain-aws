@@ -4,14 +4,14 @@ from typing import Callable
 from unittest import mock
 
 from langchain.agents import AgentOutputParser
-from langchain_community.agents_bedrock.agent_base import (
+from langchain_aws.agents.bedrock.agent_base import (
     agent_tool,
     BedrockAgentMetadata,
     BedrockAgentRuntimeConstruct,
     BedrockAgentManager,
     BedrockAgentBase
 )
-from langchain_community.agents_bedrock.agent_client import (
+from langchain_aws.agents.bedrock.agent_client import (
     bedrock_agent_runtime
 )
 from langchain_core.agents import AgentAction
