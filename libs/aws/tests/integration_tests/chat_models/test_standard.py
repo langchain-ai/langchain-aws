@@ -44,3 +44,34 @@ class TestBedrockStandard(ChatModelIntegrationTests):
         model: BaseChatModel,
     ) -> None:
         super().test_structured_few_shot_examples(model)
+
+
+class TestBedrockUseConverseStandard(ChatModelIntegrationTests):
+    @property
+    def chat_model_class(self) -> Type[BaseChatModel]:
+        return ChatBedrock
+
+    @property
+    def chat_model_params(self) -> dict:
+        return {
+            "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
+            "beta_use_converse_api": True,
+        }
+
+    @property
+    def standard_chat_model_params(self) -> dict:
+        return {
+            "model_kwargs": {
+                "temperature": 0,
+                "max_tokens": 100,
+                "stop": [],
+            }
+        }
+
+    @property
+    def supports_image_inputs(self) -> bool:
+        return True
+
+    @pytest.mark.xfail(reason="Not implemented.")
+    def test_stop_sequence(self, model: BaseChatModel) -> None:
+        super().test_stop_sequence(model)
