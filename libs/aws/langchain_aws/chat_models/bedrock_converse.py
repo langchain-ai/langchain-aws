@@ -573,7 +573,7 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
             tool_call_chunks.append(
                 ToolCallChunk(
                     name=block.get("name"),
-                    id=block.get("tool_use_id"),
+                    id=block.get("id"),
                     args=block.get("input"),
                     index=event["contentBlockStart"]["contentBlockIndex"],
                 )
@@ -589,7 +589,7 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
             tool_call_chunks.append(
                 ToolCallChunk(
                     name=block.get("name"),
-                    id=block.get("tool_use_id"),
+                    id=block.get("id"),
                     args=block.get("input"),
                     index=event["contentBlockDelta"]["contentBlockIndex"],
                 )
@@ -844,21 +844,15 @@ def _upsert_tool_calls_to_bedrock_content(
 def _format_openai_image_url(image_url: str) -> Dict:
     """
     Formats an image of format data:image/jpeg;base64,{b64_string}
-    to a dict for anthropic api
+    to a dict for bedrock api.
 
-    {
-      "type": "base64",
-      "media_type": "image/jpeg",
-      "data": "/9j/4AAQSkZJRg...",
-    }
-
-    And throws an error if it's not a b64 image
+    And throws an error if url is not a b64 image.
     """
     regex = r"^data:image/(?P<media_type>.+);base64,(?P<data>.+)$"
     match = re.match(regex, image_url)
     if match is None:
         raise ValueError(
-            "Bedrock does not currently support OpenAI-format image urls, only "
+            "Bedrock does not currently support OpenAI-format image URLs, only "
             "base64-encoded images. Example: data:image/png;base64,'/9j/4AAQSk'..."
         )
     return {
