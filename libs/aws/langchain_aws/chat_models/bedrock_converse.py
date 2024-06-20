@@ -256,11 +256,13 @@ class ChatBedrockConverse(BaseChatModel):
     client: Any = Field(exclude=True)  #: :meta private:
 
     model_id: str = Field(alias="model")
-    """Id of the model to call
+    """Id of the model to call.
     
     e.g., ``"anthropic.claude-3-sonnet-20240229-v1:0"``. This is equivalent to the 
     modelID property in the list-foundation-models api. For custom and provisioned 
-    models, an ARN value is expected.
+    models, an ARN value is expected. See 
+    https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html#model-ids-arns 
+    for a list of all supported built-in models.
     """
 
     max_tokens: Optional[int] = None
