@@ -162,6 +162,8 @@ class BedrockAgent(BedrockAgentBase, ABC):
     bedrock_agent: BedrockAgentBase = None
     agent_executor: AgentExecutor = None
     trace_handler: Callable = None
+    input_handler: Callable = None
+    output_handler: Callable = None
 
     def __init__(
             self,
@@ -171,6 +173,8 @@ class BedrockAgent(BedrockAgentBase, ABC):
             agent_foundation_model: str = 'anthropic.claude-3-sonnet-20240229-v1:0',
             agent_tools: List[Tool] = None,
             trace_handler: Callable = None,
+            input_handler: Callable = lambda _input: _input,
+            output_handler: Callable = lambda _output: _output,
             **kwargs
     ):
         super().__init__(**kwargs)
@@ -182,6 +186,8 @@ class BedrockAgent(BedrockAgentBase, ABC):
             agent_tools=agent_tools
         )
         self.trace_handler = trace_handler
+        self.input_handler = input_handler
+        self.output_handler = output_handler
         self.agent_executor = self.activate_agent(bedrock_agent_metadata)
 
     def activate_agent(
@@ -272,7 +278,7 @@ class BedrockAgent(BedrockAgentBase, ABC):
 
     def run(
             self,
-            agent_input: str,
+            agent_input: dict,
             session_id: str = None,
             **kwargs: Any,
     ):
@@ -281,14 +287,18 @@ class BedrockAgent(BedrockAgentBase, ABC):
         Overloaded function to sync with LangGraph
 
         Args:
-           agent_input: Input text to BedrockAgents
+           agent_input: Input text to BedrockAgents, as dict wth format {'input': ''}
            session_id: Session Ids are unique values, identifying a list of turns pertaining to a single conversation
            **kwargs: Containing session state
 
         Returns:
            The response from BedrockAgents
         """
-        return self.invoke(agent_input, session_id, **kwargs)
+        if type(agent_input) is dict and agent_input.get("input"):
+            _input = self.input_handler(agent_input)
+            return self.output_handler(self.invoke(_input, session_id, **kwargs))
+
+        raise Exception("Input to Bedrock Agents should be a dict with 'input' field")
 
     def delete(
             self,

@@ -2,9 +2,12 @@ import json
 import logging
 import uuid
 from typing import List
+from typing import TypedDict, Union
 
 from langchain.agents.agent import AgentExecutor
 from langchain_core.tools import Tool, StructuredTool
+from langgraph.constants import END
+from langgraph.graph import StateGraph
 
 from langchain_aws.agents.bedrock.agent_base import agent_tool, BedrockAgentMetadata, BedrockAgentBase
 from langchain_aws.agents.bedrock.agent_executor import BedrockAgentExecutor
@@ -532,3 +535,143 @@ def test_run_chain_bedrock_agent_executor_tools_session_parameter():
         logging.info(f"Bedrock Agent Response : \n {json.dumps(response, indent=4)} \n")
     finally:
         agent.delete()
+
+
+# --------------------------------------------------------------------------------------------------------#
+
+def test_bedrock_agent_lang_graph():
+    agent_name: str = "Census"
+    agent_instruction: str = "You are an agent who helps in calculating the population of a city using the provided tool"
+    agent_region: str = "us-east-1"
+    census_agent = BedrockAgent(
+        agent_name=agent_name,
+        agent_instruction=agent_instruction,
+        agent_region=agent_region,
+        agent_foundation_model="anthropic.claude-3-haiku-20240307-v1:0",
+        trace_handler=handle_trace,
+        agent_tools=[StructuredTool.from_function(city_census)],
+        input_handler=agent_input_handler,
+        output_handler=agent_output_handler
+    )
+
+    agent_name: str = "CityStatus"
+    agent_instruction: str = "You are an agent who helps in getting the status of a city based on its population"
+    agent_region: str = "us-east-1"
+    city_status_agent = BedrockAgent(
+        agent_name=agent_name,
+        agent_instruction=agent_instruction,
+        agent_region=agent_region,
+        agent_foundation_model="anthropic.claude-3-haiku-20240307-v1:0",
+        trace_handler=handle_trace,
+        agent_tools=[StructuredTool.from_function(city_status)],
+        input_handler=agent_input_handler,
+        output_handler=agent_output_handler
+    )
+
+    try:
+        # Define a lang chain graph
+        workflow = StateGraph(AgentState)
+
+        # Add nodes for each agent
+        workflow.add_node("get_census", census_agent.run)
+        workflow.add_node("get_status", city_status_agent.run)
+        workflow.add_node("final_output", final_response)
+
+        # Add entry point
+        workflow.set_entry_point("get_census")
+        # Add exit point
+        workflow.set_finish_point("final_output")
+
+        # Add transition
+        workflow.add_edge("get_census", "get_status")
+        workflow.add_edge("get_status", "final_output")
+
+        # We now add a conditional edge; for this example we don't need a conditional flow
+        workflow.add_conditional_edges(
+            # First, we define the start node. We use `get_census`.
+            # This means these are the edges taken after the `get_census` node is called.
+            "get_census",
+            # Next, we pass in the function that will determine which node is called next.
+            should_continue,
+            # Finally we pass in a mapping.
+            # The keys are strings, and the values are other nodes.
+            # END is a special node marking that the graph should finish.
+            # What will happen is we will call `should_continue`, and then the output of that
+            # will be matched against the keys in this mapping.
+            # Based on which one it matches, that node will then be called.
+            {
+                # If `continue`, then we call the get_status Agent.
+                "continue": "get_status",
+                # Otherwise we finish.
+                "end": END,
+            },
+        )
+
+        # compile the graph
+        chain = workflow.compile()
+
+        chain.invoke({"input": "get the city status for seattle"})
+
+    finally:
+        census_agent.delete()
+        city_status_agent.delete()
+
+
+def city_census(
+        city_name: str = ' '
+) -> str:
+    """
+    Gets the census of a city
+    """
+    return f"The population in {city_name} is 2 million"
+
+
+def city_status(
+        city_name: str = ' ',
+        city_population: int = 0
+) -> str:
+    """
+    Gets the status of a city based on population
+    """
+    if city_population > 20000:
+        return f"{city_name} with population of {city_population} is BIG"
+    return f"{city_name} with population of {city_population} is SMALL"
+
+
+# Define logic that will be used to determine which conditional edge to go down
+def should_continue(data):
+    return "continue"
+
+
+def agent_input_handler(agent_input=None):
+    if type(agent_input) is dict:
+        _agent_outcome = agent_input.get("agent_outcome")
+        if agent_input.get("input"):
+            agent_input = agent_input.get("input")
+        if _agent_outcome:
+            agent_input = "{}. {}".format(agent_input, _agent_outcome)
+    return agent_input
+
+
+def agent_output_handler(agent_output=None):
+    return {"agent_outcome": agent_output.get("output", "")}
+
+
+def final_response(agent_output=None):
+    return agent_output
+
+
+# https://github.com/langchain-ai/langgraph/blob/main/examples/agent_executor/base.ipynb?ref=blog.langchain.dev
+# https://langchain-ai.github.io/langgraph/#overview
+# https://medium.com/@rotemweiss/discover-the-power-of-langgraph-my-adventure-in-building-gpt-newspaper-f59c7fbcf039
+# https://github.com/langchain-ai/langgraph/issues/54
+class AgentState(TypedDict):
+    # The input string
+    input: str
+
+    # The outcome of a given call to the agent
+    # Needs `None` as a valid type, since this is what this will start as
+    # BedrockAgent final response will be either in string format or ROC structured dict
+    agent_outcome: Union[str, dict, None]
+
+# --------------------------------------------------------------------------------------------------------#
