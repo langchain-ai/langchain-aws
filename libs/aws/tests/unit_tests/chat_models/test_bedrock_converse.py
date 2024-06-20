@@ -19,7 +19,7 @@ class TestBedrockStandard(ChatModelUnitTests):
     @property
     def chat_model_params(self) -> dict:
         return {
-            "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
+            "model": "anthropic.claude-3-sonnet-20240229-v1:0",
             "region_name": "us-west-1",
         }
 
@@ -28,7 +28,7 @@ class TestBedrockStandard(ChatModelUnitTests):
         return {
             "temperature": 0,
             "max_tokens": 100,
-            "stop_sequences": [],
+            "stop": [],
         }
 
     @pytest.mark.xfail()
@@ -44,7 +44,7 @@ class GetWeather(BaseModel):
 
 def test_anthropic_bind_tools_tool_choice() -> None:
     chat_model = ChatBedrockConverse(
-        model_id="anthropic.claude-3-opus-20240229", region_name="us-west-2"
+        model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
     )  # type: ignore[call-arg]
     chat_model_with_tools = chat_model.bind_tools(
         [GetWeather], tool_choice={"tool": {"name": "GetWeather"}}

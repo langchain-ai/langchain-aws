@@ -47,7 +47,7 @@ from langchain_aws.function_calling import ToolsOutputParser
 
 @beta()
 class ChatBedrockConverse(BaseChatModel):
-    """BedrockConverse chat model integration.
+    """Bedrock chat model integration built on the ``converse`` api.
 
     Setup:
         To use Amazon Bedrock make sure you've gone through all the steps described
@@ -646,6 +646,11 @@ def _anthropic_to_bedrock(
                         }
                     }
                 )
+        elif block["type"] == "image_url":
+            # Support OpenAI image format as well.
+            bedrock_content.append(
+                {"image": _format_openai_image_url(block["imageUrl"]["url"])}
+            )
         elif block["type"] == "tool_use":
             bedrock_content.append(
                 {
@@ -834,3 +839,29 @@ def _upsert_tool_calls_to_bedrock_content(
                 }
             )
     return content
+
+
+def _format_openai_image_url(image_url: str) -> Dict:
+    """
+    Formats an image of format data:image/jpeg;base64,{b64_string}
+    to a dict for anthropic api
+
+    {
+      "type": "base64",
+      "media_type": "image/jpeg",
+      "data": "/9j/4AAQSkZJRg...",
+    }
+
+    And throws an error if it's not a b64 image
+    """
+    regex = r"^data:image/(?P<media_type>.+);base64,(?P<data>.+)$"
+    match = re.match(regex, image_url)
+    if match is None:
+        raise ValueError(
+            "Bedrock does not currently support OpenAI-format image urls, only "
+            "base64-encoded images. Example: data:image/png;base64,'/9j/4AAQSk'..."
+        )
+    return {
+        "format": match.group("media_type"),
+        "source": {"bytes": _b64str_to_bytes(match.group("data"))},
+    }
