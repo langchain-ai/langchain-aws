@@ -6,17 +6,21 @@ import uuid
 from abc import ABC
 from typing import Any, Callable, List, Tuple, Union, Optional, Dict
 
+import pydantic
 from langchain.agents import BaseSingleActionAgent, AgentOutputParser
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.callbacks.manager import (
     Callbacks,
 )
+from langchain_core.output_parsers import BaseOutputParser
+from langchain_core.output_parsers.json import PydanticBaseModel
 from langchain_core.prompts.base import BasePromptTemplate
 from langchain_core.runnables import (
     Runnable,
 )
 from langchain_core.tools import Tool, tool
-
+from pydantic.v1 import validator
+from pydantic import BaseModel, ConfigDict, ValidationError
 from langchain_aws.agents.bedrock.agent_client import bedrock_agent, bedrock_agent_runtime, iam, sts
 
 _DEFAULT_ACTION_GROUP_NAME = 'DEFAULT_AG_'
@@ -545,7 +549,7 @@ class BedrockAgentManager:
             raise
 
 
-class BedrockAgentBase(BaseSingleActionAgent, ABC):
+class BedrockAgentBase:
     """
     BedrockAgentBase to encapsulate the lifecycle processes for -
     1. Agent creation and deletion
@@ -559,14 +563,14 @@ class BedrockAgentBase(BaseSingleActionAgent, ABC):
         'invocationInput',  # This trace is emitted when BedrockAgents makes an tool invocation
     ]
 
-    name: str = 'BedrockAgent'
+    name: str = 'BedrockAgentBase'
     agent_id: str = __SINGLE_SPACE
     agent_alias_id: str = __SINGLE_SPACE
     agent_region: str = __SINGLE_SPACE
     agent_resource_role_arn: str = None
     bedrock_runtime: Any = None
     agent_tools: List[Tool] = []
-    output_parser: AgentOutputParser = None
+    output_parser: BaseOutputParser = None
     prompt_template: BasePromptTemplate = None
     trace_handler: Callable = None
 
@@ -576,7 +580,7 @@ class BedrockAgentBase(BaseSingleActionAgent, ABC):
     def agent(
             self,
             bedrock_agent_runtime_construct: BedrockAgentRuntimeConstruct,
-            output_parser: AgentOutputParser = None,
+            output_parser: BaseOutputParser = None,
             prompt_template: BasePromptTemplate = None,
             trace_handler: Callable = None
     ):
@@ -596,7 +600,7 @@ class BedrockAgentBase(BaseSingleActionAgent, ABC):
     def create(
             self,
             bedrock_agent_metadata: BedrockAgentMetadata,
-            output_parser: AgentOutputParser = None,
+            output_parser: BaseOutputParser = None,
             prompt_template: BasePromptTemplate = None,
             trace_handler: Callable = None
     ):
@@ -697,7 +701,7 @@ class BedrockAgentBase(BaseSingleActionAgent, ABC):
             kwargs['intermediate_steps'] = intermediate_steps
             kwargs.__setitem__('input', self.prompt_template.format(**kwargs))
 
-        agent_response = self.invoke(**kwargs)
+        agent_response = self.invoke_agent_base(**kwargs)
 
         if self.output_parser:
             agent_response = self.output_parser.parse(agent_response)
@@ -733,7 +737,7 @@ class BedrockAgentBase(BaseSingleActionAgent, ABC):
             AgentAction - When a tool/API is returned by BedrockAgents
         """
 
-        agent_response = self.invoke(**kwargs)
+        agent_response = self.invoke_agent_base(**kwargs)
         if self.output_parser:
             agent_response = self.output_parser.parse(agent_response)
 
@@ -744,7 +748,7 @@ class BedrockAgentBase(BaseSingleActionAgent, ABC):
             agent_response
         )
 
-    def invoke(
+    def invoke_agent_base(
             self,
             **kwargs: Any,
     ) -> str:
@@ -761,7 +765,7 @@ class BedrockAgentBase(BaseSingleActionAgent, ABC):
                 session_state = input_session_state
             agent_input = agent_input.get('input', '')
 
-        session_id = kwargs.get('session_id', '')
+        session_id = kwargs.get('session_id', str(uuid.uuid4()))
 
         return self._invoke_bedrock_agent(
             agent_input=agent_input,
@@ -773,7 +777,7 @@ class BedrockAgentBase(BaseSingleActionAgent, ABC):
             self,
             agent_input: str,
             session_state: dict,
-            session_id: str,
+            session_id: str = str(uuid.uuid4()),
             trace_enabled: bool = True
     ) -> str:
         """

@@ -4,17 +4,18 @@ from abc import ABC
 from typing import Any, List, Tuple, Union, Callable
 
 from langchain.agents import AgentExecutor
-from langchain.agents import AgentOutputParser
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.callbacks.manager import (
     Callbacks,
 )
 from langchain_core.messages.ai import AIMessage
+from langchain_core.output_parsers import BaseOutputParser
 from langchain_core.prompts.base import BasePromptTemplate
 from langchain_core.tools import Tool
 
 from langchain_aws.agents.bedrock.agent_base import BedrockAgentBase, _DEFAULT_ACTION_GROUP_NAME
 from langchain_aws.agents.bedrock.agent_base import BedrockAgentMetadata
+from langchain_aws.agents.bedrock.agent_executor import BedrockAgentExecutor
 
 
 def parse_response(
@@ -61,7 +62,7 @@ def parse_response(
         raise Exception("Parse exception encountered {}".format(repr(ex)))
 
 
-class BedrockAgentResponseParser(AgentOutputParser, ABC):
+class BedrockAgentResponseParser(BaseOutputParser, ABC):
     """
     Custom parser class for BedrockAgents, to parse Agent output
     """
@@ -159,8 +160,8 @@ class BedrockAgentInputFormatter(BasePromptTemplate, ABC):
 
 
 class BedrockAgent(BedrockAgentBase, ABC):
-    bedrock_agent: BedrockAgentBase = None
-    agent_executor: AgentExecutor = None
+    bedrock_agent_base: BedrockAgentBase = None
+    agent_executor: BedrockAgentExecutor = None
     trace_handler: Callable = None
     input_handler: Callable = None
     output_handler: Callable = None
@@ -188,45 +189,8 @@ class BedrockAgent(BedrockAgentBase, ABC):
         self.trace_handler = trace_handler
         self.input_handler = input_handler
         self.output_handler = output_handler
-        self.agent_executor = self.activate_agent(bedrock_agent_metadata)
-
-    def activate_agent(
-            self,
-            bedrock_agent_metadata: BedrockAgentMetadata
-    ) -> AgentExecutor:
-        """
-        Activate an agent, i.e -
-         1. Create the agent execution role
-         2. Create the agent using the execution role
-         2. Attach actions
-         3. Prepare the agent for inference
-
-        Args:
-            bedrock_agent_metadata: Meta data for Bedrock Agents
-
-        Returns:
-            AgentExecutor - Instantiates a langchain AgentExecutor to run inference on BedrockAgents
-                            This can
-        """
-        output_parser = BedrockAgentResponseParser()
-        request_formatter = BedrockAgentInputFormatter()
-
-        agent = BedrockAgentBase()
-        agent.create(
-            bedrock_agent_metadata=bedrock_agent_metadata,
-            output_parser=output_parser,
-            prompt_template=request_formatter,
-            trace_handler=self.trace_handler
-        )
-        self.bedrock_agent = agent
-
-        return AgentExecutor.from_agent_and_tools(
-            agent=agent,
-            verbose=False,
-            tools=bedrock_agent_metadata.agent_tools,
-            return_intermediate_steps=True,
-            max_iterations=8
-        )
+        self.bedrock_agent_base = self._activate_agent(bedrock_agent_metadata)
+        self.agent_executor = self._activate_agent_executor(bedrock_agent_metadata)
 
     def invoke_agent(
             self,
@@ -306,4 +270,46 @@ class BedrockAgent(BedrockAgentBase, ABC):
         """
         Delete an agent
         """
-        return self.bedrock_agent.delete()
+        return self.bedrock_agent_base.delete()
+
+    def _activate_agent(
+            self,
+            bedrock_agent_metadata: BedrockAgentMetadata
+    ) -> BedrockAgentBase:
+        """
+        Activate an agent, i.e -
+         1. Create the agent execution role
+         2. Create the agent using the execution role
+         2. Attach actions
+         3. Prepare the agent for inference
+
+        Args:
+            bedrock_agent_metadata: Meta data for Bedrock Agents
+
+        Returns:
+            BedrockAgentExecutor - Instantiates BedrockAgentExecutor to run inference on BedrockAgents
+        """
+        output_parser = BedrockAgentResponseParser()
+        request_formatter = BedrockAgentInputFormatter()
+
+        agent = BedrockAgentBase()
+        agent.create(
+            bedrock_agent_metadata=bedrock_agent_metadata,
+            output_parser=output_parser,
+            prompt_template=request_formatter,
+            trace_handler=self.trace_handler
+        )
+        return agent
+
+    def _activate_agent_executor(
+            self,
+            bedrock_agent_metadata: BedrockAgentMetadata
+    ) -> BedrockAgentExecutor:
+
+        return BedrockAgentExecutor.from_agent_and_tools(
+            agent=self.bedrock_agent_base,
+            verbose=False,
+            tools=bedrock_agent_metadata.agent_tools,
+            return_intermediate_steps=True,
+            max_iterations=8
+        )

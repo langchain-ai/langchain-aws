@@ -37,7 +37,8 @@ def test_run_chain_agent_executor_tools_create_delete():
             verbose=True,
             tools=agent_tools,
             return_intermediate_steps=True,
-            max_iterations=8)
+            max_iterations=8
+        )
 
         invoke_agent_request = {
             "input": "What is the weather in seattle?",
@@ -89,7 +90,8 @@ def test_run_chain_bedrock_agent_executor_tools_create_delete():
             verbose=True,
             tools=agent_tools,
             return_intermediate_steps=True,
-            max_iterations=8)
+            max_iterations=8
+        )
 
         invoke_agent_request = {
             "input": "What is the weather in seattle?",

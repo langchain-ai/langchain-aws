@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from abc import ABC
 from typing import (
     Any,
@@ -7,52 +8,60 @@ from typing import (
     List,
     Optional,
     Sequence,
-)
+    Union, Tuple)
 
-from langchain.chains.base import Chain
+from langchain_core.agents import AgentAction, AgentFinish, AgentStep
 from langchain_core.callbacks import (
     CallbackManagerForChainRun,
     Callbacks,
-)
+    CallbackManager)
+from langchain_core.load import dumpd
+from langchain_core.outputs import RunInfo
+from langchain_core.runnables import RunnableConfig, ensure_config, RunnableSerializable
 from langchain_core.tools import BaseTool
+from pydantic.v1 import validator, Field
 
-from langchain_aws.agents.bedrock.bedrock_agent import BedrockAgent
+from langchain_aws.agents.bedrock.agent_base import BedrockAgentBase
 
 
-class BedrockAgentExecutor(Chain, ABC):
+# class BedrockAgentExecutor(RunnableSerializable[Dict[str, Any], Dict[str, Any]], ABC):
+# class BedrockAgentExecutor(Chain, ABC):
+class BedrockAgentExecutor:
     """
     BedrockAgentExecutor handling the orchestration
     """
 
     name: str = 'BedrockAgentExecutor'
-    agent: BedrockAgent = None
+    agent: BedrockAgentBase = None
+    name_to_tool_map: dict = {}
 
     def __init__(
             self,
-            agent: BedrockAgent,
+            agent: BedrockAgentBase,
             **kwargs: {}
     ):
-        super().__init__(**kwargs)
+        # super().__init__(**kwargs)
         self.agent = agent
+        self.name_to_tool_map = {tool.name: tool for tool in self.agent.agent_tools}
 
     @classmethod
     def from_agent_and_tools(
             cls,
-            agent: BedrockAgent,
+            agent: BedrockAgentBase,
             tools: Sequence[BaseTool] = None,
             callbacks: Callbacks = None,
             **kwargs: Any,
     ) -> BedrockAgentExecutor:
         """
-        Create an Bedrock Agent executor from BedrockAgent and tools.
+        Create an Bedrock Agent executor from BedrockAgentBase and tools.
 
         Args:
             agent: Bedrock Agent to use
-            tools: Function which can be used in conjunction with BedrockAgent
+            tools: Function which can be used in conjunction with BedrockAgentBase
             callbacks: Chain callbacks
 
         Returns:
-           BedrockAgent Executor instance
+           BedrockAgentBase Executor instance
         """
 
         return cls(
@@ -61,6 +70,45 @@ class BedrockAgentExecutor(Chain, ABC):
             callbacks=callbacks,
             **kwargs,
         )
+
+    # def invoke(
+    #         self,
+    #         inputs: Dict[str, Any],
+    #         **kwargs,
+    # ) -> str:
+    #     return self._call({**inputs, **kwargs}).get('output', {})
+
+    def invoke(
+            self,
+            agent_input: Dict[str, Any],
+            intermediate_steps: List[Tuple[AgentAction, str]] = None,
+            callbacks: Callbacks = None,
+            **kwargs: Any,
+    ) -> Union[AgentFinish | AgentAction]:
+
+        agent_response = self.agent.plan(intermediate_steps, callbacks, **agent_input)
+        if type(agent_response) is AgentFinish:
+            return agent_response.return_values
+
+        if type(agent_response) is AgentAction:
+            tool_response = self._perform_agent_action(agent_response)
+            observation = [(tool_response.action, tool_response.observation)]
+            return self.invoke(agent_input, observation, callbacks, **kwargs)
+
+        # return outputs
+
+    def _perform_agent_action(
+            self,
+            agent_action: AgentAction
+    ) -> AgentStep:
+        if agent_action.tool in self.name_to_tool_map:
+            tool = self.name_to_tool_map[agent_action.tool]
+            observation = tool.run(
+                agent_action.tool_input
+            )
+        else:
+            raise Exception(f"Invalid tool name {agent_action.tool} provided !")
+        return AgentStep(action=agent_action, observation=observation)
 
     def _call(
             self,
@@ -83,7 +131,7 @@ class BedrockAgentExecutor(Chain, ABC):
 
         agent_input = {'input': inputs.get('input', '')}
         kwargs = {'session_state': inputs.get('session_state', {})}
-        agent_response = self.agent.invoke_agent(agent_input, **kwargs).get('output', {})
+        agent_response = self.agent._invoke_agent_base(**{**agent_input, **kwargs})
         return {
             'output': agent_response
         }
@@ -104,4 +152,8 @@ class BedrockAgentExecutor(Chain, ABC):
 
         :meta private: output_keys
         """
-        return self.agent.return_values
+        return ['output']
+
+    # @validator("agent", pre=True, always=True)
+    # def validate(self, agent: BedrockAgentBase):
+    #     return agent
