@@ -4,53 +4,92 @@ import uuid
 from typing import List
 from typing import TypedDict, Union
 
-from langchain.agents.agent import AgentExecutor
 from langchain_core.tools import Tool, StructuredTool
 from langgraph.constants import END
 from langgraph.graph import StateGraph
 
-from langchain_aws.agents.bedrock.agent_base import agent_tool, BedrockAgentMetadata, BedrockAgentBase
+from langchain_aws.agents.bedrock.agent_base import agent_tool
 from langchain_aws.agents.bedrock.agent_executor import BedrockAgentExecutor
 from langchain_aws.agents.bedrock.bedrock_agent import BedrockAgent
 
 logging.basicConfig(format='%(message)s', level=logging.INFO)
 
 
-def test_run_chain_agent_executor_tools_create_delete():
+# --------------------------------------------------------------------------------------------------------#
+
+def test_native_bedrock_agent():
     agent_name: str = "TestAgent"
     agent_instruction: str = "You are a test agent who will help me get weather information"
     agent_region: str = "us-east-1"
-    agent_tools: List[Tool] = [getWeatherScenario1]
+    agent_tools: List[Tool] = [getWeatherScenario1_1]
 
-    bedrock_agent_metadata = BedrockAgentMetadata(
+    agent = BedrockAgent(
         agent_name=agent_name,
         agent_instruction=agent_instruction,
         agent_region=agent_region,
         agent_tools=agent_tools
     )
-
-    agent = BedrockAgentBase()
     try:
-        agent.create(bedrock_agent_metadata)
-        agent_executor = AgentExecutor.from_agent_and_tools(
-            agent=agent,
-            verbose=True,
-            tools=agent_tools,
-            return_intermediate_steps=True,
-            max_iterations=8
+        response = agent.invoke(
+            agent_input="What is the weather in seattle?"
         )
-
-        invoke_agent_request = {
-            "input": "What is the weather in seattle?",
-            "session_id": "dutsudip1234",
-            "trace_enabled": True
-        }
-        response = agent_executor.invoke(invoke_agent_request)
         logging.info(f"Bedrock Agent Response : \n {json.dumps(response, indent=4)} \n")
-        assert isinstance(response, dict)
-
+        assert isinstance(json.loads(response), dict)
     finally:
         agent.delete()
+
+
+@agent_tool(action_group='GetWeatherActionGroup', action='getWeather')
+def getWeatherScenario1_1(
+        location: str = ' '
+) -> str:
+    """
+    Get the weather of a location
+
+    Args:
+        location: location of the place
+    Returns:
+        str -> the weather at the requested location
+    """
+    if location.lower() == 'seattle':
+        return f"It is raining in {location}"
+    return f"It is hot and humid in {location}"
+
+
+# --------------------------------------------------------------------------------------------------------#
+
+# def test_run_chain_agent_executor_tools_create_delete():
+#     agent_name: str = "TestAgent"
+#     agent_instruction: str = "You are a test agent who will help me get weather information"
+#     agent_region: str = "us-east-1"
+#     agent_tools: List[Tool] = [getWeatherScenario1]
+#
+#     agent = BedrockAgent(
+#         agent_name=agent_name,
+#         agent_instruction=agent_instruction,
+#         agent_region=agent_region,
+#         agent_tools=agent_tools
+#     )
+#     try:
+#         agent_executor = AgentExecutor.from_agent_and_tools(
+#             agent=agent,
+#             verbose=True,
+#             tools=agent_tools,
+#             return_intermediate_steps=True,
+#             max_iterations=8
+#         )
+#
+#         invoke_agent_request = {
+#             "input": "What is the weather in seattle?",
+#             "session_id": "dutsudip1234",
+#             "trace_enabled": True
+#         }
+#         response = agent_executor.invoke(invoke_agent_request)
+#         logging.info(f"Bedrock Agent Response : \n {json.dumps(response, indent=4)} \n")
+#         assert isinstance(response, dict)
+#
+#     finally:
+#         agent.delete_agent()
 
 
 @agent_tool(action_group='GetWeatherActionGroup', action='getWeather')
@@ -143,9 +182,10 @@ def test_run_chain_bedrock_agent_executor_tools_create_delete_simplified():
             verbose=True,
             tools=agent_tools,
             return_intermediate_steps=True,
-            max_iterations=8)
+            max_iterations=8
+        )
 
-        response = agent_executor.invoke({"input": "What is the weather in seattle?"})
+        response = agent_executor.invoke(agent_input="What is the weather in seattle?")
         logging.info(f"Bedrock Agent Response : \n {json.dumps(response, indent=4)} \n")
         assert isinstance(response, dict)
     finally:
@@ -185,12 +225,10 @@ def test_run_chain_agent_executor_tools_invoke_create_delete():
     )
     try:
         session_id = str(uuid.uuid4())
-        invoke_agent_request = {
-            "input": "what is the weather in Seattle and Vancouver?",
-            "session_id": session_id,
-            "trace_enabled": True
-        }
-        response = bedrock_agent.invoke_agent(invoke_agent_request)
+        response = bedrock_agent.execute(
+            agent_input="what is the weather in Seattle and Vancouver?",
+            session_id=session_id
+        )
         assert isinstance(response, dict)
     finally:
         bedrock_agent.delete()
@@ -230,12 +268,10 @@ def test_run_chain_agent_executor_tools_invoke_multi_serial_actions():
     )
     try:
         session_id = str(uuid.uuid4())
-        invoke_agent_request = {
-            "input": "what is my mortgage rate for id AVC-1234",
-            "session_id": session_id,
-            "trace_enabled": True
-        }
-        response = bedrock_agent.invoke_agent(invoke_agent_request)
+        response = bedrock_agent.execute(
+            agent_input="what is my mortgage rate for id AVC-1234",
+            session_id=session_id
+        )
         assert isinstance(response, dict)
     finally:
         bedrock_agent.delete()
@@ -275,6 +311,37 @@ def getMortgageRateScenario3(
 
 # # --------------------------------------------------------------------------------------------------------#
 
+def test_run_chain_bedrock_agent_executor_tools_invoke_multi_serial_actions():
+    agent_name: str = "MortgageEvaluatorAgent1"
+    agent_instruction: str = "You are an agent who helps with getting the mortgage rate based on the current asset " \
+                             "valuation "
+    agent_region: str = "us-east-1"
+    agent_tools: List[Tool] = [getAssetValueScenario3, getMortgageRateScenario3]
+
+    bedrock_agent = BedrockAgent(
+        agent_name=agent_name,
+        agent_instruction=agent_instruction,
+        agent_region=agent_region,
+        agent_tools=agent_tools,
+        trace_handler=handle_trace
+    )
+
+    agent_executor = BedrockAgentExecutor.from_agent_and_tools(
+        agent=bedrock_agent,
+        verbose=True,
+        tools=agent_tools,
+        return_intermediate_steps=True,
+        max_iterations=8
+    )
+    try:
+        response = agent_executor.invoke(agent_input="what is my mortgage rate for id AVC-1234")
+        assert isinstance(response, dict)
+    finally:
+        bedrock_agent.delete()
+
+
+# # --------------------------------------------------------------------------------------------------------#
+
 def test_run_chain_agent_executor_tools_invoke_multi_serial_actions_simplified():
     agent_name: str = "MortgageEvaluatorAgent1"
     agent_instruction: str = "You are an agent who helps with getting the mortgage rate based on the current asset " \
@@ -289,7 +356,7 @@ def test_run_chain_agent_executor_tools_invoke_multi_serial_actions_simplified()
         agent_tools=agent_tools
     )
     try:
-        response = bedrock_agent.invoke(agent_input="what is my mortgage rate for id AVC-1234")
+        response = bedrock_agent.execute(agent_input="what is my mortgage rate for id AVC-1234")
         assert isinstance(response, dict)
     finally:
         bedrock_agent.delete()
@@ -344,7 +411,7 @@ def test_run_chain_agent_executor_tools_invoke_multi_serial_actions_simplified_t
         trace_handler=handle_trace
     )
     try:
-        response = bedrock_agent.invoke(agent_input="what is my mortgage rate for id AVC-1234")
+        response = bedrock_agent.execute(agent_input="what is my mortgage rate for id AVC-1234")
         assert isinstance(response, dict)
     finally:
         bedrock_agent.delete()
@@ -369,7 +436,7 @@ def test_run_chain_agent_executor_tools_invoke_multi_serial_actions_structured_t
         trace_handler=handle_trace
     )
     try:
-        response = bedrock_agent.invoke(agent_input="what is my mortgage rate for id AVC-1234")
+        response = bedrock_agent.execute(agent_input="what is my mortgage rate for id AVC-1234")
         assert isinstance(response, dict)
     finally:
         bedrock_agent.delete()
@@ -462,7 +529,7 @@ def test_run_chain_agent_executor_tools_invoke_multi_serial_actions_structured_t
         trace_handler=handle_trace
     )
     try:
-        response = bedrock_agent.invoke(agent_input="what is my mortgage rate for id AVC-1234")
+        response = bedrock_agent.execute(agent_input="what is my mortgage rate for id AVC-1234")
         assert isinstance(response, dict)
     finally:
         bedrock_agent.delete()
@@ -493,7 +560,7 @@ def test_run_chain_agent_executor_tools_invoke_multi_serial_actions_structured_t
         trace_handler=handle_trace
     )
     try:
-        response = bedrock_agent.invoke(
+        response = bedrock_agent.execute(
             agent_input="what is my mortgage rate for id AVC-1234",
             **{'session_state': agent_session_state}
         )
@@ -529,10 +596,8 @@ def test_run_chain_bedrock_agent_executor_tools_session_parameter():
             }
         }
         response = agent_executor.invoke(
-            {
-                "input": "What is the date 10 days before today's date in MM-DD-YYYY format?",
-                "session_state": agent_session_state
-            }
+            agent_input="What is the date 10 days before today's date in MM-DD-YYYY format?",
+            **{"session_state": agent_session_state}
         )
         logging.info(f"Bedrock Agent Response : \n {json.dumps(response, indent=4)} \n")
     finally:

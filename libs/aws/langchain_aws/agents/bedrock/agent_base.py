@@ -3,24 +3,19 @@ import logging
 import re
 import time
 import uuid
-from abc import ABC
 from typing import Any, Callable, List, Tuple, Union, Optional, Dict
 
-import pydantic
-from langchain.agents import BaseSingleActionAgent, AgentOutputParser
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.callbacks.manager import (
     Callbacks,
 )
 from langchain_core.output_parsers import BaseOutputParser
-from langchain_core.output_parsers.json import PydanticBaseModel
 from langchain_core.prompts.base import BasePromptTemplate
 from langchain_core.runnables import (
     Runnable,
 )
 from langchain_core.tools import Tool, tool
-from pydantic.v1 import validator
-from pydantic import BaseModel, ConfigDict, ValidationError
+
 from langchain_aws.agents.bedrock.agent_client import bedrock_agent, bedrock_agent_runtime, iam, sts
 
 _DEFAULT_ACTION_GROUP_NAME = 'DEFAULT_AG_'
@@ -634,7 +629,7 @@ class BedrockAgentBase:
         self.agent_tools = bedrock_agent_metadata.agent_tools
         self.bedrock_runtime = bedrock_agent_runtime()
 
-    def delete(
+    def delete_agent(
             self,
     ):
         """

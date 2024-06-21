@@ -3,7 +3,6 @@ import uuid
 from abc import ABC
 from typing import Any, List, Tuple, Union, Callable
 
-from langchain.agents import AgentExecutor
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.callbacks.manager import (
     Callbacks,
@@ -160,7 +159,6 @@ class BedrockAgentInputFormatter(BasePromptTemplate, ABC):
 
 
 class BedrockAgent(BedrockAgentBase, ABC):
-    bedrock_agent_base: BedrockAgentBase = None
     agent_executor: BedrockAgentExecutor = None
     trace_handler: Callable = None
     input_handler: Callable = None
@@ -186,37 +184,37 @@ class BedrockAgent(BedrockAgentBase, ABC):
             agent_region=agent_region,
             agent_tools=agent_tools
         )
+        self._activate_agent(bedrock_agent_metadata)
         self.trace_handler = trace_handler
         self.input_handler = input_handler
         self.output_handler = output_handler
-        self.bedrock_agent_base = self._activate_agent(bedrock_agent_metadata)
         self.agent_executor = self._activate_agent_executor(bedrock_agent_metadata)
 
-    def invoke_agent(
+    def invoke(
             self,
-            invoke_agent_request: dict,
+            agent_input: str,
+            session_id: str = str(uuid.uuid4()),
             **kwargs: Any,
     ):
         """
         Invoke Bedrock Agent and return the output.
 
         Args:
-            invoke_agent_request: Json structure invoke agent request
+            agent_input: Input text to BedrockAgents
+            session_id: Session Ids are unique values, identifying a list of turns pertaining to a single conversation
             **kwargs: Containing session state
 
         Returns:
             The response from BedrockAgents
         """
-        return self.invoke(
-            invoke_agent_request.get('input'),
-            kwargs.get('session_id', None),
-            **kwargs
-        )
+        kwargs['input'] = agent_input
+        kwargs['session_id'] = session_id
+        return self.invoke_agent_base(**kwargs)
 
-    def invoke(
+    def execute(
             self,
             agent_input: str,
-            session_id: str = None,
+            session_id: str = str(uuid.uuid4()),
             **kwargs: Any,
     ):
         """
@@ -231,19 +229,16 @@ class BedrockAgent(BedrockAgentBase, ABC):
         Returns:
             The response from BedrockAgents
         """
-        if not session_id:
-            session_id = str(uuid.uuid4())
-        invoke_agent_request = {
-            "input": agent_input,
-            "session_id": session_id,
-            "trace_enabled": True
-        }
-        return self.agent_executor.invoke({**invoke_agent_request, **kwargs})
+        return self.agent_executor.invoke(
+            agent_input=agent_input,
+            session_id=session_id,
+            **kwargs
+        )
 
     def run(
             self,
             agent_input: dict,
-            session_id: str = None,
+            session_id: str = str(uuid.uuid4()),
             **kwargs: Any,
     ):
         """
@@ -260,7 +255,7 @@ class BedrockAgent(BedrockAgentBase, ABC):
         """
         if type(agent_input) is dict and agent_input.get("input"):
             _input = self.input_handler(agent_input)
-            return self.output_handler(self.invoke(_input, session_id, **kwargs))
+            return self.output_handler(self.execute(_input, session_id, **kwargs))
 
         raise Exception("Input to Bedrock Agents should be a dict with 'input' field")
 
@@ -270,12 +265,12 @@ class BedrockAgent(BedrockAgentBase, ABC):
         """
         Delete an agent
         """
-        return self.bedrock_agent_base.delete()
+        return self.delete_agent()
 
     def _activate_agent(
             self,
             bedrock_agent_metadata: BedrockAgentMetadata
-    ) -> BedrockAgentBase:
+    ):
         """
         Activate an agent, i.e -
          1. Create the agent execution role
@@ -292,22 +287,30 @@ class BedrockAgent(BedrockAgentBase, ABC):
         output_parser = BedrockAgentResponseParser()
         request_formatter = BedrockAgentInputFormatter()
 
-        agent = BedrockAgentBase()
-        agent.create(
+        self.create(
             bedrock_agent_metadata=bedrock_agent_metadata,
             output_parser=output_parser,
             prompt_template=request_formatter,
             trace_handler=self.trace_handler
         )
-        return agent
 
     def _activate_agent_executor(
             self,
             bedrock_agent_metadata: BedrockAgentMetadata
     ) -> BedrockAgentExecutor:
+        """
+        Activate Bedrock agent executor.
+        This lets the execution to bind and use callable tools and return answers when there is AgentFinish
+
+        Args:
+            bedrock_agent_metadata: Meta data for Bedrock Agents
+
+        Returns:
+            BedrockAgentExecutor - Instantiates BedrockAgentExecutor to run inference on BedrockAgents
+        """
 
         return BedrockAgentExecutor.from_agent_and_tools(
-            agent=self.bedrock_agent_base,
+            agent=self,
             verbose=False,
             tools=bedrock_agent_metadata.agent_tools,
             return_intermediate_steps=True,

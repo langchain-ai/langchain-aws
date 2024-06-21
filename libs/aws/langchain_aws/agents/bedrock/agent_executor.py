@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import inspect
-from abc import ABC
+import uuid
 from typing import (
     Any,
     Dict,
@@ -13,19 +12,12 @@ from typing import (
 from langchain_core.agents import AgentAction, AgentFinish, AgentStep
 from langchain_core.callbacks import (
     CallbackManagerForChainRun,
-    Callbacks,
-    CallbackManager)
-from langchain_core.load import dumpd
-from langchain_core.outputs import RunInfo
-from langchain_core.runnables import RunnableConfig, ensure_config, RunnableSerializable
+    Callbacks)
 from langchain_core.tools import BaseTool
-from pydantic.v1 import validator, Field
 
 from langchain_aws.agents.bedrock.agent_base import BedrockAgentBase
 
 
-# class BedrockAgentExecutor(RunnableSerializable[Dict[str, Any], Dict[str, Any]], ABC):
-# class BedrockAgentExecutor(Chain, ABC):
 class BedrockAgentExecutor:
     """
     BedrockAgentExecutor handling the orchestration
@@ -40,7 +32,6 @@ class BedrockAgentExecutor:
             agent: BedrockAgentBase,
             **kwargs: {}
     ):
-        # super().__init__(**kwargs)
         self.agent = agent
         self.name_to_tool_map = {tool.name: tool for tool in self.agent.agent_tools}
 
@@ -71,31 +62,44 @@ class BedrockAgentExecutor:
             **kwargs,
         )
 
-    # def invoke(
-    #         self,
-    #         inputs: Dict[str, Any],
-    #         **kwargs,
-    # ) -> str:
-    #     return self._call({**inputs, **kwargs}).get('output', {})
-
     def invoke(
             self,
-            agent_input: Dict[str, Any],
+            agent_input: str,
+            session_id: str = str(uuid.uuid4()),
             intermediate_steps: List[Tuple[AgentAction, str]] = None,
             callbacks: Callbacks = None,
             **kwargs: Any,
     ) -> Union[AgentFinish | AgentAction]:
+        """
+        Calls plan to invoke Agents, perform tool invocations
+        This currently follow a simple single action loop
 
-        agent_response = self.agent.plan(intermediate_steps, callbacks, **agent_input)
+        Args:
+            agent_input: Input text to BedrockAgents
+            session_id: Session Ids are unique values, identifying a list of turns pertaining to a single conversation
+            intermediate_steps: Intermediate steps during execution
+            callbacks: Executor callbacks
+
+        Returns:
+           Either an AgentFinish or an AgentAction
+        """
+
+        agent_response = self.agent.plan(
+            intermediate_steps,
+            callbacks,
+            input=agent_input,
+            session_id=session_id,
+            **kwargs
+        )
         if type(agent_response) is AgentFinish:
             return agent_response.return_values
 
         if type(agent_response) is AgentAction:
             tool_response = self._perform_agent_action(agent_response)
             observation = [(tool_response.action, tool_response.observation)]
-            return self.invoke(agent_input, observation, callbacks, **kwargs)
+            return self.invoke(agent_input, session_id, observation, callbacks, **kwargs)
 
-        # return outputs
+        raise Exception("BedrockAgentExecutor could not understand the next plan")
 
     def _perform_agent_action(
             self,
@@ -131,7 +135,7 @@ class BedrockAgentExecutor:
 
         agent_input = {'input': inputs.get('input', '')}
         kwargs = {'session_state': inputs.get('session_state', {})}
-        agent_response = self.agent._invoke_agent_base(**{**agent_input, **kwargs})
+        agent_response = self.agent.invoke_agent_base(**{**agent_input, **kwargs})
         return {
             'output': agent_response
         }
@@ -153,7 +157,3 @@ class BedrockAgentExecutor:
         :meta private: output_keys
         """
         return ['output']
-
-    # @validator("agent", pre=True, always=True)
-    # def validate(self, agent: BedrockAgentBase):
-    #     return agent
