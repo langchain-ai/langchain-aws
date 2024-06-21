@@ -430,7 +430,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         if "claude-3" in self._get_model():
             if _tools_in_params({**kwargs}):
                 result = self._generate(
-                    messages, stop=stop, run_manager=run_manager, **kwargs
+                    messages, stop=stop, run_manager=run_manager, stream=False, **kwargs
                 )
                 message = result.generations[0].message
                 if isinstance(message, AIMessage) and message.tool_calls is not None:
@@ -488,15 +488,17 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         messages: List[BaseMessage],
         stop: Optional[List[str]] = None,
         run_manager: Optional[CallbackManagerForLLMRun] = None,
+        stream: Optional[bool] = None,
         **kwargs: Any,
     ) -> ChatResult:
+        should_stream = stream if stream is not None else self.streaming
         completion = ""
         llm_output: Dict[str, Any] = {}
         tool_calls: List[Dict[str, Any]] = []
         provider_stop_reason_code = self.provider_stop_reason_key_map.get(
             self._get_provider(), "stop_reason"
         )
-        if self.streaming:
+        if should_stream:
             response_metadata: List[Dict[str, Any]] = []
             for chunk in self._stream(messages, stop, run_manager, **kwargs):
                 completion += chunk.text
