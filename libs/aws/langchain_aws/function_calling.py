@@ -175,17 +175,14 @@ class ToolsOutputParser(BaseGenerationOutputParser):
         Returns:
             Structured output.
         """
-        if not result or not isinstance(result[0], ChatGeneration):
+        if (
+            not result
+            or not isinstance(result[0], ChatGeneration)
+            or not isinstance(result[0].message, AIMessage)
+            or not result[0].message.tool_calls
+        ):
             return None if self.first_tool_only else []
-        message = result[0].message
-        if len(message.content) > 0:
-            tool_calls: List = []
-        else:
-            content = cast(AIMessage, message)
-            _tool_calls = [dict(tc) for tc in content.tool_calls]
-            # Map tool call id to index
-            id_to_index = {block["id"]: i for i, block in enumerate(_tool_calls)}
-            tool_calls = [{**tc, "index": id_to_index[tc["id"]]} for tc in _tool_calls]
+        tool_calls: Any = result[0].message.tool_calls
         if self.pydantic_schemas:
             tool_calls = [self._pydantic_parse(tc) for tc in tool_calls]
         elif self.args_only:
@@ -194,11 +191,11 @@ class ToolsOutputParser(BaseGenerationOutputParser):
             pass
 
         if self.first_tool_only:
-            return tool_calls[0] if tool_calls else None
+            return tool_calls[0]
         else:
-            return [tool_call for tool_call in tool_calls]
+            return tool_calls
 
-    def _pydantic_parse(self, tool_call: dict) -> BaseModel:
+    def _pydantic_parse(self, tool_call: ToolCall) -> BaseModel:
         cls_ = {schema.__name__: schema for schema in self.pydantic_schemas or []}[
             tool_call["name"]
         ]
