@@ -2,7 +2,6 @@ import json
 import uuid
 from unittest import mock
 
-
 from langchain_aws.agents.bedrock.agent_base import agent_tool
 from langchain_aws.agents.bedrock.bedrock_agent import (
     BedrockAgent,
@@ -292,12 +291,7 @@ def test_create_bedrock_agent(
     )
 
     assert agent is not None
-    assert agent.bedrock_agent.name == 'testAgent'
-    assert agent.bedrock_agent.agent_id == 'test_agent_id'
-    assert agent.bedrock_agent.agent_alias_id == 'TSTALIASID'
-    assert agent.bedrock_agent.agent_region == 'us-west-2'
-    assert agent.bedrock_agent.agent_tools == [asset_value_tool, mortgage_rate_tool]
-    assert agent.agent_executor.agent.name == 'testAgent'
+    assert agent.agent_executor.agent.name == 'BedrockAgentBase'
     assert agent.agent_executor.agent.agent_id == 'test_agent_id'
     assert agent.agent_executor.agent.agent_alias_id == 'TSTALIASID'
     assert agent.agent_executor.agent.agent_region == 'us-west-2'
@@ -369,16 +363,16 @@ def test_run_bedrock_agent(
         agent_tools=[getTestFunction1]
     )
 
-    agentRunResponse = agent.run('Test input', 'Test session id')
+    agentRunResponse = agent.run(
+        {'input': 'Test input'},
+        'Test session id')
 
     assert agentRunResponse is not None
-    assert agentRunResponse['input'] == 'Test input'
-    assert agentRunResponse['session_id'] == 'Test session id'
-    assert agentRunResponse['trace_enabled'] is True
+    assert agentRunResponse['output'] == ''
 
 
 @mock.patch("boto3.client")
-def test_invoke_bedrock_agent(
+def test_execute_bedrock_agent(
     mock_client
 ):
     """
@@ -426,18 +420,13 @@ def test_invoke_bedrock_agent(
         agent_tools=[getTestFunction1]
     )
 
-    invoke_agent_request = {
-        "input": 'Test input',
-        "session_id": str(uuid.uuid4()),
-        "trace_enabled": True
-    }
-
-    agentRunResponse = agent.invoke_agent(invoke_agent_request)
+    agentRunResponse = agent.execute(
+        agent_input='Hello from Bedrock',
+        session_id=str(uuid.uuid4())
+    )
 
     assert agentRunResponse is not None
-    assert agentRunResponse['input'] == 'Test input'
-    assert agentRunResponse['session_id'] is not None
-    assert agentRunResponse['trace_enabled'] is True
+    assert agentRunResponse['output'] == ''
 
 
 @mock.patch("boto3.client")

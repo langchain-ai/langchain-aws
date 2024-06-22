@@ -45,10 +45,6 @@ def agent_tool(
         args[0].__doc__ = f"<agent_tool_doc>{args[0].__doc__}</agent_tool_doc>"
         return tool(*args)
 
-    if not action_group and not method:
-        action.__name__ = action.__name__ + "ActionGroup::" + action.__name__
-        action.__doc__ = f"<agent_tool_doc>{action.__doc__}</agent_tool_doc>"
-        return tool(action)
     return atool
 
 

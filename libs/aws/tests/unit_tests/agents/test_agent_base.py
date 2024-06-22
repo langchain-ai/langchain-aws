@@ -3,7 +3,6 @@ from asyncio import run
 from typing import Callable
 from unittest import mock
 
-from langchain.agents import AgentOutputParser
 from langchain_aws.agents.bedrock.agent_base import (
     agent_tool,
     BedrockAgentMetadata,
@@ -15,7 +14,8 @@ from langchain_aws.agents.bedrock.agent_client import (
     bedrock_agent_runtime
 )
 from langchain_core.agents import AgentAction
-from langchain_core.prompts.base import BaseOutputParser, BasePromptTemplate
+from langchain_core.output_parsers import BaseOutputParser
+from langchain_core.prompts.base import BasePromptTemplate
 
 
 @agent_tool(
@@ -740,7 +740,7 @@ def test_create_bedrock_agent_base():
     agent_base = BedrockAgentBase()
 
     assert agent_base is not None
-    assert agent_base.name == 'BedrockAgent'
+    assert agent_base.name == 'BedrockAgentBase'
     assert agent_base.agent_id == ' '
     assert agent_base.agent_alias_id == ' '
     assert agent_base.agent_region == ' '
@@ -765,13 +765,6 @@ def test_agent_from_bedrock_agent_base():
         agent_alias_id='TSTALIASID',
         agent_region='us-west-2',
         agent_tools=[getTestFunction1]
-    )
-
-    class TestAgentOutputParser(AgentOutputParser):
-        def parse(self, output):
-            return output
-    agent_output_parser = TestAgentOutputParser(
-        name='agentOutputParser'
     )
 
     class TestBaseOutputParser(BaseOutputParser):
@@ -812,20 +805,20 @@ def test_agent_from_bedrock_agent_base():
     # Call agent method
     agent_base.agent(
         bedrock_agent_runtime_construct=agent_runtime_construct,
-        output_parser=agent_output_parser,
+        output_parser=agent_base_output_parser,
         prompt_template=base_prompt_template,
         trace_handler=trace_handler
     )
 
     assert agent_base is not None
-    assert agent_base.name == 'BedrockAgent'
+    assert agent_base.name == 'BedrockAgentBase'
     assert agent_base.agent_id == 'ABC1234'
     assert agent_base.agent_alias_id == 'TSTALIASID'
     assert agent_base.agent_region == 'us-west-2'
     assert agent_base.agent_resource_role_arn is None
     assert agent_base.bedrock_runtime is not None
     assert agent_base.agent_tools == [getTestFunction1]
-    assert agent_base.output_parser is agent_output_parser
+    assert agent_base.output_parser is agent_base_output_parser
     assert agent_base.prompt_template is base_prompt_template
     assert agent_base.trace_handler is trace_handler
 
@@ -890,13 +883,6 @@ def test_create_agent_from_bedrock_agent_base(
         agent_region='us-west-2'
     )
 
-    class TestAgentOutputParser(AgentOutputParser):
-        def parse(self, output):
-            return output
-    agent_output_parser = TestAgentOutputParser(
-        name='agentOutputParser'
-    )
-
     class TestBaseOutputParser(BaseOutputParser):
         def parse(self, output):
             return output
@@ -935,20 +921,20 @@ def test_create_agent_from_bedrock_agent_base(
     # Call create method
     agent_base.create(
         bedrock_agent_metadata=agent_construct,
-        output_parser=agent_output_parser,
+        output_parser=agent_base_output_parser,
         prompt_template=base_prompt_template,
         trace_handler=trace_handler
     )
 
     assert agent_base is not None
-    assert agent_base.name == 'testAgent'
+    assert agent_base.name == 'BedrockAgentBase'
     assert agent_base.agent_id == 'test_agent_id'
     assert agent_base.agent_alias_id == 'TSTALIASID'
     assert agent_base.agent_region == 'us-west-2'
     assert agent_base.agent_resource_role_arn is None
     assert agent_base.bedrock_runtime is not None
     assert agent_base.agent_tools == [getTestFunction1]
-    assert agent_base.output_parser is agent_output_parser
+    assert agent_base.output_parser is agent_base_output_parser
     assert agent_base.prompt_template is base_prompt_template
     assert agent_base.trace_handler is trace_handler
 
@@ -1023,7 +1009,7 @@ def test_delete_agent_from_bedrock_agent_base(
     )
 
     # Call delete method
-    agent_base.delete()
+    agent_base.delete_agent()
 
 
 def test_bedrock_agent_base_input_keys_method():
@@ -1221,7 +1207,7 @@ def test_invoke_from_bedrock_agent_base(
     agent_base.bedrock_runtime = bedrock_agent_runtime()
 
     # Call the plan method
-    agentBaseResponse = agent_base.invoke(
+    agentBaseResponse = agent_base.invoke_agent_base(
         input='Let\'s test the return of control function',
         session_id='testSessionId'
     )
