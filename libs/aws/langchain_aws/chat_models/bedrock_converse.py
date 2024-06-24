@@ -526,10 +526,10 @@ class ChatBedrockConverse(BaseChatModel):
 
 def _messages_to_bedrock(
     messages: List[BaseMessage],
-) -> Tuple[List[Dict[str, Any]], List[Dict[Literal["text"], str]]]:
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Handle Bedrock converse and Anthropic style content blocks"""
     bedrock_messages: List[Dict[str, Any]] = []
-    bedrock_system: List[Dict[Literal["text"], str]] = []
+    bedrock_system: List[Dict[str, Any]] = []
     for msg in messages:
         content = _anthropic_to_bedrock(msg.content)
         if isinstance(msg, HumanMessage):
@@ -538,17 +538,7 @@ def _messages_to_bedrock(
             content = _upsert_tool_calls_to_bedrock_content(content, msg.tool_calls)
             bedrock_messages.append({"role": "assistant", "content": content})
         elif isinstance(msg, SystemMessage):
-            if isinstance(msg.content, str):
-                bedrock_system.append({"text": msg.content})
-            else:
-                bedrock_system.extend(
-                    [
-                        {
-                            "text": block["text"] if isinstance(block, dict) else block
-                            for block in msg.content
-                        }
-                    ]
-                )
+            bedrock_system.extend(content)
         elif isinstance(msg, ToolMessage):
             if bedrock_messages and bedrock_messages[-1]["role"] == "user":
                 curr = bedrock_messages.pop()
