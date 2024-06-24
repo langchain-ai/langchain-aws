@@ -689,9 +689,7 @@ def _anthropic_to_bedrock(
         elif block["type"] == "json":
             bedrock_content.append({"json": block["json"]})
         elif block["type"] == "guard_content":
-            bedrock_content.append(
-                {"guardContent": {"text": {"text": block["guardContent"]["text"]}}}
-            )
+            bedrock_content.append({"guardContent": {"text": {"text": block["text"]}}})
         else:
             raise ValueError(f"Unsupported content block type:\n{block}")
     # drop empty text blocks
