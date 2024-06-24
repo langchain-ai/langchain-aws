@@ -680,7 +680,8 @@ def _anthropic_to_bedrock(
                 {
                     "toolResult": {
                         "toolUseId": block["toolUseId"],
-                        "content": _anthropic_to_bedrock(content),
+                        "content": _anthropic_to_bedrock(block["content"]),
+                        "status": "error" if block.get("isError") else "success",
                     }
                 }
             )
@@ -721,7 +722,7 @@ def _bedrock_to_anthropic(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]
                 {
                     "type": "tool_result",
                     "tool_use_id": block["tool_result"]["tool_use_id"],
-                    "is_error": block["tool_result"]["status"] == "success",
+                    "is_error": block["tool_result"].get("status") == "error",
                     "content": _bedrock_to_anthropic(block["tool_result"]["content"]),
                 }
             )
