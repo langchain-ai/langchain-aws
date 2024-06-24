@@ -662,14 +662,9 @@ def _anthropic_to_bedrock(
             bedrock_content.append(
                 {
                     "toolResult": {
-<<<<<<< userlerueda/bedrock_converse-mod-init
-                        "toolUseId": block["tool_use_id"],
-                        "content": _anthropic_to_bedrock(content),
-=======
                         "toolUseId": block["toolUseId"],
                         "content": _anthropic_to_bedrock(block["content"]),
                         "status": "error" if block.get("isError") else "success",
->>>>>>> main
                     }
                 }
             )
