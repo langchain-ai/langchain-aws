@@ -504,10 +504,10 @@ class ChatBedrockConverse(BaseChatModel):
 
 def _messages_to_bedrock(
     messages: List[BaseMessage],
-) -> Tuple[List[Dict[str, Any]], List[Dict[Literal["text"], str]]]:
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Handle Bedrock converse and Anthropic style content blocks"""
     bedrock_messages: List[Dict[str, Any]] = []
-    bedrock_system: List[Dict[Literal["text"], str]] = []
+    bedrock_system: List[Dict[str, Any]] = []
     for msg in messages:
         content = _anthropic_to_bedrock(msg.content)
         if isinstance(msg, HumanMessage):
@@ -516,17 +516,7 @@ def _messages_to_bedrock(
             content = _upsert_tool_calls_to_bedrock_content(content, msg.tool_calls)
             bedrock_messages.append({"role": "assistant", "content": content})
         elif isinstance(msg, SystemMessage):
-            if isinstance(msg.content, str):
-                bedrock_system.append({"text": msg.content})
-            else:
-                bedrock_system.extend(
-                    [
-                        {
-                            "text": block["text"] if isinstance(block, dict) else block
-                            for block in msg.content
-                        }
-                    ]
-                )
+            bedrock_system.extend(content)
         elif isinstance(msg, ToolMessage):
             if bedrock_messages and bedrock_messages[-1]["role"] == "user":
                 curr = bedrock_messages.pop()
@@ -668,7 +658,8 @@ def _anthropic_to_bedrock(
                 {
                     "toolResult": {
                         "toolUseId": block["toolUseId"],
-                        "content": _anthropic_to_bedrock(content),
+                        "content": _anthropic_to_bedrock(block["content"]),
+                        "status": "error" if block.get("isError") else "success",
                     }
                 }
             )
@@ -705,7 +696,7 @@ def _bedrock_to_anthropic(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]
                 {
                     "type": "tool_result",
                     "tool_use_id": block["tool_result"]["tool_use_id"],
-                    "is_error": block["tool_result"]["status"] == "success",
+                    "is_error": block["tool_result"].get("status") == "error",
                     "content": _bedrock_to_anthropic(block["tool_result"]["content"]),
                 }
             )
