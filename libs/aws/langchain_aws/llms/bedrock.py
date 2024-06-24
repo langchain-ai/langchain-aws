@@ -35,7 +35,7 @@ from langchain_aws.utils import (
 )
 
 AMAZON_BEDROCK_TRACE_KEY = "amazon-bedrock-trace"
-GUARDRAILS_BODY_KEY = "amazon-bedrock-guardrailAssessment"
+GUARDRAILS_BODY_KEY = "amazon-bedrock-guardrailAction"
 HUMAN_PROMPT = "\n\nHuman:"
 ASSISTANT_PROMPT = "\n\nAssistant:"
 ALTERNATION_ERROR = (
@@ -298,7 +298,7 @@ class LLMInputOutputAdapter:
         response: Any,
         stop: Optional[List[str]] = None,
         messages_api: bool = False,
-    ) -> Iterator[GenerationChunk]:
+    ) -> Union[Iterator[GenerationChunk], Iterator[Dict]]:
         stream = response.get("body")
 
         if not stream:
@@ -333,7 +333,7 @@ class LLMInputOutputAdapter:
                 return
 
             elif messages_api and (chunk_obj.get("type") == "message_stop"):
-                return
+                yield chunk_obj
 
             generation_chunk = _stream_response_to_generation_chunk(
                 chunk_obj,
@@ -394,6 +394,13 @@ class LLMInputOutputAdapter:
                 yield generation_chunk
             else:
                 continue
+
+
+class BedrockGuardrailError(Exception):
+    """Raised when a guardrail is triggered."""
+
+    def __init__(self):
+        super().__init__("Blocked by Bedrock Guardrails")
 
 
 class BedrockBase(BaseLanguageModel, ABC):
@@ -693,6 +700,9 @@ class BedrockBase(BaseLanguageModel, ABC):
                 ),
                 **services_trace,
             )
+            raise Exception(
+                f"Error raised by bedrock service: {services_trace.get('reason')}"
+            )
 
         return text, tool_calls, llm_output
 
@@ -722,7 +732,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         }
 
     def _is_guardrails_intervention(self, body: dict) -> bool:
-        return body.get(GUARDRAILS_BODY_KEY) == "GUARDRAIL_INTERVENED"
+        return body.get(GUARDRAILS_BODY_KEY) == "INTERVENED"
 
     def _prepare_input_and_invoke_stream(
         self,
@@ -795,17 +805,29 @@ class BedrockBase(BaseLanguageModel, ABC):
             raise ValueError(f"Error raised by bedrock service: {e}")
 
         for chunk in LLMInputOutputAdapter.prepare_output_stream(
-            provider,
-            response,
-            stop,
-            True if messages else False,
+            provider, response, stop, True if messages else False
         ):
-            yield chunk
-            # verify and raise callback error if any middleware intervened
-            self._get_bedrock_services_signal(chunk.generation_info)  # type: ignore[arg-type]
+            if isinstance(chunk, dict):
+                services_trace = self._get_bedrock_services_signal(chunk)
+                print(f"services_trace: {services_trace}")
 
-            if run_manager is not None:
-                run_manager.on_llm_new_token(chunk.text, chunk=chunk)
+                if run_manager is not None and services_trace.get("signal"):
+                    run_manager.on_llm_error(
+                        Exception(
+                            f"Error raised by bedrock service: {services_trace.get('reason')}"
+                        ),
+                        **services_trace,
+                    )
+                    raise Exception(
+                        f"Error raised by bedrock service: {services_trace.get('reason')}"
+                    )
+            else:
+                yield chunk
+                # verify and raise callback error if any middleware intervened
+                self._get_bedrock_services_signal(chunk.generation_info)  # type: ignore[arg-type]
+
+                if run_manager is not None:
+                    run_manager.on_llm_new_token(chunk.text, chunk=chunk)
 
     async def _aprepare_input_and_invoke_stream(
         self,
