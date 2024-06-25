@@ -143,8 +143,16 @@ def test_bedrock_streaming(chat: ChatBedrock) -> None:
 async def test_bedrock_astream(chat: ChatBedrock) -> None:
     """Test streaming tokens from OpenAI."""
 
+    full = None
     async for token in chat.astream("I'm Pickle Rick"):
+        full = token if full is None else full + token  # type: ignore[operator]
         assert isinstance(token.content, str)
+    assert isinstance(full, AIMessageChunk)
+    assert isinstance(full.content, str)
+    assert full.usage_metadata is not None
+    assert full.usage_metadata["input_tokens"] > 0
+    assert full.usage_metadata["output_tokens"] > 0
+    assert full.usage_metadata["total_tokens"] > 0
 
 
 @pytest.mark.scheduled
