@@ -31,6 +31,7 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
 )
+from langchain_core.messages.ai import UsageMetadata
 from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.pydantic_v1 import BaseModel, Extra
@@ -484,9 +485,15 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             **kwargs,
         ):
             delta = chunk.text
+            if generation_info := chunk.generation_info:
+                usage_metadata = generation_info.pop("usage_metadata", None)
+            else:
+                usage_metadata = None
             yield ChatGenerationChunk(
                 message=AIMessageChunk(
-                    content=delta, response_metadata=chunk.generation_info
+                    content=delta,
+                    response_metadata=chunk.generation_info,
+                    usage_metadata=usage_metadata,
                 )
                 if chunk.generation_info is not None
                 else AIMessageChunk(content=delta)
@@ -550,16 +557,31 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 messages=formatted_messages,
                 **params,
             )
-
+        # usage metadata
+        if usage := llm_output.get("usage"):
+            input_tokens = usage.get("prompt_tokens", 0)
+            output_tokens = usage.get("completion_tokens", 0)
+            usage_metadata = UsageMetadata(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=usage.get("total_tokens", input_tokens + output_tokens),
+            )
+        else:
+            usage_metadata = None
         llm_output["model_id"] = self.model_id
         if len(tool_calls) > 0:
             msg = AIMessage(
                 content=completion,
                 additional_kwargs=llm_output,
                 tool_calls=cast(List[ToolCall], tool_calls),
+                usage_metadata=usage_metadata,
             )
         else:
-            msg = AIMessage(content=completion, additional_kwargs=llm_output)
+            msg = AIMessage(
+                content=completion,
+                additional_kwargs=llm_output,
+                usage_metadata=usage_metadata,
+            )
         return ChatResult(
             generations=[
                 ChatGeneration(
