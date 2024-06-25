@@ -396,13 +396,6 @@ class LLMInputOutputAdapter:
                 continue
 
 
-class BedrockGuardrailError(Exception):
-    """Raised when a guardrail is triggered."""
-
-    def __init__(self):
-        super().__init__("Blocked by Bedrock Guardrails")
-
-
 class BedrockBase(BaseLanguageModel, ABC):
     """Base class for Bedrock models."""
 
@@ -700,9 +693,6 @@ class BedrockBase(BaseLanguageModel, ABC):
                 ),
                 **services_trace,
             )
-            raise Exception(
-                f"Error raised by bedrock service: {services_trace.get('reason')}"
-            )
 
         return text, tool_calls, llm_output
 
@@ -817,9 +807,6 @@ class BedrockBase(BaseLanguageModel, ABC):
                             f"Error raised by bedrock service: {services_trace.get('reason')}"
                         ),
                         **services_trace,
-                    )
-                    raise Exception(
-                        f"Error raised by bedrock service: {services_trace.get('reason')}"
                     )
             else:
                 yield chunk
