@@ -94,22 +94,8 @@ def _stream_response_to_generation_chunk(
         msg_type = stream_response.get("type")
         if msg_type == "message_start":
             usage_info = stream_response.get("message", {}).get("usage", None)
-            if provider == "anthropic":
-                # Anthropic streams output_tokens == 1 in message_start events.
-                # To avoid double-counting with output_tokens in message_dleta,
-                # here we set output_tokens to 0.
-                input_tokens = usage_info.get("input_tokens", 0)
-                usage_metadata = {
-                    "input_tokens": input_tokens,
-                    "output_tokens": 0,
-                    "total_tokens": input_tokens,
-                }
-            else:
-                usage_metadata = {}
             usage_info = _nest_usage_info_token_counts(usage_info)
             generation_info = {"usage": usage_info}
-            if usage_metadata:
-                generation_info["usage_metadata"] = usage_metadata
             return GenerationChunk(text="", generation_info=generation_info)
         elif msg_type == "content_block_delta":
             if not stream_response["delta"]:
@@ -122,20 +108,9 @@ def _stream_response_to_generation_chunk(
             )
         elif msg_type == "message_delta":
             usage_info = stream_response.get("usage", None)
-            if provider == "anthropic":
-                output_tokens = usage_info.get("output_tokens", 0)
-                usage_metadata = {
-                    "input_tokens": 0,
-                    "output_tokens": output_tokens,
-                    "total_tokens": output_tokens,
-                }
-            else:
-                usage_metadata = {}
             usage_info = _nest_usage_info_token_counts(usage_info)
             stop_reason = stream_response.get("delta", {}).get("stop_reason")
             generation_info = {"stop_reason": stop_reason, "usage": usage_info}
-            if usage_metadata:
-                generation_info["usage_metadata"] = usage_metadata
             return GenerationChunk(text="", generation_info=generation_info)
         else:
             return None
@@ -203,6 +178,19 @@ def _combine_generation_info_for_llm_result(
     )
 
     return {"usage": total_usage_info, "stop_reason": stop_reason}
+
+
+def _get_invocation_metrics_chunk(chunk: Dict[str, Any]) -> GenerationChunk:
+    generation_info = {}
+    if metrics := chunk.get("amazon-bedrock-invocationMetrics"):
+        input_tokens = metrics.get("inputTokenCount", 0)
+        output_tokens = metrics.get("outputTokenCount", 0)
+        generation_info["usage_metadata"] = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+        }
+    return GenerationChunk(text="", generation_info=generation_info)
 
 
 def extract_tool_calls(content: List[dict]) -> List[ToolCall]:
@@ -355,9 +343,11 @@ class LLMInputOutputAdapter:
                 provider == "mistral"
                 and chunk_obj.get(output_key, [{}])[0].get("stop_reason", "") == "stop"
             ):
+                yield _get_invocation_metrics_chunk(chunk_obj)
                 return
 
             elif messages_api and (chunk_obj.get("type") == "message_stop"):
+                yield _get_invocation_metrics_chunk(chunk_obj)
                 return
 
             generation_chunk = _stream_response_to_generation_chunk(
