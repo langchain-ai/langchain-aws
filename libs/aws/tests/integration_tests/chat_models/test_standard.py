@@ -23,10 +23,6 @@ class TestBedrockStandard(ChatModelIntegrationTests):
         return {}
 
     @pytest.mark.xfail(reason="Not implemented.")
-    def test_usage_metadata(self, model: BaseChatModel) -> None:
-        super().test_usage_metadata(model)
-
-    @pytest.mark.xfail(reason="Not implemented.")
     def test_stop_sequence(self, model: BaseChatModel) -> None:
         super().test_stop_sequence(model)
 

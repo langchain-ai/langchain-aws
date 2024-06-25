@@ -1,6 +1,6 @@
 """Test Bedrock chat model."""
 import json
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from langchain_core.messages import (
@@ -124,22 +124,54 @@ def test_chat_bedrock_streaming_generation_info() -> None:
 
 
 @pytest.mark.scheduled
-def test_bedrock_streaming(chat: ChatBedrock) -> None:
-    """Test streaming tokens from OpenAI."""
-
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "anthropic.claude-3-sonnet-20240229-v1:0",
+        "mistral.mistral-7b-instruct-v0:2",
+    ],
+)
+def test_bedrock_streaming(model_id: str) -> None:
+    chat = ChatBedrock(
+        model_id=model_id,
+        model_kwargs={"temperature": 0},
+    )  # type: ignore[call-arg]
     full = None
     for token in chat.stream("I'm Pickle Rick"):
         full = token if full is None else full + token  # type: ignore[operator]
         assert isinstance(token.content, str)
-    assert isinstance(cast(AIMessageChunk, full).content, str)
+    assert isinstance(full, AIMessageChunk)
+    assert isinstance(full.content, str)
+    assert full.usage_metadata is not None
+    assert full.usage_metadata["input_tokens"] > 0
+    assert full.usage_metadata["output_tokens"] > 0
+    assert full.usage_metadata["total_tokens"] > 0
 
 
 @pytest.mark.scheduled
-async def test_bedrock_astream(chat: ChatBedrock) -> None:
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "anthropic.claude-3-sonnet-20240229-v1:0",
+        "mistral.mistral-7b-instruct-v0:2",
+    ],
+)
+async def test_bedrock_astream(model_id: str) -> None:
     """Test streaming tokens from OpenAI."""
-
+    chat = ChatBedrock(
+        model_id=model_id,
+        model_kwargs={"temperature": 0},
+    )  # type: ignore[call-arg]
+    full = None
     async for token in chat.astream("I'm Pickle Rick"):
+        full = token if full is None else full + token  # type: ignore[operator]
         assert isinstance(token.content, str)
+    assert isinstance(full, AIMessageChunk)
+    assert isinstance(full.content, str)
+    assert full.usage_metadata is not None
+    assert full.usage_metadata["input_tokens"] > 0
+    assert full.usage_metadata["output_tokens"] > 0
+    assert full.usage_metadata["total_tokens"] > 0
 
 
 @pytest.mark.scheduled

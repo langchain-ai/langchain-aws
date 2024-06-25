@@ -180,6 +180,19 @@ def _combine_generation_info_for_llm_result(
     return {"usage": total_usage_info, "stop_reason": stop_reason}
 
 
+def _get_invocation_metrics_chunk(chunk: Dict[str, Any]) -> GenerationChunk:
+    generation_info = {}
+    if metrics := chunk.get("amazon-bedrock-invocationMetrics"):
+        input_tokens = metrics.get("inputTokenCount", 0)
+        output_tokens = metrics.get("outputTokenCount", 0)
+        generation_info["usage_metadata"] = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+        }
+    return GenerationChunk(text="", generation_info=generation_info)
+
+
 def extract_tool_calls(content: List[dict]) -> List[ToolCall]:
     tool_calls = []
     for block in content:
@@ -330,9 +343,11 @@ class LLMInputOutputAdapter:
                 provider == "mistral"
                 and chunk_obj.get(output_key, [{}])[0].get("stop_reason", "") == "stop"
             ):
+                yield _get_invocation_metrics_chunk(chunk_obj)
                 return
 
             elif messages_api and (chunk_obj.get("type") == "message_stop"):
+                yield _get_invocation_metrics_chunk(chunk_obj)
                 return
 
             generation_chunk = _stream_response_to_generation_chunk(
