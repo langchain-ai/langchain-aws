@@ -1,6 +1,6 @@
 """Test Bedrock chat model."""
 import json
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from langchain_core.messages import (
@@ -131,7 +131,12 @@ def test_bedrock_streaming(chat: ChatBedrock) -> None:
     for token in chat.stream("I'm Pickle Rick"):
         full = token if full is None else full + token  # type: ignore[operator]
         assert isinstance(token.content, str)
-    assert isinstance(cast(AIMessageChunk, full).content, str)
+    assert isinstance(full, AIMessageChunk)
+    assert isinstance(full.content, str)
+    assert full.usage_metadata is not None
+    assert full.usage_metadata["input_tokens"] > 0
+    assert full.usage_metadata["output_tokens"] > 0
+    assert full.usage_metadata["total_tokens"] > 0
 
 
 @pytest.mark.scheduled

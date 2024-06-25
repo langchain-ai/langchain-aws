@@ -485,9 +485,15 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             **kwargs,
         ):
             delta = chunk.text
+            if generation_info := chunk.generation_info:
+                usage_metadata = _unpack_usage_from_generation_info(generation_info)
+            else:
+                usage_metadata = None
             yield ChatGenerationChunk(
                 message=AIMessageChunk(
-                    content=delta, response_metadata=chunk.generation_info
+                    content=delta,
+                    response_metadata=chunk.generation_info,
+                    usage_metadata=usage_metadata,
                 )
                 if chunk.generation_info is not None
                 else AIMessageChunk(content=delta)
@@ -824,6 +830,22 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             base_url=self.endpoint_url,
             **kwargs,
         )
+
+
+def _unpack_usage_from_generation_info(
+    generation_info: dict,
+) -> Optional[UsageMetadata]:
+    """Extract usage metadata from generation info."""
+    usage = generation_info.get("usage")
+    if usage is None:
+        return None
+    input_tokens = (usage.get("input_tokens") or [0])[0]
+    output_tokens = (usage.get("output_tokens") or [0])[0]
+    return UsageMetadata(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=input_tokens + output_tokens,
+    )
 
 
 @deprecated(since="0.1.0", removal="0.2.0", alternative="ChatBedrock")
