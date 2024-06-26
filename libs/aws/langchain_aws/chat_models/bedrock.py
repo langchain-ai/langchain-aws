@@ -500,7 +500,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         stream: Optional[bool] = None,
         **kwargs: Any,
     ) -> ChatResult:
-
         should_stream = stream if stream is not None else self.streaming
 
         if self.beta_use_converse_api:
