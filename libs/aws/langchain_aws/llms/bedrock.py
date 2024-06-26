@@ -142,7 +142,7 @@ def _nest_usage_info_token_counts(usage_info: dict) -> dict:
 
 
 def _combine_generation_info_for_llm_result(
-    chunks_generation_info: List[Dict[str, Any]], provider_stop_code: str
+    chunks_generation_info: List[Dict[str, Any]], provider_stop_code: str, model_id: str
 ) -> Dict[str, Any]:
     """
     Returns usage and stop reason information with the intent to pack into an LLMResult
@@ -177,7 +177,7 @@ def _combine_generation_info_for_llm_result(
         total_usage_info["prompt_tokens"] + total_usage_info["completion_tokens"]
     )
 
-    return {"usage": total_usage_info, "stop_reason": stop_reason}
+    return {"usage": total_usage_info, "stop_reason": stop_reason, "model_id" : model_id}
 
 
 def _get_invocation_metrics_chunk(chunk: Dict[str, Any]) -> GenerationChunk:
@@ -694,7 +694,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         if stop is not None:
             text = enforce_stop_tokens(text, stop)
 
-        llm_output = {"usage": usage_info, "stop_reason": stop_reason}
+        llm_output = {"usage": usage_info, "stop_reason": stop_reason, "model_id": self.model_id}
 
         # Verify and raise a callback error if any intervention occurs or a signal is
         # sent from a Bedrock service,
@@ -1029,7 +1029,7 @@ class BedrockLLM(LLM, BedrockBase):
                     if chunk.generation_info is not None
                 ]
                 llm_output = _combine_generation_info_for_llm_result(
-                    chunks_generation_info, provider_stop_code=provider_stop_reason_code
+                    chunks_generation_info, provider_stop_code=provider_stop_reason_code, model_id=self.model_id
                 )
                 all_generations = [
                     Generation(text=chunk.text, generation_info=chunk.generation_info)
@@ -1121,7 +1121,7 @@ class BedrockLLM(LLM, BedrockBase):
                 if chunk.generation_info is not None
             ]
             llm_output = _combine_generation_info_for_llm_result(
-                chunks_generation_info, provider_stop_code=provider_stop_reason_code
+                chunks_generation_info, provider_stop_code=provider_stop_reason_code, model_id=self.model_id
             )
             generations = [
                 Generation(text=chunk.text, generation_info=chunk.generation_info)
