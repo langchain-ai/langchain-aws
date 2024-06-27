@@ -344,3 +344,49 @@ async def test_function_call_invoke_without_system_astream(chat: ChatBedrock) ->
 
     for chunk in llm_with_tools.stream(messages):
         assert isinstance(chunk.content, str)
+
+
+@pytest.mark.skip(reason="Needs guardrails setup to run.")
+def test_guardrails() -> None:
+    params = {
+        "region_name": "us-west-2",
+        "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
+        "guardrails": {
+            "guardrailIdentifier": "e7esbceow153",
+            "guardrailVersion": "1",
+            "trace": "enabled",
+        },
+        "beta_use_converse_api": True
+    }
+    chat_model = ChatBedrock(**params)  # type: ignore[arg-type]
+    messages = [
+        HumanMessage(
+            content=[
+                "Create a playlist of 2 heavy metal songs.",
+                {
+                    "guardContent": {
+                        "text": {"text": "Only answer with a list of songs."}
+                    }
+                },
+            ]
+        )
+    ]
+    response = chat_model.invoke(messages)
+
+    assert (
+        response.content == "Sorry, I can't answer questions about heavy metal music."
+    )
+    assert response.response_metadata["stopReason"] == "guardrail_intervened"
+    assert response.response_metadata["trace"] is not None
+
+    stream = chat_model.stream(messages)
+    response = next(stream)
+    for chunk in stream:
+        response += chunk
+
+    assert (
+        response.content[0]["text"]  # type: ignore[index]
+        == "Sorry, I can't answer questions about heavy metal music."
+    )
+    assert response.response_metadata["stopReason"] == "guardrail_intervened"
+    assert response.response_metadata["trace"] is not None

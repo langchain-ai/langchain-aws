@@ -806,6 +806,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             config=self.config,
             provider=self.provider or "",
             base_url=self.endpoint_url,
+            guardrail_config=self.guardrails if self._guardrails_enabled else None
             **kwargs,
         )
 
