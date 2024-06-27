@@ -314,6 +314,24 @@ class ChatBedrockConverse(BaseChatModel):
     config: Any = None
     """An optional botocore.config.Config instance to pass to the client."""
 
+    guardrail_config: Optional[Dict[str, Any]] = Field(None, alias="guardrails")
+    """Configuration information for a guardrail that you want to use in the request."""
+
+    additional_model_request_fields: Optional[Dict[str, Any]] = None
+    """Additional inference parameters that the model supports.
+    
+    Parameters beyond the base set of inference parameters that Converse supports in the
+    inferenceConfig field.
+    """
+
+    additional_model_response_field_paths: Optional[List[str]] = None
+    """Additional model parameters field paths to return in the response. 
+    
+    Converse returns the requested fields as a JSON Pointer object in the 
+    additionalModelResponseFields field. The following is example JSON for 
+    additionalModelResponseFieldPaths.
+    """
+
     class Config:
         """Configuration for this pydantic object."""
 
@@ -457,6 +475,7 @@ class ChatBedrockConverse(BaseChatModel):
         toolConfig: Optional[dict] = None,
         additionalModelRequestFields: Optional[dict] = None,
         additionalModelResponseFieldPaths: Optional[List[str]] = None,
+        guardrailConfig: Optional[dict] = None,
     ) -> Dict[str, Any]:
         if not inferenceConfig:
             inferenceConfig = {
@@ -474,8 +493,11 @@ class ChatBedrockConverse(BaseChatModel):
                 "modelId": modelId or self.model_id,
                 "inferenceConfig": inferenceConfig,
                 "toolConfig": toolConfig,
-                "additionalModelRequestFields": additionalModelRequestFields,
-                "additionalModelResponseFieldPaths": additionalModelResponseFieldPaths,
+                "additionalModelRequestFields": additionalModelRequestFields
+                or self.additional_model_request_fields,
+                "additionalModelResponseFieldPaths": additionalModelResponseFieldPaths
+                or self.additional_model_response_field_paths,
+                "guardrailConfig": guardrailConfig or self.guardrail_config,
             }
         )
 
@@ -666,6 +688,8 @@ def _anthropic_to_bedrock(
         # Only needed for tool_result content blocks.
         elif block["type"] == "json":
             bedrock_content.append({"json": block["json"]})
+        elif block["type"] == "guard_content":
+            bedrock_content.append({"guardContent": {"text": {"text": block["text"]}}})
         else:
             raise ValueError(f"Unsupported content block type:\n{block}")
     # drop empty text blocks
@@ -703,6 +727,16 @@ def _bedrock_to_anthropic(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]
         # Only occurs in content blocks of a tool_result:
         elif "json" in block:
             anthropic_content.append({"type": "json", **block})
+        elif "guard_content" in block:
+            anthropic_content.append(
+                {
+                    "type": "guard_content",
+                    "guard_content": {
+                        "type": "text",
+                        "text": block["guard_content"]["text"]["text"],
+                    },
+                }
+            )
         else:
             raise ValueError(
                 "Unexpected content block type in content. Expected to have one of "

@@ -87,7 +87,14 @@ def test__messages_to_bedrock() -> None:
     messages = [
         SystemMessage(content="sys1"),
         SystemMessage(content=["sys2"]),
-        SystemMessage(content=[{"text": "sys3"}, {"type": "text", "text": "sys4"}]),
+        SystemMessage(
+            content=[
+                {"text": "sys3"},
+                {"type": "text", "text": "sys4"},
+                {"guardContent": {"text": {"text": "sys5"}}},
+                {"type": "guard_content", "text": "sys6"},
+            ]
+        ),
         HumanMessage(content="hu1"),
         HumanMessage(content=["hu2"]),
         AIMessage(content="ai1"),
@@ -140,6 +147,12 @@ def test__messages_to_bedrock() -> None:
             ]
         ),
         ToolMessage(content="tool_res3", tool_call_id="tool_call3"),
+        HumanMessage(
+            content=[
+                {"guardContent": {"text": {"text": "hu5"}}},
+                {"type": "guard_content", "text": "hu6"},
+            ]
+        ),
     ]
     expected_messages = [
         {"role": "user", "content": [{"text": "hu1"}]},
@@ -215,12 +228,21 @@ def test__messages_to_bedrock() -> None:
                 },
             ],
         },
+        {
+            "role": "user",
+            "content": [
+                {"guardContent": {"text": {"text": "hu5"}}},
+                {"guardContent": {"text": {"text": "hu6"}}},
+            ],
+        },
     ]
     expected_system = [
         {"text": "sys1"},
         {"text": "sys2"},
         {"text": "sys3"},
         {"text": "sys4"},
+        {"guardContent": {"text": {"text": "sys5"}}},
+        {"guardContent": {"text": {"text": "sys6"}}},
     ]
     actual_messages, actual_system = _messages_to_bedrock(messages)
     assert expected_messages == actual_messages
