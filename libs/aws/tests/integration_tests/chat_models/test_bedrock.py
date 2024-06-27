@@ -356,7 +356,7 @@ def test_guardrails() -> None:
             "guardrailVersion": "1",
             "trace": "enabled",
         },
-        "beta_use_converse_api": True
+        "beta_use_converse_api": True,
     }
     chat_model = ChatBedrock(**params)  # type: ignore[arg-type]
     messages = [
