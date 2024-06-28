@@ -4,13 +4,13 @@ from langchain_aws.agents.base import BedrockAgentsRunnable
 
 
 @tool("AssetDetail::getAssetValue")
-def getAssetValue(asset_holder_id: str = " ") -> str:
+def getAssetValue(asset_holder_id: str) -> str:
     """Get the asset value for an owner id"""
     return f"The total asset value for {asset_holder_id} is 100K"
 
 
 @tool
-def getMortgageRate(asset_holder_id: str = " ", asset_value: str = " ") -> str:
+def getMortgageRate(asset_holder_id: str, asset_value: str) -> str:
     """Get the mortgage rate based on asset value"""
     return (
         f"The mortgage rate for {asset_holder_id} "
