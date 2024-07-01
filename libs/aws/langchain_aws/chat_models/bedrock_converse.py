@@ -47,7 +47,14 @@ from langchain_aws.function_calling import ToolsOutputParser
 
 @beta()
 class ChatBedrockConverse(BaseChatModel):
-    """Bedrock chat model integration built on the ``converse`` api.
+    """Bedrock chat model integration built on the Bedrock converse API.
+
+    This implementation will eventually replace the existing ChatBedrock implementation
+    once the Bedrock converse API has feature parity with older Bedrock API.
+    Specifically the converse API does not yet support custom Bedrock models.
+
+    For now it is being released as its own class in **beta** to give users who aren't
+    using custom models access to the latest API.
 
     Setup:
         To use Amazon Bedrock make sure you've gone through all the steps described
@@ -67,7 +74,6 @@ class ChatBedrockConverse(BaseChatModel):
         max_tokens: Optional[int]
             Max number of tokens to generate.
 
-
     Key init args — client params:
         region_name: Optional[str]
             AWS region to use, e.g. 'us-west-2'.
@@ -79,7 +85,6 @@ class ChatBedrockConverse(BaseChatModel):
 
     See full list of supported init args and their descriptions in the params section.
 
-    # TODO: Replace with relevant init params.
     Instantiate:
         .. code-block:: python
 
@@ -440,7 +445,8 @@ class ChatBedrockConverse(BaseChatModel):
         include_raw: bool = False,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
-        llm = self.bind_tools([schema], tool_choice="any")
+        tool_name = convert_to_openai_function(schema)["name"]
+        llm = self.bind_tools([schema], tool_choice=tool_name)
         if isinstance(schema, type) and issubclass(schema, BaseModel):
             output_parser = ToolsOutputParser(
                 first_tool_only=True, pydantic_schemas=[schema]
