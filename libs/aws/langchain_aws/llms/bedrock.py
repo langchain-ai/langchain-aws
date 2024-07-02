@@ -149,6 +149,7 @@ def _combine_generation_info_for_llm_result(
     Takes a list of generation_info from GenerationChunks
     If the messages api is being used,
     the generation_info from some of these chunks should contain "usage" keys
+    if not, the token counts should be found within "amazon-bedrock-invocationMetrics"
     """
     total_usage_info = {"prompt_tokens": 0, "completion_tokens": 0}
     stop_reason = ""
