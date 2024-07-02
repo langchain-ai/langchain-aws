@@ -149,7 +149,6 @@ def _combine_generation_info_for_llm_result(
     Takes a list of generation_info from GenerationChunks
     If the messages api is being used,
     the generation_info from some of these chunks should contain "usage" keys
-    if not, the token counts should be found within "amazon-bedrock-invocationMetrics"
     """
     total_usage_info = {"prompt_tokens": 0, "completion_tokens": 0}
     stop_reason = ""
@@ -193,15 +192,19 @@ def _get_invocation_metrics_chunk(chunk: Dict[str, Any]) -> GenerationChunk:
     return GenerationChunk(text="", generation_info=generation_info)
 
 
-def extract_tool_calls(content: List[dict]) -> List[ToolCall]:
+def extract_tool_calls_and_text(content: List[dict]) -> Tuple[List[ToolCall], str]:
+    text = ""
     tool_calls = []
     for block in content:
+        if block["type"] == "text":
+            text = block["text"]
+            continue
         if block["type"] != "tool_use":
             continue
         tool_calls.append(
             ToolCall(name=block["name"], args=block["input"], id=block["id"])
         )
-    return tool_calls
+    return tool_calls, text
 
 
 class AnthropicTool(TypedDict):
@@ -266,7 +269,6 @@ class LLMInputOutputAdapter:
         text = ""
         tool_calls = []
         response_body = json.loads(response.get("body").read().decode())
-
         if provider == "anthropic":
             if "completion" in response_body:
                 text = response_body.get("completion")
@@ -275,7 +277,7 @@ class LLMInputOutputAdapter:
                 if len(content) == 1 and content[0]["type"] == "text":
                     text = content[0]["text"]
                 elif any(block["type"] == "tool_use" for block in content):
-                    tool_calls = extract_tool_calls(content)
+                    tool_calls, text = extract_tool_calls_and_text(content)
 
         else:
             if provider == "ai21":
