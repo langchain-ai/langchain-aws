@@ -6,6 +6,7 @@ from langchain_aws.retrievers import (
     AmazonKendraRetriever,
     AmazonKnowledgeBasesRetriever,
 )
+from langchain_aws.vectorstores.awsinmemorydb import AWSInMemoryDBVectorSearch
 
 __all__ = [
     "Bedrock",
@@ -13,6 +14,7 @@ __all__ = [
     "BedrockLLM",
     "BedrockChat",
     "ChatBedrock",
+    "AWSInMemoryDBVectorSearch",
     "ChatBedrockConverse",
     "SagemakerEndpoint",
     "AmazonKendraRetriever",
