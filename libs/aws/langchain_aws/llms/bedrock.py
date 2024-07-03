@@ -251,7 +251,7 @@ class LLMInputOutputAdapter:
                 input_body["prompt"] = _human_assistant_format(prompt)
                 if "max_tokens_to_sample" not in input_body:
                     input_body["max_tokens_to_sample"] = 1024
-        elif provider == "cohere" and 'command-r' in model_id:
+        elif provider == "cohere" and "command-r" in model_id:
             input_body["message"] = prompt
         elif provider in ("ai21", "cohere", "meta", "mistral"):
             input_body["prompt"] = prompt
@@ -769,7 +769,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             if k := self.provider_stop_sequence_key_name_map.get(provider):
                 _model_kwargs[k] = stop
 
-        if provider == "cohere" and 'command-r' not in model_id:
+        if provider == "cohere" and "command-r" not in model_id:
             _model_kwargs["stream"] = True
 
         params = {**_model_kwargs, **kwargs}
@@ -852,7 +852,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             if k := self.provider_stop_sequence_key_name_map.get(provider):
                 _model_kwargs[k] = stop
 
-        if provider == "cohere" and 'command-r-plus' not in model_id:
+        if provider == "cohere" and "command-r-plus" not in model_id:
             _model_kwargs["stream"] = True
 
         params = {**_model_kwargs, **kwargs}
