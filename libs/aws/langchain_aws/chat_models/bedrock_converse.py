@@ -565,10 +565,12 @@ def _parse_response(response: Dict[str, Any]) -> AIMessage:
     anthropic_content = _bedrock_to_anthropic(
         response.pop("output")["message"]["content"]
     )
-    tool_calls = _extract_tool_calls(anthropic_content)
+    tool_calls, remaining_content = _extract_tool_calls_with_remainder(
+        anthropic_content
+    )
     usage = UsageMetadata(_camel_to_snake_keys(response.pop("usage")))  # type: ignore[misc]
     return AIMessage(
-        content=_str_if_single_text_block(anthropic_content),  # type: ignore[arg-type]
+        content=_str_if_single_text_block_or_empty(remaining_content),  # type: ignore[arg-type]
         usage_metadata=usage,
         response_metadata=response,
         tool_calls=tool_calls,
@@ -777,14 +779,19 @@ def _format_tool_choice(
         return {"tool": {"name": tool_choice}}
 
 
-def _extract_tool_calls(anthropic_content: List[dict]) -> List[ToolCall]:
+def _extract_tool_calls_with_remainder(
+    anthropic_content: List[dict],
+) -> Tuple[List[ToolCall], List[dict]]:
+    remainder = []
     tool_calls = []
     for block in anthropic_content:
         if block["type"] == "tool_use":
             tool_calls.append(
                 ToolCall(name=block["name"], args=block["input"], id=block["id"])
             )
-    return tool_calls
+        else:
+            remainder.append(block)
+    return tool_calls, remainder
 
 
 def _snake_to_camel(text: str) -> str:
@@ -838,11 +845,15 @@ def _bytes_to_b64_str(bytes_: bytes) -> str:
     return base64.b64encode(bytes_).decode("utf-8")
 
 
-def _str_if_single_text_block(
+def _str_if_single_text_block_or_empty(
     anthropic_content: List[Dict[str, Any]],
 ) -> Union[str, List[Dict[str, Any]]]:
-    if len(anthropic_content) == 1 and anthropic_content[0]["type"] == "text":
+    content_len = len(anthropic_content)
+    if content_len == 1 and anthropic_content[0]["type"] == "text":
         return anthropic_content[0]["text"]
+    elif content_len == 0:
+        return ""
+
     return anthropic_content
 
 
