@@ -229,6 +229,7 @@ class LLMInputOutputAdapter:
     def prepare_input(
         cls,
         provider: str,
+        model_id: str,
         model_kwargs: Dict[str, Any],
         prompt: Optional[str] = None,
         system: Optional[str] = None,
@@ -250,6 +251,8 @@ class LLMInputOutputAdapter:
                 input_body["prompt"] = _human_assistant_format(prompt)
                 if "max_tokens_to_sample" not in input_body:
                     input_body["max_tokens_to_sample"] = 1024
+        elif provider == "cohere" and 'command-r' in model_id:
+            input_body["message"] = prompt
         elif provider in ("ai21", "cohere", "meta", "mistral"):
             input_body["prompt"] = prompt
         elif provider == "amazon":
@@ -638,9 +641,11 @@ class BedrockBase(BaseLanguageModel, ABC):
         _model_kwargs = self.model_kwargs or {}
 
         provider = self._get_provider()
+        model_id = self._get_model()
         params = {**_model_kwargs, **kwargs}
         input_body = LLMInputOutputAdapter.prepare_input(
             provider=provider,
+            model_id=model_id,
             model_kwargs=params,
             prompt=prompt,
             system=system,
@@ -650,6 +655,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             if _tools_in_params(params):
                 input_body = LLMInputOutputAdapter.prepare_input(
                     provider=provider,
+                    model_id=model_id,
                     model_kwargs=params,
                     prompt=prompt,
                     system=system,
@@ -750,6 +756,7 @@ class BedrockBase(BaseLanguageModel, ABC):
     ) -> Iterator[GenerationChunk]:
         _model_kwargs = self.model_kwargs or {}
         provider = self._get_provider()
+        model_id = self._get_model()
 
         if stop:
             if provider not in self.provider_stop_sequence_key_name_map:
@@ -762,13 +769,14 @@ class BedrockBase(BaseLanguageModel, ABC):
             if k := self.provider_stop_sequence_key_name_map.get(provider):
                 _model_kwargs[k] = stop
 
-        if provider == "cohere":
+        if provider == "cohere" and 'command-r' not in model_id:
             _model_kwargs["stream"] = True
 
         params = {**_model_kwargs, **kwargs}
 
         input_body = LLMInputOutputAdapter.prepare_input(
             provider=provider,
+            model_id=model_id,
             prompt=prompt,
             system=system,
             messages=messages,
@@ -778,6 +786,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             if _tools_in_params(params):
                 input_body = LLMInputOutputAdapter.prepare_input(
                     provider=provider,
+                    model_id=model_id,
                     model_kwargs=params,
                     prompt=prompt,
                     system=system,
@@ -833,6 +842,7 @@ class BedrockBase(BaseLanguageModel, ABC):
     ) -> AsyncIterator[GenerationChunk]:
         _model_kwargs = self.model_kwargs or {}
         provider = self._get_provider()
+        model_id = self._get_model()
 
         if stop:
             if provider not in self.provider_stop_sequence_key_name_map:
@@ -842,7 +852,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             if k := self.provider_stop_sequence_key_name_map.get(provider):
                 _model_kwargs[k] = stop
 
-        if provider == "cohere":
+        if provider == "cohere" and 'command-r-plus' not in model_id:
             _model_kwargs["stream"] = True
 
         params = {**_model_kwargs, **kwargs}
@@ -850,6 +860,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             if _tools_in_params(params):
                 input_body = LLMInputOutputAdapter.prepare_input(
                     provider=provider,
+                    model_id=model_id,
                     model_kwargs=params,
                     prompt=prompt,
                     system=system,
@@ -859,6 +870,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             else:
                 input_body = LLMInputOutputAdapter.prepare_input(
                     provider=provider,
+                    model_id=model_id,
                     prompt=prompt,
                     system=system,
                     messages=messages,
