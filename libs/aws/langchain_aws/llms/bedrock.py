@@ -852,7 +852,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             if k := self.provider_stop_sequence_key_name_map.get(provider):
                 _model_kwargs[k] = stop
 
-        if provider == "cohere" and "command-r-plus" not in model_id:
+        if provider == "cohere" and "command-r" not in model_id:
             _model_kwargs["stream"] = True
 
         params = {**_model_kwargs, **kwargs}
