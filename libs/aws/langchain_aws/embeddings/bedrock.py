@@ -112,34 +112,27 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
         return values
 
-    def _embedding_func(
-        self, text: str, dim: int = 1024, norm: bool = True
-    ) -> List[float]:
+    def _embedding_func(self, text: str) -> List[float]:
         """Call out to Bedrock embedding endpoint."""
         # replace newlines, which can negatively affect performance.
         text = text.replace(os.linesep, " ")
 
         # format input body for provider
         provider = self.model_id.split(".")[0]
-        _model_kwargs = self.model_kwargs or {}
-        input_body = {**_model_kwargs}
+        input_body: Dict[str, Any] = {}
         if provider == "cohere":
-            if "input_type" not in input_body.keys():
-                input_body["input_type"] = "search_document"
+            input_body["input_type"] = "search_document"
             input_body["texts"] = [text]
         else:
             # includes common provider == "amazon"
             input_body["inputText"] = text
 
-            # v2 and beyond titan embeddings with changing dimensions
-            if "v1" not in self.model_id:
-                input_body["dimensions"] = dim
-                input_body["normalize"] = norm
+        if self.model_kwargs:
+            input_body = {**input_body, **self.model_kwargs}
 
         body = json.dumps(input_body)
 
         try:
-            # invoke bedrock API
             response = self.client.invoke_model(
                 body=body,
                 modelId=self.model_id,
@@ -147,13 +140,12 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                 contentType="application/json",
             )
 
-            # format output based on provider
             response_body = json.loads(response.get("body").read())
             if provider == "cohere":
                 return response_body.get("embeddings")[0]
             else:
-                # includes common provider == "amazon"
                 return response_body.get("embedding")
+
         except Exception as e:
             raise ValueError(f"Error raised by inference endpoint: {e}")
 
@@ -163,9 +155,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         norm_emb = emb / np.linalg.norm(emb)
         return norm_emb.tolist()
 
-    def embed_documents(
-        self, texts: List[str], dim: int = 1024, norm: bool = True
-    ) -> List[List[float]]:
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """Compute doc embeddings using a Bedrock model.
 
         Args:
@@ -176,7 +166,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         """
         results = []
         for text in texts:
-            response = self._embedding_func(text, dim, norm)
+            response = self._embedding_func(text)
 
             if self.normalize:
                 response = self._normalize_vector(response)
@@ -185,7 +175,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
         return results
 
-    def embed_query(self, text: str, dim: int = 1024, norm: bool = True) -> List[float]:
+    def embed_query(self, text: str) -> List[float]:
         """Compute query embeddings using a Bedrock model.
 
         Args:
@@ -194,7 +184,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         Returns:
             Embeddings for the text.
         """
-        embedding = self._embedding_func(text, dim, norm)
+        embedding = self._embedding_func(text)
 
         if self.normalize:
             return self._normalize_vector(embedding)
