@@ -15,9 +15,9 @@ class SearchFilter(BaseModel):
 
     andAll: Optional[List["SearchFilter"]] = None
     equals: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = None
-    greaterThan: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = (
-        None
-    )
+    greaterThan: Optional[
+        Dict[str, Union[Dict, List, int, float, str, bool, None]]
+    ] = None
     greaterThanOrEquals: Optional[
         Dict[str, Union[Dict, List, int, float, str, bool, None]]
     ] = None
@@ -31,16 +31,16 @@ class SearchFilter(BaseModel):
     listContains: Optional[
         Dict[str, Union[Dict, List, int, float, str, bool, None]]
     ] = None
-    notEquals: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = (
-        None
-    )
+    notEquals: Optional[
+        Dict[str, Union[Dict, List, int, float, str, bool, None]]
+    ] = None
     notIn: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = Field(
         None, alias="notIn"
     )
     orAll: Optional[List["SearchFilter"]] = None
-    startsWith: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = (
-        None
-    )
+    startsWith: Optional[
+        Dict[str, Union[Dict, List, int, float, str, bool, None]]
+    ] = None
     stringContains: Optional[
         Dict[str, Union[Dict, List, int, float, str, bool, None]]
     ] = None
@@ -67,33 +67,33 @@ class RetrievalConfig(BaseModel, extra="allow"):  # type: ignore[call-arg]
 class AmazonKnowledgeBasesRetriever(BaseRetriever):
     """`Amazon Bedrock Knowledge Bases` retrieval.
 
-    See https://aws.amazon.com/bedrock/knowledge-bases for more info.
+        See https://aws.amazon.com/bedrock/knowledge-bases for more info.
 
-    Args:
-        knowledge_base_id: Knowledge Base ID.
-        region_name: The aws region e.g., `us-west-2`.
-            Fallback to AWS_DEFAULT_REGION env variable or region specified in
-            ~/.aws/config.
-        credentials_profile_name: The name of the profile in the ~/.aws/credentials
-            or ~/.aws/config files, which has either access keys or role information
-            specified. If not specified, the default credential profile or, if on an
-            EC2 instance, credentials from IMDS will be used.
-        client: boto3 client for bedrock agent runtime.
-        retrieval_config: Configuration for retrieval.
+        Args:
+            knowledge_base_id: Knowledge Base ID.
+            region_name: The aws region e.g., `us-west-2`.
+                Fallback to AWS_DEFAULT_REGION env variable or region specified in
+                ~/.aws/config.
+            credentials_profile_name: The name of the profile in the ~/.aws/credentials
+                or ~/.aws/config files, which has either access keys or role information
+                specified. If not specified, the default credential profile or, if on an
+                EC2 instance, credentials from IMDS will be used.
+            client: boto3 client for bedrock agent runtime.
+            retrieval_config: Configuration for retrieval.
 
-    Example:
-        .. code-block:: python
+        Example:
+            .. code-block:: python
 
-            from langchain_community.retrievers import AmazonKnowledgeBasesRetriever
+                from langchain_community.retrievers import AmazonKnowledgeBasesRetriever
 
-            retriever = AmazonKnowledgeBasesRetriever(
-                knowledge_base_id="<knowledge-base-id>",
-                retrieval_config={
-                    "vectorSearchConfiguration": {
-                        "numberOfResults": 4
-                    }
-                },
-            )
+    retriever = AmazonKnowledgeBasesRetriever(
+        knowledge_base_id="<knowledge-base-id>",
+        retrieval_config={
+            "vectorSearchConfiguration": {
+                "numberOfResults": 4
+            }
+        },
+    )
     """
 
     knowledge_base_id: str
