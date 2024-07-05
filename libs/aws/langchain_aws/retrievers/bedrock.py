@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import boto3
 from botocore.client import Config
@@ -10,16 +10,58 @@ from langchain_core.retrievers import BaseRetriever
 from typing_extensions import Annotated
 
 
+class SearchFilter(BaseModel):
+    """Filter configuration for retrieval."""
+
+    andAll: Optional[List["SearchFilter"]] = None
+    equals: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = None
+    greaterThan: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = (
+        None
+    )
+    greaterThanOrEquals: Optional[
+        Dict[str, Union[Dict, List, int, float, str, bool, None]]
+    ] = None
+    in_: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = Field(
+        None, alias="in"
+    )
+    lessThan: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = None
+    lessThanOrEquals: Optional[
+        Dict[str, Union[Dict, List, int, float, str, bool, None]]
+    ] = None
+    listContains: Optional[
+        Dict[str, Union[Dict, List, int, float, str, bool, None]]
+    ] = None
+    notEquals: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = (
+        None
+    )
+    notIn: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = Field(
+        None, alias="notIn"
+    )
+    orAll: Optional[List["SearchFilter"]] = None
+    startsWith: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = (
+        None
+    )
+    stringContains: Optional[
+        Dict[str, Union[Dict, List, int, float, str, bool, None]]
+    ] = None
+
+    class Config:
+        allow_population_by_field_name = True
+
+
 class VectorSearchConfig(BaseModel, extra="allow"):  # type: ignore[call-arg]
     """Configuration for vector search."""
 
     numberOfResults: int = 4
+    filter: Optional[SearchFilter] = None
+    overrideSearchType: Optional[str] = None  # Can be 'HYBRID' or 'SEMANTIC'
 
 
 class RetrievalConfig(BaseModel, extra="allow"):  # type: ignore[call-arg]
     """Configuration for retrieval."""
 
     vectorSearchConfiguration: VectorSearchConfig
+    nextToken: Optional[str] = None
 
 
 class AmazonKnowledgeBasesRetriever(BaseRetriever):
@@ -128,6 +170,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         response = self.client.retrieve(
             retrievalQuery={"text": query.strip()},
             knowledgeBaseId=self.knowledge_base_id,
+            nextToken=None,
             retrievalConfiguration=self.retrieval_config.dict(),
         )
         results = response["retrievalResults"]
