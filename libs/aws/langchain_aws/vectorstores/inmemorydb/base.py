@@ -35,14 +35,11 @@ from langchain_core.vectorstores import VectorStore, VectorStoreRetriever
 from langchain_aws.utilities.redis import (
     _array_to_buffer,
     _buffer_to_array,
-  #  check_redis_module_exist,  
     get_client,
 )
 from langchain_aws.vectorstores.inmemorydb.constants import (
-  #  REDIS_REQUIRED_MODULES,
     INMEMORYDB_TAG_SEPARATOR,
 )
-#from langchain_aws.vectorstores.utils import maximal_marginal_relevance
 
 logger = logging.getLogger(__name__)
 ListOfDict = List[Dict[str, str]]
@@ -105,7 +102,7 @@ class InMemoryVectorStore(VectorStore):
             rds = InMemoryVectorStore.from_documents(
                 documents, # a list of Document objects from loaders or created
                 embeddings, # an Embeddings object
-                redis_url="redis://localhost:6379",
+                redis_url="redis://cluster_endpoint:6379",
             )
 
     Initialize, create index, and load Documents with metadata
@@ -116,7 +113,7 @@ class InMemoryVectorStore(VectorStore):
                 texts, # a list of strings
                 metadata, # a list of metadata dicts
                 embeddings, # an Embeddings object
-                redis_url="redis://localhost:6379",
+                redis_url="redis://cluster_endpoint:6379",
             )
 
     Initialize, create index, and load Documents with metadata and return keys
@@ -127,7 +124,7 @@ class InMemoryVectorStore(VectorStore):
                 texts, # a list of strings
                 metadata, # a list of metadata dicts
                 embeddings, # an Embeddings object
-                redis_url="redis://localhost:6379",
+                redis_url="redis://cluster_endpoint:6379",
             )
 
     For use cases where the index needs to stay alive, you can initialize
@@ -140,7 +137,7 @@ class InMemoryVectorStore(VectorStore):
                 metadata, # a list of metadata dicts
                 embeddings, # an Embeddings object
                 index_name="my-index",
-                redis_url="redis://localhost:6379",
+                redis_url="redis://cluster_endpoint:6379",
             )
 
     Initialize and connect to an existing index (from above)
@@ -153,7 +150,7 @@ class InMemoryVectorStore(VectorStore):
                 index_name="my-index",
                 schema=rds.schema, # schema dumped from another index
                 key_prefix=rds.key_prefix, # key prefix from another index
-                redis_url="redis://localhost:6379",
+                redis_url="redis://cluster_endpoint:6379",
             )
 
 
@@ -176,7 +173,7 @@ class InMemoryVectorStore(VectorStore):
                 metadata, # a list of metadata dicts
                 embeddings, # an Embeddings object
                 vector_schema=vector_schema,
-                redis_url="redis://localhost:6379",
+                redis_url="redis://cluster_endpoint:6379",
             )
 
     Custom index schema can be supplied to change the way that the
@@ -215,7 +212,7 @@ class InMemoryVectorStore(VectorStore):
                 metadata, # a list of metadata dicts
                 embeddings, # an Embeddings object
                 index_schema="path/to/index_schema.yaml", # can also be a dictionary
-                redis_url="redis://localhost:6379",
+                redis_url="redis://cluster_endpoint:6379",
             )
 
     When connecting to an existing index where a custom schema has been applied, it's
@@ -313,7 +310,7 @@ class InMemoryVectorStore(VectorStore):
                 redis, keys = InMemoryVectorStore.from_texts_return_keys(
                     texts,
                     embeddings,
-                    redis_url="redis://localhost:6379"
+                    redis_url="redis://cluster_endpoint:6379"
                 )
 
         Args:
@@ -504,7 +501,7 @@ class InMemoryVectorStore(VectorStore):
                     index_name="my-index",
                     schema=rds.schema, # schema dumped from another index
                     key_prefix=rds.key_prefix, # key prefix from another index
-                    redis_url="redis://username:password@localhost:6379",
+                    redis_url="redis://username:password@cluster_endpoint:6379",
                 )
 
         Args:
@@ -726,7 +723,7 @@ class InMemoryVectorStore(VectorStore):
         tags.extend(self._get_retriever_tags())
         return InMemoryVectorStoreRetriever(vectorstore=self, **kwargs, tags=tags)
 
-    @deprecated("0.0.1", alternative="similarity_search(distance_threshold=0.1)")
+    #@deprecated("0.0.1", alternative="similarity_search(distance_threshold=0.1)")
     def similarity_search_limit_score(
         self, query: str, k: int = 4, score_threshold: float = 0.2, **kwargs: Any
     ) -> List[Document]:
