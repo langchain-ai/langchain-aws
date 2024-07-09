@@ -723,7 +723,7 @@ class InMemoryVectorStore(VectorStore):
         tags.extend(self._get_retriever_tags())
         return InMemoryVectorStoreRetriever(vectorstore=self, **kwargs, tags=tags)
 
-    #@deprecated("0.0.1", alternative="similarity_search(distance_threshold=0.1)")
+    @deprecated("0.0.1", alternative="similarity_search(distance_threshold=0.1)")
     def similarity_search_limit_score(
         self, query: str, k: int = 4, score_threshold: float = 0.2, **kwargs: Any
     ) -> List[Document]:
@@ -1388,10 +1388,10 @@ def _prepare_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
 
 
 class InMemoryVectorStoreRetriever(VectorStoreRetriever):
-    """Retriever for Redis VectorStore."""
+    """Retriever for InMemoryVectorStore."""
 
     vectorstore: InMemoryVectorStore
-    """Redis VectorStore."""
+    """InMemoryVectorStore."""
     search_type: str = "similarity"
     """Type of search to perform. Can be either
     'similarity',
