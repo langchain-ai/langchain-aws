@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Literal, Tuple
 
 import boto3
 from botocore.client import Config
@@ -15,9 +15,9 @@ class SearchFilter(BaseModel):
 
     andAll: Optional[List["SearchFilter"]] = None
     equals: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = None
-    greaterThan: Optional[
-        Dict[str, Union[Dict, List, int, float, str, bool, None]]
-    ] = None
+    greaterThan: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = (
+        None
+    )
     greaterThanOrEquals: Optional[
         Dict[str, Union[Dict, List, int, float, str, bool, None]]
     ] = None
@@ -31,16 +31,16 @@ class SearchFilter(BaseModel):
     listContains: Optional[
         Dict[str, Union[Dict, List, int, float, str, bool, None]]
     ] = None
-    notEquals: Optional[
-        Dict[str, Union[Dict, List, int, float, str, bool, None]]
-    ] = None
+    notEquals: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = (
+        None
+    )
     notIn: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = Field(
         None, alias="notIn"
     )
     orAll: Optional[List["SearchFilter"]] = None
-    startsWith: Optional[
-        Dict[str, Union[Dict, List, int, float, str, bool, None]]
-    ] = None
+    startsWith: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = (
+        None
+    )
     stringContains: Optional[
         Dict[str, Union[Dict, List, int, float, str, bool, None]]
     ] = None
@@ -54,7 +54,7 @@ class VectorSearchConfig(BaseModel, extra="allow"):  # type: ignore[call-arg]
 
     numberOfResults: int = 4
     filter: Optional[SearchFilter] = None
-    overrideSearchType: Optional[str] = None  # Can be 'HYBRID' or 'SEMANTIC'
+    overrideSearchType: Optional[Literal["HYBRID", "SEMANTIC"]] = None
 
 
 class RetrievalConfig(BaseModel, extra="allow"):  # type: ignore[call-arg]
@@ -165,14 +165,20 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         return filtered_docs
 
     def _get_relevant_documents(
-        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
-    ) -> List[Document]:
+        self,
+        query: str,
+        *,
+        run_manager: CallbackManagerForRetrieverRun,
+        return_token: bool = False,
+        next_token: Optional[str] = None
+    ) -> Union[List[Document], Tuple[List[Document], Optional[str]]]:
         response = self.client.retrieve(
             retrievalQuery={"text": query.strip()},
             knowledgeBaseId=self.knowledge_base_id,
-            nextToken=None,
+            nextToken=next_token or self.retrieval_config.nextToken,
             retrievalConfiguration=self.retrieval_config.dict(),
         )
+        new_next_token = response.get("nextToken", None)
         results = response["retrievalResults"]
         documents = []
         for result in results:
@@ -189,4 +195,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
                 )
             )
 
-        return self._filter_by_score_confidence(docs=documents)
+        filtered_documents = self._filter_by_score_confidence(docs=documents)
+        if return_token:
+            return (filtered_documents, new_next_token)
+        return filtered_documents
