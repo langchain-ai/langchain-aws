@@ -21,7 +21,7 @@ from typing import (
 )
 
 import numpy as np
-import yaml
+import yaml  # type: ignore[import-untyped]
 from langchain_core._api import deprecated
 from langchain_core.callbacks import (
     AsyncCallbackManagerForRetrieverRun,
@@ -45,9 +45,9 @@ from langchain_aws.vectorstores.inmemorydb.constants import (
 logger = logging.getLogger(__name__)
 ListOfDict = List[Dict[str, str]]
 
-if TYPE_CHECKING:
-    from redis.client import Redis as InMemoryDBType
-    from redis.commands.search.query import Query
+if TYPE_CHECKING: 
+    from redis.client import Redis as InMemoryDBType  # type: ignore[import-untyped]
+    from redis.commands.search.query import Query  # type: ignore[import-untyped]
 
     from langchain_aws.vectorstores.inmemorydb.filters import InMemoryDBFilterExpression
     from langchain_aws.vectorstores.inmemorydb.schema import InMemoryDBModel

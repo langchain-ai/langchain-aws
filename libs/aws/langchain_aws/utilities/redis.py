@@ -9,8 +9,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from redis.client import Redis as RedisType
-
+    from redis.client import Redis as RedisType  # type: ignore[import-untyped]
 
 def _array_to_buffer(array: List[float], dtype: Any = np.float32) -> bytes:
     return np.array(array).astype(dtype).tobytes()
@@ -73,7 +72,7 @@ def get_client(redis_url: str, **kwargs: Any) -> RedisType:
 
     # Initialize with necessary components.
     try:
-        import redis
+        import redis  # type: ignore[import-untyped]
     except ImportError:
         raise ImportError(
             "Could not import redis python package. "
@@ -100,6 +99,5 @@ def _check_for_cluster(redis_client: RedisType) -> bool:
 
 
 def _redis_cluster_client(redis_url: str, **kwargs: Any) -> RedisType:
-    from redis.cluster import RedisCluster
-
+    from redis.cluster import RedisCluster  # type: ignore[import-untyped]
     return RedisCluster.from_url(redis_url, **kwargs)  # type: ignore[return-value]

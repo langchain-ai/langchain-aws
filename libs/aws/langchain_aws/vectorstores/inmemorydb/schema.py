@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
-import yaml
+import yaml  # type: ignore[import-untyped]
 from langchain_core.pydantic_v1 import BaseModel, Field, validator
 from typing_extensions import TYPE_CHECKING, Literal
 
