@@ -45,7 +45,7 @@ from langchain_aws.vectorstores.inmemorydb.constants import (
 logger = logging.getLogger(__name__)
 ListOfDict = List[Dict[str, str]]
 
-if TYPE_CHECKING: 
+if TYPE_CHECKING:
     from redis.client import Redis as InMemoryDBType  # type: ignore[import-untyped]
     from redis.commands.search.query import Query  # type: ignore[import-untyped]
 
@@ -244,22 +244,10 @@ class InMemoryVectorStore(VectorStore):
     ):
         """Initialize MemoryDB vector store with necessary components."""
         self._check_deprecated_kwargs(kwargs)
-        try:
-            # TODO use importlib to check if redis is installed
-            import redis  # noqa: F401
-
-        except ImportError as e:
-            raise ImportError(
-                "Could not import redis python package. "
-                "Please install it with `pip install redis`."
-            ) from e
-
         self.index_name = index_name
         self._embeddings = embedding
         try:
             redis_client = get_client(redis_url=redis_url, **kwargs)
-            # check if redis has redisearch module installed
-        #    check_redis_module_exist(redis_client, REDIS_REQUIRED_MODULES)
         except ValueError as e:
             raise ValueError(f"Redis failed to connect: {e}")
 
@@ -338,8 +326,7 @@ class InMemoryVectorStore(VectorStore):
             ValueError: If the number of metadatas does not match the number of texts.
         """
         try:
-            # TODO use importlib to check if redis is installed
-            import redis  # noqa: F401
+            import redis  # type: ignore[import-untyped] # noqa: F401
 
             from langchain_aws.vectorstores.inmemorydb.schema import read_schema
 
