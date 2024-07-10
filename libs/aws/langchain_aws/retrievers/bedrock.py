@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Union, Literal, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import boto3
 from botocore.client import Config
@@ -9,41 +9,32 @@ from langchain_core.pydantic_v1 import BaseModel, Field, root_validator
 from langchain_core.retrievers import BaseRetriever
 from typing_extensions import Annotated
 
+FilterValue = Union[Dict[str, Any], List[Any], int, float, str, bool, None]
+
+
+class Criterion(BaseModel):
+    """A model to encapsulate a filter criterion with a key and its value."""
+
+    key: str
+    value: FilterValue
+
 
 class SearchFilter(BaseModel):
     """Filter configuration for retrieval."""
 
     andAll: Optional[List["SearchFilter"]] = None
-    equals: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = None
-    greaterThan: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = (
-        None
-    )
-    greaterThanOrEquals: Optional[
-        Dict[str, Union[Dict, List, int, float, str, bool, None]]
-    ] = None
-    in_: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = Field(
-        None, alias="in"
-    )
-    lessThan: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = None
-    lessThanOrEquals: Optional[
-        Dict[str, Union[Dict, List, int, float, str, bool, None]]
-    ] = None
-    listContains: Optional[
-        Dict[str, Union[Dict, List, int, float, str, bool, None]]
-    ] = None
-    notEquals: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = (
-        None
-    )
-    notIn: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = Field(
-        None, alias="notIn"
-    )
     orAll: Optional[List["SearchFilter"]] = None
-    startsWith: Optional[Dict[str, Union[Dict, List, int, float, str, bool, None]]] = (
-        None
-    )
-    stringContains: Optional[
-        Dict[str, Union[Dict, List, int, float, str, bool, None]]
-    ] = None
+    equals: Optional[Criterion] = None
+    greaterThan: Optional[Criterion] = None
+    greaterThanOrEquals: Optional[Criterion] = None
+    in_: Optional[Criterion] = Field(None, alias="in")
+    lessThan: Optional[Criterion] = None
+    lessThanOrEquals: Optional[Criterion] = None
+    listContains: Optional[Criterion] = None
+    notEquals: Optional[Criterion] = None
+    notIn: Optional[Criterion] = Field(None, alias="notIn")
+    startsWith: Optional[Criterion] = None
+    stringContains: Optional[Criterion] = None
 
     class Config:
         allow_population_by_field_name = True
@@ -169,9 +160,39 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         query: str,
         *,
         run_manager: CallbackManagerForRetrieverRun,
-        return_token: bool = False,
-        next_token: Optional[str] = None
-    ) -> Union[List[Document], Tuple[List[Document], Optional[str]]]:
+        next_token: Optional[str] = None,
+    ) -> List[Document]:
+        response = self.client.retrieve(
+            retrievalQuery={"text": query.strip()},
+            knowledgeBaseId=self.knowledge_base_id,
+            nextToken=next_token,
+            retrievalConfiguration=self.retrieval_config.dict(),
+        )
+        results = response["retrievalResults"]
+        documents = []
+        for result in results:
+            content = result["content"]["text"]
+            result.pop("content")
+            if "score" not in result:
+                result["score"] = 0
+            if "metadata" in result:
+                result["source_metadata"] = result.pop("metadata")
+            documents.append(
+                Document(
+                    page_content=content,
+                    metadata=result,
+                )
+            )
+
+        return self._filter_by_score_confidence(docs=documents)
+
+    def _get_relevant_documents_with_token(
+        self,
+        query: str,
+        *,
+        run_manager: CallbackManagerForRetrieverRun,
+        next_token: Optional[str] = None,
+    ) -> Tuple[List[Document], Optional[str]]:
         response = self.client.retrieve(
             retrievalQuery={"text": query.strip()},
             knowledgeBaseId=self.knowledge_base_id,
@@ -196,6 +217,4 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
             )
 
         filtered_documents = self._filter_by_score_confidence(docs=documents)
-        if return_token:
-            return (filtered_documents, new_next_token)
-        return filtered_documents
+        return (filtered_documents, new_next_token)
