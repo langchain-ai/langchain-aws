@@ -20,5 +20,5 @@ __all__ = [
     "AmazonKnowledgeBasesRetriever",
     "NeptuneAnalyticsGraph",
     "NeptuneGraph",
-    "InMemoryVectorStore"
+    "InMemoryVectorStore",
 ]

@@ -1,4 +1,5 @@
 """Test chat model integration."""
+
 import base64
 from typing import Dict, List, Type, cast
 
@@ -337,5 +338,4 @@ def test__snake_to_camel_keys() -> None:
     assert _snake_to_camel_keys(_SNAKE_DICT) == _CAMEL_DICT
 
 
-def test__format_openai_image_url() -> None:
-    ...
+def test__format_openai_image_url() -> None: ...

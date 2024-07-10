@@ -9,7 +9,8 @@ from langchain_aws.utilities.redis import TokenEscaper
 
 
 class InMemoryDBFilterOperator(Enum):
-    """InMemoryDBFilterOperator enumerator is used to create InMemoryDBFilterExpressions."""
+    """InMemoryDBFilterOperator enumerator is used to create
+    InMemoryDBFilterExpressions"""
 
     EQ = 1
     NE = 2
@@ -360,11 +361,11 @@ class InMemoryDBText(InMemoryDBFilterField):
             other (str): The text value to filter on.
 
         Example:
-            >>> from langchain_community.vectorstores.InMemoryDB import InMemoryDBText
-            >>> filter = InMemoryDBText("job") % "engine*"         # suffix wild card match
-            >>> filter = InMemoryDBText("job") % "%%engine%%"      # fuzzy match w/ LD
-            >>> filter = InMemoryDBText("job") % "engineer|doctor" # contains either term
-            >>> filter = InMemoryDBText("job") % "engineer doctor" # contains both terms
+            >>> from langchain_aws.vectorstores.inmemorydb import InMemoryDBText
+            >>> filter = InMemoryDBText("job") % "engine*"   # suffix wild card match
+            >>> filter = InMemoryDBText("job") % "%%engine%%"   # fuzzy match w/ LD
+            >>> filter = InMemoryDBText("job") % "engineer|doctor" # contains either
+            >>> filter = InMemoryDBText("job") % "engineer doctor" # contains both
         """
         self._set_value(other, self.SUPPORTED_VAL_TYPES, InMemoryDBFilterOperator.LIKE)  # type: ignore
         return InMemoryDBFilterExpression(str(self))
@@ -393,14 +394,14 @@ class InMemoryDBFilterExpression:
     by combining InMemoryDBFilterFields using the & and | operators.
 
     Examples:
-
-        >>> from langchain_community.vectorstores.InMemoryVectorStore import InMemoryDBTag, InMemoryDBNum
-        >>> brand_is_nike = InMemoryDBTag("brand") == "nike"
-        >>> price_is_under_100 = InMemoryDBNum("price") < 100
-        >>> filter = brand_is_nike & price_is_under_100
-        >>> print(str(filter))
-        (@brand:{nike} @price:[-inf (100)])
-
+    >>> from langchain_aws.vectorstores.inmemorydb import (
+    ...     InMemoryDBTag, InMemoryDBNum
+    ... )
+    >>> brand_is_nike = InMemoryDBTag("brand") == "nike"
+    >>> price_is_under_100 = InMemoryDBNum("price") < 100
+    >>> filter = brand_is_nike & price_is_under_100
+    >>> print(str(filter))
+    (@brand:{nike} @price:[-inf (100)])
     """
 
     def __init__(
@@ -415,19 +416,25 @@ class InMemoryDBFilterExpression:
         self._left = left
         self._right = right
 
-    def __and__(self, other: "InMemoryDBFilterExpression") -> "InMemoryDBFilterExpression":
+    def __and__(
+        self, other: "InMemoryDBFilterExpression"
+    ) -> "InMemoryDBFilterExpression":
         return InMemoryDBFilterExpression(
             operator=InMemoryDBFilterOperator.AND, left=self, right=other
         )
 
-    def __or__(self, other: "InMemoryDBFilterExpression") -> "InMemoryDBFilterExpression":
+    def __or__(
+        self, other: "InMemoryDBFilterExpression"
+    ) -> "InMemoryDBFilterExpression":
         return InMemoryDBFilterExpression(
             operator=InMemoryDBFilterOperator.OR, left=self, right=other
         )
 
     @staticmethod
     def format_expression(
-        left: "InMemoryDBFilterExpression", right: "InMemoryDBFilterExpression", operator_str: str
+        left: "InMemoryDBFilterExpression",
+        right: "InMemoryDBFilterExpression",
+        operator_str: str,
     ) -> str:
         _left, _right = str(left), str(right)
         if _left == _right == "*":
@@ -453,7 +460,9 @@ class InMemoryDBFilterExpression:
                     "Both left and right should be type FilterExpression"
                 )
 
-            operator_str = " | " if self._operator == InMemoryDBFilterOperator.OR else " "
+            operator_str = (
+                " | " if self._operator == InMemoryDBFilterOperator.OR else " "
+            )
             return self.format_expression(self._left, self._right, operator_str)
 
         # check that base case, the filter is set

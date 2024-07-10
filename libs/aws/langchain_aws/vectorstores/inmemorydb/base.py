@@ -37,6 +37,7 @@ from langchain_aws.utilities.redis import (
     _buffer_to_array,
     get_client,
 )
+from langchain_aws.utilities.utils import maximal_marginal_relevance
 from langchain_aws.vectorstores.inmemorydb.constants import (
     INMEMORYDB_TAG_SEPARATOR,
 )
@@ -92,13 +93,13 @@ class InMemoryVectorStore(VectorStore):
     .. code-block:: python
 
         from langchain_aws.vectorstores import InMemoryVectorStore
-        
+
 
     Initialize, create index, and load Documents
         .. code-block:: python
 
             from langchain_aws.vectorstores import InMemoryVectorStore
-            
+
             rds = InMemoryVectorStore.from_documents(
                 documents, # a list of Document objects from loaders or created
                 embeddings, # an Embeddings object
@@ -328,9 +329,10 @@ class InMemoryVectorStore(VectorStore):
                 vector schema to use. Defaults to None.
             **kwargs (Any): Additional keyword arguments to pass to the Redis client.
 
-        Returns:
-            Tuple[InMemoryVectorStore, List[str]]: Tuple of the InMemoryVectorStore instance and the keys of
-                the newly created documents.
+                Returns:
+            Tuple[InMemoryVectorStore, List[str]]:
+            Tuple of the InMemoryVectorStore instance and the keys of
+            the newly created documents.
 
         Raises:
             ValueError: If the number of metadatas does not match the number of texts.
@@ -442,7 +444,7 @@ class InMemoryVectorStore(VectorStore):
 
                 from langchain_aws.vectorstores import InMemoryVectorStore
                                 embeddings = OpenAIEmbeddings()
-                
+
         Args:
             texts (List[str]): List of texts to add to the vectorstore.
             embedding (Embeddings): Embedding model class (i.e. OpenAIEmbeddings)
@@ -457,7 +459,8 @@ class InMemoryVectorStore(VectorStore):
                 schema. Defaults to None.
             vector_schema (Optional[Dict[str, Union[str, int]]], optional): Optional
                 vector schema to use. Defaults to None.
-            **kwargs (Any): Additional keyword arguments to pass to the InMemoryVectorStore client.
+            **kwargs (Any): Additional keyword arguments to pass to the
+            InMemoryVectorStore client.
 
         Returns:
             InMemoryVectorStore: InMemoryVectorStore VectorStore instance.
@@ -492,7 +495,7 @@ class InMemoryVectorStore(VectorStore):
             .. code-block:: python
 
                 from langchain_aws.vectorstores import InMemoryVectorStore
-                
+
                 embeddings = OpenAIEmbeddings()
 
                 # must pass in schema and key_prefix from another index
@@ -511,7 +514,8 @@ class InMemoryVectorStore(VectorStore):
             schema (Union[Dict[str, str], str, os.PathLike, Dict[str, ListOfDict]]):
                 Schema of the index and the vector schema. Can be a dict, or path to
                 yaml file.
-            key_prefix (Optional[str]): Prefix to use for all keys in InMemoryVectorStore associated
+            key_prefix (Optional[str]): Prefix to use for all keys in
+            InMemoryVectorStore associated
                 with this index.
             **kwargs (Any): Additional keyword arguments to pass to the Redis client.
 
@@ -543,8 +547,10 @@ class InMemoryVectorStore(VectorStore):
         if not check_index_exists(instance.client, index_name):
             # Will only raise if the running InMemoryVectorStore server does not
             # have a record of this particular index
+            # have a record of this particular index
             raise ValueError(
-                f"InMemoryVectorStore failed to connect: Index {index_name} does not exist."
+                f"InMemoryVectorStore failed to connect: "
+                f"Index {index_name} does not exist."
             )
 
         return instance
@@ -718,7 +724,7 @@ class InMemoryVectorStore(VectorStore):
         pipeline.execute()
         return ids
 
-    def as_retriever(self, **kwargs: Any) ->InMemoryVectorStoreRetriever:
+    def as_retriever(self, **kwargs: Any) -> InMemoryVectorStoreRetriever:
         tags = kwargs.pop("tags", None) or []
         tags.extend(self._get_retriever_tags())
         return InMemoryVectorStoreRetriever(vectorstore=self, **kwargs, tags=tags)
@@ -1014,7 +1020,6 @@ class InMemoryVectorStore(VectorStore):
             np.array(query_embedding), prefetch_embeddings, lambda_mult=lambda_mult, k=k
         )
         selected_docs = [prefetch_docs[i] for i in selected_indices]
-
         return selected_docs
 
     def _collect_metadata(self, result: "Document") -> Dict[str, Any]:
