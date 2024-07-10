@@ -1,4 +1,5 @@
 """Test chat model integration."""
+
 import base64
 from typing import Dict, List, Type, cast
 
