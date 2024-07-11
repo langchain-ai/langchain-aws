@@ -825,7 +825,7 @@ def _snake_to_camel_keys(obj: _T) -> _T:
 def _drop_none(obj: Any) -> Any:
     if isinstance(obj, dict):
         new = {k: _drop_none(v) for k, v in obj.items() if _drop_none(v) is not None}
-        return new or None
+        return new
     else:
         return obj
 
