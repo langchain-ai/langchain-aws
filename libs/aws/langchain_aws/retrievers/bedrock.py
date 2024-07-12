@@ -10,13 +10,7 @@ from langchain_core.retrievers import BaseRetriever
 from typing_extensions import Annotated
 
 FilterValue = Union[Dict[str, Any], List[Any], int, float, str, bool, None]
-
-
-class Criterion(BaseModel):
-    """A model to encapsulate a filter criterion with a key and its value."""
-
-    key: str
-    value: FilterValue
+Filter = Dict[str, FilterValue]
 
 
 class SearchFilter(BaseModel):
@@ -24,17 +18,17 @@ class SearchFilter(BaseModel):
 
     andAll: Optional[List["SearchFilter"]] = None
     orAll: Optional[List["SearchFilter"]] = None
-    equals: Optional[Criterion] = None
-    greaterThan: Optional[Criterion] = None
-    greaterThanOrEquals: Optional[Criterion] = None
-    in_: Optional[Criterion] = Field(None, alias="in")
-    lessThan: Optional[Criterion] = None
-    lessThanOrEquals: Optional[Criterion] = None
-    listContains: Optional[Criterion] = None
-    notEquals: Optional[Criterion] = None
-    notIn: Optional[Criterion] = Field(None, alias="notIn")
-    startsWith: Optional[Criterion] = None
-    stringContains: Optional[Criterion] = None
+    equals: Optional[Filter] = None
+    greaterThan: Optional[Filter] = None
+    greaterThanOrEquals: Optional[Filter] = None
+    in_: Optional[Filter] = Field(None, alias="in")
+    lessThan: Optional[Filter] = None
+    lessThanOrEquals: Optional[Filter] = None
+    listContains: Optional[Filter] = None
+    notEquals: Optional[Filter] = None
+    notIn: Optional[Filter] = Field(None, alias="notIn")
+    startsWith: Optional[Filter] = None
+    stringContains: Optional[Filter] = None
 
     class Config:
         allow_population_by_field_name = True
