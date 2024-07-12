@@ -160,12 +160,11 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         query: str,
         *,
         run_manager: CallbackManagerForRetrieverRun,
-        next_token: Optional[str] = None,
     ) -> List[Document]:
         response = self.client.retrieve(
             retrievalQuery={"text": query.strip()},
             knowledgeBaseId=self.knowledge_base_id,
-            nextToken=next_token,
+            nextToken=None,
             retrievalConfiguration=self.retrieval_config.dict(),
         )
         results = response["retrievalResults"]
@@ -185,36 +184,3 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
             )
 
         return self._filter_by_score_confidence(docs=documents)
-
-    def _get_relevant_documents_with_token(
-        self,
-        query: str,
-        *,
-        run_manager: CallbackManagerForRetrieverRun,
-        next_token: Optional[str] = None,
-    ) -> Tuple[List[Document], Optional[str]]:
-        response = self.client.retrieve(
-            retrievalQuery={"text": query.strip()},
-            knowledgeBaseId=self.knowledge_base_id,
-            nextToken=next_token or self.retrieval_config.nextToken,
-            retrievalConfiguration=self.retrieval_config.dict(),
-        )
-        new_next_token = response.get("nextToken", None)
-        results = response["retrievalResults"]
-        documents = []
-        for result in results:
-            content = result["content"]["text"]
-            result.pop("content")
-            if "score" not in result:
-                result["score"] = 0
-            if "metadata" in result:
-                result["source_metadata"] = result.pop("metadata")
-            documents.append(
-                Document(
-                    page_content=content,
-                    metadata=result,
-                )
-            )
-
-        filtered_documents = self._filter_by_score_confidence(docs=documents)
-        return (filtered_documents, new_next_token)
