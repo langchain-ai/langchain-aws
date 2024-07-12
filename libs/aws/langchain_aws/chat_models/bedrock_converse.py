@@ -31,10 +31,11 @@ from langchain_core.messages import (
     HumanMessageChunk,
     SystemMessage,
     ToolCall,
-    ToolCallChunk,
     ToolMessage,
 )
 from langchain_core.messages.ai import AIMessageChunk, UsageMetadata
+from langchain_core.messages.tool import tool_call as create_tool_call
+from langchain_core.messages.tool import tool_call_chunk
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.pydantic_v1 import BaseModel, Extra, Field, root_validator
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
@@ -591,7 +592,7 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         tool_call_chunks = []
         if block["type"] == "tool_use":
             tool_call_chunks.append(
-                ToolCallChunk(
+                tool_call_chunk(
                     name=block.get("name"),
                     id=block.get("id"),
                     args=block.get("input"),
@@ -607,7 +608,7 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         tool_call_chunks = []
         if block["type"] == "tool_use":
             tool_call_chunks.append(
-                ToolCallChunk(
+                tool_call_chunk(
                     name=block.get("name"),
                     id=block.get("id"),
                     args=block.get("input"),
@@ -782,7 +783,9 @@ def _extract_tool_calls(anthropic_content: List[dict]) -> List[ToolCall]:
     for block in anthropic_content:
         if block["type"] == "tool_use":
             tool_calls.append(
-                ToolCall(name=block["name"], args=block["input"], id=block["id"])
+                create_tool_call(
+                    name=block["name"], args=block["input"], id=block["id"]
+                )
             )
     return tool_calls
 

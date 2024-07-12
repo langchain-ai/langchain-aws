@@ -23,6 +23,7 @@ from langchain_core.callbacks import (
 )
 from langchain_core.language_models import LLM, BaseLanguageModel
 from langchain_core.messages import ToolCall
+from langchain_core.messages.tool import tool_call
 from langchain_core.outputs import Generation, GenerationChunk, LLMResult
 from langchain_core.pydantic_v1 import Extra, Field, root_validator
 from langchain_core.utils import get_from_dict_or_env
@@ -199,7 +200,7 @@ def extract_tool_calls(content: List[dict]) -> List[ToolCall]:
         if block["type"] != "tool_use":
             continue
         tool_calls.append(
-            ToolCall(name=block["name"], args=block["input"], id=block["id"])
+            tool_call(name=block["name"], args=block["input"], id=block["id"])
         )
     return tool_calls
 
@@ -632,7 +633,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         **kwargs: Any,
     ) -> Tuple[
         str,
-        List[dict],
+        List[ToolCall],
         Dict[str, Any],
     ]:
         _model_kwargs = self.model_kwargs or {}
