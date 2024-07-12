@@ -101,7 +101,14 @@ def test__messages_to_bedrock() -> None:
         AIMessage(content="ai1"),
         AIMessage(
             content="",
-            tool_calls=[ToolCall(name="tool1", args={"arg1": "arg1"}, id="tool_call1")],
+            tool_calls=[
+                ToolCall(
+                    name="tool1",
+                    args={"arg1": "arg1"},
+                    id="tool_call1",
+                    type="tool_call",
+                )
+            ],
         ),
         AIMessage(
             content=[

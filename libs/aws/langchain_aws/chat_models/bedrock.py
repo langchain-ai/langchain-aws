@@ -18,11 +18,8 @@ from typing import (
 )
 
 from langchain_core._api.deprecation import deprecated
-from langchain_core.callbacks import (
-    CallbackManagerForLLMRun,
-)
-from langchain_core.language_models import LanguageModelInput
-from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -32,7 +29,7 @@ from langchain_core.messages import (
     SystemMessage,
 )
 from langchain_core.messages.ai import UsageMetadata
-from langchain_core.messages.tool import ToolCall, ToolMessage
+from langchain_core.messages.tool import ToolCall, ToolMessage, tool_call_chunk
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.pydantic_v1 import BaseModel, Extra
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
@@ -445,12 +442,12 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 message = result.generations[0].message
                 if isinstance(message, AIMessage) and message.tool_calls is not None:
                     tool_call_chunks = [
-                        {
-                            "name": tool_call["name"],
-                            "args": json.dumps(tool_call["args"]),
-                            "id": tool_call["id"],
-                            "index": idx,
-                        }
+                        tool_call_chunk(
+                            name=tool_call["name"],
+                            args=json.dumps(tool_call["args"]),
+                            id=tool_call["id"],
+                            index=idx,
+                        )
                         for idx, tool_call in enumerate(message.tool_calls)
                     ]
                     message_chunk = AIMessageChunk(
@@ -512,7 +509,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
         completion = ""
         llm_output: Dict[str, Any] = {}
-        tool_calls: List[Dict[str, Any]] = []
+        tool_calls: List[ToolCall] = []
         provider_stop_reason_code = self.provider_stop_reason_key_map.get(
             self._get_provider(), "stop_reason"
         )
