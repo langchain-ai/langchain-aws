@@ -117,6 +117,12 @@ def _stream_response_to_generation_chunk(
     else:
         # chunk obj format varies with provider
         generation_info = {k: v for k, v in stream_response.items() if k != output_key}
+        if provider == "meta":
+            if "prompt_token_count" in generation_info:
+                generation_info["prompt_token_count"] = [generation_info["prompt_token_count"]]
+            if "generation_token_count" in generation_info:
+                generation_info["generation_token_count"] = [generation_info["generation_token_count"]]
+
         return GenerationChunk(
             text=(
                 stream_response[output_key]
