@@ -403,7 +403,9 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> ChatResult:
         """Top Level call"""
         bedrock_messages, system = _messages_to_bedrock(messages)
-        params = self._converse_params(stop=stop, **_snake_to_camel_keys(kwargs))
+        params = self._converse_params(
+            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
+        )
         response = self.client.converse(
             messages=bedrock_messages, system=system, **params
         )
@@ -418,7 +420,9 @@ class ChatBedrockConverse(BaseChatModel):
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
         bedrock_messages, system = _messages_to_bedrock(messages)
-        params = self._converse_params(stop=stop, **_snake_to_camel_keys(kwargs))
+        params = self._converse_params(
+            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
+        )
         response = self.client.converse_stream(
             messages=bedrock_messages, system=system, **params
         )
@@ -814,17 +818,20 @@ def _camel_to_snake_keys(obj: _T) -> _T:
         return obj
 
 
-def _snake_to_camel_keys(obj: _T) -> _T:
-    excluded_keys = {"inputSchema"}  # inputSchema contains user-provided schema
+def _snake_to_camel_keys(obj: _T, excluded_keys: set = set()) -> _T:
     if isinstance(obj, list):
-        return cast(_T, [_snake_to_camel_keys(e) for e in obj])
+        return cast(
+            _T, [_snake_to_camel_keys(e, excluded_keys=excluded_keys) for e in obj]
+        )
     elif isinstance(obj, dict):
         _dict = {}
         for k, v in obj.items():
             if k in excluded_keys:
                 _dict[k] = v
             else:
-                _dict[_snake_to_camel(k)] = _snake_to_camel_keys(v)
+                _dict[_snake_to_camel(k)] = _snake_to_camel_keys(
+                    v, excluded_keys=excluded_keys
+                )
         return cast(_T, _dict)
     else:
         return obj
