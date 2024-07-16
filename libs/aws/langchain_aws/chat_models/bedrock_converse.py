@@ -815,12 +815,17 @@ def _camel_to_snake_keys(obj: _T) -> _T:
 
 
 def _snake_to_camel_keys(obj: _T) -> _T:
+    excluded_keys = {"inputSchema"}  # inputSchema contains user-provided schema
     if isinstance(obj, list):
         return cast(_T, [_snake_to_camel_keys(e) for e in obj])
     elif isinstance(obj, dict):
-        return cast(
-            _T, {_snake_to_camel(k): _snake_to_camel_keys(v) for k, v in obj.items()}
-        )
+        _dict = {}
+        for k, v in obj.items():
+            if k in excluded_keys:
+                _dict[k] = v
+            else:
+                _dict[_snake_to_camel(k)] = _snake_to_camel_keys(v)
+        return cast(_T, _dict)
     else:
         return obj
 
