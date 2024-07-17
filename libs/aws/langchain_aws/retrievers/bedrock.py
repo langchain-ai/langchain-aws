@@ -158,7 +158,6 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         response = self.client.retrieve(
             retrievalQuery={"text": query.strip()},
             knowledgeBaseId=self.knowledge_base_id,
-            nextToken=None,
             retrievalConfiguration=self.retrieval_config.dict(),
         )
         results = response["retrievalResults"]
