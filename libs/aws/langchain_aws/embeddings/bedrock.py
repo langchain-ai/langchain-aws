@@ -68,6 +68,9 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     normalize: bool = False
     """Whether the embeddings should be normalized to unit vectors"""
 
+    config: Any = None
+    """An optional botocore.config.Config instance to pass to the client."""
+
     class Config:
         """Configuration for this pydantic object."""
 
@@ -95,6 +98,9 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
             if values["endpoint_url"]:
                 client_params["endpoint_url"] = values["endpoint_url"]
+
+            if values["config"]:
+                client_params["config"] = values["config"]
 
             values["client"] = session.client("bedrock-runtime", **client_params)
 

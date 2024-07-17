@@ -1,4 +1,5 @@
 """Test Bedrock chat model."""
+
 import json
 from typing import Any
 

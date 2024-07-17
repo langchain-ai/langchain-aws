@@ -31,10 +31,11 @@ from langchain_core.messages import (
     HumanMessageChunk,
     SystemMessage,
     ToolCall,
-    ToolCallChunk,
     ToolMessage,
 )
 from langchain_core.messages.ai import AIMessageChunk, UsageMetadata
+from langchain_core.messages.tool import tool_call as create_tool_call
+from langchain_core.messages.tool import tool_call_chunk
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.pydantic_v1 import BaseModel, Extra, Field, root_validator
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
@@ -402,7 +403,9 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> ChatResult:
         """Top Level call"""
         bedrock_messages, system = _messages_to_bedrock(messages)
-        params = self._converse_params(stop=stop, **_snake_to_camel_keys(kwargs))
+        params = self._converse_params(
+            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
+        )
         response = self.client.converse(
             messages=bedrock_messages, system=system, **params
         )
@@ -417,7 +420,9 @@ class ChatBedrockConverse(BaseChatModel):
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
         bedrock_messages, system = _messages_to_bedrock(messages)
-        params = self._converse_params(stop=stop, **_snake_to_camel_keys(kwargs))
+        params = self._converse_params(
+            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
+        )
         response = self.client.converse_stream(
             messages=bedrock_messages, system=system, **params
         )
@@ -591,7 +596,7 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         tool_call_chunks = []
         if block["type"] == "tool_use":
             tool_call_chunks.append(
-                ToolCallChunk(
+                tool_call_chunk(
                     name=block.get("name"),
                     id=block.get("id"),
                     args=block.get("input"),
@@ -607,7 +612,7 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         tool_call_chunks = []
         if block["type"] == "tool_use":
             tool_call_chunks.append(
-                ToolCallChunk(
+                tool_call_chunk(
                     name=block.get("name"),
                     id=block.get("id"),
                     args=block.get("input"),
@@ -782,7 +787,9 @@ def _extract_tool_calls(anthropic_content: List[dict]) -> List[ToolCall]:
     for block in anthropic_content:
         if block["type"] == "tool_use":
             tool_calls.append(
-                ToolCall(name=block["name"], args=block["input"], id=block["id"])
+                create_tool_call(
+                    name=block["name"], args=block["input"], id=block["id"]
+                )
             )
     return tool_calls
 
@@ -811,13 +818,21 @@ def _camel_to_snake_keys(obj: _T) -> _T:
         return obj
 
 
-def _snake_to_camel_keys(obj: _T) -> _T:
+def _snake_to_camel_keys(obj: _T, excluded_keys: set = set()) -> _T:
     if isinstance(obj, list):
-        return cast(_T, [_snake_to_camel_keys(e) for e in obj])
-    elif isinstance(obj, dict):
         return cast(
-            _T, {_snake_to_camel(k): _snake_to_camel_keys(v) for k, v in obj.items()}
+            _T, [_snake_to_camel_keys(e, excluded_keys=excluded_keys) for e in obj]
         )
+    elif isinstance(obj, dict):
+        _dict = {}
+        for k, v in obj.items():
+            if k in excluded_keys:
+                _dict[k] = v
+            else:
+                _dict[_snake_to_camel(k)] = _snake_to_camel_keys(
+                    v, excluded_keys=excluded_keys
+                )
+        return cast(_T, _dict)
     else:
         return obj
 
@@ -825,7 +840,7 @@ def _snake_to_camel_keys(obj: _T) -> _T:
 def _drop_none(obj: Any) -> Any:
     if isinstance(obj, dict):
         new = {k: _drop_none(v) for k, v in obj.items() if _drop_none(v) is not None}
-        return new or None
+        return new
     else:
         return obj
 

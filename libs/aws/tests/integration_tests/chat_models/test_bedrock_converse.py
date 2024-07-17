@@ -1,10 +1,11 @@
 """Standard LangChain interface tests"""
 
-from typing import Type
+from typing import Literal, Type
 
 import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
+from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_standard_tests.integration_tests import ChatModelIntegrationTests
 
 from langchain_aws import ChatBedrockConverse
@@ -30,6 +31,18 @@ class TestBedrockStandard(ChatModelIntegrationTests):
     @property
     def supports_image_inputs(self) -> bool:
         return True
+
+    def test_structured_output_snake_case(self, model: BaseChatModel) -> None:
+        class ClassifyQuery(BaseModel):
+            """Classify a query."""
+
+            query_type: Literal["cat", "dog"] = Field(
+                description="Classify a query as related to cats or dogs."
+            )
+
+        chat = model.with_structured_output(ClassifyQuery)
+        for chunk in chat.stream("How big are cats?"):
+            assert isinstance(chunk, ClassifyQuery)
 
 
 @pytest.mark.skip(reason="Needs guardrails setup to run.")

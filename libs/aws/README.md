@@ -66,3 +66,27 @@ retriever = AmazonKnowledgeBasesRetriever(
 
 retriever.get_relevant_documents(query="What is the meaning of life?")
 ```
+## VectorStores 
+`InMemoryVectorStore` class provides a vectorstore to connect with Amazon MemoryDB.
+
+```python
+from langchain_aws.vectorstores.inmemorydb import InMemoryVectorStore
+
+vds = InMemoryVectorStore.from_documents(
+            chunks,
+            embeddings,
+            redis_url="rediss://cluster_endpoint:6379/ssl=True ssl_cert_reqs=none",
+            vector_schema=vector_schema,
+            index_name=INDEX_NAME,
+        )
+```
+
+## MemoryDB as Retriever
+
+Here we go over different options for using the vector store as a retriever.
+
+There are three different search methods we can use to do retrieval. By default, it will use semantic similarity.
+
+```python
+retriever=vds.as_retriever()
+```
