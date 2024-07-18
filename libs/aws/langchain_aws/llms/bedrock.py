@@ -847,24 +847,23 @@ class BedrockBase(BaseLanguageModel, ABC):
             _model_kwargs["stream"] = True
 
         params = {**_model_kwargs, **kwargs}
-        if "claude-3" in self._get_model():
-            if _tools_in_params(params):
-                input_body = LLMInputOutputAdapter.prepare_input(
-                    provider=provider,
-                    model_kwargs=params,
-                    prompt=prompt,
-                    system=system,
-                    messages=messages,
-                    tools=params["tools"],
-                )
-            else:
-                input_body = LLMInputOutputAdapter.prepare_input(
-                    provider=provider,
-                    prompt=prompt,
-                    system=system,
-                    messages=messages,
-                    model_kwargs=params,
-                )
+        if "claude-3" in self._get_model() and _tools_in_params(params):
+            input_body = LLMInputOutputAdapter.prepare_input(
+                provider=provider,
+                model_kwargs=params,
+                prompt=prompt,
+                system=system,
+                messages=messages,
+                tools=params["tools"],
+            )
+        else:
+            input_body = LLMInputOutputAdapter.prepare_input(
+                provider=provider,
+                prompt=prompt,
+                system=system,
+                messages=messages,
+                model_kwargs=params,
+            )
         body = json.dumps(input_body)
 
         response = await asyncio.get_running_loop().run_in_executor(
