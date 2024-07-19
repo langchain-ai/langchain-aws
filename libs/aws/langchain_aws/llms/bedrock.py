@@ -117,7 +117,11 @@ def _stream_response_to_generation_chunk(
             return None
     else:
         # chunk obj format varies with provider
-        generation_info = {k: v for k, v in stream_response.items() if k != output_key}
+        generation_info = {
+            k: v
+            for k, v in stream_response.items()
+            if k not in [output_key, "prompt_token_count", "generation_token_count"]
+        }
         return GenerationChunk(
             text=(
                 stream_response[output_key]
@@ -344,6 +348,10 @@ class LLMInputOutputAdapter:
                 provider == "mistral"
                 and chunk_obj.get(output_key, [{}])[0].get("stop_reason", "") == "stop"
             ):
+                yield _get_invocation_metrics_chunk(chunk_obj)
+                return
+
+            elif provider == "meta" and chunk_obj.get("stop_reason", "") == "stop":
                 yield _get_invocation_metrics_chunk(chunk_obj)
                 return
 
