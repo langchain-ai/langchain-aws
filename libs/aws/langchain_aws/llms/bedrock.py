@@ -835,11 +835,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         _model_kwargs = self.model_kwargs or {}
         provider = self._get_provider()
 
-        if stop:
-            if provider not in self.provider_stop_sequence_key_name_map:
-                raise ValueError(
-                    f"Stop sequence key name for {provider} is not supported."
-                )
+        if stop and provider in self.provider_stop_sequence_key_name_map:
             if k := self.provider_stop_sequence_key_name_map.get(provider):
                 _model_kwargs[k] = stop
 
