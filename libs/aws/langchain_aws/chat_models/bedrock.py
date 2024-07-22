@@ -565,20 +565,16 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
         else:
             usage_metadata = None
+
         llm_output["model_id"] = self.model_id
-        if len(tool_calls) > 0:
-            msg = AIMessage(
-                content=completion,
-                additional_kwargs=llm_output,
-                tool_calls=cast(List[ToolCall], tool_calls),
-                usage_metadata=usage_metadata,
-            )
-        else:
-            msg = AIMessage(
-                content=completion,
-                additional_kwargs=llm_output,
-                usage_metadata=usage_metadata,
-            )
+
+        msg = AIMessage(
+            content=completion,
+            additional_kwargs=llm_output,
+            tool_calls=cast(List[ToolCall], tool_calls),
+            usage_metadata=usage_metadata,
+        )
+
         return ChatResult(
             generations=[
                 ChatGeneration(
