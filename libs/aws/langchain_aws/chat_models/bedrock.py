@@ -1,4 +1,3 @@
-import json
 import re
 from collections import defaultdict
 from operator import itemgetter
@@ -29,7 +28,7 @@ from langchain_core.messages import (
     SystemMessage,
 )
 from langchain_core.messages.ai import UsageMetadata
-from langchain_core.messages.tool import ToolCall, ToolMessage, tool_call_chunk
+from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.pydantic_v1 import BaseModel, Extra
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
@@ -39,7 +38,6 @@ from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 from langchain_aws.function_calling import (
     ToolsOutputParser,
     _lc_tool_calls_to_anthropic_tool_use_blocks,
-    _tools_in_params,
     convert_to_anthropic_tool,
     get_system_message,
 )
@@ -457,7 +455,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             **kwargs,
         ):
             if isinstance(chunk, AIMessageChunk):
-                yield ChatGenerationChunk(message=chunk)    
+                yield ChatGenerationChunk(message=chunk)
             else:
                 delta = chunk.text
                 if generation_info := chunk.generation_info:
