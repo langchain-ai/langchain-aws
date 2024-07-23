@@ -434,31 +434,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         provider = self._get_provider()
         prompt, system, formatted_messages = None, None, None
 
-        if "claude-3" in self._get_model():
-            if _tools_in_params({**kwargs}):
-                result = self._generate(
-                    messages, stop=stop, run_manager=run_manager, **kwargs
-                )
-                message = result.generations[0].message
-                if isinstance(message, AIMessage) and message.tool_calls is not None:
-                    tool_call_chunks = [
-                        tool_call_chunk(
-                            name=tool_call["name"],
-                            args=json.dumps(tool_call["args"]),
-                            id=tool_call["id"],
-                            index=idx,
-                        )
-                        for idx, tool_call in enumerate(message.tool_calls)
-                    ]
-                    message_chunk = AIMessageChunk(
-                        content=message.content,
-                        tool_call_chunks=tool_call_chunks,  # type: ignore[arg-type]
-                        usage_metadata=message.usage_metadata,
-                    )
-                    yield ChatGenerationChunk(message=message_chunk)
-                else:
-                    yield cast(ChatGenerationChunk, result.generations[0])
-                return
         if provider == "anthropic":
             system, formatted_messages = ChatPromptAdapter.format_messages(
                 provider, messages
@@ -481,20 +456,23 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             run_manager=run_manager,
             **kwargs,
         ):
-            delta = chunk.text
-            if generation_info := chunk.generation_info:
-                usage_metadata = generation_info.pop("usage_metadata", None)
+            if isinstance(chunk, AIMessageChunk):
+                yield ChatGenerationChunk(message=chunk)    
             else:
-                usage_metadata = None
-            yield ChatGenerationChunk(
-                message=AIMessageChunk(
-                    content=delta,
-                    response_metadata=chunk.generation_info,
-                    usage_metadata=usage_metadata,
+                delta = chunk.text
+                if generation_info := chunk.generation_info:
+                    usage_metadata = generation_info.pop("usage_metadata", None)
+                else:
+                    usage_metadata = None
+                yield ChatGenerationChunk(
+                    message=AIMessageChunk(
+                        content=delta,
+                        response_metadata=chunk.generation_info,
+                        usage_metadata=usage_metadata,
+                    )
+                    if chunk.generation_info is not None
+                    else AIMessageChunk(content=delta)
                 )
-                if chunk.generation_info is not None
-                else AIMessageChunk(content=delta)
-            )
 
     def _generate(
         self,

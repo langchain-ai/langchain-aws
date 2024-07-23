@@ -22,8 +22,9 @@ from langchain_core.callbacks import (
     CallbackManagerForLLMRun,
 )
 from langchain_core.language_models import LLM, BaseLanguageModel
-from langchain_core.messages import ToolCall
-from langchain_core.messages.tool import tool_call
+from langchain_core.messages import ToolCall, AIMessageChunk
+from langchain_core.messages.ai import UsageMetadata
+from langchain_core.messages.tool import tool_call, tool_call_chunk
 from langchain_core.outputs import Generation, GenerationChunk, LLMResult
 from langchain_core.pydantic_v1 import Extra, Field, root_validator
 from langchain_core.utils import get_from_dict_or_env
@@ -89,30 +90,80 @@ def _stream_response_to_generation_chunk(
     provider: str,
     output_key: str,
     messages_api: bool,
-) -> Union[GenerationChunk, None]:
+    coerce_content_to_string: bool
+) -> Union[GenerationChunk, AIMessageChunk, None]:
     """Convert a stream response to a generation chunk."""
+    print(f"{stream_response}\n")
     if messages_api:
         msg_type = stream_response.get("type")
         if msg_type == "message_start":
-            usage_info = stream_response.get("message", {}).get("usage", None)
-            usage_info = _nest_usage_info_token_counts(usage_info)
-            generation_info = {"usage": usage_info}
-            return GenerationChunk(text="", generation_info=generation_info)
+            input_tokens = stream_response["message"]["usage"]["input_tokens"]
+            return AIMessageChunk(
+                content="" if coerce_content_to_string else [],
+                usage_metadata=UsageMetadata(
+                    input_tokens=input_tokens,
+                    output_tokens=0,
+                    total_tokens=input_tokens
+                )
+            )
+        elif (
+            msg_type == "content_block_start"
+            and stream_response["content_block"] is not None
+            and stream_response["content_block"]["type"] == "tool_use"
+        ):
+            content_block = stream_response["content_block"]
+            content_block["index"] = stream_response["index"]
+            tc_chunk = tool_call_chunk(
+                index=stream_response["index"],
+                id=stream_response["content_block"]["id"],
+                name=stream_response["content_block"]["name"],
+                args="",
+            )
+            return AIMessageChunk(
+                content=[content_block],
+                tool_call_chunks=[tc_chunk],  # type: ignore
+            )
         elif msg_type == "content_block_delta":
             if not stream_response["delta"]:
-                return GenerationChunk(text="")
-            return GenerationChunk(
-                text=stream_response["delta"]["text"],
-                generation_info=dict(
-                    stop_reason=stream_response.get("stop_reason", None),
-                ),
-            )
+                return AIMessageChunk(text="")
+            if stream_response["delta"]["type"] == "text_delta":
+                if coerce_content_to_string:
+                    return AIMessageChunk(
+                        content=stream_response["delta"]["text"]
+                    )
+                else:
+                    content_block = stream_response["delta"]
+                    content_block["index"] = stream_response["index"]
+                    content_block["type"] = "text"
+                    return AIMessageChunk(content=[content_block])
+            elif stream_response["delta"]["type"]  == "input_json_delta":
+                content_block = stream_response["delta"]
+                content_block["index"] = stream_response["index"]
+                content_block["type"] = "tool_use"
+                tc_chunk = {
+                    "index": stream_response["index"],
+                    "id": None,
+                    "name": None,
+                    "args": stream_response["delta"]["partial_json"],
+                }
+                return AIMessageChunk(
+                    content=[content_block],
+                    tool_call_chunks=[tc_chunk],  # type: ignore
+                )
         elif msg_type == "message_delta":
-            usage_info = stream_response.get("usage", None)
-            usage_info = _nest_usage_info_token_counts(usage_info)
-            stop_reason = stream_response.get("delta", {}).get("stop_reason")
-            generation_info = {"stop_reason": stop_reason, "usage": usage_info}
-            return GenerationChunk(text="", generation_info=generation_info)
+            output_tokens = stream_response["usage"]["output_tokens"]
+            return AIMessageChunk(
+                content="",
+                usage_metadata=UsageMetadata(
+                    input_tokens=0,
+                    output_tokens=output_tokens,
+                    total_tokens=output_tokens
+                ),
+                response_metadata={
+                    "stop_reason": stream_response["delta"]["stop_reason"],
+                    "stop_sequence": stream_response["delta"]["stop_sequence"],
+                },
+            )
         else:
             return None
     else:
@@ -316,6 +367,7 @@ class LLMInputOutputAdapter:
         response: Any,
         stop: Optional[List[str]] = None,
         messages_api: bool = False,
+        coerce_content_to_string = False
     ) -> Iterator[GenerationChunk]:
         stream = response.get("body")
 
@@ -364,6 +416,7 @@ class LLMInputOutputAdapter:
                 provider=provider,
                 output_key=output_key,
                 messages_api=messages_api,
+                coerce_content_to_string=coerce_content_to_string
             )
             if generation_chunk:
                 yield generation_chunk
@@ -783,8 +836,10 @@ class BedrockBase(BaseLanguageModel, ABC):
             messages=messages,
             model_kwargs=params,
         )
+        coerce_content_to_string = True
         if "claude-3" in self._get_model():
             if _tools_in_params(params):
+                coerce_content_to_string = False
                 input_body = LLMInputOutputAdapter.prepare_input(
                     provider=provider,
                     model_kwargs=params,
@@ -823,13 +878,18 @@ class BedrockBase(BaseLanguageModel, ABC):
             response,
             stop,
             True if messages else False,
+            coerce_content_to_string=coerce_content_to_string
         ):
             yield chunk
             # verify and raise callback error if any middleware intervened
-            self._get_bedrock_services_signal(chunk.generation_info)  # type: ignore[arg-type]
+            if not isinstance(chunk, AIMessageChunk):
+                self._get_bedrock_services_signal(chunk.generation_info)  # type: ignore[arg-type]
 
             if run_manager is not None:
-                run_manager.on_llm_new_token(chunk.text, chunk=chunk)
+                run_manager.on_llm_new_token(
+                    chunk.content if isinstance(chunk, AIMessageChunk) else chunk.text, 
+                    chunk=chunk
+                )
 
     async def _aprepare_input_and_invoke_stream(
         self,
