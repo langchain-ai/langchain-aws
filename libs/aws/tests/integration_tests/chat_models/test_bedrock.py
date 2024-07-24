@@ -84,17 +84,18 @@ def test_chat_bedrock_streaming() -> None:
 @pytest.mark.scheduled
 def test_chat_bedrock_streaming_llama3() -> None:
     """Test that streaming correctly invokes on_llm_new_token callback."""
-    callback_handler = FakeCallbackHandler()
     chat = ChatBedrock(  # type: ignore[call-arg]
-        model_id="meta.llama3-8b-instruct-v1:0",
-        streaming=True,
-        callbacks=[callback_handler],
-        verbose=True,
+        model_id="meta.llama3-8b-instruct-v1:0"
     )
     message = HumanMessage(content="Hello")
-    response = chat([message])
-    assert callback_handler.llm_streams > 0
-    assert isinstance(response, BaseMessage)
+
+    response = AIMessageChunk(content="")
+    for chunk in chat.stream([message]):
+        response += chunk  # type: ignore[assignment]
+
+    assert response.content
+    assert response.response_metadata
+    assert response.usage_metadata
 
 
 @pytest.mark.scheduled
