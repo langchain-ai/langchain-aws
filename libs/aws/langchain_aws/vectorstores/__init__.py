@@ -1,21 +1,22 @@
-"""**Vector store** stores embedded data and performs vector search.
+import importlib
+from typing import TYPE_CHECKING, Any
 
-One of the most common ways to store and search over unstructured data is to
-embed it and store the resulting embedding vectors, and then query the store
-and retrieve the data that are 'most similar' to the embedded query.
+if TYPE_CHECKING:
+    from langchain_aws.vectorstores.documentdb import (
+        DocumentDBVectorSearch,  # noqa: F401
+    )
+    from langchain_aws.vectorstores.inmemorydb import InMemoryVectorStore
 
-**Class hierarchy:**
+__all__ = ["InMemoryVectorStore", "DocumentDBVectorSearch"]
 
-.. code-block::
+_module_lookup = {
+    "InMemoryVectorStore": "langchain_aws.vectorstores.inmemorydb",
+    "DocumentDBVectorSearch": "langchain_aws.vectorstores.documentdb",
+}
 
-    VectorStore --> <name>  # Examples: Annoy, FAISS, Milvus
 
-    BaseRetriever --> VectorStoreRetriever --> <name>Retriever  # Example: VespaRetriever
-
-**Main helpers:**
-
-.. code-block::
-
-    Embeddings, Document
-"""  # noqa: E501
-from langchain_aws.vectorstores.documentdb import DocumentDBVectorSearch  # noqa: F401
+def __getattr__(name: str) -> Any:
+    if name in _module_lookup:
+        module = importlib.import_module(_module_lookup[name])
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__} has no attribute {name}")
