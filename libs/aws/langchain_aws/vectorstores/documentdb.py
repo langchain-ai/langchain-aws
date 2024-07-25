@@ -85,7 +85,14 @@ class DocumentDBVectorSearch(VectorStore):
                 for each document.
             embedding_key: MongoDB field that will contain the embedding
                 for each document.
+            is_async: Whether the collection is async or not.
+            async_collection: Async version of the collection.
+            NOTES:
+                * If `is_async` is True, `async_collection` must be provided.
+                * `collection` must be provided also when `is_async` is False.
         """
+        if collection is None:
+            raise ValueError("Must provide 'collection' named parameter.")
         self._collection = collection
         self._embedding = embedding
         self._index_name = index_name
@@ -98,7 +105,7 @@ class DocumentDBVectorSearch(VectorStore):
                 f"Expecting `async_collection` when `is_async` is defined.\n \
                     Go async_collection = `{async_collection}`"
             )
-        self._async_collection = async_collection
+        self._async_collection = async_collection  # type: ignore[arg-type]
 
     @property
     def embeddings(self) -> Embeddings:
@@ -483,9 +490,11 @@ class DocumentDBVectorSearch(VectorStore):
         collection: Optional[Collection[DocumentDBDocumentType]] = None,
         **kwargs: Any,
     ) -> DocumentDBVectorSearch:
-        if collection is None:
+        try:
+            assert isinstance(collection, Collection)
+        except AssertionError:
             raise ValueError("Must provide 'collection' named parameter.")
-        vectorstore = cls(collection, embedding, **kwargs)
+        vectorstore = cls(collection, embedding, **kwargs)  # type: ignore [arg-type]
         vectorstore.add_texts(texts, metadatas=metadatas)
         return vectorstore
 
@@ -506,10 +515,10 @@ class DocumentDBVectorSearch(VectorStore):
                     async_collection: `{async_collection}`"
             )
         vectorstore = cls(
-            collection,
+            collection,  # type: ignore [arg-type]
             embedding,
             is_async=True,
-            async_collection=async_collection,
+            async_collection=async_collection,  # type: ignore [arg-type]
             **kwargs,
         )
         await vectorstore.aadd_texts(texts, metadatas=metadatas)

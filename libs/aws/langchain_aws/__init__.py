@@ -6,8 +6,8 @@ from langchain_aws.retrievers import (
     AmazonKendraRetriever,
     AmazonKnowledgeBasesRetriever,
 )
-from langchain_aws.vectorstores.inmemorydb import InMemoryVectorStore
 from langchain_aws.vectorstores.documentdb import DocumentDBVectorSearch
+from langchain_aws.vectorstores.inmemorydb import InMemoryVectorStore
 
 __all__ = [
     "Bedrock",
