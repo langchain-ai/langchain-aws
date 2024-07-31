@@ -19,6 +19,7 @@ from typing import (
 from langchain_core._api.deprecation import deprecated
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
+from langchain_core.language_models.chat_models import generate_from_stream
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -489,7 +490,12 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         provider_stop_reason_code = self.provider_stop_reason_key_map.get(
             self._get_provider(), "stop_reason"
         )
+        provider = self._get_provider()
         if self.streaming:
+            if provider == "anthropic":
+                stream_iter = self._stream(messages, stop, run_manager, **kwargs)
+                return generate_from_stream(stream_iter)
+
             response_metadata: List[Dict[str, Any]] = []
             for chunk in self._stream(messages, stop, run_manager, **kwargs):
                 completion += chunk.text
@@ -500,7 +506,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 response_metadata, provider_stop_reason_code
             )
         else:
-            provider = self._get_provider()
             prompt, system, formatted_messages = None, None, None
             params: Dict[str, Any] = {**kwargs}
 
