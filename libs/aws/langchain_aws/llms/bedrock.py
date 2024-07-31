@@ -180,20 +180,6 @@ def _stream_response_to_generation_chunk(
     )
 
 
-def _nest_usage_info_token_counts(usage_info: dict) -> dict:
-    """
-    Sticking usage info for token counts into lists to
-    deal with langchain_core.utils.merge_dicts incompatibility
-    in which integers must be equal to be merged
-    as seen here: https://github.com/langchain-ai/langchain-aws/pull/20#issuecomment-2118166376
-    """
-    if "input_tokens" in usage_info:
-        usage_info["input_tokens"] = [usage_info["input_tokens"]]
-    if "output_tokens" in usage_info:
-        usage_info["output_tokens"] = [usage_info["output_tokens"]]
-    return usage_info
-
-
 def _combine_generation_info_for_llm_result(
     chunks_generation_info: List[Dict[str, Any]], provider_stop_code: str
 ) -> Dict[str, Any]:
