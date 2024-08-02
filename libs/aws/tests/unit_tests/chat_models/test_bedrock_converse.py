@@ -167,43 +167,9 @@ def test__messages_to_bedrock() -> None:
         {
             "role": "assistant",
             "content": [
-                {"text": "ai1\n"},
-                {
-                    "toolUse": {
-                        "toolUseId": "tool_call2",
-                        "input": {"arg2": 2},
-                        "name": "tool2",
-                    }
-                },
-                {
-                    "toolUse": {
-                        "toolUseId": "tool_call3",
-                        "input": {"arg3": ["a", "b"]},
-                        "name": "tool3",
-                    }
-                },
-                {
-                    "toolUse": {
-                        "toolUseId": "tool_call1",
-                        "input": {"arg1": "arg1"},
-                        "name": "tool1",
-                    }
-                },
-            ],
-        },
-        {
-            "role": "assistant",
-            "content": [
                 {"text": "ai1"},
                 {
                     "toolUse": {
-                        "toolUseId": "tool_call1",
-                        "input": {"arg1": "arg1"},
-                        "name": "tool1",
-                    }
-                },
-                {
-                    "toolUse": {
                         "toolUseId": "tool_call2",
                         "input": {"arg2": 2},
                         "name": "tool2",
@@ -214,6 +180,13 @@ def test__messages_to_bedrock() -> None:
                         "toolUseId": "tool_call3",
                         "input": {"arg3": ["a", "b"]},
                         "name": "tool3",
+                    }
+                },
+                {
+                    "toolUse": {
+                        "toolUseId": "tool_call1",
+                        "input": {"arg1": "arg1"},
+                        "name": "tool1",
                     }
                 },
             ],
