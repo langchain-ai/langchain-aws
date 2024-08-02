@@ -32,6 +32,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolCall,
     ToolMessage,
+    merge_message_runs,
 )
 from langchain_core.messages.ai import AIMessageChunk, UsageMetadata
 from langchain_core.messages.tool import tool_call as create_tool_call
@@ -541,6 +542,9 @@ def _messages_to_bedrock(
     """Handle Bedrock converse and Anthropic style content blocks"""
     bedrock_messages: List[Dict[str, Any]] = []
     bedrock_system: List[Dict[str, Any]] = []
+    # Merge system, human, ai message runs because Anthropic expects (at most) 1
+    # system message then alternating human/ai messages.
+    messages = merge_message_runs(messages, )
     for msg in messages:
         content = _anthropic_to_bedrock(msg.content)
         if isinstance(msg, HumanMessage):

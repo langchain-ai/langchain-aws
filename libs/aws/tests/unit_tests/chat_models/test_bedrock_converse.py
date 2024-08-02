@@ -163,24 +163,45 @@ def test__messages_to_bedrock() -> None:
         ),
     ]
     expected_messages = [
-        {"role": "user", "content": [{"text": "hu1"}]},
-        {"role": "user", "content": [{"text": "hu2"}]},
-        {"role": "assistant", "content": [{"text": "ai1"}]},
+        {"role": "user", "content": [{"text": "hu1"}, {"text": "hu2"}]},
         {
             "role": "assistant",
             "content": [
+                {"text": "ai1\n"},
+                {
+                    "toolUse": {
+                        "toolUseId": "tool_call2",
+                        "input": {"arg2": 2},
+                        "name": "tool2",
+                    }
+                },
+                {
+                    "toolUse": {
+                        "toolUseId": "tool_call3",
+                        "input": {"arg3": ["a", "b"]},
+                        "name": "tool3",
+                    }
+                },
                 {
                     "toolUse": {
                         "toolUseId": "tool_call1",
                         "input": {"arg1": "arg1"},
                         "name": "tool1",
                     }
-                }
+                },
             ],
         },
         {
             "role": "assistant",
             "content": [
+                {"text": "ai1"},
+                {
+                    "toolUse": {
+                        "toolUseId": "tool_call1",
+                        "input": {"arg1": "arg1"},
+                        "name": "tool1",
+                    }
+                },
                 {
                     "toolUse": {
                         "toolUseId": "tool_call2",
@@ -200,9 +221,7 @@ def test__messages_to_bedrock() -> None:
         {
             "role": "user",
             "content": [
-                {
-                    "text": "hu3",
-                },
+                {"text": "hu3"},
                 {
                     "toolResult": {
                         "toolUseId": "tool_call1",
@@ -234,11 +253,6 @@ def test__messages_to_bedrock() -> None:
                         "content": [{"text": "tool_res3"}],
                     }
                 },
-            ],
-        },
-        {
-            "role": "user",
-            "content": [
                 {"guardContent": {"text": {"text": "hu5"}}},
                 {"guardContent": {"text": {"text": "hu6"}}},
             ],
