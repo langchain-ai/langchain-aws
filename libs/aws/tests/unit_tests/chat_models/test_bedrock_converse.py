@@ -47,7 +47,7 @@ class TestBedrockStandard(ChatModelUnitTests):
             "stop": [],
         }
 
-    @pytest.mark.xfail()
+    @pytest.mark.xfail(reason="Doesn't support streaming init param.")
     def test_init_streaming(self) -> None:
         super().test_init_streaming()
 
