@@ -747,7 +747,9 @@ def _anthropic_to_bedrock(
         elif block["type"] == "image":
             # Assume block is already in bedrock format.
             if "image" in block:
-                bedrock_content.append(block)
+                bedrock_content.append({
+                    "image": block["image"]
+                })
             else:
                 bedrock_content.append(
                     {
@@ -764,6 +766,11 @@ def _anthropic_to_bedrock(
             bedrock_content.append(
                 {"image": _format_openai_image_url(block["imageUrl"]["url"])}
             )
+        elif block["type"] == "document":
+            # Assume block in bedrock document format
+            bedrock_content.append({
+                "document": block["document"]
+            })
         elif block["type"] == "tool_use":
             bedrock_content.append(
                 {
@@ -812,6 +819,13 @@ def _bedrock_to_anthropic(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]
                         "type": "base64",
                         "data": _bytes_to_b64_str(block["image"]["source"]["bytes"]),
                     },
+                }
+            )
+        elif "document" in block:
+            anthropic_content.append(
+                {
+                    "type": "document",
+                    "document": block
                 }
             )
         elif "tool_result" in block:
