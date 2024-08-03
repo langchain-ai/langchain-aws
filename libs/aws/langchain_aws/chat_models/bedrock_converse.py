@@ -43,6 +43,7 @@ from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.utils import get_from_dict_or_env
 from langchain_core.utils.function_calling import convert_to_openai_function
+from langchain_core.utils.pydantic import is_basemodel_subclass
 
 from langchain_aws.function_calling import ToolsOutputParser
 
@@ -260,7 +261,7 @@ class ChatBedrockConverse(BaseChatModel):
              'metrics': {'latencyMs': 1290}}
     """  # noqa: E501
 
-    client: Any = Field(exclude=True)  #: :meta private:
+    client: Any = Field(default=None, exclude=True)  #: :meta private:
 
     model_id: str = Field(alias="model")
     """Id of the model to call.
@@ -275,7 +276,7 @@ class ChatBedrockConverse(BaseChatModel):
     max_tokens: Optional[int] = None
     """Max tokens to generate."""
 
-    stop_sequences: Optional[List[str]] = Field(None, alias="stop")
+    stop_sequences: Optional[List[str]] = Field(default=None, alias="stop")
     """Stop generation if any of these substrings occurs."""
 
     temperature: Optional[float] = None
@@ -315,13 +316,13 @@ class ChatBedrockConverse(BaseChatModel):
     have an ARN associated with them.
     """
 
-    endpoint_url: Optional[str] = Field(None, alias="base_url")
+    endpoint_url: Optional[str] = Field(default=None, alias="base_url")
     """Needed if you don't want to default to us-east-1 endpoint"""
 
     config: Any = None
     """An optional botocore.config.Config instance to pass to the client."""
 
-    guardrail_config: Optional[Dict[str, Any]] = Field(None, alias="guardrails")
+    guardrail_config: Optional[Dict[str, Any]] = Field(default=None, alias="guardrails")
     """Configuration information for a guardrail that you want to use in the request."""
 
     additional_model_request_fields: Optional[Dict[str, Any]] = None
@@ -453,7 +454,7 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
         tool_name = convert_to_openai_function(schema)["name"]
         llm = self.bind_tools([schema], tool_choice=tool_name)
-        if isinstance(schema, type) and issubclass(schema, BaseModel):
+        if isinstance(schema, type) and is_basemodel_subclass(schema):
             output_parser = ToolsOutputParser(
                 first_tool_only=True, pydantic_schemas=[schema]
             )
