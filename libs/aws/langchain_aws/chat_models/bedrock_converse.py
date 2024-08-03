@@ -32,6 +32,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolCall,
     ToolMessage,
+    merge_message_runs,
 )
 from langchain_core.messages.ai import AIMessageChunk, UsageMetadata
 from langchain_core.messages.tool import tool_call as create_tool_call
@@ -541,10 +542,20 @@ def _messages_to_bedrock(
     """Handle Bedrock converse and Anthropic style content blocks"""
     bedrock_messages: List[Dict[str, Any]] = []
     bedrock_system: List[Dict[str, Any]] = []
+    # Merge system, human, ai message runs because Anthropic expects (at most) 1
+    # system message then alternating human/ai messages.
+    messages = merge_message_runs(messages)
     for msg in messages:
         content = _anthropic_to_bedrock(msg.content)
         if isinstance(msg, HumanMessage):
-            bedrock_messages.append({"role": "user", "content": content})
+            # If there's a human, tool, human message sequence, the
+            # tool message will be merged with the first human message, so the second
+            # human message will now be preceeded by a human message and should also
+            # be merged with it.
+            if bedrock_messages and bedrock_messages[-1]["role"] == "user":
+                bedrock_messages[-1]["content"].extend(content)
+            else:
+                bedrock_messages.append({"role": "user", "content": content})
         elif isinstance(msg, AIMessage):
             content = _upsert_tool_calls_to_bedrock_content(content, msg.tool_calls)
             bedrock_messages.append({"role": "assistant", "content": content})
