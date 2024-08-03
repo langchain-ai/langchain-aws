@@ -12,7 +12,6 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
-    Type,
     TypeVar,
     Union,
     cast,
@@ -43,7 +42,7 @@ from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.utils import get_from_dict_or_env
 from langchain_core.utils.function_calling import convert_to_openai_function
-from langchain_core.utils.pydantic import is_basemodel_subclass
+from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 
 from langchain_aws.function_calling import ToolsOutputParser
 
@@ -436,7 +435,7 @@ class ChatBedrockConverse(BaseChatModel):
 
     def bind_tools(
         self,
-        tools: Sequence[Union[Dict[str, Any], Type[BaseModel], Callable, BaseTool]],
+        tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool]],
         *,
         tool_choice: Optional[Union[dict, str, Literal["auto", "any"]]] = None,
         **kwargs: Any,
@@ -447,7 +446,7 @@ class ChatBedrockConverse(BaseChatModel):
 
     def with_structured_output(
         self,
-        schema: Union[Dict, Type[BaseModel]],
+        schema: Union[Dict, TypeBaseModel],
         *,
         include_raw: bool = False,
         **kwargs: Any,
@@ -770,7 +769,7 @@ def _bedrock_to_anthropic(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]
 
 
 def _format_tools(
-    tools: Sequence[Union[Dict[str, Any], Type[BaseModel], Callable, BaseTool],],
+    tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool],],
 ) -> List[Dict[Literal["toolSpec"], Dict[str, Union[Dict[str, Any], str]]]]:
     formatted_tools: List = []
     for tool in tools:

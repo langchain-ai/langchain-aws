@@ -11,7 +11,6 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
-    Type,
     Union,
     cast,
 )
@@ -34,6 +33,7 @@ from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResu
 from langchain_core.pydantic_v1 import BaseModel, Extra
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
+from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 from langchain_aws.function_calling import (
@@ -595,7 +595,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
     def bind_tools(
         self,
-        tools: Sequence[Union[Dict[str, Any], Type[BaseModel], Callable, BaseTool]],
+        tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool]],
         *,
         tool_choice: Optional[Union[dict, str, Literal["auto", "none"], bool]] = None,
         **kwargs: Any,
@@ -650,7 +650,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
     def with_structured_output(
         self,
-        schema: Union[Dict, Type[BaseModel]],
+        schema: Union[Dict, TypeBaseModel],
         *,
         include_raw: bool = False,
         **kwargs: Any,
@@ -771,7 +771,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
         tool_name = convert_to_anthropic_tool(schema)["name"]
         llm = self.bind_tools([schema], tool_choice=tool_name)
-        if isinstance(schema, type) and issubclass(schema, BaseModel):
+        if isinstance(schema, type) and is_basemodel_subclass(schema):
             output_parser = ToolsOutputParser(
                 first_tool_only=True, pydantic_schemas=[schema]
             )
