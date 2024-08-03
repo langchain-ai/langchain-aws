@@ -9,7 +9,6 @@ from typing import (
     List,
     Literal,
     Optional,
-    Type,
     Union,
     cast,
 )
@@ -21,6 +20,7 @@ from langchain_core.prompts.chat import AIMessage
 from langchain_core.pydantic_v1 import BaseModel
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
+from langchain_core.utils.pydantic import TypeBaseModel
 from typing_extensions import TypedDict
 
 PYTHON_TO_JSON_TYPES = {
@@ -160,7 +160,7 @@ class ToolDescription(TypedDict):
 class ToolsOutputParser(BaseGenerationOutputParser):
     first_tool_only: bool = False
     args_only: bool = False
-    pydantic_schemas: Optional[List[Type[BaseModel]]] = None
+    pydantic_schemas: Optional[List[TypeBaseModel]] = None
 
     class Config:
         extra = "forbid"
@@ -203,7 +203,7 @@ class ToolsOutputParser(BaseGenerationOutputParser):
 
 
 def convert_to_anthropic_tool(
-    tool: Union[Dict[str, Any], Type[BaseModel], Callable, BaseTool],
+    tool: Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool],
 ) -> AnthropicTool:
     # already in Anthropic tool format
     if isinstance(tool, dict) and all(
