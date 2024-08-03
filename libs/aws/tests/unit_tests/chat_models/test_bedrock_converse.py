@@ -47,7 +47,7 @@ class TestBedrockStandard(ChatModelUnitTests):
             "stop": [],
         }
 
-    @pytest.mark.xfail()
+    @pytest.mark.xfail(reason="Doesn't support streaming init param.")
     def test_init_streaming(self) -> None:
         super().test_init_streaming()
 
@@ -163,24 +163,11 @@ def test__messages_to_bedrock() -> None:
         ),
     ]
     expected_messages = [
-        {"role": "user", "content": [{"text": "hu1"}]},
-        {"role": "user", "content": [{"text": "hu2"}]},
-        {"role": "assistant", "content": [{"text": "ai1"}]},
+        {"role": "user", "content": [{"text": "hu1"}, {"text": "hu2"}]},
         {
             "role": "assistant",
             "content": [
-                {
-                    "toolUse": {
-                        "toolUseId": "tool_call1",
-                        "input": {"arg1": "arg1"},
-                        "name": "tool1",
-                    }
-                }
-            ],
-        },
-        {
-            "role": "assistant",
-            "content": [
+                {"text": "ai1"},
                 {
                     "toolUse": {
                         "toolUseId": "tool_call2",
@@ -195,14 +182,19 @@ def test__messages_to_bedrock() -> None:
                         "name": "tool3",
                     }
                 },
+                {
+                    "toolUse": {
+                        "toolUseId": "tool_call1",
+                        "input": {"arg1": "arg1"},
+                        "name": "tool1",
+                    }
+                },
             ],
         },
         {
             "role": "user",
             "content": [
-                {
-                    "text": "hu3",
-                },
+                {"text": "hu3"},
                 {
                     "toolResult": {
                         "toolUseId": "tool_call1",
@@ -234,11 +226,6 @@ def test__messages_to_bedrock() -> None:
                         "content": [{"text": "tool_res3"}],
                     }
                 },
-            ],
-        },
-        {
-            "role": "user",
-            "content": [
                 {"guardContent": {"text": {"text": "hu5"}}},
                 {"guardContent": {"text": {"text": "hu6"}}},
             ],
