@@ -22,27 +22,28 @@ class TestBedrockStandard(ChatModelIntegrationTests):
 
     @property
     def standard_chat_model_params(self) -> dict:
-        return {
-            "temperature": 0,
-            "max_tokens": 100,
-            "stop": [],
-        }
+        return {"temperature": 0, "max_tokens": 100, "stop": []}
 
     @property
     def supports_image_inputs(self) -> bool:
         return True
 
-    def test_structured_output_snake_case(self, model: BaseChatModel) -> None:
-        class ClassifyQuery(BaseModel):
-            """Classify a query."""
 
-            query_type: Literal["cat", "dog"] = Field(
-                description="Classify a query as related to cats or dogs."
-            )
+def test_structured_output_snake_case() -> None:
+    model = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0", temperature=0
+    )
 
-        chat = model.with_structured_output(ClassifyQuery)
-        for chunk in chat.stream("How big are cats?"):
-            assert isinstance(chunk, ClassifyQuery)
+    class ClassifyQuery(BaseModel):
+        """Classify a query."""
+
+        query_type: Literal["cat", "dog"] = Field(
+            description="Classify a query as related to cats or dogs."
+        )
+
+    chat = model.with_structured_output(ClassifyQuery)
+    for chunk in chat.stream("How big are cats?"):
+        assert isinstance(chunk, ClassifyQuery)
 
 
 @pytest.mark.skip(reason="Needs guardrails setup to run.")
