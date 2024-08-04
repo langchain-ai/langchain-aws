@@ -12,7 +12,6 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
-    Type,
     TypeVar,
     Union,
     cast,
@@ -32,6 +31,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolCall,
     ToolMessage,
+    merge_message_runs,
 )
 from langchain_core.messages.ai import AIMessageChunk, UsageMetadata
 from langchain_core.messages.tool import tool_call as create_tool_call
@@ -42,6 +42,7 @@ from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.utils import get_from_dict_or_env
 from langchain_core.utils.function_calling import convert_to_openai_function
+from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 
 from langchain_aws.function_calling import ToolsOutputParser
 
@@ -259,7 +260,7 @@ class ChatBedrockConverse(BaseChatModel):
              'metrics': {'latencyMs': 1290}}
     """  # noqa: E501
 
-    client: Any = Field(exclude=True)  #: :meta private:
+    client: Any = Field(default=None, exclude=True)  #: :meta private:
 
     model_id: str = Field(alias="model")
     """Id of the model to call.
@@ -274,7 +275,7 @@ class ChatBedrockConverse(BaseChatModel):
     max_tokens: Optional[int] = None
     """Max tokens to generate."""
 
-    stop_sequences: Optional[List[str]] = Field(None, alias="stop")
+    stop_sequences: Optional[List[str]] = Field(default=None, alias="stop")
     """Stop generation if any of these substrings occurs."""
 
     temperature: Optional[float] = None
@@ -314,13 +315,13 @@ class ChatBedrockConverse(BaseChatModel):
     have an ARN associated with them.
     """
 
-    endpoint_url: Optional[str] = Field(None, alias="base_url")
+    endpoint_url: Optional[str] = Field(default=None, alias="base_url")
     """Needed if you don't want to default to us-east-1 endpoint"""
 
     config: Any = None
     """An optional botocore.config.Config instance to pass to the client."""
 
-    guardrail_config: Optional[Dict[str, Any]] = Field(None, alias="guardrails")
+    guardrail_config: Optional[Dict[str, Any]] = Field(default=None, alias="guardrails")
     """Configuration information for a guardrail that you want to use in the request."""
 
     additional_model_request_fields: Optional[Dict[str, Any]] = None
@@ -434,7 +435,7 @@ class ChatBedrockConverse(BaseChatModel):
 
     def bind_tools(
         self,
-        tools: Sequence[Union[Dict[str, Any], Type[BaseModel], Callable, BaseTool]],
+        tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool]],
         *,
         tool_choice: Optional[Union[dict, str, Literal["auto", "any"]]] = None,
         **kwargs: Any,
@@ -445,14 +446,14 @@ class ChatBedrockConverse(BaseChatModel):
 
     def with_structured_output(
         self,
-        schema: Union[Dict, Type[BaseModel]],
+        schema: Union[Dict, TypeBaseModel],
         *,
         include_raw: bool = False,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
         tool_name = convert_to_openai_function(schema)["name"]
         llm = self.bind_tools([schema], tool_choice=tool_name)
-        if isinstance(schema, type) and issubclass(schema, BaseModel):
+        if isinstance(schema, type) and is_basemodel_subclass(schema):
             output_parser = ToolsOutputParser(
                 first_tool_only=True, pydantic_schemas=[schema]
             )
@@ -541,10 +542,20 @@ def _messages_to_bedrock(
     """Handle Bedrock converse and Anthropic style content blocks"""
     bedrock_messages: List[Dict[str, Any]] = []
     bedrock_system: List[Dict[str, Any]] = []
+    # Merge system, human, ai message runs because Anthropic expects (at most) 1
+    # system message then alternating human/ai messages.
+    messages = merge_message_runs(messages)
     for msg in messages:
         content = _anthropic_to_bedrock(msg.content)
         if isinstance(msg, HumanMessage):
-            bedrock_messages.append({"role": "user", "content": content})
+            # If there's a human, tool, human message sequence, the
+            # tool message will be merged with the first human message, so the second
+            # human message will now be preceeded by a human message and should also
+            # be merged with it.
+            if bedrock_messages and bedrock_messages[-1]["role"] == "user":
+                bedrock_messages[-1]["content"].extend(content)
+            else:
+                bedrock_messages.append({"role": "user", "content": content})
         elif isinstance(msg, AIMessage):
             content = _upsert_tool_calls_to_bedrock_content(content, msg.tool_calls)
             bedrock_messages.append({"role": "assistant", "content": content})
@@ -758,7 +769,7 @@ def _bedrock_to_anthropic(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]
 
 
 def _format_tools(
-    tools: Sequence[Union[Dict[str, Any], Type[BaseModel], Callable, BaseTool],],
+    tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool],],
 ) -> List[Dict[Literal["toolSpec"], Dict[str, Union[Dict[str, Any], str]]]]:
     formatted_tools: List = []
     for tool in tools:
