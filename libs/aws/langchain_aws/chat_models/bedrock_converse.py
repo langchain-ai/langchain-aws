@@ -340,12 +340,19 @@ class ChatBedrockConverse(BaseChatModel):
     """
 
     supports_tool_call_streaming: Optional[bool] = None
-    """"""
+    """Whether the model supports streaming when tools are provided.
+    
+    Inferred if not specified. Only inferred as True if the ``provider`` 
+    is "anthropic"."""
 
     supports_tool_choice_values: Optional[
         Sequence[Literal["auto", "any", "tool"]]
     ] = None
-    """"""
+    """Which types of tool_choice values the model supports.
+    
+    Inferred if not specified. Inferred as ('auto', 'any', 'tool') if a 'claude-3' 
+    model is used, ('auto', 'any') if a 'mistral-large' model is used, empty otherwise.
+    """
 
     class Config:
         """Configuration for this pydantic object."""
