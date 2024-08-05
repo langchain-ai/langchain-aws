@@ -339,6 +339,14 @@ class ChatBedrockConverse(BaseChatModel):
     additionalModelResponseFieldPaths.
     """
 
+    supports_tool_call_streaming: Optional[bool] = None
+    """"""
+
+    supports_tool_choice_values: Optional[
+        Sequence[Literal["auto", "any", "tool"]]
+    ] = None
+    """"""
+
     class Config:
         """Configuration for this pydantic object."""
 
@@ -393,6 +401,21 @@ class ChatBedrockConverse(BaseChatModel):
                 f"profile name are valid. Bedrock error: {e}"
             ) from e
 
+        # As of 08/05/24 only Anthropic supports tool call streaming:
+        # https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html#conversation-inference-supported-models-features
+        if values["supports_tool_call_streaming"] is None:
+            values["supports_tool_call_streaming"] = "anthropic" in values["provider"]
+
+        # As of 08/05/24 only claude-3 and mistral-large models support tool choice:
+        # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
+        if values["supports_tool_choice_values"] is None:
+            if "claude-3" in values["model_id"]:
+                values["supports_tool_choice_values"] = ("auto", "any", "tool")
+            elif "mistral-large" in values["model_id"]:
+                values["supports_tool_choice_values"] = ("auto", "any")
+            else:
+                values["supports_tool_choice_values"] = ()
+
         return values
 
     def _generate(
@@ -424,12 +447,20 @@ class ChatBedrockConverse(BaseChatModel):
         params = self._converse_params(
             stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
         )
-        response = self.client.converse_stream(
-            messages=bedrock_messages, system=system, **params
-        )
-        for event in response["stream"]:
-            if message_chunk := _parse_stream_event(event):
-                yield ChatGenerationChunk(message=message_chunk)
+        # Not all models support tool call streaming
+        if params.get("toolConfig") and not self.supports_tool_call_streaming:
+            result = self._generate(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            )
+            msg = AIMessageChunk(**result.generations[0].message.dict(exclude={"type"}))
+            yield ChatGenerationChunk(message=msg)
+        else:
+            response = self.client.converse_stream(
+                messages=bedrock_messages, system=system, **params
+            )
+            for event in response["stream"]:
+                if message_chunk := _parse_stream_event(event):
+                    yield ChatGenerationChunk(message=message_chunk)
 
     # TODO: Add async support once there are async bedrock.converse methods.
 
@@ -441,6 +472,25 @@ class ChatBedrockConverse(BaseChatModel):
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, BaseMessage]:
         if tool_choice:
+            tool_choice = _format_tool_choice(tool_choice)
+            tool_choice_type = list(tool_choice.keys())[0]
+            if tool_choice_type not in list(self.supports_tool_choice_values or []):
+                if self.supports_tool_choice_values:
+                    supported = (
+                        f"Model {self.model_id} does not currently support tool_choice "
+                        f"of type {tool_choice_type}. The following tool_choice types "
+                        f"are supported: {self.supports_tool_choice_values}."
+                    )
+                else:
+                    supported = (
+                        f"Model {self.model_id} does not currently support tool_choice."
+                    )
+
+                raise ValueError(
+                    f"{supported} Please see "
+                    f"https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html "  # noqa: E501
+                    f"for the latest documentation on models that support tool choice."
+                )
             kwargs["tool_choice"] = _format_tool_choice(tool_choice)
         return self.bind(tools=_format_tools(tools), **kwargs)
 
@@ -451,8 +501,14 @@ class ChatBedrockConverse(BaseChatModel):
         include_raw: bool = False,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
-        tool_name = convert_to_openai_function(schema)["name"]
-        llm = self.bind_tools([schema], tool_choice=tool_name)
+        supports_tool_choice_values = self.supports_tool_choice_values or ()
+        if "tool" in supports_tool_choice_values:
+            tool_choice = convert_to_openai_function(schema)["name"]
+        elif "any" in supports_tool_choice_values:
+            tool_choice = "any"
+        else:
+            tool_choice = None
+        llm = self.bind_tools([schema], tool_choice=tool_choice)
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             output_parser = ToolsOutputParser(
                 first_tool_only=True, pydantic_schemas=[schema]
