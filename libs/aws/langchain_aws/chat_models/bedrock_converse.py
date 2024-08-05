@@ -342,8 +342,8 @@ class ChatBedrockConverse(BaseChatModel):
     supports_tool_call_streaming: Optional[bool] = None
     """Whether the model supports streaming when tools are provided.
     
-    Inferred if not specified. Only inferred as True if the ``provider`` 
-    is "anthropic"."""
+    Inferred if not specified. Only inferred as True if the ``provider`` is "anthropic".
+    """
 
     supports_tool_choice_values: Optional[
         Sequence[Literal["auto", "any", "tool"]]
