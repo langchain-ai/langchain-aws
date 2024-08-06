@@ -943,6 +943,21 @@ class BedrockBase(BaseLanguageModel, ABC):
         ):
             yield chunk
 
+            token = None
+
+            if isinstance(chunk, GenerationChunk):
+                token = chunk.text
+            elif isinstance(chunk, AIMessageChunk):
+                token = chunk.content
+
+            if run_manager is not None and asyncio.iscoroutinefunction(
+                run_manager.on_llm_new_token
+            ):
+                await run_manager.on_llm_new_token(token, chunk=chunk)
+            elif run_manager is not None:
+                run_manager.on_llm_new_token(token, chunk=chunk)  # type: ignore[unused-coroutine]
+
+
 
 class BedrockLLM(LLM, BedrockBase):
     """Bedrock models.
