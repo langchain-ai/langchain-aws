@@ -562,9 +562,14 @@ def _messages_to_bedrock(
             else:
                 curr = {"role": "user", "content": []}
 
-            # TODO: Add status once we have ToolMessage.status support.
             curr["content"].append(
-                {"toolResult": {"content": content, "toolUseId": msg.tool_call_id}}
+                {
+                    "toolResult": {
+                        "content": content,
+                        "toolUseId": msg.tool_call_id,
+                        "status": msg.status,
+                    }
+                }
             )
             bedrock_messages.append(curr)
         else:
