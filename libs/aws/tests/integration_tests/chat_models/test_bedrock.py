@@ -68,16 +68,18 @@ def test_chat_bedrock_generate_with_token_usage(chat: ChatBedrock) -> None:
 @pytest.mark.scheduled
 def test_chat_bedrock_streaming() -> None:
     """Test that streaming correctly streams chunks."""
+    callback_handler = FakeCallbackHandler()
     chat = ChatBedrock(  # type: ignore[call-arg]
         model_id="anthropic.claude-v2"
     )
     message = HumanMessage(content="Hello")
-    stream = chat.stream([message])
+    stream = chat.stream([message], RunnableConfig(callbacks=[callback_handler]))
 
     full = next(stream)
     for chunk in stream:
         full += chunk  # type: ignore[assignment]
 
+    assert callback_handler.llm_streams > 0
     assert full.content
     assert full.response_metadata
     assert full.usage_metadata  # type: ignore[attr-defined]
@@ -309,7 +311,7 @@ def test_chat_bedrock_token_callbacks() -> None:
     """
     callback_handler = FakeCallbackHandlerWithTokenCounts()
     chat = ChatBedrock(  # type: ignore[call-arg]
-        model_id="anthropic.claude-v2", streaming=False, verbose=True
+        model_id="anthropic.claude-v2", streaming=True, verbose=True
     )
     message = HumanMessage(content="Hello")
     response = chat.invoke([message], RunnableConfig(callbacks=[callback_handler]))

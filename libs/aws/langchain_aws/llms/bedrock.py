@@ -878,8 +878,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 elif isinstance(chunk, AIMessageChunk):
                     token = chunk.content
 
-                if token:
-                    run_manager.on_llm_new_token(token, chunk=chunk)
+                run_manager.on_llm_new_token(token, chunk=chunk)
 
 
     async def _aprepare_input_and_invoke_stream(
