@@ -18,7 +18,6 @@ from typing import (
 )
 
 import boto3
-from langchain_core._api import beta
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.language_models.chat_models import LangSmithParams
@@ -47,16 +46,12 @@ from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 from langchain_aws.function_calling import ToolsOutputParser
 
 
-@beta()
 class ChatBedrockConverse(BaseChatModel):
     """Bedrock chat model integration built on the Bedrock converse API.
 
     This implementation will eventually replace the existing ChatBedrock implementation
     once the Bedrock converse API has feature parity with older Bedrock API.
     Specifically the converse API does not yet support custom Bedrock models.
-
-    For now it is being released as its own class in **beta** to give users who aren't
-    using custom models access to the latest API.
 
     Setup:
         To use Amazon Bedrock make sure you've gone through all the steps described
