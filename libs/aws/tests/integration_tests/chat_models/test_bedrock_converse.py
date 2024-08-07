@@ -29,6 +29,24 @@ class TestBedrockStandard(ChatModelIntegrationTests):
         return True
 
 
+class TestBedrockMistralStandard(ChatModelIntegrationTests):
+    @property
+    def chat_model_class(self) -> Type[BaseChatModel]:
+        return ChatBedrockConverse
+
+    @property
+    def chat_model_params(self) -> dict:
+        return {"model": "mistral.mistral-large-2402-v1:0"}
+
+    @property
+    def standard_chat_model_params(self) -> dict:
+        return {"temperature": 0, "max_tokens": 100, "stop": []}
+
+    @pytest.mark.xfail(reason="Human messages following AI messages not supported.")
+    def test_tool_message_histories_list_content(self, model: BaseChatModel) -> None:
+        super().test_tool_message_histories_list_content(model)
+
+
 def test_structured_output_snake_case() -> None:
     model = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0", temperature=0
