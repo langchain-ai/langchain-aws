@@ -334,12 +334,6 @@ class ChatBedrockConverse(BaseChatModel):
     additionalModelResponseFieldPaths.
     """
 
-    supports_tool_call_streaming: Optional[bool] = None
-    """Whether the model supports streaming when tools are provided.
-    
-    Inferred if not specified. Only inferred as True if the ``provider`` is "anthropic".
-    """
-
     supports_tool_choice_values: Optional[
         Sequence[Literal["auto", "any", "tool"]]
     ] = None
@@ -355,11 +349,23 @@ class ChatBedrockConverse(BaseChatModel):
         extra = Extra.forbid
         allow_population_by_field_name = True
 
+    @root_validator(pre=True)
+    def set_disable_streaming(cls, values: Dict) -> Dict:
+        values["provider"] = (
+            values.get("provider")
+            or (values.get("model_id", values["model"])).split(".")[0]
+        )
+
+        # As of 08/05/24 only Anthropic models support streamed tool calling
+        if "disable_streaming" not in values:
+            values["disable_streaming"] = (
+                False if "anthropic" in values["provider"] else "tool_calling"
+            )
+        return values
+
     @root_validator(pre=False, skip_on_failure=True)
     def validate_environment(cls, values: Dict) -> Dict:
         """Validate that AWS credentials to and python package exists in environment."""
-        values["provider"] = values["provider"] or values["model_id"].split(".")[0]
-
         if values["client"] is not None:
             return values
 
@@ -403,11 +409,6 @@ class ChatBedrockConverse(BaseChatModel):
                 f"profile name are valid. Bedrock error: {e}"
             ) from e
 
-        # As of 08/05/24 only Anthropic supports tool call streaming:
-        # https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html#conversation-inference-supported-models-features
-        if values["supports_tool_call_streaming"] is None:
-            values["supports_tool_call_streaming"] = "anthropic" in values["provider"]
-
         # As of 08/05/24 only claude-3 and mistral-large models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
         if values["supports_tool_choice_values"] is None:
@@ -449,20 +450,12 @@ class ChatBedrockConverse(BaseChatModel):
         params = self._converse_params(
             stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
         )
-        # Not all models support tool call streaming
-        if params.get("toolConfig") and not self.supports_tool_call_streaming:
-            result = self._generate(
-                messages, stop=stop, run_manager=run_manager, **kwargs
-            )
-            msg = AIMessageChunk(**result.generations[0].message.dict(exclude={"type"}))
-            yield ChatGenerationChunk(message=msg)
-        else:
-            response = self.client.converse_stream(
-                messages=bedrock_messages, system=system, **params
-            )
-            for event in response["stream"]:
-                if message_chunk := _parse_stream_event(event):
-                    yield ChatGenerationChunk(message=message_chunk)
+        response = self.client.converse_stream(
+            messages=bedrock_messages, system=system, **params
+        )
+        for event in response["stream"]:
+            if message_chunk := _parse_stream_event(event):
+                yield ChatGenerationChunk(message=message_chunk)
 
     # TODO: Add async support once there are async bedrock.converse methods.
 
