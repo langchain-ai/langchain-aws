@@ -224,6 +224,7 @@ def test__messages_to_bedrock() -> None:
                     "toolResult": {
                         "toolUseId": "tool_call3",
                         "content": [{"text": "tool_res3"}],
+                        "status": "success",
                     }
                 },
                 {"guardContent": {"text": {"text": "hu5"}}},
