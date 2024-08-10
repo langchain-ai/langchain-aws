@@ -325,7 +325,6 @@ class LLMInputOutputAdapter:
                 elif any(block["type"] == "tool_use" for block in content):
                     tool_calls = extract_tool_calls(content)
         elif provider == "cohere":
-            response_body = json.loads(response.get("body").read().decode())
             if "text" in response_body.keys():
                 # Command-R
                 text = response_body.get("text")
