@@ -49,6 +49,8 @@ from langchain_core.utils.function_calling import (
 )
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 
+from langchain_aws.function_calling import ToolsOutputParser
+
 _BM = TypeVar("_BM", bound=BaseModel)
 _DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
 
@@ -512,15 +514,23 @@ class ChatBedrockConverse(BaseChatModel):
             tool_choice = None
         llm = self.bind_tools([schema], tool_choice=tool_choice)
         if isinstance(schema, type) and is_basemodel_subclass(schema):
-            output_parser: OutputParserLike = PydanticToolsParser(
-                tools=[schema],
-                first_tool_only=True,
-            )
+            if self.disable_streaming:
+                output_parser: OutputParserLike = ToolsOutputParser(
+                    first_tool_only=True, pydantic_schemas=[schema]
+                )
+            else:
+                output_parser = PydanticToolsParser(
+                    tools=[schema],
+                    first_tool_only=True,
+                )
         else:
             tool_name = convert_to_openai_tool(schema)["function"]["name"]
-            output_parser = JsonOutputKeyToolsParser(
-                key_name=tool_name, first_tool_only=True
-            )
+            if self.disable_streaming:
+                output_parser = ToolsOutputParser(first_tool_only=True, args_only=True)
+            else:
+                output_parser = JsonOutputKeyToolsParser(
+                    key_name=tool_name, first_tool_only=True
+                )
 
         if include_raw:
             parser_assign = RunnablePassthrough.assign(
