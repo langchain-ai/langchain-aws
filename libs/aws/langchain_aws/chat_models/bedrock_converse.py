@@ -513,8 +513,8 @@ class ChatBedrockConverse(BaseChatModel):
         llm = self.bind_tools([schema], tool_choice=tool_choice)
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             output_parser: OutputParserLike = PydanticToolsParser(
-                tools=[schema],  # type: ignore[list-item]
-                first_tool_only=True,  # type: ignore[list-item]
+                tools=[schema],
+                first_tool_only=True,
             )
         else:
             tool_name = convert_to_openai_tool(schema)["function"]["name"]
