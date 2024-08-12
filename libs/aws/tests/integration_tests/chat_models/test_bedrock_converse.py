@@ -89,17 +89,17 @@ def test_structured_output_streaming() -> None:
     assert chunk_count > 1
 
     # Pydantic
-    class AnswerWithJustification(BaseModel):
+    class AnAnswerWithJustification(BaseModel):
         """An answer to the user question along with justification for the answer."""
 
         answer: Annotated[str, ...]
         justification: Annotated[str, ...]
 
-    chat = model.with_structured_output(AnswerWithJustification)
+    chat = model.with_structured_output(AnAnswerWithJustification)
     chunk_count = 0
     for chunk in chat.stream(query):
         chunk_count = chunk_count + 1
-        assert isinstance(chunk, AnswerWithJustification)
+        assert isinstance(chunk, AnAnswerWithJustification)
     assert chunk_count > 1
 
 
