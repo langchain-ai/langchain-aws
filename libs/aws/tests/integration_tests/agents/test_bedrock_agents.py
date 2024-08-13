@@ -3,6 +3,7 @@ import time
 import uuid
 
 import boto3
+import pytest
 from langchain.agents import AgentExecutor
 from langchain_aws.agents.base import BedrockAgentsRunnable
 from langchain_core.tools import tool
@@ -349,6 +350,89 @@ def test_agent_with_memory():
 
 
 # # --------------------------------------------------------------------------------------------------------#
+
+def get_bedrock_client():
+    return boto3.client("bedrock")
+
+def create_stock_advice_guardrail():
+    # create a guard rail
+    bedrock_client = get_bedrock_client()
+    create_guardrail_response = bedrock_client.create_guardrail(
+        name="no_financial_advice_guardrail",
+        blockedInputMessaging="Sorry, the prompt is not allowed for this agent",
+        blockedOutputsMessaging="Sorry, the model cannot answer this question.",
+        topicPolicyConfig={
+            'topicsConfig': [
+                {
+                    'name': 'StockAdvice',
+                    'definition': """Any questions related to stock market investments or any questions related to 
+                        investment in stocks, bonds, or commodities
+                        """,
+                    'examples': [
+                        'what stocks should i invest in?',
+                    ],
+                    'type': 'DENY'
+                },
+            ]
+        }
+    )
+
+    return create_guardrail_response['guardrailId'], create_guardrail_response['version']
+
+def _delete_guardrail(guardrail_id):
+    bedrock_client = get_bedrock_client()
+    bedrock_client.delete_guardrail(guardrailIdentifier=guardrail_id)
+
+def test_agent_with_guardrail():
+    guardrail_id, guardrail_version = create_stock_advice_guardrail()
+    foundational_model = 'anthropic.claude-3-sonnet-20240229-v1:0'
+    agent_resource_role_arn = None
+    agent_with_guardrail = None
+    agent_without_guardrail = None
+    try:
+        agent_resource_role_arn = _create_agent_role(
+            agent_region='us-west-2',
+            foundational_model=foundational_model
+        )
+        agent_with_guardrail = BedrockAgentsRunnable.create_agent(
+            agent_name="agent_with_financial_advice_guardrail",
+            agent_resource_role_arn=agent_resource_role_arn,
+            model=foundational_model,
+            instructions="You are a test agent which will respond to user query",
+            memory_storage_days=30,
+            guardrail_id=guardrail_id,
+            guardrail_version=guardrail_version
+        )
+
+        agent_without_guardrail = BedrockAgentsRunnable.create_agent(
+            agent_name="agent_without_financial_advice_guardrail",
+            agent_resource_role_arn=agent_resource_role_arn,
+            model=foundational_model,
+            instructions="You are a test agent which will respond to user query",
+            memory_storage_days=30,
+        )
+        agent_executor_1 = AgentExecutor(agent=agent_with_guardrail, tools=[])  # type: ignore[arg-type]
+        agent_executor_2 = AgentExecutor(agent=agent_without_guardrail, tools=[])  # type: ignore[arg-type]
+
+        with pytest.raises(Exception):
+            output = agent_executor_1.invoke({"input": "can you help me invest in share market?"})
+
+        no_guardrail_output = agent_executor_2.invoke({"input": "can you help me invest in share market?"})
+
+        assert no_guardrail_output["output"] is not None
+
+    finally:
+        if agent_resource_role_arn:
+            _delete_agent_role(agent_resource_role_arn)
+        if agent_with_guardrail:
+            _delete_agent(agent_with_guardrail.agent_id)
+        if agent_without_guardrail:
+            _delete_agent(agent_without_guardrail.agent_id)
+        if guardrail_id:
+            _delete_guardrail(guardrail_id)
+
+# # --------------------------------------------------------------------------------------------------------#
+
 def should_continue(data):
     output_ = data["output"]
 

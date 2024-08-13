@@ -87,23 +87,33 @@ def _create_bedrock_agent(
         agent_resource_role_arn,
         instructions,
         model,
-        memory_storage_days
+        memory_storage_days,
+        guardrail_id,
+        guardrail_version,
 ):
     """
         Creates the bedrock agent
     """
-    create_agent_response = bedrock_client.create_agent(
-        agentName=agent_name,
-        agentResourceRoleArn=agent_resource_role_arn,
-        foundationModel=model,
-        instruction=instructions,
-        memoryConfiguration={
-            'enabledMemoryTypes': [
-                'SESSION_SUMMARY',
-            ],
-            'storageDays': memory_storage_days
+    create_agent_request = {
+        "agentName": agent_name,
+        "agentResourceRoleArn": agent_resource_role_arn,
+        "foundationModel": model,
+        "instruction": instructions,
+    }
+
+    if memory_storage_days > 0:
+        create_agent_request["memoryConfiguration"] = {
+            "enabledMemoryTypes": ["SESSION_SUMMARY"],
+            "storageDays": memory_storage_days
         }
-    )
+
+    if guardrail_id is not None:
+        create_agent_request["guardrailConfiguration"] = {
+            "guardrailIdentifier": guardrail_id,
+            "guardrailVersion": guardrail_version
+        }
+
+    create_agent_response = bedrock_client.create_agent(**create_agent_request)
     request_id = create_agent_response.get('ResponseMetadata', {}).get('RequestId', '')
     logging.info(f'Create bedrock agent call successful with request id: {request_id}')
     agent_id = create_agent_response['agent']['agentId']
@@ -328,6 +338,8 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             tools: List[BaseTool] = [],
             *,
             memory_storage_days: int = 0,
+            guardrail_id: str = None,
+            guardrail_version: str = "DRAFT",
             credentials_profile_name: str = None,
             region_name: str = None,
             bedrock_endpoint_url: str = None,
@@ -344,6 +356,9 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                 model: The model id
                 instructions: Instructions to the agent
                 tools: List of tools. Accepts LangChain's BaseTool format
+                memory_storage_days: Memory duration in days for the agent conversational context.
+                guardrail_id: Guardrail for the agent
+                guardrail_version: Version of the guardrail. Defaults to DRAFT
                 credentials_profile_name: The credentials profile name to use for initializing boto3 client
                 region_name: Region for the Bedrock agent
                 bedrock_endpoint_url: Endpoint URL for bedrock agent
@@ -374,7 +389,9 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                     agent_resource_role_arn=agent_resource_role_arn,
                     instructions=instructions,
                     model=model,
-                    memory_storage_days=memory_storage_days
+                    memory_storage_days=memory_storage_days,
+                    guardrail_id=guardrail_id,
+                    guardrail_version=guardrail_version
                 )
                 _create_bedrock_action_groups(bedrock_client, agent_id, tools)
                 _prepare_agent(bedrock_client, agent_id)
