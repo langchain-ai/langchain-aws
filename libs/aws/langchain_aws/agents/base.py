@@ -381,6 +381,9 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                     session_id: The session id to use. If not provided, a new session will be started
                     intermediate_steps: The intermediate steps that are used to provide RoC invocation details
                     enable_trace: Boolean flag to enable trace when invoke bedrock agent
+
+            Returns:
+                Union[List[BedrockAgentAction], BedrockAgentFinish]
         """
         config = ensure_config(config)
         callback_manager = CallbackManager.configure(

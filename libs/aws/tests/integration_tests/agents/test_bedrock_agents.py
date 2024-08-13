@@ -271,19 +271,19 @@ def test_multi_serial_actions_agent():
 
 # # --------------------------------------------------------------------------------------------------------#
 def should_continue(data):
-    # If the agent outcome is an AgentFinish, then we return `exit` string
-    # This will be used when setting up the graph to define the flow
     output_ = data["output"]
+
+    # If the agent outcome is a list of BedrockAgentActions, then we continue to tool execution
     if isinstance(output_, list) and len(output_) > 0 and isinstance(output_[0], BedrockAgentAction):
         return "continue"
 
+    # If the agent outcome is an AgentFinish, then we return `exit` string
+    # This will be used when setting up the graph to define the flow
     if isinstance(output_, BedrockAgentFinish):
         return "end"
-    # Otherwise, an AgentAction is returned
-    # Here we return `continue` string
-    # This will be used when setting up the graph to define the flow
-    else:
-        return "continue"
+
+    # Unknown output from the agent, end the graph
+    return "end"
 
 
 tool_executor = ToolExecutor([getWeather])
