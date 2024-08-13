@@ -7,6 +7,14 @@ from langchain.agents import AgentExecutor
 from langchain_aws.agents.base import BedrockAgentsRunnable
 from langchain_core.tools import tool
 
+import operator
+from typing import TypedDict, Annotated, Tuple
+from typing import Union
+from langchain_aws.agents.base import BedrockAgentAction, BedrockAgentFinish
+
+from langgraph.graph import END, StateGraph, START
+from langgraph.prebuilt.tool_executor import ToolExecutor
+
 
 def _create_iam_client():
     return boto3.client('iam')
@@ -136,7 +144,7 @@ def test_mortgage_bedrock_agent() -> None:
             model=foundational_model,
             instructions="""
             You are an agent who helps with getting the mortgage rate based on the current asset valuation""",
-            tools=tools
+            tools=tools,
         )
         agent_executor = AgentExecutor(agent=agent, tools=tools)  # type: ignore[arg-type]
         output = agent_executor.invoke(
@@ -262,103 +270,113 @@ def test_multi_serial_actions_agent():
 
 
 # # --------------------------------------------------------------------------------------------------------#
-#
-# @tool("CensusAgent::city_census")
-# def city_census(
-#         city_name: str = ' '
-# ) -> str:
-#     """
-#     Gets the census of a city
-#     """
-#     return f"The population in {city_name} is 2 million"
-#
-#
-# @tool("StatusAgent::getStatus")
-# def city_status(
-#         city_name: str = ' ',
-#         city_population: int = 0
-# ) -> str:
-#     """
-#     Gets the status of a city based on population
-#     """
-#     if city_population > 20000:
-#         return f"{city_name} with population of {city_population} is BIG"
-#     return f"{city_name} with population of {city_population} is SMALL"
-#
-#
-# # Define logic that will be used to determine which conditional edge to go down
-# def should_continue(data):
-#     return "continue"
-#
-#
-# def final_response(agent_output=None):
-#     return agent_output
-#
-# def test_bedrock_agent_lang_graph():
-#     from langgraph.graph import StateGraph, END
-#
-#     workflow = StateGraph(AgentState)
-#
-#     # Add nodes for each agent
-#     workflow.add_node("get_census", get_census_agent().invoke)
-#     workflow.add_node("get_status", get_status_agent().invoke)
-#     workflow.add_node("final_output", final_response)
-#
-#     # Add entry point
-#     workflow.set_entry_point("get_census")
-#
-#     # Add exit point
-#     workflow.set_finish_point("final_output")
-#
-#     # Add transitions
-#     workflow.add_edge("get_census", "get_status")
-#     workflow.add_edge("get_status", "final_output")
-#
-#     workflow.add_conditional_edges(
-#         "get_census",
-#         should_continue,
-#         path_map={
-#             "continue": "get_status",
-#             "end": END,
-#         }
-#     )
-#
-#     chain = workflow.compile()
-#
-#     final_state = chain.invoke({
-#         "input": "get the city status for seattle?",
-#         "output": ""
-#     })
-#
-#
-# def get_census_agent() -> AgentExecutor:
-#     agent = BedrockAgentsRunnable.create_agent(
-#         {"agent_id": "W2DF1EPGZM", "enable_trace": True}
-#     )
-#     tools = [city_census]
-#     agent_executor = AgentExecutor(agent=agent, tools=tools)  # type: ignore[arg-type]
-#
-#     return agent_executor
-#
-#
-# def get_status_agent() -> AgentExecutor:
-#     agent = BedrockAgentsRunnable.create_agent(
-#         {"agent_id": "UGWHI76MCI", "enable_trace": True}
-#     )
-#     tools = [city_status]
-#     agent_executor = AgentExecutor(agent=agent, tools=tools)  # type: ignore[arg-type]
-#
-#     return agent_executor
-#
-#
-# from typing import TypedDict, Annotated
-# from operator import add
-#
-# class AgentState(TypedDict):
-#     # The input string
-#     input: str
-#
-#     # The outcome of a given call to the agent
-#     # Needs `None` as a valid type, since this is what this will start as
-#     # BedrockAgent final response will be either in string format or ROC structured dict
-#     output: Annotated[str, add]
+def should_continue(data):
+    # If the agent outcome is an AgentFinish, then we return `exit` string
+    # This will be used when setting up the graph to define the flow
+    output_ = data["output"]
+    if isinstance(output_, list) and len(output_) > 0 and isinstance(output_[0], BedrockAgentAction):
+        return "continue"
+
+    if isinstance(output_, BedrockAgentFinish):
+        return "end"
+    # Otherwise, an AgentAction is returned
+    # Here we return `continue` string
+    # This will be used when setting up the graph to define the flow
+    else:
+        return "continue"
+
+
+tool_executor = ToolExecutor([getWeather])
+
+
+# Define the function to execute tools
+def execute_tools(data):
+    # Get the most recent output - this is the key added in the `agent` above
+    agent_action = data["output"]
+    output = tool_executor.invoke(agent_action[0])
+    tuple_output = agent_action[0], output
+    return {"intermediate_steps": [tuple_output]}
+
+
+def get_weather_agent_node() -> Tuple[BedrockAgentsRunnable, str]:
+    foundational_model = 'anthropic.claude-3-sonnet-20240229-v1:0'
+    tools = [getWeather]
+    try:
+        agent_resource_role_arn = _create_agent_role(
+            agent_region='us-west-2',
+            foundational_model=foundational_model)
+        agent = BedrockAgentsRunnable.create_agent(
+            agent_name="weather_agent",
+            agent_resource_role_arn=agent_resource_role_arn,
+            model=foundational_model,
+            instructions="""
+                    You are an agent who helps with getting weather for a given location""",
+            tools=tools
+        )
+
+        return agent, agent_resource_role_arn
+    except Exception as e:
+        raise e
+
+
+agent_runnable, agent_resource_role_arn = get_weather_agent_node()
+
+
+def run_agent(data):
+    agent_outcome = agent_runnable.invoke(data)
+    return {"output": agent_outcome}
+
+
+def test_bedrock_agent_lang_graph():
+    # Define a new graph
+    workflow = StateGraph(AgentState)
+
+    # Define the two nodes we will cycle between
+    workflow.add_node("agent", run_agent)
+    workflow.add_node("action", execute_tools)
+
+    # Set the entrypoint as `agent`
+    # This means that this node is the first one called
+    workflow.add_edge(START, "agent")
+
+    # We now add a conditional edge
+    workflow.add_conditional_edges(
+        # First, we define the start node. We use `agent`.
+        # This means these are the edges taken after the `agent` node is called.
+        "agent",
+        # Next, we pass in the function that will determine which node is called next.
+        should_continue,
+        # Finally we pass in a mapping.
+        # The keys are strings, and the values are other nodes.
+        # END is a special node marking that the graph should finish.
+        # What will happen is we will call `should_continue`, and then the output of that
+        # will be matched against the keys in this mapping.
+        # Based on which one it matches, that node will then be called.
+        {
+            # If `tools`, then we call the tool node.
+            "continue": "action",
+            # Otherwise we finish.
+            "end": END,
+        },
+    )
+
+    # We now add a normal edge from `tools` to `agent`.
+    # This means that after `tools` is called, `agent` node is called next.
+    workflow.add_edge("action", "agent")
+
+    # Finally, we compile it!
+    # This compiles it into a LangChain Runnable,
+    # meaning you can use it as you would any other runnable
+    app = workflow.compile()
+
+    inputs = {"input": "what is the weather in seattle?"}
+    final_state = app.invoke(inputs)
+
+    assert isinstance(final_state.get('output', {}), BedrockAgentFinish)
+    assert final_state.get('output').return_values['output'] == 'It is raining in Seattle'
+
+
+class AgentState(TypedDict):
+    input: str
+    output: Union[BedrockAgentAction, BedrockAgentFinish, None]
+    intermediate_steps: Annotated[list[tuple[BedrockAgentAction, str]], operator.add]

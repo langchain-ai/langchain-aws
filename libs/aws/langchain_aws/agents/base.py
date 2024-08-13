@@ -8,8 +8,11 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import boto3
-import botocore
+from botocore.client import Config
+from botocore.exceptions import UnknownServiceError
 from langchain_core.agents import AgentAction, AgentFinish
+from langchain_core.callbacks import CallbackManager
+from langchain_core.load import dumpd
 from langchain_core.messages import AIMessage
 from langchain_core.pydantic_v1 import Field, root_validator
 from langchain_core.runnables import RunnableConfig, RunnableSerializable, ensure_config
@@ -19,29 +22,19 @@ _DEFAULT_ACTION_GROUP_NAME = "DEFAULT_AG_"
 _TEST_AGENT_ALIAS_ID = "TSTALIASID"
 
 
-def get_bedrock_agents_runtime_client():
-    bedrock_config = botocore.client.Config(
-        connect_timeout=120,
-        read_timeout=120,
-        retries={"max_attempts": 3},
-        region_name="us-west-2",
-    )
-    return boto3.client("bedrock-agent-runtime", config=bedrock_config)
-
-
-def get_bedrock_agents_client():
-    bedrock_config = botocore.client.Config(
-        connect_timeout=120,
-        read_timeout=120,
-        retries={"max_attempts": 3},
-        region_name="us-west-2",
-    )
-    return boto3.client("bedrock-agent", config=bedrock_config)
-
-
 def parse_agent_response(response: Any) -> OutputType:
+    """
+        Parses the raw response from Bedrock Agent
+
+        Args:
+            response: The raw response from Bedrock Agent
+
+        Returns
+            Either a BedrockAgentAction or a BedrockAgentFinish
+    """
     response_text = ""
     event_stream = response["completion"]
+    session_id = response["sessionId"]
     for event in event_stream:
         if "returnControl" in event:
             response_text = json.dumps(event)
@@ -50,7 +43,8 @@ def parse_agent_response(response: Any) -> OutputType:
         if "chunk" in event:
             response_text = event["chunk"]["bytes"].decode("utf-8")
 
-    agent_finish = AgentFinish({"output": response_text}, log=response_text)
+    agent_finish = BedrockAgentFinish(
+        {"output": response_text}, log=response_text, session_id=session_id)
     if not response_text:
         return agent_finish
 
@@ -77,15 +71,20 @@ def parse_agent_response(response: Any) -> OutputType:
         tool = f"{action_group}::{function}"
         if _DEFAULT_ACTION_GROUP_NAME in action_group:
             tool = f"{function}"
-        return [AgentAction(tool=tool, tool_input=parameters_json, log=response_text)]
+        return [BedrockAgentAction(
+            tool=tool,
+            tool_input=parameters_json,
+            log=response_text,
+            session_id=session_id
+        )]
     except Exception as ex:
         raise Exception("Parse exception encountered {}".format(repr(ex)))
 
 
-OutputType = Union[List[AgentAction], AgentFinish]
-
-
 def _create_bedrock_agent(bedrock_client, agent_name, agent_resource_role_arn, instructions, model):
+    """
+        Creates the bedrock agent
+    """
     create_agent_response = bedrock_client.create_agent(
         agentName=agent_name,
         agentResourceRoleArn=agent_resource_role_arn,
@@ -104,10 +103,13 @@ def _create_bedrock_agent(bedrock_client, agent_name, agent_resource_role_arn, i
             time.sleep(2)
 
     logging.error(f'Failed to create bedrock agent {agent_id}')
-    raise
+    raise Exception(f'Failed to create bedrock agent {agent_id}')
 
 
-def _tool_to_action_group_function(tool: BaseTool) -> Tuple[str, str]:
+def _get_action_group_and_function_names(tool: BaseTool) -> Tuple[str, str]:
+    """
+        Convert the LangChain 'Tool' into Bedrock Action Group name and Function name
+    """
     action_group_name = _DEFAULT_ACTION_GROUP_NAME
     function_name = tool.name
     tool_name_split = tool.name.split("::")
@@ -118,9 +120,12 @@ def _tool_to_action_group_function(tool: BaseTool) -> Tuple[str, str]:
 
 
 def _create_bedrock_action_groups(bedrock_client, agent_id, tools):
+    """
+        Create the bedrock action groups for the agent
+    """
     tools_by_action_group = defaultdict(list)
     for tool in tools:
-        action_group_name, function_name = _tool_to_action_group_function(tool)
+        action_group_name, function_name = _get_action_group_and_function_names(tool)
         tools_by_action_group[action_group_name].append(tool)
     for action_group_name, functions in tools_by_action_group.items():
         bedrock_client.create_agent_action_group(
@@ -138,7 +143,10 @@ def _create_bedrock_action_groups(bedrock_client, agent_id, tools):
 
 
 def _tool_to_function(tool: BaseTool):
-    _, function_name = _tool_to_action_group_function(tool)
+    """
+        Convert LangChain tool to a Bedrock function schema
+    """
+    _, function_name = _get_action_group_and_function_names(tool)
     function_parameters = {}
     for arg_name, arg_details in tool.args.items():
         function_parameters[arg_name] = {
@@ -154,6 +162,9 @@ def _tool_to_function(tool: BaseTool):
 
 
 def _prepare_agent(bedrock_client, agent_id):
+    """
+        Prepare the agent for invocations
+    """
     bedrock_client.prepare_agent(agentId=agent_id)
     prepare_agent_start_time = time.time()
     while time.time() - prepare_agent_start_time < 10:
@@ -165,75 +176,265 @@ def _prepare_agent(bedrock_client, agent_id):
     raise Exception(f'Timed out while preparing the agent with id {agent_id}')
 
 
-class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
-    client: Any = Field(default_factory=get_bedrock_agents_runtime_client)
-    agent_alias_id: str = _TEST_AGENT_ALIAS_ID
-    agent_id: Optional[str] = None
-    session_id: Optional[str] = None
-    enable_trace: bool = False
+def _get_bedrock_agent(bedrock_client, agent_name):
+    """
+        Get the agent by name
+    """
+    next_token = None
+    while True:
+        if next_token:
+            list_agents_response = bedrock_client.list_agents(maxResults=1000, nextToken=next_token)
+        else:
+            list_agents_response = bedrock_client.list_agents(maxResults=1000)
+        agent_summaries = list_agents_response.get('agentSummaries', [])
+        next_token = list_agents_response.get('nextToken')
+        agent_summary = next((x for x in agent_summaries if x.get('agentName') == agent_name), None)
+        if agent_summary:
+            return agent_summary
+        if next_token is None:
+            return None
 
-    @root_validator
-    def validate_agent(cls, values: dict) -> dict:
-        # Can create and prepare agents here
-        # Set agent_id, agent_alias_id, session_id etc.
-        if not values["session_id"]:
-            values["session_id"] = uuid.uuid4().hex
 
-        return values
+class BedrockAgentFinish(AgentFinish):
+    """AgentFinish with session id information.
+
+    Parameters:
+        session_id: Session id
+    """
+
+    session_id: str
 
     @classmethod
-    def create_agent(cls,
-                     agent_name: str,
-                     agent_resource_role_arn: str,
-                     model: str,
-                     instructions: str,
-                     tools: List[BaseTool],
-                     agent_alias_id: str = _TEST_AGENT_ALIAS_ID,
-                     **kwargs: Any,
-                     ) -> BedrockAgentsRunnable:
-        try:
-            bedrock_client = get_bedrock_agents_client()
-            agent_id = _create_bedrock_agent(bedrock_client, agent_name, agent_resource_role_arn, instructions, model)
-            _create_bedrock_action_groups(bedrock_client, agent_id, tools)
-            _prepare_agent(bedrock_client, agent_id)
+    def is_lc_serializable(cls) -> bool:
+        """Check if the class is serializable by LangChain.
 
-            return cls(
-                agent_id=agent_id,
-                **kwargs
+        Returns:
+            False
+        """
+        return False
+
+
+class BedrockAgentAction(AgentAction):
+    """AgentAction with session id information.
+
+        Parameters:
+            session_id: session id
+        """
+    session_id: str
+
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        """Check if the class is serializable by LangChain.
+
+        Returns:
+            False
+        """
+        return False
+
+
+OutputType = Union[List[BedrockAgentAction], BedrockAgentFinish]
+
+
+class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
+    """
+        Invoke a Bedrock Agent
+    """
+    agent_id: Optional[str]
+    """Bedrock Agent Id"""
+    agent_alias_id: Optional[str] = _TEST_AGENT_ALIAS_ID
+    """Bedrock Agent Alias Id"""
+    client: Any
+    """Boto3 client"""
+    region_name: Optional[str] = None
+    """Region"""
+    credentials_profile_name: Optional[str] = None
+    """Credentials to use to invoke the agent"""
+    endpoint_url: Optional[str] = None
+    """Endpoint URL"""
+
+    @root_validator(skip_on_failure=True)
+    def validate_agent(cls, values: dict) -> dict:
+        if values.get("client") is not None:
+            return values
+
+        try:
+            client_params, session = cls.__get_boto_session(
+                credentials_profile_name=values["credentials_profile_name"],
+                region_name=values["region_name"],
+                endpoint_url=values["endpoint_url"]
             )
-        except Exception as exception:
-            logging.error(f'Error in create agent call: {exception}')
-            raise exception
+
+            values["client"] = session.client("bedrock-agent-runtime", **client_params)
+
+            return values
+        except ImportError:
+            raise ModuleNotFoundError(
+                "Could not import boto3 python package. "
+                "Please install it with `pip install boto3`."
+            )
+        except UnknownServiceError as e:
+            raise ModuleNotFoundError(
+                "Ensure that you have installed the latest boto3 package "
+                "that contains the API for `bedrock-runtime-agent`."
+            ) from e
+        except Exception as e:
+            raise ValueError(
+                "Could not load credentials to authenticate with AWS client. "
+                "Please check that credentials in the specified "
+                "profile name are valid."
+            ) from e
+
+    @staticmethod
+    def __get_boto_session(credentials_profile_name: str, region_name: str, endpoint_url: str):
+        """
+            Construct the boto3 session
+        """
+        if credentials_profile_name:
+            session = boto3.Session(profile_name=credentials_profile_name)
+        else:
+            # use default credentials
+            session = boto3.Session()
+        client_params = {
+            "config": Config(
+                connect_timeout=120, read_timeout=120, retries={"max_attempts": 0}
+            )
+        }
+        if region_name:
+            client_params["region_name"] = region_name
+        if endpoint_url:
+            client_params["endpoint_url"] = endpoint_url
+        return client_params, session
+
+    @classmethod
+    def create_agent(
+            cls,
+            agent_name: str,
+            agent_resource_role_arn: str,
+            model: str,
+            instructions: str,
+            tools: List[BaseTool],
+            *,
+            credentials_profile_name: str = None,
+            region_name: str = None,
+            bedrock_endpoint_url: str = None,
+            runtime_endpoint_url: str = None,
+            **kwargs: Any,
+    ) -> BedrockAgentsRunnable:
+        """
+            Create a Bedrock Agent if it doesn't exist and initialize the Runnable. If it exists, then check if it is
+            in PREPARED state. If not, prepare the agent for invocation.
+
+            Args:
+                agent_name: Name of the agent
+                agent_resource_role_arn: Resource role ARN to use
+                model: The model id
+                instructions: Instructions to the agent
+                tools: List of tools. Accepts LangChain's BaseTool format
+                credentials_profile_name: The credentials profile name to use for initializing boto3 client
+                region_name: Region for the Bedrock agent
+                bedrock_endpoint_url: Endpoint URL for bedrock agent
+                runtime_endpoint_url: Endpoint URL for bedrock agent runtime
+                **kwargs: Additional arguments
+            Returns:
+                BedrockAgentsRunnable configured to invoke the Bedrock agent
+        """
+        client_params, session = cls.__get_boto_session(
+            credentials_profile_name=credentials_profile_name,
+            region_name=region_name,
+            endpoint_url=bedrock_endpoint_url
+        )
+        bedrock_client = session.client("bedrock-agent", **client_params)
+        bedrock_agent = _get_bedrock_agent(bedrock_client=bedrock_client, agent_name=agent_name)
+
+        if bedrock_agent:
+            # Bedrock agent with the given name exists, prepare if not and return the runnable with details
+            agent_id = bedrock_agent['agentId']
+            agent_status = bedrock_agent['agentStatus']
+            if agent_status != "PREPARED":
+                _prepare_agent(bedrock_client, agent_id)
+        else:
+            try:
+                agent_id = _create_bedrock_agent(bedrock_client, agent_name, agent_resource_role_arn, instructions, model)
+                _create_bedrock_action_groups(bedrock_client, agent_id, tools)
+                _prepare_agent(bedrock_client, agent_id)
+            except Exception as exception:
+                logging.error(f'Error in create agent call: {exception}')
+                raise exception
+
+        return cls(
+            agent_id=agent_id,
+            region_name=region_name,
+            credentials_profile_name=credentials_profile_name,
+            endpoint_url=runtime_endpoint_url,
+            **kwargs
+        )
 
     def invoke(
             self, input: Dict, config: Optional[RunnableConfig] = None
     ) -> OutputType:
-        config = ensure_config(config)
-        agent_input = {
-            "agentId": self.agent_id,
-            "agentAliasId": self.agent_alias_id,
-            "enableTrace": self.enable_trace,
-            "sessionId": self.session_id,
-        }
-        if input.get("intermediate_steps"):
-            session_state = self._parse_intermediate_steps(
-                input.get("intermediate_steps")  # type: ignore[arg-type]
-            )
-            if session_state is not None:
-                agent_input["sessionState"] = session_state
-        else:
-            agent_input["inputText"] = input.get("input", "")
+        """
+            Invoke the Bedrock agent.
 
-        output = self.client.invoke_agent(**agent_input)
-        return parse_agent_response(output)
+            Args:
+                input: The LangChain Runnable input dictionary that can include:
+                    input: The input text to the agent
+                    session_id: The session id to use. If not provided, a new session will be started
+                    intermediate_steps: The intermediate steps that are used to provide RoC invocation details
+                    enable_trace: Boolean flag to enable trace when invoke bedrock agent
+        """
+        config = ensure_config(config)
+        callback_manager = CallbackManager.configure(
+            inheritable_callbacks=config.get("callbacks"),
+            inheritable_tags=config.get("tags"),
+            inheritable_metadata=config.get("metadata"),
+        )
+        run_manager = callback_manager.on_chain_start(
+            dumpd(self), input, name=config.get("run_name")
+        )
+
+        try:
+            agent_input = {
+                "agentId": self.agent_id,
+                "agentAliasId": self.agent_alias_id,
+                "enableTrace": input.get("enable_trace", False)
+            }
+
+            if input.get("intermediate_steps"):
+                session_id, session_state = self._parse_intermediate_steps(
+                    input.get("intermediate_steps")  # type: ignore[arg-type]
+                )
+
+                if session_id is not None:
+                    agent_input["sessionId"] = session_id
+
+                if session_state is not None:
+                    agent_input["sessionState"] = session_state
+            else:
+                agent_input["inputText"] = input.get("input", "")
+                agent_input["sessionId"] = input.get("session_id", str(uuid.uuid4()))
+
+            output = self.client.invoke_agent(**agent_input)
+        except Exception as e:
+            run_manager.on_chain_error(e)
+            raise e
+
+        try:
+            response = parse_agent_response(output)
+        except Exception as e:
+            run_manager.on_chain_error(e)
+            raise e
+        else:
+            run_manager.on_chain_end(response)
+            return response
 
     def _parse_intermediate_steps(
-            self, intermediate_steps: List[Tuple[AgentAction, str]]
-    ) -> Any:
+            self, intermediate_steps: List[Tuple[BedrockAgentAction, str]]
+    ) -> Tuple[str, Dict[str, Any]]:
         last_step = max(0, len(intermediate_steps) - 1)
         action = intermediate_steps[last_step][0]
         tool_invoked = action.tool
         messages = action.messages
+        session_id = action.session_id
 
         if tool_invoked:
             action_group_name = _DEFAULT_ACTION_GROUP_NAME
@@ -263,4 +464,4 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                         ],
                     }
 
-                    return session_state
+                    return session_id, session_state
