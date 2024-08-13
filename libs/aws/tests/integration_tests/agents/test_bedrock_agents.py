@@ -268,6 +268,85 @@ def test_multi_serial_actions_agent():
         if agent:
             _delete_agent(agent.agent_id)
 
+# ----------------------------------------------------------------------------------------------------------#
+
+def test_agent_with_memory():
+    foundational_model = 'anthropic.claude-3-sonnet-20240229-v1:0'
+    agent_resource_role_arn = None
+    agent = None
+    try:
+        agent_resource_role_arn = _create_agent_role(
+            agent_region='us-west-2',
+            foundational_model=foundational_model
+        )
+        agent = BedrockAgentsRunnable.create_agent(
+            agent_name="country_capital_cities_and_states_with_memory",
+            agent_resource_role_arn=agent_resource_role_arn,
+            model=foundational_model,
+            instructions="""
+            You are an agent who will help with capital cities and number of states for countries. 
+            When asked for capital city, you will just return the name of the city.
+            When asked for number of states, you will just return the number
+            """,
+            memory_storage_days=30
+        )
+        agent_executor = AgentExecutor(agent=agent, tools=[])  # type: ignore[arg-type]
+
+        # start a session
+        memory_id_1 = str(uuid.uuid4())
+        session_id = str(uuid.uuid4())
+        usa_capital_output = agent_executor.invoke(
+            {
+                "input": "what is the capital city of USA?",
+                "memory_id": memory_id_1,
+                "session_id": session_id
+            }
+        )
+
+        #end the session
+        end_session = agent_executor.invoke(
+            {
+                "input": "end",
+                "session_id": session_id,
+                "end_session": True
+            }
+        )
+
+        # wait for the memory summary to be generated - bedrock agents gap.
+        runtime_client = boto3.client('bedrock-agent-runtime')
+        memory_contents = []
+        while len(memory_contents) == 0:
+            time.sleep(60)
+            memory_response = runtime_client.get_agent_memory(
+                agentAliasId=agent.agent_alias_id,
+                agentId=agent.agent_id,
+                maxItems=100,
+                memoryId=memory_id_1,
+                memoryType='SESSION_SUMMARY'
+            )
+
+            memory_contents = memory_response.get("memoryContents", [])
+
+        # start a new session but use the memory id from previous session
+        new_session = str(uuid.uuid4())
+        usa_capital_new_session_output = agent_executor.invoke(
+            {
+                "input": "what is the capital city again?",
+                "memory_id": memory_id_1,
+                "session_id": str(uuid.uuid4()),
+            }
+        )
+
+        assert "Washington" in usa_capital_output["output"]
+        assert "Washington" in usa_capital_new_session_output["output"]
+    except Exception as ex:
+        raise ex
+    finally:
+        if agent_resource_role_arn:
+            _delete_agent_role(agent_resource_role_arn)
+        if agent:
+            _delete_agent(agent.agent_id)
+
 
 # # --------------------------------------------------------------------------------------------------------#
 def should_continue(data):

@@ -81,7 +81,14 @@ def parse_agent_response(response: Any) -> OutputType:
         raise Exception("Parse exception encountered {}".format(repr(ex)))
 
 
-def _create_bedrock_agent(bedrock_client, agent_name, agent_resource_role_arn, instructions, model):
+def _create_bedrock_agent(
+        bedrock_client,
+        agent_name,
+        agent_resource_role_arn,
+        instructions,
+        model,
+        memory_storage_days
+):
     """
         Creates the bedrock agent
     """
@@ -89,7 +96,13 @@ def _create_bedrock_agent(bedrock_client, agent_name, agent_resource_role_arn, i
         agentName=agent_name,
         agentResourceRoleArn=agent_resource_role_arn,
         foundationModel=model,
-        instruction=instructions
+        instruction=instructions,
+        memoryConfiguration={
+            'enabledMemoryTypes': [
+                'SESSION_SUMMARY',
+            ],
+            'storageDays': memory_storage_days
+        }
     )
     request_id = create_agent_response.get('ResponseMetadata', {}).get('RequestId', '')
     logging.info(f'Create bedrock agent call successful with request id: {request_id}')
@@ -312,8 +325,9 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             agent_resource_role_arn: str,
             model: str,
             instructions: str,
-            tools: List[BaseTool],
+            tools: List[BaseTool] = [],
             *,
+            memory_storage_days: int = 0,
             credentials_profile_name: str = None,
             region_name: str = None,
             bedrock_endpoint_url: str = None,
@@ -354,7 +368,14 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                 _prepare_agent(bedrock_client, agent_id)
         else:
             try:
-                agent_id = _create_bedrock_agent(bedrock_client, agent_name, agent_resource_role_arn, instructions, model)
+                agent_id = _create_bedrock_agent(
+                    bedrock_client=bedrock_client,
+                    agent_name=agent_name,
+                    agent_resource_role_arn=agent_resource_role_arn,
+                    instructions=instructions,
+                    model=model,
+                    memory_storage_days=memory_storage_days
+                )
                 _create_bedrock_action_groups(bedrock_client, agent_id, tools)
                 _prepare_agent(bedrock_client, agent_id)
             except Exception as exception:
@@ -378,7 +399,9 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             Args:
                 input: The LangChain Runnable input dictionary that can include:
                     input: The input text to the agent
+                    memory_id: The memory id to use for an agent with memory enabled
                     session_id: The session id to use. If not provided, a new session will be started
+                    end_session: Boolean indicating whether to end a session or not
                     intermediate_steps: The intermediate steps that are used to provide RoC invocation details
                     enable_trace: Boolean flag to enable trace when invoke bedrock agent
 
@@ -399,8 +422,12 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             agent_input = {
                 "agentId": self.agent_id,
                 "agentAliasId": self.agent_alias_id,
-                "enableTrace": input.get("enable_trace", False)
+                "enableTrace": input.get("enable_trace", False),
+                "endSession": bool(input.get("end_session", False))
             }
+
+            if input.get("memory_id"):
+                agent_input["memoryId"] = input.get("memory_id")
 
             if input.get("intermediate_steps"):
                 session_id, session_state = self._parse_intermediate_steps(
