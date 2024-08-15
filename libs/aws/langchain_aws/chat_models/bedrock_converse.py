@@ -366,6 +366,16 @@ class ChatBedrockConverse(BaseChatModel):
     @root_validator(pre=False, skip_on_failure=True)
     def validate_environment(cls, values: Dict) -> Dict:
         """Validate that AWS credentials to and python package exists in environment."""
+        # As of 08/05/24 only claude-3 and mistral-large models support tool choice:
+        # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
+        if values["supports_tool_choice_values"] is None:
+            if "claude-3" in values["model_id"]:
+                values["supports_tool_choice_values"] = ("auto", "any", "tool")
+            elif "mistral-large" in values["model_id"]:
+                values["supports_tool_choice_values"] = ("auto", "any")
+            else:
+                values["supports_tool_choice_values"] = ()
+
         if values["client"] is not None:
             return values
 
@@ -408,16 +418,6 @@ class ChatBedrockConverse(BaseChatModel):
                 "Please check that credentials in the specified "
                 f"profile name are valid. Bedrock error: {e}"
             ) from e
-
-        # As of 08/05/24 only claude-3 and mistral-large models support tool choice:
-        # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
-        if values["supports_tool_choice_values"] is None:
-            if "claude-3" in values["model_id"]:
-                values["supports_tool_choice_values"] = ("auto", "any", "tool")
-            elif "mistral-large" in values["model_id"]:
-                values["supports_tool_choice_values"] = ("auto", "any")
-            else:
-                values["supports_tool_choice_values"] = ()
 
         return values
 
