@@ -113,26 +113,55 @@ def _delete_agent(agent_id):
     bedrock_client.delete_agent(agentId=agent_id, skipResourceInUseCheck=True)
 
 
-# --------------------------------------------------------------------------------------------------------#
-
-@tool("AssetDetail::getAssetValue")
-def getAssetValue(asset_holder_id: str) -> str:
-    """Get the asset value for an owner id"""
-    return f"The total asset value for {asset_holder_id} is 100K"
+def _delete_guardrail(guardrail_id):
+    bedrock_client = boto3.client("bedrock")
+    bedrock_client.delete_guardrail(guardrailIdentifier=guardrail_id)
 
 
-@tool("AssetDetail::getMortgageRate")
-def getMortgageRate(asset_holder_id: str, asset_value: str) -> str:
-    """Get the mortgage rate based on asset value"""
-    return (
-        f"The mortgage rate for {asset_holder_id} "
-        f"with asset value of {asset_value} is 8.87%"
+def create_stock_advice_guardrail():
+    # create a guard rail
+    bedrock_client = boto3.client("bedrock")
+    create_guardrail_response = bedrock_client.create_guardrail(
+        name="block_financial_advice_guardrail",
+        blockedInputMessaging="Sorry, the prompt is not allowed for this agent",
+        blockedOutputsMessaging="Sorry, the model cannot answer this question.",
+        topicPolicyConfig={
+            'topicsConfig': [
+                {
+                    'name': 'StockAdvice',
+                    'definition': """Any questions related to stock market investments or any questions related to 
+                        investment in stocks, bonds, or commodities
+                        """,
+                    'examples': [
+                        'what stocks should i invest in?',
+                    ],
+                    'type': 'DENY'
+                },
+            ]
+        }
     )
 
+    return create_guardrail_response['guardrailId'], create_guardrail_response['version']
 
+
+# --------------------------------------------------------------------------------------------------------#
 def test_mortgage_bedrock_agent() -> None:
+    # define tools
+    @tool("AssetDetail::getAssetValue")
+    def get_asset_value(asset_holder_id: str) -> str:
+        """Get the asset value for an owner id"""
+        return f"The total asset value for {asset_holder_id} is 100K"
+
+    @tool("AssetDetail::getMortgageRate")
+    def get_mortgage_rate(asset_holder_id: str, asset_value: str) -> str:
+        """Get the mortgage rate based on asset value"""
+        return (
+            f"The mortgage rate for the asset holder id {asset_holder_id}"
+            f"with asset value of {asset_value} is 8.87%"
+        )
+
     foundational_model = 'anthropic.claude-3-sonnet-20240229-v1:0'
-    tools = [getAssetValue, getMortgageRate]
+    tools = [get_asset_value, get_mortgage_rate]
     agent_resource_role_arn = None
     agent = None
     try:
@@ -164,22 +193,21 @@ def test_mortgage_bedrock_agent() -> None:
 
 
 # --------------------------------------------------------------------------------------------------------#
-@tool
-def getWeather(location: str = '') -> str:
-    """
-        Get the weather of a location
-
-        Args:
-            location: location of the place
-    """
-    if location.lower() == 'seattle':
-        return f"It is raining in {location}"
-    return f"It is hot and humid in {location}"
-
-
 def test_weather_agent():
+    @tool
+    def get_weather(location: str = '') -> str:
+        """
+            Get the weather of a location
+
+            Args:
+                location: location of the place
+        """
+        if location.lower() == 'seattle':
+            return f"It is raining in {location}"
+        return f"It is hot and humid in {location}"
+
     foundational_model = 'anthropic.claude-3-sonnet-20240229-v1:0'
-    tools = [getWeather]
+    tools = [get_weather]
     agent_resource_role_arn = None
     agent = None
     try:
@@ -210,179 +238,6 @@ def test_weather_agent():
 
 
 # # --------------------------------------------------------------------------------------------------------#
-
-@tool("AssetDetail::getAssetValue")
-def getTotalAssetValue(asset_holder_id: str = '') -> str:
-    """
-        Get the asset value for an owner id
-
-        Args:
-            asset_holder_id: id of the owner holding the asset
-        Returns:
-            str -> the valuation of the asset
-        """
-    return f"The total asset value for {asset_holder_id} is 100K"
-
-
-@tool("MortgateEvaluation::getMortgateEvaluation")
-def getMortgateEvaluation(asset_holder_id: str = '', asset_value: int = 0) -> str:
-    """
-        Get the mortgage rate based on asset value
-
-        Args:
-            asset_holder_id: id of the owner holding the asset
-            asset_value: asset value which is used to get the mortgage rate
-        Returns:
-            str -> the calculated mortgage rate based on the asset value
-        """
-    return f"The mortgage rate for {asset_holder_id} with asset value of {asset_value} is 8.87%"
-
-
-def test_multi_serial_actions_agent():
-    foundational_model = 'anthropic.claude-3-sonnet-20240229-v1:0'
-    tools = [getTotalAssetValue, getMortgateEvaluation]
-    agent_resource_role_arn = None
-    agent = None
-    try:
-        agent_resource_role_arn = _create_agent_role(
-            agent_region='us-west-2',
-            foundational_model=foundational_model)
-        agent = BedrockAgentsRunnable.create_agent(
-            agent_name="weather_agent",
-            agent_resource_role_arn=agent_resource_role_arn,
-            model=foundational_model,
-            instructions="""
-                    You are an agent who helps with getting weather for a given location""",
-            tools=tools
-        )
-        agent_executor = AgentExecutor(agent=agent, tools=tools)  # type: ignore[arg-type]
-        output = agent_executor.invoke(
-            {"input": "what is my mortgage rate for id AVC-1234?"}
-        )
-
-        assert output["output"] == "The mortgage rate for the asset holder id AVC-1234 is 8.87%"
-    except Exception as ex:
-        raise ex
-    finally:
-        if agent_resource_role_arn:
-            _delete_agent_role(agent_resource_role_arn)
-        if agent:
-            _delete_agent(agent.agent_id)
-
-# ----------------------------------------------------------------------------------------------------------#
-
-def test_agent_with_memory():
-    foundational_model = 'anthropic.claude-3-sonnet-20240229-v1:0'
-    agent_resource_role_arn = None
-    agent = None
-    try:
-        agent_resource_role_arn = _create_agent_role(
-            agent_region='us-west-2',
-            foundational_model=foundational_model
-        )
-        agent = BedrockAgentsRunnable.create_agent(
-            agent_name="country_capital_cities_and_states_with_memory",
-            agent_resource_role_arn=agent_resource_role_arn,
-            model=foundational_model,
-            instructions="""
-            You are an agent who will help with capital cities and number of states for countries. 
-            When asked for capital city, you will just return the name of the city.
-            When asked for number of states, you will just return the number
-            """,
-            memory_storage_days=30
-        )
-        agent_executor = AgentExecutor(agent=agent, tools=[])  # type: ignore[arg-type]
-
-        # start a session
-        memory_id_1 = str(uuid.uuid4())
-        session_id = str(uuid.uuid4())
-        usa_capital_output = agent_executor.invoke(
-            {
-                "input": "what is the capital city of USA?",
-                "memory_id": memory_id_1,
-                "session_id": session_id
-            }
-        )
-
-        #end the session
-        end_session = agent_executor.invoke(
-            {
-                "input": "end",
-                "session_id": session_id,
-                "end_session": True
-            }
-        )
-
-        # wait for the memory summary to be generated - bedrock agents gap.
-        runtime_client = boto3.client('bedrock-agent-runtime')
-        memory_contents = []
-        while len(memory_contents) == 0:
-            time.sleep(60)
-            memory_response = runtime_client.get_agent_memory(
-                agentAliasId=agent.agent_alias_id,
-                agentId=agent.agent_id,
-                maxItems=100,
-                memoryId=memory_id_1,
-                memoryType='SESSION_SUMMARY'
-            )
-
-            memory_contents = memory_response.get("memoryContents", [])
-
-        # start a new session but use the memory id from previous session
-        new_session = str(uuid.uuid4())
-        usa_capital_new_session_output = agent_executor.invoke(
-            {
-                "input": "what is the capital city again?",
-                "memory_id": memory_id_1,
-                "session_id": str(uuid.uuid4()),
-            }
-        )
-
-        assert "Washington" in usa_capital_output["output"]
-        assert "Washington" in usa_capital_new_session_output["output"]
-    except Exception as ex:
-        raise ex
-    finally:
-        if agent_resource_role_arn:
-            _delete_agent_role(agent_resource_role_arn)
-        if agent:
-            _delete_agent(agent.agent_id)
-
-
-# # --------------------------------------------------------------------------------------------------------#
-
-def get_bedrock_client():
-    return boto3.client("bedrock")
-
-def create_stock_advice_guardrail():
-    # create a guard rail
-    bedrock_client = get_bedrock_client()
-    create_guardrail_response = bedrock_client.create_guardrail(
-        name="no_financial_advice_guardrail",
-        blockedInputMessaging="Sorry, the prompt is not allowed for this agent",
-        blockedOutputsMessaging="Sorry, the model cannot answer this question.",
-        topicPolicyConfig={
-            'topicsConfig': [
-                {
-                    'name': 'StockAdvice',
-                    'definition': """Any questions related to stock market investments or any questions related to 
-                        investment in stocks, bonds, or commodities
-                        """,
-                    'examples': [
-                        'what stocks should i invest in?',
-                    ],
-                    'type': 'DENY'
-                },
-            ]
-        }
-    )
-
-    return create_guardrail_response['guardrailId'], create_guardrail_response['version']
-
-def _delete_guardrail(guardrail_id):
-    bedrock_client = get_bedrock_client()
-    bedrock_client.delete_guardrail(guardrailIdentifier=guardrail_id)
-
 def test_agent_with_guardrail():
     guardrail_id, guardrail_version = create_stock_advice_guardrail()
     foundational_model = 'anthropic.claude-3-sonnet-20240229-v1:0'
@@ -429,117 +284,128 @@ def test_agent_with_guardrail():
         if agent_without_guardrail:
             _delete_agent(agent_without_guardrail.agent_id)
         if guardrail_id:
-            _delete_guardrail(guardrail_id)
+            _delete_guardrail(guardrail_id=guardrail_id)
+
 
 # # --------------------------------------------------------------------------------------------------------#
+def test_bedrock_agent_lang_graph():
+    @tool
+    def get_weather(location: str = '') -> str:
+        """
+            Get the weather of a location
 
-def should_continue(data):
-    output_ = data["output"]
+            Args:
+                location: location of the place
+        """
+        if location.lower() == 'seattle':
+            return f"It is raining in {location}"
+        return f"It is hot and humid in {location}"
 
-    # If the agent outcome is a list of BedrockAgentActions, then we continue to tool execution
-    if isinstance(output_, list) and len(output_) > 0 and isinstance(output_[0], BedrockAgentAction):
-        return "continue"
+    class AgentState(TypedDict):
+        input: str
+        output: Union[BedrockAgentAction, BedrockAgentFinish, None]
+        intermediate_steps: Annotated[list[tuple[BedrockAgentAction, str]], operator.add]
 
-    # If the agent outcome is an AgentFinish, then we return `exit` string
-    # This will be used when setting up the graph to define the flow
-    if isinstance(output_, BedrockAgentFinish):
+    def get_weather_agent_node() -> Tuple[BedrockAgentsRunnable, str]:
+        foundational_model = 'anthropic.claude-3-sonnet-20240229-v1:0'
+        tools = [get_weather]
+        try:
+            agent_resource_role_arn = _create_agent_role(
+                agent_region='us-west-2',
+                foundational_model=foundational_model)
+            agent = BedrockAgentsRunnable.create_agent(
+                agent_name="weather_agent",
+                agent_resource_role_arn=agent_resource_role_arn,
+                model=foundational_model,
+                instructions="""
+                        You are an agent who helps with getting weather for a given location""",
+                tools=tools
+            )
+
+            return agent, agent_resource_role_arn
+        except Exception as e:
+            raise e
+
+    agent_runnable, agent_resource_role_arn = get_weather_agent_node()
+
+    def run_agent(data):
+        agent_outcome = agent_runnable.invoke(data)
+        return {"output": agent_outcome}
+
+    tool_executor = ToolExecutor([get_weather])
+
+    # Define the function to execute tools
+    def execute_tools(data):
+        # Get the most recent output - this is the key added in the `agent` above
+        agent_action = data["output"]
+        output = tool_executor.invoke(agent_action[0])
+        tuple_output = agent_action[0], output
+        return {"intermediate_steps": [tuple_output]}
+
+    def should_continue(data):
+        output_ = data["output"]
+
+        # If the agent outcome is a list of BedrockAgentActions, then we continue to tool execution
+        if isinstance(output_, list) and len(output_) > 0 and isinstance(output_[0], BedrockAgentAction):
+            return "continue"
+
+        # If the agent outcome is an AgentFinish, then we return `exit` string
+        # This will be used when setting up the graph to define the flow
+        if isinstance(output_, BedrockAgentFinish):
+            return "end"
+
+        # Unknown output from the agent, end the graph
         return "end"
 
-    # Unknown output from the agent, end the graph
-    return "end"
-
-
-tool_executor = ToolExecutor([getWeather])
-
-
-# Define the function to execute tools
-def execute_tools(data):
-    # Get the most recent output - this is the key added in the `agent` above
-    agent_action = data["output"]
-    output = tool_executor.invoke(agent_action[0])
-    tuple_output = agent_action[0], output
-    return {"intermediate_steps": [tuple_output]}
-
-
-def get_weather_agent_node() -> Tuple[BedrockAgentsRunnable, str]:
-    foundational_model = 'anthropic.claude-3-sonnet-20240229-v1:0'
-    tools = [getWeather]
     try:
-        agent_resource_role_arn = _create_agent_role(
-            agent_region='us-west-2',
-            foundational_model=foundational_model)
-        agent = BedrockAgentsRunnable.create_agent(
-            agent_name="weather_agent",
-            agent_resource_role_arn=agent_resource_role_arn,
-            model=foundational_model,
-            instructions="""
-                    You are an agent who helps with getting weather for a given location""",
-            tools=tools
+        # Define a new graph
+        workflow = StateGraph(AgentState)
+
+        # Define the two nodes we will cycle between
+        workflow.add_node("agent", run_agent)
+        workflow.add_node("action", execute_tools)
+
+        # Set the entrypoint as `agent`
+        # This means that this node is the first one called
+        workflow.add_edge(START, "agent")
+
+        # We now add a conditional edge
+        workflow.add_conditional_edges(
+            # First, we define the start node. We use `agent`.
+            # This means these are the edges taken after the `agent` node is called.
+            "agent",
+            # Next, we pass in the function that will determine which node is called next.
+            should_continue,
+            # Finally we pass in a mapping.
+            # The keys are strings, and the values are other nodes.
+            # END is a special node marking that the graph should finish.
+            # What will happen is we will call `should_continue`, and then the output of that
+            # will be matched against the keys in this mapping.
+            # Based on which one it matches, that node will then be called.
+            {
+                # If `tools`, then we call the tool node.
+                "continue": "action",
+                # Otherwise we finish.
+                "end": END,
+            },
         )
 
-        return agent, agent_resource_role_arn
-    except Exception as e:
-        raise e
+        # We now add a normal edge from `tools` to `agent`.
+        # This means that after `tools` is called, `agent` node is called next.
+        workflow.add_edge("action", "agent")
 
+        # Finally, we compile it!
+        # This compiles it into a LangChain Runnable,
+        # meaning you can use it as you would any other runnable
+        app = workflow.compile()
 
-agent_runnable, agent_resource_role_arn = get_weather_agent_node()
+        inputs = {"input": "what is the weather in seattle?"}
+        final_state = app.invoke(inputs)
 
-
-def run_agent(data):
-    agent_outcome = agent_runnable.invoke(data)
-    return {"output": agent_outcome}
-
-
-def test_bedrock_agent_lang_graph():
-    # Define a new graph
-    workflow = StateGraph(AgentState)
-
-    # Define the two nodes we will cycle between
-    workflow.add_node("agent", run_agent)
-    workflow.add_node("action", execute_tools)
-
-    # Set the entrypoint as `agent`
-    # This means that this node is the first one called
-    workflow.add_edge(START, "agent")
-
-    # We now add a conditional edge
-    workflow.add_conditional_edges(
-        # First, we define the start node. We use `agent`.
-        # This means these are the edges taken after the `agent` node is called.
-        "agent",
-        # Next, we pass in the function that will determine which node is called next.
-        should_continue,
-        # Finally we pass in a mapping.
-        # The keys are strings, and the values are other nodes.
-        # END is a special node marking that the graph should finish.
-        # What will happen is we will call `should_continue`, and then the output of that
-        # will be matched against the keys in this mapping.
-        # Based on which one it matches, that node will then be called.
-        {
-            # If `tools`, then we call the tool node.
-            "continue": "action",
-            # Otherwise we finish.
-            "end": END,
-        },
-    )
-
-    # We now add a normal edge from `tools` to `agent`.
-    # This means that after `tools` is called, `agent` node is called next.
-    workflow.add_edge("action", "agent")
-
-    # Finally, we compile it!
-    # This compiles it into a LangChain Runnable,
-    # meaning you can use it as you would any other runnable
-    app = workflow.compile()
-
-    inputs = {"input": "what is the weather in seattle?"}
-    final_state = app.invoke(inputs)
-
-    assert isinstance(final_state.get('output', {}), BedrockAgentFinish)
-    assert final_state.get('output').return_values['output'] == 'It is raining in Seattle'
-
-
-class AgentState(TypedDict):
-    input: str
-    output: Union[BedrockAgentAction, BedrockAgentFinish, None]
-    intermediate_steps: Annotated[list[tuple[BedrockAgentAction, str]], operator.add]
+        assert isinstance(final_state.get('output', {}), BedrockAgentFinish)
+        assert final_state.get('output').return_values['output'] == 'It is raining in Seattle'
+    finally:
+        if agent_resource_role_arn:
+            _delete_agent_role(agent_resource_role_arn=agent_resource_role_arn)
+        if agent_runnable:
+            _delete_agent(agent_id=agent_runnable.agent_id)
