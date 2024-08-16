@@ -5,7 +5,7 @@ import logging
 import time
 import uuid
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
 
 import boto3
 from botocore.client import Config
@@ -20,6 +20,27 @@ from langchain_core.tools import BaseTool
 
 _DEFAULT_ACTION_GROUP_NAME = "DEFAULT_AG_"
 _TEST_AGENT_ALIAS_ID = "TSTALIASID"
+
+
+def get_boto_session(credentials_profile_name: str, region_name: str, endpoint_url: str):
+    """
+        Construct the boto3 session
+    """
+    if credentials_profile_name:
+        session = boto3.Session(profile_name=credentials_profile_name)
+    else:
+        # use default credentials
+        session = boto3.Session()
+    client_params = {
+        "config": Config(
+            connect_timeout=120, read_timeout=120, retries={"max_attempts": 0}
+        )
+    }
+    if region_name:
+        client_params["region_name"] = region_name
+    if endpoint_url:
+        client_params["endpoint_url"] = endpoint_url
+    return client_params, session
 
 
 def parse_agent_response(response: Any) -> OutputType:
@@ -87,9 +108,11 @@ def _create_bedrock_agent(
         agent_resource_role_arn,
         instructions,
         model,
-        memory_storage_days,
-        guardrail_id,
-        guardrail_version,
+        client_token,
+        customer_encryption_key_arn,
+        description,
+        guardrail_configuration,
+        idle_session_ttl_in_seconds
 ):
     """
         Creates the bedrock agent
@@ -98,20 +121,26 @@ def _create_bedrock_agent(
         "agentName": agent_name,
         "agentResourceRoleArn": agent_resource_role_arn,
         "foundationModel": model,
-        "instruction": instructions,
+        "instruction": instructions
     }
 
-    if memory_storage_days > 0:
-        create_agent_request["memoryConfiguration"] = {
-            "enabledMemoryTypes": ["SESSION_SUMMARY"],
-            "storageDays": memory_storage_days
+    if description:
+        create_agent_request["description"] = description
+
+    if client_token:
+        create_agent_request["clientToken"] = client_token
+
+    if customer_encryption_key_arn:
+        create_agent_request["customerEncryptionKeyArn"] = customer_encryption_key_arn
+
+    if guardrail_configuration is not None:
+        create_agent_request["guardrailConfiguration"] = {
+            "guardrailIdentifier": guardrail_configuration['guardrail_identifier'],
+            "guardrailVersion": guardrail_configuration['guardrail_version'] or 'DRAFT'
         }
 
-    if guardrail_id is not None:
-        create_agent_request["guardrailConfiguration"] = {
-            "guardrailIdentifier": guardrail_id,
-            "guardrailVersion": guardrail_version
-        }
+    if idle_session_ttl_in_seconds:
+        create_agent_request["idleSessionTTLInSeconds"] = idle_session_ttl_in_seconds
 
     create_agent_response = bedrock_client.create_agent(**create_agent_request)
     request_id = create_agent_response.get('ResponseMetadata', {}).get('RequestId', '')
@@ -258,6 +287,11 @@ class BedrockAgentAction(AgentAction):
 OutputType = Union[List[BedrockAgentAction], BedrockAgentFinish]
 
 
+class GuardrailConfiguration(TypedDict):
+    guardrail_identifier: str
+    guardrail_version: str
+
+
 class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
     """
         Invoke a Bedrock Agent
@@ -281,7 +315,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             return values
 
         try:
-            client_params, session = cls.__get_boto_session(
+            client_params, session = get_boto_session(
                 credentials_profile_name=values["credentials_profile_name"],
                 region_name=values["region_name"],
                 endpoint_url=values["endpoint_url"]
@@ -307,39 +341,20 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                 "profile name are valid."
             ) from e
 
-    @staticmethod
-    def __get_boto_session(credentials_profile_name: str, region_name: str, endpoint_url: str):
-        """
-            Construct the boto3 session
-        """
-        if credentials_profile_name:
-            session = boto3.Session(profile_name=credentials_profile_name)
-        else:
-            # use default credentials
-            session = boto3.Session()
-        client_params = {
-            "config": Config(
-                connect_timeout=120, read_timeout=120, retries={"max_attempts": 0}
-            )
-        }
-        if region_name:
-            client_params["region_name"] = region_name
-        if endpoint_url:
-            client_params["endpoint_url"] = endpoint_url
-        return client_params, session
-
     @classmethod
     def create_agent(
             cls,
             agent_name: str,
             agent_resource_role_arn: str,
-            model: str,
-            instructions: str,
+            foundation_model: str,
+            instruction: str,
             tools: List[BaseTool] = [],
             *,
-            memory_storage_days: int = 0,
-            guardrail_id: str = None,
-            guardrail_version: str = "DRAFT",
+            client_token: str = None,
+            customer_encryption_key_arn: str = None,
+            description: str = None,
+            guardrail_configuration: GuardrailConfiguration = None,
+            idle_session_ttl_in_seconds: int = None,
             credentials_profile_name: str = None,
             region_name: str = None,
             bedrock_endpoint_url: str = None,
@@ -353,12 +368,14 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             Args:
                 agent_name: Name of the agent
                 agent_resource_role_arn: Resource role ARN to use
-                model: The model id
-                instructions: Instructions to the agent
+                foundation_model: The model id
+                instruction: Instructions to the agent
                 tools: List of tools. Accepts LangChain's BaseTool format
-                memory_storage_days: Memory duration in days for the agent conversational context.
-                guardrail_id: Guardrail for the agent
-                guardrail_version: Version of the guardrail. Defaults to DRAFT
+                client_token: A unique, case-sensitive identifier to ensure idempotency
+                customer_encryption_key_arn: ARN for the KMS key to encrypt the agent
+                description: Agent description
+                guardrail_configuration: A typed dictionary with guardrail configuration to use for the agent
+                idle_session_ttl_in_seconds: Session timeout parameter in seconds
                 credentials_profile_name: The credentials profile name to use for initializing boto3 client
                 region_name: Region for the Bedrock agent
                 bedrock_endpoint_url: Endpoint URL for bedrock agent
@@ -367,7 +384,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             Returns:
                 BedrockAgentsRunnable configured to invoke the Bedrock agent
         """
-        client_params, session = cls.__get_boto_session(
+        client_params, session = get_boto_session(
             credentials_profile_name=credentials_profile_name,
             region_name=region_name,
             endpoint_url=bedrock_endpoint_url
@@ -387,11 +404,13 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                     bedrock_client=bedrock_client,
                     agent_name=agent_name,
                     agent_resource_role_arn=agent_resource_role_arn,
-                    instructions=instructions,
-                    model=model,
-                    memory_storage_days=memory_storage_days,
-                    guardrail_id=guardrail_id,
-                    guardrail_version=guardrail_version
+                    instructions=instruction,
+                    model=foundation_model,
+                    client_token=client_token,
+                    customer_encryption_key_arn=customer_encryption_key_arn,
+                    description=description,
+                    guardrail_configuration=guardrail_configuration,
+                    idle_session_ttl_in_seconds=idle_session_ttl_in_seconds
                 )
                 _create_bedrock_action_groups(bedrock_client, agent_id, tools)
                 _prepare_agent(bedrock_client, agent_id)

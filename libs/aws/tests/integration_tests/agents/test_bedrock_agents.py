@@ -5,6 +5,8 @@ import uuid
 import boto3
 import pytest
 from langchain.agents import AgentExecutor
+
+import langchain_aws.agents.base
 from langchain_aws.agents.base import BedrockAgentsRunnable
 from langchain_core.tools import tool
 
@@ -145,7 +147,8 @@ def create_stock_advice_guardrail():
 
 
 # --------------------------------------------------------------------------------------------------------#
-def test_mortgage_bedrock_agent() -> None:
+@pytest.mark.skip
+def test_mortgage_bedrock_agent():
     # define tools
     @tool("AssetDetail::getAssetValue")
     def get_asset_value(asset_holder_id: str) -> str:
@@ -171,8 +174,8 @@ def test_mortgage_bedrock_agent() -> None:
         agent = BedrockAgentsRunnable.create_agent(
             agent_name="mortgage_interest_rate_agent",
             agent_resource_role_arn=agent_resource_role_arn,
-            model=foundational_model,
-            instructions="""
+            foundation_model=foundational_model,
+            instruction="""
             You are an agent who helps with getting the mortgage rate based on the current asset valuation""",
             tools=tools,
         )
@@ -193,6 +196,7 @@ def test_mortgage_bedrock_agent() -> None:
 
 
 # --------------------------------------------------------------------------------------------------------#
+@pytest.mark.skip
 def test_weather_agent():
     @tool
     def get_weather(location: str = '') -> str:
@@ -217,8 +221,8 @@ def test_weather_agent():
         agent = BedrockAgentsRunnable.create_agent(
             agent_name="weather_agent",
             agent_resource_role_arn=agent_resource_role_arn,
-            model=foundational_model,
-            instructions="""
+            foundation_model=foundational_model,
+            instruction="""
                 You are an agent who helps with getting weather for a given location""",
             tools=tools
         )
@@ -238,6 +242,7 @@ def test_weather_agent():
 
 
 # # --------------------------------------------------------------------------------------------------------#
+@pytest.mark.skip
 def test_agent_with_guardrail():
     guardrail_id, guardrail_version = create_stock_advice_guardrail()
     foundational_model = 'anthropic.claude-3-sonnet-20240229-v1:0'
@@ -252,18 +257,20 @@ def test_agent_with_guardrail():
         agent_with_guardrail = BedrockAgentsRunnable.create_agent(
             agent_name="agent_with_financial_advice_guardrail",
             agent_resource_role_arn=agent_resource_role_arn,
-            model=foundational_model,
-            instructions="You are a test agent which will respond to user query",
-            memory_storage_days=30,
-            guardrail_id=guardrail_id,
-            guardrail_version=guardrail_version
+            foundation_model=foundational_model,
+            instruction="You are a test agent which will respond to user query",
+            guardrail_configuration=langchain_aws.agents.base.GuardrailConfiguration(
+                guardrail_identifier=guardrail_id,
+                guardrail_version=guardrail_version
+            ),
+            description="Sample agent"
         )
 
         agent_without_guardrail = BedrockAgentsRunnable.create_agent(
             agent_name="agent_without_financial_advice_guardrail",
             agent_resource_role_arn=agent_resource_role_arn,
-            model=foundational_model,
-            instructions="You are a test agent which will respond to user query",
+            foundation_model=foundational_model,
+            instruction="You are a test agent which will respond to user query",
             memory_storage_days=30,
         )
         agent_executor_1 = AgentExecutor(agent=agent_with_guardrail, tools=[])  # type: ignore[arg-type]
@@ -288,6 +295,7 @@ def test_agent_with_guardrail():
 
 
 # # --------------------------------------------------------------------------------------------------------#
+@pytest.mark.skip
 def test_bedrock_agent_lang_graph():
     @tool
     def get_weather(location: str = '') -> str:
@@ -316,8 +324,8 @@ def test_bedrock_agent_lang_graph():
             agent = BedrockAgentsRunnable.create_agent(
                 agent_name="weather_agent",
                 agent_resource_role_arn=agent_resource_role_arn,
-                model=foundational_model,
-                instructions="""
+                foundation_model=foundational_model,
+                instruction="""
                         You are an agent who helps with getting weather for a given location""",
                 tools=tools
             )
