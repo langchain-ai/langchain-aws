@@ -10,8 +10,6 @@ import boto3
 import pytest
 from langchain.agents import AgentExecutor
 from langchain_core.tools import tool
-from langgraph.graph import END, START, StateGraph
-from langgraph.prebuilt.tool_executor import ToolExecutor
 
 import langchain_aws.agents.base
 from langchain_aws.agents.base import (
@@ -295,7 +293,10 @@ def test_agent_with_guardrail():
 
 
 @pytest.mark.skip
-def test_bedrock_agent_lang_graph():
+def test_bedrock_agent_langgraph():
+    from langgraph.graph import END, START, StateGraph
+    from langgraph.prebuilt.tool_executor import ToolExecutor
+
     @tool
     def get_weather(location: str = "") -> str:
         """
