@@ -4,12 +4,13 @@ import json
 import operator
 import time
 import uuid
-from typing import Annotated, Any, Tuple, TypedDict, Union
+from typing import Any, Tuple, TypedDict, Union
 
 import boto3
 import pytest
 from langchain.agents import AgentExecutor
 from langchain_core.tools import tool
+from typing_extensions import Annotated
 
 import langchain_aws.agents.base
 from langchain_aws.agents.base import (
