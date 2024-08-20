@@ -622,7 +622,7 @@ def _messages_to_bedrock(
         if isinstance(msg, HumanMessage):
             # If there's a human, tool, human message sequence, the
             # tool message will be merged with the first human message, so the second
-            # human message will now be preceeded by a human message and should also
+            # human message will now be preceded by a human message and should also
             # be merged with it.
             if bedrock_messages and bedrock_messages[-1]["role"] == "user":
                 bedrock_messages[-1]["content"].extend(content)
@@ -747,7 +747,7 @@ def _anthropic_to_bedrock(
         elif block["type"] == "image":
             # Assume block is already in bedrock format.
             if "image" in block:
-                bedrock_content.append(block)
+                bedrock_content.append({"image": block["image"]})
             else:
                 bedrock_content.append(
                     {
@@ -764,6 +764,9 @@ def _anthropic_to_bedrock(
             bedrock_content.append(
                 {"image": _format_openai_image_url(block["imageUrl"]["url"])}
             )
+        elif block["type"] == "document":
+            # Assume block in bedrock document format
+            bedrock_content.append({"document": block["document"]})
         elif block["type"] == "tool_use":
             bedrock_content.append(
                 {
