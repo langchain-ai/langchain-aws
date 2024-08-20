@@ -622,7 +622,7 @@ def _messages_to_bedrock(
         if isinstance(msg, HumanMessage):
             # If there's a human, tool, human message sequence, the
             # tool message will be merged with the first human message, so the second
-            # human message will now be preceeded by a human message and should also
+            # human message will now be preceded by a human message and should also
             # be merged with it.
             if bedrock_messages and bedrock_messages[-1]["role"] == "user":
                 bedrock_messages[-1]["content"].extend(content)
@@ -817,8 +817,6 @@ def _bedrock_to_anthropic(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]
                     },
                 }
             )
-        elif "document" in block:
-            anthropic_content.append({"type": "document", "document": block})
         elif "tool_result" in block:
             anthropic_content.append(
                 {
