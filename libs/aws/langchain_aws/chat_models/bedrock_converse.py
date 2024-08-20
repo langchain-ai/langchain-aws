@@ -12,13 +12,13 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
+    Type,
     TypeVar,
     Union,
     cast,
 )
 
 import boto3
-from langchain_core._api import beta
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.language_models.chat_models import LangSmithParams
@@ -36,27 +36,31 @@ from langchain_core.messages import (
 from langchain_core.messages.ai import AIMessageChunk, UsageMetadata
 from langchain_core.messages.tool import tool_call as create_tool_call
 from langchain_core.messages.tool import tool_call_chunk
+from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
+from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.pydantic_v1 import BaseModel, Extra, Field, root_validator
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.utils import get_from_dict_or_env
-from langchain_core.utils.function_calling import convert_to_openai_function
+from langchain_core.utils.function_calling import (
+    convert_to_openai_function,
+    convert_to_openai_tool,
+)
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 
 from langchain_aws.function_calling import ToolsOutputParser
 
+_BM = TypeVar("_BM", bound=BaseModel)
+_DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
 
-@beta()
+
 class ChatBedrockConverse(BaseChatModel):
     """Bedrock chat model integration built on the Bedrock converse API.
 
     This implementation will eventually replace the existing ChatBedrock implementation
     once the Bedrock converse API has feature parity with older Bedrock API.
     Specifically the converse API does not yet support custom Bedrock models.
-
-    For now it is being released as its own class in **beta** to give users who aren't
-    using custom models access to the latest API.
 
     Setup:
         To use Amazon Bedrock make sure you've gone through all the steps described
@@ -339,17 +343,38 @@ class ChatBedrockConverse(BaseChatModel):
     additionalModelResponseFieldPaths.
     """
 
+    supports_tool_choice_values: Optional[
+        Sequence[Literal["auto", "any", "tool"]]
+    ] = None
+    """Which types of tool_choice values the model supports.
+    
+    Inferred if not specified. Inferred as ('auto', 'any', 'tool') if a 'claude-3' 
+    model is used, ('auto', 'any') if a 'mistral-large' model is used, empty otherwise.
+    """
+
     class Config:
         """Configuration for this pydantic object."""
 
         extra = Extra.forbid
         allow_population_by_field_name = True
 
+    @root_validator(pre=True)
+    def set_disable_streaming(cls, values: Dict) -> Dict:
+        values["provider"] = (
+            values.get("provider")
+            or (values.get("model_id", values["model"])).split(".")[0]
+        )
+
+        # As of 08/05/24 only Anthropic models support streamed tool calling
+        if "disable_streaming" not in values:
+            values["disable_streaming"] = (
+                False if "anthropic" in values["provider"] else "tool_calling"
+            )
+        return values
+
     @root_validator(pre=False, skip_on_failure=True)
     def validate_environment(cls, values: Dict) -> Dict:
         """Validate that AWS credentials to and python package exists in environment."""
-        values["provider"] = values["provider"] or values["model_id"].split(".")[0]
-
         if values["client"] is not None:
             return values
 
@@ -392,6 +417,16 @@ class ChatBedrockConverse(BaseChatModel):
                 "Please check that credentials in the specified "
                 f"profile name are valid. Bedrock error: {e}"
             ) from e
+
+        # As of 08/05/24 only claude-3 and mistral-large models support tool choice:
+        # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
+        if values["supports_tool_choice_values"] is None:
+            if "claude-3" in values["model_id"]:
+                values["supports_tool_choice_values"] = ("auto", "any", "tool")
+            elif "mistral-large" in values["model_id"]:
+                values["supports_tool_choice_values"] = ("auto", "any")
+            else:
+                values["supports_tool_choice_values"] = ()
 
         return values
 
@@ -441,24 +476,61 @@ class ChatBedrockConverse(BaseChatModel):
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, BaseMessage]:
         if tool_choice:
+            tool_choice = _format_tool_choice(tool_choice)
+            tool_choice_type = list(tool_choice.keys())[0]
+            if tool_choice_type not in list(self.supports_tool_choice_values or []):
+                if self.supports_tool_choice_values:
+                    supported = (
+                        f"Model {self.model_id} does not currently support tool_choice "
+                        f"of type {tool_choice_type}. The following tool_choice types "
+                        f"are supported: {self.supports_tool_choice_values}."
+                    )
+                else:
+                    supported = (
+                        f"Model {self.model_id} does not currently support tool_choice."
+                    )
+
+                raise ValueError(
+                    f"{supported} Please see "
+                    f"https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html "  # noqa: E501
+                    f"for the latest documentation on models that support tool choice."
+                )
             kwargs["tool_choice"] = _format_tool_choice(tool_choice)
         return self.bind(tools=_format_tools(tools), **kwargs)
 
     def with_structured_output(
         self,
-        schema: Union[Dict, TypeBaseModel],
+        schema: _DictOrPydanticClass,
         *,
         include_raw: bool = False,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
-        tool_name = convert_to_openai_function(schema)["name"]
-        llm = self.bind_tools([schema], tool_choice=tool_name)
-        if isinstance(schema, type) and is_basemodel_subclass(schema):
-            output_parser = ToolsOutputParser(
-                first_tool_only=True, pydantic_schemas=[schema]
-            )
+        supports_tool_choice_values = self.supports_tool_choice_values or ()
+        if "tool" in supports_tool_choice_values:
+            tool_choice = convert_to_openai_function(schema)["name"]
+        elif "any" in supports_tool_choice_values:
+            tool_choice = "any"
         else:
-            output_parser = ToolsOutputParser(first_tool_only=True, args_only=True)
+            tool_choice = None
+        llm = self.bind_tools([schema], tool_choice=tool_choice)
+        if isinstance(schema, type) and is_basemodel_subclass(schema):
+            if self.disable_streaming:
+                output_parser: OutputParserLike = ToolsOutputParser(
+                    first_tool_only=True, pydantic_schemas=[schema]
+                )
+            else:
+                output_parser = PydanticToolsParser(
+                    tools=[schema],
+                    first_tool_only=True,
+                )
+        else:
+            tool_name = convert_to_openai_tool(schema)["function"]["name"]
+            if self.disable_streaming:
+                output_parser = ToolsOutputParser(first_tool_only=True, args_only=True)
+            else:
+                output_parser = JsonOutputKeyToolsParser(
+                    key_name=tool_name, first_tool_only=True
+                )
 
         if include_raw:
             parser_assign = RunnablePassthrough.assign(
@@ -567,9 +639,14 @@ def _messages_to_bedrock(
             else:
                 curr = {"role": "user", "content": []}
 
-            # TODO: Add status once we have ToolMessage.status support.
             curr["content"].append(
-                {"toolResult": {"content": content, "toolUseId": msg.tool_call_id}}
+                {
+                    "toolResult": {
+                        "content": content,
+                        "toolUseId": msg.tool_call_id,
+                        "status": msg.status,
+                    }
+                }
             )
             bedrock_messages.append(curr)
         else:
