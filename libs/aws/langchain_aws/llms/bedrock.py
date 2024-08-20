@@ -21,7 +21,7 @@ from langchain_core.callbacks import (
     AsyncCallbackManagerForLLMRun,
     CallbackManagerForLLMRun,
 )
-from langchain_core.language_models import LLM, BaseLanguageModel
+from langchain_core.language_models import LLM, BaseLanguageModel, LangSmithParams
 from langchain_core.messages import AIMessageChunk, ToolCall
 from langchain_core.messages.ai import UsageMetadata
 from langchain_core.messages.tool import tool_call, tool_call_chunk
@@ -994,6 +994,15 @@ class BedrockLLM(LLM, BedrockBase):
             attributes["region_name"] = self.region_name
 
         return attributes
+
+    def _get_ls_params(
+        self, stop: Optional[List[str]] = None, **kwargs: Any
+    ) -> LangSmithParams:
+        """Get standard params for tracing."""
+        ls_params = super()._get_ls_params(stop=stop, **kwargs)
+        ls_params["ls_provider"] = "amazon_bedrock"
+        ls_params["ls_model_name"] = self.model_id
+        return ls_params
 
     class Config:
         """Configuration for this pydantic object."""

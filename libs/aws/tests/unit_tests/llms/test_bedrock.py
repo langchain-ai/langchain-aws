@@ -447,3 +447,13 @@ def test_prepare_output_for_ai21(ai21_response):
     assert result["usage"]["completion_tokens"] == 25
     assert result["usage"]["total_tokens"] == 40
     assert result["stop_reason"] is None
+
+
+def test_standard_tracing_params():
+    llm = BedrockLLM(model_id="foo")
+    ls_params = llm._get_ls_params()
+    assert ls_params == {
+        "ls_provider": "amazon_bedrock",
+        "ls_model_type": "llm",
+        "ls_model_name": "foo",
+    }
