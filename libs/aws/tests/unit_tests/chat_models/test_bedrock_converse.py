@@ -161,6 +161,26 @@ def test__messages_to_bedrock() -> None:
                 {"type": "guard_content", "text": "hu6"},
             ]
         ),
+        HumanMessage(
+            content=[
+                {
+                    "type": "document",
+                    "document": {
+                        "format": "pdf",
+                        "name": "doc1",
+                        "source": {"bytes": b"doc1_data"},
+                    },
+                }
+            ]
+        ),
+        HumanMessage(
+            content=[
+                {
+                    "type": "image",
+                    "image": {"format": "jpeg", "source": {"bytes": b"image_data"}},
+                }
+            ]
+        ),
     ]
     expected_messages = [
         {"role": "user", "content": [{"text": "hu1"}, {"text": "hu2"}]},
@@ -229,6 +249,14 @@ def test__messages_to_bedrock() -> None:
                 },
                 {"guardContent": {"text": {"text": "hu5"}}},
                 {"guardContent": {"text": {"text": "hu6"}}},
+                {
+                    "document": {
+                        "format": "pdf",
+                        "name": "doc1",
+                        "source": {"bytes": b"doc1_data"},
+                    }
+                },
+                {"image": {"format": "jpeg", "source": {"bytes": b"image_data"}}},
             ],
         },
     ]
