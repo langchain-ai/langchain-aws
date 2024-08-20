@@ -164,14 +164,12 @@ def test__messages_to_bedrock() -> None:
         HumanMessage(
             content=[
                 {
-                    "type": "document", 
+                    "type": "document",
                     "document": {
                         "format": "pdf",
                         "name": "doc1",
-                        "source": {
-                            "bytes": b"doc1_data"
-                        }
-                    }
+                        "source": {"bytes": b"doc1_data"},
+                    },
                 }
             ]
         ),
@@ -179,15 +177,10 @@ def test__messages_to_bedrock() -> None:
             content=[
                 {
                     "type": "image",
-                    "image": {
-                        "format": "jpeg",
-                        "source": {
-                            "bytes": b"image_data"
-                        }
-                    }
+                    "image": {"format": "jpeg", "source": {"bytes": b"image_data"}},
                 }
             ]
-        )
+        ),
     ]
     expected_messages = [
         {"role": "user", "content": [{"text": "hu1"}, {"text": "hu2"}]},
@@ -260,21 +253,12 @@ def test__messages_to_bedrock() -> None:
                     "document": {
                         "format": "pdf",
                         "name": "doc1",
-                        "source": {
-                            "bytes": b"doc1_data"
-                        }
+                        "source": {"bytes": b"doc1_data"},
                     }
                 },
-                {
-                    "image": {
-                        "format": "jpeg",
-                        "source": {
-                            "bytes": b"image_data"
-                        }
-                    }
-                }
+                {"image": {"format": "jpeg", "source": {"bytes": b"image_data"}}},
             ],
-        }
+        },
     ]
     expected_system = [
         {"text": "sys1"},
