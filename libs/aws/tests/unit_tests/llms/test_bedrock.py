@@ -450,7 +450,7 @@ def test_prepare_output_for_ai21(ai21_response):
 
 
 def test_standard_tracing_params():
-    llm = BedrockLLM(model_id="foo", client=None)
+    llm = BedrockLLM(model_id="foo", region_name="us-west-2")
     ls_params = llm._get_ls_params()
     assert ls_params == {
         "ls_provider": "amazon_bedrock",
