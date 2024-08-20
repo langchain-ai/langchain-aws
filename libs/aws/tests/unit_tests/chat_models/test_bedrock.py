@@ -398,3 +398,24 @@ def test_anthropic_bind_tools_tool_choice() -> None:
     assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
         "type": "any"
     }
+
+
+def test_standard_tracing_params() -> None:
+    llm = ChatBedrock(model_id="foo", region_name="us-west-2")  # type: ignore[call-arg]
+    ls_params = llm._get_ls_params()
+    assert ls_params == {
+        "ls_provider": "amazon_bedrock",
+        "ls_model_type": "chat",
+        "ls_model_name": "foo",
+    }
+
+    llm = ChatBedrock(
+        model_id="foo", model_kwargs={"temperature": 0.1}, region_name="us-west-2"
+    )  # type: ignore[call-arg]
+    ls_params = llm._get_ls_params()
+    assert ls_params == {
+        "ls_provider": "amazon_bedrock",
+        "ls_model_type": "chat",
+        "ls_model_name": "foo",
+        "ls_temperature": 0.1,
+    }

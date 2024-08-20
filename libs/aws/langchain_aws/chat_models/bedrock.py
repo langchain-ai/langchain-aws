@@ -17,7 +17,11 @@ from typing import (
 
 from langchain_core._api.deprecation import deprecated
 from langchain_core.callbacks import CallbackManagerForLLMRun
-from langchain_core.language_models import BaseChatModel, LanguageModelInput
+from langchain_core.language_models import (
+    BaseChatModel,
+    LangSmithParams,
+    LanguageModelInput,
+)
 from langchain_core.language_models.chat_models import generate_from_stream
 from langchain_core.messages import (
     AIMessage,
@@ -417,6 +421,24 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         """Configuration for this pydantic object."""
 
         extra = Extra.forbid
+
+    def _get_ls_params(
+        self, stop: Optional[List[str]] = None, **kwargs: Any
+    ) -> LangSmithParams:
+        """Get standard params for tracing."""
+        params = self._get_invocation_params(stop=stop, **kwargs)
+        ls_params = LangSmithParams(
+            ls_provider="amazon_bedrock",
+            ls_model_name=self.model_id,
+            ls_model_type="chat",
+        )
+        if ls_temperature := params.get("temperature"):
+            ls_params["ls_temperature"] = ls_temperature
+        if ls_max_tokens := params.get("max_tokens"):
+            ls_params["ls_max_tokens"] = ls_max_tokens
+        if ls_stop := stop or params.get("stop", None):
+            ls_params["ls_stop"] = ls_stop
+        return ls_params
 
     def _stream(
         self,
