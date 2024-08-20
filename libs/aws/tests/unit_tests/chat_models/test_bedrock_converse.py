@@ -337,7 +337,7 @@ def test__format_openai_image_url() -> None:
     ...
 
 
-def test_standard_tracing_params():
+def test_standard_tracing_params() -> None:
     llm = ChatBedrockConverse(model="foo", temperature=0.1, max_tokens=10)
     ls_params = llm._get_ls_params()
     assert ls_params == {
