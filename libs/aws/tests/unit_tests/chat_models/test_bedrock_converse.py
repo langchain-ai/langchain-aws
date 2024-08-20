@@ -335,3 +335,15 @@ def test__snake_to_camel_keys() -> None:
 
 def test__format_openai_image_url() -> None:
     ...
+
+
+def test_standard_tracing_params():
+    llm = ChatBedrockConverse(model="foo", temperature=0.1, max_tokens=10)
+    ls_params = llm._get_ls_params()
+    assert ls_params == {
+        "ls_provider": "amazon_bedrock",
+        "ls_model_type": "chat",
+        "ls_model_name": "foo",
+        "ls_temperature": 0.1,
+        "ls_max_tokens": 10,
+    }
