@@ -13,7 +13,7 @@ from langchain_core.tools import tool
 from typing_extensions import Annotated
 
 import langchain_aws.agents.base
-from langchain_aws.agents.base import (
+from langchain_aws.agents import (
     BedrockAgentAction,
     BedrockAgentFinish,
     BedrockAgentsRunnable,
