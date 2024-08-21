@@ -23,7 +23,6 @@ from langchain_core.callbacks import (
 )
 from langchain_core.language_models import LLM, BaseLanguageModel, LangSmithParams
 from langchain_core.messages import AIMessageChunk, ToolCall
-from langchain_core.messages.ai import UsageMetadata
 from langchain_core.messages.tool import tool_call, tool_call_chunk
 from langchain_core.outputs import Generation, GenerationChunk, LLMResult
 from langchain_core.pydantic_v1 import Extra, Field, root_validator
@@ -96,14 +95,8 @@ def _stream_response_to_generation_chunk(
     if messages_api:
         msg_type = stream_response.get("type")
         if msg_type == "message_start":
-            input_tokens = stream_response["message"]["usage"]["input_tokens"]
             return AIMessageChunk(
                 content="" if coerce_content_to_string else [],
-                usage_metadata=UsageMetadata(
-                    input_tokens=input_tokens,
-                    output_tokens=0,
-                    total_tokens=input_tokens,
-                ),
             )
         elif (
             msg_type == "content_block_start"
@@ -148,14 +141,8 @@ def _stream_response_to_generation_chunk(
                     tool_call_chunks=[tc_chunk],  # type: ignore
                 )
         elif msg_type == "message_delta":
-            output_tokens = stream_response["usage"]["output_tokens"]
             return AIMessageChunk(
                 content="",
-                usage_metadata=UsageMetadata(
-                    input_tokens=0,
-                    output_tokens=output_tokens,
-                    total_tokens=output_tokens,
-                ),
                 response_metadata={
                     "stop_reason": stream_response["delta"]["stop_reason"],
                     "stop_sequence": stream_response["delta"]["stop_sequence"],
