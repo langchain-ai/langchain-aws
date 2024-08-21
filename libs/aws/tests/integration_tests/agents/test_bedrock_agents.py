@@ -24,12 +24,12 @@ def _create_iam_client() -> Any:
     return boto3.client("iam")
 
 
-def _create_agent_role(agent_region: str, foundational_model: str) -> str:
+def _create_agent_role(agent_region: str, foundation_model: str) -> str:
     """Create agent resource role
 
     Args:
         agent_region: AWS region in which agent should be created
-        foundational_model: The model id of the foundation model to use for the agent
+        foundation_model: The model id of the foundation model to use for the agent
     Returns:
        Agent execution role arn"""
 
@@ -60,7 +60,7 @@ def _create_agent_role(agent_region: str, foundational_model: str) -> str:
                     "Effect": "Allow",
                     "Action": "bedrock:InvokeModel",
                     "Resource": [
-                        f"arn:aws:bedrock:{agent_region}::foundation-model/{foundational_model}"
+                        f"arn:aws:bedrock:{agent_region}::foundation-model/{foundation_model}"
                     ],
                 }
             ],
@@ -160,18 +160,18 @@ def test_mortgage_bedrock_agent():
             f"with asset value of {asset_value} is 8.87%"
         )
 
-    foundational_model = "anthropic.claude-3-sonnet-20240229-v1:0"
+    foundation_model = "anthropic.claude-3-sonnet-20240229-v1:0"
     tools = [get_asset_value, get_mortgage_rate]
     agent_resource_role_arn = None
     agent = None
     try:
         agent_resource_role_arn = _create_agent_role(
-            agent_region="us-west-2", foundational_model=foundational_model
+            agent_region="us-west-2", foundation_model=foundation_model
         )
         agent = BedrockAgentsRunnable.create_agent(
             agent_name="mortgage_interest_rate_agent",
             agent_resource_role_arn=agent_resource_role_arn,
-            foundation_model=foundational_model,
+            foundation_model=foundation_model,
             instruction=(
                 "You are an agent who helps with getting the mortgage rate based on "
                 "the current asset valuation"
@@ -210,18 +210,18 @@ def test_weather_agent():
             return f"It is raining in {location}"
         return f"It is hot and humid in {location}"
 
-    foundational_model = "anthropic.claude-3-sonnet-20240229-v1:0"
+    foundation_model = "anthropic.claude-3-sonnet-20240229-v1:0"
     tools = [get_weather]
     agent_resource_role_arn = None
     agent = None
     try:
         agent_resource_role_arn = _create_agent_role(
-            agent_region="us-west-2", foundational_model=foundational_model
+            agent_region="us-west-2", foundation_model=foundation_model
         )
         agent = BedrockAgentsRunnable.create_agent(
             agent_name="weather_agent",
             agent_resource_role_arn=agent_resource_role_arn,
-            foundation_model=foundational_model,
+            foundation_model=foundation_model,
             instruction="""
                 You are an agent who helps with getting weather for a given location""",
             tools=tools,
@@ -242,18 +242,18 @@ def test_weather_agent():
 @pytest.mark.skip
 def test_agent_with_guardrail():
     guardrail_id, guardrail_version = create_stock_advice_guardrail()
-    foundational_model = "anthropic.claude-3-sonnet-20240229-v1:0"
+    foundation_model = "anthropic.claude-3-sonnet-20240229-v1:0"
     agent_resource_role_arn = None
     agent_with_guardrail = None
     agent_without_guardrail = None
     try:
         agent_resource_role_arn = _create_agent_role(
-            agent_region="us-west-2", foundational_model=foundational_model
+            agent_region="us-west-2", foundation_model=foundation_model
         )
         agent_with_guardrail = BedrockAgentsRunnable.create_agent(
             agent_name="agent_with_financial_advice_guardrail",
             agent_resource_role_arn=agent_resource_role_arn,
-            foundation_model=foundational_model,
+            foundation_model=foundation_model,
             instruction="You are a test agent which will respond to user query",
             guardrail_configuration=langchain_aws.agents.base.GuardrailConfiguration(
                 guardrail_identifier=guardrail_id, guardrail_version=guardrail_version
@@ -264,7 +264,7 @@ def test_agent_with_guardrail():
         agent_without_guardrail = BedrockAgentsRunnable.create_agent(
             agent_name="agent_without_financial_advice_guardrail",
             agent_resource_role_arn=agent_resource_role_arn,
-            foundation_model=foundational_model,
+            foundation_model=foundation_model,
             instruction="You are a test agent which will respond to user query",
             memory_storage_days=30,
         )
@@ -318,16 +318,16 @@ def test_bedrock_agent_langgraph():
         ]
 
     def get_weather_agent_node() -> Tuple[BedrockAgentsRunnable, str]:
-        foundational_model = "anthropic.claude-3-sonnet-20240229-v1:0"
+        foundation_model = "anthropic.claude-3-sonnet-20240229-v1:0"
         tools = [get_weather]
         try:
             agent_resource_role_arn = _create_agent_role(
-                agent_region="us-west-2", foundational_model=foundational_model
+                agent_region="us-west-2", foundation_model=foundation_model
             )
             agent = BedrockAgentsRunnable.create_agent(
                 agent_name="weather_agent",
                 agent_resource_role_arn=agent_resource_role_arn,
-                foundation_model=foundational_model,
+                foundation_model=foundation_model,
                 instruction=(
                     "You are an agent who helps with getting weather for a given "
                     "location"
