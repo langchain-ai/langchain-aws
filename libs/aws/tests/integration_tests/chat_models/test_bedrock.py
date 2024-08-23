@@ -101,6 +101,25 @@ def test_chat_bedrock_streaming_llama3() -> None:
 
 
 @pytest.mark.scheduled
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "cohere.command-text-v14",
+        "cohere.command-r-plus-v1:0",
+    ],)
+def test_chat_bedrock_invoke_cohere(model_id: str) -> None:
+    """Test that streaming correctly streams message chunks"""
+    chat = ChatBedrock(  # type: ignore[call-arg]
+        model_id=model_id
+    )
+    system = SystemMessage(content="You are a helpful assistant.")
+    human = HumanMessage(content="Hello")
+    response = chat.invoke([system, human])
+
+    assert isinstance(response, BaseMessage)
+    assert isinstance(response.content, str)
+
+@pytest.mark.scheduled
 def test_chat_bedrock_streaming_generation_info() -> None:
     """Test that generation info is preserved when streaming."""
 

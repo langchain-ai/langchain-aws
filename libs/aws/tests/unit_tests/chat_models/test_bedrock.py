@@ -11,6 +11,7 @@ from langchain_core.tools import BaseTool
 from langchain_aws import ChatBedrock
 from langchain_aws.chat_models.bedrock import (
     _format_anthropic_messages,
+    _format_cohere_messages,
     _merge_messages,
 )
 from langchain_aws.function_calling import convert_to_anthropic_tool
@@ -254,6 +255,23 @@ def test__format_anthropic_messages_with_tool_use_blocks_and_tool_calls() -> Non
         ],
     )
     actual = _format_anthropic_messages(messages)
+    assert expected == actual
+
+def test__format_cohere_messages() -> None:
+    system = SystemMessage("fuzz")  # type: ignore[misc]
+    human = HumanMessage("foo")  # type: ignore[misc]
+    ai = AIMessage("bar")  # type: ignore[misc]
+
+    messages = [system, human, ai]
+    expected = (
+        "bar",
+        [
+            {"role": "USER", "message": "fuzz"},
+            {"role": "USER", "message": "foo"},
+            {"role": "CHATBOT", "message": "bar"},
+        ],
+    )
+    actual = _format_cohere_messages(messages)
     assert expected == actual
 
 
