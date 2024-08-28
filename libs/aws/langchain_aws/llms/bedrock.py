@@ -42,7 +42,7 @@ ASSISTANT_PROMPT = "\n\nAssistant:"
 ALTERNATION_ERROR = (
     "Error: Prompt must alternate between '\n\nHuman:' and '\n\nAssistant:'."
 )
-
+INFERENCE_PROFILE_PREFIXES = ["us.", "eu."]
 
 def _add_newlines_before_ha(input_text: str) -> str:
     new_text = input_text
@@ -616,13 +616,20 @@ class BedrockBase(BaseLanguageModel, ABC):
     def _get_provider(self) -> str:
         if self.provider:
             return self.provider
-        if self.model_id.startswith("arn"):
+        
+        model_id = self.model_id
+        for prefix in INFERENCE_PROFILE_PREFIXES:
+            if model_id.startswith(prefix):
+                model_id = model_id[len(prefix):]
+                break
+
+        if model_id.startswith("arn"):
             raise ValueError(
                 "Model provider should be supplied when passing a model ARN as "
                 "model_id"
             )
 
-        return self.model_id.split(".")[0]
+        return model_id.split(".")[0]
 
     def _get_model(self) -> str:
         return self.model_id.split(".", maxsplit=1)[-1]
