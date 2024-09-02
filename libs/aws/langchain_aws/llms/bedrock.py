@@ -144,8 +144,8 @@ def _stream_response_to_generation_chunk(
             return AIMessageChunk(
                 content="",
                 response_metadata={
-                    "stop_reason": stream_response["delta"]["stop_reason"],
-                    "stop_sequence": stream_response["delta"]["stop_sequence"],
+                    "stop_reason": stream_response["delta"].get("stop_reason"),
+                    "stop_sequence": stream_response["delta"].get("stop_sequence"),
                 },
             )
         else:
