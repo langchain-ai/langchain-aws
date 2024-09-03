@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import warnings
 from abc import ABC
 from typing import (
@@ -25,8 +26,7 @@ from langchain_core.language_models import LLM, BaseLanguageModel, LangSmithPara
 from langchain_core.messages import AIMessageChunk, ToolCall
 from langchain_core.messages.tool import tool_call, tool_call_chunk
 from langchain_core.outputs import Generation, GenerationChunk, LLMResult
-from langchain_core.pydantic_v1 import Extra, Field, root_validator
-from langchain_core.utils import get_from_dict_or_env
+from langchain_core.pydantic_v1 import Field, root_validator
 
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
@@ -550,7 +550,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 ...Logic to handle guardrail intervention...
     """  # noqa: E501
 
-    @root_validator()
+    @root_validator(pre=False, skip_on_failure=True)
     def validate_environment(cls, values: Dict) -> Dict:
         """Validate that AWS credentials to and python package exists in environment."""
 
@@ -567,11 +567,10 @@ class BedrockBase(BaseLanguageModel, ABC):
                 # use default credentials
                 session = boto3.Session()
 
-            values["region_name"] = get_from_dict_or_env(
-                values,
-                "region_name",
-                "AWS_DEFAULT_REGION",
-                default=session.region_name,
+            values["region_name"] = (
+                values.get("region_name")
+                or os.getenv("AWS_DEFAULT_REGION")
+                or session.region_name
             )
 
             client_params = {}
@@ -947,7 +946,7 @@ class BedrockLLM(LLM, BedrockBase):
 
     """
 
-    @root_validator()
+    @root_validator(pre=False, skip_on_failure=True)
     def validate_environment(cls, values: Dict) -> Dict:
         model_id = values["model_id"]
         if model_id.startswith("anthropic.claude-3"):
@@ -994,7 +993,7 @@ class BedrockLLM(LLM, BedrockBase):
     class Config:
         """Configuration for this pydantic object."""
 
-        extra = Extra.forbid
+        extra = "forbid"
 
     def _stream(
         self,
