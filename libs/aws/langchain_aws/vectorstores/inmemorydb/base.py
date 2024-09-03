@@ -29,7 +29,6 @@ from langchain_core.callbacks import (
 )
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
-from langchain_core.utils import get_from_dict_or_env
 from langchain_core.vectorstores import VectorStore, VectorStoreRetriever
 
 from langchain_aws.utilities.redis import (
@@ -336,7 +335,7 @@ class InMemoryVectorStore(VectorStore):
                 "Please install it with `pip install redis`."
             ) from e
 
-        redis_url = get_from_dict_or_env(kwargs, "redis_url", "REDIS_URL")
+        redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
 
         if "redis_url" in kwargs:
             kwargs.pop("redis_url")
@@ -513,7 +512,7 @@ class InMemoryVectorStore(VectorStore):
             ValueError: If the index does not exist.
             ImportError: If the redis python package is not installed.
         """
-        redis_url = get_from_dict_or_env(kwargs, "redis_url", "REDIS_URL")
+        redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
         # We need to first remove redis_url from kwargs,
         # otherwise passing it to Redis will result in an error.
         if "redis_url" in kwargs:
@@ -572,7 +571,7 @@ class InMemoryVectorStore(VectorStore):
             ValueError: If the redis python package is not installed.
             ValueError: If the ids (keys in redis) are not provided
         """
-        redis_url = get_from_dict_or_env(kwargs, "redis_url", "REDIS_URL")
+        redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
 
         if ids is None:
             raise ValueError("'ids' (keys)() were not provided.")
@@ -617,7 +616,7 @@ class InMemoryVectorStore(VectorStore):
         Returns:
             bool: Whether or not the drop was successful.
         """
-        redis_url = get_from_dict_or_env(kwargs, "redis_url", "REDIS_URL")
+        redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
         try:
             import redis  # noqa: F401
         except ImportError:

@@ -34,7 +34,7 @@ from langchain_core.messages import (
 from langchain_core.messages.ai import UsageMetadata
 from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from langchain_core.pydantic_v1 import BaseModel, Extra
+from langchain_core.pydantic_v1 import BaseModel
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
@@ -420,7 +420,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     class Config:
         """Configuration for this pydantic object."""
 
-        extra = Extra.forbid
+        extra = "forbid"
 
     def _get_ls_params(
         self, stop: Optional[List[str]] = None, **kwargs: Any

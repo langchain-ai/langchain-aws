@@ -1,5 +1,6 @@
 import base64
 import json
+import os
 import re
 from operator import itemgetter
 from typing import (
@@ -39,10 +40,9 @@ from langchain_core.messages.tool import tool_call_chunk
 from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
 from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from langchain_core.pydantic_v1 import BaseModel, Extra, Field, root_validator
+from langchain_core.pydantic_v1 import BaseModel, Field, root_validator
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
-from langchain_core.utils import get_from_dict_or_env
 from langchain_core.utils.function_calling import (
     convert_to_openai_function,
     convert_to_openai_tool,
@@ -355,7 +355,7 @@ class ChatBedrockConverse(BaseChatModel):
     class Config:
         """Configuration for this pydantic object."""
 
-        extra = Extra.forbid
+        extra = "forbid"
         allow_population_by_field_name = True
 
     @root_validator(pre=True)
@@ -392,11 +392,10 @@ class ChatBedrockConverse(BaseChatModel):
                 f"profile name are valid. Bedrock error: {e}"
             ) from e
 
-        values["region_name"] = get_from_dict_or_env(
-            values,
-            "region_name",
-            "AWS_DEFAULT_REGION",
-            default=session.region_name,
+        values["region_name"] = (
+            values.get("region_name")
+            or os.getenv("AWS_DEFAULT_REGION")
+            or session.region_name
         )
 
         client_params = {}
