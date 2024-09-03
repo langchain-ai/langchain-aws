@@ -550,7 +550,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 ...Logic to handle guardrail intervention...
     """  # noqa: E501
 
-    @root_validator()
+    @root_validator(pre=False, skip_on_failure=True)
     def validate_environment(cls, values: Dict) -> Dict:
         """Validate that AWS credentials to and python package exists in environment."""
 
@@ -947,7 +947,7 @@ class BedrockLLM(LLM, BedrockBase):
 
     """
 
-    @root_validator()
+    @root_validator(pre=False, skip_on_failure=True)
     def validate_environment(cls, values: Dict) -> Dict:
         model_id = values["model_id"]
         if model_id.startswith("anthropic.claude-3"):

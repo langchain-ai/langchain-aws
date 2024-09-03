@@ -254,7 +254,7 @@ class SagemakerEndpoint(LLM):
 
         extra = Extra.forbid
 
-    @root_validator()
+    @root_validator(pre=False, skip_on_failure=True)
     def validate_environment(cls, values: Dict) -> Dict:
         """Dont do anything if client provided externally"""
         if values.get("client") is not None:
