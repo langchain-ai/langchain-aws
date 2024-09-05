@@ -12,7 +12,7 @@ from langchain_core.messages import (
     ToolCall,
     ToolMessage,
 )
-from langchain_core.pydantic_v1 import BaseModel, Field
+from pydantic import BaseModel, Field
 from langchain_core.runnables import RunnableBinding
 from langchain_standard_tests.unit_tests import ChatModelUnitTests
 

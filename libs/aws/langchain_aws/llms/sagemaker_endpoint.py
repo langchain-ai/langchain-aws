@@ -8,7 +8,9 @@ from typing import Any, Dict, Generic, Iterator, List, Mapping, Optional, TypeVa
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.llms import LLM
 from langchain_core.outputs import GenerationChunk
-from langchain_core.pydantic_v1 import root_validator
+from pydantic import root_validator
+from pydantic import ConfigDict
+
 
 INPUT_TYPE = TypeVar("INPUT_TYPE", bound=Union[str, List[str]])
 OUTPUT_TYPE = TypeVar("OUTPUT_TYPE", bound=Union[str, List[List[float]], Iterator])
@@ -249,10 +251,7 @@ class SagemakerEndpoint(LLM):
     .. _boto3: <https://boto3.amazonaws.com/v1/documentation/api/latest/index.html>
     """
 
-    class Config:
-        """Configuration for this pydantic object."""
-
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid",)
 
     @root_validator(pre=False, skip_on_failure=True)
     def validate_environment(cls, values: Dict) -> Dict:

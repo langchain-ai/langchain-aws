@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import yaml  # type: ignore[import-untyped]
-from langchain_core.pydantic_v1 import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator
 from typing_extensions import TYPE_CHECKING, Literal
 
 from langchain_aws.vectorstores.inmemorydb.constants import INMEMORYDB_VECTOR_DTYPE_MAP

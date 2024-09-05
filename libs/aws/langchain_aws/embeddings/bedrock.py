@@ -5,8 +5,10 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 from langchain_core.embeddings import Embeddings
-from langchain_core.pydantic_v1 import BaseModel, root_validator
+from pydantic import BaseModel, root_validator
 from langchain_core.runnables.config import run_in_executor
+from pydantic import ConfigDict
+
 
 
 class BedrockEmbeddings(BaseModel, Embeddings):
@@ -71,10 +73,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     config: Any = None
     """An optional botocore.config.Config instance to pass to the client."""
 
-    class Config:
-        """Configuration for this pydantic object."""
-
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid",)
 
     @root_validator(pre=False, skip_on_failure=True)
     def validate_environment(cls, values: Dict) -> Dict:

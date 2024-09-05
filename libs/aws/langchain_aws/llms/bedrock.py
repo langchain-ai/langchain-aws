@@ -26,7 +26,7 @@ from langchain_core.language_models import LLM, BaseLanguageModel, LangSmithPara
 from langchain_core.messages import AIMessageChunk, ToolCall
 from langchain_core.messages.tool import tool_call, tool_call_chunk
 from langchain_core.outputs import Generation, GenerationChunk, LLMResult
-from langchain_core.pydantic_v1 import Field, root_validator
+from pydantic import Field, root_validator
 
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
@@ -34,6 +34,8 @@ from langchain_aws.utils import (
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
+from pydantic import ConfigDict
+
 
 AMAZON_BEDROCK_TRACE_KEY = "amazon-bedrock-trace"
 GUARDRAILS_BODY_KEY = "amazon-bedrock-guardrailAssessment"
@@ -990,10 +992,7 @@ class BedrockLLM(LLM, BedrockBase):
         ls_params["ls_model_name"] = self.model_id
         return ls_params
 
-    class Config:
-        """Configuration for this pydantic object."""
-
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid",)
 
     def _stream(
         self,

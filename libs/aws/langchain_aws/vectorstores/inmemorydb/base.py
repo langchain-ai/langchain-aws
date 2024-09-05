@@ -40,6 +40,8 @@ from langchain_aws.utilities.utils import maximal_marginal_relevance
 from langchain_aws.vectorstores.inmemorydb.constants import (
     INMEMORYDB_TAG_SEPARATOR,
 )
+from pydantic import ConfigDict
+
 
 logger = logging.getLogger(__name__)
 ListOfDict = List[Dict[str, str]]
@@ -1406,10 +1408,7 @@ class InMemoryVectorStoreRetriever(VectorStoreRetriever):
     ]
     """Allowed search types."""
 
-    class Config:
-        """Configuration for this pydantic object."""
-
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True,)
 
     def _get_relevant_documents(
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun

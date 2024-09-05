@@ -14,7 +14,7 @@ from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.callbacks import CallbackManager
 from langchain_core.load import dumpd
 from langchain_core.messages import AIMessage
-from langchain_core.pydantic_v1 import root_validator
+from pydantic import root_validator
 from langchain_core.runnables import RunnableConfig, RunnableSerializable, ensure_config
 from langchain_core.tools import BaseTool
 
