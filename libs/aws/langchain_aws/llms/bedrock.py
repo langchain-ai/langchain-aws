@@ -569,7 +569,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 session = boto3.Session()
 
             self.region_name = (
-                (self.region_name or None)
+                self.region_name
                 or os.getenv("AWS_DEFAULT_REGION")
                 or session.region_name
             )

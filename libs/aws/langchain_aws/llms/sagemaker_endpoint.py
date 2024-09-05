@@ -257,7 +257,7 @@ class SagemakerEndpoint(LLM):
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Dont do anything if client provided externally"""
-        if (self.client or None) is not None:
+        if self.client is not None:
             return self
 
         """Validate that AWS credentials to and python package exists in environment."""

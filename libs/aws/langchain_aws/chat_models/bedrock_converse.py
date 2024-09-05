@@ -394,7 +394,7 @@ class ChatBedrockConverse(BaseChatModel):
             ) from e
 
         self.region_name = (
-            (self.region_name or None)
+            self.region_name
             or os.getenv("AWS_DEFAULT_REGION")
             or session.region_name
         )
