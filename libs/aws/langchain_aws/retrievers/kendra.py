@@ -17,8 +17,8 @@ from langchain_core.retrievers import BaseRetriever
 from pydantic import (
     BaseModel,
     Field,
-    model_validator,
     field_validator,
+    model_validator,
 )
 from typing_extensions import Annotated
 
