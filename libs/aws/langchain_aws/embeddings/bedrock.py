@@ -74,6 +74,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
     model_config = ConfigDict(
         extra="forbid",
+        protected_namespaces=(),
     )
 
     @model_validator(mode="after")
