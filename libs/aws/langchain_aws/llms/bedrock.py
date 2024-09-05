@@ -449,7 +449,7 @@ class LLMInputOutputAdapter:
 class BedrockBase(BaseLanguageModel, ABC):
     """Base class for Bedrock models."""
 
-    client: Any = Field(exclude=True)  #: :meta private:
+    client: Any = Field(default=None, exclude=True)  #: :meta private:
 
     region_name: Optional[str] = None
     """The aws region e.g., `us-west-2`. Fallsback to AWS_DEFAULT_REGION env variable
