@@ -40,7 +40,6 @@ from langchain_core.messages.tool import tool_call_chunk
 from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
 from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from pydantic import BaseModel, Field, root_validator, model_validator
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import (
@@ -48,12 +47,10 @@ from langchain_core.utils.function_calling import (
     convert_to_openai_tool,
 )
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
-
-from langchain_aws.function_calling import ToolsOutputParser
-from pydantic import ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator, root_validator
 from typing_extensions import Self
 
-
+from langchain_aws.function_calling import ToolsOutputParser
 
 _BM = TypeVar("_BM", bound=BaseModel)
 _DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
@@ -356,7 +353,10 @@ class ChatBedrockConverse(BaseChatModel):
     model is used, ('auto', 'any') if a 'mistral-large' model is used, empty otherwise.
     """
 
-    model_config = ConfigDict(extra="forbid",populate_by_name=True,)
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
 
     @model_validator(mode="before")
     @classmethod

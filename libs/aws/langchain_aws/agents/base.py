@@ -14,9 +14,9 @@ from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.callbacks import CallbackManager
 from langchain_core.load import dumpd
 from langchain_core.messages import AIMessage
-from pydantic import root_validator
 from langchain_core.runnables import RunnableConfig, RunnableSerializable, ensure_config
 from langchain_core.tools import BaseTool
+from pydantic import root_validator
 
 _DEFAULT_ACTION_GROUP_NAME = "DEFAULT_AG_"
 _TEST_AGENT_ALIAS_ID = "TSTALIASID"

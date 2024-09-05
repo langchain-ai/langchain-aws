@@ -12,9 +12,9 @@ from langchain_core.messages import (
     ToolCall,
     ToolMessage,
 )
-from pydantic import BaseModel, Field
 from langchain_core.runnables import RunnableBinding
 from langchain_standard_tests.unit_tests import ChatModelUnitTests
+from pydantic import BaseModel, Field
 
 from langchain_aws import ChatBedrockConverse
 from langchain_aws.chat_models.bedrock_converse import (

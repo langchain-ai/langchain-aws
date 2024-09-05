@@ -34,10 +34,10 @@ from langchain_core.messages import (
 from langchain_core.messages.ai import UsageMetadata
 from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from pydantic import BaseModel
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
+from pydantic import BaseModel, ConfigDict
 
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 from langchain_aws.function_calling import (
@@ -54,8 +54,6 @@ from langchain_aws.utils import (
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
-from pydantic import ConfigDict
-
 
 
 def _convert_one_message_to_text_llama(message: BaseMessage) -> str:
@@ -419,7 +417,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
         return attributes
 
-    model_config = ConfigDict(extra="forbid",)
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
     def _get_ls_params(
         self, stop: Optional[List[str]] = None, **kwargs: Any

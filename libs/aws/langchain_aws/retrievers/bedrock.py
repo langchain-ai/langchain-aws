@@ -5,11 +5,9 @@ from botocore.client import Config
 from botocore.exceptions import UnknownServiceError
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
-from pydantic import BaseModel, Field, root_validator, model_validator
 from langchain_core.retrievers import BaseRetriever
+from pydantic import BaseModel, ConfigDict, Field, model_validator, root_validator
 from typing_extensions import Annotated
-from pydantic import ConfigDict
-
 
 FilterValue = Union[Dict[str, Any], List[Any], int, float, str, bool, None]
 Filter = Dict[str, FilterValue]
@@ -32,7 +30,9 @@ class SearchFilter(BaseModel):
     startsWith: Optional[Filter] = None
     stringContains: Optional[Filter] = None
 
-    model_config = ConfigDict(populate_by_name=True,)
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
 
 
 class VectorSearchConfig(BaseModel, extra="allow"):  # type: ignore[call-arg]

@@ -17,13 +17,11 @@ from langchain_core.messages import ToolCall
 from langchain_core.output_parsers import BaseGenerationOutputParser
 from langchain_core.outputs import ChatGeneration, Generation
 from langchain_core.prompts.chat import AIMessage
-from pydantic import BaseModel
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_core.utils.pydantic import TypeBaseModel
+from pydantic import BaseModel, ConfigDict
 from typing_extensions import TypedDict
-from pydantic import ConfigDict
-
 
 PYTHON_TO_JSON_TYPES = {
     "str": "string",
@@ -164,7 +162,9 @@ class ToolsOutputParser(BaseGenerationOutputParser):
     args_only: bool = False
     pydantic_schemas: Optional[List[TypeBaseModel]] = None
 
-    model_config = ConfigDict(extra="forbid",)
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
     def parse_result(self, result: List[Generation], *, partial: bool = False) -> Any:
         """Parse a list of candidate model Generations into a specific format.

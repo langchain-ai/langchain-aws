@@ -12,8 +12,8 @@ from langchain_core.messages import (
     SystemMessage,
 )
 from langchain_core.outputs import ChatGeneration, LLMResult
-from pydantic import BaseModel, Field
 from langchain_core.runnables import RunnableConfig
+from pydantic import BaseModel, Field
 
 from langchain_aws.chat_models.bedrock import ChatBedrock
 from tests.callbacks import FakeCallbackHandler, FakeCallbackHandlerWithTokenCounts

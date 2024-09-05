@@ -5,12 +5,9 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 from langchain_core.embeddings import Embeddings
-from pydantic import BaseModel, root_validator, model_validator
 from langchain_core.runnables.config import run_in_executor
-from pydantic import ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator, root_validator
 from typing_extensions import Self
-
-
 
 
 class BedrockEmbeddings(BaseModel, Embeddings):
@@ -75,7 +72,9 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     config: Any = None
     """An optional botocore.config.Config instance to pass to the client."""
 
-    model_config = ConfigDict(extra="forbid",)
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:

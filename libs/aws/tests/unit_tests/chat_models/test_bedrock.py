@@ -4,9 +4,9 @@ from typing import Any, Callable, Dict, Literal, Type, cast
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from pydantic import BaseModel, Field
 from langchain_core.runnables import RunnableBinding
 from langchain_core.tools import BaseTool
+from pydantic import BaseModel, Field
 
 from langchain_aws import ChatBedrock
 from langchain_aws.chat_models.bedrock import (
