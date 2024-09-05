@@ -3,6 +3,7 @@ for supported model providers"""
 
 import json
 from typing import (
+    Annotated,
     Any,
     Callable,
     Dict,
@@ -20,7 +21,7 @@ from langchain_core.prompts.chat import AIMessage
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_core.utils.pydantic import TypeBaseModel
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SkipValidation
 from typing_extensions import TypedDict
 
 PYTHON_TO_JSON_TYPES = {
@@ -160,7 +161,7 @@ class ToolDescription(TypedDict):
 class ToolsOutputParser(BaseGenerationOutputParser):
     first_tool_only: bool = False
     args_only: bool = False
-    pydantic_schemas: Optional[List[TypeBaseModel]] = None
+    pydantic_schemas: Optional[List[Annotated[TypeBaseModel, SkipValidation()]]] = None
 
     model_config = ConfigDict(
         extra="forbid",
