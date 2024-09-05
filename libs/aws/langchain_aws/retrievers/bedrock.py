@@ -88,7 +88,9 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
     endpoint_url: Optional[str] = None
     client: Any
     retrieval_config: RetrievalConfig
-    min_score_confidence: Annotated[Optional[float], Field(ge=0.0, le=1.0)]
+    min_score_confidence: Annotated[
+        Optional[float], Field(ge=0.0, le=1.0, default=None)
+    ]
 
     @model_validator(mode="before")
     @classmethod
