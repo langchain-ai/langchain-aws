@@ -18,6 +18,7 @@ numpy = [
      {version = "^1", python = "<3.12"},
      {version = "^1.26.0", python = ">=3.12"}
  ]
+ pydantic = ">=2,<3"
 
 [tool.poetry.group.test]
 optional = true
