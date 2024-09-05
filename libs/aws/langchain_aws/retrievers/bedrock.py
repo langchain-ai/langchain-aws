@@ -5,7 +5,7 @@ from botocore.client import Config
 from botocore.exceptions import UnknownServiceError
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
-from pydantic import BaseModel, Field, root_validator
+from pydantic import BaseModel, Field, root_validator, model_validator
 from langchain_core.retrievers import BaseRetriever
 from typing_extensions import Annotated
 from pydantic import ConfigDict
@@ -90,8 +90,9 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
     retrieval_config: RetrievalConfig
     min_score_confidence: Annotated[Optional[float], Field(ge=0.0, le=1.0)]
 
-    @root_validator(pre=True)
-    def create_client(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    @model_validator(mode="before")
+    @classmethod
+    def create_client(cls, values: Dict[str, Any]) -> Any:
         if values.get("client") is not None:
             return values
 

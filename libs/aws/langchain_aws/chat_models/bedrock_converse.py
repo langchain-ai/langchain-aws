@@ -40,7 +40,7 @@ from langchain_core.messages.tool import tool_call_chunk
 from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
 from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from pydantic import BaseModel, Field, root_validator
+from pydantic import BaseModel, Field, root_validator, model_validator
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import (
@@ -356,8 +356,9 @@ class ChatBedrockConverse(BaseChatModel):
 
     model_config = ConfigDict(extra="forbid",populate_by_name=True,)
 
-    @root_validator(pre=True)
-    def set_disable_streaming(cls, values: Dict) -> Dict:
+    @model_validator(mode="before")
+    @classmethod
+    def set_disable_streaming(cls, values: Dict) -> Any:
         values["provider"] = (
             values.get("provider")
             or (values.get("model_id", values["model"])).split(".")[0]
