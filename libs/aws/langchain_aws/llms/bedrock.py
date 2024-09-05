@@ -26,7 +26,7 @@ from langchain_core.language_models import LLM, BaseLanguageModel, LangSmithPara
 from langchain_core.messages import AIMessageChunk, ToolCall
 from langchain_core.messages.tool import tool_call, tool_call_chunk
 from langchain_core.outputs import Generation, GenerationChunk, LLMResult
-from pydantic import Field, root_validator
+from pydantic import Field, root_validator, model_validator
 
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
@@ -552,38 +552,38 @@ class BedrockBase(BaseLanguageModel, ABC):
                 ...Logic to handle guardrail intervention...
     """  # noqa: E501
 
-    @root_validator(pre=False, skip_on_failure=True)
-    def validate_environment(cls, values: Dict) -> Dict:
+    @model_validator(mode="after")
+    def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
 
         # Skip creating new client if passed in constructor
-        if values["client"] is not None:
-            return values
+        if self.client is not None:
+            return self
 
         try:
             import boto3
 
-            if values["credentials_profile_name"] is not None:
-                session = boto3.Session(profile_name=values["credentials_profile_name"])
+            if self.credentials_profile_name is not None:
+                session = boto3.Session(profile_name=self.credentials_profile_name)
             else:
                 # use default credentials
                 session = boto3.Session()
 
-            values["region_name"] = (
-                values.get("region_name")
+            self.region_name = (
+                (self.region_name or None)
                 or os.getenv("AWS_DEFAULT_REGION")
                 or session.region_name
             )
 
             client_params = {}
-            if values["region_name"]:
-                client_params["region_name"] = values["region_name"]
-            if values["endpoint_url"]:
-                client_params["endpoint_url"] = values["endpoint_url"]
-            if values["config"]:
-                client_params["config"] = values["config"]
+            if self.region_name:
+                client_params["region_name"] = self.region_name
+            if self.endpoint_url:
+                client_params["endpoint_url"] = self.endpoint_url
+            if self.config:
+                client_params["config"] = self.config
 
-            values["client"] = session.client("bedrock-runtime", **client_params)
+            self.client = session.client("bedrock-runtime", **client_params)
 
         except ImportError:
             raise ModuleNotFoundError(
@@ -599,7 +599,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 f"profile name are valid. Bedrock error: {e}"
             ) from e
 
-        return values
+        return self
 
     @property
     def _identifying_params(self) -> Dict[str, Any]:
@@ -948,16 +948,16 @@ class BedrockLLM(LLM, BedrockBase):
 
     """
 
-    @root_validator(pre=False, skip_on_failure=True)
-    def validate_environment(cls, values: Dict) -> Dict:
-        model_id = values["model_id"]
+    @model_validator(mode="after")
+    def validate_environment(self) -> Self:
+        model_id = self.model_id
         if model_id.startswith("anthropic.claude-3"):
             raise ValueError(
                 "Claude v3 models are not supported by this LLM."
                 "Please use `from langchain_community.chat_models import BedrockChat` "
                 "instead."
             )
-        return super().validate_environment(values)
+        return self
 
     @property
     def _llm_type(self) -> str:

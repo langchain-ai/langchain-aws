@@ -371,15 +371,15 @@ class ChatBedrockConverse(BaseChatModel):
             )
         return values
 
-    @root_validator(pre=False, skip_on_failure=True)
-    def validate_environment(cls, values: Dict) -> Dict:
+    @model_validator(mode="after")
+    def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
-        if values["client"] is not None:
-            return values
+        if self.client is not None:
+            return self
 
         try:
-            if values["credentials_profile_name"] is not None:
-                session = boto3.Session(profile_name=values["credentials_profile_name"])
+            if self.credentials_profile_name is not None:
+                session = boto3.Session(profile_name=self.credentials_profile_name)
             else:
                 session = boto3.Session()
         except ValueError as e:
@@ -391,22 +391,22 @@ class ChatBedrockConverse(BaseChatModel):
                 f"profile name are valid. Bedrock error: {e}"
             ) from e
 
-        values["region_name"] = (
-            values.get("region_name")
+        self.region_name = (
+            (self.region_name or None)
             or os.getenv("AWS_DEFAULT_REGION")
             or session.region_name
         )
 
         client_params = {}
-        if values["region_name"]:
-            client_params["region_name"] = values["region_name"]
-        if values["endpoint_url"]:
-            client_params["endpoint_url"] = values["endpoint_url"]
-        if values["config"]:
-            client_params["config"] = values["config"]
+        if self.region_name:
+            client_params["region_name"] = self.region_name
+        if self.endpoint_url:
+            client_params["endpoint_url"] = self.endpoint_url
+        if self.config:
+            client_params["config"] = self.config
 
         try:
-            values["client"] = session.client("bedrock-runtime", **client_params)
+            self.client = session.client("bedrock-runtime", **client_params)
         except ValueError as e:
             raise ValueError(f"Error raised by bedrock service: {e}")
         except Exception as e:
@@ -418,15 +418,15 @@ class ChatBedrockConverse(BaseChatModel):
 
         # As of 08/05/24 only claude-3 and mistral-large models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
-        if values["supports_tool_choice_values"] is None:
-            if "claude-3" in values["model_id"]:
-                values["supports_tool_choice_values"] = ("auto", "any", "tool")
-            elif "mistral-large" in values["model_id"]:
-                values["supports_tool_choice_values"] = ("auto", "any")
+        if self.supports_tool_choice_values is None:
+            if "claude-3" in self.model_id:
+                self.supports_tool_choice_values = ("auto", "any", "tool")
+            elif "mistral-large" in self.model_id:
+                self.supports_tool_choice_values = ("auto", "any")
             else:
-                values["supports_tool_choice_values"] = ()
+                self.supports_tool_choice_values = ()
 
-        return values
+        return self
 
     def _generate(
         self,
