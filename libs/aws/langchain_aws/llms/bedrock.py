@@ -26,7 +26,7 @@ from langchain_core.language_models import LLM, BaseLanguageModel, LangSmithPara
 from langchain_core.messages import AIMessageChunk, ToolCall
 from langchain_core.messages.tool import tool_call, tool_call_chunk
 from langchain_core.outputs import Generation, GenerationChunk, LLMResult
-from pydantic import ConfigDict, Field, model_validator, root_validator
+from pydantic import ConfigDict, Field, model_validator
 from typing_extensions import Self
 
 from langchain_aws.function_calling import _tools_in_params

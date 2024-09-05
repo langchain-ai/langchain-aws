@@ -8,7 +8,7 @@ from typing import Any, Dict, Generic, Iterator, List, Mapping, Optional, TypeVa
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.llms import LLM
 from langchain_core.outputs import GenerationChunk
-from pydantic import ConfigDict, model_validator, root_validator
+from pydantic import ConfigDict, model_validator
 from typing_extensions import Self
 
 INPUT_TYPE = TypeVar("INPUT_TYPE", bound=Union[str, List[str]])

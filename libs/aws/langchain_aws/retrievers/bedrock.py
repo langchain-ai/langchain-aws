@@ -6,7 +6,7 @@ from botocore.exceptions import UnknownServiceError
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
-from pydantic import BaseModel, ConfigDict, Field, model_validator, root_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import Annotated
 
 FilterValue = Union[Dict[str, Any], List[Any], int, float, str, bool, None]
