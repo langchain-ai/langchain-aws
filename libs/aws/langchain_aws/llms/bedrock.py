@@ -35,6 +35,8 @@ from langchain_aws.utils import (
     get_token_ids_anthropic,
 )
 from pydantic import ConfigDict
+from typing_extensions import Self
+
 
 
 AMAZON_BEDROCK_TRACE_KEY = "amazon-bedrock-trace"

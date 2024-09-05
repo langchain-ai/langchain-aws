@@ -10,6 +10,8 @@ from langchain_core.language_models.llms import LLM
 from langchain_core.outputs import GenerationChunk
 from pydantic import root_validator, model_validator
 from pydantic import ConfigDict
+from typing_extensions import Self
+
 
 
 INPUT_TYPE = TypeVar("INPUT_TYPE", bound=Union[str, List[str]])

@@ -51,6 +51,8 @@ from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 
 from langchain_aws.function_calling import ToolsOutputParser
 from pydantic import ConfigDict
+from typing_extensions import Self
+
 
 
 _BM = TypeVar("_BM", bound=BaseModel)

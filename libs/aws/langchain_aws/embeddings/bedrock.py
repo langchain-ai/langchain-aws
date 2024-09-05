@@ -8,6 +8,8 @@ from langchain_core.embeddings import Embeddings
 from pydantic import BaseModel, root_validator, model_validator
 from langchain_core.runnables.config import run_in_executor
 from pydantic import ConfigDict
+from typing_extensions import Self
+
 
 
 
