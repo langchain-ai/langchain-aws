@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import yaml  # type: ignore[import-untyped]
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, validator
 from typing_extensions import TYPE_CHECKING, Literal
 
 from langchain_aws.vectorstores.inmemorydb.constants import INMEMORYDB_VECTOR_DTYPE_MAP
@@ -103,7 +103,7 @@ class InMemoryDBVectorField(InMemoryDBField):
     def uppercase_strings(cls, v: str) -> str:
         return v.upper()
 
-    @validator("datatype", pre=True)
+    @field_validator("datatype", mode="before")
     def uppercase_and_check_dtype(cls, v: str) -> str:
         if v.upper() not in INMEMORYDB_VECTOR_DTYPE_MAP:
             raise ValueError(

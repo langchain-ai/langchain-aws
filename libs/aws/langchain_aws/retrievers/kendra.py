@@ -18,7 +18,7 @@ from pydantic import (
     BaseModel,
     Field,
     model_validator,
-    validator,
+    field_validator,
 )
 from typing_extensions import Annotated
 
@@ -371,7 +371,7 @@ class AmazonKendraRetriever(BaseRetriever):
     user_context: Optional[Dict] = None
     min_score_confidence: Annotated[Optional[float], Field(ge=0.0, le=1.0)]
 
-    @validator("top_k")
+    @field_validator("top_k")
     def validate_top_k(cls, value: int) -> int:
         if value < 0:
             raise ValueError(f"top_k ({value}) cannot be negative.")
