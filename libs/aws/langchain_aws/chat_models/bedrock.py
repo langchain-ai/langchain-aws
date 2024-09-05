@@ -707,7 +707,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             .. code-block:: python
 
                 from langchain_aws.chat_models.bedrock import ChatBedrock
-                from langchain_core.pydantic_v1 import BaseModel
+                from pydantic import BaseModel
 
                 class AnswerWithJustification(BaseModel):
                     '''An answer to the user question along with justification for the answer.'''
@@ -731,7 +731,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             .. code-block:: python
 
                 from langchain_aws.chat_models.bedrock import ChatBedrock
-                from langchain_core.pydantic_v1 import BaseModel
+                from pydantic import BaseModel
 
                 class AnswerWithJustification(BaseModel):
                     '''An answer to the user question along with justification for the answer.'''
