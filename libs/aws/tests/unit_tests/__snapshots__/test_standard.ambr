@@ -1,0 +1,154 @@
+# serializer version: 1
+# name: TestBedrockAsConverseStandard.test_serdes[serialized]
+  dict({
+    'graph': dict({
+      'edges': list([
+        dict({
+          'source': 0,
+          'target': 1,
+        }),
+        dict({
+          'source': 1,
+          'target': 2,
+        }),
+      ]),
+      'nodes': list([
+        dict({
+          'data': 'ChatBedrockInput',
+          'id': 0,
+          'type': 'schema',
+        }),
+        dict({
+          'data': dict({
+            'id': list([
+              'langchain',
+              'chat_models',
+              'bedrock',
+              'ChatBedrock',
+            ]),
+            'name': 'ChatBedrock',
+          }),
+          'id': 1,
+          'type': 'runnable',
+        }),
+        dict({
+          'data': 'ChatBedrockOutput',
+          'id': 2,
+          'type': 'schema',
+        }),
+      ]),
+    }),
+    'id': list([
+      'langchain',
+      'chat_models',
+      'bedrock',
+      'ChatBedrock',
+    ]),
+    'kwargs': dict({
+      'beta_use_converse_api': True,
+      'guardrails': dict({
+        'guardrailIdentifier': None,
+        'guardrailVersion': None,
+        'trace': None,
+      }),
+      'model_id': 'anthropic.claude-3-sonnet-20240229-v1:0',
+      'model_kwargs': dict({
+        'max_tokens': 100,
+        'stop': list([
+        ]),
+        'temperature': 0,
+      }),
+      'provider_stop_reason_key_map': dict({
+        'ai21': 'finishReason',
+        'amazon': 'completionReason',
+        'anthropic': 'stop_reason',
+        'cohere': 'finish_reason',
+        'mistral': 'stop_reason',
+      }),
+      'provider_stop_sequence_key_name_map': dict({
+        'ai21': 'stop_sequences',
+        'amazon': 'stopSequences',
+        'anthropic': 'stop_sequences',
+        'cohere': 'stop_sequences',
+        'mistral': 'stop_sequences',
+      }),
+      'region_name': 'us-east-1',
+    }),
+    'lc': 1,
+    'name': 'ChatBedrock',
+    'type': 'constructor',
+  })
+# ---
+# name: TestBedrockStandard.test_serdes[serialized]
+  dict({
+    'graph': dict({
+      'edges': list([
+        dict({
+          'source': 0,
+          'target': 1,
+        }),
+        dict({
+          'source': 1,
+          'target': 2,
+        }),
+      ]),
+      'nodes': list([
+        dict({
+          'data': 'ChatBedrockInput',
+          'id': 0,
+          'type': 'schema',
+        }),
+        dict({
+          'data': dict({
+            'id': list([
+              'langchain',
+              'chat_models',
+              'bedrock',
+              'ChatBedrock',
+            ]),
+            'name': 'ChatBedrock',
+          }),
+          'id': 1,
+          'type': 'runnable',
+        }),
+        dict({
+          'data': 'ChatBedrockOutput',
+          'id': 2,
+          'type': 'schema',
+        }),
+      ]),
+    }),
+    'id': list([
+      'langchain',
+      'chat_models',
+      'bedrock',
+      'ChatBedrock',
+    ]),
+    'kwargs': dict({
+      'guardrails': dict({
+        'guardrailIdentifier': None,
+        'guardrailVersion': None,
+        'trace': None,
+      }),
+      'model_id': 'anthropic.claude-3-sonnet-20240229-v1:0',
+      'provider_stop_reason_key_map': dict({
+        'ai21': 'finishReason',
+        'amazon': 'completionReason',
+        'anthropic': 'stop_reason',
+        'cohere': 'finish_reason',
+        'mistral': 'stop_reason',
+      }),
+      'provider_stop_sequence_key_name_map': dict({
+        'ai21': 'stop_sequences',
+        'amazon': 'stopSequences',
+        'anthropic': 'stop_sequences',
+        'cohere': 'stop_sequences',
+        'mistral': 'stop_sequences',
+      }),
+      'region_name': 'us-east-1',
+    }),
+    'lc': 1,
+    'name': 'ChatBedrock',
+    'type': 'constructor',
+  })
+# ---

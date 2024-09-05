@@ -28,6 +28,7 @@ pytest = "^7.4.3"
 pytest-cov = "^4.1.0"
 syrupy = "^4.0.2"
 pytest-asyncio = "^0.23.2"
+pytest-watcher = "^0.3.4"
 langchain-core = { git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/core", branch = "v0.3rc"}
 langchain-standard-tests = {git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/standard-tests", branch = "v0.3rc"}
 langchain = { git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/langchain", branch = "v0.3rc"}
