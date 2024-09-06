@@ -1,5 +1,8 @@
+# type:ignore
+
 """Test chat model integration."""
 
+from contextlib import nullcontext
 from typing import Any, Callable, Dict, Literal, Type, cast
 
 import pytest
@@ -419,3 +422,33 @@ def test_standard_tracing_params() -> None:
         "ls_model_name": "foo",
         "ls_temperature": 0.1,
     }
+
+
+@pytest.mark.parametrize(
+    "model_id, provider, expected_provider, expectation",
+    [
+        (
+            "eu.anthropic.claude-3-haiku-20240307-v1:0",
+            None,
+            "anthropic",
+            nullcontext(),
+        ),
+        ("meta.llama3-1-405b-instruct-v1:0", None, "meta", nullcontext()),
+        (
+            "arn:aws:bedrock:us-east-1::custom-model/cohere.command-r-v1:0/MyCustomModel2",
+            "cohere",
+            "cohere",
+            nullcontext(),
+        ),
+        (
+            "arn:aws:bedrock:us-east-1::custom-model/cohere.command-r-v1:0/MyCustomModel2",
+            None,
+            "cohere",
+            pytest.raises(ValueError),
+        ),
+    ],
+)
+def test__get_provider(model_id, provider, expected_provider, expectation) -> None:
+    llm = ChatBedrock(model_id=model_id, provider=provider, region_name="us-west-2")
+    with expectation:
+        assert llm._get_provider() == expected_provider
