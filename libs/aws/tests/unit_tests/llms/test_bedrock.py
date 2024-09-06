@@ -490,6 +490,6 @@ def does_not_raise():
     ],
 )
 def test__get_provider(model_id, provider, expected_provider, expectation) -> None:
-    llm = ChatBedrock(model_id=model_id, provider=provider)
+    llm = ChatBedrock(model_id=model_id, provider=provider, region_name="us-west-2")
     with expectation:
         assert llm._get_provider() == expected_provider
