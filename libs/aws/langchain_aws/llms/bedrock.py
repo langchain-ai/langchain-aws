@@ -613,15 +613,23 @@ class BedrockBase(BaseLanguageModel, ABC):
         }
 
     def _get_provider(self) -> str:
+        # If provider supplied by user, return as-is
         if self.provider:
             return self.provider
+
+        # If model_id is an arn, can't extract provider from model_id,
+        # so this requires passing in the provider by user
         if self.model_id.startswith("arn"):
             raise ValueError(
                 "Model provider should be supplied when passing a model ARN as "
                 "model_id"
             )
 
-        return self.model_id.split(".")[0]
+        # If model_id has region prefixed to them,
+        # for example eu.anthropic.claude-3-haiku-20240307-v1:0,
+        # provider is the second part, otherwise, the first part
+        first, second, *_ = self.model_id.split(".", maxsplit=2)
+        return second if first.lower() in {"eu", "us", "ap", "sa"} else first
 
     def _get_model(self) -> str:
         return self.model_id.split(".", maxsplit=1)[-1]
