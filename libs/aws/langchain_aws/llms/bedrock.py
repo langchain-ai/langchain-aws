@@ -628,8 +628,12 @@ class BedrockBase(BaseLanguageModel, ABC):
         # If model_id has region prefixed to them,
         # for example eu.anthropic.claude-3-haiku-20240307-v1:0,
         # provider is the second part, otherwise, the first part
-        first, second, *_ = self.model_id.split(".", maxsplit=2)
-        return second if first.lower() in {"eu", "us", "ap", "sa"} else first
+        parts = self.model_id.split(".", maxsplit=2)
+        return (
+            parts[1]
+            if (len(parts) > 1 and parts[0].lower() in {"eu", "us", "ap", "sa"})
+            else parts[0]
+        )
 
     def _get_model(self) -> str:
         return self.model_id.split(".", maxsplit=1)[-1]

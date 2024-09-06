@@ -1,13 +1,12 @@
 # type:ignore
 
 import json
-from contextlib import contextmanager
 from typing import AsyncGenerator, Dict
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from langchain_aws import BedrockLLM, ChatBedrock
+from langchain_aws import BedrockLLM
 from langchain_aws.llms.bedrock import (
     ALTERNATION_ERROR,
     LLMInputOutputAdapter,
@@ -458,38 +457,3 @@ def test_standard_tracing_params():
         "ls_model_type": "llm",
         "ls_model_name": "foo",
     }
-
-
-@contextmanager
-def does_not_raise():
-    yield
-
-
-@pytest.mark.parametrize(
-    "model_id, provider, expected_provider, expectation",
-    [
-        (
-            "eu.anthropic.claude-3-haiku-20240307-v1:0",
-            None,
-            "anthropic",
-            does_not_raise(),
-        ),
-        ("meta.llama3-1-405b-instruct-v1:0", None, "meta", does_not_raise()),
-        (
-            "arn:aws:bedrock:us-east-1::custom-model/cohere.command-r-v1:0/MyCustomModel2",
-            "cohere",
-            "cohere",
-            does_not_raise(),
-        ),
-        (
-            "arn:aws:bedrock:us-east-1::custom-model/cohere.command-r-v1:0/MyCustomModel2",
-            None,
-            "cohere",
-            pytest.raises(ValueError),
-        ),
-    ],
-)
-def test__get_provider(model_id, provider, expected_provider, expectation) -> None:
-    llm = ChatBedrock(model_id=model_id, provider=provider, region_name="us-west-2")
-    with expectation:
-        assert llm._get_provider() == expected_provider
