@@ -53,6 +53,16 @@ from langchain_aws.function_calling import ToolsOutputParser
 
 _BM = TypeVar("_BM", bound=BaseModel)
 _DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
+# supported regions for bedrock
+# ref: https://docs.aws.amazon.com/general/latest/gr/bedrock.html#bedrock_region
+AWS_REGIONS = [
+    "us",
+    "ap",
+    "ca",
+    "eu",
+    "sa",
+    "us-gov",
+]
 
 
 class ChatBedrockConverse(BaseChatModel):
@@ -360,10 +370,19 @@ class ChatBedrockConverse(BaseChatModel):
 
     @root_validator(pre=True)
     def set_disable_streaming(cls, values: Dict) -> Dict:
-        values["provider"] = (
-            values.get("provider")
-            or (values.get("model_id", values["model"])).split(".")[0]
-        )
+        if "provider" not in values:
+            model_id = values.get("model_id", values["model"])
+            if not model_id:
+                raise ValueError("model_id must be provided")
+
+            if model_id.startswith("arn"):
+                raise ValueError(
+                    "Model provider should be supplied when passing a model ARN as "
+                    "model_id"
+                )
+
+            parts = model_id.split(".", maxsplit=2)
+            values["provider"] = parts[1] if _model_is_inference(model_id) else parts[0]
 
         # As of 08/05/24 only Anthropic models support streamed tool calling
         if "disable_streaming" not in values:
@@ -997,3 +1016,9 @@ def _format_openai_image_url(image_url: str) -> Dict:
         "format": match.group("media_type"),
         "source": {"bytes": _b64str_to_bytes(match.group("data"))},
     }
+
+
+def _model_is_inference(model_id: str) -> bool:
+    parts = model_id.split(".")
+
+    return True if parts[0] in AWS_REGIONS else False

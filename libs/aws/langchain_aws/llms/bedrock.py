@@ -42,6 +42,16 @@ ASSISTANT_PROMPT = "\n\nAssistant:"
 ALTERNATION_ERROR = (
     "Error: Prompt must alternate between '\n\nHuman:' and '\n\nAssistant:'."
 )
+# supported regions for bedrock
+# ref: https://docs.aws.amazon.com/general/latest/gr/bedrock.html#bedrock_region
+AWS_REGIONS = [
+    "us",
+    "ap",
+    "ca",
+    "eu",
+    "sa",
+    "us-gov",
+]
 
 
 def _add_newlines_before_ha(input_text: str) -> str:
@@ -625,15 +635,10 @@ class BedrockBase(BaseLanguageModel, ABC):
                 "model_id"
             )
 
-        # If model_id has region prefixed to them,
-        # for example eu.anthropic.claude-3-haiku-20240307-v1:0,
-        # provider is the second part, otherwise, the first part
         parts = self.model_id.split(".", maxsplit=2)
-        return (
-            parts[1]
-            if (len(parts) > 1 and parts[0].lower() in {"eu", "us", "ap", "sa"})
-            else parts[0]
-        )
+        # inference models are in the format of <region>.<provider>.<model_id>
+        # the others are in the format of <provider>.<model_id>
+        return parts[1] if self._model_is_inference else parts[0]
 
     def _get_model(self) -> str:
         return self.model_id.split(".", maxsplit=1)[-1]
@@ -641,6 +646,12 @@ class BedrockBase(BaseLanguageModel, ABC):
     @property
     def _model_is_anthropic(self) -> bool:
         return self._get_provider() == "anthropic"
+
+    @property
+    def _model_is_inference(self) -> bool:
+        parts = self.model_id.split(".")
+
+        return True if parts[0] in AWS_REGIONS else False
 
     @property
     def _guardrails_enabled(self) -> bool:
