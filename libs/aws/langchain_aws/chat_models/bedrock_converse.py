@@ -53,14 +53,17 @@ from langchain_aws.function_calling import ToolsOutputParser
 
 _BM = TypeVar("_BM", bound=BaseModel)
 _DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
-# supported regions for bedrock
-# ref: https://docs.aws.amazon.com/general/latest/gr/bedrock.html#bedrock_region
+
 AWS_REGIONS = [
     "us",
-    "ap",
-    "ca",
-    "eu",
     "sa",
+    "me",
+    "il",
+    "eu",
+    "cn",
+    "ca",
+    "ap",
+    "af",
     "us-gov",
 ]
 

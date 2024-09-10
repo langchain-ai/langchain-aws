@@ -42,14 +42,16 @@ ASSISTANT_PROMPT = "\n\nAssistant:"
 ALTERNATION_ERROR = (
     "Error: Prompt must alternate between '\n\nHuman:' and '\n\nAssistant:'."
 )
-# supported regions for bedrock
-# ref: https://docs.aws.amazon.com/general/latest/gr/bedrock.html#bedrock_region
 AWS_REGIONS = [
     "us",
-    "ap",
-    "ca",
-    "eu",
     "sa",
+    "me",
+    "il",
+    "eu",
+    "cn",
+    "ca",
+    "ap",
+    "af",
     "us-gov",
 ]
 
