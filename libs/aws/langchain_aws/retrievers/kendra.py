@@ -425,13 +425,13 @@ class AmazonKendraRetriever(BaseRetriever):
             kendra_kwargs["UserContext"] = self.user_context
 
         response = self.client.retrieve(**kendra_kwargs)
-        r_result = RetrieveResult.parse_obj(response)
+        r_result = RetrieveResult.model_validate(response)
         if r_result.ResultItems:
             return r_result.ResultItems
 
         # Retrieve API returned 0 results, fall back to Query API
         response = self.client.query(**kendra_kwargs)
-        q_result = QueryResult.parse_obj(response)
+        q_result = QueryResult.model_validate(response)
         return q_result.ResultItems
 
     def _get_top_k_docs(self, result_items: Sequence[ResultItem]) -> List[Document]:

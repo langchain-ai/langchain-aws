@@ -56,7 +56,7 @@ def test_get_relevant_documents(retriever, mock_client) -> None:  # type: ignore
 
     query = "test query"
 
-    docs = retriever.get_relevant_documents(query)
+    docs = retriever.invoke(query)
 
     # Only documents with confidence score of HIGH are returned
     assert len(docs) == 2
