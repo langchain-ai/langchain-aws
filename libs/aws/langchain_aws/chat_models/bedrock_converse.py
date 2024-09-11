@@ -649,7 +649,7 @@ def _messages_to_bedrock(
             )
             bedrock_messages.append(curr)
         else:
-            raise ValueError()
+            raise ValueError(f"Unsupported message type {type(msg)}")
     return bedrock_messages, bedrock_system
 
 
