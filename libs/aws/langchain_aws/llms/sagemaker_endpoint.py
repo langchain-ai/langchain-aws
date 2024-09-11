@@ -1,6 +1,7 @@
 """Sagemaker InvokeEndpoint API."""
 
 import io
+import logging
 import re
 from abc import abstractmethod
 from typing import Any, Dict, Generic, Iterator, List, Mapping, Optional, TypeVar, Union
@@ -338,7 +339,10 @@ class SagemakerEndpoint(LLM):
                         run_manager.on_llm_new_token(chunk.text)
 
         except Exception as e:
-            raise ValueError(f"Error raised by streaming inference endpoint: {e}")
+            logging.error(f"Error raised by streaming inference endpoint: {e}")
+            if run_manager is not None:
+                run_manager.on_llm_error(e)
+            raise e
 
     def _call(
         self,
@@ -384,7 +388,10 @@ class SagemakerEndpoint(LLM):
                 **_endpoint_kwargs,
             )
         except Exception as e:
-            raise ValueError(f"Error raised by inference endpoint: {e}")
+            logging.error(f"Error raised by inference endpoint: {e}")
+            if run_manager is not None:
+                run_manager.on_llm_error(e)
+            raise e
 
         text = self.content_handler.transform_output(response["Body"])
         if stop is not None:

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import warnings
 from abc import ABC
@@ -734,7 +735,10 @@ class BedrockBase(BaseLanguageModel, ABC):
             ) = LLMInputOutputAdapter.prepare_output(provider, response).values()
 
         except Exception as e:
-            raise ValueError(f"Error raised by bedrock service: {e}")
+            logging.error(f"Error raised by bedrock service: {e}")
+            if run_manager is not None:
+                run_manager.on_llm_error(e)
+            raise e
 
         if stop is not None:
             text = enforce_stop_tokens(text, stop)
@@ -854,7 +858,10 @@ class BedrockBase(BaseLanguageModel, ABC):
             response = self.client.invoke_model_with_response_stream(**request_options)
 
         except Exception as e:
-            raise ValueError(f"Error raised by bedrock service: {e}")
+            logging.error(f"Error raised by bedrock service: {e}")
+            if run_manager is not None:
+                run_manager.on_llm_error(e)
+            raise e
 
         for chunk in LLMInputOutputAdapter.prepare_output_stream(
             provider,
