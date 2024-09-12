@@ -605,6 +605,13 @@ class ChatBedrockConverse(BaseChatModel):
         """Return type of chat model."""
         return "amazon_bedrock_converse_chat"
 
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        return True
+
+    @classmethod
+    def get_lc_namespace(cls) -> List[str]:
+        return ["langchain_aws", "chat_models"]
 
 def _messages_to_bedrock(
     messages: List[BaseMessage],

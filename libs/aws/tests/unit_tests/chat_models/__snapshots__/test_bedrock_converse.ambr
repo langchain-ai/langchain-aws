@@ -1,0 +1,63 @@
+# serializer version: 1
+# name: TestBedrockStandard.test_serdes[serialized]
+  dict({
+    'graph': dict({
+      'edges': list([
+        dict({
+          'source': 0,
+          'target': 1,
+        }),
+        dict({
+          'source': 1,
+          'target': 2,
+        }),
+      ]),
+      'nodes': list([
+        dict({
+          'data': 'ChatBedrockConverseInput',
+          'id': 0,
+          'type': 'schema',
+        }),
+        dict({
+          'data': dict({
+            'id': list([
+              'langchain_aws',
+              'chat_models',
+              'ChatBedrockConverse',
+            ]),
+            'name': 'ChatBedrockConverse',
+          }),
+          'id': 1,
+          'type': 'runnable',
+        }),
+        dict({
+          'data': 'ChatBedrockConverseOutput',
+          'id': 2,
+          'type': 'schema',
+        }),
+      ]),
+    }),
+    'id': list([
+      'langchain_aws',
+      'chat_models',
+      'ChatBedrockConverse',
+    ]),
+    'kwargs': dict({
+      'max_tokens': 100,
+      'model_id': 'anthropic.claude-3-sonnet-20240229-v1:0',
+      'provider': 'anthropic',
+      'region_name': 'us-west-1',
+      'stop_sequences': list([
+      ]),
+      'supports_tool_choice_values': list([
+        'auto',
+        'any',
+        'tool',
+      ]),
+      'temperature': 0.0,
+    }),
+    'lc': 1,
+    'name': 'ChatBedrockConverse',
+    'type': 'constructor',
+  })
+# ---
