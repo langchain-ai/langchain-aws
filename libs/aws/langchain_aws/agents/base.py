@@ -14,9 +14,9 @@ from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.callbacks import CallbackManager
 from langchain_core.load import dumpd
 from langchain_core.messages import AIMessage
-from langchain_core.pydantic_v1 import root_validator
 from langchain_core.runnables import RunnableConfig, RunnableSerializable, ensure_config
 from langchain_core.tools import BaseTool
+from pydantic import model_validator
 
 _DEFAULT_ACTION_GROUP_NAME = "DEFAULT_AG_"
 _TEST_AGENT_ALIAS_ID = "TSTALIASID"
@@ -329,8 +329,9 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
     endpoint_url: Optional[str] = None
     """Endpoint URL"""
 
-    @root_validator(skip_on_failure=True)
-    def validate_agent(cls, values: dict) -> dict:
+    @model_validator(mode="before")
+    @classmethod
+    def validate_agent(cls, values: dict) -> Any:
         if values.get("client") is not None:
             return values
 

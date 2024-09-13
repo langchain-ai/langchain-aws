@@ -13,13 +13,13 @@ from typing import (
 
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
-from langchain_core.pydantic_v1 import (
+from langchain_core.retrievers import BaseRetriever
+from pydantic import (
     BaseModel,
     Field,
-    root_validator,
-    validator,
+    field_validator,
+    model_validator,
 )
-from langchain_core.retrievers import BaseRetriever
 from typing_extensions import Annotated
 
 
@@ -371,14 +371,15 @@ class AmazonKendraRetriever(BaseRetriever):
     user_context: Optional[Dict] = None
     min_score_confidence: Annotated[Optional[float], Field(ge=0.0, le=1.0)]
 
-    @validator("top_k")
+    @field_validator("top_k")
     def validate_top_k(cls, value: int) -> int:
         if value < 0:
             raise ValueError(f"top_k ({value}) cannot be negative.")
         return value
 
-    @root_validator(pre=True)
-    def create_client(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    @model_validator(mode="before")
+    @classmethod
+    def create_client(cls, values: Dict[str, Any]) -> Any:
         if values.get("client") is not None:
             return values
 
@@ -424,13 +425,13 @@ class AmazonKendraRetriever(BaseRetriever):
             kendra_kwargs["UserContext"] = self.user_context
 
         response = self.client.retrieve(**kendra_kwargs)
-        r_result = RetrieveResult.parse_obj(response)
+        r_result = RetrieveResult.model_validate(response)
         if r_result.ResultItems:
             return r_result.ResultItems
 
         # Retrieve API returned 0 results, fall back to Query API
         response = self.client.query(**kendra_kwargs)
-        q_result = QueryResult.parse_obj(response)
+        q_result = QueryResult.model_validate(response)
         return q_result.ResultItems
 
     def _get_top_k_docs(self, result_items: Sequence[ResultItem]) -> List[Document]:

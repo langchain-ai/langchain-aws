@@ -5,8 +5,9 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 from langchain_core.embeddings import Embeddings
-from langchain_core.pydantic_v1 import BaseModel, root_validator
 from langchain_core.runnables.config import run_in_executor
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing_extensions import Self
 
 
 class BedrockEmbeddings(BaseModel, Embeddings):
@@ -40,7 +41,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
             )
     """
 
-    client: Any  #: :meta private:
+    client: Any = Field(default=None, exclude=True)  #: :meta private:
     """Bedrock client."""
     region_name: Optional[str] = None
     """The aws region e.g., `us-west-2`. Fallsback to AWS_DEFAULT_REGION env variable
@@ -71,38 +72,38 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     config: Any = None
     """An optional botocore.config.Config instance to pass to the client."""
 
-    class Config:
-        """Configuration for this pydantic object."""
+    model_config = ConfigDict(
+        extra="forbid",
+        protected_namespaces=(),
+    )
 
-        extra = "forbid"
-
-    @root_validator(pre=False, skip_on_failure=True)
-    def validate_environment(cls, values: Dict) -> Dict:
+    @model_validator(mode="after")
+    def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
 
-        if values["client"] is not None:
-            return values
+        if self.client is not None:
+            return self
 
         try:
             import boto3
 
-            if values["credentials_profile_name"] is not None:
-                session = boto3.Session(profile_name=values["credentials_profile_name"])
+            if self.credentials_profile_name is not None:
+                session = boto3.Session(profile_name=self.credentials_profile_name)
             else:
                 # use default credentials
                 session = boto3.Session()
 
             client_params = {}
-            if values["region_name"]:
-                client_params["region_name"] = values["region_name"]
+            if self.region_name:
+                client_params["region_name"] = self.region_name
 
-            if values["endpoint_url"]:
-                client_params["endpoint_url"] = values["endpoint_url"]
+            if self.endpoint_url:
+                client_params["endpoint_url"] = self.endpoint_url
 
-            if values["config"]:
-                client_params["config"] = values["config"]
+            if self.config:
+                client_params["config"] = self.config
 
-            values["client"] = session.client("bedrock-runtime", **client_params)
+            self.client = session.client("bedrock-runtime", **client_params)
 
         except ImportError:
             raise ModuleNotFoundError(
@@ -116,7 +117,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                 f"profile name are valid. Bedrock error: {e}"
             ) from e
 
-        return values
+        return self
 
     def _embedding_func(self, text: str) -> List[float]:
         """Call out to Bedrock embedding endpoint."""

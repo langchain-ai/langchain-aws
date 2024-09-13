@@ -30,6 +30,7 @@ from langchain_core.callbacks import (
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStore, VectorStoreRetriever
+from pydantic import ConfigDict
 
 from langchain_aws.utilities.redis import (
     _array_to_buffer,
@@ -1406,10 +1407,9 @@ class InMemoryVectorStoreRetriever(VectorStoreRetriever):
     ]
     """Allowed search types."""
 
-    class Config:
-        """Configuration for this pydantic object."""
-
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+    )
 
     def _get_relevant_documents(
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun
