@@ -17,7 +17,6 @@ from typing import (
     Union,
 )
 
-from langchain_core._api.deprecation import deprecated
 from langchain_core.callbacks import (
     AsyncCallbackManagerForLLMRun,
     CallbackManagerForLLMRun,
@@ -520,7 +519,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         Optional[Mapping[str, str]]: A mapping with 'id' and 'version' keys.
 
     Example:
-    llm = Bedrock(model_id="<model_id>", client=<bedrock_client>,
+    llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
                   model_kwargs={},
                   guardrails={
                         "id": "<guardrail_id>",
@@ -530,7 +529,7 @@ class BedrockBase(BaseLanguageModel, ABC):
     'run_manager' parameter of the 'generate', '_call' methods.
 
     Example:
-    llm = Bedrock(model_id="<model_id>", client=<bedrock_client>,
+    llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
                   model_kwargs={},
                   guardrails={
                         "id": "<guardrail_id>",
@@ -1192,8 +1191,3 @@ class BedrockLLM(LLM, BedrockBase):
             return get_token_ids_anthropic(text)
         else:
             return super().get_token_ids(text)
-
-
-@deprecated(since="0.1.0", removal="0.2.0", alternative="BedrockLLM")
-class Bedrock(BedrockLLM):
-    pass
