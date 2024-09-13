@@ -965,7 +965,7 @@ class BedrockLLM(LLM, BedrockBase):
         if model_id.startswith("anthropic.claude-3"):
             raise ValueError(
                 "Claude v3 models are not supported by this LLM."
-                "Please use `from langchain_community.chat_models import BedrockChat` "
+                "Please use `from langchain_aws import ChatBedrock` "
                 "instead."
             )
         return self
