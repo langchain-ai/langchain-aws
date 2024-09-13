@@ -1,43 +1,6 @@
 # serializer version: 1
 # name: TestBedrockAsConverseStandard.test_serdes[serialized]
   dict({
-    'graph': dict({
-      'edges': list([
-        dict({
-          'source': 0,
-          'target': 1,
-        }),
-        dict({
-          'source': 1,
-          'target': 2,
-        }),
-      ]),
-      'nodes': list([
-        dict({
-          'data': 'ChatBedrockInput',
-          'id': 0,
-          'type': 'schema',
-        }),
-        dict({
-          'data': dict({
-            'id': list([
-              'langchain',
-              'chat_models',
-              'bedrock',
-              'ChatBedrock',
-            ]),
-            'name': 'ChatBedrock',
-          }),
-          'id': 1,
-          'type': 'runnable',
-        }),
-        dict({
-          'data': 'ChatBedrockOutput',
-          'id': 2,
-          'type': 'schema',
-        }),
-      ]),
-    }),
     'id': list([
       'langchain',
       'chat_models',
@@ -81,43 +44,6 @@
 # ---
 # name: TestBedrockStandard.test_serdes[serialized]
   dict({
-    'graph': dict({
-      'edges': list([
-        dict({
-          'source': 0,
-          'target': 1,
-        }),
-        dict({
-          'source': 1,
-          'target': 2,
-        }),
-      ]),
-      'nodes': list([
-        dict({
-          'data': 'ChatBedrockInput',
-          'id': 0,
-          'type': 'schema',
-        }),
-        dict({
-          'data': dict({
-            'id': list([
-              'langchain',
-              'chat_models',
-              'bedrock',
-              'ChatBedrock',
-            ]),
-            'name': 'ChatBedrock',
-          }),
-          'id': 1,
-          'type': 'runnable',
-        }),
-        dict({
-          'data': 'ChatBedrockOutput',
-          'id': 2,
-          'type': 'schema',
-        }),
-      ]),
-    }),
     'id': list([
       'langchain',
       'chat_models',
