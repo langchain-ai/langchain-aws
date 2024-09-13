@@ -15,7 +15,6 @@ from typing import (
     cast,
 )
 
-from langchain_core._api.deprecation import deprecated
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import (
     BaseChatModel,
@@ -828,8 +827,3 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             guardrail_config=(self.guardrails if self._guardrails_enabled else None),  # type: ignore[call-arg]
             **kwargs,
         )
-
-
-@deprecated(since="0.1.0", removal="0.2.0", alternative="ChatBedrock")
-class BedrockChat(ChatBedrock):
-    pass
