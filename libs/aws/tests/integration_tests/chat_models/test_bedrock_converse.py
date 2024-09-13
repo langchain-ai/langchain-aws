@@ -5,8 +5,8 @@ from typing import Literal, Type
 import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
-from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_standard_tests.integration_tests import ChatModelIntegrationTests
+from pydantic import BaseModel, Field
 from typing_extensions import Annotated, TypedDict
 
 from langchain_aws import ChatBedrockConverse

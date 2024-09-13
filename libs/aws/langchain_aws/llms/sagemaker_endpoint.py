@@ -8,7 +8,8 @@ from typing import Any, Dict, Generic, Iterator, List, Mapping, Optional, TypeVa
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.llms import LLM
 from langchain_core.outputs import GenerationChunk
-from langchain_core.pydantic_v1 import root_validator
+from pydantic import ConfigDict, model_validator
+from typing_extensions import Self
 
 INPUT_TYPE = TypeVar("INPUT_TYPE", bound=Union[str, List[str]])
 OUTPUT_TYPE = TypeVar("OUTPUT_TYPE", bound=Union[str, List[List[float]], Iterator])
@@ -249,32 +250,29 @@ class SagemakerEndpoint(LLM):
     .. _boto3: <https://boto3.amazonaws.com/v1/documentation/api/latest/index.html>
     """
 
-    class Config:
-        """Configuration for this pydantic object."""
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
-        extra = "forbid"
-
-    @root_validator(pre=False, skip_on_failure=True)
-    def validate_environment(cls, values: Dict) -> Dict:
+    @model_validator(mode="after")
+    def validate_environment(self) -> Self:
         """Dont do anything if client provided externally"""
-        if values.get("client") is not None:
-            return values
+        if self.client is not None:
+            return self
 
         """Validate that AWS credentials to and python package exists in environment."""
         try:
             import boto3
 
             try:
-                if values["credentials_profile_name"] is not None:
-                    session = boto3.Session(
-                        profile_name=values["credentials_profile_name"]
-                    )
+                if self.credentials_profile_name is not None:
+                    session = boto3.Session(profile_name=self.credentials_profile_name)
                 else:
                     # use default credentials
                     session = boto3.Session()
 
-                values["client"] = session.client(
-                    "sagemaker-runtime", region_name=values["region_name"]
+                self.client = session.client(
+                    "sagemaker-runtime", region_name=self.region_name
                 )
 
             except Exception as e:
@@ -289,7 +287,7 @@ class SagemakerEndpoint(LLM):
                 "Could not import boto3 python package. "
                 "Please install it with `pip install boto3`."
             )
-        return values
+        return self
 
     @property
     def _identifying_params(self) -> Mapping[str, Any]:
