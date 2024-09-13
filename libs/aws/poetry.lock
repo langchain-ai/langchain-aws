@@ -738,7 +738,7 @@ files = [
 
 [[package]]
 name = "langchain"
-version = "0.3.0.dev1"
+version = "0.3.0"
 description = "Building applications with LLMs through composability"
 optional = false
 python-versions = ">=3.9,<4.0"
@@ -748,8 +748,8 @@ develop = false
 [package.dependencies]
 aiohttp = "^3.8.3"
 async-timeout = {version = "^4.0.0", markers = "python_version < \"3.11\""}
-langchain-core = "^0.3.0.dev2"
-langchain-text-splitters = "^0.3.0.dev1"
+langchain-core = "^0.3.0"
+langchain-text-splitters = "^0.3.0"
 langsmith = "^0.1.17"
 numpy = [
     {version = ">=1,<2", markers = "python_version < \"3.12\""},
@@ -764,13 +764,13 @@ tenacity = "^8.1.0,!=8.4.0"
 [package.source]
 type = "git"
 url = "https://github.com/langchain-ai/langchain.git"
-reference = "v0.3rc"
-resolved_reference = "e24259fee7c61f3bccdbeff4a9b5174a43be5cf7"
+reference = "HEAD"
+resolved_reference = "995dfc6b05760a48e2669df28a7de3ee1e3b9571"
 subdirectory = "libs/langchain"
 
 [[package]]
 name = "langchain-core"
-version = "0.3.0.dev4"
+version = "0.3.0"
 description = "Building applications with LLMs through composability"
 optional = false
 python-versions = ">=3.9,<4.0"
@@ -779,9 +779,12 @@ develop = false
 
 [package.dependencies]
 jsonpatch = "^1.33"
-langsmith = "^0.1.112"
+langsmith = "^0.1.117"
 packaging = ">=23.2,<25"
-pydantic = "^2.7.4"
+pydantic = [
+    {version = ">=2.5.2,<3.0.0", markers = "python_full_version < \"3.12.4\""},
+    {version = ">=2.7.4,<3.0.0", markers = "python_full_version >= \"3.12.4\""},
+]
 PyYAML = ">=5.3"
 tenacity = "^8.1.0,!=8.4.0"
 typing-extensions = ">=4.7"
@@ -789,8 +792,8 @@ typing-extensions = ">=4.7"
 [package.source]
 type = "git"
 url = "https://github.com/langchain-ai/langchain.git"
-reference = "v0.3rc"
-resolved_reference = "e24259fee7c61f3bccdbeff4a9b5174a43be5cf7"
+reference = "HEAD"
+resolved_reference = "69977317290485f4e2190af76793b7b359e45a1c"
 subdirectory = "libs/core"
 
 [[package]]
@@ -811,23 +814,23 @@ syrupy = "^4"
 [package.source]
 type = "git"
 url = "https://github.com/langchain-ai/langchain.git"
-reference = "v0.3rc"
-resolved_reference = "e24259fee7c61f3bccdbeff4a9b5174a43be5cf7"
+reference = "HEAD"
+resolved_reference = "995dfc6b05760a48e2669df28a7de3ee1e3b9571"
 subdirectory = "libs/standard-tests"
 
 [[package]]
 name = "langchain-text-splitters"
-version = "0.3.0.dev1"
+version = "0.3.0"
 description = "LangChain text splitting utilities"
 optional = false
 python-versions = "<4.0,>=3.9"
 files = [
-    {file = "langchain_text_splitters-0.3.0.dev1-py3-none-any.whl", hash = "sha256:85abe6ab1aa95e8cc3bf985cd9e53848de616c21d3590a25ac13a694d409f133"},
-    {file = "langchain_text_splitters-0.3.0.dev1.tar.gz", hash = "sha256:5e13ca0f27719406c6c5575f48cdfb89755f02dd0f1c8af5d1f8a1a9f391f3a2"},
+    {file = "langchain_text_splitters-0.3.0-py3-none-any.whl", hash = "sha256:e84243e45eaff16e5b776cd9c81b6d07c55c010ebcb1965deb3d1792b7358e83"},
+    {file = "langchain_text_splitters-0.3.0.tar.gz", hash = "sha256:f9fe0b4d244db1d6de211e7343d4abc4aa90295aa22e1f0c89e51f33c55cd7ce"},
 ]
 
 [package.dependencies]
-langchain-core = ">=0.3.0.dev1,<0.4.0"
+langchain-core = ">=0.3.0,<0.4.0"
 
 [[package]]
 name = "langsmith"
@@ -1853,4 +1856,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<4.0"
-content-hash = "6f57044f1c71942367ff54abb9b0114eca2cc993cdc21c0657d7bd6ebe057394"
+content-hash = "d6c6fc32b29e7971a803c00d24244ed76b0c84945c4ee738d93da8d9dec5ec3e"
