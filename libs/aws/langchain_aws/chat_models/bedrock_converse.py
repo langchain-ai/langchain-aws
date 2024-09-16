@@ -47,7 +47,7 @@ from langchain_core.utils.function_calling import (
     convert_to_openai_tool,
 )
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
-from pydantic import BaseModel, ConfigDict, Field, model_validator, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
@@ -380,9 +380,11 @@ class ChatBedrockConverse(BaseChatModel):
 
     @property
     def lc_secrets(self) -> Dict[str, str]:
-        return {"aws_access_key_id": "AWS_ACCESS_KEY_ID",
-                "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
-                "aws_session_token": "AWS_SESSION_TOKEN"}
+        return {
+            "aws_access_key_id": "AWS_ACCESS_KEY_ID",
+            "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
+            "aws_session_token": "AWS_SESSION_TOKEN",
+        }
 
     @model_validator(mode="before")
     @classmethod
@@ -410,7 +412,7 @@ class ChatBedrockConverse(BaseChatModel):
                 session = boto3.Session(
                     aws_access_key_id=self.aws_access_key_id.get_secret_value(),
                     aws_secret_access_key=self.aws_secret_access_key.get_secret_value(),
-                    aws_session_token=self.aws_session_token.get_secret_value()
+                    aws_session_token=self.aws_session_token.get_secret_value(),
                 )
             elif self.credentials_profile_name is not None:
                 session = boto3.Session(profile_name=self.credentials_profile_name)

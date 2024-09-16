@@ -25,7 +25,7 @@ from langchain_core.language_models import LLM, BaseLanguageModel, LangSmithPara
 from langchain_core.messages import AIMessageChunk, ToolCall
 from langchain_core.messages.tool import tool_call, tool_call_chunk
 from langchain_core.outputs import Generation, GenerationChunk, LLMResult
-from pydantic import ConfigDict, Field, model_validator, SecretStr
+from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.function_calling import _tools_in_params
@@ -572,9 +572,11 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     @property
     def lc_secrets(self) -> Dict[str, str]:
-        return {"aws_access_key_id": "AWS_ACCESS_KEY_ID",
-                "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
-                "aws_session_token": "AWS_SESSION_TOKEN"}
+        return {
+            "aws_access_key_id": "AWS_ACCESS_KEY_ID",
+            "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
+            "aws_session_token": "AWS_SESSION_TOKEN",
+        }
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
@@ -591,7 +593,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 session = boto3.Session(
                     aws_access_key_id=self.aws_access_key_id.get_secret_value(),
                     aws_secret_access_key=self.aws_secret_access_key.get_secret_value(),
-                    aws_session_token=self.aws_session_token.get_secret_value()
+                    aws_session_token=self.aws_session_token.get_secret_value(),
                 )
             elif self.credentials_profile_name is not None:
                 session = boto3.Session(profile_name=self.credentials_profile_name)
