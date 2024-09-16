@@ -15,9 +15,12 @@ from typing import (
     cast,
 )
 
-from langchain_core._api.deprecation import deprecated
 from langchain_core.callbacks import CallbackManagerForLLMRun
-from langchain_core.language_models import BaseChatModel, LanguageModelInput
+from langchain_core.language_models import (
+    BaseChatModel,
+    LangSmithParams,
+    LanguageModelInput,
+)
 from langchain_core.language_models.chat_models import generate_from_stream
 from langchain_core.messages import (
     AIMessage,
@@ -30,10 +33,10 @@ from langchain_core.messages import (
 from langchain_core.messages.ai import UsageMetadata
 from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from langchain_core.pydantic_v1 import BaseModel, Extra
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
+from pydantic import BaseModel, ConfigDict
 
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 from langchain_aws.function_calling import (
@@ -210,7 +213,7 @@ def _merge_messages(
     """Merge runs of human/tool messages into single human messages with content blocks."""  # noqa: E501
     merged: list = []
     for curr in messages:
-        curr = curr.copy(deep=True)
+        curr = curr.model_copy(deep=True)
         if isinstance(curr, ToolMessage):
             if isinstance(curr.content, list) and all(
                 isinstance(block, dict) and block.get("type") == "tool_result"
@@ -462,10 +465,27 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
         return attributes
 
-    class Config:
-        """Configuration for this pydantic object."""
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
-        extra = Extra.forbid
+    def _get_ls_params(
+        self, stop: Optional[List[str]] = None, **kwargs: Any
+    ) -> LangSmithParams:
+        """Get standard params for tracing."""
+        params = self._get_invocation_params(stop=stop, **kwargs)
+        ls_params = LangSmithParams(
+            ls_provider="amazon_bedrock",
+            ls_model_name=self.model_id,
+            ls_model_type="chat",
+        )
+        if ls_temperature := params.get("temperature"):
+            ls_params["ls_temperature"] = ls_temperature
+        if ls_max_tokens := params.get("max_tokens"):
+            ls_params["ls_max_tokens"] = ls_max_tokens
+        if ls_stop := stop or params.get("stop", None):
+            ls_params["ls_stop"] = ls_stop
+        return ls_params
 
     def _stream(
         self,
@@ -746,7 +766,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             .. code-block:: python
 
                 from langchain_aws.chat_models.bedrock import ChatBedrock
-                from langchain_core.pydantic_v1 import BaseModel
+                from pydantic import BaseModel
 
                 class AnswerWithJustification(BaseModel):
                     '''An answer to the user question along with justification for the answer.'''
@@ -770,7 +790,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             .. code-block:: python
 
                 from langchain_aws.chat_models.bedrock import ChatBedrock
-                from langchain_core.pydantic_v1 import BaseModel
+                from pydantic import BaseModel
 
                 class AnswerWithJustification(BaseModel):
                     '''An answer to the user question along with justification for the answer.'''
@@ -867,8 +887,3 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             guardrail_config=(self.guardrails if self._guardrails_enabled else None),  # type: ignore[call-arg]
             **kwargs,
         )
-
-
-@deprecated(since="0.1.0", removal="0.2.0", alternative="ChatBedrock")
-class BedrockChat(ChatBedrock):
-    pass

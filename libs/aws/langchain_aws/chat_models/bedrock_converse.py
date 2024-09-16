@@ -1,5 +1,6 @@
 import base64
 import json
+import os
 import re
 from operator import itemgetter
 from typing import (
@@ -12,6 +13,7 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
+    Type,
     TypeVar,
     Union,
     cast,
@@ -35,15 +37,23 @@ from langchain_core.messages import (
 from langchain_core.messages.ai import AIMessageChunk, UsageMetadata
 from langchain_core.messages.tool import tool_call as create_tool_call
 from langchain_core.messages.tool import tool_call_chunk
+from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
+from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from langchain_core.pydantic_v1 import BaseModel, Extra, Field, root_validator
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
-from langchain_core.utils import get_from_dict_or_env
-from langchain_core.utils.function_calling import convert_to_openai_function
+from langchain_core.utils.function_calling import (
+    convert_to_openai_function,
+    convert_to_openai_tool,
+)
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
+
+_BM = TypeVar("_BM", bound=BaseModel)
+_DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
 
 
 class ChatBedrockConverse(BaseChatModel):
@@ -143,7 +153,7 @@ class ChatBedrockConverse(BaseChatModel):
     Tool calling:
         .. code-block:: python
 
-            from langchain_core.pydantic_v1 import BaseModel, Field
+            from pydantic import BaseModel, Field
 
             class GetWeather(BaseModel):
                 '''Get the current weather in a given location'''
@@ -181,7 +191,7 @@ class ChatBedrockConverse(BaseChatModel):
 
             from typing import Optional
 
-            from langchain_core.pydantic_v1 import BaseModel, Field
+            from pydantic import BaseModel, Field
 
             class Joke(BaseModel):
                 '''Joke to tell user.'''
@@ -343,14 +353,14 @@ class ChatBedrockConverse(BaseChatModel):
     model is used, ('auto', 'any') if a 'mistral-large' model is used, empty otherwise.
     """
 
-    class Config:
-        """Configuration for this pydantic object."""
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
 
-        extra = Extra.forbid
-        allow_population_by_field_name = True
-
-    @root_validator(pre=True)
-    def set_disable_streaming(cls, values: Dict) -> Dict:
+    @model_validator(mode="before")
+    @classmethod
+    def set_disable_streaming(cls, values: Dict) -> Any:
         values["provider"] = (
             values.get("provider")
             or (values.get("model_id", values["model"])).split(".")[0]
@@ -363,15 +373,15 @@ class ChatBedrockConverse(BaseChatModel):
             )
         return values
 
-    @root_validator(pre=False, skip_on_failure=True)
-    def validate_environment(cls, values: Dict) -> Dict:
+    @model_validator(mode="after")
+    def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
-        if values["client"] is not None:
-            return values
+        if self.client is not None:
+            return self
 
         try:
-            if values["credentials_profile_name"] is not None:
-                session = boto3.Session(profile_name=values["credentials_profile_name"])
+            if self.credentials_profile_name is not None:
+                session = boto3.Session(profile_name=self.credentials_profile_name)
             else:
                 session = boto3.Session()
         except ValueError as e:
@@ -383,23 +393,20 @@ class ChatBedrockConverse(BaseChatModel):
                 f"profile name are valid. Bedrock error: {e}"
             ) from e
 
-        values["region_name"] = get_from_dict_or_env(
-            values,
-            "region_name",
-            "AWS_DEFAULT_REGION",
-            default=session.region_name,
+        self.region_name = (
+            self.region_name or os.getenv("AWS_DEFAULT_REGION") or session.region_name
         )
 
         client_params = {}
-        if values["region_name"]:
-            client_params["region_name"] = values["region_name"]
-        if values["endpoint_url"]:
-            client_params["endpoint_url"] = values["endpoint_url"]
-        if values["config"]:
-            client_params["config"] = values["config"]
+        if self.region_name:
+            client_params["region_name"] = self.region_name
+        if self.endpoint_url:
+            client_params["endpoint_url"] = self.endpoint_url
+        if self.config:
+            client_params["config"] = self.config
 
         try:
-            values["client"] = session.client("bedrock-runtime", **client_params)
+            self.client = session.client("bedrock-runtime", **client_params)
         except ValueError as e:
             raise ValueError(f"Error raised by bedrock service: {e}")
         except Exception as e:
@@ -411,15 +418,15 @@ class ChatBedrockConverse(BaseChatModel):
 
         # As of 08/05/24 only claude-3 and mistral-large models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
-        if values["supports_tool_choice_values"] is None:
-            if "claude-3" in values["model_id"]:
-                values["supports_tool_choice_values"] = ("auto", "any", "tool")
-            elif "mistral-large" in values["model_id"]:
-                values["supports_tool_choice_values"] = ("auto", "any")
+        if self.supports_tool_choice_values is None:
+            if "claude-3" in self.model_id:
+                self.supports_tool_choice_values = ("auto", "any", "tool")
+            elif "mistral-large" in self.model_id:
+                self.supports_tool_choice_values = ("auto", "any")
             else:
-                values["supports_tool_choice_values"] = ()
+                self.supports_tool_choice_values = ()
 
-        return values
+        return self
 
     def _generate(
         self,
@@ -491,7 +498,7 @@ class ChatBedrockConverse(BaseChatModel):
 
     def with_structured_output(
         self,
-        schema: Union[Dict, TypeBaseModel],
+        schema: _DictOrPydanticClass,
         *,
         include_raw: bool = False,
         **kwargs: Any,
@@ -505,11 +512,23 @@ class ChatBedrockConverse(BaseChatModel):
             tool_choice = None
         llm = self.bind_tools([schema], tool_choice=tool_choice)
         if isinstance(schema, type) and is_basemodel_subclass(schema):
-            output_parser = ToolsOutputParser(
-                first_tool_only=True, pydantic_schemas=[schema]
-            )
+            if self.disable_streaming:
+                output_parser: OutputParserLike = ToolsOutputParser(
+                    first_tool_only=True, pydantic_schemas=[schema]
+                )
+            else:
+                output_parser = PydanticToolsParser(
+                    tools=[schema],
+                    first_tool_only=True,
+                )
         else:
-            output_parser = ToolsOutputParser(first_tool_only=True, args_only=True)
+            tool_name = convert_to_openai_tool(schema)["function"]["name"]
+            if self.disable_streaming:
+                output_parser = ToolsOutputParser(first_tool_only=True, args_only=True)
+            else:
+                output_parser = JsonOutputKeyToolsParser(
+                    key_name=tool_name, first_tool_only=True
+                )
 
         if include_raw:
             parser_assign = RunnablePassthrough.assign(
@@ -601,7 +620,7 @@ def _messages_to_bedrock(
         if isinstance(msg, HumanMessage):
             # If there's a human, tool, human message sequence, the
             # tool message will be merged with the first human message, so the second
-            # human message will now be preceeded by a human message and should also
+            # human message will now be preceded by a human message and should also
             # be merged with it.
             if bedrock_messages and bedrock_messages[-1]["role"] == "user":
                 bedrock_messages[-1]["content"].extend(content)
@@ -726,7 +745,7 @@ def _anthropic_to_bedrock(
         elif block["type"] == "image":
             # Assume block is already in bedrock format.
             if "image" in block:
-                bedrock_content.append(block)
+                bedrock_content.append({"image": block["image"]})
             else:
                 bedrock_content.append(
                     {
@@ -743,6 +762,9 @@ def _anthropic_to_bedrock(
             bedrock_content.append(
                 {"image": _format_openai_image_url(block["imageUrl"]["url"])}
             )
+        elif block["type"] == "document":
+            # Assume block in bedrock document format
+            bedrock_content.append({"document": block["document"]})
         elif block["type"] == "tool_use":
             bedrock_content.append(
                 {

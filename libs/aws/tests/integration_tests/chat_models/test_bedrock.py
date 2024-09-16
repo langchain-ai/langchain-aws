@@ -12,8 +12,8 @@ from langchain_core.messages import (
     SystemMessage,
 )
 from langchain_core.outputs import ChatGeneration, LLMResult
-from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.runnables import RunnableConfig
+from pydantic import BaseModel, Field
 
 from langchain_aws.chat_models.bedrock import ChatBedrock
 from tests.callbacks import FakeCallbackHandler, FakeCallbackHandlerWithTokenCounts
@@ -29,7 +29,7 @@ def chat() -> ChatBedrock:
 
 @pytest.mark.scheduled
 def test_chat_bedrock(chat: ChatBedrock) -> None:
-    """Test BedrockChat wrapper."""
+    """Test ChatBedrock wrapper."""
     system = SystemMessage(content="You are a helpful assistant.")
     human = HumanMessage(content="Hello")
     response = chat.invoke([system, human])
@@ -39,7 +39,7 @@ def test_chat_bedrock(chat: ChatBedrock) -> None:
 
 @pytest.mark.scheduled
 def test_chat_bedrock_generate(chat: ChatBedrock) -> None:
-    """Test BedrockChat wrapper with generate."""
+    """Test ChatBedrock wrapper with generate."""
     message = HumanMessage(content="Hello")
     response = chat.generate([[message], [message]])
     assert isinstance(response, LLMResult)
@@ -53,7 +53,7 @@ def test_chat_bedrock_generate(chat: ChatBedrock) -> None:
 
 @pytest.mark.scheduled
 def test_chat_bedrock_generate_with_token_usage(chat: ChatBedrock) -> None:
-    """Test BedrockChat wrapper with generate."""
+    """Test ChatBedrock wrapper with generate."""
     message = HumanMessage(content="Hello")
     response = chat.generate([[message], [message]])
     assert isinstance(response, LLMResult)
@@ -81,6 +81,26 @@ def test_chat_bedrock_streaming() -> None:
     assert full.content
     assert full.response_metadata
     assert full.usage_metadata  # type: ignore[attr-defined]
+
+
+@pytest.mark.scheduled
+def test_chat_bedrock_token_counts() -> None:
+    chat = ChatBedrock(  # type: ignore[call-arg]
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_kwargs={"temperature": 0},
+    )
+    invoke_response = chat.invoke("hi", max_tokens=6)
+    assert isinstance(invoke_response, AIMessage)
+    assert invoke_response.usage_metadata is not None
+    assert invoke_response.usage_metadata["output_tokens"] <= 6
+
+    stream = chat.stream("hi", max_tokens=6)
+    stream_response = next(stream)
+    for chunk in stream:
+        stream_response += chunk
+    assert isinstance(stream_response, AIMessage)
+    assert stream_response.usage_metadata is not None
+    assert stream_response.usage_metadata["output_tokens"] <= 6
 
 
 @pytest.mark.scheduled
@@ -199,7 +219,7 @@ async def test_bedrock_astream(model_id: str) -> None:
 
 @pytest.mark.scheduled
 async def test_bedrock_abatch(chat: ChatBedrock) -> None:
-    """Test streaming tokens from BedrockChat."""
+    """Test streaming tokens from ChatBedrock."""
     result = await chat.abatch(["I'm Pickle Rick", "I'm not Pickle Rick"])
     for token in result:
         assert isinstance(token.content, str)
@@ -207,7 +227,7 @@ async def test_bedrock_abatch(chat: ChatBedrock) -> None:
 
 @pytest.mark.scheduled
 async def test_bedrock_abatch_tags(chat: ChatBedrock) -> None:
-    """Test batch tokens from BedrockChat."""
+    """Test batch tokens from ChatBedrock."""
     result = await chat.abatch(
         ["I'm Pickle Rick", "I'm not Pickle Rick"], config={"tags": ["foo"]}
     )
@@ -217,7 +237,7 @@ async def test_bedrock_abatch_tags(chat: ChatBedrock) -> None:
 
 @pytest.mark.scheduled
 def test_bedrock_batch(chat: ChatBedrock) -> None:
-    """Test batch tokens from BedrockChat."""
+    """Test batch tokens from ChatBedrock."""
     result = chat.batch(["I'm Pickle Rick", "I'm not Pickle Rick"])
     for token in result:
         assert isinstance(token.content, str)
@@ -225,14 +245,14 @@ def test_bedrock_batch(chat: ChatBedrock) -> None:
 
 @pytest.mark.scheduled
 async def test_bedrock_ainvoke(chat: ChatBedrock) -> None:
-    """Test invoke tokens from BedrockChat."""
+    """Test invoke tokens from ChatBedrock."""
     result = await chat.ainvoke("I'm Pickle Rick", config={"tags": ["foo"]})
     assert isinstance(result.content, str)
 
 
 @pytest.mark.scheduled
 def test_bedrock_invoke(chat: ChatBedrock) -> None:
-    """Test invoke tokens from BedrockChat."""
+    """Test invoke tokens from ChatBedrock."""
     result = chat.invoke("I'm Pickle Rick", config=dict(tags=["foo"]))
     assert isinstance(result.content, str)
     assert "usage" in result.additional_kwargs

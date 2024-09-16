@@ -5,8 +5,9 @@ from typing import Literal, Type
 import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
-from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_standard_tests.integration_tests import ChatModelIntegrationTests
+from pydantic import BaseModel, Field
+from typing_extensions import Annotated, TypedDict
 
 from langchain_aws import ChatBedrockConverse
 
@@ -62,6 +63,44 @@ def test_structured_output_snake_case() -> None:
     chat = model.with_structured_output(ClassifyQuery)
     for chunk in chat.stream("How big are cats?"):
         assert isinstance(chunk, ClassifyQuery)
+
+
+def test_structured_output_streaming() -> None:
+    model = ChatBedrockConverse(
+        model="anthropic.claude-3-5-sonnet-20240620-v1:0", temperature=0
+    )
+    query = (
+        "What weighs more, a pound of bricks or a pound of feathers? "
+        "Limit your response to 20 words."
+    )
+
+    # TypedDict
+    class AnswerWithJustification(TypedDict):
+        """An answer to the user question along with justification for the answer."""
+
+        answer: Annotated[str, ...]
+        justification: Annotated[str, ...]
+
+    chat = model.with_structured_output(AnswerWithJustification)
+    chunk_count = 0
+    for chunk in chat.stream(query):
+        chunk_count = chunk_count + 1
+        assert isinstance(chunk, dict)
+    assert chunk_count > 1
+
+    # Pydantic
+    class AnAnswerWithJustification(BaseModel):
+        """An answer to the user question along with justification for the answer."""
+
+        answer: Annotated[str, ...]
+        justification: Annotated[str, ...]
+
+    chat = model.with_structured_output(AnAnswerWithJustification)
+    chunk_count = 0
+    for chunk in chat.stream(query):
+        chunk_count = chunk_count + 1
+        assert isinstance(chunk, AnAnswerWithJustification)
+    assert chunk_count > 1
 
 
 @pytest.mark.skip(reason="Needs guardrails setup to run.")

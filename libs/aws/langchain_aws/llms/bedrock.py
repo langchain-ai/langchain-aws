@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import warnings
 from abc import ABC
 from typing import (
@@ -16,18 +17,16 @@ from typing import (
     Union,
 )
 
-from langchain_core._api.deprecation import deprecated
 from langchain_core.callbacks import (
     AsyncCallbackManagerForLLMRun,
     CallbackManagerForLLMRun,
 )
-from langchain_core.language_models import LLM, BaseLanguageModel
+from langchain_core.language_models import LLM, BaseLanguageModel, LangSmithParams
 from langchain_core.messages import AIMessageChunk, ToolCall
-from langchain_core.messages.ai import UsageMetadata
 from langchain_core.messages.tool import tool_call, tool_call_chunk
 from langchain_core.outputs import Generation, GenerationChunk, LLMResult
-from langchain_core.pydantic_v1 import Extra, Field, root_validator
-from langchain_core.utils import get_from_dict_or_env
+from pydantic import ConfigDict, Field, model_validator
+from typing_extensions import Self
 
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
@@ -96,14 +95,8 @@ def _stream_response_to_generation_chunk(
     if messages_api:
         msg_type = stream_response.get("type")
         if msg_type == "message_start":
-            input_tokens = stream_response["message"]["usage"]["input_tokens"]
             return AIMessageChunk(
                 content="" if coerce_content_to_string else [],
-                usage_metadata=UsageMetadata(
-                    input_tokens=input_tokens,
-                    output_tokens=0,
-                    total_tokens=input_tokens,
-                ),
             )
         elif (
             msg_type == "content_block_start"
@@ -148,14 +141,8 @@ def _stream_response_to_generation_chunk(
                     tool_call_chunks=[tc_chunk],  # type: ignore
                 )
         elif msg_type == "message_delta":
-            output_tokens = stream_response["usage"]["output_tokens"]
             return AIMessageChunk(
                 content="",
-                usage_metadata=UsageMetadata(
-                    input_tokens=0,
-                    output_tokens=output_tokens,
-                    total_tokens=output_tokens,
-                ),
                 response_metadata={
                     "stop_reason": stream_response["delta"]["stop_reason"],
                     "stop_sequence": stream_response["delta"]["stop_sequence"],
@@ -476,7 +463,7 @@ class LLMInputOutputAdapter:
 class BedrockBase(BaseLanguageModel, ABC):
     """Base class for Bedrock models."""
 
-    client: Any = Field(exclude=True)  #: :meta private:
+    client: Any = Field(default=None, exclude=True)  #: :meta private:
 
     region_name: Optional[str] = None
     """The aws region e.g., `us-west-2`. Fallsback to AWS_DEFAULT_REGION env variable
@@ -547,7 +534,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         Optional[Mapping[str, str]]: A mapping with 'id' and 'version' keys.
 
     Example:
-    llm = Bedrock(model_id="<model_id>", client=<bedrock_client>,
+    llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
                   model_kwargs={},
                   guardrails={
                         "id": "<guardrail_id>",
@@ -557,7 +544,7 @@ class BedrockBase(BaseLanguageModel, ABC):
     'run_manager' parameter of the 'generate', '_call' methods.
 
     Example:
-    llm = Bedrock(model_id="<model_id>", client=<bedrock_client>,
+    llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
                   model_kwargs={},
                   guardrails={
                         "id": "<guardrail_id>",
@@ -578,39 +565,38 @@ class BedrockBase(BaseLanguageModel, ABC):
                 ...Logic to handle guardrail intervention...
     """  # noqa: E501
 
-    @root_validator()
-    def validate_environment(cls, values: Dict) -> Dict:
+    @model_validator(mode="after")
+    def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
 
         # Skip creating new client if passed in constructor
-        if values["client"] is not None:
-            return values
+        if self.client is not None:
+            return self
 
         try:
             import boto3
 
-            if values["credentials_profile_name"] is not None:
-                session = boto3.Session(profile_name=values["credentials_profile_name"])
+            if self.credentials_profile_name is not None:
+                session = boto3.Session(profile_name=self.credentials_profile_name)
             else:
                 # use default credentials
                 session = boto3.Session()
 
-            values["region_name"] = get_from_dict_or_env(
-                values,
-                "region_name",
-                "AWS_DEFAULT_REGION",
-                default=session.region_name,
+            self.region_name = (
+                self.region_name
+                or os.getenv("AWS_DEFAULT_REGION")
+                or session.region_name
             )
 
             client_params = {}
-            if values["region_name"]:
-                client_params["region_name"] = values["region_name"]
-            if values["endpoint_url"]:
-                client_params["endpoint_url"] = values["endpoint_url"]
-            if values["config"]:
-                client_params["config"] = values["config"]
+            if self.region_name:
+                client_params["region_name"] = self.region_name
+            if self.endpoint_url:
+                client_params["endpoint_url"] = self.endpoint_url
+            if self.config:
+                client_params["config"] = self.config
 
-            values["client"] = session.client("bedrock-runtime", **client_params)
+            self.client = session.client("bedrock-runtime", **client_params)
 
         except ImportError:
             raise ModuleNotFoundError(
@@ -626,7 +612,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 f"profile name are valid. Bedrock error: {e}"
             ) from e
 
-        return values
+        return self
 
     @property
     def _identifying_params(self) -> Dict[str, Any]:
@@ -642,15 +628,27 @@ class BedrockBase(BaseLanguageModel, ABC):
         }
 
     def _get_provider(self) -> str:
+        # If provider supplied by user, return as-is
         if self.provider:
             return self.provider
+
+        # If model_id is an arn, can't extract provider from model_id,
+        # so this requires passing in the provider by user
         if self.model_id.startswith("arn"):
             raise ValueError(
                 "Model provider should be supplied when passing a model ARN as "
                 "model_id"
             )
 
-        return self.model_id.split(".")[0]
+        # If model_id has region prefixed to them,
+        # for example eu.anthropic.claude-3-haiku-20240307-v1:0,
+        # provider is the second part, otherwise, the first part
+        parts = self.model_id.split(".", maxsplit=2)
+        return (
+            parts[1]
+            if (len(parts) > 1 and parts[0].lower() in {"eu", "us", "ap", "sa"})
+            else parts[0]
+        )
 
     def _get_model(self) -> str:
         return self.model_id.split(".", maxsplit=1)[-1]
@@ -977,13 +975,13 @@ class BedrockLLM(LLM, BedrockBase):
 
     """
 
-    @root_validator()
-    def validate_environment(cls, values: Dict) -> Dict:
-        model_id = values["model_id"]
+    @model_validator(mode="after")
+    def validate_environment(self) -> Self:
+        model_id = self.model_id
         if model_id.startswith("anthropic.claude-3"):
             raise ValueError(
                 "Claude v3 models are not supported by this LLM."
-                "Please use `from langchain_community.chat_models import BedrockChat` "
+                "Please use `from langchain_aws import ChatBedrock` "
                 "instead."
             )
         if model_id.startswith("cohere.command-r"):
@@ -992,7 +990,7 @@ class BedrockLLM(LLM, BedrockBase):
                 "Please use `from langchain_community.chat_models import BedrockChat` "
                 "instead."
             )
-        return super().validate_environment(values)
+        return self
 
     @property
     def _llm_type(self) -> str:
@@ -1018,10 +1016,18 @@ class BedrockLLM(LLM, BedrockBase):
 
         return attributes
 
-    class Config:
-        """Configuration for this pydantic object."""
+    def _get_ls_params(
+        self, stop: Optional[List[str]] = None, **kwargs: Any
+    ) -> LangSmithParams:
+        """Get standard params for tracing."""
+        ls_params = super()._get_ls_params(stop=stop, **kwargs)
+        ls_params["ls_provider"] = "amazon_bedrock"
+        ls_params["ls_model_name"] = self.model_id
+        return ls_params
 
-        extra = Extra.forbid
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
     def _stream(
         self,
@@ -1208,8 +1214,3 @@ class BedrockLLM(LLM, BedrockBase):
             return get_token_ids_anthropic(text)
         else:
             return super().get_token_ids(text)
-
-
-@deprecated(since="0.1.0", removal="0.2.0", alternative="BedrockLLM")
-class Bedrock(BedrockLLM):
-    pass
