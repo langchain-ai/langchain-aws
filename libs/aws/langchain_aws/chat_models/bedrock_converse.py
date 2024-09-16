@@ -47,7 +47,7 @@ from langchain_core.utils.function_calling import (
     convert_to_openai_tool,
 )
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, SecretStr
 from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
@@ -311,6 +311,26 @@ class ChatBedrockConverse(BaseChatModel):
     https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     """
 
+    aws_access_key_id: Optional[SecretStr] = None
+    """AWS access key id. If provided, aws_secret_access_key must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    """
+
+    aws_secret_access_key: Optional[SecretStr] = None
+    """AWS secret_access_key. If provided, aws_access_key_id must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    """
+
+    aws_session_token: Optional[SecretStr] = None
+    """AWS session token. If provided, aws_access_key_id and aws_secret_access_key must also be provided.
+    Not required unless using temporary credentials.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    """
+
     provider: str = ""
     """The model provider, e.g., amazon, cohere, ai21, etc. 
     
@@ -358,6 +378,12 @@ class ChatBedrockConverse(BaseChatModel):
         populate_by_name=True,
     )
 
+    @property
+    def lc_secrets(self) -> Dict[str, str]:
+        return {"aws_access_key_id": "AWS_ACCESS_KEY_ID",
+                "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
+                "aws_session_token": "AWS_SESSION_TOKEN"}
+
     @model_validator(mode="before")
     @classmethod
     def set_disable_streaming(cls, values: Dict) -> Any:
@@ -380,7 +406,13 @@ class ChatBedrockConverse(BaseChatModel):
             return self
 
         try:
-            if self.credentials_profile_name is not None:
+            if self.aws_access_key_id:
+                session = boto3.Session(
+                    aws_access_key_id=self.aws_access_key_id.get_secret_value(),
+                    aws_secret_access_key=self.aws_secret_access_key.get_secret_value(),
+                    aws_session_token=self.aws_session_token.get_secret_value()
+                )
+            elif self.credentials_profile_name is not None:
                 session = boto3.Session(profile_name=self.credentials_profile_name)
             else:
                 session = boto3.Session()

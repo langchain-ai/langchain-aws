@@ -25,7 +25,7 @@ from langchain_core.language_models import LLM, BaseLanguageModel, LangSmithPara
 from langchain_core.messages import AIMessageChunk, ToolCall
 from langchain_core.messages.tool import tool_call, tool_call_chunk
 from langchain_core.outputs import Generation, GenerationChunk, LLMResult
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, model_validator, SecretStr
 from typing_extensions import Self
 
 from langchain_aws.function_calling import _tools_in_params
@@ -463,6 +463,26 @@ class BedrockBase(BaseLanguageModel, ABC):
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     """
 
+    aws_access_key_id: Optional[SecretStr] = None
+    """AWS access key id. If provided, aws_secret_access_key must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    """
+
+    aws_secret_access_key: Optional[SecretStr] = None
+    """AWS secret_access_key. If provided, aws_access_key_id must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    """
+
+    aws_session_token: Optional[SecretStr] = None
+    """AWS session token. If provided, aws_access_key_id and aws_secret_access_key must also be provided.
+    Not required unless using temporary credentials.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    """
+
     config: Any = None
     """An optional botocore.config.Config instance to pass to the client."""
 
@@ -550,6 +570,12 @@ class BedrockBase(BaseLanguageModel, ABC):
                 ...Logic to handle guardrail intervention...
     """  # noqa: E501
 
+    @property
+    def lc_secrets(self) -> Dict[str, str]:
+        return {"aws_access_key_id": "AWS_ACCESS_KEY_ID",
+                "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
+                "aws_session_token": "AWS_SESSION_TOKEN"}
+
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
@@ -561,7 +587,13 @@ class BedrockBase(BaseLanguageModel, ABC):
         try:
             import boto3
 
-            if self.credentials_profile_name is not None:
+            if self.aws_access_key_id:
+                session = boto3.Session(
+                    aws_access_key_id=self.aws_access_key_id.get_secret_value(),
+                    aws_secret_access_key=self.aws_secret_access_key.get_secret_value(),
+                    aws_session_token=self.aws_session_token.get_secret_value()
+                )
+            elif self.credentials_profile_name is not None:
                 session = boto3.Session(profile_name=self.credentials_profile_name)
             else:
                 # use default credentials
