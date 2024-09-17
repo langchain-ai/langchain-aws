@@ -17,6 +17,7 @@ from typing import (
     Union,
 )
 
+import boto3
 from langchain_core.callbacks import (
     AsyncCallbackManagerForLLMRun,
     CallbackManagerForLLMRun,
@@ -25,6 +26,7 @@ from langchain_core.language_models import LLM, BaseLanguageModel, LangSmithPara
 from langchain_core.messages import AIMessageChunk, ToolCall
 from langchain_core.messages.tool import tool_call, tool_call_chunk
 from langchain_core.outputs import Generation, GenerationChunk, LLMResult
+from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
@@ -463,26 +465,45 @@ class BedrockBase(BaseLanguageModel, ABC):
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     """
 
-    aws_access_key_id: Optional[SecretStr] = None
-    """AWS access key id. If provided, aws_secret_access_key must also be provided.
+    aws_access_key_id: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
+    )
+    """AWS access key id. 
+    
+    If provided, aws_secret_access_key must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    
+    Will be read from env var 'AWS_ACCESS_KEY_ID' if it is set and env var 
+    aws_access_key_id init arg is not passed in.
     """
 
-    aws_secret_access_key: Optional[SecretStr] = None
-    """AWS secret_access_key. If provided, aws_access_key_id must also be provided.
+    aws_secret_access_key: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
+    )
+    """AWS secret_access_key. 
+    
+    If provided, aws_access_key_id must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    
+    Will be read from env var 'AWS_SECRET_ACCESS_KEY' if it is set and 
+    aws_secret_access_key init arg is not passed in.
     """
 
-    aws_session_token: Optional[SecretStr] = None
+    aws_session_token: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
+    )
     """AWS session token. 
     
     If provided, aws_access_key_id and aws_secret_access_key must also be provided.
     Not required unless using temporary credentials.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    
+    Will be read from env var 'AWS_SESSION_TOKEN' if it is set and aws_session_token 
+    init arg is not passed in.
     """
 
     config: Any = None
@@ -588,20 +609,28 @@ class BedrockBase(BaseLanguageModel, ABC):
         if self.client is not None:
             return self
 
-        try:
-            import boto3
+        creds = {
+            "aws_access_key_id": self.aws_access_key_id,
+            "aws_secret_access_key": self.aws_secret_access_key,
+            "aws_session_token": self.aws_session_token,
+        }
+        if creds["aws_access_key_id"] and creds["aws_secret_access_key"]:
+            session_params = {k: v.get_secret_value() for k, v in creds.items() if v}
+        elif any(creds.values()):
+            raise ValueError(
+                f"If any of aws_access_key_id, aws_secret_access_key, or "
+                f"aws_session_token are specified then both aws_access_key_id and "
+                f"aws_secret_access_key must be specified. Only received "
+                f"{(k for k, v in creds.items() if v)}."
+            )
+        elif self.credentials_profile_name is not None:
+            session_params = {"profile_name": self.credentials_profile_name}
+        else:
+            # use default credentials
+            session_params = {}
 
-            if self.aws_access_key_id:
-                session = boto3.Session(
-                    aws_access_key_id=self.aws_access_key_id.get_secret_value(),
-                    aws_secret_access_key=self.aws_secret_access_key.get_secret_value(),
-                    aws_session_token=self.aws_session_token.get_secret_value(),
-                )
-            elif self.credentials_profile_name is not None:
-                session = boto3.Session(profile_name=self.credentials_profile_name)
-            else:
-                # use default credentials
-                session = boto3.Session()
+        try:
+            session = boto3.Session(**session_params)
 
             self.region_name = (
                 self.region_name
@@ -609,28 +638,20 @@ class BedrockBase(BaseLanguageModel, ABC):
                 or session.region_name
             )
 
-            client_params = {}
-            if self.region_name:
-                client_params["region_name"] = self.region_name
-            if self.endpoint_url:
-                client_params["endpoint_url"] = self.endpoint_url
-            if self.config:
-                client_params["config"] = self.config
-
+            client_params = {
+                "endpoint_url": self.endpoint_url,
+                "config": self.config,
+                "region_name": self.region_name,
+            }
+            client_params = {k: v for k, v in client_params.items() if v}
             self.client = session.client("bedrock-runtime", **client_params)
-
-        except ImportError:
-            raise ModuleNotFoundError(
-                "Could not import boto3 python package. "
-                "Please install it with `pip install boto3`."
-            )
         except ValueError as e:
-            raise ValueError(f"Error raised by bedrock service: {e}")
+            raise ValueError(f"Error raised by bedrock service:\n\n{e}") from e
         except Exception as e:
             raise ValueError(
                 "Could not load credentials to authenticate with AWS client. "
                 "Please check that credentials in the specified "
-                f"profile name are valid. Bedrock error: {e}"
+                f"profile name are valid. Bedrock error:\n\n{e}"
             ) from e
 
         return self
