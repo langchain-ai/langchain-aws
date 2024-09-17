@@ -326,8 +326,10 @@ class ChatBedrockConverse(BaseChatModel):
     """
 
     aws_session_token: Optional[SecretStr] = None
-    """AWS session token. If provided, aws_access_key_id and aws_secret_access_key must also be provided.
-    Not required unless using temporary credentials.
+    """AWS session token. 
+    
+    If provided, aws_access_key_id and aws_secret_access_key must 
+    also be provided. Not required unless using temporary credentials.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     """
 
