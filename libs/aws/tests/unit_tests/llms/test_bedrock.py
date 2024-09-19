@@ -297,6 +297,7 @@ async def test_bedrock_async_streaming_call() -> None:  #
                 client=None,
                 model_id="anthropic.claude-v2",
                 streaming=True,
+                region_name="us-west-2",
             )
             # Call the _astream method
             chunks = [
