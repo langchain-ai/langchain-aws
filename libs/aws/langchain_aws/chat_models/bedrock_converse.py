@@ -322,8 +322,7 @@ class ChatBedrockConverse(BaseChatModel):
     credentials from IMDS will be used.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     
-    Will be read from env var 'AWS_ACCESS_KEY_ID' if it is set and env var 
-    aws_access_key_id init arg is not passed in.
+    If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
     """
 
     aws_secret_access_key: Optional[SecretStr] = Field(
@@ -336,8 +335,7 @@ class ChatBedrockConverse(BaseChatModel):
     credentials from IMDS will be used.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     
-    Will be read from env var 'AWS_SECRET_ACCESS_KEY' if it is set and 
-    aws_secret_access_key init arg is not passed in.
+    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
     """
 
     aws_session_token: Optional[SecretStr] = Field(
@@ -349,8 +347,7 @@ class ChatBedrockConverse(BaseChatModel):
     also be provided. Not required unless using temporary credentials.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     
-    Will be read from env var 'AWS_SESSION_TOKEN' if it is set and aws_session_token 
-    init arg is not passed in.
+    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
     """
 
     provider: str = ""
