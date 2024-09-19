@@ -423,54 +423,6 @@ class ChatBedrockConverse(BaseChatModel):
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
-        # Skip creating new client if passed in constructor
-        if self.client is not None:
-            return self
-
-        creds = {
-            "aws_access_key_id": self.aws_access_key_id,
-            "aws_secret_access_key": self.aws_secret_access_key,
-            "aws_session_token": self.aws_session_token,
-        }
-        if creds["aws_access_key_id"] and creds["aws_secret_access_key"]:
-            session_params = {k: v.get_secret_value() for k, v in creds.items() if v}
-        elif any(creds.values()):
-            raise ValueError(
-                f"If any of aws_access_key_id, aws_secret_access_key, or "
-                f"aws_session_token are specified then both aws_access_key_id and "
-                f"aws_secret_access_key must be specified. Only received "
-                f"{(k for k, v in creds.items() if v)}."
-            )
-        elif self.credentials_profile_name is not None:
-            session_params = {"profile_name": self.credentials_profile_name}
-        else:
-            # use default credentials
-            session_params = {}
-
-        try:
-            session = boto3.Session(**session_params)
-
-            self.region_name = (
-                self.region_name
-                or os.getenv("AWS_DEFAULT_REGION")
-                or session.region_name
-            )
-
-            client_params = {
-                "endpoint_url": self.endpoint_url,
-                "config": self.config,
-                "region_name": self.region_name,
-            }
-            client_params = {k: v for k, v in client_params.items() if v}
-            self.client = session.client("bedrock-runtime", **client_params)
-        except ValueError as e:
-            raise ValueError(f"Error raised by bedrock service:\n\n{e}") from e
-        except Exception as e:
-            raise ValueError(
-                "Could not load credentials to authenticate with AWS client. "
-                "Please check that credentials in the specified "
-                f"profile name are valid. Bedrock error:\n\n{e}"
-            ) from e
 
         # As of 08/05/24 only claude-3 and mistral-large models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
@@ -481,6 +433,55 @@ class ChatBedrockConverse(BaseChatModel):
                 self.supports_tool_choice_values = ("auto", "any")
             else:
                 self.supports_tool_choice_values = ()
+
+        # Skip creating new client if passed in constructor
+        if self.client is None:
+            creds = {
+                "aws_access_key_id": self.aws_access_key_id,
+                "aws_secret_access_key": self.aws_secret_access_key,
+                "aws_session_token": self.aws_session_token,
+            }
+            if creds["aws_access_key_id"] and creds["aws_secret_access_key"]:
+                session_params = {
+                    k: v.get_secret_value() for k, v in creds.items() if v
+                }
+            elif any(creds.values()):
+                raise ValueError(
+                    f"If any of aws_access_key_id, aws_secret_access_key, or "
+                    f"aws_session_token are specified then both aws_access_key_id and "
+                    f"aws_secret_access_key must be specified. Only received "
+                    f"{(k for k, v in creds.items() if v)}."
+                )
+            elif self.credentials_profile_name is not None:
+                session_params = {"profile_name": self.credentials_profile_name}
+            else:
+                # use default credentials
+                session_params = {}
+
+            try:
+                session = boto3.Session(**session_params)
+
+                self.region_name = (
+                    self.region_name
+                    or os.getenv("AWS_DEFAULT_REGION")
+                    or session.region_name
+                )
+
+                client_params = {
+                    "endpoint_url": self.endpoint_url,
+                    "config": self.config,
+                    "region_name": self.region_name,
+                }
+                client_params = {k: v for k, v in client_params.items() if v}
+                self.client = session.client("bedrock-runtime", **client_params)
+            except ValueError as e:
+                raise ValueError(f"Error raised by bedrock service:\n\n{e}") from e
+            except Exception as e:
+                raise ValueError(
+                    "Could not load credentials to authenticate with AWS client. "
+                    "Please check that credentials in the specified "
+                    f"profile name are valid. Bedrock error:\n\n{e}"
+                ) from e
 
         return self
 
