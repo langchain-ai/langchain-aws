@@ -794,7 +794,7 @@ subdirectory = "libs/langchain"
 
 [[package]]
 name = "langchain-core"
-version = "0.3.0"
+version = "0.3.2"
 description = "Building applications with LLMs through composability"
 optional = false
 python-versions = ">=3.9,<4.0"
@@ -817,7 +817,7 @@ typing-extensions = ">=4.7"
 type = "git"
 url = "https://github.com/langchain-ai/langchain.git"
 reference = "HEAD"
-resolved_reference = "ca304ae0469fa0723205484450ceaafd056b184e"
+resolved_reference = "c453b76579e139bc9ba55b5a717699df3c667032"
 subdirectory = "libs/core"
 
 [[package]]
@@ -1894,4 +1894,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<4.0"
-content-hash = "06bab61161d3947863dce618853099886f8a55eecad7cf8016dd9ec052d6d218"
+content-hash = "8bf93e448f73da47e4d474a1a06bade262aa69e4c3e60c6da419bd93569dabdc"
