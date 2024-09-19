@@ -1020,7 +1020,7 @@ class BedrockLLM(LLM, BedrockBase):
     """
 
     @model_validator(mode="after")
-    def validate_environment(self) -> Self:
+    def validate_environment_llm(self) -> Self:
         model_id = self.model_id
         if model_id.startswith("anthropic.claude-3"):
             raise ValueError(
