@@ -376,46 +376,6 @@ class ChatBedrockConverse(BaseChatModel):
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
-        if self.client is not None:
-            return self
-
-        try:
-            if self.credentials_profile_name is not None:
-                session = boto3.Session(profile_name=self.credentials_profile_name)
-            else:
-                session = boto3.Session()
-        except ValueError as e:
-            raise ValueError(f"Error raised by bedrock service: {e}")
-        except Exception as e:
-            raise ValueError(
-                "Could not load credentials to authenticate with AWS client. "
-                "Please check that credentials in the specified "
-                f"profile name are valid. Bedrock error: {e}"
-            ) from e
-
-        self.region_name = (
-            self.region_name or os.getenv("AWS_DEFAULT_REGION") or session.region_name
-        )
-
-        client_params = {}
-        if self.region_name:
-            client_params["region_name"] = self.region_name
-        if self.endpoint_url:
-            client_params["endpoint_url"] = self.endpoint_url
-        if self.config:
-            client_params["config"] = self.config
-
-        try:
-            self.client = session.client("bedrock-runtime", **client_params)
-        except ValueError as e:
-            raise ValueError(f"Error raised by bedrock service: {e}")
-        except Exception as e:
-            raise ValueError(
-                "Could not load credentials to authenticate with AWS client. "
-                "Please check that credentials in the specified "
-                f"profile name are valid. Bedrock error: {e}"
-            ) from e
-
         # As of 08/05/24 only claude-3 and mistral-large models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
         if self.supports_tool_choice_values is None:
@@ -425,6 +385,46 @@ class ChatBedrockConverse(BaseChatModel):
                 self.supports_tool_choice_values = ("auto", "any")
             else:
                 self.supports_tool_choice_values = ()
+
+        if self.client is None:
+            try:
+                if self.credentials_profile_name is not None:
+                    session = boto3.Session(profile_name=self.credentials_profile_name)
+                else:
+                    session = boto3.Session()
+            except ValueError as e:
+                raise ValueError(f"Error raised by bedrock service: {e}")
+            except Exception as e:
+                raise ValueError(
+                    "Could not load credentials to authenticate with AWS client. "
+                    "Please check that credentials in the specified "
+                    f"profile name are valid. Bedrock error: {e}"
+                ) from e
+
+            self.region_name = (
+                self.region_name
+                or os.getenv("AWS_DEFAULT_REGION")
+                or session.region_name
+            )
+
+            client_params = {}
+            if self.region_name:
+                client_params["region_name"] = self.region_name
+            if self.endpoint_url:
+                client_params["endpoint_url"] = self.endpoint_url
+            if self.config:
+                client_params["config"] = self.config
+
+            try:
+                self.client = session.client("bedrock-runtime", **client_params)
+            except ValueError as e:
+                raise ValueError(f"Error raised by bedrock service: {e}")
+            except Exception as e:
+                raise ValueError(
+                    "Could not load credentials to authenticate with AWS client. "
+                    "Please check that credentials in the specified "
+                    f"profile name are valid. Bedrock error: {e}"
+                ) from e
 
         return self
 
