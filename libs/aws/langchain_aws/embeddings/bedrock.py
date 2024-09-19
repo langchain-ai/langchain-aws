@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
@@ -154,7 +155,8 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                 return response_body.get("embedding")
 
         except Exception as e:
-            raise ValueError(f"Error raised by inference endpoint: {e}")
+            logging.error(f"Error raised by inference endpoint: {e}")
+            raise e
 
     def _normalize_vector(self, embeddings: List[float]) -> List[float]:
         """Normalize the embedding to a unit vector."""
