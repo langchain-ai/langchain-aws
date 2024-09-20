@@ -662,7 +662,6 @@ class ChatBedrockConverse(BaseChatModel):
     def get_lc_namespace(cls) -> list[str]:
         return ["langchain_aws", "chat_models"]
 
-
     @property
     def lc_secrets(self) -> Dict[str, str]:
         return {
@@ -670,7 +669,6 @@ class ChatBedrockConverse(BaseChatModel):
             "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
             "aws_session_token": "AWS_SESSION_TOKEN",
         }
-
 
 
 def _messages_to_bedrock(
