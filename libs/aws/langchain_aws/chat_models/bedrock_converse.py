@@ -397,14 +397,6 @@ class ChatBedrockConverse(BaseChatModel):
         populate_by_name=True,
     )
 
-    @property
-    def lc_secrets(self) -> Dict[str, str]:
-        return {
-            "aws_access_key_id": "AWS_ACCESS_KEY_ID",
-            "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
-            "aws_session_token": "AWS_SESSION_TOKEN",
-        }
-
     @model_validator(mode="before")
     @classmethod
     def set_disable_streaming(cls, values: Dict) -> Any:
@@ -661,6 +653,24 @@ class ChatBedrockConverse(BaseChatModel):
     def _llm_type(self) -> str:
         """Return type of chat model."""
         return "amazon_bedrock_converse_chat"
+
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        return True
+
+    @classmethod
+    def get_lc_namespace(cls) -> list[str]:
+        return ["langchain_aws", "chat_models"]
+
+
+    @property
+    def lc_secrets(self) -> Dict[str, str]:
+        return {
+            "aws_access_key_id": "AWS_ACCESS_KEY_ID",
+            "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
+            "aws_session_token": "AWS_SESSION_TOKEN",
+        }
+
 
 
 def _messages_to_bedrock(
