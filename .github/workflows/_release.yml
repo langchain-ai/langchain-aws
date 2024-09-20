@@ -174,14 +174,6 @@ jobs:
         run: make integration_tests
         working-directory: ${{ inputs.working-directory }}
 
-      - name: Remove environment variables
-        run: |
-          unset AWS_ACCESS_KEY_ID
-          unset AWS_SECRET_ACCESS_KEY
-          unset AWS_REGION
-          # Verify they are removed
-          if [ -z "$AWS_ACCESS_KEY_ID" ]; then echo "AWS_ACCESS_KEY_ID is unset"; else echo "AWS_ACCESS_KEY_ID is still set"; fi
-
       - name: Get minimum versions
         working-directory: ${{ inputs.working-directory }}
         id: min-version
@@ -197,6 +189,14 @@ jobs:
           MIN_VERSIONS: ${{ steps.min-version.outputs.min-versions }}
         run: |
           poetry run pip install $MIN_VERSIONS
+
+          # unset AWS credentials to ensure they are not used in snapshots
+          unset AWS_ACCESS_KEY_ID
+          unset AWS_SECRET_ACCESS_KEY
+          unset AWS_REGION
+          # Verify they are removed
+          if [ -z "$AWS_ACCESS_KEY_ID" ]; then echo "AWS_ACCESS_KEY_ID is unset"; else echo "AWS_ACCESS_KEY_ID is still set"; fi
+          
           make tests
         working-directory: ${{ inputs.working-directory }}
 
