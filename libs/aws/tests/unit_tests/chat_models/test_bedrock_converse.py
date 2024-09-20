@@ -1,7 +1,7 @@
 """Test chat model integration."""
 
 import base64
-from typing import Dict, List, Type, cast
+from typing import Dict, List, Tuple, Type, cast
 
 import pytest
 from langchain_core.language_models import BaseChatModel
@@ -46,6 +46,28 @@ class TestBedrockStandard(ChatModelUnitTests):
             "max_tokens": 100,
             "stop": [],
         }
+
+    @property
+    def init_from_env_params(self) -> Tuple[dict, dict, dict]:
+        """Return env vars, init args, and expected instance attrs for initializing
+        from env vars."""
+        return (
+            {
+                "AWS_ACCESS_KEY_ID": "key_id",
+                "AWS_SECRET_ACCESS_KEY": "secret_key",
+                "AWS_SESSION_TOKEN": "token",
+                "AWS_DEFAULT_REGION": "region",
+            },
+            {
+                "model": "anthropic.claude-3-sonnet-20240229-v1:0",
+            },
+            {
+                "aws_access_key_id": "key_id",
+                "aws_secret_access_key": "secret_key",
+                "aws_session_token": "token",
+                "region_name": "region",
+            },
+        )
 
     @pytest.mark.xfail(reason="Doesn't support streaming init param.")
     def test_init_streaming(self) -> None:

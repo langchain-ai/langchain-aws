@@ -42,12 +42,13 @@ from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
+from langchain_core.utils import secret_from_env
 from langchain_core.utils.function_calling import (
     convert_to_openai_function,
     convert_to_openai_tool,
 )
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
@@ -307,8 +308,46 @@ class ChatBedrockConverse(BaseChatModel):
     
     Profile should either have access keys or role information specified.
     If not specified, the default credential profile or, if on an EC2 instance,
-    credentials from IMDS will be used. See: 
-    https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    credentials from IMDS will be used. 
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    """
+
+    aws_access_key_id: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
+    )
+    """AWS access key id. 
+    
+    If provided, aws_secret_access_key must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    
+    If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+    """
+
+    aws_secret_access_key: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
+    )
+    """AWS secret_access_key. 
+    
+    If provided, aws_access_key_id must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    
+    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+    """
+
+    aws_session_token: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
+    )
+    """AWS session token. 
+    
+    If provided, aws_access_key_id and aws_secret_access_key must 
+    also be provided. Not required unless using temporary credentials.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    
+    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
     """
 
     provider: str = ""
@@ -358,6 +397,14 @@ class ChatBedrockConverse(BaseChatModel):
         populate_by_name=True,
     )
 
+    @property
+    def lc_secrets(self) -> Dict[str, str]:
+        return {
+            "aws_access_key_id": "AWS_ACCESS_KEY_ID",
+            "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
+            "aws_session_token": "AWS_SESSION_TOKEN",
+        }
+
     @model_validator(mode="before")
     @classmethod
     def set_disable_streaming(cls, values: Dict) -> Any:
@@ -376,6 +423,7 @@ class ChatBedrockConverse(BaseChatModel):
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
+
         # As of 08/05/24 only claude-3 and mistral-large models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
         if self.supports_tool_choice_values is None:
@@ -386,44 +434,53 @@ class ChatBedrockConverse(BaseChatModel):
             else:
                 self.supports_tool_choice_values = ()
 
+        # Skip creating new client if passed in constructor
         if self.client is None:
-            try:
-                if self.credentials_profile_name is not None:
-                    session = boto3.Session(profile_name=self.credentials_profile_name)
-                else:
-                    session = boto3.Session()
-            except ValueError as e:
-                raise ValueError(f"Error raised by bedrock service: {e}")
-            except Exception as e:
+            creds = {
+                "aws_access_key_id": self.aws_access_key_id,
+                "aws_secret_access_key": self.aws_secret_access_key,
+                "aws_session_token": self.aws_session_token,
+            }
+            if creds["aws_access_key_id"] and creds["aws_secret_access_key"]:
+                session_params = {
+                    k: v.get_secret_value() for k, v in creds.items() if v
+                }
+            elif any(creds.values()):
                 raise ValueError(
-                    "Could not load credentials to authenticate with AWS client. "
-                    "Please check that credentials in the specified "
-                    f"profile name are valid. Bedrock error: {e}"
-                ) from e
-
-            self.region_name = (
-                self.region_name
-                or os.getenv("AWS_DEFAULT_REGION")
-                or session.region_name
-            )
-
-            client_params = {}
-            if self.region_name:
-                client_params["region_name"] = self.region_name
-            if self.endpoint_url:
-                client_params["endpoint_url"] = self.endpoint_url
-            if self.config:
-                client_params["config"] = self.config
+                    f"If any of aws_access_key_id, aws_secret_access_key, or "
+                    f"aws_session_token are specified then both aws_access_key_id and "
+                    f"aws_secret_access_key must be specified. Only received "
+                    f"{(k for k, v in creds.items() if v)}."
+                )
+            elif self.credentials_profile_name is not None:
+                session_params = {"profile_name": self.credentials_profile_name}
+            else:
+                # use default credentials
+                session_params = {}
 
             try:
+                session = boto3.Session(**session_params)
+
+                self.region_name = (
+                    self.region_name
+                    or os.getenv("AWS_DEFAULT_REGION")
+                    or session.region_name
+                )
+
+                client_params = {
+                    "endpoint_url": self.endpoint_url,
+                    "config": self.config,
+                    "region_name": self.region_name,
+                }
+                client_params = {k: v for k, v in client_params.items() if v}
                 self.client = session.client("bedrock-runtime", **client_params)
             except ValueError as e:
-                raise ValueError(f"Error raised by bedrock service: {e}")
+                raise ValueError(f"Error raised by bedrock service:\n\n{e}") from e
             except Exception as e:
                 raise ValueError(
                     "Could not load credentials to authenticate with AWS client. "
                     "Please check that credentials in the specified "
-                    f"profile name are valid. Bedrock error: {e}"
+                    f"profile name are valid. Bedrock error:\n\n{e}"
                 ) from e
 
         return self
@@ -648,7 +705,7 @@ def _messages_to_bedrock(
             )
             bedrock_messages.append(curr)
         else:
-            raise ValueError()
+            raise ValueError(f"Unsupported message type {type(msg)}")
     return bedrock_messages, bedrock_system
 
 
