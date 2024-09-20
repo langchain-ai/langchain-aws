@@ -418,6 +418,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
     model_config = ConfigDict(
         extra="forbid",
+        populate_by_name=True,
     )
 
     def _get_ls_params(

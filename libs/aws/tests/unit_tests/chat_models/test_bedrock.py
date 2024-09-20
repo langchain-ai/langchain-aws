@@ -405,12 +405,16 @@ def test_anthropic_bind_tools_tool_choice() -> None:
 
 def test_standard_tracing_params() -> None:
     llm = ChatBedrock(model_id="foo", region_name="us-west-2")  # type: ignore[call-arg]
-    ls_params = llm._get_ls_params()
-    assert ls_params == {
+    expected = {
         "ls_provider": "amazon_bedrock",
         "ls_model_type": "chat",
         "ls_model_name": "foo",
     }
+    assert llm._get_ls_params() == expected
+
+    # Test initialization with `model` alias
+    llm = ChatBedrock(model="foo", region_name="us-west-2")
+    assert llm._get_ls_params() == expected
 
     llm = ChatBedrock(
         model_id="foo", model_kwargs={"temperature": 0.1}, region_name="us-west-2"
