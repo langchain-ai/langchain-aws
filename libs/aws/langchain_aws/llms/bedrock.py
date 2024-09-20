@@ -473,7 +473,7 @@ class BedrockBase(BaseLanguageModel, ABC):
     not have the provider in them, e.g., custom and provisioned models that have an ARN
     associated with them."""
 
-    model_id: str
+    model_id: str = Field(alias="model")
     """Id of the model to call, e.g., amazon.titan-text-express-v1, this is
     equivalent to the modelId property in the list-foundation-models api. For custom and
     provisioned models, an ARN value is expected."""
@@ -1004,6 +1004,7 @@ class BedrockLLM(LLM, BedrockBase):
 
     model_config = ConfigDict(
         extra="forbid",
+        populate_by_name=True,
     )
 
     def _stream(
