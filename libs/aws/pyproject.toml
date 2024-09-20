@@ -27,9 +27,9 @@ pytest = "^7.4.3"
 pytest-cov = "^4.1.0"
 syrupy = "^4.0.2"
 pytest-asyncio = "^0.23.2"
-langchain-core = { git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/core" }
-langchain-standard-tests = {git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/standard-tests"}
-langchain = { git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/langchain" }
+langchain-core = { git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/core", branch = "v0.2" }
+langchain-standard-tests = {git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/standard-tests", branch = "v0.2"}
+langchain = { git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/langchain", branch = "v0.2" }
 
 
 [tool.poetry.group.codespell]
@@ -52,13 +52,13 @@ ruff = "^0.1.8"
 [tool.poetry.group.typing.dependencies]
 mypy = "^1.7"
 types-requests = "^2.28.11.5"
-langchain-core = { git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/core" }
+langchain-core = { git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/core", branch = "v0.2"  }
 
 [tool.poetry.group.dev]
 optional = true
 
 [tool.poetry.group.dev.dependencies]
-langchain-core = { git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/core" }
+langchain-core = { git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/core", branch = "v0.2"  }
 
 [tool.ruff.lint]
 select = [
