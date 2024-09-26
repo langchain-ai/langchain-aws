@@ -383,8 +383,7 @@ def test__snake_to_camel_keys() -> None:
     assert _snake_to_camel_keys(_SNAKE_DICT) == _CAMEL_DICT
 
 
-def test__format_openai_image_url() -> None:
-    ...
+def test__format_openai_image_url() -> None: ...
 
 
 def test_standard_tracing_params() -> None:
