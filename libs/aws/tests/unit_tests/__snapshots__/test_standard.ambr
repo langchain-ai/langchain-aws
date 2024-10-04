@@ -14,12 +14,11 @@
         'guardrailVersion': None,
         'trace': None,
       }),
+      'max_tokens': 100,
       'model_id': 'anthropic.claude-3-sonnet-20240229-v1:0',
       'model_kwargs': dict({
-        'max_tokens': 100,
         'stop': list([
         ]),
-        'temperature': 0,
       }),
       'provider_stop_reason_key_map': dict({
         'ai21': 'finishReason',
@@ -36,6 +35,7 @@
         'mistral': 'stop_sequences',
       }),
       'region_name': 'us-east-1',
+      'temperature': 0,
     }),
     'lc': 1,
     'name': 'ChatBedrock',

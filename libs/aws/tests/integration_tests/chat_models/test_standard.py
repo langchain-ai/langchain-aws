@@ -20,7 +20,7 @@ class TestBedrockStandard(ChatModelIntegrationTests):
 
     @property
     def standard_chat_model_params(self) -> dict:
-        return {}
+        return {"temperature": 0, "max_tokens": 100}
 
     @pytest.mark.xfail(reason="Not implemented.")
     def test_stop_sequence(self, model: BaseChatModel) -> None:
@@ -57,11 +57,11 @@ class TestBedrockUseConverseStandard(ChatModelIntegrationTests):
     @property
     def standard_chat_model_params(self) -> dict:
         return {
+            "temperature": 0,
+            "max_tokens": 100,
             "model_kwargs": {
-                "temperature": 0,
-                "max_tokens": 100,
                 "stop": [],
-            }
+            },
         }
 
     @property
