@@ -431,9 +431,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             ls_model_name=self.model_id,
             ls_model_type="chat",
         )
-        if ls_temperature := params.get("temperature"):
+        if ls_temperature := params.get("temperature", self.temperature):
             ls_params["ls_temperature"] = ls_temperature
-        if ls_max_tokens := params.get("max_tokens"):
+        if ls_max_tokens := params.get("max_tokens", self.max_tokens):
             ls_params["ls_max_tokens"] = ls_max_tokens
         if ls_stop := stop or params.get("stop", None):
             ls_params["ls_stop"] = ls_stop
@@ -818,6 +818,10 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             for k, v in (self.model_kwargs or {}).items()
             if k in ("stop", "stop_sequences", "max_tokens", "temperature", "top_p")
         }
+        if self.max_tokens:
+            kwargs["max_tokens"] = self.max_tokens
+        if self.temperature is not None:
+            kwargs["temperature"] = self.temperature
         return ChatBedrockConverse(
             model=self.model_id,
             region_name=self.region_name,

@@ -263,6 +263,9 @@ class LLMInputOutputAdapter:
         system: Optional[str] = None,
         messages: Optional[List[Dict]] = None,
         tools: Optional[List[AnthropicTool]] = None,
+        *,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
     ) -> Dict[str, Any]:
         input_body = {**model_kwargs}
         if provider == "anthropic":
@@ -273,18 +276,44 @@ class LLMInputOutputAdapter:
                 input_body["messages"] = messages
                 if system:
                     input_body["system"] = system
-                if "max_tokens" not in input_body:
+                if max_tokens:
+                    input_body["max_tokens"] = max_tokens
+                elif "max_tokens" not in input_body:
                     input_body["max_tokens"] = 1024
+
             if prompt:
                 input_body["prompt"] = _human_assistant_format(prompt)
-                if "max_tokens_to_sample" not in input_body:
+                if max_tokens:
+                    input_body["max_tokens_to_sample"] = max_tokens
+                elif "max_tokens_to_sample" not in input_body:
                     input_body["max_tokens_to_sample"] = 1024
+
+            if temperature is not None:
+                input_body["temperature"] = temperature
+
         elif provider in ("ai21", "cohere", "meta", "mistral"):
             input_body["prompt"] = prompt
+            if max_tokens:
+                if provider == "cohere":
+                    input_body["max_tokens"] = max_tokens
+                elif provider == "meta":
+                    input_body["max_gen_len"] = max_tokens
+                elif provider == "mistral":
+                    input_body["max_tokens"] = max_tokens
+                else:
+                    # TODO: Add AI21 support, param depends on specific model.
+                    pass
+            if temperature is not None:
+                input_body["temperature"] = temperature
+
         elif provider == "amazon":
             input_body = dict()
             input_body["inputText"] = prompt
             input_body["textGenerationConfig"] = {**model_kwargs}
+            if max_tokens:
+                input_body["textGenerationConfig"]["maxTokenCount"] = max_tokens
+            if temperature is not None:
+                input_body["textGenerationConfig"]["temperature"] = temperature
         else:
             input_body["inputText"] = prompt
 
@@ -451,7 +480,7 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     client: Any = Field(default=None, exclude=True)  #: :meta private:
 
-    region_name: Optional[str] = None
+    region_name: Optional[str] = Field(default=None, alias="region")
     """The aws region e.g., `us-west-2`. Fallsback to AWS_DEFAULT_REGION env variable
     or region specified in ~/.aws/config in case it is not provided here.
     """
@@ -589,6 +618,9 @@ class BedrockBase(BaseLanguageModel, ABC):
                 ...Logic to handle guardrail intervention...
     """  # noqa: E501
 
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+
     @property
     def lc_secrets(self) -> Dict[str, str]:
         return {
@@ -600,6 +632,17 @@ class BedrockBase(BaseLanguageModel, ABC):
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
+
+        if self.model_kwargs:
+            if "temperature" in self.model_kwargs:
+                if self.temperature is None:
+                    self.temperature = self.model_kwargs["temperature"]
+                self.model_kwargs.pop("temperature")
+
+            if "max_tokens" in self.model_kwargs:
+                if not self.max_tokens:
+                    self.max_tokens = self.model_kwargs["max_tokens"]
+                self.model_kwargs.pop("max_tokens")
 
         # Skip creating new client if passed in constructor
         if self.client is not None:
@@ -737,23 +780,27 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         provider = self._get_provider()
         params = {**_model_kwargs, **kwargs}
-        input_body = LLMInputOutputAdapter.prepare_input(
-            provider=provider,
-            model_kwargs=params,
-            prompt=prompt,
-            system=system,
-            messages=messages,
-        )
-        if "claude-3" in self._get_model():
-            if _tools_in_params(params):
-                input_body = LLMInputOutputAdapter.prepare_input(
-                    provider=provider,
-                    model_kwargs=params,
-                    prompt=prompt,
-                    system=system,
-                    messages=messages,
-                    tools=params["tools"],
-                )
+        if "claude-3" in self._get_model() and _tools_in_params(params):
+            input_body = LLMInputOutputAdapter.prepare_input(
+                provider=provider,
+                model_kwargs=params,
+                prompt=prompt,
+                system=system,
+                messages=messages,
+                tools=params["tools"],
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+            )
+        else:
+            input_body = LLMInputOutputAdapter.prepare_input(
+                provider=provider,
+                model_kwargs=params,
+                prompt=prompt,
+                system=system,
+                messages=messages,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+            )
         body = json.dumps(input_body)
         accept = "application/json"
         contentType = "application/json"
@@ -874,6 +921,8 @@ class BedrockBase(BaseLanguageModel, ABC):
             system=system,
             messages=messages,
             model_kwargs=params,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
         )
         coerce_content_to_string = True
         if "claude-3" in self._get_model():
@@ -886,6 +935,8 @@ class BedrockBase(BaseLanguageModel, ABC):
                     system=system,
                     messages=messages,
                     tools=params["tools"],
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
                 )
         body = json.dumps(input_body)
 
@@ -959,6 +1010,8 @@ class BedrockBase(BaseLanguageModel, ABC):
                 system=system,
                 messages=messages,
                 tools=params["tools"],
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
             )
         else:
             input_body = LLMInputOutputAdapter.prepare_input(
@@ -967,6 +1020,8 @@ class BedrockBase(BaseLanguageModel, ABC):
                 system=system,
                 messages=messages,
                 model_kwargs=params,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
             )
         body = json.dumps(input_body)
 
