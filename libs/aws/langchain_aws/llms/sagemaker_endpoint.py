@@ -184,7 +184,7 @@ class SagemakerEndpoint(LLM):
                 credentials_profile_name=credentials_profile_name
             )
         
-        # Usage with Inference Component
+            # Usage with Inference Component
             se = SagemakerEndpoint(
                 endpoint_name=endpoint_name,
                 inference_component_name=inference_component_name,
