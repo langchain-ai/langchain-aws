@@ -335,7 +335,7 @@ class SagemakerEndpoint(LLM):
             **_endpoint_kwargs,
         }
 
-        # If inference_compoent_name is specified, append it to invocation_params
+        # If inference_component_name is specified, append it to invocation_params
         if self.inference_component_name:
             invocation_params["InferenceComponentName"] = self.inference_component_name
 
@@ -369,7 +369,7 @@ class SagemakerEndpoint(LLM):
         **kwargs: Any,
     ) -> str:
         """Call out to SageMaker inference endpoint or inference component
-            of SageMaker endpoint
+            of SageMaker inference endpoint.
 
         Args:
             prompt: The prompt to pass into the model.
