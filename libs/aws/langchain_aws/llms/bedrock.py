@@ -482,7 +482,7 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     client: Any = Field(default=None, exclude=True)  #: :meta private:
 
-    region_name: Optional[str] = None
+    region_name: Optional[str] = Field(default=None, alias="region")
     """The aws region e.g., `us-west-2`. Fallsback to AWS_DEFAULT_REGION env variable
     or region specified in ~/.aws/config in case it is not provided here.
     """
