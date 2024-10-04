@@ -366,7 +366,17 @@ class LLMInputOutputAdapter:
             ):
                 return
 
-            elif (
+            generation_chunk = _stream_response_to_generation_chunk(
+                chunk_obj,
+                provider=provider,
+                output_key=output_key,
+                messages_api=messages_api,
+                coerce_content_to_string=coerce_content_to_string,
+            )
+            if generation_chunk:
+                yield generation_chunk
+
+            if (
                 provider == "mistral"
                 and chunk_obj.get(output_key, [{}])[0].get("stop_reason", "") == "stop"
             ):
@@ -380,18 +390,6 @@ class LLMInputOutputAdapter:
             elif messages_api and (chunk_obj.get("type") == "message_stop"):
                 yield _get_invocation_metrics_chunk(chunk_obj)
                 return
-
-            generation_chunk = _stream_response_to_generation_chunk(
-                chunk_obj,
-                provider=provider,
-                output_key=output_key,
-                messages_api=messages_api,
-                coerce_content_to_string=coerce_content_to_string,
-            )
-            if generation_chunk:
-                yield generation_chunk
-            else:
-                continue
 
     @classmethod
     async def aprepare_output_stream(

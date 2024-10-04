@@ -270,6 +270,11 @@ MOCK_STREAMING_RESPONSE = [
     {"chunk": {"bytes": b'{"text": " you"}'}},
 ]
 
+MOCK_STREAMING_RESPONSE_MISTRAL = [
+    {"chunk": {"bytes": b'{"outputs": [{"text": "Thank","stop_reason": null}]}'}},
+    {"chunk": {"bytes": b'{"outputs": [{"text": "you.","stop_reason": "stop"}]}'}},
+]
+
 
 async def async_gen_mock_streaming_response() -> AsyncGenerator[Dict, None]:
     for item in MOCK_STREAMING_RESPONSE:
@@ -327,6 +332,12 @@ def mistral_response():
         },
     )
 
+    return response
+
+
+@pytest.fixture
+def mistral_streaming_response():
+    response = dict(body=MOCK_STREAMING_RESPONSE_MISTRAL)
     return response
 
 
@@ -409,6 +420,18 @@ def test_prepare_output_for_mistral(mistral_response):
     assert result["usage"]["completion_tokens"] == 28
     assert result["usage"]["total_tokens"] == 46
     assert result["stop_reason"] is None
+
+
+def test_prepare_output_stream_for_mistral(mistral_streaming_response) -> None:
+    results = [
+        chunk.text
+        for chunk in LLMInputOutputAdapter.prepare_output_stream(
+            "mistral", mistral_streaming_response
+        )
+    ]
+
+    assert results[0] == "Thank"
+    assert results[1] == "you."
 
 
 def test_prepare_output_for_cohere(cohere_response):
