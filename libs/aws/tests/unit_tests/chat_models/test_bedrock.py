@@ -1,12 +1,15 @@
+# type:ignore
+
 """Test chat model integration."""
 
+from contextlib import nullcontext
 from typing import Any, Callable, Dict, Literal, Type, cast
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.runnables import RunnableBinding
 from langchain_core.tools import BaseTool
+from pydantic import BaseModel, Field
 
 from langchain_aws import ChatBedrock
 from langchain_aws.chat_models.bedrock import (
@@ -398,3 +401,58 @@ def test_anthropic_bind_tools_tool_choice() -> None:
     assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
         "type": "any"
     }
+
+
+def test_standard_tracing_params() -> None:
+    llm = ChatBedrock(model_id="foo", region_name="us-west-2")  # type: ignore[call-arg]
+    expected = {
+        "ls_provider": "amazon_bedrock",
+        "ls_model_type": "chat",
+        "ls_model_name": "foo",
+    }
+    assert llm._get_ls_params() == expected
+
+    # Test initialization with `model` alias
+    llm = ChatBedrock(model="foo", region_name="us-west-2")
+    assert llm._get_ls_params() == expected
+
+    llm = ChatBedrock(
+        model_id="foo", model_kwargs={"temperature": 0.1}, region_name="us-west-2"
+    )  # type: ignore[call-arg]
+    ls_params = llm._get_ls_params()
+    assert ls_params == {
+        "ls_provider": "amazon_bedrock",
+        "ls_model_type": "chat",
+        "ls_model_name": "foo",
+        "ls_temperature": 0.1,
+    }
+
+
+@pytest.mark.parametrize(
+    "model_id, provider, expected_provider, expectation",
+    [
+        (
+            "eu.anthropic.claude-3-haiku-20240307-v1:0",
+            None,
+            "anthropic",
+            nullcontext(),
+        ),
+        ("meta.llama3-1-405b-instruct-v1:0", None, "meta", nullcontext()),
+        (
+            "arn:aws:bedrock:us-east-1::custom-model/cohere.command-r-v1:0/MyCustomModel2",
+            "cohere",
+            "cohere",
+            nullcontext(),
+        ),
+        (
+            "arn:aws:bedrock:us-east-1::custom-model/cohere.command-r-v1:0/MyCustomModel2",
+            None,
+            "cohere",
+            pytest.raises(ValueError),
+        ),
+    ],
+)
+def test__get_provider(model_id, provider, expected_provider, expectation) -> None:
+    llm = ChatBedrock(model_id=model_id, provider=provider, region_name="us-west-2")
+    with expectation:
+        assert llm._get_provider() == expected_provider

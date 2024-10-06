@@ -1,5 +1,6 @@
 import base64
 import json
+import os
 import re
 from operator import itemgetter
 from typing import (
@@ -39,15 +40,16 @@ from langchain_core.messages.tool import tool_call_chunk
 from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
 from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from langchain_core.pydantic_v1 import BaseModel, Extra, Field, root_validator
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
-from langchain_core.utils import get_from_dict_or_env
+from langchain_core.utils import secret_from_env
 from langchain_core.utils.function_calling import (
     convert_to_openai_function,
     convert_to_openai_tool,
 )
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
 
@@ -152,7 +154,7 @@ class ChatBedrockConverse(BaseChatModel):
     Tool calling:
         .. code-block:: python
 
-            from langchain_core.pydantic_v1 import BaseModel, Field
+            from pydantic import BaseModel, Field
 
             class GetWeather(BaseModel):
                 '''Get the current weather in a given location'''
@@ -190,7 +192,7 @@ class ChatBedrockConverse(BaseChatModel):
 
             from typing import Optional
 
-            from langchain_core.pydantic_v1 import BaseModel, Field
+            from pydantic import BaseModel, Field
 
             class Joke(BaseModel):
                 '''Joke to tell user.'''
@@ -306,8 +308,46 @@ class ChatBedrockConverse(BaseChatModel):
     
     Profile should either have access keys or role information specified.
     If not specified, the default credential profile or, if on an EC2 instance,
-    credentials from IMDS will be used. See: 
-    https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    credentials from IMDS will be used. 
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    """
+
+    aws_access_key_id: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
+    )
+    """AWS access key id. 
+    
+    If provided, aws_secret_access_key must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    
+    If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+    """
+
+    aws_secret_access_key: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
+    )
+    """AWS secret_access_key. 
+    
+    If provided, aws_access_key_id must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    
+    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+    """
+
+    aws_session_token: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
+    )
+    """AWS session token. 
+    
+    If provided, aws_access_key_id and aws_secret_access_key must 
+    also be provided. Not required unless using temporary credentials.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    
+    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
     """
 
     provider: str = ""
@@ -352,14 +392,14 @@ class ChatBedrockConverse(BaseChatModel):
     model is used, ('auto', 'any') if a 'mistral-large' model is used, empty otherwise.
     """
 
-    class Config:
-        """Configuration for this pydantic object."""
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
 
-        extra = Extra.forbid
-        allow_population_by_field_name = True
-
-    @root_validator(pre=True)
-    def set_disable_streaming(cls, values: Dict) -> Dict:
+    @model_validator(mode="before")
+    @classmethod
+    def set_disable_streaming(cls, values: Dict) -> Any:
         values["provider"] = (
             values.get("provider")
             or (values.get("model_id", values["model"])).split(".")[0]
@@ -372,63 +412,70 @@ class ChatBedrockConverse(BaseChatModel):
             )
         return values
 
-    @root_validator(pre=False, skip_on_failure=True)
-    def validate_environment(cls, values: Dict) -> Dict:
+    @model_validator(mode="after")
+    def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
-        if values["client"] is not None:
-            return values
-
-        try:
-            if values["credentials_profile_name"] is not None:
-                session = boto3.Session(profile_name=values["credentials_profile_name"])
-            else:
-                session = boto3.Session()
-        except ValueError as e:
-            raise ValueError(f"Error raised by bedrock service: {e}")
-        except Exception as e:
-            raise ValueError(
-                "Could not load credentials to authenticate with AWS client. "
-                "Please check that credentials in the specified "
-                f"profile name are valid. Bedrock error: {e}"
-            ) from e
-
-        values["region_name"] = get_from_dict_or_env(
-            values,
-            "region_name",
-            "AWS_DEFAULT_REGION",
-            default=session.region_name,
-        )
-
-        client_params = {}
-        if values["region_name"]:
-            client_params["region_name"] = values["region_name"]
-        if values["endpoint_url"]:
-            client_params["endpoint_url"] = values["endpoint_url"]
-        if values["config"]:
-            client_params["config"] = values["config"]
-
-        try:
-            values["client"] = session.client("bedrock-runtime", **client_params)
-        except ValueError as e:
-            raise ValueError(f"Error raised by bedrock service: {e}")
-        except Exception as e:
-            raise ValueError(
-                "Could not load credentials to authenticate with AWS client. "
-                "Please check that credentials in the specified "
-                f"profile name are valid. Bedrock error: {e}"
-            ) from e
 
         # As of 08/05/24 only claude-3 and mistral-large models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
-        if values["supports_tool_choice_values"] is None:
-            if "claude-3" in values["model_id"]:
-                values["supports_tool_choice_values"] = ("auto", "any", "tool")
-            elif "mistral-large" in values["model_id"]:
-                values["supports_tool_choice_values"] = ("auto", "any")
+        if self.supports_tool_choice_values is None:
+            if "claude-3" in self.model_id:
+                self.supports_tool_choice_values = ("auto", "any", "tool")
+            elif "mistral-large" in self.model_id:
+                self.supports_tool_choice_values = ("auto", "any")
             else:
-                values["supports_tool_choice_values"] = ()
+                self.supports_tool_choice_values = ()
 
-        return values
+        # Skip creating new client if passed in constructor
+        if self.client is None:
+            creds = {
+                "aws_access_key_id": self.aws_access_key_id,
+                "aws_secret_access_key": self.aws_secret_access_key,
+                "aws_session_token": self.aws_session_token,
+            }
+            if creds["aws_access_key_id"] and creds["aws_secret_access_key"]:
+                session_params = {
+                    k: v.get_secret_value() for k, v in creds.items() if v
+                }
+            elif any(creds.values()):
+                raise ValueError(
+                    f"If any of aws_access_key_id, aws_secret_access_key, or "
+                    f"aws_session_token are specified then both aws_access_key_id and "
+                    f"aws_secret_access_key must be specified. Only received "
+                    f"{(k for k, v in creds.items() if v)}."
+                )
+            elif self.credentials_profile_name is not None:
+                session_params = {"profile_name": self.credentials_profile_name}
+            else:
+                # use default credentials
+                session_params = {}
+
+            try:
+                session = boto3.Session(**session_params)
+
+                self.region_name = (
+                    self.region_name
+                    or os.getenv("AWS_DEFAULT_REGION")
+                    or session.region_name
+                )
+
+                client_params = {
+                    "endpoint_url": self.endpoint_url,
+                    "config": self.config,
+                    "region_name": self.region_name,
+                }
+                client_params = {k: v for k, v in client_params.items() if v}
+                self.client = session.client("bedrock-runtime", **client_params)
+            except ValueError as e:
+                raise ValueError(f"Error raised by bedrock service:\n\n{e}") from e
+            except Exception as e:
+                raise ValueError(
+                    "Could not load credentials to authenticate with AWS client. "
+                    "Please check that credentials in the specified "
+                    f"profile name are valid. Bedrock error:\n\n{e}"
+                ) from e
+
+        return self
 
     def _generate(
         self,
@@ -607,6 +654,22 @@ class ChatBedrockConverse(BaseChatModel):
         """Return type of chat model."""
         return "amazon_bedrock_converse_chat"
 
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        return True
+
+    @classmethod
+    def get_lc_namespace(cls) -> list[str]:
+        return ["langchain_aws", "chat_models"]
+
+    @property
+    def lc_secrets(self) -> Dict[str, str]:
+        return {
+            "aws_access_key_id": "AWS_ACCESS_KEY_ID",
+            "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
+            "aws_session_token": "AWS_SESSION_TOKEN",
+        }
+
 
 def _messages_to_bedrock(
     messages: List[BaseMessage],
@@ -622,7 +685,7 @@ def _messages_to_bedrock(
         if isinstance(msg, HumanMessage):
             # If there's a human, tool, human message sequence, the
             # tool message will be merged with the first human message, so the second
-            # human message will now be preceeded by a human message and should also
+            # human message will now be preceded by a human message and should also
             # be merged with it.
             if bedrock_messages and bedrock_messages[-1]["role"] == "user":
                 bedrock_messages[-1]["content"].extend(content)
@@ -650,7 +713,7 @@ def _messages_to_bedrock(
             )
             bedrock_messages.append(curr)
         else:
-            raise ValueError()
+            raise ValueError(f"Unsupported message type {type(msg)}")
     return bedrock_messages, bedrock_system
 
 
@@ -747,7 +810,7 @@ def _anthropic_to_bedrock(
         elif block["type"] == "image":
             # Assume block is already in bedrock format.
             if "image" in block:
-                bedrock_content.append(block)
+                bedrock_content.append({"image": block["image"]})
             else:
                 bedrock_content.append(
                     {
@@ -764,6 +827,9 @@ def _anthropic_to_bedrock(
             bedrock_content.append(
                 {"image": _format_openai_image_url(block["imageUrl"]["url"])}
             )
+        elif block["type"] == "document":
+            # Assume block in bedrock document format
+            bedrock_content.append({"document": block["document"]})
         elif block["type"] == "tool_use":
             bedrock_content.append(
                 {

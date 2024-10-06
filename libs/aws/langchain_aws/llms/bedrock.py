@@ -1,5 +1,7 @@
 import asyncio
 import json
+import logging
+import os
 import warnings
 from abc import ABC
 from typing import (
@@ -16,18 +18,18 @@ from typing import (
     Union,
 )
 
-from langchain_core._api.deprecation import deprecated
+import boto3
 from langchain_core.callbacks import (
     AsyncCallbackManagerForLLMRun,
     CallbackManagerForLLMRun,
 )
-from langchain_core.language_models import LLM, BaseLanguageModel
+from langchain_core.language_models import LLM, BaseLanguageModel, LangSmithParams
 from langchain_core.messages import AIMessageChunk, ToolCall
-from langchain_core.messages.ai import UsageMetadata
 from langchain_core.messages.tool import tool_call, tool_call_chunk
 from langchain_core.outputs import Generation, GenerationChunk, LLMResult
-from langchain_core.pydantic_v1 import Extra, Field, root_validator
-from langchain_core.utils import get_from_dict_or_env
+from langchain_core.utils import secret_from_env
+from pydantic import ConfigDict, Field, SecretStr, model_validator
+from typing_extensions import Self
 
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
@@ -96,14 +98,8 @@ def _stream_response_to_generation_chunk(
     if messages_api:
         msg_type = stream_response.get("type")
         if msg_type == "message_start":
-            input_tokens = stream_response["message"]["usage"]["input_tokens"]
             return AIMessageChunk(
                 content="" if coerce_content_to_string else [],
-                usage_metadata=UsageMetadata(
-                    input_tokens=input_tokens,
-                    output_tokens=0,
-                    total_tokens=input_tokens,
-                ),
             )
         elif (
             msg_type == "content_block_start"
@@ -148,14 +144,8 @@ def _stream_response_to_generation_chunk(
                     tool_call_chunks=[tc_chunk],  # type: ignore
                 )
         elif msg_type == "message_delta":
-            output_tokens = stream_response["usage"]["output_tokens"]
             return AIMessageChunk(
                 content="",
-                usage_metadata=UsageMetadata(
-                    input_tokens=0,
-                    output_tokens=output_tokens,
-                    total_tokens=output_tokens,
-                ),
                 response_metadata={
                     "stop_reason": stream_response["delta"]["stop_reason"],
                     "stop_sequence": stream_response["delta"]["stop_sequence"],
@@ -273,6 +263,9 @@ class LLMInputOutputAdapter:
         system: Optional[str] = None,
         messages: Optional[List[Dict]] = None,
         tools: Optional[List[AnthropicTool]] = None,
+        *,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
     ) -> Dict[str, Any]:
         input_body = {**model_kwargs}
         if provider == "anthropic":
@@ -283,18 +276,44 @@ class LLMInputOutputAdapter:
                 input_body["messages"] = messages
                 if system:
                     input_body["system"] = system
-                if "max_tokens" not in input_body:
+                if max_tokens:
+                    input_body["max_tokens"] = max_tokens
+                elif "max_tokens" not in input_body:
                     input_body["max_tokens"] = 1024
+
             if prompt:
                 input_body["prompt"] = _human_assistant_format(prompt)
-                if "max_tokens_to_sample" not in input_body:
+                if max_tokens:
+                    input_body["max_tokens_to_sample"] = max_tokens
+                elif "max_tokens_to_sample" not in input_body:
                     input_body["max_tokens_to_sample"] = 1024
+
+            if temperature is not None:
+                input_body["temperature"] = temperature
+
         elif provider in ("ai21", "cohere", "meta", "mistral"):
             input_body["prompt"] = prompt
+            if max_tokens:
+                if provider == "cohere":
+                    input_body["max_tokens"] = max_tokens
+                elif provider == "meta":
+                    input_body["max_gen_len"] = max_tokens
+                elif provider == "mistral":
+                    input_body["max_tokens"] = max_tokens
+                else:
+                    # TODO: Add AI21 support, param depends on specific model.
+                    pass
+            if temperature is not None:
+                input_body["temperature"] = temperature
+
         elif provider == "amazon":
             input_body = dict()
             input_body["inputText"] = prompt
             input_body["textGenerationConfig"] = {**model_kwargs}
+            if max_tokens:
+                input_body["textGenerationConfig"]["maxTokenCount"] = max_tokens
+            if temperature is not None:
+                input_body["textGenerationConfig"]["temperature"] = temperature
         else:
             input_body["inputText"] = prompt
 
@@ -379,7 +398,17 @@ class LLMInputOutputAdapter:
             ):
                 return
 
-            elif (
+            generation_chunk = _stream_response_to_generation_chunk(
+                chunk_obj,
+                provider=provider,
+                output_key=output_key,
+                messages_api=messages_api,
+                coerce_content_to_string=coerce_content_to_string,
+            )
+            if generation_chunk:
+                yield generation_chunk
+
+            if (
                 provider == "mistral"
                 and chunk_obj.get(output_key, [{}])[0].get("stop_reason", "") == "stop"
             ):
@@ -393,18 +422,6 @@ class LLMInputOutputAdapter:
             elif messages_api and (chunk_obj.get("type") == "message_stop"):
                 yield _get_invocation_metrics_chunk(chunk_obj)
                 return
-
-            generation_chunk = _stream_response_to_generation_chunk(
-                chunk_obj,
-                provider=provider,
-                output_key=output_key,
-                messages_api=messages_api,
-                coerce_content_to_string=coerce_content_to_string,
-            )
-            if generation_chunk:
-                yield generation_chunk
-            else:
-                continue
 
     @classmethod
     async def aprepare_output_stream(
@@ -461,9 +478,9 @@ class LLMInputOutputAdapter:
 class BedrockBase(BaseLanguageModel, ABC):
     """Base class for Bedrock models."""
 
-    client: Any = Field(exclude=True)  #: :meta private:
+    client: Any = Field(default=None, exclude=True)  #: :meta private:
 
-    region_name: Optional[str] = None
+    region_name: Optional[str] = Field(default=None, alias="region")
     """The aws region e.g., `us-west-2`. Fallsback to AWS_DEFAULT_REGION env variable
     or region specified in ~/.aws/config in case it is not provided here.
     """
@@ -476,6 +493,44 @@ class BedrockBase(BaseLanguageModel, ABC):
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     """
 
+    aws_access_key_id: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
+    )
+    """AWS access key id. 
+    
+    If provided, aws_secret_access_key must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    
+    If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+    """
+
+    aws_secret_access_key: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
+    )
+    """AWS secret_access_key. 
+    
+    If provided, aws_access_key_id must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    
+    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+    """
+
+    aws_session_token: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
+    )
+    """AWS session token. 
+    
+    If provided, aws_access_key_id and aws_secret_access_key must also be provided.
+    Not required unless using temporary credentials.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    
+    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
+    """
+
     config: Any = None
     """An optional botocore.config.Config instance to pass to the client."""
 
@@ -486,7 +541,7 @@ class BedrockBase(BaseLanguageModel, ABC):
     not have the provider in them, e.g., custom and provisioned models that have an ARN
     associated with them."""
 
-    model_id: str
+    model_id: str = Field(alias="model")
     """Id of the model to call, e.g., amazon.titan-text-express-v1, this is
     equivalent to the modelId property in the list-foundation-models api. For custom and
     provisioned models, an ARN value is expected."""
@@ -532,7 +587,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         Optional[Mapping[str, str]]: A mapping with 'id' and 'version' keys.
 
     Example:
-    llm = Bedrock(model_id="<model_id>", client=<bedrock_client>,
+    llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
                   model_kwargs={},
                   guardrails={
                         "id": "<guardrail_id>",
@@ -542,7 +597,7 @@ class BedrockBase(BaseLanguageModel, ABC):
     'run_manager' parameter of the 'generate', '_call' methods.
 
     Example:
-    llm = Bedrock(model_id="<model_id>", client=<bedrock_client>,
+    llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
                   model_kwargs={},
                   guardrails={
                         "id": "<guardrail_id>",
@@ -563,55 +618,82 @@ class BedrockBase(BaseLanguageModel, ABC):
                 ...Logic to handle guardrail intervention...
     """  # noqa: E501
 
-    @root_validator()
-    def validate_environment(cls, values: Dict) -> Dict:
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+
+    @property
+    def lc_secrets(self) -> Dict[str, str]:
+        return {
+            "aws_access_key_id": "AWS_ACCESS_KEY_ID",
+            "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
+            "aws_session_token": "AWS_SESSION_TOKEN",
+        }
+
+    @model_validator(mode="after")
+    def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
 
+        if self.model_kwargs:
+            if "temperature" in self.model_kwargs:
+                if self.temperature is None:
+                    self.temperature = self.model_kwargs["temperature"]
+                self.model_kwargs.pop("temperature")
+
+            if "max_tokens" in self.model_kwargs:
+                if not self.max_tokens:
+                    self.max_tokens = self.model_kwargs["max_tokens"]
+                self.model_kwargs.pop("max_tokens")
+
         # Skip creating new client if passed in constructor
-        if values["client"] is not None:
-            return values
+        if self.client is not None:
+            return self
+
+        creds = {
+            "aws_access_key_id": self.aws_access_key_id,
+            "aws_secret_access_key": self.aws_secret_access_key,
+            "aws_session_token": self.aws_session_token,
+        }
+        if creds["aws_access_key_id"] and creds["aws_secret_access_key"]:
+            session_params = {k: v.get_secret_value() for k, v in creds.items() if v}
+        elif any(creds.values()):
+            raise ValueError(
+                f"If any of aws_access_key_id, aws_secret_access_key, or "
+                f"aws_session_token are specified then both aws_access_key_id and "
+                f"aws_secret_access_key must be specified. Only received "
+                f"{(k for k, v in creds.items() if v)}."
+            )
+        elif self.credentials_profile_name is not None:
+            session_params = {"profile_name": self.credentials_profile_name}
+        else:
+            # use default credentials
+            session_params = {}
 
         try:
-            import boto3
+            session = boto3.Session(**session_params)
 
-            if values["credentials_profile_name"] is not None:
-                session = boto3.Session(profile_name=values["credentials_profile_name"])
-            else:
-                # use default credentials
-                session = boto3.Session()
-
-            values["region_name"] = get_from_dict_or_env(
-                values,
-                "region_name",
-                "AWS_DEFAULT_REGION",
-                default=session.region_name,
+            self.region_name = (
+                self.region_name
+                or os.getenv("AWS_DEFAULT_REGION")
+                or session.region_name
             )
 
-            client_params = {}
-            if values["region_name"]:
-                client_params["region_name"] = values["region_name"]
-            if values["endpoint_url"]:
-                client_params["endpoint_url"] = values["endpoint_url"]
-            if values["config"]:
-                client_params["config"] = values["config"]
-
-            values["client"] = session.client("bedrock-runtime", **client_params)
-
-        except ImportError:
-            raise ModuleNotFoundError(
-                "Could not import boto3 python package. "
-                "Please install it with `pip install boto3`."
-            )
+            client_params = {
+                "endpoint_url": self.endpoint_url,
+                "config": self.config,
+                "region_name": self.region_name,
+            }
+            client_params = {k: v for k, v in client_params.items() if v}
+            self.client = session.client("bedrock-runtime", **client_params)
         except ValueError as e:
-            raise ValueError(f"Error raised by bedrock service: {e}")
+            raise ValueError(f"Error raised by bedrock service:\n\n{e}") from e
         except Exception as e:
             raise ValueError(
                 "Could not load credentials to authenticate with AWS client. "
                 "Please check that credentials in the specified "
-                f"profile name are valid. Bedrock error: {e}"
+                f"profile name are valid. Bedrock error:\n\n{e}"
             ) from e
 
-        return values
+        return self
 
     @property
     def _identifying_params(self) -> Dict[str, Any]:
@@ -627,15 +709,27 @@ class BedrockBase(BaseLanguageModel, ABC):
         }
 
     def _get_provider(self) -> str:
+        # If provider supplied by user, return as-is
         if self.provider:
             return self.provider
+
+        # If model_id is an arn, can't extract provider from model_id,
+        # so this requires passing in the provider by user
         if self.model_id.startswith("arn"):
             raise ValueError(
                 "Model provider should be supplied when passing a model ARN as "
                 "model_id"
             )
 
-        return self.model_id.split(".")[0]
+        # If model_id has region prefixed to them,
+        # for example eu.anthropic.claude-3-haiku-20240307-v1:0,
+        # provider is the second part, otherwise, the first part
+        parts = self.model_id.split(".", maxsplit=2)
+        return (
+            parts[1]
+            if (len(parts) > 1 and parts[0].lower() in {"eu", "us", "ap", "sa"})
+            else parts[0]
+        )
 
     def _get_model(self) -> str:
         return self.model_id.split(".", maxsplit=1)[-1]
@@ -686,23 +780,27 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         provider = self._get_provider()
         params = {**_model_kwargs, **kwargs}
-        input_body = LLMInputOutputAdapter.prepare_input(
-            provider=provider,
-            model_kwargs=params,
-            prompt=prompt,
-            system=system,
-            messages=messages,
-        )
-        if "claude-3" in self._get_model():
-            if _tools_in_params(params):
-                input_body = LLMInputOutputAdapter.prepare_input(
-                    provider=provider,
-                    model_kwargs=params,
-                    prompt=prompt,
-                    system=system,
-                    messages=messages,
-                    tools=params["tools"],
-                )
+        if "claude-3" in self._get_model() and _tools_in_params(params):
+            input_body = LLMInputOutputAdapter.prepare_input(
+                provider=provider,
+                model_kwargs=params,
+                prompt=prompt,
+                system=system,
+                messages=messages,
+                tools=params["tools"],
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+            )
+        else:
+            input_body = LLMInputOutputAdapter.prepare_input(
+                provider=provider,
+                model_kwargs=params,
+                prompt=prompt,
+                system=system,
+                messages=messages,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+            )
         body = json.dumps(input_body)
         accept = "application/json"
         contentType = "application/json"
@@ -736,7 +834,10 @@ class BedrockBase(BaseLanguageModel, ABC):
             ) = LLMInputOutputAdapter.prepare_output(provider, response).values()
 
         except Exception as e:
-            raise ValueError(f"Error raised by bedrock service: {e}")
+            logging.error(f"Error raised by bedrock service: {e}")
+            if run_manager is not None:
+                run_manager.on_llm_error(e)
+            raise e
 
         if stop is not None:
             text = enforce_stop_tokens(text, stop)
@@ -820,6 +921,8 @@ class BedrockBase(BaseLanguageModel, ABC):
             system=system,
             messages=messages,
             model_kwargs=params,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
         )
         coerce_content_to_string = True
         if "claude-3" in self._get_model():
@@ -832,6 +935,8 @@ class BedrockBase(BaseLanguageModel, ABC):
                     system=system,
                     messages=messages,
                     tools=params["tools"],
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
                 )
         body = json.dumps(input_body)
 
@@ -856,7 +961,10 @@ class BedrockBase(BaseLanguageModel, ABC):
             response = self.client.invoke_model_with_response_stream(**request_options)
 
         except Exception as e:
-            raise ValueError(f"Error raised by bedrock service: {e}")
+            logging.error(f"Error raised by bedrock service: {e}")
+            if run_manager is not None:
+                run_manager.on_llm_error(e)
+            raise e
 
         for chunk in LLMInputOutputAdapter.prepare_output_stream(
             provider,
@@ -898,6 +1006,8 @@ class BedrockBase(BaseLanguageModel, ABC):
                 system=system,
                 messages=messages,
                 tools=params["tools"],
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
             )
         else:
             input_body = LLMInputOutputAdapter.prepare_input(
@@ -906,6 +1016,8 @@ class BedrockBase(BaseLanguageModel, ABC):
                 system=system,
                 messages=messages,
                 model_kwargs=params,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
             )
         body = json.dumps(input_body)
 
@@ -956,16 +1068,16 @@ class BedrockLLM(LLM, BedrockBase):
 
     """
 
-    @root_validator()
-    def validate_environment(cls, values: Dict) -> Dict:
-        model_id = values["model_id"]
+    @model_validator(mode="after")
+    def validate_environment_llm(self) -> Self:
+        model_id = self.model_id
         if model_id.startswith("anthropic.claude-3"):
             raise ValueError(
                 "Claude v3 models are not supported by this LLM."
-                "Please use `from langchain_community.chat_models import BedrockChat` "
+                "Please use `from langchain_aws import ChatBedrock` "
                 "instead."
             )
-        return super().validate_environment(values)
+        return self
 
     @property
     def _llm_type(self) -> str:
@@ -991,10 +1103,19 @@ class BedrockLLM(LLM, BedrockBase):
 
         return attributes
 
-    class Config:
-        """Configuration for this pydantic object."""
+    def _get_ls_params(
+        self, stop: Optional[List[str]] = None, **kwargs: Any
+    ) -> LangSmithParams:
+        """Get standard params for tracing."""
+        ls_params = super()._get_ls_params(stop=stop, **kwargs)
+        ls_params["ls_provider"] = "amazon_bedrock"
+        ls_params["ls_model_name"] = self.model_id
+        return ls_params
 
-        extra = Extra.forbid
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
 
     def _stream(
         self,
@@ -1181,8 +1302,3 @@ class BedrockLLM(LLM, BedrockBase):
             return get_token_ids_anthropic(text)
         else:
             return super().get_token_ids(text)
-
-
-@deprecated(since="0.1.0", removal="0.2.0", alternative="BedrockLLM")
-class Bedrock(BedrockLLM):
-    pass

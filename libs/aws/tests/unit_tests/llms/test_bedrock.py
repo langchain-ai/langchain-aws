@@ -270,6 +270,11 @@ MOCK_STREAMING_RESPONSE = [
     {"chunk": {"bytes": b'{"text": " you"}'}},
 ]
 
+MOCK_STREAMING_RESPONSE_MISTRAL = [
+    {"chunk": {"bytes": b'{"outputs": [{"text": "Thank","stop_reason": null}]}'}},
+    {"chunk": {"bytes": b'{"outputs": [{"text": "you.","stop_reason": "stop"}]}'}},
+]
+
 
 async def async_gen_mock_streaming_response() -> AsyncGenerator[Dict, None]:
     for item in MOCK_STREAMING_RESPONSE:
@@ -297,6 +302,7 @@ async def test_bedrock_async_streaming_call() -> None:
                 client=None,
                 model_id="anthropic.claude-v2",
                 streaming=True,
+                region_name="us-west-2",
             )
             # Call the _astream method
             chunks = [
@@ -327,6 +333,12 @@ def mistral_response():
         },
     )
 
+    return response
+
+
+@pytest.fixture
+def mistral_streaming_response():
+    response = dict(body=MOCK_STREAMING_RESPONSE_MISTRAL)
     return response
 
 
@@ -411,6 +423,18 @@ def test_prepare_output_for_mistral(mistral_response):
     assert result["stop_reason"] is None
 
 
+def test_prepare_output_stream_for_mistral(mistral_streaming_response) -> None:
+    results = [
+        chunk.text
+        for chunk in LLMInputOutputAdapter.prepare_output_stream(
+            "mistral", mistral_streaming_response
+        )
+    ]
+
+    assert results[0] == "Thank"
+    assert results[1] == "you."
+
+
 def test_prepare_output_for_cohere(cohere_response):
     result = LLMInputOutputAdapter.prepare_output("cohere", cohere_response)
     assert result["text"] == "This is the Cohere output text."
@@ -447,3 +471,13 @@ def test_prepare_output_for_ai21(ai21_response):
     assert result["usage"]["completion_tokens"] == 25
     assert result["usage"]["total_tokens"] == 40
     assert result["stop_reason"] is None
+
+
+def test_standard_tracing_params():
+    llm = BedrockLLM(model_id="foo", region_name="us-west-2")
+    ls_params = llm._get_ls_params()
+    assert ls_params == {
+        "ls_provider": "amazon_bedrock",
+        "ls_model_type": "llm",
+        "ls_model_name": "foo",
+    }

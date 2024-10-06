@@ -5,8 +5,8 @@ from botocore.client import Config
 from botocore.exceptions import UnknownServiceError
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
-from langchain_core.pydantic_v1 import BaseModel, Field, root_validator
 from langchain_core.retrievers import BaseRetriever
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import Annotated
 
 FilterValue = Union[Dict[str, Any], List[Any], int, float, str, bool, None]
@@ -30,8 +30,9 @@ class SearchFilter(BaseModel):
     startsWith: Optional[Filter] = None
     stringContains: Optional[Filter] = None
 
-    class Config:
-        allow_population_by_field_name = True
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
 
 
 class VectorSearchConfig(BaseModel, extra="allow"):  # type: ignore[call-arg]
@@ -87,10 +88,13 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
     endpoint_url: Optional[str] = None
     client: Any
     retrieval_config: RetrievalConfig
-    min_score_confidence: Annotated[Optional[float], Field(ge=0.0, le=1.0)]
+    min_score_confidence: Annotated[
+        Optional[float], Field(ge=0.0, le=1.0, default=None)
+    ]
 
-    @root_validator(pre=True)
-    def create_client(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    @model_validator(mode="before")
+    @classmethod
+    def create_client(cls, values: Dict[str, Any]) -> Any:
         if values.get("client") is not None:
             return values
 
@@ -158,7 +162,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         response = self.client.retrieve(
             retrievalQuery={"text": query.strip()},
             knowledgeBaseId=self.knowledge_base_id,
-            retrievalConfiguration=self.retrieval_config.dict(exclude_none=True),
+            retrievalConfiguration=self.retrieval_config.model_dump(exclude_none=True),
         )
         results = response["retrievalResults"]
         documents = []

@@ -1,6 +1,7 @@
 """Sagemaker InvokeEndpoint API."""
 
 import io
+import logging
 import re
 from abc import abstractmethod
 from typing import Any, Dict, Generic, Iterator, List, Mapping, Optional, TypeVar, Union
@@ -8,7 +9,8 @@ from typing import Any, Dict, Generic, Iterator, List, Mapping, Optional, TypeVa
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.llms import LLM
 from langchain_core.outputs import GenerationChunk
-from langchain_core.pydantic_v1 import Extra, root_validator
+from pydantic import ConfigDict, model_validator
+from typing_extensions import Self
 
 INPUT_TYPE = TypeVar("INPUT_TYPE", bound=Union[str, List[str]])
 OUTPUT_TYPE = TypeVar("OUTPUT_TYPE", bound=Union[str, List[List[float]], Iterator])
@@ -181,6 +183,14 @@ class SagemakerEndpoint(LLM):
                 region_name=region_name,
                 credentials_profile_name=credentials_profile_name
             )
+        
+            # Usage with Inference Component
+            se = SagemakerEndpoint(
+                endpoint_name=endpoint_name,
+                inference_component_name=inference_component_name,
+                region_name=region_name,
+                credentials_profile_name=credentials_profile_name
+            )
 
         #Use with boto3 client
             client = boto3.client(
@@ -200,6 +210,10 @@ class SagemakerEndpoint(LLM):
     endpoint_name: str = ""
     """The name of the endpoint from the deployed Sagemaker model.
     Must be unique within an AWS Region."""
+
+    inference_component_name: Optional[str] = None
+    """Optional name of the inference component to invoke 
+    if specified with endpoint name."""
 
     region_name: str = ""
     """The aws region where the Sagemaker model is deployed, eg. `us-west-2`."""
@@ -249,32 +263,29 @@ class SagemakerEndpoint(LLM):
     .. _boto3: <https://boto3.amazonaws.com/v1/documentation/api/latest/index.html>
     """
 
-    class Config:
-        """Configuration for this pydantic object."""
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
-        extra = Extra.forbid
-
-    @root_validator()
-    def validate_environment(cls, values: Dict) -> Dict:
+    @model_validator(mode="after")
+    def validate_environment(self) -> Self:
         """Dont do anything if client provided externally"""
-        if values.get("client") is not None:
-            return values
+        if self.client is not None:
+            return self
 
         """Validate that AWS credentials to and python package exists in environment."""
         try:
             import boto3
 
             try:
-                if values["credentials_profile_name"] is not None:
-                    session = boto3.Session(
-                        profile_name=values["credentials_profile_name"]
-                    )
+                if self.credentials_profile_name is not None:
+                    session = boto3.Session(profile_name=self.credentials_profile_name)
                 else:
                     # use default credentials
                     session = boto3.Session()
 
-                values["client"] = session.client(
-                    "sagemaker-runtime", region_name=values["region_name"]
+                self.client = session.client(
+                    "sagemaker-runtime", region_name=self.region_name
                 )
 
             except Exception as e:
@@ -289,7 +300,7 @@ class SagemakerEndpoint(LLM):
                 "Could not import boto3 python package. "
                 "Please install it with `pip install boto3`."
             )
-        return values
+        return self
 
     @property
     def _identifying_params(self) -> Mapping[str, Any]:
@@ -297,6 +308,7 @@ class SagemakerEndpoint(LLM):
         _model_kwargs = self.model_kwargs or {}
         return {
             **{"endpoint_name": self.endpoint_name},
+            **{"inference_component_name": self.inference_component_name},
             **{"model_kwargs": _model_kwargs},
         }
 
@@ -316,13 +328,19 @@ class SagemakerEndpoint(LLM):
         _model_kwargs = {**_model_kwargs, **kwargs}
         _endpoint_kwargs = self.endpoint_kwargs or {}
 
+        invocation_params = {
+            "EndpointName": self.endpoint_name,
+            "Body": self.content_handler.transform_input(prompt, _model_kwargs),
+            "ContentType": self.content_handler.content_type,
+            **_endpoint_kwargs,
+        }
+
+        # If inference_component_name is specified, append it to invocation_params
+        if self.inference_component_name:
+            invocation_params["InferenceComponentName"] = self.inference_component_name
+
         try:
-            resp = self.client.invoke_endpoint_with_response_stream(
-                EndpointName=self.endpoint_name,
-                Body=self.content_handler.transform_input(prompt, _model_kwargs),
-                ContentType=self.content_handler.content_type,
-                **_endpoint_kwargs,
-            )
+            resp = self.client.invoke_endpoint_with_response_stream(**invocation_params)
             iterator = LineIterator(resp["Body"])
 
             for line in iterator:
@@ -338,7 +356,10 @@ class SagemakerEndpoint(LLM):
                         run_manager.on_llm_new_token(chunk.text)
 
         except Exception as e:
-            raise ValueError(f"Error raised by streaming inference endpoint: {e}")
+            logging.error(f"Error raised by streaming inference endpoint: {e}")
+            if run_manager is not None:
+                run_manager.on_llm_error(e)
+            raise e
 
     def _call(
         self,
@@ -347,7 +368,8 @@ class SagemakerEndpoint(LLM):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> str:
-        """Call out to Sagemaker inference endpoint.
+        """Call out to SageMaker inference endpoint or inference component
+            of SageMaker inference endpoint.
 
         Args:
             prompt: The prompt to pass into the model.
@@ -369,6 +391,18 @@ class SagemakerEndpoint(LLM):
         content_type = self.content_handler.content_type
         accepts = self.content_handler.accepts
 
+        invocation_params = {
+            "EndpointName": self.endpoint_name,
+            "Body": body,
+            "ContentType": content_type,
+            "Accept": accepts,
+            **_endpoint_kwargs,
+        }
+
+        # If inference_compoent_name is specified, append it to invocation_params
+        if self.inference_component_name:
+            invocation_params["InferenceComponentName"] = self.inference_component_name
+
         if self.streaming and run_manager:
             completion: str = ""
             for chunk in self._stream(prompt, stop, run_manager, **kwargs):
@@ -376,15 +410,12 @@ class SagemakerEndpoint(LLM):
             return completion
 
         try:
-            response = self.client.invoke_endpoint(
-                EndpointName=self.endpoint_name,
-                Body=body,
-                ContentType=content_type,
-                Accept=accepts,
-                **_endpoint_kwargs,
-            )
+            response = self.client.invoke_endpoint(**invocation_params)
         except Exception as e:
-            raise ValueError(f"Error raised by inference endpoint: {e}")
+            logging.error(f"Error raised by inference endpoint: {e}")
+            if run_manager is not None:
+                run_manager.on_llm_error(e)
+            raise e
 
         text = self.content_handler.transform_output(response["Body"])
         if stop is not None:

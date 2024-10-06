@@ -1,7 +1,7 @@
 """Test chat model integration."""
 
 import base64
-from typing import Dict, List, Type, cast
+from typing import Dict, List, Tuple, Type, cast
 
 import pytest
 from langchain_core.language_models import BaseChatModel
@@ -12,9 +12,9 @@ from langchain_core.messages import (
     ToolCall,
     ToolMessage,
 )
-from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.runnables import RunnableBinding
 from langchain_standard_tests.unit_tests import ChatModelUnitTests
+from pydantic import BaseModel, Field
 
 from langchain_aws import ChatBedrockConverse
 from langchain_aws.chat_models.bedrock_converse import (
@@ -46,6 +46,28 @@ class TestBedrockStandard(ChatModelUnitTests):
             "max_tokens": 100,
             "stop": [],
         }
+
+    @property
+    def init_from_env_params(self) -> Tuple[dict, dict, dict]:
+        """Return env vars, init args, and expected instance attrs for initializing
+        from env vars."""
+        return (
+            {
+                "AWS_ACCESS_KEY_ID": "key_id",
+                "AWS_SECRET_ACCESS_KEY": "secret_key",
+                "AWS_SESSION_TOKEN": "token",
+                "AWS_DEFAULT_REGION": "region",
+            },
+            {
+                "model": "anthropic.claude-3-sonnet-20240229-v1:0",
+            },
+            {
+                "aws_access_key_id": "key_id",
+                "aws_secret_access_key": "secret_key",
+                "aws_session_token": "token",
+                "region_name": "region",
+            },
+        )
 
     @pytest.mark.xfail(reason="Doesn't support streaming init param.")
     def test_init_streaming(self) -> None:
@@ -161,6 +183,26 @@ def test__messages_to_bedrock() -> None:
                 {"type": "guard_content", "text": "hu6"},
             ]
         ),
+        HumanMessage(
+            content=[
+                {
+                    "type": "document",
+                    "document": {
+                        "format": "pdf",
+                        "name": "doc1",
+                        "source": {"bytes": b"doc1_data"},
+                    },
+                }
+            ]
+        ),
+        HumanMessage(
+            content=[
+                {
+                    "type": "image",
+                    "image": {"format": "jpeg", "source": {"bytes": b"image_data"}},
+                }
+            ]
+        ),
     ]
     expected_messages = [
         {"role": "user", "content": [{"text": "hu1"}, {"text": "hu2"}]},
@@ -229,6 +271,14 @@ def test__messages_to_bedrock() -> None:
                 },
                 {"guardContent": {"text": {"text": "hu5"}}},
                 {"guardContent": {"text": {"text": "hu6"}}},
+                {
+                    "document": {
+                        "format": "pdf",
+                        "name": "doc1",
+                        "source": {"bytes": b"doc1_data"},
+                    }
+                },
+                {"image": {"format": "jpeg", "source": {"bytes": b"image_data"}}},
             ],
         },
     ]
@@ -335,3 +385,17 @@ def test__snake_to_camel_keys() -> None:
 
 def test__format_openai_image_url() -> None:
     ...
+
+
+def test_standard_tracing_params() -> None:
+    llm = ChatBedrockConverse(
+        model="foo", temperature=0.1, max_tokens=10, region_name="us-west-2"
+    )
+    ls_params = llm._get_ls_params()
+    assert ls_params == {
+        "ls_provider": "amazon_bedrock",
+        "ls_model_type": "chat",
+        "ls_model_name": "foo",
+        "ls_temperature": 0.1,
+        "ls_max_tokens": 10,
+    }
