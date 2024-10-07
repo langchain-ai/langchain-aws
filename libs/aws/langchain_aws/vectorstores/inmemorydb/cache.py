@@ -1,23 +1,3 @@
-"""
-
-**Cache** provides an optional caching layer for LLMs.
-
-Cache is useful for two reasons:
-
-- It can save you money by reducing the number of API calls you make to the LLM
-  provider if you're often requesting the same completion multiple times.
-- It can speed up your application by reducing the number of API calls you make
-  to the LLM provider.
-
-Cache directly competes with Memory. See documentation for Pros and Cons.
-
-**Class hierarchy:**
-
-.. code-block::
-
-    BaseCache --> <name>Cache  # Examples: I
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -156,7 +136,7 @@ class InMemorySemanticCache(BaseCache):
             {"name": "return_val"},
             {"name": "llm_string"},
         ],
-    }  # This bracket closes the dictionary correctly
+    }
 
     def __init__(
         self, redis_url: str, embedding: Embeddings, score_threshold: float = 0.2
@@ -172,10 +152,9 @@ class InMemorySemanticCache(BaseCache):
 
         .. code-block:: python
 
-            from langchain_community.globals import set_llm_cache
+            from langchain_core.globals import set_llm_cache
 
-            from langchain_community.cache import InMemorySemanticCache
-            from langchain_community.embeddings import OpenAIEmbeddings
+            from langchain_aws.cache import InMemorySemanticCache
 
             set_llm_cache(InMemorySemanticCache(
                 redis_url="redis://localhost:6379",
@@ -272,4 +251,3 @@ class InMemorySemanticCache(BaseCache):
             "return_val": dumps([g for g in return_val]),
         }
         llm_cache.add_texts(texts=[prompt], metadatas=[metadata])
-

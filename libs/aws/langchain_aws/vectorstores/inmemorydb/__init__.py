@@ -1,4 +1,5 @@
 from .base import InMemoryVectorStore, InMemoryVectorStoreRetriever
+from .cache import InMemorySemanticCache
 from .filters import (
     InMemoryDBFilter,
     InMemoryDBNum,
@@ -13,4 +14,5 @@ __all__ = [
     "InMemoryDBText",
     "InMemoryDBNum",
     "InMemoryVectorStoreRetriever",
+    "InMemorySemanticCache",
 ]
