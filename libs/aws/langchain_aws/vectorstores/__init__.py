@@ -2,14 +2,18 @@ import importlib
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from langchain_aws.vectorstores.inmemorydb import InMemoryVectorStore
-
+    from langchain_aws.vectorstores.inmemorydb import (
+        InMemorySemanticCache,
+        InMemoryVectorStore,
+    )
 __all__ = [
     "InMemoryVectorStore",
+    "InMemorySemanticCache",
 ]
 
 _module_lookup = {
     "InMemoryVectorStore": "langchain_aws.vectorstores.inmemorydb",
+    "InMemorySemanticCache": "langchain_aws.vectorstores.inmemorydb",
 }
 
 
