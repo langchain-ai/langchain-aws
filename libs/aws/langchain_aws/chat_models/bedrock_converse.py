@@ -611,7 +611,7 @@ class ChatBedrockConverse(BaseChatModel):
         return True
 
     @classmethod
-    def get_lc_namespace(cls) -> list[str]:
+    def get_lc_namespace(cls) -> List[str]:
         return ["langchain_aws", "chat_models"]
 
     @property
