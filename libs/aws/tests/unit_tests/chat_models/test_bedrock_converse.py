@@ -413,5 +413,5 @@ def test_standard_tracing_params() -> None:
 def test_set_disable_streaming(
     model_id: str, disable_streaming: Union[bool, str]
 ) -> None:
-    llm = ChatBedrockConverse(model=model_id)
+    llm = ChatBedrockConverse(model=model_id, region_name="us-west-2")
     assert llm.disable_streaming == disable_streaming
