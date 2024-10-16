@@ -1,7 +1,7 @@
 """Test chat model integration."""
 
 import base64
-from typing import Dict, List, Tuple, Type, cast
+from typing import Dict, List, Tuple, Type, Union, cast
 
 import pytest
 from langchain_core.language_models import BaseChatModel
@@ -399,3 +399,19 @@ def test_standard_tracing_params() -> None:
         "ls_temperature": 0.1,
         "ls_max_tokens": 10,
     }
+
+
+@pytest.mark.parametrize(
+    "model_id, disable_streaming",
+    [
+        ("anthropic.claude-3-5-sonnet-20240620-v1:0", False),
+        ("us.anthropic.claude-3-haiku-20240307-v1:0", False),
+        ("cohere.command-r-v1:0", False),
+        ("meta.llama3-1-405b-instruct-v1:0", "tool_calling"),
+    ],
+)
+def test_set_disable_streaming(
+    model_id: str, disable_streaming: Union[bool, str]
+) -> None:
+    llm = ChatBedrockConverse(model=model_id)
+    assert llm.disable_streaming == disable_streaming
