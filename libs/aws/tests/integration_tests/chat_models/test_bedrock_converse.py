@@ -48,6 +48,28 @@ class TestBedrockMistralStandard(ChatModelIntegrationTests):
         super().test_tool_message_histories_list_content(model)
 
 
+class TestBedrockCohereStandard(ChatModelIntegrationTests):
+    @property
+    def chat_model_class(self) -> Type[BaseChatModel]:
+        return ChatBedrockConverse
+
+    @property
+    def chat_model_params(self) -> dict:
+        return {"model": "cohere.command-r-plus-v1:0"}
+
+    @property
+    def standard_chat_model_params(self) -> dict:
+        return {"temperature": 0, "max_tokens": 100, "stop": []}
+
+    @pytest.mark.xfail(reason="Cohere models don't support tool_choice.")
+    def test_structured_few_shot_examples(self, model: BaseChatModel) -> None:
+        pass
+
+    @pytest.mark.xfail(reason="Cohere models don't support tool_choice.")
+    def test_tool_calling_with_no_arguments(self, model: BaseChatModel) -> None:
+        pass
+
+
 def test_structured_output_snake_case() -> None:
     model = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0", temperature=0

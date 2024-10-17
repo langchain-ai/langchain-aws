@@ -400,15 +400,18 @@ class ChatBedrockConverse(BaseChatModel):
     @model_validator(mode="before")
     @classmethod
     def set_disable_streaming(cls, values: Dict) -> Any:
-        values["provider"] = (
-            values.get("provider")
-            or (values.get("model_id", values["model"])).split(".")[0]
+        model_id = values.get("model_id", values.get("model"))
+        model_parts = model_id.split(".")
+        values["provider"] = values.get("provider") or (
+            model_parts[-2] if len(model_parts) > 1 else model_parts[0]
         )
 
-        # As of 08/05/24 only Anthropic models support streamed tool calling
+        # As of 09/15/24 Anthropic and Cohere models support streamed tool calling
         if "disable_streaming" not in values:
             values["disable_streaming"] = (
-                False if "anthropic" in values["provider"] else "tool_calling"
+                False
+                if values["provider"] in ["anthropic", "cohere"]
+                else "tool_calling"
             )
         return values
 
