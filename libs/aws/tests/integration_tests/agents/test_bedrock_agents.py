@@ -19,7 +19,6 @@ from langchain_aws.agents import (
     BedrockAgentsRunnable,
 )
 
-
 def _create_iam_client() -> Any:
     return boto3.client("iam")
 
@@ -114,7 +113,7 @@ def _delete_guardrail(guardrail_id: str) -> None:
     bedrock_client.delete_guardrail(guardrailIdentifier=guardrail_id)
 
 
-def create_stock_advice_guardrail() -> None:
+def create_stock_advice_guardrail() -> tuple[Any, Any]:
     # create a guard rail
     bedrock_client = boto3.client("bedrock")
     create_guardrail_response = bedrock_client.create_guardrail(
@@ -178,9 +177,12 @@ def test_mortgage_bedrock_agent():
             ),
             tools=tools,
         )
-        agent_executor = AgentExecutor(agent=agent, tools=tools)  # type: ignore[arg-type]
+        agent_executor = AgentExecutor(agent=agent,
+                                       tools=tools,
+                                       return_intermediate_steps=True
+                                       )  # type: ignore[arg-type]
         output = agent_executor.invoke(
-            {"input": "what is my mortgage rate for id AVC-1234"}
+            {"input": "what is my mortgage rate for id AVC-1234", "enable_trace": True}
         )
 
         assert output["output"] == (
@@ -316,6 +318,7 @@ def test_bedrock_agent_langgraph():
         intermediate_steps: Annotated[
             list[tuple[BedrockAgentAction, str]], operator.add
         ]
+        enable_trace: bool
 
     def get_weather_agent_node() -> Tuple[BedrockAgentsRunnable, str]:
         foundation_model = "anthropic.claude-3-sonnet-20240229-v1:0"
@@ -418,7 +421,7 @@ def test_bedrock_agent_langgraph():
         # meaning you can use it as you would any other runnable
         app = workflow.compile()
 
-        inputs = {"input": "what is the weather in seattle?"}
+        inputs = {"input": "what is the weather in seattle?", "enable_trace": True}
         final_state = app.invoke(inputs)
 
         assert isinstance(final_state.get("output", {}), BedrockAgentFinish)

@@ -60,7 +60,11 @@ def parse_agent_response(response: Any) -> OutputType:
     response_text = ""
     event_stream = response["completion"]
     session_id = response["sessionId"]
+    trace_log = ""
     for event in event_stream:
+        if "trace" in event:
+            trace_log = json.dumps(event["trace"])
+
         if "returnControl" in event:
             response_text = json.dumps(event)
             break
@@ -72,6 +76,7 @@ def parse_agent_response(response: Any) -> OutputType:
         return_values={"output": response_text},
         log=response_text,
         session_id=session_id,
+        trace_log=trace_log,
     )
     if not response_text:
         return agent_finish
@@ -105,6 +110,7 @@ def parse_agent_response(response: Any) -> OutputType:
                 tool_input=parameters_json,
                 log=response_text,
                 session_id=session_id,
+                trace_log=trace_log,
             )
         ]
     except Exception as ex:
@@ -270,9 +276,11 @@ class BedrockAgentFinish(AgentFinish):
 
     Parameters:
         session_id: Session id
+        trace_log: trace log as string when enable_trace flag is set
     """
 
     session_id: str
+    trace_log: Optional[str]
 
     @classmethod
     def is_lc_serializable(cls) -> bool:
@@ -289,9 +297,11 @@ class BedrockAgentAction(AgentAction):
 
     Parameters:
         session_id: session id
+        trace_log: trace log as string when enable_trace flag is set
     """
 
     session_id: str
+    trace_log: Optional[str]
 
     @classmethod
     def is_lc_serializable(cls) -> bool:
@@ -480,6 +490,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                 intermediate_steps: The intermediate steps that are used to provide RoC
                     invocation details
                 enable_trace: Boolean flag to enable trace when invoke bedrock agent
+            config: The optional RunnableConfig
 
         Returns:
             Union[List[BedrockAgentAction], BedrockAgentFinish]
@@ -498,7 +509,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             agent_input = {
                 "agentId": self.agent_id,
                 "agentAliasId": self.agent_alias_id,
-                "enableTrace": input.get("enable_trace", False),
+                "enableTrace": bool(input.get("enable_trace", False)),
                 "endSession": bool(input.get("end_session", False)),
             }
 
