@@ -477,14 +477,19 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             **kwargs,
         ):
             if isinstance(chunk, AIMessageChunk):
-                yield ChatGenerationChunk(message=chunk)
+                generation_chunk = ChatGenerationChunk(message=chunk)
+                if run_manager:
+                    run_manager.on_llm_new_token(
+                        generation_chunk.text, chunk=generation_chunk
+                    )
+                yield generation_chunk
             else:
                 delta = chunk.text
                 if generation_info := chunk.generation_info:
                     usage_metadata = generation_info.pop("usage_metadata", None)
                 else:
                     usage_metadata = None
-                yield ChatGenerationChunk(
+                generation_chunk = ChatGenerationChunk(
                     message=AIMessageChunk(
                         content=delta,
                         response_metadata=chunk.generation_info,
@@ -493,6 +498,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     if chunk.generation_info is not None
                     else AIMessageChunk(content=delta)
                 )
+                if run_manager:
+                    run_manager.on_llm_new_token(
+                        generation_chunk.text, chunk=generation_chunk
+                    )
+                yield generation_chunk
 
     def _generate(
         self,
