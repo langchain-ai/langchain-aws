@@ -19,6 +19,7 @@ from langchain_aws.agents import (
     BedrockAgentsRunnable,
 )
 
+
 def _create_iam_client() -> Any:
     return boto3.client("iam")
 
@@ -176,12 +177,11 @@ def test_mortgage_bedrock_agent():
                 "the current asset valuation"
             ),
             tools=tools,
-            enable_trace=True
+            enable_trace=True,
         )
-        agent_executor = AgentExecutor(agent=agent,
-                                       tools=tools,
-                                       return_intermediate_steps=True
-                                       )  # type: ignore[arg-type]
+        agent_executor = AgentExecutor(
+            agent=agent, tools=tools, return_intermediate_steps=True
+        )  # type: ignore[arg-type]
         output = agent_executor.invoke(
             {"input": "what is my mortgage rate for id AVC-1234"}
         )
@@ -336,7 +336,7 @@ def test_bedrock_agent_langgraph():
                     "location"
                 ),
                 tools=tools,
-                enable_trace=True
+                enable_trace=True,
             )
 
             return agent, agent_resource_role_arn

@@ -511,7 +511,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
         )
 
         try:
-            agent_input = {
+            agent_input: Dict[str, Any] = {
                 "agentId": self.agent_id,
                 "agentAliasId": self.agent_alias_id,
                 "enableTrace": self.enable_trace,
