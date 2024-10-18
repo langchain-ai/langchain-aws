@@ -60,7 +60,11 @@ def parse_agent_response(response: Any) -> OutputType:
     response_text = ""
     event_stream = response["completion"]
     session_id = response["sessionId"]
+    trace_log = ""
     for event in event_stream:
+        if "trace" in event:
+            trace_log = json.dumps(event["trace"])
+
         if "returnControl" in event:
             response_text = json.dumps(event)
             break
@@ -72,6 +76,7 @@ def parse_agent_response(response: Any) -> OutputType:
         return_values={"output": response_text},
         log=response_text,
         session_id=session_id,
+        trace_log=trace_log,
     )
     if not response_text:
         return agent_finish
@@ -105,6 +110,7 @@ def parse_agent_response(response: Any) -> OutputType:
                 tool_input=parameters_json,
                 log=response_text,
                 session_id=session_id,
+                trace_log=trace_log,
             )
         ]
     except Exception as ex:
@@ -270,9 +276,11 @@ class BedrockAgentFinish(AgentFinish):
 
     Parameters:
         session_id: Session id
+        trace_log: trace log as string when enable_trace flag is set
     """
 
     session_id: str
+    trace_log: Optional[str]
 
     @classmethod
     def is_lc_serializable(cls) -> bool:
@@ -289,9 +297,11 @@ class BedrockAgentAction(AgentAction):
 
     Parameters:
         session_id: session id
+        trace_log: trace log as string when enable_trace flag is set
     """
 
     session_id: str
+    trace_log: Optional[str]
 
     @classmethod
     def is_lc_serializable(cls) -> bool:
@@ -328,6 +338,8 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
     """Credentials to use to invoke the agent"""
     endpoint_url: Optional[str] = None
     """Endpoint URL"""
+    enable_trace: Optional[bool] = False
+    """Boolean flag to enable trace when invoking Bedrock Agent"""
 
     @model_validator(mode="before")
     @classmethod
@@ -380,6 +392,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
         region_name: Optional[str] = None,
         bedrock_endpoint_url: Optional[str] = None,
         runtime_endpoint_url: Optional[str] = None,
+        enable_trace: Optional[bool] = False,
         **kwargs: Any,
     ) -> BedrockAgentsRunnable:
         """
@@ -417,6 +430,8 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             region_name: Region for the Bedrock agent
             bedrock_endpoint_url: Endpoint URL for bedrock agent
             runtime_endpoint_url: Endpoint URL for bedrock agent runtime
+            enable_trace: Boolean flag to specify whether trace should be enabled when
+                invoking the agent
             **kwargs: Additional arguments
         Returns:
             BedrockAgentsRunnable configured to invoke the Bedrock agent
@@ -461,6 +476,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             region_name=region_name,
             credentials_profile_name=credentials_profile_name,
             endpoint_url=runtime_endpoint_url,
+            enable_trace=enable_trace,
             **kwargs,
         )
 
@@ -479,7 +495,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                 end_session: Boolean indicating whether to end a session or not
                 intermediate_steps: The intermediate steps that are used to provide RoC
                     invocation details
-                enable_trace: Boolean flag to enable trace when invoke bedrock agent
+            config: The optional RunnableConfig
 
         Returns:
             Union[List[BedrockAgentAction], BedrockAgentFinish]
@@ -495,10 +511,10 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
         )
 
         try:
-            agent_input = {
+            agent_input: Dict[str, Any] = {
                 "agentId": self.agent_id,
                 "agentAliasId": self.agent_alias_id,
-                "enableTrace": input.get("enable_trace", False),
+                "enableTrace": self.enable_trace,
                 "endSession": bool(input.get("end_session", False)),
             }
 
