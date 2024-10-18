@@ -176,13 +176,14 @@ def test_mortgage_bedrock_agent():
                 "the current asset valuation"
             ),
             tools=tools,
+            enable_trace=True
         )
         agent_executor = AgentExecutor(agent=agent,
                                        tools=tools,
                                        return_intermediate_steps=True
                                        )  # type: ignore[arg-type]
         output = agent_executor.invoke(
-            {"input": "what is my mortgage rate for id AVC-1234", "enable_trace": True}
+            {"input": "what is my mortgage rate for id AVC-1234"}
         )
 
         assert output["output"] == (
@@ -336,6 +337,7 @@ def test_bedrock_agent_langgraph():
                     "location"
                 ),
                 tools=tools,
+                enable_trace=True
             )
 
             return agent, agent_resource_role_arn
@@ -421,7 +423,7 @@ def test_bedrock_agent_langgraph():
         # meaning you can use it as you would any other runnable
         app = workflow.compile()
 
-        inputs = {"input": "what is the weather in seattle?", "enable_trace": True}
+        inputs = {"input": "what is the weather in seattle?"}
         final_state = app.invoke(inputs)
 
         assert isinstance(final_state.get("output", {}), BedrockAgentFinish)

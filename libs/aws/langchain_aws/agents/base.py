@@ -338,6 +338,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
     """Credentials to use to invoke the agent"""
     endpoint_url: Optional[str] = None
     """Endpoint URL"""
+    enable_trace: Optional[bool] = False
 
     @model_validator(mode="before")
     @classmethod
@@ -390,6 +391,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
         region_name: Optional[str] = None,
         bedrock_endpoint_url: Optional[str] = None,
         runtime_endpoint_url: Optional[str] = None,
+        enable_trace: Optional[bool] = False,
         **kwargs: Any,
     ) -> BedrockAgentsRunnable:
         """
@@ -427,6 +429,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             region_name: Region for the Bedrock agent
             bedrock_endpoint_url: Endpoint URL for bedrock agent
             runtime_endpoint_url: Endpoint URL for bedrock agent runtime
+            enable_trace: Boolean flag to specify whether trace should be enabled when invoking the agent
             **kwargs: Additional arguments
         Returns:
             BedrockAgentsRunnable configured to invoke the Bedrock agent
@@ -471,6 +474,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             region_name=region_name,
             credentials_profile_name=credentials_profile_name,
             endpoint_url=runtime_endpoint_url,
+            enable_trace=enable_trace,
             **kwargs,
         )
 
@@ -489,7 +493,6 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                 end_session: Boolean indicating whether to end a session or not
                 intermediate_steps: The intermediate steps that are used to provide RoC
                     invocation details
-                enable_trace: Boolean flag to enable trace when invoke bedrock agent
             config: The optional RunnableConfig
 
         Returns:
@@ -509,7 +512,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             agent_input = {
                 "agentId": self.agent_id,
                 "agentAliasId": self.agent_alias_id,
-                "enableTrace": bool(input.get("enable_trace", False)),
+                "enableTrace": self.enable_trace,
                 "endSession": bool(input.get("end_session", False)),
             }
 
