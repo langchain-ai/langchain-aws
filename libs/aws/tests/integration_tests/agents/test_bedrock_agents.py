@@ -319,7 +319,6 @@ def test_bedrock_agent_langgraph():
         intermediate_steps: Annotated[
             list[tuple[BedrockAgentAction, str]], operator.add
         ]
-        enable_trace: bool
 
     def get_weather_agent_node() -> Tuple[BedrockAgentsRunnable, str]:
         foundation_model = "anthropic.claude-3-sonnet-20240229-v1:0"
