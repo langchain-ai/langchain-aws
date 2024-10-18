@@ -339,6 +339,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
     endpoint_url: Optional[str] = None
     """Endpoint URL"""
     enable_trace: Optional[bool] = False
+    """Boolean flag to enable trace when invoking Bedrock Agent"""
 
     @model_validator(mode="before")
     @classmethod
