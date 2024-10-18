@@ -389,7 +389,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
     system_prompt_with_tools: str = ""
     beta_use_converse_api: bool = False
-    """Use the new Bedrock ``converse`` API which provides a standardized interface to 
+    """Use the new Bedrock ``converse`` API which provides a standardized interface to
     all Bedrock models. Support still in beta. See ChatBedrockConverse docs for more."""
 
     @property
@@ -796,7 +796,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 schema, include_raw=include_raw, **kwargs
             )
         if "claude-3" not in self._get_model():
-            ValueError(
+            raise ValueError(
                 f"Structured output is not supported for model {self._get_model()}"
             )
 
