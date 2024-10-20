@@ -56,6 +56,18 @@ from langchain_aws.function_calling import ToolsOutputParser
 _BM = TypeVar("_BM", bound=BaseModel)
 _DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
 
+AWS_REGIONS = [
+    "us",
+    "sa",
+    "me",
+    "il",
+    "eu",
+    "cn",
+    "ca",
+    "ap",
+    "af",
+    "us-gov",
+]
 
 class ChatBedrockConverse(BaseChatModel):
     """Bedrock chat model integration built on the Bedrock converse API.
@@ -404,7 +416,21 @@ class ChatBedrockConverse(BaseChatModel):
             values.get("provider")
             or (values.get("model_id", values["model"])).split(".")[0]
         )
+        
+        if "provider" not in values:
+            model_id = values.get("model_id", values["model"])
+            if not model_id:
+                raise ValueError("model_id must be provided")
 
+            if model_id.startswith("arn"):
+                raise ValueError(
+                    "Model provider should be supplied when passing a model ARN as "
+                    "model_id"
+                )
+
+            parts = model_id.split(".", maxsplit=2)
+            values["provider"] = parts[1] if (len(parts) > 1 and parts[0].lower() in AWS_REGIONS )  else parts[0]    
+            
         # As of 08/05/24 only Anthropic models support streamed tool calling
         if "disable_streaming" not in values:
             values["disable_streaming"] = (

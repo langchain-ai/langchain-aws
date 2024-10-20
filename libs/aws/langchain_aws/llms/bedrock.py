@@ -45,7 +45,18 @@ ASSISTANT_PROMPT = "\n\nAssistant:"
 ALTERNATION_ERROR = (
     "Error: Prompt must alternate between '\n\nHuman:' and '\n\nAssistant:'."
 )
-
+AWS_REGIONS = [
+    "us",
+    "sa",
+    "me",
+    "il",
+    "eu",
+    "cn",
+    "ca",
+    "ap",
+    "af",
+    "us-gov",
+]
 
 def _add_newlines_before_ha(input_text: str) -> str:
     new_text = input_text
@@ -725,9 +736,13 @@ class BedrockBase(BaseLanguageModel, ABC):
         # for example eu.anthropic.claude-3-haiku-20240307-v1:0,
         # provider is the second part, otherwise, the first part
         parts = self.model_id.split(".", maxsplit=2)
+        # inference models are in the format of <region>.<provider>.<model_id>
+        # the others are in the format of <provider>.<model_id>
+        #return parts[1] if self._model_is_inference else parts[0]
+        
         return (
             parts[1]
-            if (len(parts) > 1 and parts[0].lower() in {"eu", "us", "ap", "sa"})
+            if (len(parts) > 1 and parts[0].lower() in AWS_REGIONS )
             else parts[0]
         )
 
