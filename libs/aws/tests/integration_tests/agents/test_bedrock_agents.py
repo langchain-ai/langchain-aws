@@ -114,7 +114,7 @@ def _delete_guardrail(guardrail_id: str) -> None:
     bedrock_client.delete_guardrail(guardrailIdentifier=guardrail_id)
 
 
-def create_stock_advice_guardrail() -> None:
+def create_stock_advice_guardrail() -> tuple[Any, Any]:
     # create a guard rail
     bedrock_client = boto3.client("bedrock")
     create_guardrail_response = bedrock_client.create_guardrail(
@@ -177,8 +177,11 @@ def test_mortgage_bedrock_agent():
                 "the current asset valuation"
             ),
             tools=tools,
+            enable_trace=True,
         )
-        agent_executor = AgentExecutor(agent=agent, tools=tools)  # type: ignore[arg-type]
+        agent_executor = AgentExecutor(
+            agent=agent, tools=tools, return_intermediate_steps=True
+        )  # type: ignore[arg-type]
         output = agent_executor.invoke(
             {"input": "what is my mortgage rate for id AVC-1234"}
         )
@@ -333,6 +336,7 @@ def test_bedrock_agent_langgraph():
                     "location"
                 ),
                 tools=tools,
+                enable_trace=True,
             )
 
             return agent, agent_resource_role_arn
