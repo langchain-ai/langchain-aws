@@ -1,4 +1,4 @@
-name: test
+name: integration-test
 
 on:
   workflow_dispatch:
@@ -51,6 +51,13 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: poetry install --with test
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Run integration tests
         shell: bash
