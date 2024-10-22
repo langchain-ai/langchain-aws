@@ -10,7 +10,7 @@ on:
       fork:
         required: true
         type: string
-        default: 'langchain-aws'
+        default: 'langchain-ai'
         description: "Which fork to run this test against"
       branch:
         required: true
