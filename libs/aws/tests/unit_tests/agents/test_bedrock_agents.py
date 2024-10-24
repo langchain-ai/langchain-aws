@@ -46,7 +46,7 @@ class TestBedrockAgentResponseParser(unittest.TestCase):
 
     def test_parse_return_of_control_invocation(self) -> None:
         response = self.mock_success_return_of_control_response
-        parsed_response: Union[list[BedrockAgentAction] | BedrockAgentFinish]
+        parsed_response: Union[list[BedrockAgentAction], BedrockAgentFinish]
         parsed_response = parse_agent_response(response)
         self.assertIsInstance(
             parsed_response, list, "Expected a list of BedrockAgentAction."
@@ -54,7 +54,7 @@ class TestBedrockAgentResponseParser(unittest.TestCase):
 
     def test_parse_finish_invocation(self) -> None:
         response = self.mock_success_finish_response
-        parsed_response: Union[list[BedrockAgentAction] | BedrockAgentFinish]
+        parsed_response: Union[list[BedrockAgentAction], BedrockAgentFinish]
         parsed_response = parse_agent_response(response)
         # Type narrowing - now TypeScript knows parsed_response is BedrockAgentFinish
         assert isinstance(parsed_response, BedrockAgentFinish)
@@ -63,11 +63,3 @@ class TestBedrockAgentResponseParser(unittest.TestCase):
         self.assertGreater(
             len(parsed_response.trace_log), 0, "Expected a trace log, none received."
         )
-
-
-def run_tests() -> None:
-    unittest.main(argv=[""], verbosity=2)
-
-
-if __name__ == "__main__":
-    run_tests()
