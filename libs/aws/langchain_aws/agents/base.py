@@ -60,10 +60,10 @@ def parse_agent_response(response: Any) -> OutputType:
     response_text = ""
     event_stream = response["completion"]
     session_id = response["sessionId"]
-    trace_log = ""
+    trace_log_elements = []
     for event in event_stream:
         if "trace" in event:
-            trace_log = json.dumps(event["trace"])
+            trace_log_elements.append(event["trace"])
 
         if "returnControl" in event:
             response_text = json.dumps(event)
@@ -71,6 +71,8 @@ def parse_agent_response(response: Any) -> OutputType:
 
         if "chunk" in event:
             response_text = event["chunk"]["bytes"].decode("utf-8")
+
+    trace_log = json.dumps(trace_log_elements)
 
     agent_finish = BedrockAgentFinish(
         return_values={"output": response_text},
