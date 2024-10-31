@@ -819,12 +819,12 @@ tenacity = ">=8.1.0,!=8.4.0,<10"
 type = "git"
 url = "https://github.com/langchain-ai/langchain.git"
 reference = "HEAD"
-resolved_reference = "6691202998cc332506b94e3d2487ca3e4996569a"
+resolved_reference = "8ef0df3539eabf1371795c5869914ec0b1e2c27f"
 subdirectory = "libs/langchain"
 
 [[package]]
 name = "langchain-core"
-version = "0.3.14"
+version = "0.3.15"
 description = "Building applications with LLMs through composability"
 optional = false
 python-versions = ">=3.9,<4.0"
@@ -847,7 +847,7 @@ typing-extensions = ">=4.7"
 type = "git"
 url = "https://github.com/langchain-ai/langchain.git"
 reference = "HEAD"
-resolved_reference = "6691202998cc332506b94e3d2487ca3e4996569a"
+resolved_reference = "8ef0df3539eabf1371795c5869914ec0b1e2c27f"
 subdirectory = "libs/core"
 
 [[package]]
@@ -869,7 +869,7 @@ syrupy = "^4"
 type = "git"
 url = "https://github.com/langchain-ai/langchain.git"
 reference = "HEAD"
-resolved_reference = "6691202998cc332506b94e3d2487ca3e4996569a"
+resolved_reference = "8ef0df3539eabf1371795c5869914ec0b1e2c27f"
 subdirectory = "libs/standard-tests"
 
 [[package]]
@@ -2052,4 +2052,4 @@ propcache = ">=0.2.0"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<4.0"
-content-hash = "2f54ab1061b07c9ad160367acec8dba394cf35321cdaec0d2698ee1794c94ffd"
+content-hash = "407cda5901089bb9e05798dba7f2e1dc03a2cbf9494ee4d87b971f6e19189e30"
