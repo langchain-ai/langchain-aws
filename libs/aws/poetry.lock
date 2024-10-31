@@ -847,7 +847,7 @@ typing-extensions = ">=4.7"
 type = "git"
 url = "https://github.com/langchain-ai/langchain.git"
 reference = "HEAD"
-resolved_reference = "1ed3cd252e499bcbd1899ab5ee40d75642c4cef2"
+resolved_reference = "6691202998cc332506b94e3d2487ca3e4996569a"
 subdirectory = "libs/core"
 
 [[package]]
