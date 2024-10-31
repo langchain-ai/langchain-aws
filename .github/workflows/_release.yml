@@ -240,6 +240,7 @@ jobs:
           packages-dir: ${{ inputs.working-directory }}/dist/
           verbose: true
           print-hash: true
+          attestations: false
 
   mark-release:
     needs:
