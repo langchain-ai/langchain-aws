@@ -483,7 +483,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
         )
 
     def invoke(
-        self, input: Dict, config: Optional[RunnableConfig] = None
+        self, input: Dict, config: Optional[RunnableConfig] = None, **kwargs: Any
     ) -> OutputType:
         """
         Invoke the Bedrock agent.
