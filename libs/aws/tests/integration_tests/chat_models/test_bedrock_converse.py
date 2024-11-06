@@ -87,9 +87,25 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
     def test_structured_few_shot_examples(self, model: BaseChatModel) -> None:
         pass
 
+    # TODO: This needs investigation, if this is a bug with Bedrock or Llama models,
+    # but this test consistently seem to return single quoted input values {input: '3'} 
+    # instead of {input: 3} failing the test. Upon checking with tools with non-numeric 
+    # inputs, tool calling seems to work as expected with Bedrock and Llama models.
+    @pytest.mark.xfail(
+        reason="Bedrock Meta models tend to return string values for integer inputs ."
+    )
+    def test_tool_calling(self, model: BaseChatModel) -> None:
+        super().test_tool_calling(model)
+
     @pytest.mark.xfail(reason="Meta models don't support tool_choice.")
     def test_tool_calling_with_no_arguments(self, model: BaseChatModel) -> None:
         pass
+
+    @pytest.mark.xfail(
+        reason="Human messages following AI messages not supported by Bedrock."
+    )
+    def test_tool_message_histories_list_content(self, model: BaseChatModel) -> None:
+        super().test_tool_message_histories_list_content(model)
 
 
 def test_structured_output_snake_case() -> None:
