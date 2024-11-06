@@ -70,6 +70,28 @@ class TestBedrockCohereStandard(ChatModelIntegrationTests):
         pass
 
 
+class TestBedrockMetaStandard(ChatModelIntegrationTests):
+    @property
+    def chat_model_class(self) -> Type[BaseChatModel]:
+        return ChatBedrockConverse
+
+    @property
+    def chat_model_params(self) -> dict:
+        return {"model": "us.meta.llama3-2-90b-instruct-v1:0"}
+
+    @property
+    def standard_chat_model_params(self) -> dict:
+        return {"temperature": 0.1, "max_tokens": 100, "stop": []}
+
+    @pytest.mark.xfail(reason="Meta models don't support tool_choice.")
+    def test_structured_few_shot_examples(self, model: BaseChatModel) -> None:
+        pass
+
+    @pytest.mark.xfail(reason="Meta models don't support tool_choice.")
+    def test_tool_calling_with_no_arguments(self, model: BaseChatModel) -> None:
+        pass
+
+
 def test_structured_output_snake_case() -> None:
     model = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0", temperature=0
