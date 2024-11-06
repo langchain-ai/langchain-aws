@@ -88,8 +88,8 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
         pass
 
     # TODO: This needs investigation, if this is a bug with Bedrock or Llama models,
-    # but this test consistently seem to return single quoted input values {input: '3'} 
-    # instead of {input: 3} failing the test. Upon checking with tools with non-numeric 
+    # but this test consistently seem to return single quoted input values {input: '3'}
+    # instead of {input: 3} failing the test. Upon checking with tools with non-numeric
     # inputs, tool calling seems to work as expected with Bedrock and Llama models.
     @pytest.mark.xfail(
         reason="Bedrock Meta models tend to return string values for integer inputs ."
