@@ -21,6 +21,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _bedrock_to_anthropic,
     _camel_to_snake,
     _camel_to_snake_keys,
+    _extract_response_metadata,
     _messages_to_bedrock,
     _snake_to_camel,
     _snake_to_camel_keys,
@@ -415,3 +416,24 @@ def test_set_disable_streaming(
 ) -> None:
     llm = ChatBedrockConverse(model=model_id, region_name="us-west-2")
     assert llm.disable_streaming == disable_streaming
+
+
+def test__extract_response_metadata() -> None:
+    response = {
+        "ResponseMetadata": {
+            "RequestId": "xxxxxx",
+            "HTTPStatusCode": 200,
+            "HTTPHeaders": {
+                "date": "Wed, 06 Nov 2024 23:28:31 GMT",
+                "content-type": "application/json",
+                "content-length": "212",
+                "connection": "keep-alive",
+                "x-amzn-requestid": "xxxxx",
+            },
+            "RetryAttempts": 0,
+        },
+        "stopReason": "end_turn",
+        "metrics": {"latencyMs": 191},
+    }
+    response_metadata = _extract_response_metadata(response)
+    assert response_metadata["metrics"]["latencyMs"] == [191]
