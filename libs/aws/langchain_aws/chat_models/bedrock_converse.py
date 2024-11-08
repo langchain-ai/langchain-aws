@@ -726,6 +726,15 @@ def _messages_to_bedrock(
     return bedrock_messages, bedrock_system
 
 
+def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:
+    response_metadata = response
+    # response_metadata only supports string, list or dict
+    if "metrics" in response and "latencyMs" in response["metrics"]:
+        response_metadata["metrics"]["latencyMs"] = [response["metrics"]["latencyMs"]]
+
+    return response_metadata
+
+
 def _parse_response(response: Dict[str, Any]) -> AIMessage:
     anthropic_content = _bedrock_to_anthropic(
         response.pop("output")["message"]["content"]
@@ -735,7 +744,7 @@ def _parse_response(response: Dict[str, Any]) -> AIMessage:
     return AIMessage(
         content=_str_if_single_text_block(anthropic_content),  # type: ignore[arg-type]
         usage_metadata=usage,
-        response_metadata=response,
+        response_metadata=_extract_response_metadata(response),
         tool_calls=tool_calls,
     )
 
