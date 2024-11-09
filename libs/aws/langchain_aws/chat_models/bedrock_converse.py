@@ -400,15 +400,18 @@ class ChatBedrockConverse(BaseChatModel):
     @model_validator(mode="before")
     @classmethod
     def set_disable_streaming(cls, values: Dict) -> Any:
-        values["provider"] = (
-            values.get("provider")
-            or (values.get("model_id", values["model"])).split(".")[0]
+        model_id = values.get("model_id", values.get("model"))
+        model_parts = model_id.split(".")
+        values["provider"] = values.get("provider") or (
+            model_parts[-2] if len(model_parts) > 1 else model_parts[0]
         )
 
-        # As of 08/05/24 only Anthropic models support streamed tool calling
+        # As of 09/15/24 Anthropic and Cohere models support streamed tool calling
         if "disable_streaming" not in values:
             values["disable_streaming"] = (
-                False if "anthropic" in values["provider"] else "tool_calling"
+                False
+                if values["provider"] in ["anthropic", "cohere"]
+                else "tool_calling"
             )
         return values
 
@@ -522,6 +525,12 @@ class ChatBedrockConverse(BaseChatModel):
         tool_choice: Optional[Union[dict, str, Literal["auto", "any"]]] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, BaseMessage]:
+        try:
+            formatted_tools: list[dict] = [
+                convert_to_openai_tool(tool) for tool in tools
+            ]
+        except Exception:
+            formatted_tools = _format_tools(tools)
         if tool_choice:
             tool_choice = _format_tool_choice(tool_choice)
             tool_choice_type = list(tool_choice.keys())[0]
@@ -543,7 +552,7 @@ class ChatBedrockConverse(BaseChatModel):
                     f"for the latest documentation on models that support tool choice."
                 )
             kwargs["tool_choice"] = _format_tool_choice(tool_choice)
-        return self.bind(tools=_format_tools(tools), **kwargs)
+        return self.bind(tools=formatted_tools, **kwargs)
 
     def with_structured_output(
         self,
@@ -717,6 +726,15 @@ def _messages_to_bedrock(
     return bedrock_messages, bedrock_system
 
 
+def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:
+    response_metadata = response
+    # response_metadata only supports string, list or dict
+    if "metrics" in response and "latencyMs" in response["metrics"]:
+        response_metadata["metrics"]["latencyMs"] = [response["metrics"]["latencyMs"]]
+
+    return response_metadata
+
+
 def _parse_response(response: Dict[str, Any]) -> AIMessage:
     anthropic_content = _bedrock_to_anthropic(
         response.pop("output")["message"]["content"]
@@ -726,7 +744,7 @@ def _parse_response(response: Dict[str, Any]) -> AIMessage:
     return AIMessage(
         content=_str_if_single_text_block(anthropic_content),  # type: ignore[arg-type]
         usage_metadata=usage,
-        response_metadata=response,
+        response_metadata=_extract_response_metadata(response),
         tool_calls=tool_calls,
     )
 
@@ -919,7 +937,7 @@ def _format_tools(
         if isinstance(tool, dict) and "toolSpec" in tool:
             formatted_tools.append(tool)
         else:
-            spec = convert_to_openai_function(tool)
+            spec = convert_to_openai_tool(tool)["function"]
             spec["inputSchema"] = {"json": spec.pop("parameters")}
             formatted_tools.append({"toolSpec": spec})
     return formatted_tools

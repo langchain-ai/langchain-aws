@@ -1,7 +1,7 @@
 """Test chat model integration."""
 
 import base64
-from typing import Dict, List, Tuple, Type, cast
+from typing import Dict, List, Tuple, Type, Union, cast
 
 import pytest
 from langchain_core.language_models import BaseChatModel
@@ -21,6 +21,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _bedrock_to_anthropic,
     _camel_to_snake,
     _camel_to_snake_keys,
+    _extract_response_metadata,
     _messages_to_bedrock,
     _snake_to_camel,
     _snake_to_camel_keys,
@@ -399,3 +400,40 @@ def test_standard_tracing_params() -> None:
         "ls_temperature": 0.1,
         "ls_max_tokens": 10,
     }
+
+
+@pytest.mark.parametrize(
+    "model_id, disable_streaming",
+    [
+        ("anthropic.claude-3-5-sonnet-20240620-v1:0", False),
+        ("us.anthropic.claude-3-haiku-20240307-v1:0", False),
+        ("cohere.command-r-v1:0", False),
+        ("meta.llama3-1-405b-instruct-v1:0", "tool_calling"),
+    ],
+)
+def test_set_disable_streaming(
+    model_id: str, disable_streaming: Union[bool, str]
+) -> None:
+    llm = ChatBedrockConverse(model=model_id, region_name="us-west-2")
+    assert llm.disable_streaming == disable_streaming
+
+
+def test__extract_response_metadata() -> None:
+    response = {
+        "ResponseMetadata": {
+            "RequestId": "xxxxxx",
+            "HTTPStatusCode": 200,
+            "HTTPHeaders": {
+                "date": "Wed, 06 Nov 2024 23:28:31 GMT",
+                "content-type": "application/json",
+                "content-length": "212",
+                "connection": "keep-alive",
+                "x-amzn-requestid": "xxxxx",
+            },
+            "RetryAttempts": 0,
+        },
+        "stopReason": "end_turn",
+        "metrics": {"latencyMs": 191},
+    }
+    response_metadata = _extract_response_metadata(response)
+    assert response_metadata["metrics"]["latencyMs"] == [191]

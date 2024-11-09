@@ -6,7 +6,10 @@ from langchain_aws.retrievers import (
     AmazonKendraRetriever,
     AmazonKnowledgeBasesRetriever,
 )
-from langchain_aws.vectorstores.inmemorydb import InMemoryVectorStore
+from langchain_aws.vectorstores.inmemorydb import (
+    InMemorySemanticCache,
+    InMemoryVectorStore,
+)
 
 __all__ = [
     "BedrockEmbeddings",
@@ -19,4 +22,5 @@ __all__ = [
     "NeptuneAnalyticsGraph",
     "NeptuneGraph",
     "InMemoryVectorStore",
+    "InMemorySemanticCache",
 ]

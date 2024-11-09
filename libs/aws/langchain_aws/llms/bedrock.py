@@ -147,8 +147,8 @@ def _stream_response_to_generation_chunk(
             return AIMessageChunk(
                 content="",
                 response_metadata={
-                    "stop_reason": stream_response["delta"]["stop_reason"],
-                    "stop_sequence": stream_response["delta"]["stop_sequence"],
+                    "stop_reason": stream_response["delta"].get("stop_reason"),
+                    "stop_sequence": stream_response["delta"].get("stop_sequence"),
                 },
             )
         else:
@@ -579,19 +579,20 @@ class BedrockBase(BaseLanguageModel, ABC):
     """
     An optional dictionary to configure guardrails for Bedrock.
 
-    This field 'guardrails' consists of two keys: 'id' and 'version',
-    which should be strings, but are initialized to None. It's used to
-    determine if specific guardrails are enabled and properly set.
+    This field 'guardrails' consists of two keys: 'guardrailId' and
+    'guardrailVersion', which should be strings, but are initialized to None.
+    It's used to determine if specific guardrails are enabled and properly set.
 
     Type:
-        Optional[Mapping[str, str]]: A mapping with 'id' and 'version' keys.
+        Optional[Mapping[str, str]]: A mapping with 'guardrailId' and
+        'guardrailVersion' keys.
 
     Example:
     llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
                   model_kwargs={},
                   guardrails={
-                        "id": "<guardrail_id>",
-                        "version": "<guardrail_version>"})
+                        "guardrailId": "<guardrail_id>",
+                        "guardrailVersion": "<guardrail_version>"})
 
     To enable tracing for guardrails, set the 'trace' key to True and pass a callback handler to the
     'run_manager' parameter of the 'generate', '_call' methods.
@@ -600,8 +601,8 @@ class BedrockBase(BaseLanguageModel, ABC):
     llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
                   model_kwargs={},
                   guardrails={
-                        "id": "<guardrail_id>",
-                        "version": "<guardrail_version>",
+                        "guardrailId": "<guardrail_id>",
+                        "guardrailVersion": "<guardrail_version>",
                         "trace": True},
                 callbacks=[BedrockAsyncCallbackHandler()])
 

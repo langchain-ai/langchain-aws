@@ -1,0 +1,77 @@
+name: integration-test
+
+on:
+  workflow_dispatch:
+    inputs:
+      working-directory:
+        required: true
+        type: string
+        default: 'libs/aws'
+      fork:
+        required: true
+        type: string
+        default: 'langchain-ai'
+        description: "Which fork to run this test against"
+      branch:
+        required: true
+        type: string
+        default: 'main'
+        description: "Which branch to run this test against"
+      test-file:
+        required: true
+        type: string
+        default: "tests/integration_tests/**/test*.py"
+        description: "Which test file to run"
+
+env:
+  PYTHON_VERSION: "3.11"
+  POETRY_VERSION: "1.7.1"
+
+jobs:
+  build:
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    runs-on: ubuntu-latest
+    name: "make integration_test"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: "${{ inputs.fork }}/langchain-aws"
+          ref: "${{ inputs.branch }}"
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }} + Poetry ${{ env.POETRY_VERSION }}
+        uses: "./.github/actions/poetry_setup"
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          poetry-version: ${{ env.POETRY_VERSION }}
+          working-directory: ${{ inputs.working-directory }}
+          cache-key: core
+
+      - name: Install dependencies
+        shell: bash
+        run: poetry install --with test
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Run integration tests
+        shell: bash
+        run: |
+          poetry run pytest -vv -s ${{ inputs.test-file }}
+
+      - name: Ensure the tests did not create any additional files
+        shell: bash
+        run: |
+          set -eu
+
+          STATUS="$(git status)"
+          echo "$STATUS"
+
+          # grep will exit non-zero if the target message isn't found,
+          # and `set -e` above will cause the step to fail.
+          echo "$STATUS" | grep 'nothing to commit, working tree clean'
