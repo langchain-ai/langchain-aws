@@ -429,30 +429,40 @@ def test_standard_tracing_params() -> None:
 
 
 @pytest.mark.parametrize(
-    "model_id, provider, expected_provider, expectation",
+    "model_id, provider, expected_provider, expectation, region_name",
     [
         (
             "eu.anthropic.claude-3-haiku-20240307-v1:0",
             None,
             "anthropic",
             nullcontext(),
+            "us-west-2",
         ),
-        ("meta.llama3-1-405b-instruct-v1:0", None, "meta", nullcontext()),
+        (
+            "apac.anthropic.claude-3-5-sonnet-20240620-v1:0",
+            None,
+            "anthropic",
+            nullcontext(),
+            "ap-northeast-1",
+        ),
+        ("meta.llama3-1-405b-instruct-v1:0", None, "meta", nullcontext(), "us-west-2"),
         (
             "arn:aws:bedrock:us-east-1::custom-model/cohere.command-r-v1:0/MyCustomModel2",
             "cohere",
             "cohere",
             nullcontext(),
+            "us-west-2",
         ),
         (
             "arn:aws:bedrock:us-east-1::custom-model/cohere.command-r-v1:0/MyCustomModel2",
             None,
             "cohere",
             pytest.raises(ValueError),
+            "us-west-2",
         ),
     ],
 )
-def test__get_provider(model_id, provider, expected_provider, expectation) -> None:
-    llm = ChatBedrock(model_id=model_id, provider=provider, region_name="us-west-2")
+def test__get_provider(model_id, provider, expected_provider, expectation, region_name) -> None:
+    llm = ChatBedrock(model_id=model_id, provider=provider, region_name=region_name)
     with expectation:
         assert llm._get_provider() == expected_provider
