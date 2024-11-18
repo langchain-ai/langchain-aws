@@ -10,6 +10,18 @@ def enforce_stop_tokens(text: str, stop: List[str]) -> str:
 def _get_anthropic_client() -> Any:
     try:
         import anthropic
+        from packaging import version
+
+        max_supported_version = version.parse("0.38.0")
+        anthropic_version = version.parse(anthropic.__version__)
+
+        if anthropic_version > max_supported_version:
+            raise NotImplementedError(
+                "Currently installed anthropic version {anthropic_version} is not "
+                "supported. Please use ChatAnthropic.get_num_tokens_from_messages "
+                "instead."
+            )
+
     except ImportError:
         raise ImportError(
             "Could not import anthropic python package. "
