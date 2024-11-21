@@ -91,11 +91,18 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
     # but this test consistently seem to return single quoted input values {input: '3'}
     # instead of {input: 3} failing the test. Upon checking with tools with non-numeric
     # inputs, tool calling seems to work as expected with Bedrock and Llama models.
+    # Same problem with tool_calling_async, below.
     @pytest.mark.xfail(
         reason="Bedrock Meta models tend to return string values for integer inputs ."
     )
     def test_tool_calling(self, model: BaseChatModel) -> None:
         super().test_tool_calling(model)
+
+    @pytest.mark.xfail(
+        reason="Bedrock Meta models tend to return string values for integer inputs ."
+    )
+    async def test_tool_calling_async(self, model: BaseChatModel) -> None:
+        await super().test_tool_calling_async(model)
 
     @pytest.mark.xfail(reason="Meta models don't support tool_choice.")
     def test_tool_calling_with_no_arguments(self, model: BaseChatModel) -> None:
