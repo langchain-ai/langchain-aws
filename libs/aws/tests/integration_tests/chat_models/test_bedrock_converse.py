@@ -101,8 +101,8 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
     @pytest.mark.xfail(
         reason="Bedrock Meta models tend to return string values for integer inputs ."
     )
-    def test_tool_calling_async(self, model: BaseChatModel) -> None:
-        super().test_tool_calling(model)
+    async def test_tool_calling_async(self, model: BaseChatModel) -> None:
+        await super().test_tool_calling_async(model)
 
     @pytest.mark.xfail(reason="Meta models don't support tool_choice.")
     def test_tool_calling_with_no_arguments(self, model: BaseChatModel) -> None:
