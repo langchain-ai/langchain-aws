@@ -25,11 +25,12 @@ pip install langchain-aws
 Here's a simple example of how to use the `langchain-aws` package.
 
 ```python
-from langchain_aws import BedrockLLM
+from langchain_aws import ChatBedrock
 
-# Initialize the Bedrock LLM
-llm = BedrockLLM(
-    model_id="anthropic.claude-v2:1"
+# Initialize the Bedrock chat model
+llm = ChatBedrock(
+    model="anthropic.claude-3-sonnet-20240229-v1:0",
+    beta_use_converse_api=True
 )
 
 # Invoke the llm
