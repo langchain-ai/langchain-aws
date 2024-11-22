@@ -35,6 +35,11 @@ optional = true
 [tool.poetry.group.codespell.dependencies]
 codespell = "^2.2.6"
 
+[tool.poetry.group.test_integration]
+optional = true
+
+[tool.poetry.group.test_integration.dependencies]
+
 [tool.poetry.group.lint]
 optional = true
 
@@ -44,6 +49,11 @@ ruff = "^0.1.8"
 [tool.poetry.group.typing.dependencies]
 mypy = "^1.7"
 types-requests = "^2.28.11.5"
+
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
 
 [tool.ruff.lint]
 select = [
