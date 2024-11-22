@@ -96,7 +96,7 @@ class InMemoryDBVectorField(InMemoryDBField):
     dims: int = Field(...)
     algorithm: object = Field(...)
     datatype: str = Field(default="FLOAT32")
-    distance_metric: InMemoryDBDistanceMetric = Field(default="COSINE")
+    distance_metric: InMemoryDBDistanceMetric = Field(default="COSINE")  # type: ignore
     initial_cap: Optional[int] = None
 
     @field_validator("algorithm", "datatype", "distance_metric", mode="before")
