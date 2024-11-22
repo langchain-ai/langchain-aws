@@ -66,6 +66,7 @@ select = [
 [tool.mypy]
 ignore_missing_imports = "True"
 disallow_untyped_defs = "True"
+exclude = ["notebooks", "samples"]
 
 [tool.coverage.run]
 omit = ["tests/*"]
