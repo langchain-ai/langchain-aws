@@ -4,6 +4,7 @@ import json
 import operator
 import time
 import uuid
+from decimal import Decimal
 from typing import Any, Tuple, TypedDict, Union
 
 import boto3
@@ -435,3 +436,65 @@ def test_bedrock_agent_langgraph():
             _delete_agent_role(agent_resource_role_arn=agent_resource_role_arn)
         if agent_runnable:
             _delete_agent(agent_id=agent_runnable.agent_id)
+
+
+def is_asking_location(response):
+    import re
+    # Common patterns for asking about location
+    patterns = [
+        r'what (?:is )?(?:the )?location',
+        r'what (?:is )?(?:the )?location',
+        r'(?=.*location)(?=.*\?)',
+        r'(?=.*city)(?=.*\?)'
+    ]
+
+    # Combine all patterns with OR operator and make case insensitive
+    combined_pattern = '|'.join(patterns)
+
+    # Check if any pattern matches
+    return bool(re.search(combined_pattern, response.lower()))
+
+
+def test_weather_agent_with_human_input():
+    @tool
+    def get_weather(location: str) -> str:
+        """
+        Get the weather of a location
+
+        Args:
+            location: location of the place
+        """
+        if location.lower() == "seattle":
+            return f"It is raining in {location}"
+        return f"It is hot and humid in {location}"
+
+    foundation_model = "anthropic.claude-3-sonnet-20240229-v1:0"
+    tools = [get_weather]
+    agent_resource_role_arn = None
+    agent = None
+    try:
+        agent_resource_role_arn = _create_agent_role(
+            agent_region="us-west-2", foundation_model=foundation_model
+        )
+        agent = BedrockAgentsRunnable.create_agent(
+            agent_name="weather_agent",
+            agent_resource_role_arn=agent_resource_role_arn,
+            foundation_model=foundation_model,
+            instruction="""
+                You are an agent who helps with getting weather for a given location.
+                If the user does not provide a location then ask for the location and be
+                sure to use the word 'location'.""",
+            tools=tools,
+            enable_humidity=True,
+        )
+        agent_executor = AgentExecutor(agent=agent, tools=tools)  # type: ignore[arg-type]
+        output = agent_executor.invoke({"input": "what is the weather?"})
+
+        assert is_asking_location(output["output"])
+    except Exception as ex:
+        raise ex
+    finally:
+        if agent_resource_role_arn:
+            _delete_agent_role(agent_resource_role_arn)
+        if agent:
+            _delete_agent(agent.agent_id)
