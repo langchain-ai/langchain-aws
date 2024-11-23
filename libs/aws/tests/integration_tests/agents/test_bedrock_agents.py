@@ -4,7 +4,6 @@ import json
 import operator
 import time
 import uuid
-from decimal import Decimal
 from typing import Any, Tuple, TypedDict, Union
 
 import boto3
@@ -440,19 +439,21 @@ def test_bedrock_agent_langgraph():
 
 def is_asking_location(response):
     import re
+
     # Common patterns for asking about location
     patterns = [
-        r'what (?:is )?(?:the )?location',
-        r'what (?:is )?(?:the )?location',
-        r'(?=.*location)(?=.*\?)',
-        r'(?=.*city)(?=.*\?)'
+        r"what (?:is )?(?:the )?location",
+        r"what (?:is )?(?:the )?location",
+        r"(?=.*location)(?=.*\?)",
+        r"(?=.*city)(?=.*\?)",
     ]
 
     # Combine all patterns with OR operator and make case insensitive
-    combined_pattern = '|'.join(patterns)
+    combined_pattern = "|".join(patterns)
 
     # Check if any pattern matches
     return bool(re.search(combined_pattern, response.lower()))
+
 
 @pytest.mark.skip
 def test_weather_agent_with_human_input():

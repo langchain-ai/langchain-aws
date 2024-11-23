@@ -193,7 +193,10 @@ def _get_action_group_and_function_names(tool: BaseTool) -> Tuple[str, str]:
 
 
 def _create_bedrock_action_groups(
-    bedrock_client: Any, agent_id: str, tools: List[BaseTool], enable_human_input: Optional[bool] = False
+    bedrock_client: Any,
+    agent_id: str,
+    tools: List[BaseTool],
+    enable_human_input: Optional[bool] = False,
 ) -> None:
     """Create the bedrock action groups for the agent"""
 
@@ -478,7 +481,9 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                     guardrail_configuration=guardrail_configuration,
                     idle_session_ttl_in_seconds=idle_session_ttl_in_seconds,
                 )
-                _create_bedrock_action_groups(bedrock_client, agent_id, tools, enable_human_input)
+                _create_bedrock_action_groups(
+                    bedrock_client, agent_id, tools, enable_human_input
+                )
                 _prepare_agent(bedrock_client, agent_id)
             except Exception as exception:
                 logging.error(f"Error in create agent call: {exception}")
