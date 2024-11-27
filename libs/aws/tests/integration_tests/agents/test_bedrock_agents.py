@@ -512,16 +512,21 @@ def test_weather_agent_with_human_input():
         bedrock_client = boto3.client("bedrock-agent")
         version = get_latest_agent_version(agent.agent_id)
         paginator = bedrock_client.get_paginator("list_agent_action_groups")
+        has_human_input_tool = False
         for page in paginator.paginate(
             agentId=agent.agent_id,
             agentVersion=version,
             PaginationConfig={"PageSize": 10},
         ):
             for summary in page["actionGroupSummaries"]:
-                if str(summary["actionGroupName"]).lower() == "userinputactions":
-                    return True
+                if (
+                    str(summary["actionGroupName"]).lower() == "userinputaction"
+                    and str(summary["actionGroupState"]).lower() == "enabled"
+                ):
+                    has_human_input_tool = True
+                    break
 
-        return False
+        assert has_human_input_tool
     except Exception as ex:
         raise ex
     finally:
