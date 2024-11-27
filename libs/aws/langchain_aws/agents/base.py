@@ -448,6 +448,8 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             runtime_endpoint_url: Endpoint URL for bedrock agent runtime
             enable_trace: Boolean flag to specify whether trace should be enabled when
                 invoking the agent
+            enable_human_input: Boolean flag to specify whether a human as a tool should
+                 be enabled for the agent.
             **kwargs: Additional arguments
         Returns:
             BedrockAgentsRunnable configured to invoke the Bedrock agent
