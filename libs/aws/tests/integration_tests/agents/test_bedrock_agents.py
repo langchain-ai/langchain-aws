@@ -437,24 +437,6 @@ def test_bedrock_agent_langgraph():
             _delete_agent(agent_id=agent_runnable.agent_id)
 
 
-def is_asking_location(response):
-    import re
-
-    # Common patterns for asking about location
-    patterns = [
-        r"what (?:is )?(?:the )?location",
-        r"what (?:is )?(?:the )?location",
-        r"(?=.*location)(?=.*\?)",
-        r"(?=.*city)(?=.*\?)",
-    ]
-
-    # Combine all patterns with OR operator and make case insensitive
-    combined_pattern = "|".join(patterns)
-
-    # Check if any pattern matches
-    return bool(re.search(combined_pattern, response.lower()))
-
-
 def get_latest_agent_version(agent_id: str) -> str:
     """
     Gets the latest version of a Bedrock Agent by creation date.
