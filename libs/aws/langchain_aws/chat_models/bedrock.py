@@ -36,7 +36,7 @@ from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResu
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 from langchain_aws.function_calling import (
@@ -392,6 +392,12 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     """Use the new Bedrock ``converse`` API which provides a standardized interface to 
     all Bedrock models. Support still in beta. See ChatBedrockConverse docs for more."""
 
+    stop_sequences: Optional[List[str]] = Field(default=None, alias='stop')
+    """Stop sequence inference parameter from new Bedrock ``converse`` API providing 
+    a sequence of characters that causes a model to stop generating a response. See 
+    https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_InferenceConfiguration.html 
+    for more."""
+    
     @property
     def _llm_type(self) -> str:
         """Return type of chat model."""
