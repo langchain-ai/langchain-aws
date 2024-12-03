@@ -412,7 +412,7 @@ class ChatBedrockConverse(BaseChatModel):
             values["disable_streaming"] = (
                 False
                 if values["provider"] in ["anthropic", "cohere"] or
-                    ("nova" in model_id and values["provider"] == "amazon")
+                    (values["provider"] == "amazon" and "nova" in model_id)
                 else "tool_calling"
             )
         return values
