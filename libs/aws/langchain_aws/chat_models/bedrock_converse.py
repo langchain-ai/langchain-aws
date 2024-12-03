@@ -411,11 +411,10 @@ class ChatBedrockConverse(BaseChatModel):
         if "disable_streaming" not in values:
             values["disable_streaming"] = (
                 False
-                if values["provider"] in ["anthropic", "cohere"]
+                if values["provider"] in ["anthropic", "cohere"] or
+                    ("nova" in model_id and values["provider"] == "amazon")
                 else "tool_calling"
             )
-            if "nova" in model_id:
-                values["disable_streaming"] = False
         return values
 
     @model_validator(mode="after")
