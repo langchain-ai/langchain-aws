@@ -54,6 +54,7 @@ from langchain_aws.utils import (
     get_token_ids_anthropic,
 )
 
+
 def _convert_one_message_to_text_llama(message: BaseMessage) -> str:
     if isinstance(message, ChatMessage):
         message_text = f"\n\n{message.role.capitalize()}: {message.content}"
@@ -834,7 +835,16 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         kwargs = {
             k: v
             for k, v in (self.model_kwargs or {}).items()
-            if k in ("stop", "stop_sequences", "max_tokens", "temperature", "top_p", "additional_model_request_fields", "additional_model_response_field_paths")
+            if k
+            in (
+                "stop",
+                "stop_sequences",
+                "max_tokens",
+                "temperature",
+                "top_p",
+                "additional_model_request_fields",
+                "additional_model_response_field_paths",
+            )
         }
         if self.max_tokens:
             kwargs["max_tokens"] = self.max_tokens

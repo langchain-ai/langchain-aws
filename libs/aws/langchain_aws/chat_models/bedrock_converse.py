@@ -411,8 +411,8 @@ class ChatBedrockConverse(BaseChatModel):
         if "disable_streaming" not in values:
             values["disable_streaming"] = (
                 False
-                if values["provider"] in ["anthropic", "cohere"] or
-                    (values["provider"] == "amazon" and "nova" in model_id)
+                if values["provider"] in ["anthropic", "cohere"]
+                or (values["provider"] == "amazon" and "nova" in model_id)
                 else "tool_calling"
             )
         return values
@@ -741,9 +741,7 @@ def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _parse_response(response: Dict[str, Any]) -> AIMessage:
-    lc_content = _bedrock_to_lc(
-        response.pop("output")["message"]["content"]
-    )
+    lc_content = _bedrock_to_lc(response.pop("output")["message"]["content"])
     tool_calls = _extract_tool_calls(lc_content)
     usage = UsageMetadata(_camel_to_snake_keys(response.pop("usage")))  # type: ignore[misc]
     return AIMessage(
@@ -871,9 +869,7 @@ def _lc_content_to_bedrock(
                         {
                             "video": {
                                 "format": block["source"]["mediaType"].split("/")[1],
-                                "source": {
-                                    "s3Location": block["source"]["data"]
-                                },
+                                "source": {"s3Location": block["source"]["data"]},
                             }
                         }
                     )
@@ -943,7 +939,9 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                         "source": {
                             "media_type": f"video/{block['video']['format']}",
                             "type": "base64",
-                            "data": _bytes_to_b64_str(block["video"]["source"]["bytes"]),
+                            "data": _bytes_to_b64_str(
+                                block["video"]["source"]["bytes"]
+                            ),
                         },
                     }
                 )
@@ -960,7 +958,7 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 )
         elif "document" in block:
             # Request syntax assumes bedrock format; returning in same bedrock format
-            lc_content.append({"type": "document",**block})
+            lc_content.append({"type": "document", **block})
         elif "tool_result" in block:
             lc_content.append(
                 {
@@ -1135,13 +1133,14 @@ def _format_openai_image_url(image_url: str) -> Dict:
     match = re.match(regex, image_url)
     if match is None:
         raise ValueError(
-            "Bedrock does not currently support OpenAI-format image URLs, only "
+            "The image URL provided is not supported. Expected image URL format is "
             "base64-encoded images. Example: data:image/png;base64,'/9j/4AAQSk'..."
         )
     return {
         "format": match.group("media_type"),
         "source": {"bytes": _b64str_to_bytes(match.group("data"))},
     }
+
 
 def _format_openai_video_url(video_url: str) -> Dict:
     """
@@ -1154,7 +1153,7 @@ def _format_openai_video_url(video_url: str) -> Dict:
     match = re.match(regex, video_url)
     if match is None:
         raise ValueError(
-            "Bedrock does not currently support OpenAI-format video URLs, only "
+            "The video URL provided is not supported. Expected video URL format is "
             "base64-encoded video. Example: data:video/mp4;base64,'/9j/4AAQSk'..."
         )
     return {

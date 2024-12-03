@@ -115,17 +115,18 @@ def test_amazon_bind_tools_tool_choice() -> None:
         chat_model.bind_tools(
             [GetWeather], tool_choice={"tool": {"name": "GetWeather"}}
         )
-    
+
     with pytest.raises(ValueError):
         chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
 
     with pytest.raises(ValueError):
         chat_model.bind_tools([GetWeather], tool_choice="any")
-    
+
     chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="auto")
     assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
         "auto": {}
     }
+
 
 def test__messages_to_bedrock() -> None:
     messages = [
@@ -224,7 +225,7 @@ def test__messages_to_bedrock() -> None:
                 }
             ]
         ),
-         HumanMessage(
+        HumanMessage(
             content=[
                 {
                     "type": "video",
@@ -236,7 +237,10 @@ def test__messages_to_bedrock() -> None:
             content=[
                 {
                     "type": "video",
-                    "video": {"format": "mp4", "source": { "s3Location": { "uri": "s3_url"}}},
+                    "video": {
+                        "format": "mp4",
+                        "source": {"s3Location": {"uri": "s3_url"}},
+                    },
                 }
             ]
         ),
@@ -317,7 +321,12 @@ def test__messages_to_bedrock() -> None:
                 },
                 {"image": {"format": "jpeg", "source": {"bytes": b"image_data"}}},
                 {"video": {"format": "mp4", "source": {"bytes": b"video_data"}}},
-                {"video": {"format": "mp4", "source": { "s3Location": { "uri": "s3_url"}}}},
+                {
+                    "video": {
+                        "format": "mp4",
+                        "source": {"s3Location": {"uri": "s3_url"}},
+                    }
+                },
             ],
         },
     ]
@@ -356,7 +365,7 @@ def test__bedrock_to_lc() -> None:
             }
         },
         {"video": {"format": "mp4", "source": {"bytes": b"video_data"}}},
-        {"video": {"format": "mp4", "source": {"s3Location": { "uri": "video_data"}}}},
+        {"video": {"format": "mp4", "source": {"s3Location": {"uri": "video_data"}}}},
     ]
     expected = [
         {"type": "text", "text": "text1"},
@@ -404,7 +413,7 @@ def test__bedrock_to_lc() -> None:
             "source": {
                 "type": "s3Location",
                 "media_type": "video/mp4",
-                "data":  {"uri": "video_data"},
+                "data": {"uri": "video_data"},
             },
         },
     ]

@@ -47,6 +47,7 @@ class TestBedrockMistralStandard(ChatModelIntegrationTests):
     def test_tool_message_histories_list_content(self, model: BaseChatModel) -> None:
         super().test_tool_message_histories_list_content(model)
 
+
 class TestBedrockNovaStandard(ChatModelIntegrationTests):
     @property
     def chat_model_class(self) -> Type[BaseChatModel]:
@@ -71,6 +72,7 @@ class TestBedrockNovaStandard(ChatModelIntegrationTests):
     @pytest.mark.xfail(reason="Human messages following AI messages not supported.")
     def test_tool_message_histories_list_content(self, model: BaseChatModel) -> None:
         super().test_tool_message_histories_list_content(model)
+
 
 class TestBedrockCohereStandard(ChatModelIntegrationTests):
     @property
