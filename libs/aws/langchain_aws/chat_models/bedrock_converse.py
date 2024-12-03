@@ -389,8 +389,8 @@ class ChatBedrockConverse(BaseChatModel):
     """Which types of tool_choice values the model supports.
     
     Inferred if not specified. Inferred as ('auto', 'any', 'tool') if a 'claude-3' 
-    model is used, ('auto', 'any') if a 'mistral-large' model is used, ('auto') if a 'nova' model is used,
-    empty otherwise.
+    model is used, ('auto', 'any') if a 'mistral-large' model is used, 
+    ('auto') if a 'nova' model is used, empty otherwise.
     """
 
     model_config = ConfigDict(
@@ -407,7 +407,8 @@ class ChatBedrockConverse(BaseChatModel):
             model_parts[-2] if len(model_parts) > 1 else model_parts[0]
         )
 
-        # As of 12/03/24 Anthropic, Cohere and Amazon Nova models support streamed tool calling
+        # As of 12/03/24:
+        # Anthropic, Cohere and Amazon Nova models support streamed tool calling
         if "disable_streaming" not in values:
             values["disable_streaming"] = (
                 False
@@ -421,7 +422,8 @@ class ChatBedrockConverse(BaseChatModel):
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
 
-        # As of 12/03/24 only claude-3, mistral-large, and nova models support tool choice:
+        # As of 12/03/24:
+        # only claude-3, mistral-large, and nova models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
         if self.supports_tool_choice_values is None:
             if "claude-3" in self.model_id:
@@ -429,7 +431,7 @@ class ChatBedrockConverse(BaseChatModel):
             elif "mistral-large" in self.model_id:
                 self.supports_tool_choice_values = ("auto", "any")
             elif "nova" in self.model_id:
-                self.supports_tool_choice_values = ("auto", "")
+                self.supports_tool_choice_values = ["auto"]
             else:
                 self.supports_tool_choice_values = ()
 
