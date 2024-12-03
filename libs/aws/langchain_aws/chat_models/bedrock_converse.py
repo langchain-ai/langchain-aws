@@ -1154,8 +1154,8 @@ def _format_openai_video_url(video_url: str) -> Dict:
     match = re.match(regex, video_url)
     if match is None:
         raise ValueError(
-            "Bedrock does not currently support OpenAI-format image URLs, only "
-            "base64-encoded images. Example: data:image/png;base64,'/9j/4AAQSk'..."
+            "Bedrock does not currently support OpenAI-format video URLs, only "
+            "base64-encoded video. Example: data:video/mp4;base64,'/9j/4AAQSk'..."
         )
     return {
         "format": match.group("media_type"),
