@@ -15,6 +15,10 @@ python = ">=3.9,<4.0"
 langchain-core = ">=0.3.15,<0.4"
 boto3 = ">=1.35.74"
 pydantic = ">=2,<3"
+numpy = [
+  { version = "^1", python = "<3.12" },
+  { version = ">=1.26.0,<3", python = ">=3.12" },
+]
 
 [tool.poetry.group.test]
 optional = true
