@@ -428,6 +428,22 @@ def test_standard_tracing_params() -> None:
     }
 
 
+def test_beta_use_converse_api() -> None:
+    llm = ChatBedrock(model_id="nova.foo", region_name="us-west-2")  # type: ignore[call-arg]
+    assert llm.beta_use_converse_api
+
+    llm = ChatBedrock(
+        model="nova.foo", region_name="us-west-2", beta_use_converse_api=False
+    )
+    assert not llm.beta_use_converse_api
+
+    llm = ChatBedrock(model="foo", region_name="us-west-2", beta_use_converse_api=True)
+    assert llm.beta_use_converse_api
+
+    llm = ChatBedrock(model="foo", region_name="us-west-2", beta_use_converse_api=False)
+    assert not llm.beta_use_converse_api
+
+
 @pytest.mark.parametrize(
     "model_id, provider, expected_provider, expectation",
     [
