@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from langchain_aws import ChatBedrockConverse
 from langchain_aws.chat_models.bedrock_converse import (
-    _bedrock_to_anthropic,
+    _bedrock_to_lc,
     _camel_to_snake,
     _camel_to_snake_keys,
     _extract_response_metadata,
@@ -104,6 +104,27 @@ def test_anthropic_bind_tools_tool_choice() -> None:
     chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="any")
     assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
         "any": {}
+    }
+
+
+def test_amazon_bind_tools_tool_choice() -> None:
+    chat_model = ChatBedrockConverse(
+        model="us.amazon.nova-lite-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    with pytest.raises(ValueError):
+        chat_model.bind_tools(
+            [GetWeather], tool_choice={"tool": {"name": "GetWeather"}}
+        )
+
+    with pytest.raises(ValueError):
+        chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+
+    with pytest.raises(ValueError):
+        chat_model.bind_tools([GetWeather], tool_choice="any")
+
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="auto")
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "auto": {}
     }
 
 
@@ -204,6 +225,25 @@ def test__messages_to_bedrock() -> None:
                 }
             ]
         ),
+        HumanMessage(
+            content=[
+                {
+                    "type": "video",
+                    "video": {"format": "mp4", "source": {"bytes": b"video_data"}},
+                }
+            ]
+        ),
+        HumanMessage(
+            content=[
+                {
+                    "type": "video",
+                    "video": {
+                        "format": "mp4",
+                        "source": {"s3Location": {"uri": "s3_url"}},
+                    },
+                }
+            ]
+        ),
     ]
     expected_messages = [
         {"role": "user", "content": [{"text": "hu1"}, {"text": "hu2"}]},
@@ -280,6 +320,13 @@ def test__messages_to_bedrock() -> None:
                     }
                 },
                 {"image": {"format": "jpeg", "source": {"bytes": b"image_data"}}},
+                {"video": {"format": "mp4", "source": {"bytes": b"video_data"}}},
+                {
+                    "video": {
+                        "format": "mp4",
+                        "source": {"s3Location": {"uri": "s3_url"}},
+                    }
+                },
             ],
         },
     ]
@@ -296,7 +343,7 @@ def test__messages_to_bedrock() -> None:
     assert expected_system == actual_system
 
 
-def test__bedrock_to_anthropic() -> None:
+def test__bedrock_to_lc() -> None:
     bedrock: List[Dict] = [
         {"text": "text1"},
         {
@@ -317,6 +364,8 @@ def test__bedrock_to_anthropic() -> None:
                 ],
             }
         },
+        {"video": {"format": "mp4", "source": {"bytes": b"video_data"}}},
+        {"video": {"format": "mp4", "source": {"s3Location": {"uri": "video_data"}}}},
     ]
     expected = [
         {"type": "text", "text": "text1"},
@@ -351,8 +400,24 @@ def test__bedrock_to_anthropic() -> None:
             ],
             "is_error": False,
         },
+        {
+            "type": "video",
+            "source": {
+                "type": "base64",
+                "media_type": "video/mp4",
+                "data": base64.b64encode(b"video_data").decode("utf-8"),
+            },
+        },
+        {
+            "type": "video",
+            "source": {
+                "type": "s3Location",
+                "media_type": "video/mp4",
+                "data": {"uri": "video_data"},
+            },
+        },
     ]
-    actual = _bedrock_to_anthropic(bedrock)
+    actual = _bedrock_to_lc(bedrock)
     assert expected == actual
 
 
