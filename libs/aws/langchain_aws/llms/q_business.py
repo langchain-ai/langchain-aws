@@ -9,7 +9,6 @@ from pydantic import ConfigDict
 import json
 import asyncio
 import boto3
-from tvm_client import TVMClient
 
 class AmazonQ(LLM):
     """Amazon Q LLM wrapper.
