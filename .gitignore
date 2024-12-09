@@ -1,6 +1,7 @@
 .vs/
 .vscode/
 .idea/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -59,6 +60,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.mypy_cache_test/
 
 # Translations
 *.mo
