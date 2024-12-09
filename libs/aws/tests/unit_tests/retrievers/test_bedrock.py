@@ -59,7 +59,7 @@ def test_retriever_invoke(amazon_retriever, mock_client):
         retrievalConfiguration={
             "vectorSearchConfiguration": {
                 "numberOfResults": 5,
-                # Expecting to be called with correct "in" operatior instead of "in_"
+                # Expecting to be called with correct "in" operator instead of "in_"
                 "filter": {"in": {"key": "key", "value": ["value1", "value2"]}},
             }
         },
