@@ -392,12 +392,12 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     """Use the new Bedrock ``converse`` API which provides a standardized interface to 
     all Bedrock models. Support still in beta. See ChatBedrockConverse docs for more."""
 
-    stop_sequences: Optional[List[str]] = Field(default=None, alias='stop')
+    stop_sequences: Optional[List[str]] = Field(default=None, alias="stop")
     """Stop sequence inference parameter from new Bedrock ``converse`` API providing 
     a sequence of characters that causes a model to stop generating a response. See 
     https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_InferenceConfiguration.html 
     for more."""
-    
+
     @property
     def _llm_type(self) -> str:
         """Return type of chat model."""
