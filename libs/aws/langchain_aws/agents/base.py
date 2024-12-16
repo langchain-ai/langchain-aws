@@ -193,7 +193,10 @@ def _get_action_group_and_function_names(tool: BaseTool) -> Tuple[str, str]:
 
 
 def _create_bedrock_action_groups(
-    bedrock_client: Any, agent_id: str, tools: List[BaseTool]
+    bedrock_client: Any,
+    agent_id: str,
+    tools: List[BaseTool],
+    enable_human_input: Optional[bool] = False,
 ) -> None:
     """Create the bedrock action groups for the agent"""
 
@@ -201,6 +204,7 @@ def _create_bedrock_action_groups(
     for tool in tools:
         action_group_name, function_name = _get_action_group_and_function_names(tool)
         tools_by_action_group[action_group_name].append(tool)
+
     for action_group_name, functions in tools_by_action_group.items():
         bedrock_client.create_agent_action_group(
             actionGroupName=action_group_name,
@@ -209,6 +213,15 @@ def _create_bedrock_action_groups(
             functionSchema={
                 "functions": [_tool_to_function(function) for function in functions]
             },
+            agentId=agent_id,
+            agentVersion="DRAFT",
+        )
+
+    if enable_human_input:
+        bedrock_client.create_agent_action_group(
+            actionGroupName="UserInputAction",
+            parentActionGroupSignature="AMAZON.UserInput",
+            actionGroupState="ENABLED",
             agentId=agent_id,
             agentVersion="DRAFT",
         )
@@ -395,6 +408,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
         bedrock_endpoint_url: Optional[str] = None,
         runtime_endpoint_url: Optional[str] = None,
         enable_trace: Optional[bool] = False,
+        enable_human_input: Optional[bool] = False,
         **kwargs: Any,
     ) -> BedrockAgentsRunnable:
         """
@@ -434,6 +448,8 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             runtime_endpoint_url: Endpoint URL for bedrock agent runtime
             enable_trace: Boolean flag to specify whether trace should be enabled when
                 invoking the agent
+            enable_human_input: Boolean flag to specify whether a human as a tool should
+                 be enabled for the agent.
             **kwargs: Additional arguments
         Returns:
             BedrockAgentsRunnable configured to invoke the Bedrock agent
@@ -467,7 +483,9 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                     guardrail_configuration=guardrail_configuration,
                     idle_session_ttl_in_seconds=idle_session_ttl_in_seconds,
                 )
-                _create_bedrock_action_groups(bedrock_client, agent_id, tools)
+                _create_bedrock_action_groups(
+                    bedrock_client, agent_id, tools, enable_human_input
+                )
                 _prepare_agent(bedrock_client, agent_id)
             except Exception as exception:
                 logging.error(f"Error in create agent call: {exception}")
