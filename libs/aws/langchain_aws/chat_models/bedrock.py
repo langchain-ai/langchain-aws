@@ -412,7 +412,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     def set_beta_use_converse_api(cls, values: Dict) -> Any:
         model_id = values.get("model_id", values.get("model"))
 
-        if model_id is not None and "beta_use_converse_api" not in values:
+        if model_id and "beta_use_converse_api" not in values:
             values["beta_use_converse_api"] = "nova" in model_id
         return values
 
