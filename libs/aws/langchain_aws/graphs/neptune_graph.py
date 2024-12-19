@@ -1,6 +1,49 @@
 import json
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Union
+
+logger = logging.getLogger(__name__)
+
+
+def _format_triples(triples: List[dict]) -> List[str]:
+    triple_template = "(:`{a}`)-[:`{e}`]->(:`{b}`)"
+    triple_schema = []
+    for t in triples:
+        triple = triple_template.format(
+            a=t["~from"], e=t["~type"], b=t["~to"]
+        )
+        triple_schema.append(triple)
+
+    return triple_schema
+
+
+def _format_node_properties(n_labels: dict) -> List:
+    node_properties = []
+
+    for label, props_item in n_labels.items():
+        props = props_item["properties"]
+        np = {
+            "properties": [{"property": k, "type": v["datatypes"][0]} for k, v in props.items()],
+            "labels": label,
+        }
+        node_properties.append(np)
+
+    return node_properties
+
+
+def _format_edge_properties(e_labels: dict) -> List:
+    edge_properties = []
+
+    for label, props_item in e_labels.items():
+        props = props_item["properties"]
+        np = {
+            "type": label,
+            "properties": [{"property": k, "type": v["datatypes"][0]} for k, v in props.items()],
+        }
+        edge_properties.append(np)
+
+    return edge_properties
 
 
 class NeptuneQueryException(Exception):
@@ -171,8 +214,11 @@ class NeptuneAnalyticsGraph(BaseNeptuneGraph):
         client: Any = None,
         credentials_profile_name: Optional[str] = None,
         region_name: Optional[str] = None,
+        use_schema_algorithm: bool = True
     ) -> None:
         """Create a new Neptune Analytics graph wrapper instance."""
+
+        self.use_schema_algorithm = use_schema_algorithm
 
         try:
             if client is not None:
@@ -265,6 +311,38 @@ class NeptuneAnalyticsGraph(BaseNeptuneGraph):
             )
         else:
             return summary
+
+    def _refresh_schema(self) -> None:
+        """
+        Refreshes the Neptune graph schema information.
+        """
+        pg_schema_query = """
+        CALL neptune.graph.pg_schema() 
+        YIELD schema
+        RETURN schema
+        """
+        if self.use_schema_algorithm:
+            try:
+                data = self.query(pg_schema_query)
+                raw_schema = data[0]["schema"]
+                triple_schema = _format_triples(raw_schema["labelTriples"])
+                node_properties = _format_node_properties(raw_schema["nodeLabelDetails"])
+                edge_properties = _format_edge_properties(raw_schema["edgeLabelDetails"])
+                self.schema = f"""
+                Node properties are the following:
+                {node_properties}
+                Relationship properties are the following:
+                {edge_properties}
+                The relationships are the following:
+                {triple_schema}
+                """
+            except Exception as e:
+                logger.info("pg_schema algorithm is unsupported on this Neptune version. "
+                            "Falling back to manual graph schema creation.")
+                logger.debug(e)
+                super()._refresh_schema()
+        else:
+            super()._refresh_schema()
 
 
 class NeptuneGraph(BaseNeptuneGraph):
