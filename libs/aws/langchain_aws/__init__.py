@@ -1,3 +1,4 @@
+from langchain_aws.chains.graph_qa import NeptuneOpenCypherQAChain, NeptuneSparqlQAChain
 from langchain_aws.chat_models import ChatBedrock, ChatBedrockConverse
 from langchain_aws.embeddings import BedrockEmbeddings
 from langchain_aws.graphs import NeptuneAnalyticsGraph, NeptuneGraph
@@ -19,6 +20,8 @@ __all__ = [
     "SagemakerEndpoint",
     "AmazonKendraRetriever",
     "AmazonKnowledgeBasesRetriever",
+    "NeptuneOpenCypherQAChain",
+    "NeptuneSparqlQAChain",
     "NeptuneAnalyticsGraph",
     "NeptuneGraph",
     "InMemoryVectorStore",
