@@ -24,6 +24,9 @@ class AmazonQ(LLM):
     
     region_name: Optional[str] = None
     """AWS region name. If not provided, will be extracted from environment."""
+
+    user_id: Optional[str] = None
+    """Amazon Q user will be used for credentials if they are not provided through the client."""
     
     streaming: bool = False
     """Whether to stream the results or not."""
@@ -61,7 +64,6 @@ class AmazonQ(LLM):
     def _llm_type(self) -> str:
         """Return type of llm."""
         return "amazon_q"
-
     def __init__(self, **kwargs: Any) -> None:
         """Initialize the Amazon Q client."""
         super().__init__(**kwargs)
@@ -88,9 +90,6 @@ class AmazonQ(LLM):
                 response = llm.invoke("Tell me a joke.")
         """
         try:
-            print("Prompt Length (Amazon Q ChatSync API takes a maximum of 7000 chars)")
-            print(len(prompt))
-
             # Prepare the request
             request = {
                 'applicationId': self.application_id,
@@ -118,8 +117,6 @@ class AmazonQ(LLM):
                 logging.info(f"Prompt Length: {len(prompt)}")
                 print(f"""Prompt:
                 {prompt}""")
-                raise ValueError(f"Error raised by Amazon Q service: {e}")
-            
             raise ValueError(f"Error raised by Amazon Q service: {e}")
 
     def get_last_response(self) -> Dict:
@@ -143,32 +140,27 @@ class AmazonQ(LLM):
             None, _execute_call
         )
 
-    @property
-    def _identifying_params(self) -> Dict[str, Any]:
-        """Get the identifying parameters."""
-        return {
-            "region_name": self.region_name,
-        }
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Dont do anything if client provided externally"""
         if self.client is not None:
             return self
+        #If the client is not provided, and the user_id is not provided in the class constructor, throw an error saying one or the other needs to be provided
+        if self.user_id is None:
+            raise ValueError(
+                "Either the user_id or the client needs to be provided."
+            )
 
         """Validate that AWS credentials to and python package exists in environment."""
         try:
             import boto3
 
             try:
-                if self.credentials_profile_name is not None:
-                    session = boto3.Session(profile_name=self.credentials_profile_name)
+                if self.region_name is not None:
+                    self.client = boto3.client('qbusiness', self.region_name)
                 else:
-                    # use default credentials
-                    session = boto3.Session()
-
-                self.client = session.client(
-                    "qbusiness", region_name=self.region_name
-                )
+                    # use default region
+                    self.client = boto3.client('qbusiness')
 
             except Exception as e:
                 raise ValueError(
