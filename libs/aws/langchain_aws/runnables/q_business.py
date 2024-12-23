@@ -25,11 +25,8 @@ class AmazonQ(LLM):
     region_name: Optional[str] = None
     """AWS region name. If not provided, will be extracted from environment."""
 
-    user_id: Optional[str] = None
-    """Amazon Q user will be used for credentials if they are not provided through the client."""
-    
-    streaming: bool = False
-    """Whether to stream the results or not."""
+    credentials: Optional[Any] = None
+    """Amazon Q credentials used to instantiate the client if the client is not provided."""
     
     client: Any = None
     """Amazon Q client."""
@@ -49,13 +46,6 @@ class AmazonQ(LLM):
     chat_mode: str = "RETRIEVAL_MODE"
     """AWS region name. If not provided, will be extracted from environment."""
 
-    credentials_profile_name: Optional[str] = None
-    """The name of the profile in the ~/.aws/credentials or ~/.aws/config files, which
-    has either access keys or role information specified.
-    If not specified, the default credential profile or, if on an EC2 instance,
-    credentials from IMDS will be used.
-    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-    """
     model_config = ConfigDict(
         extra="forbid",
     )
@@ -146,9 +136,9 @@ class AmazonQ(LLM):
         if self.client is not None:
             return self
         #If the client is not provided, and the user_id is not provided in the class constructor, throw an error saying one or the other needs to be provided
-        if self.user_id is None:
+        if self.credentials is None:
             raise ValueError(
-                "Either the user_id or the client needs to be provided."
+                "Either the credentials or the client needs to be provided."
             )
 
         """Validate that AWS credentials to and python package exists in environment."""
@@ -157,10 +147,10 @@ class AmazonQ(LLM):
 
             try:
                 if self.region_name is not None:
-                    self.client = boto3.client('qbusiness', self.region_name)
+                    self.client = boto3.client('qbusiness', self.region_name, **self.credentials)
                 else:
                     # use default region
-                    self.client = boto3.client('qbusiness')
+                    self.client = boto3.client('qbusiness', **self.credentials)
 
             except Exception as e:
                 raise ValueError(
