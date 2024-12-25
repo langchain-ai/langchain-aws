@@ -39,7 +39,7 @@ from langchain_aws.utils import (
 )
 
 AMAZON_BEDROCK_TRACE_KEY = "amazon-bedrock-trace"
-GUARDRAILS_BODY_KEY = "amazon-bedrock-guardrailAssessment"
+GUARDRAILS_BODY_KEY = "amazon-bedrock-guardrailAction"
 HUMAN_PROMPT = "\n\nHuman:"
 ASSISTANT_PROMPT = "\n\nAssistant:"
 ALTERNATION_ERROR = (
@@ -886,7 +886,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         }
 
     def _is_guardrails_intervention(self, body: dict) -> bool:
-        return body.get(GUARDRAILS_BODY_KEY) == "GUARDRAIL_INTERVENED"
+        return body.get(GUARDRAILS_BODY_KEY) == "INTERVENED"
 
     def _prepare_input_and_invoke_stream(
         self,
