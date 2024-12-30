@@ -133,14 +133,14 @@ class LLMContentHandler(ContentHandlerBase[str, str]):
 class SagemakerEndpoint(LLM):
     """Sagemaker Inference Endpoint models.
 
-    To use with a pre-deployed SageMaker endpoint or inference component, you must supply the
-    endpoint name and optional inference component name from your deployed Sagemaker model
-    & the region where it is deployed.
+    To use with a pre-deployed SageMaker endpoint or inference component, you must 
+    supply the endpoint name and optional inference component name from your deployed
+    Sagemaker model & the region where it is deployed.
 
-    To use with undeployed SageMaker resources, you can supply an endpoint name, optional
-    inference component name, and deployment configuration which defines the endpoint and model
-    configs. This construct can then be used by the SageMaker PythonSDK ModelBuilder class to
-    deploy a Sagemaker model on the desired compute.
+    To use with undeployed SageMaker resources, you can supply an endpoint name, 
+    optional inference component name, and deployment configuration which defines
+    the endpoint and model configs. This construct can then be used by the SageMaker
+    PythonSDK ModelBuilder class to deploy a Sagemaker model on the desired compute.
 
     To authenticate, the AWS client uses the following methods to
     automatically load credentials:
@@ -269,9 +269,9 @@ class SagemakerEndpoint(LLM):
     """
 
     deployment_config: Optional[Dict] = None
-    """The deployment configuration for an undeployed endpoint or inference component which
-    can be deployed through the Sagemaker Python SDK ModelBuilder class. Comprises two
-    sub-dictionaries model_config and endpoint_config.
+    """The deployment configuration for an undeployed endpoint or inference component 
+    which can be deployed through the Sagemaker Python SDK ModelBuilder class. 
+    Comprises two sub-dictionaries model_config and endpoint_config.
     """
 
     """
