@@ -393,6 +393,9 @@ class ChatBedrockConverse(BaseChatModel):
     ('auto') if a 'nova' model is used, empty otherwise.
     """
 
+    request_metadata: Optional[Dict[str, str]] = None
+    """Key-Value pairs that you can use to filter invocation logs."""
+
     model_config = ConfigDict(
         extra="forbid",
         populate_by_name=True,
@@ -623,6 +626,7 @@ class ChatBedrockConverse(BaseChatModel):
         additionalModelRequestFields: Optional[dict] = None,
         additionalModelResponseFieldPaths: Optional[List[str]] = None,
         guardrailConfig: Optional[dict] = None,
+        requestMetadata: Optional[dict] = None,
     ) -> Dict[str, Any]:
         if not inferenceConfig:
             inferenceConfig = {
@@ -645,6 +649,7 @@ class ChatBedrockConverse(BaseChatModel):
                 "additionalModelResponseFieldPaths": additionalModelResponseFieldPaths
                 or self.additional_model_response_field_paths,
                 "guardrailConfig": guardrailConfig or self.guardrail_config,
+                "requestMetadata": requestMetadata or self.request_metadata,
             }
         )
 
