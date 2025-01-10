@@ -3,19 +3,19 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from langchain_aws.chains.graph_qa.neptune_cypher import (
-        NeptuneOpenCypherQAChain
+        create_neptune_opencypher_qa_chain
     )
     from langchain_aws.chains.graph_qa.neptune_sparql import (
         NeptuneSparqlQAChain
     )
 
 __all__ = [
-    "NeptuneOpenCypherQAChain",
+    "create_neptune_opencypher_qa_chain",
     "NeptuneSparqlQAChain"
 ]
 
 _module_lookup = {
-    "NeptuneOpenCypherQAChain": "langchain_aws.chains.graph_qa.neptune_cypher",
+    "create_neptune_opencypher_qa_chain": "langchain_aws.chains.graph_qa.neptune_cypher",
     "NeptuneSparqlQAChain": "langchain_aws.chains.graph_qa.neptune_sparql",
 }
 
