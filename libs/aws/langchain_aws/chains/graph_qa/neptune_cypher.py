@@ -148,16 +148,19 @@ def create_neptune_opencypher_qa_chain(
         }
 
     def format_response(inputs: dict) -> dict:
-        final_response = {
-            "query": inputs["query"],
-            "result": inputs["qa_result"] if not return_direct else inputs["context"]
-        }
+        intermediate_steps = [
+            {"query": inputs["cypher"]}
+        ]
+
+        if return_direct:
+            final_response = {"result": inputs["context"]}
+        else:
+            final_response = {"result": inputs["qa_result"]}
+            intermediate_steps.append({"context": inputs["context"]})
+
         if return_intermediate_steps:
-            final_response.update({
-                "intermediate_steps": [
-                    {"context": inputs["context"]},
-                ],
-            })
+            final_response[INTERMEDIATE_STEPS_KEY] = intermediate_steps
+
         return final_response
 
     chain_result = (
@@ -167,9 +170,9 @@ def create_neptune_opencypher_qa_chain(
         | {
             "query": lambda x: x["query"],
             "cypher": (lambda x: x["cypher_generation_inputs"])
-            | cypher_generation_chain
-            | (lambda x: extract_cypher(x.content))
-            | trim_query
+                      | cypher_generation_chain
+                      | (lambda x: extract_cypher(x.content))
+                      | trim_query
         }
         | RunnablePassthrough.assign(
             context=lambda x: execute_graph_query(x["cypher"])
