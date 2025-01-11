@@ -6,17 +6,17 @@ if TYPE_CHECKING:
         create_neptune_opencypher_qa_chain
     )
     from langchain_aws.chains.graph_qa.neptune_sparql import (
-        NeptuneSparqlQAChain
+        create_neptune_sparql_qa_chain
     )
 
 __all__ = [
     "create_neptune_opencypher_qa_chain",
-    "NeptuneSparqlQAChain"
+    "create_neptune_sparql_qa_chain"
 ]
 
 _module_lookup = {
     "create_neptune_opencypher_qa_chain": "langchain_aws.chains.graph_qa.neptune_cypher",
-    "NeptuneSparqlQAChain": "langchain_aws.chains.graph_qa.neptune_sparql",
+    "create_neptune_sparql_qa_chain": "langchain_aws.chains.graph_qa.neptune_sparql",
 }
 
 
