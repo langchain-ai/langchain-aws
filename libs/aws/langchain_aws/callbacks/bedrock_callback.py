@@ -109,14 +109,15 @@ def _get_token_cost(
             f"Unknown model: {model_id}. Please provide a valid  model name."
             "Known models are: " + ", ".join(MODEL_COST_PER_1K_INPUT_TOKENS.keys())
         )
-    return (
+    return round(
         ((prompt_tokens - prompt_tokens_cache_read) / 1000)
         * MODEL_COST_PER_1K_INPUT_TOKENS[base_model_id]
         + (prompt_tokens_cache_write / 1000)
         * MODEL_COST_PER_1K_INPUT_CACHE_WRITE_TOKENS[base_model_id]
         + (prompt_tokens_cache_read / 1000)
         * MODEL_COST_PER_1K_INPUT_CACHE_READ_TOKENS[base_model_id]
-        + (completion_tokens / 1000) * MODEL_COST_PER_1K_OUTPUT_TOKENS[base_model_id]
+        + (completion_tokens / 1000) * MODEL_COST_PER_1K_OUTPUT_TOKENS[base_model_id],
+        7,
     )
 
 
