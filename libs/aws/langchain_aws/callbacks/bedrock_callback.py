@@ -1,4 +1,3 @@
-import logging
 import threading
 from typing import Any, Dict, List, Union
 
@@ -110,8 +109,6 @@ MODEL_COST_PER_1K_INPUT_CACHE_READ_TOKENS = {
     "amazon.nova-micro-v1:0": 0.00000875,
 }
 
-logger = logging.getLogger(__name__)
-
 
 def _get_token_cost(
     prompt_tokens: int,
@@ -132,14 +129,11 @@ def _get_token_cost(
         base_model_id = model_id
     """Get the cost of tokens for the model."""
     if base_model_id not in MODEL_COST_PER_1K_INPUT_TOKENS:
-        logger.error(
-            "Failed to calculate token cost. "
-            "Unknown model: %s. Please provide a valid model name. "
-            "Known models are: %s",
-            model_id,
-            ", ".join(MODEL_COST_PER_1K_INPUT_TOKENS.keys()),
+        raise ValueError(
+            f"Failed to calculate token cost. Unknown model: {model_id}. "
+            "Please provide a valid model name. "
+            f"Known models are: {",".join(MODEL_COST_PER_1K_INPUT_TOKENS.keys())}"
         )
-        return 0.0
     return round(
         ((prompt_tokens - prompt_tokens_cache_read) / 1000)
         * MODEL_COST_PER_1K_INPUT_TOKENS[base_model_id]
