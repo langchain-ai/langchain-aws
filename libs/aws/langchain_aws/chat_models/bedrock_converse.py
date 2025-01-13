@@ -506,14 +506,18 @@ class ChatBedrockConverse(BaseChatModel):
         usage_metadata: UsageMetadata = (
             response_message.usage_metadata or UsageMetadata()
         )
-        input_token_details = usage_metadata.input_token_details or InputTokenDetails()
+        input_token_details: InputTokenDetails = (
+            usage_metadata.get("input_token_details") or InputTokenDetails()
+        )
         llm_output = {
             "usage": {
-                "prompt_tokens": usage_metadata.input_tokens,
-                "prompt_tokens_cache_write": input_token_details.cache_creation,
-                "prompt_tokens_cache_read": input_token_details.cache_read,
-                "completion_tokens": usage_metadata.output_tokens,
-                "total_tokens": usage_metadata.total_tokens,
+                "prompt_tokens": usage_metadata.get("input_tokens", 0),
+                "prompt_tokens_cache_write": input_token_details.get(
+                    "cache_creation", 0
+                ),
+                "prompt_tokens_cache_read": input_token_details.get("cache_read", 0),
+                "completion_tokens": usage_metadata.get("output_tokens", 0),
+                "total_tokens": usage_metadata.get("total_tokens", 0),
             },
             "model_id": self.model_id,
         }
