@@ -764,13 +764,25 @@ def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:
     return response_metadata
 
 
+def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
+    usage: Dict[str, int] = response.pop("usage")  # type: ignore[misc]
+    return UsageMetadata(
+        input_tokens=usage.get("inputTokens", 0),
+        output_tokens=usage.get("outputTokens", 0),
+        total_tokens=usage.get("totalTokens", 0),
+        input_token_details=InputTokenDetails(
+            cache_creation=usage.get("cacheWriteInputTokensCount", 0),
+            cache_read=usage.get("cacheReadInputTokensCount", 0),
+        ),
+    )
+
+
 def _parse_response(response: Dict[str, Any]) -> AIMessage:
     lc_content = _bedrock_to_lc(response.pop("output")["message"]["content"])
     tool_calls = _extract_tool_calls(lc_content)
-    usage = UsageMetadata(_camel_to_snake_keys(response.pop("usage")))  # type: ignore[misc]
     return AIMessage(
         content=_str_if_single_text_block(lc_content),  # type: ignore[arg-type]
-        usage_metadata=usage,
+        usage_metadata=_extract_usage_metadata(response),
         response_metadata=_extract_response_metadata(response),
         tool_calls=tool_calls,
     )
@@ -825,9 +837,11 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         # TODO: snake case response metadata?
         return AIMessageChunk(content=[], response_metadata=event["messageStop"])
     elif "metadata" in event:
-        usage = UsageMetadata(_camel_to_snake_keys(event["metadata"].pop("usage")))  # type: ignore[misc]
+        usage_metadata = _extract_usage_metadata(event["metadata"])
         return AIMessageChunk(
-            content=[], response_metadata=event["metadata"], usage_metadata=usage
+            content=[],
+            response_metadata=event["metadata"],
+            usage_metadata=usage_metadata,
         )
     elif "Exception" in list(event.keys())[0]:
         name, info = list(event.items())[0]
