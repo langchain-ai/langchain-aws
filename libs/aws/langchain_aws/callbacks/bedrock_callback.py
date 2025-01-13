@@ -1,3 +1,4 @@
+import logging
 import threading
 from typing import Any, Dict, List, Union
 
@@ -19,6 +20,12 @@ MODEL_COST_PER_1K_INPUT_TOKENS = {
     "meta.llama3-8b-instruct-v1:0": 0.0003,
     "meta.llama2-13b-chat-v1": 0.00075,
     "meta.llama2-70b-chat-v1": 0.00195,
+    "meta.llama3-1-70b-instruct-v1:0": 0.00072,
+    "meta.llama3-1-8b-instruct-v1:0": 0.00022,
+    "meta.llama3-2-11b-instruct-v1:0": 0.00016,
+    "meta.llama3-2-1b-instruct-v1:0": 0.0001,
+    "meta.llama3-2-3b-instruct-v1:0": 0.00015,
+    "meta.llama3-2-90b-instruct-v1:0": 0.00072,
     "meta.llama3-3-70b-instruct-v1:0": 0.00072,
     "amazon.nova-pro-v1:0": 0.0008,
     "amazon.nova-lite-v1:0": 0.00006,
@@ -39,6 +46,12 @@ MODEL_COST_PER_1K_OUTPUT_TOKENS = {
     "meta.llama3-8b-instruct-v1:0": 0.0006,
     "meta.llama2-13b-chat-v1": 0.00100,
     "meta.llama2-70b-chat-v1": 0.00256,
+    "meta.llama3-1-70b-instruct-v1:0": 0.00072,
+    "meta.llama3-1-8b-instruct-v1:0": 0.00022,
+    "meta.llama3-2-11b-instruct-v1:0": 0.00016,
+    "meta.llama3-2-1b-instruct-v1:0": 0.0001,
+    "meta.llama3-2-3b-instruct-v1:0": 0.00015,
+    "meta.llama3-2-90b-instruct-v1:0": 0.00072,
     "meta.llama3-3-70b-instruct-v1:0": 0.00072,
     "amazon.nova-pro-v1:0": 0.0032,
     "amazon.nova-lite-v1:0": 0.00024,
@@ -59,6 +72,12 @@ MODEL_COST_PER_1K_INPUT_CACHE_WRITE_TOKENS = {
     "meta.llama3-8b-instruct-v1:0": 0.0,
     "meta.llama2-13b-chat-v1": 0.0,
     "meta.llama2-70b-chat-v1": 0.0,
+    "meta.llama3-1-70b-instruct-v1:0": 0.0,
+    "meta.llama3-1-8b-instruct-v1:0": 0.0,
+    "meta.llama3-2-11b-instruct-v1:0": 0.0,
+    "meta.llama3-2-1b-instruct-v1:0": 0.0,
+    "meta.llama3-2-3b-instruct-v1:0": 0.0,
+    "meta.llama3-2-90b-instruct-v1:0": 0.0,
     "meta.llama3-3-70b-instruct-v1:0": 0.0,
     "amazon.nova-pro-v1:0": 0.0,
     "amazon.nova-lite-v1:0": 0.0,
@@ -79,11 +98,19 @@ MODEL_COST_PER_1K_INPUT_CACHE_READ_TOKENS = {
     "meta.llama3-8b-instruct-v1:0": 0.0,
     "meta.llama2-13b-chat-v1": 0.0,
     "meta.llama2-70b-chat-v1": 0.0,
+    "meta.llama3-1-70b-instruct-v1:0": 0.0,
+    "meta.llama3-1-8b-instruct-v1:0": 0.0,
+    "meta.llama3-2-11b-instruct-v1:0": 0.0,
+    "meta.llama3-2-1b-instruct-v1:0": 0.0,
+    "meta.llama3-2-3b-instruct-v1:0": 0.0,
+    "meta.llama3-2-90b-instruct-v1:0": 0.0,
     "meta.llama3-3-70b-instruct-v1:0": 0.0,
     "amazon.nova-pro-v1:0": 0.0002,
     "amazon.nova-lite-v1:0": 0.000015,
     "amazon.nova-micro-v1:0": 0.00000875,
 }
+
+logger = logging.getLogger(__name__)
 
 
 def _get_token_cost(
@@ -105,10 +132,14 @@ def _get_token_cost(
         base_model_id = model_id
     """Get the cost of tokens for the model."""
     if base_model_id not in MODEL_COST_PER_1K_INPUT_TOKENS:
-        raise ValueError(
-            f"Unknown model: {model_id}. Please provide a valid  model name."
-            "Known models are: " + ", ".join(MODEL_COST_PER_1K_INPUT_TOKENS.keys())
+        logger.error(
+            "Failed to calculate token cost. "
+            "Unknown model: %s. Please provide a valid model name. "
+            "Known models are: %s",
+            model_id,
+            ", ".join(MODEL_COST_PER_1K_INPUT_TOKENS.keys()),
         )
+        return 0.0
     return round(
         ((prompt_tokens - prompt_tokens_cache_read) / 1000)
         * MODEL_COST_PER_1K_INPUT_TOKENS[base_model_id]
