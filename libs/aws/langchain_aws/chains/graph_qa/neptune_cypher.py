@@ -6,12 +6,14 @@ from typing import Any, Optional
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.prompts.base import BasePromptTemplate
 from langchain_core.runnables import Runnable, RunnablePassthrough
+
+from langchain_aws.graphs import BaseNeptuneGraph
+
 from .prompts import (
     CYPHER_QA_PROMPT,
     NEPTUNE_OPENCYPHER_GENERATION_PROMPT,
     NEPTUNE_OPENCYPHER_GENERATION_SIMPLE_PROMPT,
 )
-from langchain_aws.graphs import BaseNeptuneGraph
 
 INTERMEDIATE_STEPS_KEY = "intermediate_steps"
 
@@ -80,14 +82,14 @@ def get_prompt(llm: BaseLanguageModel) -> BasePromptTemplate:
 
 
 def create_neptune_opencypher_qa_chain(
-        llm: BaseLanguageModel,
-        graph: BaseNeptuneGraph,
-        qa_prompt: BasePromptTemplate = CYPHER_QA_PROMPT,
-        cypher_prompt: Optional[BasePromptTemplate] = None,
-        return_intermediate_steps: bool = False,
-        return_direct: bool = False,
-        extra_instructions: Optional[str] = None,
-        allow_dangerous_requests: bool = False
+    llm: BaseLanguageModel,
+    graph: BaseNeptuneGraph,
+    qa_prompt: BasePromptTemplate = CYPHER_QA_PROMPT,
+    cypher_prompt: Optional[BasePromptTemplate] = None,
+    return_intermediate_steps: bool = False,
+    return_direct: bool = False,
+    extra_instructions: Optional[str] = None,
+    allow_dangerous_requests: bool = False,
 ) -> Runnable[dict[str, Any], dict]:
     """Chain for question-answering against a Neptune graph
     by generating openCypher statements.
@@ -148,9 +150,7 @@ def create_neptune_opencypher_qa_chain(
         }
 
     def format_response(inputs: dict) -> dict:
-        intermediate_steps = [
-            {"query": inputs["cypher"]}
-        ]
+        intermediate_steps = [{"query": inputs["cypher"]}]
 
         if return_direct:
             final_response = {"result": inputs["context"]}
@@ -164,23 +164,16 @@ def create_neptune_opencypher_qa_chain(
         return final_response
 
     chain_result = (
-        RunnablePassthrough.assign(
-            cypher_generation_inputs=get_cypher_inputs
-        )
+        RunnablePassthrough.assign(cypher_generation_inputs=get_cypher_inputs)
         | {
             "query": lambda x: x["query"],
             "cypher": (lambda x: x["cypher_generation_inputs"])
-                      | cypher_generation_chain
-                      | (lambda x: extract_cypher(x.content))
-                      | trim_query
+            | cypher_generation_chain
+            | (lambda x: extract_cypher(x.content))
+            | trim_query,
         }
-        | RunnablePassthrough.assign(
-            context=lambda x: execute_graph_query(x["cypher"])
-        )
-        | RunnablePassthrough.assign(
-            qa_result=(lambda x: get_qa_inputs(x))
-            | qa_chain
-        )
+        | RunnablePassthrough.assign(context=lambda x: execute_graph_query(x["cypher"]))
+        | RunnablePassthrough.assign(qa_result=(lambda x: get_qa_inputs(x)) | qa_chain)
         | format_response
     )
 

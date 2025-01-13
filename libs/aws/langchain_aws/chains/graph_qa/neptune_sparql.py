@@ -10,12 +10,14 @@ from langchain_core.language_models import BaseLanguageModel
 from langchain_core.prompts.base import BasePromptTemplate
 from langchain_core.prompts.prompt import PromptTemplate
 from langchain_core.runnables import Runnable, RunnablePassthrough
-from .prompts import (
-    SPARQL_QA_PROMPT,
-    NEPTUNE_SPARQL_GENERATION_TEMPLATE,
-    NEPTUNE_SPARQL_GENERATION_PROMPT,
-)
+
 from langchain_aws.graphs import NeptuneRdfGraph
+
+from .prompts import (
+    NEPTUNE_SPARQL_GENERATION_PROMPT,
+    NEPTUNE_SPARQL_GENERATION_TEMPLATE,
+    SPARQL_QA_PROMPT,
+)
 
 INTERMEDIATE_STEPS_KEY = "intermediate_steps"
 
@@ -45,9 +47,7 @@ def get_prompt(examples: str) -> BasePromptTemplate:
     """Selects the final prompt."""
     template_to_use = NEPTUNE_SPARQL_GENERATION_TEMPLATE
     if examples:
-        template_to_use = template_to_use.replace(
-            "Examples:", "Examples: " + examples
-        )
+        template_to_use = template_to_use.replace("Examples:", "Examples: " + examples)
         return PromptTemplate(
             input_variables=["schema", "prompt"], template=template_to_use
         )
@@ -55,15 +55,15 @@ def get_prompt(examples: str) -> BasePromptTemplate:
 
 
 def create_neptune_sparql_qa_chain(
-        llm: BaseLanguageModel,
-        graph: NeptuneRdfGraph,
-        qa_prompt: BasePromptTemplate = SPARQL_QA_PROMPT,
-        sparql_prompt: Optional[BasePromptTemplate] = None,
-        return_intermediate_steps: bool = False,
-        return_direct: bool = False,
-        extra_instructions: Optional[str] = None,
-        allow_dangerous_requests: bool = False,
-        examples: Optional[str] = None,
+    llm: BaseLanguageModel,
+    graph: NeptuneRdfGraph,
+    qa_prompt: BasePromptTemplate = SPARQL_QA_PROMPT,
+    sparql_prompt: Optional[BasePromptTemplate] = None,
+    return_intermediate_steps: bool = False,
+    return_direct: bool = False,
+    extra_instructions: Optional[str] = None,
+    allow_dangerous_requests: bool = False,
+    examples: Optional[str] = None,
 ) -> Runnable[dict[str, Any], dict]:
     """Chain for question-answering against a Neptune graph
     by generating SPARQL statements.
@@ -123,9 +123,7 @@ def create_neptune_sparql_qa_chain(
         }
 
     def format_response(inputs: dict) -> dict:
-        intermediate_steps = [
-            {"query": inputs["sparql"]}
-        ]
+        intermediate_steps = [{"query": inputs["sparql"]}]
 
         if return_direct:
             final_response = {"result": inputs["context"]}
@@ -139,23 +137,16 @@ def create_neptune_sparql_qa_chain(
         return final_response
 
     chain_result = (
-            RunnablePassthrough.assign(
-                sparql_generation_inputs=get_sparql_inputs
-            )
-            | {
-                "query": lambda x: x["query"],
-                "sparql": (lambda x: x["sparql_generation_inputs"])
-                          | sparql_generation_chain
-                          | (lambda x: extract_sparql(x.content))
-            }
-            | RunnablePassthrough.assign(
-                context=lambda x: execute_graph_query(x["sparql"])
-            )
-            | RunnablePassthrough.assign(
-                qa_result=(lambda x: get_qa_inputs(x))
-                | qa_chain
-            )
-            | format_response
+        RunnablePassthrough.assign(sparql_generation_inputs=get_sparql_inputs)
+        | {
+            "query": lambda x: x["query"],
+            "sparql": (lambda x: x["sparql_generation_inputs"])
+            | sparql_generation_chain
+            | (lambda x: extract_sparql(x.content)),
+        }
+        | RunnablePassthrough.assign(context=lambda x: execute_graph_query(x["sparql"]))
+        | RunnablePassthrough.assign(qa_result=(lambda x: get_qa_inputs(x)) | qa_chain)
+        | format_response
     )
 
     return chain_result
