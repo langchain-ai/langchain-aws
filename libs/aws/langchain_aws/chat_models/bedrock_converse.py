@@ -34,7 +34,7 @@ from langchain_core.messages import (
     ToolMessage,
     merge_message_runs,
 )
-from langchain_core.messages.ai import AIMessageChunk, UsageMetadata
+from langchain_core.messages.ai import AIMessageChunk, InputTokenDetails, UsageMetadata
 from langchain_core.messages.tool import tool_call as create_tool_call
 from langchain_core.messages.tool import tool_call_chunk
 from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
@@ -383,9 +383,9 @@ class ChatBedrockConverse(BaseChatModel):
     additionalModelResponseFieldPaths.
     """
 
-    supports_tool_choice_values: Optional[
-        Sequence[Literal["auto", "any", "tool"]]
-    ] = None
+    supports_tool_choice_values: Optional[Sequence[Literal["auto", "any", "tool"]]] = (
+        None
+    )
     """Which types of tool_choice values the model supports.
     
     Inferred if not specified. Inferred as ('auto', 'any', 'tool') if a 'claude-3' 
@@ -502,7 +502,25 @@ class ChatBedrockConverse(BaseChatModel):
             messages=bedrock_messages, system=system, **params
         )
         response_message = _parse_response(response)
-        return ChatResult(generations=[ChatGeneration(message=response_message)])
+
+        usage_metadata: UsageMetadata = (
+            response_message.usage_metadata or UsageMetadata()
+        )
+        input_token_details = usage_metadata.input_token_details or InputTokenDetails()
+        llm_output = {
+            "usage": {
+                "prompt_tokens": usage_metadata.input_tokens,
+                "prompt_tokens_cache_write": input_token_details.cache_creation,
+                "prompt_tokens_cache_read": input_token_details.cache_read,
+                "completion_tokens": usage_metadata.output_tokens,
+                "total_tokens": usage_metadata.total_tokens,
+            },
+            "model_id": self.model_id,
+        }
+        return ChatResult(
+            generations=[ChatGeneration(message=response_message)],
+            llm_output=llm_output,
+        )
 
     def _stream(
         self,

@@ -30,7 +30,7 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
 )
-from langchain_core.messages.ai import UsageMetadata
+from langchain_core.messages.ai import InputTokenDetails, UsageMetadata
 from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
@@ -578,11 +578,17 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         # usage metadata
         if usage := llm_output.get("usage"):
             input_tokens = usage.get("prompt_tokens", 0)
+            cache_creation = usage.get("prompt_tokens_cache_write", 0)
+            cache_read = usage.get("prompt_tokens_cache_read", 0)
             output_tokens = usage.get("completion_tokens", 0)
             usage_metadata = UsageMetadata(
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 total_tokens=usage.get("total_tokens", input_tokens + output_tokens),
+                input_token_details=InputTokenDetails(
+                    cache_creation=cache_creation,
+                    cache_read=cache_read,
+                ),
             )
         else:
             usage_metadata = None

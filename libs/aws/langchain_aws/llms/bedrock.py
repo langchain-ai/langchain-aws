@@ -349,6 +349,9 @@ class LLMInputOutputAdapter:
 
         headers = response.get("ResponseMetadata", {}).get("HTTPHeaders", {})
         prompt_tokens = int(headers.get("x-amzn-bedrock-input-token-count", 0))
+        # TODO what are the headers for cache write and read, if any?
+        prompt_tokens_cache_write = int(headers.get("x-amzn-bedrock-XXX", 0))
+        prompt_tokens_cache_read = int(headers.get("x-amzn-bedrock-XXX", 0))
         completion_tokens = int(headers.get("x-amzn-bedrock-output-token-count", 0))
         return {
             "text": text,
@@ -356,6 +359,8 @@ class LLMInputOutputAdapter:
             "body": response_body,
             "usage": {
                 "prompt_tokens": prompt_tokens,
+                "prompt_tokens_cache_write": prompt_tokens_cache_write,
+                "prompt_tokens_cache_read": prompt_tokens_cache_read,
                 "completion_tokens": completion_tokens,
                 "total_tokens": prompt_tokens + completion_tokens,
             },
