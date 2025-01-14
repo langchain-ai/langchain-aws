@@ -1,4 +1,4 @@
-from langchain_aws.chains.graph_qa import (
+from langchain_aws.chains import (
     create_neptune_opencypher_qa_chain,
     create_neptune_sparql_qa_chain,
 )
