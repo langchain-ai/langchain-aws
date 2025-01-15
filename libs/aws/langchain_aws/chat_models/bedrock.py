@@ -49,10 +49,13 @@ from langchain_aws.llms.bedrock import (
     BedrockBase,
     _combine_generation_info_for_llm_result,
 )
+from langchain_aws.logger_util import get_logger
 from langchain_aws.utils import (
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
+
+logger = get_logger(__name__)
 
 
 def _convert_one_message_to_text_llama(message: BaseMessage) -> str:
@@ -520,6 +523,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
+        logger.info(f"The input message sent by user: {messages}")
         if self.beta_use_converse_api:
             return self._as_converse._generate(
                 messages, stop=stop, run_manager=run_manager, **kwargs
@@ -595,7 +599,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             tool_calls=cast(List[ToolCall], tool_calls),
             usage_metadata=usage_metadata,
         )
-
+        logger.info(f"The output message sent by user: {msg}")
         return ChatResult(
             generations=[
                 ChatGeneration(
@@ -805,7 +809,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 schema, include_raw=include_raw, **kwargs
             )
         if "claude-3" not in self._get_model():
-            ValueError(
+            raise ValueError(
                 f"Structured output is not supported for model {self._get_model()}"
             )
 

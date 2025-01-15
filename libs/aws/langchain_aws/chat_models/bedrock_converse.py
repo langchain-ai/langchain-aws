@@ -52,9 +52,12 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
+from langchain_aws.logger_util import get_logger
 
 _BM = TypeVar("_BM", bound=BaseModel)
 _DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
+
+logger = get_logger(__name__)
 
 
 class ChatBedrockConverse(BaseChatModel):
@@ -495,6 +498,7 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> ChatResult:
         """Top Level call"""
         bedrock_messages, system = _messages_to_bedrock(messages)
+        logger.debug(f"input message: {bedrock_messages}")
         params = self._converse_params(
             stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
         )
@@ -502,6 +506,7 @@ class ChatBedrockConverse(BaseChatModel):
             messages=bedrock_messages, system=system, **params
         )
         response_message = _parse_response(response)
+        logger.info(f"output message: {response_message}")
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
     def _stream(
