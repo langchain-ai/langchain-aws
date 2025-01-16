@@ -14,6 +14,7 @@ from langchain_aws.vectorstores.inmemorydb import (
     InMemorySemanticCache,
     InMemoryVectorStore,
 )
+from langchain_aws.rerank.rerank import BedrockRerank
 
 __all__ = [
     "BedrockEmbeddings",
@@ -29,4 +30,5 @@ __all__ = [
     "NeptuneGraph",
     "InMemoryVectorStore",
     "InMemorySemanticCache",
+    "BedrockRerank"
 ]
