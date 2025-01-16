@@ -4,7 +4,7 @@ Question answering over an RDF or OWL graph using SPARQL.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.prompts.base import BasePromptTemplate
@@ -64,7 +64,7 @@ def create_neptune_sparql_qa_chain(
     extra_instructions: Optional[str] = None,
     allow_dangerous_requests: bool = False,
     examples: Optional[str] = None,
-) -> Runnable[dict[str, Any], dict]:
+) -> Runnable[Any, dict]:
     """Chain for question-answering against a Neptune graph
     by generating SPARQL statements.
 
@@ -106,6 +106,11 @@ def create_neptune_sparql_qa_chain(
     _sparql_prompt = sparql_prompt or get_prompt(examples)
     sparql_generation_chain = _sparql_prompt | llm
 
+    def normalize_input(raw_input: Union[str, dict]) -> dict:
+        if isinstance(raw_input, str):
+            return {"query": raw_input}
+        return raw_input
+
     def execute_graph_query(sparql_query: str) -> dict:
         return graph.query(sparql_query)
 
@@ -137,7 +142,8 @@ def create_neptune_sparql_qa_chain(
         return final_response
 
     chain_result = (
-        RunnablePassthrough.assign(sparql_generation_inputs=get_sparql_inputs)
+        normalize_input
+        | RunnablePassthrough.assign(sparql_generation_inputs=get_sparql_inputs)
         | {
             "query": lambda x: x["query"],
             "sparql": (lambda x: x["sparql_generation_inputs"])
