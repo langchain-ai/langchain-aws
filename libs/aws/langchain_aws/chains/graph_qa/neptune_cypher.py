@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.prompts.base import BasePromptTemplate
@@ -90,7 +90,7 @@ def create_neptune_opencypher_qa_chain(
     return_direct: bool = False,
     extra_instructions: Optional[str] = None,
     allow_dangerous_requests: bool = False,
-) -> Runnable[dict[str, Any], dict]:
+) -> Runnable:
     """Chain for question-answering against a Neptune graph
     by generating openCypher statements.
 
@@ -133,6 +133,11 @@ def create_neptune_opencypher_qa_chain(
     _cypher_prompt = cypher_prompt or get_prompt(llm)
     cypher_generation_chain = _cypher_prompt | llm
 
+    def normalize_input(raw_input: Union[str, dict]) -> dict:
+        if isinstance(raw_input, str):
+            return {"query": raw_input}
+        return raw_input
+
     def execute_graph_query(cypher_query: str) -> dict:
         return graph.query(cypher_query)
 
@@ -164,7 +169,8 @@ def create_neptune_opencypher_qa_chain(
         return final_response
 
     chain_result = (
-        RunnablePassthrough.assign(cypher_generation_inputs=get_cypher_inputs)
+        normalize_input
+        | RunnablePassthrough.assign(cypher_generation_inputs=get_cypher_inputs)
         | {
             "query": lambda x: x["query"],
             "cypher": (lambda x: x["cypher_generation_inputs"])
