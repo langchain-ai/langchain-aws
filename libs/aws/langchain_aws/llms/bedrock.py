@@ -802,7 +802,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 max_tokens=self.max_tokens,
                 temperature=self.temperature,
             )
-        body = json.dumps(input_body)
+        body = json.dumps(input_body, default=str)
         accept = "application/json"
         contentType = "application/json"
 
