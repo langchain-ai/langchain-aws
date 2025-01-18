@@ -36,7 +36,7 @@ from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResu
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 from langchain_aws.function_calling import (
@@ -406,6 +406,15 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     def get_lc_namespace(cls) -> List[str]:
         """Get the namespace of the langchain object."""
         return ["langchain", "chat_models", "bedrock"]
+
+    @model_validator(mode="before")
+    @classmethod
+    def set_beta_use_converse_api(cls, values: Dict) -> Any:
+        model_id = values.get("model_id", values.get("model"))
+
+        if model_id and "beta_use_converse_api" not in values:
+            values["beta_use_converse_api"] = "nova" in model_id
+        return values
 
     @property
     def lc_attributes(self) -> Dict[str, Any]:
@@ -826,7 +835,16 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         kwargs = {
             k: v
             for k, v in (self.model_kwargs or {}).items()
-            if k in ("stop", "stop_sequences", "max_tokens", "temperature", "top_p")
+            if k
+            in (
+                "stop",
+                "stop_sequences",
+                "max_tokens",
+                "temperature",
+                "top_p",
+                "additional_model_request_fields",
+                "additional_model_response_field_paths",
+            )
         }
         if self.max_tokens:
             kwargs["max_tokens"] = self.max_tokens
