@@ -939,7 +939,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                     max_tokens=self.max_tokens,
                     temperature=self.temperature,
                 )
-        body = json.dumps(input_body)
+        body = json.dumps(input_body, default=str)
 
         request_options = {
             "body": body,
@@ -1024,7 +1024,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 max_tokens=self.max_tokens,
                 temperature=self.temperature,
             )
-        body = json.dumps(input_body)
+        body = json.dumps(input_body, default=str)
 
         response = await asyncio.get_running_loop().run_in_executor(
             None,
