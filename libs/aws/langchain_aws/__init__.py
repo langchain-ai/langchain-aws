@@ -1,8 +1,9 @@
+from langchain_aws.chat_model_adapter import BedrockClaudeAdapter, BedrockLlamaAdapter, ModelAdapter
 from langchain_aws.chains import (
     create_neptune_opencypher_qa_chain,
     create_neptune_sparql_qa_chain,
 )
-from langchain_aws.chat_models import ChatBedrock, ChatBedrockConverse
+from langchain_aws.chat_models import ChatBedrock, ChatBedrockConverse, DemoChatBedrock
 from langchain_aws.embeddings import BedrockEmbeddings
 from langchain_aws.graphs import NeptuneAnalyticsGraph, NeptuneGraph
 from langchain_aws.llms import BedrockLLM, SagemakerEndpoint
@@ -20,6 +21,10 @@ __all__ = [
     "BedrockLLM",
     "ChatBedrock",
     "ChatBedrockConverse",
+    "DemoChatBedrock",
+    "ModelAdapter",
+    "BedrockClaudeAdapter",
+    "BedrockLlamaAdapter",
     "SagemakerEndpoint",
     "AmazonKendraRetriever",
     "AmazonKnowledgeBasesRetriever",

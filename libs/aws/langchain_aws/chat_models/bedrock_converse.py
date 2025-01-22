@@ -498,6 +498,7 @@ class ChatBedrockConverse(BaseChatModel):
         params = self._converse_params(
             stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
         )
+        print("Converse API used for getting response")
         response = self.client.converse(
             messages=bedrock_messages, system=system, **params
         )
