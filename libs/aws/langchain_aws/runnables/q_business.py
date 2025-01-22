@@ -50,15 +50,11 @@ class AmazonQ(LLM):
         extra="forbid",
     )
 
-    @property
-    def _llm_type(self) -> str:
-        """Return type of llm."""
-        return "amazon_q"
     def __init__(self, **kwargs: Any) -> None:
         """Initialize the Amazon Q client."""
         super().__init__(**kwargs)
 
-    def _call(
+    def invoke(
         self,
         prompt: str,
         stop: Optional[List[str]] = None,
@@ -113,7 +109,7 @@ class AmazonQ(LLM):
         """Method to access the full response from the last call"""
         return self._last_response
 
-    async def _acall(
+    async def ainvoke(
         self,
         prompt: str,
         stop: Optional[List[str]] = None,
@@ -123,7 +119,7 @@ class AmazonQ(LLM):
         """Async call to Amazon Q service."""
         
         def _execute_call():
-            return self._call(prompt, stop=stop, **kwargs)
+            return self.invoke(prompt, stop=stop, **kwargs)
 
         # Run the synchronous call in a thread pool
         return await asyncio.get_running_loop().run_in_executor(
