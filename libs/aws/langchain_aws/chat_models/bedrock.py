@@ -805,7 +805,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 schema, include_raw=include_raw, **kwargs
             )
         if "claude-3" not in self._get_model():
-            ValueError(
+            raise ValueError(
                 f"Structured output is not supported for model {self._get_model()}"
             )
 
