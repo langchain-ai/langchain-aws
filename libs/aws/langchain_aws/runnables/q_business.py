@@ -7,7 +7,10 @@ from pydantic import ConfigDict
 from typing_extensions import Self
 
 
-class AmazonQ(Runnable):
+from langchain_core._api.beta_decorator import beta
+
+@beta(message="This API is in beta and can change in future.")
+class AmazonQ(Runnable[str, str]):
     """Amazon Q Runnable wrapper.
 
     To authenticate, the AWS client uses the following methods to
@@ -54,8 +57,7 @@ class AmazonQ(Runnable):
     ):
         self.region_name = region_name
         self.credentials = credentials
-        self.client = client
-        self.validate_environment()
+        self.client = client or self.validate_environment()
         self.application_id = application_id
         self.parent_message_id = parent_message_id
         self.conversation_id = conversation_id
@@ -132,8 +134,6 @@ class AmazonQ(Runnable):
 
     def validate_environment(self) -> Self:
         """Don't do anything if client provided externally"""
-        if self.client is not None:
-            return self
         #If the client is not provided, and the user_id is not provided in the class constructor, throw an error saying one or the other needs to be provided
         if self.credentials is None:
             raise ValueError(
@@ -146,10 +146,10 @@ class AmazonQ(Runnable):
 
             try:
                 if self.region_name is not None:
-                    self.client = boto3.client('qbusiness', self.region_name, **self.credentials)
+                    client = boto3.client('qbusiness', self.region_name, **self.credentials)
                 else:
                     # use default region
-                    self.client = boto3.client('qbusiness', **self.credentials)
+                    client = boto3.client('qbusiness', **self.credentials)
 
             except Exception as e:
                 raise ValueError(
@@ -163,4 +163,4 @@ class AmazonQ(Runnable):
                 "Could not import boto3 python package. "
                 "Please install it with `pip install boto3`."
             )
-        return self
+        return client
