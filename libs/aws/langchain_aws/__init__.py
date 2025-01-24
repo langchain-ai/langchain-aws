@@ -15,6 +15,16 @@ from langchain_aws.vectorstores.inmemorydb import (
     InMemoryVectorStore,
 )
 
+def setup_logging():
+    import logging
+    import os
+
+    if os.environ.get("LANGCHAIN_AWS_DEBUG", "FALSE").lower() in ["true", "1"]:
+        logging.getLogger("langchain_aws").addHandler(logging.StreamHandler())
+        logging.getLogger("langchain_aws").setLevel(logging.DEBUG)
+
+setup_logging()
+
 __all__ = [
     "BedrockEmbeddings",
     "BedrockLLM",

@@ -497,16 +497,18 @@ class ChatBedrockConverse(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         """Top Level call"""
+        logger.info(f"The input message: {messages}")
         bedrock_messages, system = _messages_to_bedrock(messages)
-        logger.debug(f"input message: {bedrock_messages}")
+        logger.debug(f"input message to bedrock: {bedrock_messages}")
+        logger.debug(f"System message to bedrock: {system}")
         params = self._converse_params(
             stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
         )
         response = self.client.converse(
             messages=bedrock_messages, system=system, **params
         )
+        logger.debug(f"response from Bedrock: {response}")
         response_message = _parse_response(response)
-        logger.info(f"output message: {response_message}")
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
     def _stream(

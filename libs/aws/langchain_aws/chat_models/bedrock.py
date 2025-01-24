@@ -54,8 +54,9 @@ from langchain_aws.utils import (
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
+import logging
 
-logger = get_logger(__name__)
+logger = logging.getLogger("langchain_aws")
 
 
 def _convert_one_message_to_text_llama(message: BaseMessage) -> str:
@@ -523,11 +524,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        logger.info(f"The input message sent by user: {messages}")
         if self.beta_use_converse_api:
             return self._as_converse._generate(
                 messages, stop=stop, run_manager=run_manager, **kwargs
             )
+        logger.info(f"The input message: {messages}")
         completion = ""
         llm_output: Dict[str, Any] = {}
         tool_calls: List[ToolCall] = []
@@ -590,16 +591,14 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
         else:
             usage_metadata = None
-
+        logger.info(f"The message received from Bedrock: {completion}")
         llm_output["model_id"] = self.model_id
-
         msg = AIMessage(
             content=completion,
             additional_kwargs=llm_output,
             tool_calls=cast(List[ToolCall], tool_calls),
             usage_metadata=usage_metadata,
         )
-        logger.info(f"The output message sent by user: {msg}")
         return ChatResult(
             generations=[
                 ChatGeneration(
