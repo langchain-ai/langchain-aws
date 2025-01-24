@@ -1,13 +1,12 @@
-import asyncio
 import logging
 from typing import Any, Dict, Optional
 
+from langchain_core._api.beta_decorator import beta
 from langchain_core.runnables import Runnable
+from langchain_core.runnables.config import RunnableConfig
 from pydantic import ConfigDict
 from typing_extensions import Self
 
-
-from langchain_core._api.beta_decorator import beta
 
 @beta(message="This API is in beta and can change in future.")
 class AmazonQ(Runnable[str, str]):
@@ -66,6 +65,8 @@ class AmazonQ(Runnable[str, str]):
     def invoke(
         self,
         input: str,
+        config: Optional[RunnableConfig] = None,
+        **kwargs: Any
     ) -> str:
         """Call out to Amazon Q service.
 
@@ -117,20 +118,6 @@ class AmazonQ(Runnable[str, str]):
     def get_last_response(self) -> Dict:
         """Method to access the full response from the last call"""
         return self._last_response
-
-    async def ainvoke(
-        self,
-        input: str,
-    ) -> str:
-        """Async call to Amazon Q service."""
-
-        def _execute_call():
-            return self.invoke(input)
-
-        # Run the synchronous call in a thread pool
-        return await asyncio.get_running_loop().run_in_executor(
-            None, _execute_call
-        )
 
     def validate_environment(self) -> Self:
         """Don't do anything if client provided externally"""
