@@ -20,7 +20,7 @@ class BedrockRerank(BaseDocumentCompressor):
     model: Optional[str] = "amazon.rerank-v1:0"
     """Model to use for reranking. Default is amazon.rerank-v1:0."""
     aws_region: str = Field(
-        default_factory=from_env("AWS_DEFAULT_REGION", default="us-west-2")
+        default_factory=from_env("AWS_DEFAULT_REGION", default=None)
     )
     """AWS region to initialize the Bedrock client."""
     aws_profile: Optional[str] = Field(
