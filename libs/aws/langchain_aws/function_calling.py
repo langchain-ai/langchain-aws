@@ -211,11 +211,15 @@ def convert_to_anthropic_tool(
     if isinstance(tool, dict) and all(
         k in tool for k in ("name", "description", "input_schema")
     ):
+        if not tool["description"]:
+            tool["description"] = tool["name"]
         return AnthropicTool(tool)  # type: ignore
     else:
         formatted = convert_to_openai_tool(tool)["function"]
+        description = formatted["description"] if formatted["description"] \
+            else formatted["name"]
         return AnthropicTool(
             name=formatted["name"],
-            description=formatted["description"],
+            description=description,
             input_schema=formatted["parameters"],
         )
