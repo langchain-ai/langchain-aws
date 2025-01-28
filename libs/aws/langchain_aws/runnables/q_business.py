@@ -152,6 +152,9 @@ class AmazonQ(Runnable[str, str]):
             )
         return client
     def convert_langchain_messages_to_q_input(self, input: Any) -> str:
+        #If it is just a string and not a ChatPromptTemplate collection just return string
+        if type(input) is str:
+            return input
         # Messages must be of type human', 'user', 'ai', 'assistant', or 'system
         # Instead of logically formulating a message. We will allow langchain users to have their messages
         # Added line by line the way they ordered them in the chain. We will prefix the content with the type,
