@@ -64,7 +64,7 @@ class AmazonQ(Runnable[str, str]):
 
     def invoke(
         self,
-        input: str,
+        input: Any,
         config: Optional[RunnableConfig] = None,
         **kwargs: Any
     ) -> str:
@@ -89,7 +89,7 @@ class AmazonQ(Runnable[str, str]):
             # Prepare the request
             request = {
                 'applicationId': self.application_id,
-                'userMessage': input,
+                'userMessage': self.convert_langchain_messages_to_q_input(input), # Langchain's input comes in the form of an array of "messages". We must convert to a single string for Amazon Q's use
                 'chatMode': self.chat_mode,
             }
             if self.conversation_id:
@@ -151,3 +151,12 @@ class AmazonQ(Runnable[str, str]):
                 "Please install it with `pip install boto3`."
             )
         return client
+    def convert_langchain_messages_to_q_input(self, input: Any) -> str:
+        # Messages must be of type human', 'user', 'ai', 'assistant', or 'system
+        # Instead of logically formulating a message. We will allow langchain users to have their messages
+        # Added line by line the way they ordered them in the chain. We will prefix the content with the type,
+        # Hopefully this will inform Amazon Q how each message in the chain should be interpreted
+        messagesToStringArray = []
+        for message in input.to_messages(): # Returns List[BaseMessage]
+            messagesToStringArray.append(message.type + ": " + message.content)
+        return "\n".join(messagesToStringArray)
