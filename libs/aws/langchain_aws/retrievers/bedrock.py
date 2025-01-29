@@ -87,7 +87,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
     credentials_profile_name: Optional[str] = None
     endpoint_url: Optional[str] = None
     client: Any
-    retrieval_config: Optional[RetrievalConfig] | Optional[Dict[str, Any]] = None
+    retrieval_config: Union[RetrievalConfig, Dict[str, Any], None] = None
     min_score_confidence: Annotated[
         Optional[float], Field(ge=0.0, le=1.0, default=None)
     ]
