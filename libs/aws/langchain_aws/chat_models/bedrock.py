@@ -1,3 +1,4 @@
+import logging
 import re
 from collections import defaultdict
 from operator import itemgetter
@@ -50,9 +51,12 @@ from langchain_aws.llms.bedrock import (
     _combine_generation_info_for_llm_result,
 )
 from langchain_aws.utils import (
+    check_anthropic_tokens_dependencies,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _convert_one_message_to_text_llama(message: BaseMessage) -> str:
@@ -618,15 +622,25 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         return final_output
 
     def get_num_tokens(self, text: str) -> int:
-        if self._model_is_anthropic:
+        if self._model_is_anthropic and check_anthropic_tokens_dependencies():
             return get_num_tokens_anthropic(text)
         else:
+            if self._model_is_anthropic:
+                logger.debug(
+                    "Falling back to default token counting due to incompatible or missing Anthropic dependencies. "
+                    "To fix this, ensure that you have anthropic<=0.38.0, httpx<=0.27.2, and Python<=3.12 installed."
+                )
             return super().get_num_tokens(text)
 
     def get_token_ids(self, text: str) -> List[int]:
-        if self._model_is_anthropic:
+        if self._model_is_anthropic and check_anthropic_tokens_dependencies():
             return get_token_ids_anthropic(text)
         else:
+            if self._model_is_anthropic:
+                logger.debug(
+                    "Falling back to default token ids retrieval due to incompatible or missing Anthropic dependencies."
+                    " To fix this, ensure that you have anthropic<=0.38.0, httpx<=0.27.2, and Python<=3.12 installed."
+                )
             return super().get_token_ids(text)
 
     def set_system_prompt_with_tools(self, xml_tools_system_prompt: str) -> None:

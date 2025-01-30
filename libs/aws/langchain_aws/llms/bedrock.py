@@ -33,10 +33,13 @@ from typing_extensions import Self
 
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
+    check_anthropic_tokens_dependencies,
     enforce_stop_tokens,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
+
+logger = logging.getLogger(__name__)
 
 AMAZON_BEDROCK_TRACE_KEY = "amazon-bedrock-trace"
 GUARDRAILS_BODY_KEY = "amazon-bedrock-guardrailAction"
@@ -1297,13 +1300,23 @@ class BedrockLLM(LLM, BedrockBase):
         return "".join([chunk.text for chunk in chunks])
 
     def get_num_tokens(self, text: str) -> int:
-        if self._model_is_anthropic:
+        if self._model_is_anthropic and check_anthropic_tokens_dependencies():
             return get_num_tokens_anthropic(text)
         else:
+            if self._model_is_anthropic:
+                logger.debug(
+                    "Falling back to default token counting due to incompatible or missing Anthropic dependencies. "
+                    "To fix this, ensure that you have anthropic<=0.38.0, httpx<=0.27.2, and Python<=3.12 installed."
+                )
             return super().get_num_tokens(text)
 
     def get_token_ids(self, text: str) -> List[int]:
-        if self._model_is_anthropic:
+        if self._model_is_anthropic and check_anthropic_tokens_dependencies():
             return get_token_ids_anthropic(text)
         else:
+            if self._model_is_anthropic:
+                logger.debug(
+                    "Falling back to default token ids retrieval due to incompatible or missing Anthropic dependencies."
+                    " To fix this, ensure that you have anthropic<=0.38.0, httpx<=0.27.2, and Python<=3.12 installed."
+                )
             return super().get_token_ids(text)
