@@ -1,7 +1,8 @@
 import re
 import sys
-from packaging import version
 from typing import Any, List
+
+from packaging import version
 
 
 def enforce_stop_tokens(text: str, stop: List[str]) -> str:
