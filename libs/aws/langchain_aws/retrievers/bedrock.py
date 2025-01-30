@@ -136,7 +136,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
                 "profile name are valid."
             ) from e
 
-    def __filter_by_score_confidence(self, docs: List[Document]) -> List[Document]:
+    def _filter_by_score_confidence(self, docs: List[Document]) -> List[Document]:
         """
         Filter out the records that have a score confidence
         less than the required threshold.
@@ -166,16 +166,16 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         :param run_manager: The callback handler to use
         :return: List of relevant documents
         """
-        retrieve_request: Dict[str, Any] = self.__get_retrieve_request(query)
+        retrieve_request: Dict[str, Any] = self._get_retrieve_request(query)
         response = self.client.retrieve(**retrieve_request)
         results = response["retrievalResults"]
         documents: List[
             Document
-        ] = AmazonKnowledgeBasesRetriever.__retrieval_results_to_documents(results)
+        ] = AmazonKnowledgeBasesRetriever._retrieval_results_to_documents(results)
 
-        return self.__filter_by_score_confidence(docs=documents)
+        return self._filter_by_score_confidence(docs=documents)
 
-    def __get_retrieve_request(self, query: str) -> Dict[str, Any]:
+    def _get_retrieve_request(self, query: str) -> Dict[str, Any]:
         """
         Build a Retrieve request
 
@@ -193,7 +193,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         return request
 
     @staticmethod
-    def __retrieval_results_to_documents(
+    def _retrieval_results_to_documents(
         results: List[Dict[str, Any]],
     ) -> List[Document]:
         """
@@ -204,7 +204,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         """
         documents = []
         for result in results:
-            content = AmazonKnowledgeBasesRetriever.__get_content_from_result(result)
+            content = AmazonKnowledgeBasesRetriever._get_content_from_result(result)
             result["type"] = result.get("content", {}).get("type", "TEXT")
             result.pop("content")
             if "score" not in result:
@@ -220,7 +220,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         return documents
 
     @staticmethod
-    def __get_content_from_result(result: Dict[str, Any]) -> Optional[str]:
+    def _get_content_from_result(result: Dict[str, Any]) -> Optional[str]:
         """
         Convert the content from one Retrieve API result to string
 

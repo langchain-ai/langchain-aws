@@ -494,7 +494,7 @@ def test_when_get_content_from_result_then_get_expected_content(
     search_result_input, expected_output
 ):
     assert (
-        AmazonKnowledgeBasesRetriever._AmazonKnowledgeBasesRetriever__get_content_from_result(
+        AmazonKnowledgeBasesRetriever._get_content_from_result(
             search_result_input
         )
         == expected_output
@@ -518,7 +518,7 @@ def test_when_get_content_from_result_with_invalid_content_then_raise_error(
     search_result_input,
 ):
     with pytest.raises(ValueError):
-        AmazonKnowledgeBasesRetriever._AmazonKnowledgeBasesRetriever__get_content_from_result(
+        AmazonKnowledgeBasesRetriever._get_content_from_result(
             search_result_input
         )
 
