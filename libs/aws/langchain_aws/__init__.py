@@ -15,13 +15,14 @@ from langchain_aws.vectorstores.inmemorydb import (
     InMemoryVectorStore,
 )
 
+
 def setup_logging():
     import logging
     import os
 
     if os.environ.get("LANGCHAIN_AWS_DEBUG", "FALSE").lower() in ["true", "1"]:
         DEFAULT_LOG_FORMAT = (
-            "%(asctime)s %(levelname)s | [%(filename)s:%(lineno)s]" 
+            "%(asctime)s %(levelname)s | [%(filename)s:%(lineno)s]"
             "| %(name)s - %(message)s"
         )
         log_formatter = logging.Formatter(DEFAULT_LOG_FORMAT)
@@ -29,6 +30,7 @@ def setup_logging():
         log_handler.setFormatter(log_formatter)
         logging.getLogger("langchain_aws").addHandler(log_handler)
         logging.getLogger("langchain_aws").setLevel(logging.DEBUG)
+
 
 setup_logging()
 

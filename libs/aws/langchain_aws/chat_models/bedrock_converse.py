@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import os
 import re
 from operator import itemgetter
@@ -53,9 +54,8 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
-import logging
 
-logger = logging.getLogger("langchain_aws")
+logger = logging.getLogger(__name__)
 _BM = TypeVar("_BM", bound=BaseModel)
 
 _DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
@@ -519,7 +519,7 @@ class ChatBedrockConverse(BaseChatModel):
             stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
         )
         logger.debug(f"Input params: {params}")
-        logger.info(f"Using Bedrock Converse API to generate response")
+        logger.info("Using Bedrock Converse API to generate response")
         response = self.client.converse(
             messages=bedrock_messages, system=system, **params
         )

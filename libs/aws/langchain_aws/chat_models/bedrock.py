@@ -1,3 +1,4 @@
+import logging
 import re
 from collections import defaultdict
 from operator import itemgetter
@@ -53,9 +54,8 @@ from langchain_aws.utils import (
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
-import logging
 
-logger = logging.getLogger("langchain_aws")
+logger = logging.getLogger(__name__)
 
 
 def _convert_one_message_to_text_llama(message: BaseMessage) -> str:

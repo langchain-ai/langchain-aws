@@ -37,9 +37,8 @@ from langchain_aws.utils import (
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
-import logging
 
-logger = logging.getLogger("langchain_aws")
+logger = logging.getLogger(__name__)
 
 AMAZON_BEDROCK_TRACE_KEY = "amazon-bedrock-trace"
 GUARDRAILS_BODY_KEY = "amazon-bedrock-guardrailAction"
@@ -828,7 +827,7 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         try:
             logger.debug(f"Request body sent to bedrock: {request_options}")
-            logger.info(f"Using Bedrock Invoke API to generate response")
+            logger.info("Using Bedrock Invoke API to generate response")
             response = self.client.invoke_model(**request_options)
 
             (
