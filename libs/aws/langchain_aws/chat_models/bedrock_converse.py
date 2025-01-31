@@ -10,6 +10,7 @@ from typing import (
     Iterator,
     List,
     Literal,
+    Mapping,
     Optional,
     Sequence,
     Tuple,
@@ -396,6 +397,16 @@ class ChatBedrockConverse(BaseChatModel):
     ('auto') if a 'nova' model is used, empty otherwise.
     """
 
+    performance_config: Optional[Mapping[str, Any]] = Field(
+        default=None,
+        description="""Performance configuration settings for latency optimization.
+        
+        Example:
+            performance_config={'latency': 'optimized'}
+        If not provided, defaults to standard latency.
+        """,
+    )
+
     model_config = ConfigDict(
         extra="forbid",
         populate_by_name=True,
@@ -630,6 +641,7 @@ class ChatBedrockConverse(BaseChatModel):
         additionalModelRequestFields: Optional[dict] = None,
         additionalModelResponseFieldPaths: Optional[List[str]] = None,
         guardrailConfig: Optional[dict] = None,
+        performanceConfig: Optional[Mapping[str, Any]] = None,
     ) -> Dict[str, Any]:
         if not inferenceConfig:
             inferenceConfig = {
@@ -652,6 +664,7 @@ class ChatBedrockConverse(BaseChatModel):
                 "additionalModelResponseFieldPaths": additionalModelResponseFieldPaths
                 or self.additional_model_response_field_paths,
                 "guardrailConfig": guardrailConfig or self.guardrail_config,
+                "performanceConfig": performanceConfig or self.performance_config,
             }
         )
 
