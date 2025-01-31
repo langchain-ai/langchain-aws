@@ -1,4 +1,3 @@
-import json
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence, Union
 
@@ -17,8 +16,8 @@ class BedrockRerank(BaseDocumentCompressor):
     """Bedrock client to use for compressing documents."""
     top_n: Optional[int] = 3
     """Number of documents to return."""
-    model: Optional[str] = "amazon.rerank-v1:0"
-    """Model to use for reranking. Default is amazon.rerank-v1:0."""
+    model_id: Optional[str] = "amazon.rerank-v1:0"
+    """Model ID to fetch ARN dynamically."""
     aws_region: str = Field(
         default_factory=from_env("AWS_DEFAULT_REGION", default=None)
     )
@@ -37,21 +36,30 @@ class BedrockRerank(BaseDocumentCompressor):
     def initialize_client(self) -> Self:
         """Initialize the AWS Bedrock client."""
         if not self.client:
-            session = (
-                boto3.Session(profile_name=self.aws_profile)
-                if self.aws_profile
-                else boto3.Session()
-            )
-            self.client = session.client("bedrock-runtime", region_name=self.aws_region)
+            session = self._get_session()
+            self.client = session.client("bedrock-agent-runtime")
         return self
+
+    def _get_session(self):
+        return (
+            boto3.Session(profile_name=self.aws_profile)
+            if self.aws_profile
+            else boto3.Session()
+        )
+
+    def _get_model_arn(self) -> str:
+        """Fetch the ARN of the reranker model using the model ID."""
+        session = self._get_session()
+        client = session.client("bedrock", self.aws_region)
+        response = client.get_foundation_model(modelIdentifier=self.model_id)
+        return response["modelDetails"]["modelArn"]
 
     def rerank(
         self,
         documents: Sequence[Union[str, Document, dict]],
         query: str,
-        *,
         top_n: Optional[int] = None,
-        model: Optional[str] = None,
+        extra_model_fields: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Returns an ordered list of documents based on their relevance to the query.
 
@@ -59,7 +67,7 @@ class BedrockRerank(BaseDocumentCompressor):
             query: The query to use for reranking.
             documents: A sequence of documents to rerank.
             top_n: The number of top-ranked results to return. Defaults to self.top_n.
-            model: The model to use for reranking. Defaults to self.model.
+            extra_model_fields: A dictionary of additional fields to pass to the model.
 
         Returns:
             List[Dict[str, Any]]: A list of ranked documents with relevance scores.
@@ -67,35 +75,43 @@ class BedrockRerank(BaseDocumentCompressor):
         if len(documents) == 0:
             return []
 
+        model_arn = self._get_model_arn()
+
         # Serialize documents for the Bedrock API
         serialized_documents = [
-            json.dumps(doc)
-            if isinstance(doc, dict)
-            else doc.page_content
+            {"textDocument": {"text": doc.page_content}, "type": "TEXT"}
             if isinstance(doc, Document)
-            else doc
+            else {"textDocument": {"text": doc}, "type": "TEXT"}
+            if isinstance(doc, str)
+            else {"jsonDocument": doc, "type": "JSON"}
             for doc in documents
         ]
 
-        body = json.dumps(
-            {
-                "query": query,
-                "documents": serialized_documents,
-                "top_n": top_n or self.top_n,
-            }
-        )
+        request_body = {
+            "queries": [{"textQuery": {"text": query}, "type": "TEXT"}],
+            "rerankingConfiguration": {
+                "bedrockRerankingConfiguration": {
+                    "modelConfiguration": {
+                        "modelArn": model_arn,
+                        "additionalModelRequestFields": extra_model_fields
+                        or {},
+                    },
+                    "numberOfResults": top_n or self.top_n,
+                },
+                "type": "BEDROCK_RERANKING_MODEL",
+            },
+            "sources": [
+                {"inlineDocumentSource": doc, "type": "INLINE"}
+                for doc in serialized_documents
+            ],
+        }
 
-        response = self.client.invoke_model(
-            modelId=model or self.model,
-            accept="application/json",
-            contentType="application/json",
-            body=body,
-        )
+        response = self.client.rerank(**request_body)
+        response_body = response.get("results", [])
 
-        response_body = json.loads(response.get("body").read())
         results = [
-            {"index": result["index"], "relevance_score": result["relevance_score"]}
-            for result in response_body["results"]
+            {"index": result["index"], "relevance_score": result["relevanceScore"]}
+            for result in response_body
         ]
 
         return results
