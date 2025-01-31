@@ -847,6 +847,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 "additional_model_request_fields",
                 "additional_model_response_field_paths",
                 "performance_config",
+                "request_metadata",
             )
         }
         if self.max_tokens:

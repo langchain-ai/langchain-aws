@@ -407,6 +407,9 @@ class ChatBedrockConverse(BaseChatModel):
         """,
     )
 
+    request_metadata: Optional[Dict[str, str]] = None
+    """Key-Value pairs that you can use to filter invocation logs."""
+
     model_config = ConfigDict(
         extra="forbid",
         populate_by_name=True,
@@ -644,6 +647,7 @@ class ChatBedrockConverse(BaseChatModel):
         additionalModelResponseFieldPaths: Optional[List[str]] = None,
         guardrailConfig: Optional[dict] = None,
         performanceConfig: Optional[Mapping[str, Any]] = None,
+        requestMetadata: Optional[dict] = None,
     ) -> Dict[str, Any]:
         if not inferenceConfig:
             inferenceConfig = {
@@ -667,6 +671,7 @@ class ChatBedrockConverse(BaseChatModel):
                 or self.additional_model_response_field_paths,
                 "guardrailConfig": guardrailConfig or self.guardrail_config,
                 "performanceConfig": performanceConfig or self.performance_config,
+                "requestMetadata": requestMetadata or self.request_metadata,
             }
         )
 
