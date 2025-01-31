@@ -7,9 +7,7 @@ def _format_triples(triples: List[dict]) -> List[str]:
     triple_template = "(:`{a}`)-[:`{e}`]->(:`{b}`)"
     triple_schema = []
     for t in triples:
-        triple = triple_template.format(
-            a=t["~from"], e=t["~type"], b=t["~to"]
-        )
+        triple = triple_template.format(a=t["~from"], e=t["~type"], b=t["~to"])
         triple_schema.append(triple)
 
     return triple_schema
@@ -21,7 +19,9 @@ def _format_node_properties(n_labels: dict) -> List:
     for label, props_item in n_labels.items():
         props = props_item["properties"]
         np = {
-            "properties": [{"property": k, "type": v["datatypes"][0]} for k, v in props.items()],
+            "properties": [
+                {"property": k, "type": v["datatypes"][0]} for k, v in props.items()
+            ],
             "labels": label,
         }
         node_properties.append(np)
@@ -36,7 +36,9 @@ def _format_edge_properties(e_labels: dict) -> List:
         props = props_item["properties"]
         np = {
             "type": label,
-            "properties": [{"property": k, "type": v["datatypes"][0]} for k, v in props.items()],
+            "properties": [
+                {"property": k, "type": v["datatypes"][0]} for k, v in props.items()
+            ],
         }
         edge_properties.append(np)
 
@@ -210,7 +212,7 @@ class NeptuneAnalyticsGraph(BaseNeptuneGraph):
         graph_identifier: str,
         client: Any = None,
         credentials_profile_name: Optional[str] = None,
-        region_name: Optional[str] = None
+        region_name: Optional[str] = None,
     ) -> None:
         """Create a new Neptune Analytics graph wrapper instance."""
 
@@ -330,6 +332,7 @@ class NeptuneAnalyticsGraph(BaseNeptuneGraph):
         The relationships are the following:
         {triple_schema}
         """
+
 
 class NeptuneGraph(BaseNeptuneGraph):
     """Neptune wrapper for graph operations.
