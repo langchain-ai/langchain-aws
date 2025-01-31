@@ -805,7 +805,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 schema, include_raw=include_raw, **kwargs
             )
         if "claude-3" not in self._get_model():
-            ValueError(
+            raise ValueError(
                 f"Structured output is not supported for model {self._get_model()}"
             )
 
@@ -844,6 +844,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 "top_p",
                 "additional_model_request_fields",
                 "additional_model_response_field_paths",
+                "performance_config",
+                "request_metadata",
             )
         }
         if self.max_tokens:
