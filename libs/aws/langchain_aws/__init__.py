@@ -20,7 +20,14 @@ def setup_logging():
     import os
 
     if os.environ.get("LANGCHAIN_AWS_DEBUG", "FALSE").lower() in ["true", "1"]:
-        logging.getLogger("langchain_aws").addHandler(logging.StreamHandler())
+        DEFAULT_LOG_FORMAT = (
+            "%(asctime)s %(levelname)s | [%(filename)s:%(lineno)s]" 
+            "| %(name)s - %(message)s"
+        )
+        log_formatter = logging.Formatter(DEFAULT_LOG_FORMAT)
+        log_handler = logging.StreamHandler()
+        log_handler.setFormatter(log_formatter)
+        logging.getLogger("langchain_aws").addHandler(log_handler)
         logging.getLogger("langchain_aws").setLevel(logging.DEBUG)
 
 setup_logging()

@@ -32,14 +32,14 @@ from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.function_calling import _tools_in_params
-from langchain_aws.logger_util import get_logger
 from langchain_aws.utils import (
     enforce_stop_tokens,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
+import logging
 
-logger = get_logger(__name__)
+logger = logging.getLogger("langchain_aws")
 
 AMAZON_BEDROCK_TRACE_KEY = "amazon-bedrock-trace"
 GUARDRAILS_BODY_KEY = "amazon-bedrock-guardrailAction"
@@ -827,7 +827,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 request_options["trace"] = "ENABLED"
 
         try:
-            logger.debug(f"The request body sent to bedrock: {request_options}")
+            logger.debug(f"Request body sent to bedrock: {request_options}")
             logger.info(f"Using Bedrock Invoke API to generate response")
             response = self.client.invoke_model(**request_options)
 
@@ -838,7 +838,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 usage_info,
                 stop_reason,
             ) = LLMInputOutputAdapter.prepare_output(provider, response).values()
-            logger.debug(f"The response received from Bedrock: {response}")
+            logger.debug(f"Response received from Bedrock: {response}")
         except Exception as e:
             logging.error(f"Error raised by bedrock service: {e}")
             if run_manager is not None:

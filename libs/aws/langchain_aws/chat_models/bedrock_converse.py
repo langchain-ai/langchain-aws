@@ -53,12 +53,12 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
-from langchain_aws.logger_util import get_logger
+import logging
 
+logger = logging.getLogger("langchain_aws")
 _BM = TypeVar("_BM", bound=BaseModel)
-_DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
 
-logger = get_logger(__name__)
+_DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
 
 
 class ChatBedrockConverse(BaseChatModel):
@@ -515,10 +515,12 @@ class ChatBedrockConverse(BaseChatModel):
         params = self._converse_params(
             stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
         )
+        logger.debug(f"Input params: {params}")
+        logger.info(f"Using Bedrock Converse API to generate response")
         response = self.client.converse(
             messages=bedrock_messages, system=system, **params
         )
-        logger.debug(f"response from Bedrock: {response}")
+        logger.debug(f"Response from Bedrock: {response}")
         response_message = _parse_response(response)
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 

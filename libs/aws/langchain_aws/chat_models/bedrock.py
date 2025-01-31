@@ -49,7 +49,6 @@ from langchain_aws.llms.bedrock import (
     BedrockBase,
     _combine_generation_info_for_llm_result,
 )
-from langchain_aws.logger_util import get_logger
 from langchain_aws.utils import (
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
