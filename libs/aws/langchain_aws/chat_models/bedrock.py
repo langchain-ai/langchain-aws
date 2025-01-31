@@ -1,3 +1,4 @@
+import logging
 import re
 from collections import defaultdict
 from operator import itemgetter
@@ -53,6 +54,8 @@ from langchain_aws.utils import (
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _convert_one_message_to_text_llama(message: BaseMessage) -> str:
@@ -524,6 +527,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             return self._as_converse._generate(
                 messages, stop=stop, run_manager=run_manager, **kwargs
             )
+        logger.info(f"The input message: {messages}")
         completion = ""
         llm_output: Dict[str, Any] = {}
         tool_calls: List[ToolCall] = []
@@ -586,16 +590,14 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
         else:
             usage_metadata = None
-
+        logger.info(f"The message received from Bedrock: {completion}")
         llm_output["model_id"] = self.model_id
-
         msg = AIMessage(
             content=completion,
             additional_kwargs=llm_output,
             tool_calls=cast(List[ToolCall], tool_calls),
             usage_metadata=usage_metadata,
         )
-
         return ChatResult(
             generations=[
                 ChatGeneration(
