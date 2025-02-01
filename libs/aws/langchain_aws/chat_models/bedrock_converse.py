@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import os
 import re
 from operator import itemgetter
@@ -54,7 +55,9 @@ from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
 
+logger = logging.getLogger(__name__)
 _BM = TypeVar("_BM", bound=BaseModel)
+
 _DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
 
 
@@ -404,6 +407,9 @@ class ChatBedrockConverse(BaseChatModel):
         """,
     )
 
+    request_metadata: Optional[Dict[str, str]] = None
+    """Key-Value pairs that you can use to filter invocation logs."""
+
     model_config = ConfigDict(
         extra="forbid",
         populate_by_name=True,
@@ -505,13 +511,19 @@ class ChatBedrockConverse(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         """Top Level call"""
+        logger.info(f"The input message: {messages}")
         bedrock_messages, system = _messages_to_bedrock(messages)
+        logger.debug(f"input message to bedrock: {bedrock_messages}")
+        logger.debug(f"System message to bedrock: {system}")
         params = self._converse_params(
             stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
         )
+        logger.debug(f"Input params: {params}")
+        logger.info("Using Bedrock Converse API to generate response")
         response = self.client.converse(
             messages=bedrock_messages, system=system, **params
         )
+        logger.debug(f"Response from Bedrock: {response}")
         response_message = _parse_response(response)
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
@@ -635,6 +647,7 @@ class ChatBedrockConverse(BaseChatModel):
         additionalModelResponseFieldPaths: Optional[List[str]] = None,
         guardrailConfig: Optional[dict] = None,
         performanceConfig: Optional[Mapping[str, Any]] = None,
+        requestMetadata: Optional[dict] = None,
     ) -> Dict[str, Any]:
         if not inferenceConfig:
             inferenceConfig = {
@@ -658,6 +671,7 @@ class ChatBedrockConverse(BaseChatModel):
                 or self.additional_model_response_field_paths,
                 "guardrailConfig": guardrailConfig or self.guardrail_config,
                 "performanceConfig": performanceConfig or self.performance_config,
+                "requestMetadata": requestMetadata or self.request_metadata,
             }
         )
 

@@ -48,19 +48,20 @@ def test_get_relevant_documents(retriever, mock_client) -> None:  # type: ignore
     expected_documents = [
         Document(
             page_content="This is the first result.",
-            metadata={"location": "location1", "score": 0.9},
+            metadata={"location": "location1", "score": 0.9, "type": "TEXT"},
         ),
         Document(
             page_content="This is the second result.",
-            metadata={"location": "location2", "score": 0.8},
+            metadata={"location": "location2", "score": 0.8, "type": "TEXT"},
         ),
         Document(
             page_content="This is the third result.",
-            metadata={"location": "location3", "score": 0.0},
+            metadata={"location": "location3", "score": 0.0, "type": "TEXT"},
         ),
         Document(
             page_content="This is the fourth result.",
             metadata={
+                "type": "TEXT",
                 "score": 0.0,
                 "source_metadata": {
                     "key1": "value1",
@@ -108,11 +109,11 @@ def test_get_relevant_documents_with_score(retriever, mock_client) -> None:  # t
     expected_documents = [
         Document(
             page_content="This is the first result.",
-            metadata={"location": "location1", "score": 0.9},
+            metadata={"location": "location1", "score": 0.9, "type": "TEXT"},
         ),
         Document(
             page_content="This is the second result.",
-            metadata={"location": "location2", "score": 0.8},
+            metadata={"location": "location2", "score": 0.8, "type": "TEXT"},
         ),
     ]
 

@@ -529,6 +529,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             return self._as_converse._generate(
                 messages, stop=stop, run_manager=run_manager, **kwargs
             )
+        logger.info(f"The input message: {messages}")
         completion = ""
         llm_output: Dict[str, Any] = {}
         tool_calls: List[ToolCall] = []
@@ -591,16 +592,14 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
         else:
             usage_metadata = None
-
+        logger.info(f"The message received from Bedrock: {completion}")
         llm_output["model_id"] = self.model_id
-
         msg = AIMessage(
             content=completion,
             additional_kwargs=llm_output,
             tool_calls=cast(List[ToolCall], tool_calls),
             usage_metadata=usage_metadata,
         )
-
         return ChatResult(
             generations=[
                 ChatGeneration(
@@ -860,6 +859,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 "additional_model_request_fields",
                 "additional_model_response_field_paths",
                 "performance_config",
+                "request_metadata",
             )
         }
         if self.max_tokens:

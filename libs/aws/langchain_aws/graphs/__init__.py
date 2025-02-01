@@ -7,7 +7,7 @@ from langchain_aws.graphs.neptune_rdf_graph import NeptuneRdfGraph
 
 __all__ = [
     "BaseNeptuneGraph",
-    "NeptuneAnalyticsGraph", 
+    "NeptuneAnalyticsGraph",
     "NeptuneGraph",
-    "NeptuneRdfGraph"
+    "NeptuneRdfGraph",
 ]
