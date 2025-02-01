@@ -12,12 +12,12 @@ from typing_extensions import Self
 class BedrockRerank(BaseDocumentCompressor):
     """Document compressor that uses AWS Bedrock Rerank API."""
 
+    model_arn: str
+    """The ARN of the reranker model."""
     client: Any = None
     """Bedrock client to use for compressing documents."""
     top_n: Optional[int] = 3
     """Number of documents to return."""
-    model_id: Optional[str] = "amazon.rerank-v1:0"
-    """Model ID to fetch ARN dynamically."""
     aws_region: str = Field(
         default_factory=from_env("AWS_DEFAULT_REGION", default=None)
     )
@@ -47,13 +47,6 @@ class BedrockRerank(BaseDocumentCompressor):
             else boto3.Session()
         )
 
-    def _get_model_arn(self) -> str:
-        """Fetch the ARN of the reranker model using the model ID."""
-        session = self._get_session()
-        client = session.client("bedrock", self.aws_region)
-        response = client.get_foundation_model(modelIdentifier=self.model_id)
-        return response["modelDetails"]["modelArn"]
-
     def rerank(
         self,
         documents: Sequence[Union[str, Document, dict]],
@@ -75,8 +68,6 @@ class BedrockRerank(BaseDocumentCompressor):
         if len(documents) == 0:
             return []
 
-        model_arn = self._get_model_arn()
-
         # Serialize documents for the Bedrock API
         serialized_documents = [
             {"textDocument": {"text": doc.page_content}, "type": "TEXT"}
@@ -92,7 +83,7 @@ class BedrockRerank(BaseDocumentCompressor):
             "rerankingConfiguration": {
                 "bedrockRerankingConfiguration": {
                     "modelConfiguration": {
-                        "modelArn": model_arn,
+                        "modelArn": self.model_arn,
                         "additionalModelRequestFields": extra_model_fields
                         or {},
                     },
