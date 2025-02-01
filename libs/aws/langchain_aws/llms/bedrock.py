@@ -33,7 +33,7 @@ from typing_extensions import Self
 
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
-    check_anthropic_tokens_dependencies,
+    anthropic_tokens_supported,
     enforce_stop_tokens,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
@@ -1300,28 +1300,23 @@ class BedrockLLM(LLM, BedrockBase):
         return "".join([chunk.text for chunk in chunks])
 
     def get_num_tokens(self, text: str) -> int:
-        if self._model_is_anthropic:
-            bad_deps = check_anthropic_tokens_dependencies()
+        if self._model_is_anthropic and not self.custom_get_token_ids:
+            bad_deps = anthropic_tokens_supported()
             if not bad_deps:
                 return get_num_tokens_anthropic(text)
-            else:
-                logger.debug(
-                    "Falling back to default token counting due to incompatible/missing Anthropic dependencies:"
-                )
-                for x in bad_deps:
-                    logger.debug(x)
-
         return super().get_num_tokens(text)
 
     def get_token_ids(self, text: str) -> List[int]:
-        if self._model_is_anthropic:
-            bad_deps = check_anthropic_tokens_dependencies()
+        if self._model_is_anthropic and not self.custom_get_token_ids:
+            bad_deps = anthropic_tokens_supported()
             if not bad_deps:
                 return get_token_ids_anthropic(text)
             else:
-                logger.debug(
-                    "Falling back to default token ids retrieval due to incompatible/missing Anthropic dependencies:"
+                warnings.warn(
+                    f"Falling back to default token method due to incompatibilities with the Anthropic API: {bad_deps}"
+                    f"For anthropic versions > 0.38.0, it is recommended to provide a custom_get_token_ids "
+                    f"method to the chat model class that implements the appropriate tokenizer for Anthropic. "
+                    f"Alternately, you can implement your own token counter method using the ChatAnthropic "
+                    f"or AnthropicLLM classes."
                 )
-                for x in bad_deps:
-                    logger.debug(x)
         return super().get_token_ids(text)

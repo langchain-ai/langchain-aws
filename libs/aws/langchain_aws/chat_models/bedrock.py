@@ -1,5 +1,6 @@
 import logging
 import re
+import warnings
 from collections import defaultdict
 from operator import itemgetter
 from typing import (
@@ -51,7 +52,7 @@ from langchain_aws.llms.bedrock import (
     _combine_generation_info_for_llm_result,
 )
 from langchain_aws.utils import (
-    check_anthropic_tokens_dependencies,
+    anthropic_tokens_supported,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
@@ -622,29 +623,25 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         return final_output
 
     def get_num_tokens(self, text: str) -> int:
-        if self._model_is_anthropic:
-            bad_deps = check_anthropic_tokens_dependencies()
+        if self._model_is_anthropic and not self.custom_get_token_ids:
+            bad_deps = anthropic_tokens_supported()
             if not bad_deps:
                 return get_num_tokens_anthropic(text)
-            else:
-                logger.debug(
-                    "Falling back to default token counting due to incompatible/missing Anthropic dependencies:"
-                )
-                for x in bad_deps:
-                    logger.debug(x)
         return super().get_num_tokens(text)
 
     def get_token_ids(self, text: str) -> List[int]:
-        if self._model_is_anthropic:
-            bad_deps = check_anthropic_tokens_dependencies()
+        if self._model_is_anthropic and not self.custom_get_token_ids:
+            bad_deps = anthropic_tokens_supported()
             if not bad_deps:
                 return get_token_ids_anthropic(text)
             else:
-                logger.debug(
-                    "Falling back to default token ids retrieval due to incompatible/missing Anthropic dependencies:"
+                warnings.warn(
+                    f"Falling back to default token method due to conflicts with the Anthropic API: {bad_deps}"
+                    f"\n\nFor Anthropic SDK versions > 0.38.0, it is recommended to provide the chat model class with a"
+                    f" custom_get_token_ids method that implements a more accurate tokenizer for Anthropic. "
+                    f"For get_num_tokens, as another alternative, you can implement your own token counter method "
+                    f"using the ChatAnthropic or AnthropicLLM classes."
                 )
-                for x in bad_deps:
-                    logger.debug(x)
         return super().get_token_ids(text)
 
     def set_system_prompt_with_tools(self, xml_tools_system_prompt: str) -> None:

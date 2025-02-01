@@ -1,5 +1,4 @@
 import re
-import sys
 from typing import Any, List
 
 from packaging import version
@@ -10,14 +9,9 @@ def enforce_stop_tokens(text: str, stop: List[str]) -> str:
     return re.split("|".join(stop), text, maxsplit=1)[0]
 
 
-def check_anthropic_tokens_dependencies() -> List[str]:
+def anthropic_tokens_supported() -> List[str]:
     """Check if we have all requirements for Anthropic count_tokens() and get_tokenizer()."""
     bad_deps = []
-
-    python_version = sys.version_info
-    if python_version > (3, 12):
-        bad_deps.append(f"Python 3.12 or earlier required, found {'.'.join(map(str, python_version[:3]))})")
-
     bad_anthropic = None
     try:
         import anthropic
