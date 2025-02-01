@@ -14,7 +14,7 @@ from langchain_aws.vectorstores.inmemorydb import (
     InMemorySemanticCache,
     InMemoryVectorStore,
 )
-from langchain_aws.rerank.rerank import BedrockRerank
+from langchain_aws.document_compressors.rerank import BedrockRerank
 
 
 def setup_logging():
