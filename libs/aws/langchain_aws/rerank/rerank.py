@@ -18,11 +18,11 @@ class BedrockRerank(BaseDocumentCompressor):
     """Bedrock client to use for compressing documents."""
     top_n: Optional[int] = 3
     """Number of documents to return."""
-    aws_region: str = Field(
+    region_name: str = Field(
         default_factory=from_env("AWS_DEFAULT_REGION", default=None)
     )
     """AWS region to initialize the Bedrock client."""
-    aws_profile: Optional[str] = Field(
+    credentials_profile_name: Optional[str] = Field(
         default_factory=from_env("AWS_PROFILE", default=None)
     )
     """AWS profile for authentication, optional."""
@@ -37,13 +37,16 @@ class BedrockRerank(BaseDocumentCompressor):
         """Initialize the AWS Bedrock client."""
         if not self.client:
             session = self._get_session()
-            self.client = session.client("bedrock-agent-runtime")
+            self.client = session.client(
+                "bedrock-agent-runtime",
+                region_name=self.region_name
+                )
         return self
 
     def _get_session(self):
         return (
-            boto3.Session(profile_name=self.aws_profile)
-            if self.aws_profile
+            boto3.Session(profile_name=self.credentials_profile_name)
+            if self.credentials_profile_name
             else boto3.Session()
         )
 
