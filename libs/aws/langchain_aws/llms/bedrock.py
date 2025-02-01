@@ -1313,10 +1313,10 @@ class BedrockLLM(LLM, BedrockBase):
                 return get_token_ids_anthropic(text)
             else:
                 warnings.warn(
-                    f"Falling back to default token method due to incompatibilities with the Anthropic API: {bad_deps}"
-                    f"For anthropic versions > 0.38.0, it is recommended to provide a custom_get_token_ids "
-                    f"method to the chat model class that implements the appropriate tokenizer for Anthropic. "
-                    f"Alternately, you can implement your own token counter method using the ChatAnthropic "
-                    f"or AnthropicLLM classes."
+                    f"Falling back to default token method due to conflicts with the Anthropic API: {bad_deps}"
+                    f"\n\nFor Anthropic SDK versions > 0.38.0, it is recommended to provide the model class with a"
+                    f" custom_get_token_ids method that implements a more accurate tokenizer for Anthropic. "
+                    f"For get_num_tokens, as another alternative, you can implement your own token counter method "
+                    f"using the ChatAnthropic or AnthropicLLM classes."
                 )
         return super().get_token_ids(text)

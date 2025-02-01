@@ -637,7 +637,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             else:
                 warnings.warn(
                     f"Falling back to default token method due to conflicts with the Anthropic API: {bad_deps}"
-                    f"\n\nFor Anthropic SDK versions > 0.38.0, it is recommended to provide the chat model class with a"
+                    f"\n\nFor Anthropic SDK versions > 0.38.0, it is recommended to provide the model class with a"
                     f" custom_get_token_ids method that implements a more accurate tokenizer for Anthropic. "
                     f"For get_num_tokens, as another alternative, you can implement your own token counter method "
                     f"using the ChatAnthropic or AnthropicLLM classes."
