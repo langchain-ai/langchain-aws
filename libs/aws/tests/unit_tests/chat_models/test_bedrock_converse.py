@@ -36,6 +36,7 @@ class TestBedrockStandard(ChatModelUnitTests):
     @property
     def chat_model_params(self) -> dict:
         return {
+            "client": None,
             "model": "anthropic.claude-3-sonnet-20240229-v1:0",
             "region_name": "us-west-1",
         }
