@@ -3,6 +3,7 @@ from langchain_aws.chains import (
     create_neptune_sparql_qa_chain,
 )
 from langchain_aws.chat_models import ChatBedrock, ChatBedrockConverse
+from langchain_aws.document_compressors.rerank import BedrockRerank
 from langchain_aws.embeddings import BedrockEmbeddings
 from langchain_aws.graphs import NeptuneAnalyticsGraph, NeptuneGraph
 from langchain_aws.llms import BedrockLLM, SagemakerEndpoint
@@ -14,7 +15,6 @@ from langchain_aws.vectorstores.inmemorydb import (
     InMemorySemanticCache,
     InMemoryVectorStore,
 )
-from langchain_aws.document_compressors.rerank import BedrockRerank
 
 
 def setup_logging():

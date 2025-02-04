@@ -9,7 +9,8 @@ from langchain_aws.document_compressors.rerank import BedrockRerank
 @pytest.fixture
 def reranker():
     reranker = BedrockRerank(
-        model_arn="arn:aws:bedrock:us-west-2::foundation-model/amazon.rerank-v1:0"
+        model_arn="arn:aws:bedrock:us-west-2::foundation-model/amazon.rerank-v1:0",
+        region_name="us-east-1",
         )
     reranker.client = MagicMock()
     return reranker
