@@ -1,15 +1,16 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from langchain_core._api.beta_decorator import beta
 from langchain_core.runnables import Runnable
 from langchain_core.runnables.config import RunnableConfig
 from pydantic import ConfigDict
 from typing_extensions import Self
+from langchain_core.prompt_values import ChatPromptValue
 
 
 @beta(message="This API is in beta and can change in future.")
-class AmazonQ(Runnable[str, str]):
+class AmazonQ(Runnable[Union[str,ChatPromptValue], str]):
     """Amazon Q Runnable wrapper.
 
     To authenticate, the AWS client uses the following methods to
@@ -64,7 +65,7 @@ class AmazonQ(Runnable[str, str]):
 
     def invoke(
         self,
-        input: Any,
+        input: Union[str,ChatPromptValue],
         config: Optional[RunnableConfig] = None,
         **kwargs: Any
     ) -> str:
@@ -86,7 +87,7 @@ class AmazonQ(Runnable[str, str]):
             response = model.invoke("Tell me a joke")
         """
         try:
-            # Prepare the request
+            # Prepare the request            
             request = {
                 'applicationId': self.application_id,
                 'userMessage': self.convert_langchain_messages_to_q_input(input), # Langchain's input comes in the form of an array of "messages". We must convert to a single string for Amazon Q's use
@@ -151,15 +152,9 @@ class AmazonQ(Runnable[str, str]):
                 "Please install it with `pip install boto3`."
             )
         return client
-    def convert_langchain_messages_to_q_input(self, input: Any) -> str:
+    def convert_langchain_messages_to_q_input(self, input: Union[str,ChatPromptValue]) -> str:
         #If it is just a string and not a ChatPromptTemplate collection just return string
         if type(input) is str:
             return input
-        # Messages must be of type human', 'user', 'ai', 'assistant', or 'system
-        # Instead of logically formulating a message. We will allow langchain users to have their messages
-        # Added line by line the way they ordered them in the chain. We will prefix the content with the type,
-        # Hopefully this will inform Amazon Q how each message in the chain should be interpreted
-        messagesToStringArray = []
-        for message in input.to_messages(): # Returns List[BaseMessage]
-            messagesToStringArray.append(message.type + ": " + message.content)
-        return "\n".join(messagesToStringArray)
+        return input.to_string()
+    
