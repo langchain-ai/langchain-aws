@@ -1,6 +1,7 @@
 """Standard LangChain interface tests"""
 
 from typing import Literal, Type
+
 import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
