@@ -1,7 +1,6 @@
 """Standard LangChain interface tests"""
 
 from typing import Literal, Type
-from unittest.mock import Mock
 import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
@@ -56,33 +55,6 @@ class TestBedrockNovaStandard(ChatModelIntegrationTests):
     @property
     def chat_model_params(self) -> dict:
         return {"model": "us.amazon.nova-pro-v1:0"}
-
-    @property
-    def standard_chat_model_params(self) -> dict:
-        return {"max_tokens": 300, "stop": []}
-
-    @property
-    def tool_choice_value(self) -> str:
-        return "auto"
-
-    @pytest.mark.xfail(reason="Tool choice 'Any' not supported.")
-    def test_structured_few_shot_examples(self, model: BaseChatModel) -> None:
-        super().test_structured_few_shot_examples(model)
-
-    @pytest.mark.xfail(reason="Human messages following AI messages not supported.")
-    def test_tool_message_histories_list_content(self, model: BaseChatModel) -> None:
-        super().test_tool_message_histories_list_content(model)
-
-
-class TestBedrockNovaStandardWithClient(ChatModelIntegrationTests):
-    @property
-    def chat_model_class(self) -> Type[BaseChatModel]:
-        return ChatBedrockConverse
-
-    @property
-    def chat_model_params(self) -> dict:
-        client = Mock()
-        return {"client": client, "model": "us.amazon.nova-pro-v1:0"}
 
     @property
     def standard_chat_model_params(self) -> dict:
