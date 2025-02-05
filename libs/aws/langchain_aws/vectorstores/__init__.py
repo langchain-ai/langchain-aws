@@ -8,14 +8,12 @@ if TYPE_CHECKING:
         InMemoryVectorStore,
     )
 __all__ = [
-  "MongoDBVectorStore",
+    "MongoDBVectorStore",
     "InMemoryVectorStore",
     "InMemorySemanticCache",
-
 ]
 
 _module_lookup = {
-
     "MongoDBVectorStore": "langchain_aws.vectorstores.documentdb",
     "InMemorySemanticCache": "langchain_aws.vectorstores.inmemorydb",
 }

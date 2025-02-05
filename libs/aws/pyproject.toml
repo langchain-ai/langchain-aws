@@ -20,8 +20,8 @@ numpy = [
   { version = "^1", python = "<3.12" },
   { version = ">=1.26.0,<3", python = ">=3.12" },
 ]
-pymongo = {version = "^4.6.3", optional = true}
-motor = {version = "^3.3.1", optional = true}
+pymongo = "^4.6.3"
+motor = "^3.3.1"
 
 [tool.poetry.group.test]
 optional = true
@@ -34,6 +34,7 @@ pytest-asyncio = "^0.23.2"
 pytest-watcher = "^0.3.4"
 langchain-tests = "0.3.1"
 langchain = "^0.3.7"
+langchain-openai = "^0.3"
 
 [tool.poetry.group.codespell]
 optional = true
@@ -81,8 +82,8 @@ select = [
 ]
 
 [tool.mypy]
-ignore_missing_imports = "True"
-disallow_untyped_defs = "True"
+ignore_missing_imports = true
+disallow_untyped_defs = true
 exclude = ["notebooks", "samples"]
 
 [tool.coverage.run]
