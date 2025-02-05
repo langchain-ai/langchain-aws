@@ -1,7 +1,7 @@
 """Test chat model integration."""
 
 import base64
-from typing import Dict, List, Type, cast
+from typing import Dict, List, Tuple, Type, Union, cast
 
 import pytest
 from langchain_core.language_models import BaseChatModel
@@ -12,15 +12,16 @@ from langchain_core.messages import (
     ToolCall,
     ToolMessage,
 )
-from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.runnables import RunnableBinding
 from langchain_standard_tests.unit_tests import ChatModelUnitTests
+from pydantic import BaseModel, Field
 
 from langchain_aws import ChatBedrockConverse
 from langchain_aws.chat_models.bedrock_converse import (
-    _bedrock_to_anthropic,
+    _bedrock_to_lc,
     _camel_to_snake,
     _camel_to_snake_keys,
+    _extract_response_metadata,
     _messages_to_bedrock,
     _snake_to_camel,
     _snake_to_camel_keys,
@@ -47,7 +48,29 @@ class TestBedrockStandard(ChatModelUnitTests):
             "stop": [],
         }
 
-    @pytest.mark.xfail()
+    @property
+    def init_from_env_params(self) -> Tuple[dict, dict, dict]:
+        """Return env vars, init args, and expected instance attrs for initializing
+        from env vars."""
+        return (
+            {
+                "AWS_ACCESS_KEY_ID": "key_id",
+                "AWS_SECRET_ACCESS_KEY": "secret_key",
+                "AWS_SESSION_TOKEN": "token",
+                "AWS_DEFAULT_REGION": "region",
+            },
+            {
+                "model": "anthropic.claude-3-sonnet-20240229-v1:0",
+            },
+            {
+                "aws_access_key_id": "key_id",
+                "aws_secret_access_key": "secret_key",
+                "aws_session_token": "token",
+                "region_name": "region",
+            },
+        )
+
+    @pytest.mark.xfail(reason="Doesn't support streaming init param.")
     def test_init_streaming(self) -> None:
         super().test_init_streaming()
 
@@ -81,6 +104,27 @@ def test_anthropic_bind_tools_tool_choice() -> None:
     chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="any")
     assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
         "any": {}
+    }
+
+
+def test_amazon_bind_tools_tool_choice() -> None:
+    chat_model = ChatBedrockConverse(
+        model="us.amazon.nova-lite-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    with pytest.raises(ValueError):
+        chat_model.bind_tools(
+            [GetWeather], tool_choice={"tool": {"name": "GetWeather"}}
+        )
+
+    with pytest.raises(ValueError):
+        chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+
+    with pytest.raises(ValueError):
+        chat_model.bind_tools([GetWeather], tool_choice="any")
+
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="auto")
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "auto": {}
     }
 
 
@@ -161,26 +205,52 @@ def test__messages_to_bedrock() -> None:
                 {"type": "guard_content", "text": "hu6"},
             ]
         ),
+        HumanMessage(
+            content=[
+                {
+                    "type": "document",
+                    "document": {
+                        "format": "pdf",
+                        "name": "doc1",
+                        "source": {"bytes": b"doc1_data"},
+                    },
+                }
+            ]
+        ),
+        HumanMessage(
+            content=[
+                {
+                    "type": "image",
+                    "image": {"format": "jpeg", "source": {"bytes": b"image_data"}},
+                }
+            ]
+        ),
+        HumanMessage(
+            content=[
+                {
+                    "type": "video",
+                    "video": {"format": "mp4", "source": {"bytes": b"video_data"}},
+                }
+            ]
+        ),
+        HumanMessage(
+            content=[
+                {
+                    "type": "video",
+                    "video": {
+                        "format": "mp4",
+                        "source": {"s3Location": {"uri": "s3_url"}},
+                    },
+                }
+            ]
+        ),
     ]
     expected_messages = [
-        {"role": "user", "content": [{"text": "hu1"}]},
-        {"role": "user", "content": [{"text": "hu2"}]},
-        {"role": "assistant", "content": [{"text": "ai1"}]},
+        {"role": "user", "content": [{"text": "hu1"}, {"text": "hu2"}]},
         {
             "role": "assistant",
             "content": [
-                {
-                    "toolUse": {
-                        "toolUseId": "tool_call1",
-                        "input": {"arg1": "arg1"},
-                        "name": "tool1",
-                    }
-                }
-            ],
-        },
-        {
-            "role": "assistant",
-            "content": [
+                {"text": "ai1"},
                 {
                     "toolUse": {
                         "toolUseId": "tool_call2",
@@ -195,14 +265,19 @@ def test__messages_to_bedrock() -> None:
                         "name": "tool3",
                     }
                 },
+                {
+                    "toolUse": {
+                        "toolUseId": "tool_call1",
+                        "input": {"arg1": "arg1"},
+                        "name": "tool1",
+                    }
+                },
             ],
         },
         {
             "role": "user",
             "content": [
-                {
-                    "text": "hu3",
-                },
+                {"text": "hu3"},
                 {
                     "toolResult": {
                         "toolUseId": "tool_call1",
@@ -232,15 +307,26 @@ def test__messages_to_bedrock() -> None:
                     "toolResult": {
                         "toolUseId": "tool_call3",
                         "content": [{"text": "tool_res3"}],
+                        "status": "success",
                     }
                 },
-            ],
-        },
-        {
-            "role": "user",
-            "content": [
                 {"guardContent": {"text": {"text": "hu5"}}},
                 {"guardContent": {"text": {"text": "hu6"}}},
+                {
+                    "document": {
+                        "format": "pdf",
+                        "name": "doc1",
+                        "source": {"bytes": b"doc1_data"},
+                    }
+                },
+                {"image": {"format": "jpeg", "source": {"bytes": b"image_data"}}},
+                {"video": {"format": "mp4", "source": {"bytes": b"video_data"}}},
+                {
+                    "video": {
+                        "format": "mp4",
+                        "source": {"s3Location": {"uri": "s3_url"}},
+                    }
+                },
             ],
         },
     ]
@@ -257,7 +343,7 @@ def test__messages_to_bedrock() -> None:
     assert expected_system == actual_system
 
 
-def test__bedrock_to_anthropic() -> None:
+def test__bedrock_to_lc() -> None:
     bedrock: List[Dict] = [
         {"text": "text1"},
         {
@@ -278,6 +364,8 @@ def test__bedrock_to_anthropic() -> None:
                 ],
             }
         },
+        {"video": {"format": "mp4", "source": {"bytes": b"video_data"}}},
+        {"video": {"format": "mp4", "source": {"s3Location": {"uri": "video_data"}}}},
     ]
     expected = [
         {"type": "text", "text": "text1"},
@@ -312,8 +400,24 @@ def test__bedrock_to_anthropic() -> None:
             ],
             "is_error": False,
         },
+        {
+            "type": "video",
+            "source": {
+                "type": "base64",
+                "media_type": "video/mp4",
+                "data": base64.b64encode(b"video_data").decode("utf-8"),
+            },
+        },
+        {
+            "type": "video",
+            "source": {
+                "type": "s3Location",
+                "media_type": "video/mp4",
+                "data": {"uri": "video_data"},
+            },
+        },
     ]
-    actual = _bedrock_to_anthropic(bedrock)
+    actual = _bedrock_to_lc(bedrock)
     assert expected == actual
 
 
@@ -347,3 +451,54 @@ def test__snake_to_camel_keys() -> None:
 
 def test__format_openai_image_url() -> None:
     ...
+
+
+def test_standard_tracing_params() -> None:
+    llm = ChatBedrockConverse(
+        model="foo", temperature=0.1, max_tokens=10, region_name="us-west-2"
+    )
+    ls_params = llm._get_ls_params()
+    assert ls_params == {
+        "ls_provider": "amazon_bedrock",
+        "ls_model_type": "chat",
+        "ls_model_name": "foo",
+        "ls_temperature": 0.1,
+        "ls_max_tokens": 10,
+    }
+
+
+@pytest.mark.parametrize(
+    "model_id, disable_streaming",
+    [
+        ("anthropic.claude-3-5-sonnet-20240620-v1:0", False),
+        ("us.anthropic.claude-3-haiku-20240307-v1:0", False),
+        ("cohere.command-r-v1:0", False),
+        ("meta.llama3-1-405b-instruct-v1:0", "tool_calling"),
+    ],
+)
+def test_set_disable_streaming(
+    model_id: str, disable_streaming: Union[bool, str]
+) -> None:
+    llm = ChatBedrockConverse(model=model_id, region_name="us-west-2")
+    assert llm.disable_streaming == disable_streaming
+
+
+def test__extract_response_metadata() -> None:
+    response = {
+        "ResponseMetadata": {
+            "RequestId": "xxxxxx",
+            "HTTPStatusCode": 200,
+            "HTTPHeaders": {
+                "date": "Wed, 06 Nov 2024 23:28:31 GMT",
+                "content-type": "application/json",
+                "content-length": "212",
+                "connection": "keep-alive",
+                "x-amzn-requestid": "xxxxx",
+            },
+            "RetryAttempts": 0,
+        },
+        "stopReason": "end_turn",
+        "metrics": {"latencyMs": 191},
+    }
+    response_metadata = _extract_response_metadata(response)
+    assert response_metadata["metrics"]["latencyMs"] == [191]

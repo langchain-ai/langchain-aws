@@ -13,14 +13,13 @@ from typing import (
 
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
-from langchain_core.pydantic_v1 import (
-    BaseModel,
-    Extra,
-    Field,
-    root_validator,
-    validator,
-)
 from langchain_core.retrievers import BaseRetriever
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+    model_validator,
+)
 from typing_extensions import Annotated
 
 
@@ -68,32 +67,32 @@ Dates are also represented as str.
 
 
 # Unexpected keyword argument "extra" for "__init_subclass__" of "object"
-class Highlight(BaseModel, extra=Extra.allow):  # type: ignore[call-arg]
+class Highlight(BaseModel, extra="allow"):  # type: ignore[call-arg]
     """Information that highlights the keywords in the excerpt."""
 
     BeginOffset: int
     """The zero-based location in the excerpt where the highlight starts."""
     EndOffset: int
     """The zero-based location in the excerpt where the highlight ends."""
-    TopAnswer: Optional[bool]
+    TopAnswer: Optional[bool] = None
     """Indicates whether the result is the best one."""
-    Type: Optional[str]
+    Type: Optional[str] = None
     """The highlight type: STANDARD or THESAURUS_SYNONYM."""
 
 
 # Unexpected keyword argument "extra" for "__init_subclass__" of "object"
-class TextWithHighLights(BaseModel, extra=Extra.allow):  # type: ignore[call-arg]
+class TextWithHighLights(BaseModel, extra="allow"):  # type: ignore[call-arg]
     """Text with highlights."""
 
     Text: str
     """The text."""
-    Highlights: Optional[Any]
+    Highlights: Optional[Any] = None
     """The highlights."""
 
 
 # Unexpected keyword argument "extra" for "__init_subclass__" of "object"
 class AdditionalResultAttributeValue(  # type: ignore[call-arg]
-    BaseModel, extra=Extra.allow
+    BaseModel, extra="allow"
 ):
     """Value of an additional result attribute."""
 
@@ -102,7 +101,7 @@ class AdditionalResultAttributeValue(  # type: ignore[call-arg]
 
 
 # Unexpected keyword argument "extra" for "__init_subclass__" of "object"
-class AdditionalResultAttribute(BaseModel, extra=Extra.allow):  # type: ignore[call-arg]
+class AdditionalResultAttribute(BaseModel, extra="allow"):  # type: ignore[call-arg]
     """Additional result attribute."""
 
     Key: str
@@ -117,16 +116,16 @@ class AdditionalResultAttribute(BaseModel, extra=Extra.allow):  # type: ignore[c
 
 
 # Unexpected keyword argument "extra" for "__init_subclass__" of "object"
-class DocumentAttributeValue(BaseModel, extra=Extra.allow):  # type: ignore[call-arg]
+class DocumentAttributeValue(BaseModel, extra="allow"):  # type: ignore[call-arg]
     """Value of a document attribute."""
 
-    DateValue: Optional[str]
+    DateValue: Optional[str] = None
     """The date expressed as an ISO 8601 string."""
-    LongValue: Optional[int]
+    LongValue: Optional[int] = None
     """The long value."""
-    StringListValue: Optional[List[str]]
+    StringListValue: Optional[List[str]] = None
     """The string list value."""
-    StringValue: Optional[str]
+    StringValue: Optional[str] = None
     """The string value."""
 
     @property
@@ -148,7 +147,7 @@ class DocumentAttributeValue(BaseModel, extra=Extra.allow):  # type: ignore[call
 
 
 # Unexpected keyword argument "extra" for "__init_subclass__" of "object"
-class DocumentAttribute(BaseModel, extra=Extra.allow):  # type: ignore[call-arg]
+class DocumentAttribute(BaseModel, extra="allow"):  # type: ignore[call-arg]
     """Document attribute."""
 
     Key: str
@@ -158,18 +157,18 @@ class DocumentAttribute(BaseModel, extra=Extra.allow):  # type: ignore[call-arg]
 
 
 # Unexpected keyword argument "extra" for "__init_subclass__" of "object"
-class ResultItem(BaseModel, ABC, extra=Extra.allow):  # type: ignore[call-arg]
+class ResultItem(BaseModel, ABC, extra="allow"):  # type: ignore[call-arg]
     """Base class of a result item."""
 
-    Id: Optional[str]
+    Id: Optional[str] = None
     """The ID of the relevant result item."""
-    DocumentId: Optional[str]
+    DocumentId: Optional[str] = None
     """The document ID."""
-    DocumentURI: Optional[str]
+    DocumentURI: Optional[str] = None
     """The document URI."""
     DocumentAttributes: Optional[List[DocumentAttribute]] = []
     """The document attributes."""
-    ScoreAttributes: Optional[dict]
+    ScoreAttributes: Optional[dict] = None
     """The kendra score confidence"""
 
     @abstractmethod
@@ -228,19 +227,19 @@ class QueryResultItem(ResultItem):
 
     DocumentTitle: TextWithHighLights
     """The document title."""
-    FeedbackToken: Optional[str]
+    FeedbackToken: Optional[str] = None
     """Identifies a particular result from a particular query."""
-    Format: Optional[str]
+    Format: Optional[str] = None
     """
     If the Type is ANSWER, then format is either:
         * TABLE: a table excerpt is returned in TableExcerpt;
         * TEXT: a text excerpt is returned in DocumentExcerpt.
     """
-    Type: Optional[str]
+    Type: Optional[str] = None
     """Type of result: DOCUMENT or QUESTION_ANSWER or ANSWER"""
     AdditionalAttributes: Optional[List[AdditionalResultAttribute]] = []
     """One or more additional attributes associated with the result."""
-    DocumentExcerpt: Optional[TextWithHighLights]
+    DocumentExcerpt: Optional[TextWithHighLights] = None
     """Excerpt of the document text."""
 
     def get_title(self) -> str:
@@ -275,9 +274,9 @@ class QueryResultItem(ResultItem):
 class RetrieveResultItem(ResultItem):
     """Retrieve API result item."""
 
-    DocumentTitle: Optional[str]
+    DocumentTitle: Optional[str] = None
     """The document title."""
-    Content: Optional[str]
+    Content: Optional[str] = None
     """The content of the item."""
 
     def get_title(self) -> str:
@@ -288,7 +287,7 @@ class RetrieveResultItem(ResultItem):
 
 
 # Unexpected keyword argument "extra" for "__init_subclass__" of "object"
-class QueryResult(BaseModel, extra=Extra.allow):  # type: ignore[call-arg]
+class QueryResult(BaseModel, extra="allow"):  # type: ignore[call-arg]
     """`Amazon Kendra Query API` search result.
 
     It is composed of:
@@ -302,7 +301,7 @@ class QueryResult(BaseModel, extra=Extra.allow):  # type: ignore[call-arg]
 
 
 # Unexpected keyword argument "extra" for "__init_subclass__" of "object"
-class RetrieveResult(BaseModel, extra=Extra.allow):  # type: ignore[call-arg]
+class RetrieveResult(BaseModel, extra="allow"):  # type: ignore[call-arg]
     """`Amazon Kendra Retrieve API` search result.
 
     It is composed of:
@@ -372,14 +371,15 @@ class AmazonKendraRetriever(BaseRetriever):
     user_context: Optional[Dict] = None
     min_score_confidence: Annotated[Optional[float], Field(ge=0.0, le=1.0)]
 
-    @validator("top_k")
+    @field_validator("top_k")
     def validate_top_k(cls, value: int) -> int:
         if value < 0:
             raise ValueError(f"top_k ({value}) cannot be negative.")
         return value
 
-    @root_validator(pre=True)
-    def create_client(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+    @model_validator(mode="before")
+    @classmethod
+    def create_client(cls, values: Dict[str, Any]) -> Any:
         if values.get("client") is not None:
             return values
 
@@ -425,13 +425,13 @@ class AmazonKendraRetriever(BaseRetriever):
             kendra_kwargs["UserContext"] = self.user_context
 
         response = self.client.retrieve(**kendra_kwargs)
-        r_result = RetrieveResult.parse_obj(response)
+        r_result = RetrieveResult.model_validate(response)
         if r_result.ResultItems:
             return r_result.ResultItems
 
         # Retrieve API returned 0 results, fall back to Query API
         response = self.client.query(**kendra_kwargs)
-        q_result = QueryResult.parse_obj(response)
+        q_result = QueryResult.model_validate(response)
         return q_result.ResultItems
 
     def _get_top_k_docs(self, result_items: Sequence[ResultItem]) -> List[Document]:

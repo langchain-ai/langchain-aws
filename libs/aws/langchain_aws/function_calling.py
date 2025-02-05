@@ -3,13 +3,13 @@ for supported model providers"""
 
 import json
 from typing import (
+    Annotated,
     Any,
     Callable,
     Dict,
     List,
     Literal,
     Optional,
-    Type,
     Union,
     cast,
 )
@@ -18,9 +18,10 @@ from langchain_core.messages import ToolCall
 from langchain_core.output_parsers import BaseGenerationOutputParser
 from langchain_core.outputs import ChatGeneration, Generation
 from langchain_core.prompts.chat import AIMessage
-from langchain_core.pydantic_v1 import BaseModel
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
+from langchain_core.utils.pydantic import TypeBaseModel
+from pydantic import BaseModel, ConfigDict, SkipValidation
 from typing_extensions import TypedDict
 
 PYTHON_TO_JSON_TYPES = {
@@ -160,10 +161,11 @@ class ToolDescription(TypedDict):
 class ToolsOutputParser(BaseGenerationOutputParser):
     first_tool_only: bool = False
     args_only: bool = False
-    pydantic_schemas: Optional[List[Type[BaseModel]]] = None
+    pydantic_schemas: Optional[List[Annotated[TypeBaseModel, SkipValidation()]]] = None
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
     def parse_result(self, result: List[Generation], *, partial: bool = False) -> Any:
         """Parse a list of candidate model Generations into a specific format.
@@ -203,7 +205,7 @@ class ToolsOutputParser(BaseGenerationOutputParser):
 
 
 def convert_to_anthropic_tool(
-    tool: Union[Dict[str, Any], Type[BaseModel], Callable, BaseTool],
+    tool: Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool],
 ) -> AnthropicTool:
     # already in Anthropic tool format
     if isinstance(tool, dict) and all(

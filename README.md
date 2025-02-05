@@ -7,6 +7,7 @@ This repository provides LangChain components for various AWS services. It aims 
 - **LLMs**: Includes LLM classes for AWS services like [Bedrock](https://aws.amazon.com/bedrock) and [SageMaker Endpoints](https://aws.amazon.com/sagemaker/deploy/), allowing you to leverage their language models within LangChain.
 - **Retrievers**: Supports retrievers for services like [Amazon Kendra](https://aws.amazon.com/kendra/) and [KnowledgeBases for Amazon Bedrock](https://aws.amazon.com/bedrock/knowledge-bases/), enabling efficient retrieval of relevant information in your RAG applications.
 - **Graphs**: Provides components for working with [AWS Neptune](https://aws.amazon.com/neptune/) graphs within LangChain.
+- **Agents**: Includes Runnables to support [Amazon Bedrock Agents](https://aws.amazon.com/bedrock/agents/), allowing you to leverage Bedrock Agents within LangChain and LangGraph.
 - **More to come**: This repository will continue to expand and offer additional components for various AWS services as development progresses.
 
 **Note**: This repository will replace all AWS integrations currently present in the `langchain-community` package. Users are encouraged to migrate to this repository as soon as possible.
@@ -24,11 +25,12 @@ pip install langchain-aws
 Here's a simple example of how to use the `langchain-aws` package.
 
 ```python
-from langchain_aws import BedrockLLM
+from langchain_aws import ChatBedrock
 
-# Initialize the Bedrock LLM
-llm = BedrockLLM(
-    model_id="anthropic.claude-v2:1"
+# Initialize the Bedrock chat model
+llm = ChatBedrock(
+    model="anthropic.claude-3-sonnet-20240229-v1:0",
+    beta_use_converse_api=True
 )
 
 # Invoke the llm

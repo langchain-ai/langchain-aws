@@ -1,5 +1,7 @@
 import base64
 import json
+import logging
+import os
 import re
 from operator import itemgetter
 from typing import (
@@ -9,6 +11,7 @@ from typing import (
     Iterator,
     List,
     Literal,
+    Mapping,
     Optional,
     Sequence,
     Tuple,
@@ -19,7 +22,6 @@ from typing import (
 )
 
 import boto3
-from langchain_core._api import beta
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.language_models.chat_models import LangSmithParams
@@ -32,30 +34,39 @@ from langchain_core.messages import (
     SystemMessage,
     ToolCall,
     ToolMessage,
+    merge_message_runs,
 )
 from langchain_core.messages.ai import AIMessageChunk, UsageMetadata
 from langchain_core.messages.tool import tool_call as create_tool_call
 from langchain_core.messages.tool import tool_call_chunk
+from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
+from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from langchain_core.pydantic_v1 import BaseModel, Extra, Field, root_validator
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
-from langchain_core.utils import get_from_dict_or_env
-from langchain_core.utils.function_calling import convert_to_openai_function
+from langchain_core.utils import secret_from_env
+from langchain_core.utils.function_calling import (
+    convert_to_openai_function,
+    convert_to_openai_tool,
+)
+from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
 
+logger = logging.getLogger(__name__)
+_BM = TypeVar("_BM", bound=BaseModel)
 
-@beta()
+_DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
+
+
 class ChatBedrockConverse(BaseChatModel):
     """Bedrock chat model integration built on the Bedrock converse API.
 
     This implementation will eventually replace the existing ChatBedrock implementation
     once the Bedrock converse API has feature parity with older Bedrock API.
     Specifically the converse API does not yet support custom Bedrock models.
-
-    For now it is being released as its own class in **beta** to give users who aren't
-    using custom models access to the latest API.
 
     Setup:
         To use Amazon Bedrock make sure you've gone through all the steps described
@@ -147,7 +158,7 @@ class ChatBedrockConverse(BaseChatModel):
     Tool calling:
         .. code-block:: python
 
-            from langchain_core.pydantic_v1 import BaseModel, Field
+            from pydantic import BaseModel, Field
 
             class GetWeather(BaseModel):
                 '''Get the current weather in a given location'''
@@ -185,7 +196,7 @@ class ChatBedrockConverse(BaseChatModel):
 
             from typing import Optional
 
-            from langchain_core.pydantic_v1 import BaseModel, Field
+            from pydantic import BaseModel, Field
 
             class Joke(BaseModel):
                 '''Joke to tell user.'''
@@ -259,7 +270,7 @@ class ChatBedrockConverse(BaseChatModel):
              'metrics': {'latencyMs': 1290}}
     """  # noqa: E501
 
-    client: Any = Field(exclude=True)  #: :meta private:
+    client: Any = Field(default=None, exclude=True)  #: :meta private:
 
     model_id: str = Field(alias="model")
     """Id of the model to call.
@@ -274,7 +285,7 @@ class ChatBedrockConverse(BaseChatModel):
     max_tokens: Optional[int] = None
     """Max tokens to generate."""
 
-    stop_sequences: Optional[List[str]] = Field(None, alias="stop")
+    stop_sequences: Optional[List[str]] = Field(default=None, alias="stop")
     """Stop generation if any of these substrings occurs."""
 
     temperature: Optional[float] = None
@@ -301,8 +312,46 @@ class ChatBedrockConverse(BaseChatModel):
     
     Profile should either have access keys or role information specified.
     If not specified, the default credential profile or, if on an EC2 instance,
-    credentials from IMDS will be used. See: 
-    https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    credentials from IMDS will be used. 
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    """
+
+    aws_access_key_id: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
+    )
+    """AWS access key id. 
+    
+    If provided, aws_secret_access_key must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    
+    If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+    """
+
+    aws_secret_access_key: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
+    )
+    """AWS secret_access_key. 
+    
+    If provided, aws_access_key_id must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    
+    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+    """
+
+    aws_session_token: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
+    )
+    """AWS session token. 
+    
+    If provided, aws_access_key_id and aws_secret_access_key must 
+    also be provided. Not required unless using temporary credentials.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    
+    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
     """
 
     provider: str = ""
@@ -314,13 +363,13 @@ class ChatBedrockConverse(BaseChatModel):
     have an ARN associated with them.
     """
 
-    endpoint_url: Optional[str] = Field(None, alias="base_url")
+    endpoint_url: Optional[str] = Field(default=None, alias="base_url")
     """Needed if you don't want to default to us-east-1 endpoint"""
 
     config: Any = None
     """An optional botocore.config.Config instance to pass to the client."""
 
-    guardrail_config: Optional[Dict[str, Any]] = Field(None, alias="guardrails")
+    guardrail_config: Optional[Dict[str, Any]] = Field(default=None, alias="guardrails")
     """Configuration information for a guardrail that you want to use in the request."""
 
     additional_model_request_fields: Optional[Dict[str, Any]] = None
@@ -338,61 +387,121 @@ class ChatBedrockConverse(BaseChatModel):
     additionalModelResponseFieldPaths.
     """
 
-    class Config:
-        """Configuration for this pydantic object."""
+    supports_tool_choice_values: Optional[
+        Sequence[Literal["auto", "any", "tool"]]
+    ] = None
+    """Which types of tool_choice values the model supports.
+    
+    Inferred if not specified. Inferred as ('auto', 'any', 'tool') if a 'claude-3' 
+    model is used, ('auto', 'any') if a 'mistral-large' model is used, 
+    ('auto') if a 'nova' model is used, empty otherwise.
+    """
 
-        extra = Extra.forbid
-        allow_population_by_field_name = True
+    performance_config: Optional[Mapping[str, Any]] = Field(
+        default=None,
+        description="""Performance configuration settings for latency optimization.
+        
+        Example:
+            performance_config={'latency': 'optimized'}
+        If not provided, defaults to standard latency.
+        """,
+    )
 
-    @root_validator(pre=False, skip_on_failure=True)
-    def validate_environment(cls, values: Dict) -> Dict:
-        """Validate that AWS credentials to and python package exists in environment."""
-        values["provider"] = values["provider"] or values["model_id"].split(".")[0]
+    request_metadata: Optional[Dict[str, str]] = None
+    """Key-Value pairs that you can use to filter invocation logs."""
 
-        if values["client"] is not None:
-            return values
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
 
-        try:
-            if values["credentials_profile_name"] is not None:
-                session = boto3.Session(profile_name=values["credentials_profile_name"])
-            else:
-                session = boto3.Session()
-        except ValueError as e:
-            raise ValueError(f"Error raised by bedrock service: {e}")
-        except Exception as e:
-            raise ValueError(
-                "Could not load credentials to authenticate with AWS client. "
-                "Please check that credentials in the specified "
-                f"profile name are valid. Bedrock error: {e}"
-            ) from e
-
-        values["region_name"] = get_from_dict_or_env(
-            values,
-            "region_name",
-            "AWS_DEFAULT_REGION",
-            default=session.region_name,
+    @model_validator(mode="before")
+    @classmethod
+    def set_disable_streaming(cls, values: Dict) -> Any:
+        model_id = values.get("model_id", values.get("model"))
+        model_parts = model_id.split(".")
+        values["provider"] = values.get("provider") or (
+            model_parts[-2] if len(model_parts) > 1 else model_parts[0]
         )
 
-        client_params = {}
-        if values["region_name"]:
-            client_params["region_name"] = values["region_name"]
-        if values["endpoint_url"]:
-            client_params["endpoint_url"] = values["endpoint_url"]
-        if values["config"]:
-            client_params["config"] = values["config"]
-
-        try:
-            values["client"] = session.client("bedrock-runtime", **client_params)
-        except ValueError as e:
-            raise ValueError(f"Error raised by bedrock service: {e}")
-        except Exception as e:
-            raise ValueError(
-                "Could not load credentials to authenticate with AWS client. "
-                "Please check that credentials in the specified "
-                f"profile name are valid. Bedrock error: {e}"
-            ) from e
-
+        # As of 12/03/24:
+        # Anthropic, Cohere and Amazon Nova models support streamed tool calling
+        if "disable_streaming" not in values:
+            values["disable_streaming"] = (
+                False
+                if values["provider"] in ["anthropic", "cohere"]
+                or (values["provider"] == "amazon" and "nova" in model_id)
+                else "tool_calling"
+            )
         return values
+
+    @model_validator(mode="after")
+    def validate_environment(self) -> Self:
+        """Validate that AWS credentials to and python package exists in environment."""
+
+        # As of 12/03/24:
+        # only claude-3, mistral-large, and nova models support tool choice:
+        # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
+        if self.supports_tool_choice_values is None:
+            if "claude-3" in self.model_id:
+                self.supports_tool_choice_values = ("auto", "any", "tool")
+            elif "mistral-large" in self.model_id:
+                self.supports_tool_choice_values = ("auto", "any")
+            elif "nova" in self.model_id:
+                self.supports_tool_choice_values = ["auto"]
+            else:
+                self.supports_tool_choice_values = ()
+
+        # Skip creating new client if passed in constructor
+        if self.client is None:
+            creds = {
+                "aws_access_key_id": self.aws_access_key_id,
+                "aws_secret_access_key": self.aws_secret_access_key,
+                "aws_session_token": self.aws_session_token,
+            }
+            if creds["aws_access_key_id"] and creds["aws_secret_access_key"]:
+                session_params = {
+                    k: v.get_secret_value() for k, v in creds.items() if v
+                }
+            elif any(creds.values()):
+                raise ValueError(
+                    f"If any of aws_access_key_id, aws_secret_access_key, or "
+                    f"aws_session_token are specified then both aws_access_key_id and "
+                    f"aws_secret_access_key must be specified. Only received "
+                    f"{(k for k, v in creds.items() if v)}."
+                )
+            elif self.credentials_profile_name is not None:
+                session_params = {"profile_name": self.credentials_profile_name}
+            else:
+                # use default credentials
+                session_params = {}
+
+            try:
+                session = boto3.Session(**session_params)
+
+                self.region_name = (
+                    self.region_name
+                    or os.getenv("AWS_DEFAULT_REGION")
+                    or session.region_name
+                )
+
+                client_params = {
+                    "endpoint_url": self.endpoint_url,
+                    "config": self.config,
+                    "region_name": self.region_name,
+                }
+                client_params = {k: v for k, v in client_params.items() if v}
+                self.client = session.client("bedrock-runtime", **client_params)
+            except ValueError as e:
+                raise ValueError(f"Error raised by bedrock service:\n\n{e}") from e
+            except Exception as e:
+                raise ValueError(
+                    "Could not load credentials to authenticate with AWS client. "
+                    "Please check that credentials in the specified "
+                    f"profile name are valid. Bedrock error:\n\n{e}"
+                ) from e
+
+        return self
 
     def _generate(
         self,
@@ -402,13 +511,19 @@ class ChatBedrockConverse(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         """Top Level call"""
+        logger.info(f"The input message: {messages}")
         bedrock_messages, system = _messages_to_bedrock(messages)
+        logger.debug(f"input message to bedrock: {bedrock_messages}")
+        logger.debug(f"System message to bedrock: {system}")
         params = self._converse_params(
             stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
         )
+        logger.debug(f"Input params: {params}")
+        logger.info("Using Bedrock Converse API to generate response")
         response = self.client.converse(
             messages=bedrock_messages, system=system, **params
         )
+        logger.debug(f"Response from Bedrock: {response}")
         response_message = _parse_response(response)
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
@@ -434,30 +549,74 @@ class ChatBedrockConverse(BaseChatModel):
 
     def bind_tools(
         self,
-        tools: Sequence[Union[Dict[str, Any], Type[BaseModel], Callable, BaseTool]],
+        tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool]],
         *,
         tool_choice: Optional[Union[dict, str, Literal["auto", "any"]]] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, BaseMessage]:
+        try:
+            formatted_tools: list[dict] = [
+                convert_to_openai_tool(tool) for tool in tools
+            ]
+        except Exception:
+            formatted_tools = _format_tools(tools)
         if tool_choice:
+            tool_choice = _format_tool_choice(tool_choice)
+            tool_choice_type = list(tool_choice.keys())[0]
+            if tool_choice_type not in list(self.supports_tool_choice_values or []):
+                if self.supports_tool_choice_values:
+                    supported = (
+                        f"Model {self.model_id} does not currently support tool_choice "
+                        f"of type {tool_choice_type}. The following tool_choice types "
+                        f"are supported: {self.supports_tool_choice_values}."
+                    )
+                else:
+                    supported = (
+                        f"Model {self.model_id} does not currently support tool_choice."
+                    )
+
+                raise ValueError(
+                    f"{supported} Please see "
+                    f"https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html "  # noqa: E501
+                    f"for the latest documentation on models that support tool choice."
+                )
             kwargs["tool_choice"] = _format_tool_choice(tool_choice)
-        return self.bind(tools=_format_tools(tools), **kwargs)
+
+        return self.bind(tools=formatted_tools, **kwargs)
 
     def with_structured_output(
         self,
-        schema: Union[Dict, Type[BaseModel]],
+        schema: _DictOrPydanticClass,
         *,
         include_raw: bool = False,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
-        tool_name = convert_to_openai_function(schema)["name"]
-        llm = self.bind_tools([schema], tool_choice=tool_name)
-        if isinstance(schema, type) and issubclass(schema, BaseModel):
-            output_parser = ToolsOutputParser(
-                first_tool_only=True, pydantic_schemas=[schema]
-            )
+        supports_tool_choice_values = self.supports_tool_choice_values or ()
+        if "tool" in supports_tool_choice_values:
+            tool_choice = convert_to_openai_function(schema)["name"]
+        elif "any" in supports_tool_choice_values:
+            tool_choice = "any"
         else:
-            output_parser = ToolsOutputParser(first_tool_only=True, args_only=True)
+            tool_choice = None
+        llm = self.bind_tools([schema], tool_choice=tool_choice)
+        if isinstance(schema, type) and is_basemodel_subclass(schema):
+            if self.disable_streaming:
+                output_parser: OutputParserLike = ToolsOutputParser(
+                    first_tool_only=True, pydantic_schemas=[schema]
+                )
+            else:
+                output_parser = PydanticToolsParser(
+                    tools=[schema],
+                    first_tool_only=True,
+                )
+        else:
+            tool_name = convert_to_openai_tool(schema)["function"]["name"]
+            if self.disable_streaming:
+                output_parser = ToolsOutputParser(first_tool_only=True, args_only=True)
+            else:
+                output_parser = JsonOutputKeyToolsParser(
+                    key_name=tool_name, first_tool_only=True
+                )
 
         if include_raw:
             parser_assign = RunnablePassthrough.assign(
@@ -487,6 +646,8 @@ class ChatBedrockConverse(BaseChatModel):
         additionalModelRequestFields: Optional[dict] = None,
         additionalModelResponseFieldPaths: Optional[List[str]] = None,
         guardrailConfig: Optional[dict] = None,
+        performanceConfig: Optional[Mapping[str, Any]] = None,
+        requestMetadata: Optional[dict] = None,
     ) -> Dict[str, Any]:
         if not inferenceConfig:
             inferenceConfig = {
@@ -509,6 +670,8 @@ class ChatBedrockConverse(BaseChatModel):
                 "additionalModelResponseFieldPaths": additionalModelResponseFieldPaths
                 or self.additional_model_response_field_paths,
                 "guardrailConfig": guardrailConfig or self.guardrail_config,
+                "performanceConfig": performanceConfig or self.performance_config,
+                "requestMetadata": requestMetadata or self.request_metadata,
             }
         )
 
@@ -534,6 +697,22 @@ class ChatBedrockConverse(BaseChatModel):
         """Return type of chat model."""
         return "amazon_bedrock_converse_chat"
 
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        return True
+
+    @classmethod
+    def get_lc_namespace(cls) -> list[str]:
+        return ["langchain_aws", "chat_models"]
+
+    @property
+    def lc_secrets(self) -> Dict[str, str]:
+        return {
+            "aws_access_key_id": "AWS_ACCESS_KEY_ID",
+            "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
+            "aws_session_token": "AWS_SESSION_TOKEN",
+        }
+
 
 def _messages_to_bedrock(
     messages: List[BaseMessage],
@@ -541,10 +720,20 @@ def _messages_to_bedrock(
     """Handle Bedrock converse and Anthropic style content blocks"""
     bedrock_messages: List[Dict[str, Any]] = []
     bedrock_system: List[Dict[str, Any]] = []
+    # Merge system, human, ai message runs because Anthropic expects (at most) 1
+    # system message then alternating human/ai messages.
+    messages = merge_message_runs(messages)
     for msg in messages:
-        content = _anthropic_to_bedrock(msg.content)
+        content = _lc_content_to_bedrock(msg.content)
         if isinstance(msg, HumanMessage):
-            bedrock_messages.append({"role": "user", "content": content})
+            # If there's a human, tool, human message sequence, the
+            # tool message will be merged with the first human message, so the second
+            # human message will now be preceded by a human message and should also
+            # be merged with it.
+            if bedrock_messages and bedrock_messages[-1]["role"] == "user":
+                bedrock_messages[-1]["content"].extend(content)
+            else:
+                bedrock_messages.append({"role": "user", "content": content})
         elif isinstance(msg, AIMessage):
             content = _upsert_tool_calls_to_bedrock_content(content, msg.tool_calls)
             bedrock_messages.append({"role": "assistant", "content": content})
@@ -556,26 +745,38 @@ def _messages_to_bedrock(
             else:
                 curr = {"role": "user", "content": []}
 
-            # TODO: Add status once we have ToolMessage.status support.
             curr["content"].append(
-                {"toolResult": {"content": content, "toolUseId": msg.tool_call_id}}
+                {
+                    "toolResult": {
+                        "content": content,
+                        "toolUseId": msg.tool_call_id,
+                        "status": msg.status,
+                    }
+                }
             )
             bedrock_messages.append(curr)
         else:
-            raise ValueError()
+            raise ValueError(f"Unsupported message type {type(msg)}")
     return bedrock_messages, bedrock_system
 
 
+def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:
+    response_metadata = response
+    # response_metadata only supports string, list or dict
+    if "metrics" in response and "latencyMs" in response["metrics"]:
+        response_metadata["metrics"]["latencyMs"] = [response["metrics"]["latencyMs"]]
+
+    return response_metadata
+
+
 def _parse_response(response: Dict[str, Any]) -> AIMessage:
-    anthropic_content = _bedrock_to_anthropic(
-        response.pop("output")["message"]["content"]
-    )
-    tool_calls = _extract_tool_calls(anthropic_content)
+    lc_content = _bedrock_to_lc(response.pop("output")["message"]["content"])
+    tool_calls = _extract_tool_calls(lc_content)
     usage = UsageMetadata(_camel_to_snake_keys(response.pop("usage")))  # type: ignore[misc]
     return AIMessage(
-        content=_str_if_single_text_block(anthropic_content),  # type: ignore[arg-type]
+        content=_str_if_single_text_block(lc_content),  # type: ignore[arg-type]
         usage_metadata=usage,
-        response_metadata=response,
+        response_metadata=_extract_response_metadata(response),
         tool_calls=tool_calls,
     )
 
@@ -590,7 +791,7 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         )
     elif "contentBlockStart" in event:
         block = {
-            **_bedrock_to_anthropic([event["contentBlockStart"]["start"]])[0],
+            **_bedrock_to_lc([event["contentBlockStart"]["start"]])[0],
             "index": event["contentBlockStart"]["contentBlockIndex"],
         }
         tool_call_chunks = []
@@ -606,7 +807,7 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         return AIMessageChunk(content=[block], tool_call_chunks=tool_call_chunks)
     elif "contentBlockDelta" in event:
         block = {
-            **_bedrock_to_anthropic([event["contentBlockDelta"]["delta"]])[0],
+            **_bedrock_to_lc([event["contentBlockDelta"]["delta"]])[0],
             "index": event["contentBlockDelta"]["contentBlockIndex"],
         }
         tool_call_chunks = []
@@ -642,7 +843,7 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         raise ValueError(f"Received unsupported stream event:\n\n{event}")
 
 
-def _anthropic_to_bedrock(
+def _lc_content_to_bedrock(
     content: Union[str, List[Union[str, Dict[str, Any]]]],
 ) -> List[Dict[str, Any]]:
     if isinstance(content, str):
@@ -659,7 +860,7 @@ def _anthropic_to_bedrock(
         elif block["type"] == "image":
             # Assume block is already in bedrock format.
             if "image" in block:
-                bedrock_content.append(block)
+                bedrock_content.append({"image": block["image"]})
             else:
                 bedrock_content.append(
                     {
@@ -676,6 +877,39 @@ def _anthropic_to_bedrock(
             bedrock_content.append(
                 {"image": _format_openai_image_url(block["imageUrl"]["url"])}
             )
+        elif block["type"] == "video":
+            # Assume block is already in bedrock format.
+            if "video" in block:
+                bedrock_content.append({"video": block["video"]})
+            else:
+                if block["source"]["type"] == "base64":
+                    bedrock_content.append(
+                        {
+                            "video": {
+                                "format": block["source"]["mediaType"].split("/")[1],
+                                "source": {
+                                    "bytes": _b64str_to_bytes(block["source"]["data"])
+                                },
+                            }
+                        }
+                    )
+                elif block["source"]["type"] == "s3Location":
+                    bedrock_content.append(
+                        {
+                            "video": {
+                                "format": block["source"]["mediaType"].split("/")[1],
+                                "source": {"s3Location": block["source"]["data"]},
+                            }
+                        }
+                    )
+        elif block["type"] == "video_url":
+            # Support OpenAI image format as well.
+            bedrock_content.append(
+                {"video": _format_openai_video_url(block["videoUrl"]["url"])}
+            )
+        elif block["type"] == "document":
+            # Assume block in bedrock document format
+            bedrock_content.append({"document": block["document"]})
         elif block["type"] == "tool_use":
             bedrock_content.append(
                 {
@@ -691,7 +925,7 @@ def _anthropic_to_bedrock(
                 {
                     "toolResult": {
                         "toolUseId": block["toolUseId"],
-                        "content": _anthropic_to_bedrock(block["content"]),
+                        "content": _lc_content_to_bedrock(block["content"]),
                         "status": "error" if block.get("isError") else "success",
                     }
                 }
@@ -707,16 +941,16 @@ def _anthropic_to_bedrock(
     return [block for block in bedrock_content if block.get("text", True)]
 
 
-def _bedrock_to_anthropic(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    anthropic_content = []
+def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    lc_content = []
     for block in _camel_to_snake_keys(content):
         if "text" in block:
-            anthropic_content.append({"type": "text", "text": block["text"]})
+            lc_content.append({"type": "text", "text": block["text"]})
         elif "tool_use" in block:
             block["tool_use"]["id"] = block["tool_use"].pop("tool_use_id", None)
-            anthropic_content.append({"type": "tool_use", **block["tool_use"]})
+            lc_content.append({"type": "tool_use", **block["tool_use"]})
         elif "image" in block:
-            anthropic_content.append(
+            lc_content.append(
                 {
                     "type": "image",
                     "source": {
@@ -726,20 +960,48 @@ def _bedrock_to_anthropic(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]
                     },
                 }
             )
+        elif "video" in block:
+            if "bytes" in block["video"]["source"]:
+                lc_content.append(
+                    {
+                        "type": "video",
+                        "source": {
+                            "media_type": f"video/{block['video']['format']}",
+                            "type": "base64",
+                            "data": _bytes_to_b64_str(
+                                block["video"]["source"]["bytes"]
+                            ),
+                        },
+                    }
+                )
+            if "s3location" in block["video"]["source"]:
+                lc_content.append(
+                    {
+                        "type": "video",
+                        "source": {
+                            "media_type": f"video/{block['video']['format']}",
+                            "type": "s3Location",
+                            "data": block["video"]["source"]["s3location"],
+                        },
+                    }
+                )
+        elif "document" in block:
+            # Request syntax assumes bedrock format; returning in same bedrock format
+            lc_content.append({"type": "document", **block})
         elif "tool_result" in block:
-            anthropic_content.append(
+            lc_content.append(
                 {
                     "type": "tool_result",
                     "tool_use_id": block["tool_result"]["tool_use_id"],
                     "is_error": block["tool_result"].get("status") == "error",
-                    "content": _bedrock_to_anthropic(block["tool_result"]["content"]),
+                    "content": _bedrock_to_lc(block["tool_result"]["content"]),
                 }
             )
         # Only occurs in content blocks of a tool_result:
         elif "json" in block:
-            anthropic_content.append({"type": "json", **block})
+            lc_content.append({"type": "json", **block})
         elif "guard_content" in block:
-            anthropic_content.append(
+            lc_content.append(
                 {
                     "type": "guard_content",
                     "guard_content": {
@@ -754,18 +1016,18 @@ def _bedrock_to_anthropic(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]
                 "'text', 'tool_use', 'image', or 'tool_result' keys. Received:\n\n"
                 f"{block}"
             )
-    return anthropic_content
+    return lc_content
 
 
 def _format_tools(
-    tools: Sequence[Union[Dict[str, Any], Type[BaseModel], Callable, BaseTool],],
+    tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool],],
 ) -> List[Dict[Literal["toolSpec"], Dict[str, Union[Dict[str, Any], str]]]]:
     formatted_tools: List = []
     for tool in tools:
         if isinstance(tool, dict) and "toolSpec" in tool:
             formatted_tools.append(tool)
         else:
-            spec = convert_to_openai_function(tool)
+            spec = convert_to_openai_tool(tool)["function"]
             spec["inputSchema"] = {"json": spec.pop("parameters")}
             formatted_tools.append({"toolSpec": spec})
     return formatted_tools
@@ -854,11 +1116,11 @@ def _bytes_to_b64_str(bytes_: bytes) -> str:
 
 
 def _str_if_single_text_block(
-    anthropic_content: List[Dict[str, Any]],
+    content: List[Dict[str, Any]],
 ) -> Union[str, List[Dict[str, Any]]]:
-    if len(anthropic_content) == 1 and anthropic_content[0]["type"] == "text":
-        return anthropic_content[0]["text"]
-    return anthropic_content
+    if len(content) == 1 and content[0]["type"] == "text":
+        return content[0]["text"]
+    return content
 
 
 def _upsert_tool_calls_to_bedrock_content(
@@ -900,8 +1162,28 @@ def _format_openai_image_url(image_url: str) -> Dict:
     match = re.match(regex, image_url)
     if match is None:
         raise ValueError(
-            "Bedrock does not currently support OpenAI-format image URLs, only "
+            "The image URL provided is not supported. Expected image URL format is "
             "base64-encoded images. Example: data:image/png;base64,'/9j/4AAQSk'..."
+        )
+    return {
+        "format": match.group("media_type"),
+        "source": {"bytes": _b64str_to_bytes(match.group("data"))},
+    }
+
+
+def _format_openai_video_url(video_url: str) -> Dict:
+    """
+    Formats a video of format data:video/mp4;base64,{b64_string}
+    to a dict for bedrock api.
+
+    And throws an error if url is not a b64 video.
+    """
+    regex = r"^data:video/(?P<media_type>.+);base64,(?P<data>.+)$"
+    match = re.match(regex, video_url)
+    if match is None:
+        raise ValueError(
+            "The video URL provided is not supported. Expected video URL format is "
+            "base64-encoded video. Example: data:video/mp4;base64,'/9j/4AAQSk'..."
         )
     return {
         "format": match.group("media_type"),

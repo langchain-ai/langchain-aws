@@ -1,4 +1,4 @@
-import json
+import logging
 import re
 from collections import defaultdict
 from operator import itemgetter
@@ -12,14 +12,17 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
-    Type,
     Union,
     cast,
 )
 
-from langchain_core._api.deprecation import deprecated
 from langchain_core.callbacks import CallbackManagerForLLMRun
-from langchain_core.language_models import BaseChatModel, LanguageModelInput
+from langchain_core.language_models import (
+    BaseChatModel,
+    LangSmithParams,
+    LanguageModelInput,
+)
+from langchain_core.language_models.chat_models import generate_from_stream
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -29,17 +32,17 @@ from langchain_core.messages import (
     SystemMessage,
 )
 from langchain_core.messages.ai import UsageMetadata
-from langchain_core.messages.tool import ToolCall, ToolMessage, tool_call_chunk
+from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from langchain_core.pydantic_v1 import BaseModel, Extra
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
+from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 from langchain_aws.function_calling import (
     ToolsOutputParser,
     _lc_tool_calls_to_anthropic_tool_use_blocks,
-    _tools_in_params,
     convert_to_anthropic_tool,
     get_system_message,
 )
@@ -51,6 +54,8 @@ from langchain_aws.utils import (
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _convert_one_message_to_text_llama(message: BaseMessage) -> str:
@@ -211,7 +216,7 @@ def _merge_messages(
     """Merge runs of human/tool messages into single human messages with content blocks."""  # noqa: E501
     merged: list = []
     for curr in messages:
-        curr = curr.copy(deep=True)
+        curr = curr.model_copy(deep=True)
         if isinstance(curr, ToolMessage):
             if isinstance(curr.content, list) and all(
                 isinstance(block, dict) and block.get("type") == "tool_result"
@@ -405,6 +410,15 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         """Get the namespace of the langchain object."""
         return ["langchain", "chat_models", "bedrock"]
 
+    @model_validator(mode="before")
+    @classmethod
+    def set_beta_use_converse_api(cls, values: Dict) -> Any:
+        model_id = values.get("model_id", values.get("model"))
+
+        if model_id and "beta_use_converse_api" not in values:
+            values["beta_use_converse_api"] = "nova" in model_id
+        return values
+
     @property
     def lc_attributes(self) -> Dict[str, Any]:
         attributes: Dict[str, Any] = {}
@@ -414,10 +428,28 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
         return attributes
 
-    class Config:
-        """Configuration for this pydantic object."""
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
 
-        extra = Extra.forbid
+    def _get_ls_params(
+        self, stop: Optional[List[str]] = None, **kwargs: Any
+    ) -> LangSmithParams:
+        """Get standard params for tracing."""
+        params = self._get_invocation_params(stop=stop, **kwargs)
+        ls_params = LangSmithParams(
+            ls_provider="amazon_bedrock",
+            ls_model_name=self.model_id,
+            ls_model_type="chat",
+        )
+        if ls_temperature := params.get("temperature", self.temperature):
+            ls_params["ls_temperature"] = ls_temperature
+        if ls_max_tokens := params.get("max_tokens", self.max_tokens):
+            ls_params["ls_max_tokens"] = ls_max_tokens
+        if ls_stop := stop or params.get("stop", None):
+            ls_params["ls_stop"] = ls_stop
+        return ls_params
 
     def _stream(
         self,
@@ -434,31 +466,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         provider = self._get_provider()
         prompt, system, formatted_messages = None, None, None
 
-        if "claude-3" in self._get_model():
-            if _tools_in_params({**kwargs}):
-                result = self._generate(
-                    messages, stop=stop, run_manager=run_manager, **kwargs
-                )
-                message = result.generations[0].message
-                if isinstance(message, AIMessage) and message.tool_calls is not None:
-                    tool_call_chunks = [
-                        tool_call_chunk(
-                            name=tool_call["name"],
-                            args=json.dumps(tool_call["args"]),
-                            id=tool_call["id"],
-                            index=idx,
-                        )
-                        for idx, tool_call in enumerate(message.tool_calls)
-                    ]
-                    message_chunk = AIMessageChunk(
-                        content=message.content,
-                        tool_call_chunks=tool_call_chunks,  # type: ignore[arg-type]
-                        usage_metadata=message.usage_metadata,
-                    )
-                    yield ChatGenerationChunk(message=message_chunk)
-                else:
-                    yield cast(ChatGenerationChunk, result.generations[0])
-                return
         if provider == "anthropic":
             system, formatted_messages = ChatPromptAdapter.format_messages(
                 provider, messages
@@ -481,20 +488,33 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             run_manager=run_manager,
             **kwargs,
         ):
-            delta = chunk.text
-            if generation_info := chunk.generation_info:
-                usage_metadata = generation_info.pop("usage_metadata", None)
+            if isinstance(chunk, AIMessageChunk):
+                generation_chunk = ChatGenerationChunk(message=chunk)
+                if run_manager:
+                    run_manager.on_llm_new_token(
+                        generation_chunk.text, chunk=generation_chunk
+                    )
+                yield generation_chunk
             else:
-                usage_metadata = None
-            yield ChatGenerationChunk(
-                message=AIMessageChunk(
-                    content=delta,
-                    response_metadata=chunk.generation_info,
-                    usage_metadata=usage_metadata,
+                delta = chunk.text
+                if generation_info := chunk.generation_info:
+                    usage_metadata = generation_info.pop("usage_metadata", None)
+                else:
+                    usage_metadata = None
+                generation_chunk = ChatGenerationChunk(
+                    message=AIMessageChunk(
+                        content=delta,
+                        response_metadata=chunk.generation_info,
+                        usage_metadata=usage_metadata,
+                    )
+                    if chunk.generation_info is not None
+                    else AIMessageChunk(content=delta)
                 )
-                if chunk.generation_info is not None
-                else AIMessageChunk(content=delta)
-            )
+                if run_manager:
+                    run_manager.on_llm_new_token(
+                        generation_chunk.text, chunk=generation_chunk
+                    )
+                yield generation_chunk
 
     def _generate(
         self,
@@ -507,13 +527,19 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             return self._as_converse._generate(
                 messages, stop=stop, run_manager=run_manager, **kwargs
             )
+        logger.info(f"The input message: {messages}")
         completion = ""
         llm_output: Dict[str, Any] = {}
         tool_calls: List[ToolCall] = []
         provider_stop_reason_code = self.provider_stop_reason_key_map.get(
             self._get_provider(), "stop_reason"
         )
+        provider = self._get_provider()
         if self.streaming:
+            if provider == "anthropic":
+                stream_iter = self._stream(messages, stop, run_manager, **kwargs)
+                return generate_from_stream(stream_iter)
+
             response_metadata: List[Dict[str, Any]] = []
             for chunk in self._stream(messages, stop, run_manager, **kwargs):
                 completion += chunk.text
@@ -524,7 +550,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 response_metadata, provider_stop_reason_code
             )
         else:
-            provider = self._get_provider()
             prompt, system, formatted_messages = None, None, None
             params: Dict[str, Any] = {**kwargs}
 
@@ -565,16 +590,14 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
         else:
             usage_metadata = None
-
+        logger.info(f"The message received from Bedrock: {completion}")
         llm_output["model_id"] = self.model_id
-
         msg = AIMessage(
             content=completion,
             additional_kwargs=llm_output,
             tool_calls=cast(List[ToolCall], tool_calls),
             usage_metadata=usage_metadata,
         )
-
         return ChatResult(
             generations=[
                 ChatGeneration(
@@ -614,7 +637,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
     def bind_tools(
         self,
-        tools: Sequence[Union[Dict[str, Any], Type[BaseModel], Callable, BaseTool]],
+        tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool]],
         *,
         tool_choice: Optional[Union[dict, str, Literal["auto", "none"], bool]] = None,
         **kwargs: Any,
@@ -669,7 +692,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
     def with_structured_output(
         self,
-        schema: Union[Dict, Type[BaseModel]],
+        schema: Union[Dict, TypeBaseModel],
         *,
         include_raw: bool = False,
         **kwargs: Any,
@@ -705,7 +728,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             .. code-block:: python
 
                 from langchain_aws.chat_models.bedrock import ChatBedrock
-                from langchain_core.pydantic_v1 import BaseModel
+                from pydantic import BaseModel
 
                 class AnswerWithJustification(BaseModel):
                     '''An answer to the user question along with justification for the answer.'''
@@ -729,7 +752,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             .. code-block:: python
 
                 from langchain_aws.chat_models.bedrock import ChatBedrock
-                from langchain_core.pydantic_v1 import BaseModel
+                from pydantic import BaseModel
 
                 class AnswerWithJustification(BaseModel):
                     '''An answer to the user question along with justification for the answer.'''
@@ -784,13 +807,13 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 schema, include_raw=include_raw, **kwargs
             )
         if "claude-3" not in self._get_model():
-            ValueError(
+            raise ValueError(
                 f"Structured output is not supported for model {self._get_model()}"
             )
 
         tool_name = convert_to_anthropic_tool(schema)["name"]
         llm = self.bind_tools([schema], tool_choice=tool_name)
-        if isinstance(schema, type) and issubclass(schema, BaseModel):
+        if isinstance(schema, type) and is_basemodel_subclass(schema):
             output_parser = ToolsOutputParser(
                 first_tool_only=True, pydantic_schemas=[schema]
             )
@@ -814,20 +837,33 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         kwargs = {
             k: v
             for k, v in (self.model_kwargs or {}).items()
-            if k in ("stop", "stop_sequences", "max_tokens", "temperature", "top_p")
+            if k
+            in (
+                "stop",
+                "stop_sequences",
+                "max_tokens",
+                "temperature",
+                "top_p",
+                "additional_model_request_fields",
+                "additional_model_response_field_paths",
+                "performance_config",
+                "request_metadata",
+            )
         }
+        if self.max_tokens:
+            kwargs["max_tokens"] = self.max_tokens
+        if self.temperature is not None:
+            kwargs["temperature"] = self.temperature
         return ChatBedrockConverse(
             model=self.model_id,
             region_name=self.region_name,
             credentials_profile_name=self.credentials_profile_name,
+            aws_access_key_id=self.aws_access_key_id,
+            aws_secret_access_key=self.aws_secret_access_key,
+            aws_session_token=self.aws_session_token,
             config=self.config,
             provider=self.provider or "",
             base_url=self.endpoint_url,
             guardrail_config=(self.guardrails if self._guardrails_enabled else None),  # type: ignore[call-arg]
             **kwargs,
         )
-
-
-@deprecated(since="0.1.0", removal="0.2.0", alternative="ChatBedrock")
-class BedrockChat(ChatBedrock):
-    pass

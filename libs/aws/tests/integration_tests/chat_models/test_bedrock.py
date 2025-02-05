@@ -12,8 +12,8 @@ from langchain_core.messages import (
     SystemMessage,
 )
 from langchain_core.outputs import ChatGeneration, LLMResult
-from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.runnables import RunnableConfig
+from pydantic import BaseModel, Field
 
 from langchain_aws.chat_models.bedrock import ChatBedrock
 from tests.callbacks import FakeCallbackHandler, FakeCallbackHandlerWithTokenCounts
@@ -29,17 +29,17 @@ def chat() -> ChatBedrock:
 
 @pytest.mark.scheduled
 def test_chat_bedrock(chat: ChatBedrock) -> None:
-    """Test BedrockChat wrapper."""
+    """Test ChatBedrock wrapper."""
     system = SystemMessage(content="You are a helpful assistant.")
     human = HumanMessage(content="Hello")
-    response = chat([system, human])
+    response = chat.invoke([system, human])
     assert isinstance(response, BaseMessage)
     assert isinstance(response.content, str)
 
 
 @pytest.mark.scheduled
 def test_chat_bedrock_generate(chat: ChatBedrock) -> None:
-    """Test BedrockChat wrapper with generate."""
+    """Test ChatBedrock wrapper with generate."""
     message = HumanMessage(content="Hello")
     response = chat.generate([[message], [message]])
     assert isinstance(response, LLMResult)
@@ -53,7 +53,7 @@ def test_chat_bedrock_generate(chat: ChatBedrock) -> None:
 
 @pytest.mark.scheduled
 def test_chat_bedrock_generate_with_token_usage(chat: ChatBedrock) -> None:
-    """Test BedrockChat wrapper with generate."""
+    """Test ChatBedrock wrapper with generate."""
     message = HumanMessage(content="Hello")
     response = chat.generate([[message], [message]])
     assert isinstance(response, LLMResult)
@@ -67,23 +67,45 @@ def test_chat_bedrock_generate_with_token_usage(chat: ChatBedrock) -> None:
 
 @pytest.mark.scheduled
 def test_chat_bedrock_streaming() -> None:
-    """Test that streaming correctly invokes on_llm_new_token callback."""
-    callback_handler = FakeCallbackHandler()
+    """Test that streaming correctly streams chunks."""
     chat = ChatBedrock(  # type: ignore[call-arg]
-        model_id="anthropic.claude-v2",
-        streaming=True,
-        callbacks=[callback_handler],
-        verbose=True,
+        model_id="anthropic.claude-v2"
     )
     message = HumanMessage(content="Hello")
-    response = chat([message])
-    assert callback_handler.llm_streams > 0
-    assert isinstance(response, BaseMessage)
+    stream = chat.stream([message])
+
+    full = next(stream)
+    for chunk in stream:
+        full += chunk  # type: ignore[assignment]
+
+    assert full.content
+    assert full.response_metadata
+    assert full.usage_metadata  # type: ignore[attr-defined]
+
+
+@pytest.mark.scheduled
+def test_chat_bedrock_token_counts() -> None:
+    chat = ChatBedrock(  # type: ignore[call-arg]
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_kwargs={"temperature": 0},
+    )
+    invoke_response = chat.invoke("hi", max_tokens=6)
+    assert isinstance(invoke_response, AIMessage)
+    assert invoke_response.usage_metadata is not None
+    assert invoke_response.usage_metadata["output_tokens"] <= 6
+
+    stream = chat.stream("hi", max_tokens=6)
+    stream_response = next(stream)
+    for chunk in stream:
+        stream_response += chunk
+    assert isinstance(stream_response, AIMessage)
+    assert stream_response.usage_metadata is not None
+    assert stream_response.usage_metadata["output_tokens"] <= 6
 
 
 @pytest.mark.scheduled
 def test_chat_bedrock_streaming_llama3() -> None:
-    """Test that streaming correctly invokes on_llm_new_token callback."""
+    """Test that streaming correctly streams message chunks"""
     chat = ChatBedrock(  # type: ignore[call-arg]
         model_id="meta.llama3-8b-instruct-v1:0"
     )
@@ -178,7 +200,7 @@ async def test_bedrock_astream(model_id: str) -> None:
 
 @pytest.mark.scheduled
 async def test_bedrock_abatch(chat: ChatBedrock) -> None:
-    """Test streaming tokens from BedrockChat."""
+    """Test streaming tokens from ChatBedrock."""
     result = await chat.abatch(["I'm Pickle Rick", "I'm not Pickle Rick"])
     for token in result:
         assert isinstance(token.content, str)
@@ -186,7 +208,7 @@ async def test_bedrock_abatch(chat: ChatBedrock) -> None:
 
 @pytest.mark.scheduled
 async def test_bedrock_abatch_tags(chat: ChatBedrock) -> None:
-    """Test batch tokens from BedrockChat."""
+    """Test batch tokens from ChatBedrock."""
     result = await chat.abatch(
         ["I'm Pickle Rick", "I'm not Pickle Rick"], config={"tags": ["foo"]}
     )
@@ -196,7 +218,7 @@ async def test_bedrock_abatch_tags(chat: ChatBedrock) -> None:
 
 @pytest.mark.scheduled
 def test_bedrock_batch(chat: ChatBedrock) -> None:
-    """Test batch tokens from BedrockChat."""
+    """Test batch tokens from ChatBedrock."""
     result = chat.batch(["I'm Pickle Rick", "I'm not Pickle Rick"])
     for token in result:
         assert isinstance(token.content, str)
@@ -204,14 +226,14 @@ def test_bedrock_batch(chat: ChatBedrock) -> None:
 
 @pytest.mark.scheduled
 async def test_bedrock_ainvoke(chat: ChatBedrock) -> None:
-    """Test invoke tokens from BedrockChat."""
+    """Test invoke tokens from ChatBedrock."""
     result = await chat.ainvoke("I'm Pickle Rick", config={"tags": ["foo"]})
     assert isinstance(result.content, str)
 
 
 @pytest.mark.scheduled
 def test_bedrock_invoke(chat: ChatBedrock) -> None:
-    """Test invoke tokens from BedrockChat."""
+    """Test invoke tokens from ChatBedrock."""
     result = chat.invoke("I'm Pickle Rick", config=dict(tags=["foo"]))
     assert isinstance(result.content, str)
     assert "usage" in result.additional_kwargs
@@ -300,34 +322,14 @@ def test_anthropic_bind_tools_tool_choice(tool_choice: str) -> None:
 
 
 @pytest.mark.scheduled
-def test_function_call_invoke_with_system(chat: ChatBedrock) -> None:
-    class GetWeather(BaseModel):
-        location: str = Field(..., description="The city and state")
-
-    llm_with_tools = chat.bind_tools([GetWeather])
-
-    messages = [
-        SystemMessage(content="answer only in french"),
-        HumanMessage(content="what is the weather like in San Francisco"),
-    ]
-
-    response = llm_with_tools.invoke(messages)
-    assert isinstance(response, BaseMessage)
-    assert isinstance(response.content, str)
-
-
-@pytest.mark.scheduled
-@pytest.mark.parametrize("streaming", [True, False])
-def test_chat_bedrock_token_callbacks(streaming: bool) -> None:
+def test_chat_bedrock_token_callbacks() -> None:
     """
     Test that streaming correctly invokes on_llm_end
     and stores token counts and stop reason.
     """
     callback_handler = FakeCallbackHandlerWithTokenCounts()
     chat = ChatBedrock(  # type: ignore[call-arg]
-        model_id="anthropic.claude-v2",
-        streaming=streaming,
-        verbose=True,
+        model_id="anthropic.claude-v2", streaming=False, verbose=True
     )
     message = HumanMessage(content="Hello")
     response = chat.invoke([message], RunnableConfig(callbacks=[callback_handler]))
@@ -352,7 +354,7 @@ def test_function_call_invoke_without_system(chat: ChatBedrock) -> None:
 
 
 @pytest.mark.scheduled
-async def test_function_call_invoke_with_system_astream(chat: ChatBedrock) -> None:
+async def test_function_call_invoke_with_system(chat: ChatBedrock) -> None:
     class GetWeather(BaseModel):
         location: str = Field(..., description="The city and state")
 
@@ -363,8 +365,9 @@ async def test_function_call_invoke_with_system_astream(chat: ChatBedrock) -> No
         HumanMessage(content="what is the weather like in San Francisco"),
     ]
 
-    for chunk in llm_with_tools.stream(messages):
-        assert isinstance(chunk.content, str)
+    response = llm_with_tools.invoke(messages)
+    assert isinstance(response, BaseMessage)
+    assert isinstance(response.content, str)
 
 
 @pytest.mark.scheduled
@@ -376,8 +379,12 @@ async def test_function_call_invoke_without_system_astream(chat: ChatBedrock) ->
 
     messages = [HumanMessage(content="what is the weather like in San Francisco")]
 
-    for chunk in llm_with_tools.stream(messages):
-        assert isinstance(chunk.content, str)
+    astream = llm_with_tools.astream(messages)
+    full = await astream.__anext__()
+    async for chunk in astream:
+        full += chunk  # type: ignore[assignment]
+
+    assert full.tool_calls  # type: ignore[attr-defined]
 
 
 @pytest.mark.skip(reason="Needs guardrails setup to run.")

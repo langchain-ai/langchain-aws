@@ -2,20 +2,22 @@ import importlib
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from langchain_aws.vectorstores.documentdb import (
-        DocumentDBVectorSearch,  # noqa: F401
-    )
-    from langchain_aws.vectorstores.inmemorydb import InMemoryVectorStore
     from langchain_aws.vectorstores.documentdb import MongoDBVectorStore
-
+    from langchain_aws.vectorstores.inmemorydb import (
+        InMemorySemanticCache,
+        InMemoryVectorStore,
+    )
 __all__ = [
+  "MongoDBVectorStore",
     "InMemoryVectorStore",
-    "MongoDBVectorStore",
+    "InMemorySemanticCache",
+
 ]
 
 _module_lookup = {
-    "InMemoryVectorStore": "langchain_aws.vectorstores.inmemorydb",
+
     "MongoDBVectorStore": "langchain_aws.vectorstores.documentdb",
+    "InMemorySemanticCache": "langchain_aws.vectorstores.inmemorydb",
 }
 
 
