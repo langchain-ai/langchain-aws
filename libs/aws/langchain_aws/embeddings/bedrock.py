@@ -132,18 +132,16 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
         # format input body for provider
         input_body: Dict[str, Any] = {}
+
         if self.provider == "cohere":
             input_body["input_type"] = "search_document"
             input_body["texts"] = [text]
+            response_body = self._invoke_model(input_body)
+            return response_body.get("embeddings")[0]
         else:
             # includes common provider == "amazon"
             input_body["inputText"] = text
-
-        response_body = self._invoke_model(input_body)
-
-        if self.provider == "cohere":
-            return response_body.get("embeddings")[0]
-        else:
+            response_body = self._invoke_model(input_body)
             return response_body.get("embedding")
 
     def _cohere_multi_embedding(self, texts: List[str]) -> List[float]:
