@@ -2,15 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 import uuid
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
 
-import boto3
-from botocore.client import Config
 from botocore.exceptions import UnknownServiceError
-from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.callbacks import CallbackManager
 from langchain_core.load import dumpd
 from langchain_core.messages import AIMessage
@@ -18,339 +14,27 @@ from langchain_core.runnables import RunnableConfig, RunnableSerializable, ensur
 from langchain_core.tools import BaseTool
 from pydantic import model_validator
 
+from langchain_aws.agents.types import (
+    BedrockAgentAction,
+    GuardrailConfiguration,
+    InlineAgentConfiguration,
+    OutputType,
+    _TEST_AGENT_ALIAS_ID,
+    _DEFAULT_ACTION_GROUP_NAME,
+)
+
+from langchain_aws.agents.utils import (
+    get_boto_session,
+    _get_bedrock_agent,
+    _prepare_agent,
+    _create_bedrock_agent,
+    _create_bedrock_action_groups,
+    parse_agent_response,
+    _get_action_group_and_function_names,
+    _tool_to_function
+)
+
 logger = logging.getLogger(__name__)
-
-_DEFAULT_ACTION_GROUP_NAME = "DEFAULT_AG_"
-_TEST_AGENT_ALIAS_ID = "TSTALIASID"
-
-
-def get_boto_session(
-    credentials_profile_name: Optional[str] = None,
-    region_name: Optional[str] = None,
-    endpoint_url: Optional[str] = None,
-) -> Any:
-    """
-    Construct the boto3 session
-    """
-    if credentials_profile_name:
-        session = boto3.Session(profile_name=credentials_profile_name)
-    else:
-        # use default credentials
-        session = boto3.Session()
-    client_params = {
-        "config": Config(
-            connect_timeout=120, read_timeout=120, retries={"max_attempts": 0}
-        )
-    }
-    if region_name:
-        client_params["region_name"] = region_name
-    if endpoint_url:
-        client_params["endpoint_url"] = endpoint_url
-    return client_params, session
-
-
-def parse_agent_response(response: Any) -> OutputType:
-    """
-    Parses the raw response from Bedrock Agent
-
-    Args:
-        response: The raw response from Bedrock Agent
-
-    Returns
-        Either a BedrockAgentAction or a BedrockAgentFinish
-    """
-    response_text = ""
-    event_stream = response["completion"]
-    session_id = response["sessionId"]
-    trace_log_elements = []
-    files = []
-    for event in event_stream:
-        if "trace" in event:
-            trace_log_elements.append(event["trace"])
-
-        if "returnControl" in event:
-            response_text = json.dumps(event)
-            break
-
-        if "chunk" in event:
-            response_text = event["chunk"]["bytes"].decode("utf-8")
-
-        if "files" in event:
-            files = event["files"]["files"]
-
-    trace_log = json.dumps(trace_log_elements)
-
-    agent_finish = BedrockAgentFinish(
-        return_values={"output": response_text, "files": files},
-        log=response_text,
-        session_id=session_id,
-        trace_log=trace_log,
-    )
-    if not response_text:
-        return agent_finish
-
-    if "returnControl" not in response_text:
-        return agent_finish
-
-    return_control = json.loads(response_text).get("returnControl")
-    if not return_control:
-        return agent_finish
-
-    invocation_inputs = return_control.get("invocationInputs")
-    if not invocation_inputs:
-        return agent_finish
-
-    try:
-        invocation_input = invocation_inputs[0].get("functionInvocationInput", {})
-        action_group = invocation_input.get("actionGroup", "")
-        function = invocation_input.get("function", "")
-        parameters = invocation_input.get("parameters", [])
-        parameters_json = {}
-        for parameter in parameters:
-            parameters_json[parameter.get("name")] = parameter.get("value", "")
-
-        tool = f"{action_group}::{function}"
-        if _DEFAULT_ACTION_GROUP_NAME in action_group:
-            tool = f"{function}"
-        return [
-            BedrockAgentAction(
-                tool=tool,
-                tool_input=parameters_json,
-                log=response_text,
-                session_id=session_id,
-                trace_log=trace_log,
-            )
-        ]
-    except Exception as ex:
-        raise Exception("Parse exception encountered {}".format(repr(ex)))
-
-
-def _create_bedrock_agent(
-    bedrock_client: Any,
-    agent_name: str,
-    agent_resource_role_arn: str,
-    instruction: str,
-    foundation_model: str,
-    client_token: Optional[str] = None,
-    customer_encryption_key_arn: Optional[str] = None,
-    description: Optional[str] = None,
-    guardrail_configuration: Optional[GuardrailConfiguration] = None,
-    idle_session_ttl_in_seconds: Optional[int] = None,
-) -> Union[str, None]:
-    """
-    Creates the bedrock agent
-    """
-    create_agent_request: dict = {
-        "agentName": agent_name,
-        "agentResourceRoleArn": agent_resource_role_arn,
-        "foundationModel": foundation_model,
-        "instruction": instruction,
-    }
-
-    if description:
-        create_agent_request["description"] = description
-
-    if client_token:
-        create_agent_request["clientToken"] = client_token
-
-    if customer_encryption_key_arn:
-        create_agent_request["customerEncryptionKeyArn"] = customer_encryption_key_arn
-
-    if guardrail_configuration is not None:
-        create_agent_request["guardrailConfiguration"] = {
-            "guardrailIdentifier": guardrail_configuration["guardrail_identifier"],
-            "guardrailVersion": guardrail_configuration["guardrail_version"] or "DRAFT",
-        }
-
-    if idle_session_ttl_in_seconds:
-        create_agent_request["idleSessionTTLInSeconds"] = idle_session_ttl_in_seconds
-
-    create_agent_response = bedrock_client.create_agent(**create_agent_request)
-    request_id = create_agent_response.get("ResponseMetadata", {}).get("RequestId", "")
-    logger.info(f"Create bedrock agent call successful with request id: {request_id}")
-    agent_id = create_agent_response["agent"]["agentId"]
-    create_agent_start_time = time.time()
-    while time.time() - create_agent_start_time < 10:
-        agent_creation_status = (
-            bedrock_client.get_agent(agentId=agent_id)
-            .get("agent", {})
-            .get("agentStatus", {})
-        )
-        if agent_creation_status == "NOT_PREPARED":
-            return agent_id
-        else:
-            time.sleep(2)
-
-    logger.error(f"Failed to create bedrock agent {agent_id}")
-    raise Exception(f"Failed to create bedrock agent {agent_id}")
-
-
-def _get_action_group_and_function_names(tool: BaseTool) -> Tuple[str, str]:
-    """
-    Convert the LangChain 'Tool' into Bedrock Action Group name and Function name
-    """
-    action_group_name = _DEFAULT_ACTION_GROUP_NAME
-    function_name = tool.name
-    tool_name_split = tool.name.split("::")
-    if len(tool_name_split) > 1:
-        action_group_name = tool_name_split[0]
-        function_name = tool_name_split[1]
-    return action_group_name, function_name
-
-
-def _create_bedrock_action_groups(
-    bedrock_client: Any,
-    agent_id: str,
-    tools: List[BaseTool],
-    enable_human_input: Optional[bool] = False,
-    enable_code_interpreter: Optional[bool] = False,
-) -> None:
-    """Create the bedrock action groups for the agent"""
-
-    tools_by_action_group = defaultdict(list)
-    for tool in tools:
-        action_group_name, function_name = _get_action_group_and_function_names(tool)
-        tools_by_action_group[action_group_name].append(tool)
-
-    for action_group_name, functions in tools_by_action_group.items():
-        bedrock_client.create_agent_action_group(
-            actionGroupName=action_group_name,
-            actionGroupState="ENABLED",
-            actionGroupExecutor={"customControl": "RETURN_CONTROL"},
-            functionSchema={
-                "functions": [_tool_to_function(function) for function in functions]
-            },
-            agentId=agent_id,
-            agentVersion="DRAFT",
-        )
-
-    if enable_human_input:
-        bedrock_client.create_agent_action_group(
-            actionGroupName="UserInputAction",
-            parentActionGroupSignature="AMAZON.UserInput",
-            actionGroupState="ENABLED",
-            agentId=agent_id,
-            agentVersion="DRAFT",
-        )
-
-    if enable_code_interpreter:
-        bedrock_client.create_agent_action_group(
-            actionGroupName="CodeInterpreterAction",
-            parentActionGroupSignature="AMAZON.CodeInterpreter",
-            actionGroupState="ENABLED",
-            agentId=agent_id,
-            agentVersion="DRAFT",
-        )
-
-
-def _tool_to_function(tool: BaseTool) -> dict:
-    """
-    Convert LangChain tool to a Bedrock function schema
-    """
-    _, function_name = _get_action_group_and_function_names(tool)
-    function_parameters = {}
-    for arg_name, arg_details in tool.args.items():
-        function_parameters[arg_name] = {
-            "description": arg_details.get(
-                "description", arg_details.get("title", arg_name)
-            ),
-            "type": arg_details.get("type", "string"),
-            "required": not bool(arg_details.get("default", None)),
-        }
-    return {
-        "description": tool.description,
-        "name": function_name,
-        "parameters": function_parameters,
-    }
-
-
-def _prepare_agent(bedrock_client: Any, agent_id: str) -> None:
-    """
-    Prepare the agent for invocations
-    """
-    bedrock_client.prepare_agent(agentId=agent_id)
-    prepare_agent_start_time = time.time()
-    while time.time() - prepare_agent_start_time < 10:
-        agent_status = bedrock_client.get_agent(agentId=agent_id)
-        if agent_status.get("agent", {}).get("agentStatus", "") == "PREPARED":
-            return
-        else:
-            time.sleep(2)
-    raise Exception(f"Timed out while preparing the agent with id {agent_id}")
-
-
-def _get_bedrock_agent(bedrock_client: Any, agent_name: str) -> Any:
-    """
-    Get the agent by name
-    """
-    next_token = None
-    while True:
-        if next_token:
-            list_agents_response = bedrock_client.list_agents(
-                maxResults=1000, nextToken=next_token
-            )
-        else:
-            list_agents_response = bedrock_client.list_agents(maxResults=1000)
-        agent_summaries = list_agents_response.get("agentSummaries", [])
-        next_token = list_agents_response.get("nextToken")
-        agent_summary = next(
-            (x for x in agent_summaries if x.get("agentName") == agent_name), None
-        )
-        if agent_summary:
-            return agent_summary
-        if next_token is None:
-            return None
-
-
-class BedrockAgentFinish(AgentFinish):
-    """AgentFinish with session id information.
-
-    Parameters:
-        session_id: Session id
-        trace_log: trace log as string when enable_trace flag is set
-    """
-
-    session_id: str
-    trace_log: Optional[str]
-
-    @classmethod
-    def is_lc_serializable(cls) -> bool:
-        """Check if the class is serializable by LangChain.
-
-        Returns:
-            False
-        """
-        return False
-
-
-class BedrockAgentAction(AgentAction):
-    """AgentAction with session id information.
-
-    Parameters:
-        session_id: session id
-        trace_log: trace log as string when enable_trace flag is set
-    """
-
-    session_id: str
-    trace_log: Optional[str]
-
-    @classmethod
-    def is_lc_serializable(cls) -> bool:
-        """Check if the class is serializable by LangChain.
-
-        Returns:
-            False
-        """
-        return False
-
-
-OutputType = Union[List[BedrockAgentAction], BedrockAgentFinish]
-
-
-class GuardrailConfiguration(TypedDict):
-    guardrail_identifier: str
-    guardrail_version: str
-
 
 class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
     """
@@ -633,25 +317,6 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
 
         return None, None
 
-class KnowledgebaseConfiguration(TypedDict, total=False):
-    description: str
-    knowledgeBaseId: str
-    retrievalConfiguration: Dict
-
-class InlineAgentConfiguration(TypedDict, total=False):
-    """Configurations for an Inline Agent."""
-    foundation_model: str
-    instruction: str
-    enable_trace: Optional[bool]
-    tools: List[BaseTool]
-    enable_human_input: Optional[bool]
-    enable_code_interpreter: Optional[bool]
-    customer_encryption_key_arn: Optional[str]
-    idle_session_ttl_in_seconds: Optional[int]
-    guardrail_configuration: Optional[GuardrailConfiguration]
-    knowledge_bases: Optional[KnowledgebaseConfiguration]
-    prompt_override_configuration: Optional[Dict]
-    inline_session_state: Optional[Dict]
 
 class BedrockInlineAgentsRunnable(RunnableSerializable[Dict, OutputType]):
     """
@@ -812,9 +477,8 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                 if effective_config.get(input_key):
                     agent_input[param_name] = effective_config[input_key]
 
-            session_id = None
             if input.get("intermediate_steps"):
-                session_id, session_state = self._parse_intermediate_steps(
+                self.session_id, session_state = self._parse_intermediate_steps(
                     input.get("intermediate_steps")
                 )
                 if session_state:
@@ -823,11 +487,11 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                 agent_input["inputText"] = input.get("input_text", "")
 
            # Use existing session_id from input, or from intermediate steps, or generate new one
-            session_id = input.get("session_id") or session_id or str(uuid.uuid4())
+            self.session_id = input.get("session_id") or self.session_id or str(uuid.uuid4())
 
             # Make the InvokeInlineAgent request to bedrock
             output = self.client.invoke_inline_agent(
-                sessionId=session_id, **agent_input
+                sessionId=self.session_id, **agent_input
             )
 
         except Exception as e:
