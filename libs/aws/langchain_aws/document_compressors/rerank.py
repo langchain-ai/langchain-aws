@@ -32,23 +32,21 @@ class BedrockRerank(BaseDocumentCompressor):
         arbitrary_types_allowed=True,
     )
 
-    @model_validator(mode="after")
-    def initialize_client(self) -> Self:
+    @model_validator(mode="before")
+    @classmethod
+    def initialize_client(cls, values: Dict[str, Any]) -> Any:
         """Initialize the AWS Bedrock client."""
-        if not self.client:
-            session = self._get_session()
-            self.client = session.client(
+        if not values.get("client"):
+            session = (
+                boto3.Session(profile_name=values.get("credentials_profile_name"))
+                if values.get("credentials_profile_name", None)
+                else boto3.Session()
+            )
+            values["client"] = session.client(
                 "bedrock-agent-runtime",
-                region_name=self.region_name
-                )
-        return self
-
-    def _get_session(self):
-        return (
-            boto3.Session(profile_name=self.credentials_profile_name)
-            if self.credentials_profile_name
-            else boto3.Session()
-        )
+                region_name=values.get("region_name"),
+            )
+        return values
 
     def rerank(
         self,

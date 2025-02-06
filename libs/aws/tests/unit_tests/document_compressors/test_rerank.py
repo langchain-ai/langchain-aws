@@ -7,7 +7,7 @@ from langchain_aws.document_compressors.rerank import BedrockRerank
 
 
 @pytest.fixture
-def reranker():
+def reranker() -> BedrockRerank:
     reranker = BedrockRerank(
         model_arn="arn:aws:bedrock:us-west-2::foundation-model/amazon.rerank-v1:0",
         region_name="us-east-1",
@@ -16,15 +16,14 @@ def reranker():
     return reranker
 
 @patch("boto3.Session")
-def test_initialize_client(mock_boto_session, reranker):
+def test_initialize_client(mock_boto_session: MagicMock, reranker: BedrockRerank) -> None:
     session_instance = MagicMock()
     mock_boto_session.return_value = session_instance
     session_instance.client.return_value = MagicMock()
-    reranker.initialize_client()
     assert reranker.client is not None
 
 @patch("langchain_aws.document_compressors.rerank.BedrockRerank.rerank")
-def test_rerank(mock_rerank, reranker):
+def test_rerank(mock_rerank: MagicMock, reranker: BedrockRerank) -> None:
     mock_rerank.return_value = [
         {"index": 0, "relevance_score": 0.9},
         {"index": 1, "relevance_score": 0.8},
@@ -41,7 +40,7 @@ def test_rerank(mock_rerank, reranker):
     assert results[1]["relevance_score"] == 0.8
 
 @patch("langchain_aws.document_compressors.rerank.BedrockRerank.rerank")
-def test_compress_documents(mock_rerank, reranker):
+def test_compress_documents(mock_rerank: MagicMock, reranker: BedrockRerank) -> None:
     mock_rerank.return_value = [
         {"index": 0, "relevance_score": 0.95},
         {"index": 1, "relevance_score": 0.85},
