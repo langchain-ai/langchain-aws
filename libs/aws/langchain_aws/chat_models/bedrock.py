@@ -463,6 +463,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 messages, stop=stop, run_manager=run_manager, **kwargs
             )
             return
+        logger.info("Calling stream function of ChatBedrock")
         provider = self._get_provider()
         prompt, system, formatted_messages = None, None, None
 
@@ -491,6 +492,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             if isinstance(chunk, AIMessageChunk):
                 generation_chunk = ChatGenerationChunk(message=chunk)
                 if run_manager:
+                    logger.info("Entering the run manager passed")
                     run_manager.on_llm_new_token(
                         generation_chunk.text, chunk=generation_chunk
                     )
@@ -511,6 +513,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     else AIMessageChunk(content=delta)
                 )
                 if run_manager:
+                    logger.info("Entering the run manager passed")
                     run_manager.on_llm_new_token(
                         generation_chunk.text, chunk=generation_chunk
                     )
@@ -524,9 +527,16 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         **kwargs: Any,
     ) -> ChatResult:
         if self.beta_use_converse_api:
-            return self._as_converse._generate(
-                messages, stop=stop, run_manager=run_manager, **kwargs
-            )
+            if not self.streaming:
+                return self._as_converse._generate(
+                    messages, stop=stop, run_manager=run_manager, **kwargs
+                )
+            else:
+                stream_iter = self._as_converse._stream(
+                    messages, stop=stop, run_manager=run_manager, **kwargs
+                )
+                return generate_from_stream(stream_iter)
+        
         logger.info(f"The input message: {messages}")
         completion = ""
         llm_output: Dict[str, Any] = {}
