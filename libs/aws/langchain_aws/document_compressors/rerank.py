@@ -53,7 +53,7 @@ class BedrockRerank(BaseDocumentCompressor):
         documents: Sequence[Union[str, Document, dict]],
         query: str,
         top_n: Optional[int] = None,
-        extra_model_fields: Optional[Dict[str, Any]] = None,
+        additional_model_request_fields: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Returns an ordered list of documents based on their relevance to the query.
 
@@ -61,7 +61,7 @@ class BedrockRerank(BaseDocumentCompressor):
             query: The query to use for reranking.
             documents: A sequence of documents to rerank.
             top_n: The number of top-ranked results to return. Defaults to self.top_n.
-            extra_model_fields: A dictionary of additional fields to pass to the model.
+            additional_model_request_fields: A dictionary of additional fields to pass to the model.
 
         Returns:
             List[Dict[str, Any]]: A list of ranked documents with relevance scores.
@@ -85,7 +85,7 @@ class BedrockRerank(BaseDocumentCompressor):
                 "bedrockRerankingConfiguration": {
                     "modelConfiguration": {
                         "modelArn": self.model_arn,
-                        "additionalModelRequestFields": extra_model_fields
+                        "additionalModelRequestFields": additional_model_request_fields
                         or {},
                     },
                     "numberOfResults": top_n or self.top_n,
