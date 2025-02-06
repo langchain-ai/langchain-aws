@@ -1303,21 +1303,19 @@ class BedrockLLM(LLM, BedrockBase):
 
     def get_num_tokens(self, text: str) -> int:
         if self._model_is_anthropic and not self.custom_get_token_ids:
-            bad_deps = anthropic_tokens_supported()
-            if not bad_deps:
+            if anthropic_tokens_supported():
                 return get_num_tokens_anthropic(text)
         return super().get_num_tokens(text)
 
     def get_token_ids(self, text: str) -> List[int]:
         if self._model_is_anthropic and not self.custom_get_token_ids:
-            bad_deps = anthropic_tokens_supported()
-            if not bad_deps:
+            if anthropic_tokens_supported():
                 return get_token_ids_anthropic(text)
             else:
                 warnings.warn(
-                    f"Falling back to default token method due to conflicts with the Anthropic API: {bad_deps}"
-                    f"\n\nFor Anthropic SDK versions > 0.38.0, it is recommended to provide the model class with a"
-                    f" custom_get_token_ids method that implements a more accurate tokenizer for Anthropic. "
+                    f"Falling back to default token method due to missing or incompatible `anthropic` installation "
+                    f"(needs <=0.38.0).\n\nFor `anthropic>0.38.0`, it is recommended to provide the model "
+                    f"class with a custom_get_token_ids method implementing a more accurate tokenizer for Anthropic. "
                     f"For get_num_tokens, as another alternative, you can implement your own token counter method "
                     f"using the ChatAnthropic or AnthropicLLM classes."
                 )

@@ -9,33 +9,27 @@ def enforce_stop_tokens(text: str, stop: List[str]) -> str:
     return re.split("|".join(stop), text, maxsplit=1)[0]
 
 
-def anthropic_tokens_supported() -> List[str]:
+def anthropic_tokens_supported() -> bool:
     """Check if we have all requirements for Anthropic count_tokens() and get_tokenizer()."""
-    bad_deps = []
-    bad_anthropic = None
     try:
         import anthropic
-        anthropic_version = version.parse(anthropic.__version__)
-        if anthropic_version > version.parse("0.38.0"):
-            bad_anthropic = anthropic_version
     except ImportError:
-        bad_anthropic = "none installed"
+        return False
 
-    bad_httpx = None
-    try:
-        import httpx
+    anthropic_version = version.parse(anthropic.__version__)
+    if anthropic_version > version.parse("0.38.0"):
+        return False
+    else:
+        httpx_import_msg = "httpx<=0.27.2 is required."
+        try:
+            import httpx
+        except ImportError:
+            raise ImportError(httpx_import_msg)
         httpx_version = version.parse(httpx.__version__)
         if httpx_version > version.parse("0.27.2"):
-            bad_httpx = httpx_version
-    except ImportError:
-        bad_httpx = "none installed"
-
-    if bad_anthropic:
-        bad_deps.append(f"anthropic<=0.38.0 required, found {bad_anthropic}.")
-    if bad_httpx:
-        bad_deps.append(f"httpx<=0.27.2 required, found {bad_httpx}.")
-
-    return bad_deps
+            raise ImportError(httpx_import_msg)
+        else:
+            return True
 
 
 def _get_anthropic_client() -> Any:
