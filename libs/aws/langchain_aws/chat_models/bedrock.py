@@ -1,5 +1,6 @@
 import logging
 import re
+import warnings
 from collections import defaultdict
 from operator import itemgetter
 from typing import (
@@ -51,6 +52,7 @@ from langchain_aws.llms.bedrock import (
     _combine_generation_info_for_llm_result,
 )
 from langchain_aws.utils import (
+    anthropic_tokens_supported,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
@@ -620,16 +622,27 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         return final_output
 
     def get_num_tokens(self, text: str) -> int:
-        if self._model_is_anthropic:
+        if (
+            self._model_is_anthropic
+            and not self.custom_get_token_ids
+            and anthropic_tokens_supported()
+        ):
             return get_num_tokens_anthropic(text)
-        else:
-            return super().get_num_tokens(text)
+        return super().get_num_tokens(text)
 
     def get_token_ids(self, text: str) -> List[int]:
-        if self._model_is_anthropic:
-            return get_token_ids_anthropic(text)
-        else:
-            return super().get_token_ids(text)
+        if self._model_is_anthropic and not self.custom_get_token_ids:
+            if anthropic_tokens_supported():
+                return get_token_ids_anthropic(text)
+            else:
+                warnings.warn(
+                    f"Falling back to default token method due to missing or incompatible `anthropic` installation "
+                    f"(needs <=0.38.0).\n\nIf using `anthropic>0.38.0`, it is recommended to provide the model "
+                    f"class with a custom_get_token_ids method implementing a more accurate tokenizer for Anthropic. "
+                    f"For get_num_tokens, as another alternative, you can implement your own token counter method "
+                    f"using the ChatAnthropic or AnthropicLLM classes."
+                )
+        return super().get_token_ids(text)
 
     def set_system_prompt_with_tools(self, xml_tools_system_prompt: str) -> None:
         """Workaround to bind. Sets the system prompt with tools"""
