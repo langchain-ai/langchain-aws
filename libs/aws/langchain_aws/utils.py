@@ -21,7 +21,8 @@ def anthropic_tokens_supported() -> bool:
 
     try:
         import httpx
-        if version.parse(httpx.__version__)  > version.parse("0.27.2"):
+
+        if version.parse(httpx.__version__) > version.parse("0.27.2"):
             raise ImportError()
     except ImportError:
         raise ImportError("httpx<=0.27.2 is required.")
@@ -31,6 +32,7 @@ def anthropic_tokens_supported() -> bool:
 
 def _get_anthropic_client() -> Any:
     import anthropic
+
     return anthropic.Anthropic()
 
 

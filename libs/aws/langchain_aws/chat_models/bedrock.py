@@ -622,9 +622,12 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         return final_output
 
     def get_num_tokens(self, text: str) -> int:
-        if self._model_is_anthropic and not self.custom_get_token_ids:
-            if anthropic_tokens_supported():
-                return get_num_tokens_anthropic(text)
+        if (
+            self._model_is_anthropic
+            and not self.custom_get_token_ids
+            and anthropic_tokens_supported()
+        ):
+            return get_num_tokens_anthropic(text)
         return super().get_num_tokens(text)
 
     def get_token_ids(self, text: str) -> List[int]:
