@@ -16,20 +16,17 @@ def anthropic_tokens_supported() -> bool:
     except ImportError:
         return False
 
-    anthropic_version = version.parse(anthropic.__version__)
-    if anthropic_version > version.parse("0.38.0"):
+    if version.parse(anthropic.__version__) > version.parse("0.38.0"):
         return False
-    else:
-        httpx_import_msg = "httpx<=0.27.2 is required."
-        try:
-            import httpx
-        except ImportError:
-            raise ImportError(httpx_import_msg)
-        httpx_version = version.parse(httpx.__version__)
-        if httpx_version > version.parse("0.27.2"):
-            raise ImportError(httpx_import_msg)
-        else:
-            return True
+
+    try:
+        import httpx
+        if version.parse(httpx.__version__)  > version.parse("0.27.2"):
+            raise ImportError()
+    except ImportError:
+        raise ImportError("httpx<=0.27.2 is required.")
+
+    return True
 
 
 def _get_anthropic_client() -> Any:
