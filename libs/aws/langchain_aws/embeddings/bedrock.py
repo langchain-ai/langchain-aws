@@ -130,18 +130,19 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         # replace newlines, which can negatively affect performance.
         text = text.replace(os.linesep, " ")
 
-        # format input body for provider
-        input_body: Dict[str, Any] = {}
-
         if self.provider == "cohere":
-            input_body["input_type"] = "search_document"
-            input_body["texts"] = [text]
-            response_body = self._invoke_model(input_body)
+            response_body = self._invoke_model(
+                input_body={
+                    "input_type": "search_document",
+                    "texts": [text],
+                }
+            )
             return response_body.get("embeddings")[0]
         else:
             # includes common provider == "amazon"
-            input_body["inputText"] = text
-            response_body = self._invoke_model(input_body)
+            response_body = self._invoke_model(
+                input_body={"inputText": text},
+            )
             return response_body.get("embedding")
 
     def _cohere_multi_embedding(self, texts: List[str]) -> List[float]:
@@ -149,11 +150,12 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         # replace newlines, which can negatively affect performance.
         texts = [text.replace(os.linesep, " ") for text in texts]
 
-        input_body: Dict[str, Any] = {}
-        input_body["input_type"] = "search_document"
-        input_body["texts"] = texts
-
-        return self._invoke_model(input_body).get("embeddings")
+        return self._invoke_model(
+            input_body={
+                "input_type": "search_document",
+                "texts": texts,
+            }
+        ).get("embeddings")
 
     def _invoke_model(self, input_body: Dict[str, Any] = {}) -> Dict[str, Any]:
         if self.model_kwargs:
