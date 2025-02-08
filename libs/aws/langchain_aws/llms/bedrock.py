@@ -33,6 +33,7 @@ from typing_extensions import Self
 
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
+    anthropic_tokens_supported,
     enforce_stop_tokens,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
@@ -1301,13 +1302,21 @@ class BedrockLLM(LLM, BedrockBase):
         return "".join([chunk.text for chunk in chunks])
 
     def get_num_tokens(self, text: str) -> int:
-        if self._model_is_anthropic:
-            return get_num_tokens_anthropic(text)
-        else:
-            return super().get_num_tokens(text)
+        if self._model_is_anthropic and not self.custom_get_token_ids:
+            if anthropic_tokens_supported():
+                return get_num_tokens_anthropic(text)
+        return super().get_num_tokens(text)
 
     def get_token_ids(self, text: str) -> List[int]:
-        if self._model_is_anthropic:
-            return get_token_ids_anthropic(text)
-        else:
-            return super().get_token_ids(text)
+        if self._model_is_anthropic and not self.custom_get_token_ids:
+            if anthropic_tokens_supported():
+                return get_token_ids_anthropic(text)
+            else:
+                warnings.warn(
+                    f"Falling back to default token method due to missing or incompatible `anthropic` installation "
+                    f"(needs <=0.38.0).\n\nFor `anthropic>0.38.0`, it is recommended to provide the model "
+                    f"class with a custom_get_token_ids method implementing a more accurate tokenizer for Anthropic. "
+                    f"For get_num_tokens, as another alternative, you can implement your own token counter method "
+                    f"using the ChatAnthropic or AnthropicLLM classes."
+                )
+        return super().get_token_ids(text)
