@@ -185,6 +185,48 @@ def convert_messages_to_prompt_mistral(messages: List[BaseMessage]) -> str:
     )
 
 
+def _convert_one_message_to_text_deepseek(message: BaseMessage) -> str:
+    if isinstance(message, ChatMessage):
+        message_text = (
+            f"<|{message.role}|>{message.content}<|EOT|>"
+        )
+    elif isinstance(message, HumanMessage):
+        message_text = (
+            f"<|User|>{message.content}<|EOT|>"
+        )
+    elif isinstance(message, AIMessage):
+        message_text = (
+            f"<|Assistant|>{message.content}<|EOT|>"
+        )
+    elif isinstance(message, SystemMessage):
+        message_text = (
+            f"<|System|>{message.content}<|EOT|>"
+        )
+    else:
+        raise ValueError(f"Got unknown type {message}")
+
+    return message_text
+
+
+def convert_messages_to_prompt_deepseek(messages: List[BaseMessage]) -> str:
+    """Convert a list of messages to a prompt for DeepSeek-R1."""
+    prompt = "\n<｜begin_of_sentence｜>You are a helpful assistant "
+
+    sys_msg_used = False
+    for message in messages:
+        if isinstance(message, SystemMessage):
+            sys_msg_used = True
+        prompt += _convert_one_message_to_text_deepseek(message)
+
+    prompt += "<|Assistant|>\n\n"
+
+    if sys_msg_used:
+        warnings.warn("Avoid using a system prompt with DeepSeek R1; "
+                      "all instructions should be contained within the user prompt.")
+
+    return prompt
+
+
 def _format_image(image_url: str) -> Dict:
     """
     Formats an image of format data:image/jpeg;base64,{b64_string}
@@ -350,6 +392,8 @@ class ChatPromptAdapter:
     ) -> str:
         if provider == "anthropic":
             prompt = convert_messages_to_prompt_anthropic(messages=messages)
+        elif "deepseek-llm-r1" in provider:
+            prompt = convert_messages_to_prompt_deepseek(messages=messages)
         elif provider == "meta":
             if "llama3" in model:
                 prompt = convert_messages_to_prompt_llama3(messages=messages)
