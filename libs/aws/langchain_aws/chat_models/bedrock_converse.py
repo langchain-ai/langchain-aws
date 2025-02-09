@@ -420,19 +420,44 @@ class ChatBedrockConverse(BaseChatModel):
     def set_disable_streaming(cls, values: Dict) -> Any:
         model_id = values.get("model_id", values.get("model"))
         model_parts = model_id.split(".")
-        values["provider"] = values.get("provider") or (
+
+        # As of 2025-02-09: based on the AWS documentation: https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html
+        # Extract provider from the model_id (e.g., "amazon", "anthropic", "ai21", "meta", "mistral")
+        provider = values.get("provider") or (
             model_parts[-2] if len(model_parts) > 1 else model_parts[0]
         )
+        values["provider"] = provider
 
-        # As of 12/03/24:
-        # Anthropic, Cohere and Amazon Nova models support streamed tool calling
+        # Determine if the model supports streaming based on updated documentation:
+        streaming_supported = False
+
+        # Providers that always support streaming
+        if provider in ["anthropic", "cohere", "ai21", "meta", "mistral"]:
+            streaming_supported = True
+
+        # For Amazon, only specific models support streaming:
+        # e.g. amazon.nova-lite, amazon.nova-micro, amazon.nova-pro,
+        # amazon.titan-text-express, amazon.titan-text-lite, amazon.titan-text-premier
+        elif provider == "amazon":
+            amazon_streaming_keywords = [
+                "nova-lite",
+                "nova-micro",
+                "nova-pro",
+                "titan-text-express",
+                "titan-text-lite",
+                "titan-text-premier",
+            ]
+            if any(keyword in model_id for keyword in amazon_streaming_keywords):
+                streaming_supported = True
+
+        # Set the disable_streaming flag accordingly
+        # If streaming is supported, we want it enabled (i.e. disable_streaming == False)
+        # Otherwise, set it to "tool_calling" (which you can handle downstream as a validation error or alternative mode)
         if "disable_streaming" not in values:
             values["disable_streaming"] = (
-                False
-                if values["provider"] in ["anthropic", "cohere"]
-                or (values["provider"] == "amazon" and "nova" in model_id)
-                else "tool_calling"
+                False if streaming_supported else "tool_calling"
             )
+
         return values
 
     @model_validator(mode="after")
