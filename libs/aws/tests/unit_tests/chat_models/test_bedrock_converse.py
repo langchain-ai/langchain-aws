@@ -474,10 +474,15 @@ def test_standard_tracing_params() -> None:
     "model_id, disable_streaming",
     [
         ("us.anthropic.claude-3-7-sonnet-20250219-v1:0", False),
+        # As of 2025-02-09, Anthropic, Cohere, AI21, Meta and Mistral models support streaming:
         ("anthropic.claude-3-5-sonnet-20240620-v1:0", False),
         ("us.anthropic.claude-3-haiku-20240307-v1:0", False),
         ("cohere.command-r-v1:0", False),
-        ("meta.llama3-1-405b-instruct-v1:0", "tool_calling"),
+        ("meta.llama3-1-405b-instruct-v1:0", False),
+        ("us.meta.llama3-3-70b-instruct-v1:0", False),  # Added test case
+        # Amazon models support streaming only when model_id contains specific keywords:
+        ("us.amazon.nova-lite-v1:0", False),
+        ("us.amazon.nonstreaming-model-v1:0", "tool_calling"),
     ],
 )
 def test_set_disable_streaming(
