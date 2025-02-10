@@ -263,12 +263,36 @@ def _format_anthropic_messages(
         if message.type == "system":
             if i != 0:
                 raise ValueError("System message must be at beginning of message list.")
-            if not isinstance(message.content, str):
+            if isinstance(message.content, str):
+                system = message.content
+            elif isinstance(message.content, list):
+                text_chunks: list[str] = []
+                for item in message.content:
+                    if isinstance(item, str):
+                        text_chunks.append(item)
+                    elif isinstance(item, dict):
+                        item_type = item.get("type", None)
+                        if item_type != "text":
+                            raise ValueError(
+                                "System message content item must be type 'text'"
+                            )
+                        if "text" not in item:
+                            raise ValueError(
+                                "System message content item must have a 'text' key"
+                            )
+                        text_chunks.append(item["text"])
+                    else:
+                        raise ValueError(
+                            "System message content list must be a string or dict, "
+                            f"instead was: {type(item)}"
+                        )
+                system = "".join(text_chunks)
+            else:
                 raise ValueError(
-                    "System message must be a string, "
+                    "System message content must be a string or list, "
                     f"instead was: {type(message.content)}"
                 )
-            system = message.content
+
             continue
 
         role = _message_type_lookups[message.type]
@@ -314,8 +338,15 @@ def _format_anthropic_messages(
                         # Only add non-empty strings for now as empty ones are not
                         # accepted.
                         # https://github.com/anthropics/anthropic-sdk-python/issues/461
+
+                        content_item = {"type": "text", "text": text}
+
+                        cache_point = item.get("cache_control", None)
+                        if cache_point:
+                            content_item["cache_control"] = {"type": "ephemeral"}
+
                         if text.strip():
-                            content.append({"type": "text", "text": text})
+                            content.append(content_item)
                     else:
                         content.append(item)
                 else:
