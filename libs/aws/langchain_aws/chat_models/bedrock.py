@@ -184,6 +184,23 @@ def convert_messages_to_prompt_mistral(messages: List[BaseMessage]) -> str:
         [_convert_one_message_to_text_mistral(message) for message in messages]
     )
 
+def _convert_one_message_to_text_deepseek(message: BaseMessage) -> str:
+    return f"You are a helpful assistant <|User|>{message.content}<|Assistant|>"
+
+def convert_messages_to_prompt_deepseek(messages: List[BaseMessage]) -> str:
+    """Convert a list of messages to a prompt for deepseek."""
+    return "\n".join(
+        [_convert_one_message_to_text_deepseek(message) for message in messages]
+    )
+
+def _convert_one_message_to_text_qwen(message: BaseMessage) -> str:
+    return f"<|im_start|>user\n{message}<|im_end|>\n<|im_start|>assistant"
+
+def convert_messages_to_prompt_qwen(messages: List[BaseMessage]) -> str:
+    """Convert a list of messages to a prompt for qwen."""
+    return "\n".join(
+        [_convert_one_message_to_text_qwen(message) for message in messages]
+    )
 
 def _format_image(image_url: str) -> Dict:
     """
@@ -363,6 +380,10 @@ class ChatPromptAdapter:
                 human_prompt="\n\nUser:",
                 ai_prompt="\n\nBot:",
             )
+        elif provider == "deepseek":
+            prompt = convert_messages_to_prompt_deepseek(messages=messages)
+        elif provider == "qwen":
+            prompt = convert_messages_to_prompt_qwen(messages=messages)
         else:
             raise NotImplementedError(
                 f"Provider {provider} model does not support chat."
