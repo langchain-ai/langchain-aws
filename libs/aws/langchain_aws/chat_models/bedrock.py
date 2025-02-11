@@ -188,19 +188,19 @@ def convert_messages_to_prompt_mistral(messages: List[BaseMessage]) -> str:
 def _convert_one_message_to_text_deepseek(message: BaseMessage) -> str:
     if isinstance(message, ChatMessage):
         message_text = (
-            f"<|{message.role}|>{message.content}<|EOT|>"
+            f"<|{message.role}|>{message.content}"
         )
     elif isinstance(message, HumanMessage):
         message_text = (
-            f"<|User|>{message.content}<|EOT|>"
+            f"<|User|>{message.content}"
         )
     elif isinstance(message, AIMessage):
         message_text = (
-            f"<|Assistant|>{message.content}<|EOT|>"
+            f"<|Assistant|>{message.content}"
         )
     elif isinstance(message, SystemMessage):
         message_text = (
-            f"<|System|>{message.content}<|EOT|>"
+            f"<|System|>{message.content}"
         )
     else:
         raise ValueError(f"Got unknown type {message}")
@@ -210,19 +210,12 @@ def _convert_one_message_to_text_deepseek(message: BaseMessage) -> str:
 
 def convert_messages_to_prompt_deepseek(messages: List[BaseMessage]) -> str:
     """Convert a list of messages to a prompt for DeepSeek-R1."""
-    prompt = "\n<｜begin_of_sentence｜>You are a helpful assistant "
+    prompt = "\n<|begin_of_sentence|>"
 
-    sys_msg_used = False
     for message in messages:
-        if isinstance(message, SystemMessage):
-            sys_msg_used = True
         prompt += _convert_one_message_to_text_deepseek(message)
 
     prompt += "<|Assistant|>\n\n"
-
-    if sys_msg_used:
-        warnings.warn("Avoid using a system prompt with DeepSeek R1; "
-                      "all instructions should be contained within the user prompt.")
 
     return prompt
 
