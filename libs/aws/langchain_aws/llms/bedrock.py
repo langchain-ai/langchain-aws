@@ -33,13 +33,16 @@ from typing_extensions import Self
 
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
+    anthropic_tokens_supported,
     enforce_stop_tokens,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
 
+logger = logging.getLogger(__name__)
+
 AMAZON_BEDROCK_TRACE_KEY = "amazon-bedrock-trace"
-GUARDRAILS_BODY_KEY = "amazon-bedrock-guardrailAssessment"
+GUARDRAILS_BODY_KEY = "amazon-bedrock-guardrailAction"
 HUMAN_PROMPT = "\n\nHuman:"
 ASSISTANT_PROMPT = "\n\nAssistant:"
 ALTERNATION_ERROR = (
@@ -824,6 +827,8 @@ class BedrockBase(BaseLanguageModel, ABC):
                 request_options["trace"] = "ENABLED"
 
         try:
+            logger.debug(f"Request body sent to bedrock: {request_options}")
+            logger.info("Using Bedrock Invoke API to generate response")
             response = self.client.invoke_model(**request_options)
 
             (
@@ -833,7 +838,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 usage_info,
                 stop_reason,
             ) = LLMInputOutputAdapter.prepare_output(provider, response).values()
-
+            logger.debug(f"Response received from Bedrock: {response}")
         except Exception as e:
             logging.error(f"Error raised by bedrock service: {e}")
             if run_manager is not None:
@@ -886,7 +891,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         }
 
     def _is_guardrails_intervention(self, body: dict) -> bool:
-        return body.get(GUARDRAILS_BODY_KEY) == "GUARDRAIL_INTERVENED"
+        return body.get(GUARDRAILS_BODY_KEY) == "INTERVENED"
 
     def _prepare_input_and_invoke_stream(
         self,
@@ -1297,13 +1302,21 @@ class BedrockLLM(LLM, BedrockBase):
         return "".join([chunk.text for chunk in chunks])
 
     def get_num_tokens(self, text: str) -> int:
-        if self._model_is_anthropic:
-            return get_num_tokens_anthropic(text)
-        else:
-            return super().get_num_tokens(text)
+        if self._model_is_anthropic and not self.custom_get_token_ids:
+            if anthropic_tokens_supported():
+                return get_num_tokens_anthropic(text)
+        return super().get_num_tokens(text)
 
     def get_token_ids(self, text: str) -> List[int]:
-        if self._model_is_anthropic:
-            return get_token_ids_anthropic(text)
-        else:
-            return super().get_token_ids(text)
+        if self._model_is_anthropic and not self.custom_get_token_ids:
+            if anthropic_tokens_supported():
+                return get_token_ids_anthropic(text)
+            else:
+                warnings.warn(
+                    f"Falling back to default token method due to missing or incompatible `anthropic` installation "
+                    f"(needs <=0.38.0).\n\nFor `anthropic>0.38.0`, it is recommended to provide the model "
+                    f"class with a custom_get_token_ids method implementing a more accurate tokenizer for Anthropic. "
+                    f"For get_num_tokens, as another alternative, you can implement your own token counter method "
+                    f"using the ChatAnthropic or AnthropicLLM classes."
+                )
+        return super().get_token_ids(text)
