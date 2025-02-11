@@ -392,7 +392,7 @@ class ChatPromptAdapter:
     ) -> str:
         if provider == "anthropic":
             prompt = convert_messages_to_prompt_anthropic(messages=messages)
-        elif "deepseek-llm-r1" in provider:
+        elif provider == "deepseek":
             prompt = convert_messages_to_prompt_deepseek(messages=messages)
         elif provider == "meta":
             if "llama3" in model:
