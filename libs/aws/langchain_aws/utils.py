@@ -1,21 +1,38 @@
 import re
 from typing import Any, List
 
+from packaging import version
+
 
 def enforce_stop_tokens(text: str, stop: List[str]) -> str:
     """Cut off the text as soon as any stop words occur."""
     return re.split("|".join(stop), text, maxsplit=1)[0]
 
 
-def _get_anthropic_client() -> Any:
+def anthropic_tokens_supported() -> bool:
+    """Check if we have all requirements for Anthropic count_tokens() and get_tokenizer()."""
     try:
         import anthropic
     except ImportError:
-        raise ImportError(
-            "Could not import anthropic python package. "
-            "This is needed in order to accurately tokenize the text "
-            "for anthropic models. Please install it with `pip install anthropic`."
-        )
+        return False
+
+    if version.parse(anthropic.__version__) > version.parse("0.38.0"):
+        return False
+
+    try:
+        import httpx
+
+        if version.parse(httpx.__version__) > version.parse("0.27.2"):
+            raise ImportError()
+    except ImportError:
+        raise ImportError("httpx<=0.27.2 is required.")
+
+    return True
+
+
+def _get_anthropic_client() -> Any:
+    import anthropic
+
     return anthropic.Anthropic()
 
 
