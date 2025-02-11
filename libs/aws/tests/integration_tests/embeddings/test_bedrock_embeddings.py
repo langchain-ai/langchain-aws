@@ -18,6 +18,13 @@ def bedrock_embeddings_v2() -> BedrockEmbeddings:
     )
 
 
+@pytest.fixture
+def cohere_embeddings_v3() -> BedrockEmbeddings:
+    return BedrockEmbeddings(
+        model_id="cohere.embed-english-v3",
+    )
+
+
 @pytest.mark.scheduled
 def test_bedrock_embedding_documents(bedrock_embeddings) -> None:
     documents = ["foo bar"]
@@ -101,3 +108,21 @@ def test_embed_query_with_size(bedrock_embeddings_v2) -> None:
     output = bedrock_embeddings_v2.embed_query(prompt_data)
     assert len(response[0]) == 256
     assert len(output) == 256
+
+
+@pytest.mark.scheduled
+def test_bedrock_cohere_embedding_documents(cohere_embeddings_v3) -> None:
+    documents = ["foo bar"]
+    output = cohere_embeddings_v3.embed_documents(documents)
+    assert len(output) == 1
+    assert len(output[0]) == 1024
+
+
+@pytest.mark.scheduled
+def test_bedrock_cohere_embedding_documents_multiple(cohere_embeddings_v3) -> None:
+    documents = ["foo bar", "bar foo", "foo"]
+    output = cohere_embeddings_v3.embed_documents(documents)
+    assert len(output) == 3
+    assert len(output[0]) == 1024
+    assert len(output[1]) == 1024
+    assert len(output[2]) == 1024
