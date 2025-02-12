@@ -875,7 +875,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         return ChatBedrockConverse(
             client=self.client,
             model=self.model_id,
-            region_name=self.region_name or os.getenv("AWS_REGION"),
+            region_name=self.region_name,
             credentials_profile_name=self.credentials_profile_name,
             aws_access_key_id=self.aws_access_key_id,
             aws_secret_access_key=self.aws_secret_access_key,
