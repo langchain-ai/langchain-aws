@@ -827,6 +827,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 request_options["trace"] = "ENABLED"
 
         try:
+            logger.debug(f"Request body sent to bedrock: {request_options}")
             logger.info("Using Bedrock Invoke API to generate response")
             response = self.client.invoke_model(**request_options)
 
@@ -837,6 +838,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 usage_info,
                 stop_reason,
             ) = LLMInputOutputAdapter.prepare_output(provider, response).values()
+            logger.debug(f"Response received from Bedrock: {response}")
         except Exception as e:
             logging.error(f"Error raised by bedrock service: {e}")
             if run_manager is not None:
