@@ -465,7 +465,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 messages, stop=stop, run_manager=run_manager, **kwargs
             )
             return
-        logger.info("Calling stream function of ChatBedrock")
         provider = self._get_provider()
         prompt, system, formatted_messages = None, None, None
 
