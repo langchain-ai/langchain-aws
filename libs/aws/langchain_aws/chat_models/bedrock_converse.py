@@ -511,7 +511,6 @@ class ChatBedrockConverse(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         """Top Level call"""
-        logger.info(f"The input message: {messages}")
         bedrock_messages, system = _messages_to_bedrock(messages)
         logger.debug(f"input message to bedrock: {bedrock_messages}")
         logger.debug(f"System message to bedrock: {system}")
@@ -1030,6 +1029,9 @@ def _format_tools(
             spec = convert_to_openai_tool(tool)["function"]
             spec["inputSchema"] = {"json": spec.pop("parameters")}
             formatted_tools.append({"toolSpec": spec})
+        
+        tool_spec = formatted_tools[-1]["toolSpec"]
+        tool_spec["description"] = tool_spec.get("description") or tool_spec["name"]
     return formatted_tools
 
 
