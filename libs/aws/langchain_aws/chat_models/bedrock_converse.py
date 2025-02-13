@@ -542,7 +542,12 @@ class ChatBedrockConverse(BaseChatModel):
         )
         for event in response["stream"]:
             if message_chunk := _parse_stream_event(event):
-                yield ChatGenerationChunk(message=message_chunk)
+                generation_chunk = ChatGenerationChunk(message=message_chunk)
+                if run_manager:
+                    run_manager.on_llm_new_token(
+                        generation_chunk.text, chunk=generation_chunk
+                    )
+                yield generation_chunk
 
     # TODO: Add async support once there are async bedrock.converse methods.
 
