@@ -535,8 +535,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     messages, stop=stop, run_manager=run_manager, **kwargs
                 )
                 return generate_from_stream(stream_iter)
-        
-        logger.info(f"The input message: {messages}")
         completion = ""
         llm_output: Dict[str, Any] = {}
         tool_calls: List[ToolCall] = []
