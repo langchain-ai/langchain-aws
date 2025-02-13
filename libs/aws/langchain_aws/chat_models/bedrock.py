@@ -493,7 +493,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             if isinstance(chunk, AIMessageChunk):
                 generation_chunk = ChatGenerationChunk(message=chunk)
                 if run_manager:
-                    logger.info("Entering the run manager passed")
                     run_manager.on_llm_new_token(
                         generation_chunk.text, chunk=generation_chunk
                     )
@@ -514,7 +513,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     else AIMessageChunk(content=delta)
                 )
                 if run_manager:
-                    logger.info("Entering the run manager passed")
                     run_manager.on_llm_new_token(
                         generation_chunk.text, chunk=generation_chunk
                     )
