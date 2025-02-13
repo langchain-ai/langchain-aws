@@ -225,15 +225,19 @@ def _get_invocation_metrics_chunk(chunk: Dict[str, Any]) -> GenerationChunk:
     return GenerationChunk(text="", generation_info=generation_info)
 
 
-def extract_tool_calls(content: List[dict]) -> List[ToolCall]:
+def extract_tool_calls_and_text(content: List[dict]) -> Tuple[List[ToolCall], str]:
+    text = ""
     tool_calls = []
     for block in content:
+        if block["type"] == "text":
+            text = block["text"]
+            continue
         if block["type"] != "tool_use":
             continue
         tool_calls.append(
             tool_call(name=block["name"], args=block["input"], id=block["id"])
         )
-    return tool_calls
+    return tool_calls, text
 
 
 class AnthropicTool(TypedDict):
@@ -327,7 +331,6 @@ class LLMInputOutputAdapter:
         text = ""
         tool_calls = []
         response_body = json.loads(response.get("body").read().decode())
-
         if provider == "anthropic":
             if "completion" in response_body:
                 text = response_body.get("completion")
@@ -336,7 +339,7 @@ class LLMInputOutputAdapter:
                 if len(content) == 1 and content[0]["type"] == "text":
                     text = content[0]["text"]
                 elif any(block["type"] == "tool_use" for block in content):
-                    tool_calls = extract_tool_calls(content)
+                    tool_calls, text = extract_tool_calls_and_text(content)
 
         else:
             if provider == "ai21":
