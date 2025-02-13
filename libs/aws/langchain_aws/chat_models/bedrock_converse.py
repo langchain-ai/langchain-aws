@@ -511,7 +511,6 @@ class ChatBedrockConverse(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         """Top Level call"""
-        logger.info(f"The input message: {messages}")
         bedrock_messages, system = _messages_to_bedrock(messages)
         logger.debug(f"input message to bedrock: {bedrock_messages}")
         logger.debug(f"System message to bedrock: {system}")
