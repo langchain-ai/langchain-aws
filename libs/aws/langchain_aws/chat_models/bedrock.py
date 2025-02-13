@@ -529,7 +529,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             return self._as_converse._generate(
                 messages, stop=stop, run_manager=run_manager, **kwargs
             )
-        logger.info(f"The input message: {messages}")
+
         completion = ""
         llm_output: Dict[str, Any] = {}
         tool_calls: List[ToolCall] = []
