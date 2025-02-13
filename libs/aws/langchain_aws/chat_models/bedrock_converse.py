@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import os
 import re
 from operator import itemgetter
@@ -10,6 +11,7 @@ from typing import (
     Iterator,
     List,
     Literal,
+    Mapping,
     Optional,
     Sequence,
     Tuple,
@@ -53,7 +55,9 @@ from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
 
+logger = logging.getLogger(__name__)
 _BM = TypeVar("_BM", bound=BaseModel)
+
 _DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
 
 
@@ -393,6 +397,19 @@ class ChatBedrockConverse(BaseChatModel):
     ('auto') if a 'nova' model is used, empty otherwise.
     """
 
+    performance_config: Optional[Mapping[str, Any]] = Field(
+        default=None,
+        description="""Performance configuration settings for latency optimization.
+        
+        Example:
+            performance_config={'latency': 'optimized'}
+        If not provided, defaults to standard latency.
+        """,
+    )
+
+    request_metadata: Optional[Dict[str, str]] = None
+    """Key-Value pairs that you can use to filter invocation logs."""
+
     model_config = ConfigDict(
         extra="forbid",
         populate_by_name=True,
@@ -495,12 +512,17 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> ChatResult:
         """Top Level call"""
         bedrock_messages, system = _messages_to_bedrock(messages)
+        logger.debug(f"input message to bedrock: {bedrock_messages}")
+        logger.debug(f"System message to bedrock: {system}")
         params = self._converse_params(
             stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
         )
+        logger.debug(f"Input params: {params}")
+        logger.info("Using Bedrock Converse API to generate response")
         response = self.client.converse(
             messages=bedrock_messages, system=system, **params
         )
+        logger.debug(f"Response from Bedrock: {response}")
         response_message = _parse_response(response)
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
@@ -520,7 +542,12 @@ class ChatBedrockConverse(BaseChatModel):
         )
         for event in response["stream"]:
             if message_chunk := _parse_stream_event(event):
-                yield ChatGenerationChunk(message=message_chunk)
+                generation_chunk = ChatGenerationChunk(message=message_chunk)
+                if run_manager:
+                    run_manager.on_llm_new_token(
+                        generation_chunk.text, chunk=generation_chunk
+                    )
+                yield generation_chunk
 
     # TODO: Add async support once there are async bedrock.converse methods.
 
@@ -623,6 +650,8 @@ class ChatBedrockConverse(BaseChatModel):
         additionalModelRequestFields: Optional[dict] = None,
         additionalModelResponseFieldPaths: Optional[List[str]] = None,
         guardrailConfig: Optional[dict] = None,
+        performanceConfig: Optional[Mapping[str, Any]] = None,
+        requestMetadata: Optional[dict] = None,
     ) -> Dict[str, Any]:
         if not inferenceConfig:
             inferenceConfig = {
@@ -645,6 +674,8 @@ class ChatBedrockConverse(BaseChatModel):
                 "additionalModelResponseFieldPaths": additionalModelResponseFieldPaths
                 or self.additional_model_response_field_paths,
                 "guardrailConfig": guardrailConfig or self.guardrail_config,
+                "performanceConfig": performanceConfig or self.performance_config,
+                "requestMetadata": requestMetadata or self.request_metadata,
             }
         )
 
@@ -1003,6 +1034,9 @@ def _format_tools(
             spec = convert_to_openai_tool(tool)["function"]
             spec["inputSchema"] = {"json": spec.pop("parameters")}
             formatted_tools.append({"toolSpec": spec})
+        
+        tool_spec = formatted_tools[-1]["toolSpec"]
+        tool_spec["description"] = tool_spec.get("description") or tool_spec["name"]
     return formatted_tools
 
 

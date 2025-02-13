@@ -1,4 +1,6 @@
+import logging
 import re
+import warnings
 from collections import defaultdict
 from operator import itemgetter
 from typing import (
@@ -50,9 +52,12 @@ from langchain_aws.llms.bedrock import (
     _combine_generation_info_for_llm_result,
 )
 from langchain_aws.utils import (
+    anthropic_tokens_supported,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _convert_one_message_to_text_llama(message: BaseMessage) -> str:
@@ -521,9 +526,15 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         **kwargs: Any,
     ) -> ChatResult:
         if self.beta_use_converse_api:
-            return self._as_converse._generate(
-                messages, stop=stop, run_manager=run_manager, **kwargs
-            )
+            if not self.streaming:
+                return self._as_converse._generate(
+                    messages, stop=stop, run_manager=run_manager, **kwargs
+                )
+            else:
+                stream_iter = self._as_converse._stream(
+                    messages, stop=stop, run_manager=run_manager, **kwargs
+                )
+                return generate_from_stream(stream_iter)
         completion = ""
         llm_output: Dict[str, Any] = {}
         tool_calls: List[ToolCall] = []
@@ -586,16 +597,14 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
         else:
             usage_metadata = None
-
+        logger.info(f"The message received from Bedrock: {completion}")
         llm_output["model_id"] = self.model_id
-
         msg = AIMessage(
             content=completion,
             additional_kwargs=llm_output,
             tool_calls=cast(List[ToolCall], tool_calls),
             usage_metadata=usage_metadata,
         )
-
         return ChatResult(
             generations=[
                 ChatGeneration(
@@ -618,16 +627,27 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         return final_output
 
     def get_num_tokens(self, text: str) -> int:
-        if self._model_is_anthropic:
+        if (
+            self._model_is_anthropic
+            and not self.custom_get_token_ids
+            and anthropic_tokens_supported()
+        ):
             return get_num_tokens_anthropic(text)
-        else:
-            return super().get_num_tokens(text)
+        return super().get_num_tokens(text)
 
     def get_token_ids(self, text: str) -> List[int]:
-        if self._model_is_anthropic:
-            return get_token_ids_anthropic(text)
-        else:
-            return super().get_token_ids(text)
+        if self._model_is_anthropic and not self.custom_get_token_ids:
+            if anthropic_tokens_supported():
+                return get_token_ids_anthropic(text)
+            else:
+                warnings.warn(
+                    f"Falling back to default token method due to missing or incompatible `anthropic` installation "
+                    f"(needs <=0.38.0).\n\nIf using `anthropic>0.38.0`, it is recommended to provide the model "
+                    f"class with a custom_get_token_ids method implementing a more accurate tokenizer for Anthropic. "
+                    f"For get_num_tokens, as another alternative, you can implement your own token counter method "
+                    f"using the ChatAnthropic or AnthropicLLM classes."
+                )
+        return super().get_token_ids(text)
 
     def set_system_prompt_with_tools(self, xml_tools_system_prompt: str) -> None:
         """Workaround to bind. Sets the system prompt with tools"""
@@ -805,7 +825,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 schema, include_raw=include_raw, **kwargs
             )
         if "claude-3" not in self._get_model():
-            ValueError(
+            raise ValueError(
                 f"Structured output is not supported for model {self._get_model()}"
             )
 
@@ -844,6 +864,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 "top_p",
                 "additional_model_request_fields",
                 "additional_model_response_field_paths",
+                "performance_config",
+                "request_metadata",
             )
         }
         if self.max_tokens:
