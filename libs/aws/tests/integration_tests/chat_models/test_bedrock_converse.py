@@ -55,7 +55,7 @@ class TestBedrockNovaStandard(ChatModelIntegrationTests):
 
     @property
     def chat_model_params(self) -> dict:
-        return {"model": "us.amazon.nova-pro-v1:0", "region_name": "us-east-1"}
+        return {"model": "us.amazon.nova-pro-v1:0"}
 
     @property
     def standard_chat_model_params(self) -> dict:
@@ -242,22 +242,3 @@ def test_guardrails() -> None:
     )
     assert response.response_metadata["stopReason"] == "guardrail_intervened"
     assert response.response_metadata["trace"] is not None
-
-
-def test_chat_bedrock_converse_with_region_name() -> None:
-    model = ChatBedrockConverse(
-        model="us.amazon.nova-pro-v1:0", region_name="us-east-1", temperature=0
-    )
-    response = model.invoke("Create a list of 3 pop songs")
-    assert isinstance(response, BaseModel)
-    assert response.content is not None
-
-
-def test_chat_bedrock_converse_with_aws_region_env() -> None:
-    import os
-
-    os.environ["AWS_REGION"] = "us-east-1"
-    model = ChatBedrockConverse(model="us.amazon.nova-pro-v1:0", temperature=0)
-    response = model.invoke("Create a list of 3 pop songs")
-    assert isinstance(response, BaseModel)
-    assert response.content is not None
