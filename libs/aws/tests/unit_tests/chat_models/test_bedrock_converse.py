@@ -36,6 +36,7 @@ class TestBedrockStandard(ChatModelUnitTests):
     @property
     def chat_model_params(self) -> dict:
         return {
+            "client": None,
             "model": "anthropic.claude-3-sonnet-20240229-v1:0",
             "region_name": "us-west-1",
         }
@@ -57,7 +58,7 @@ class TestBedrockStandard(ChatModelUnitTests):
                 "AWS_ACCESS_KEY_ID": "key_id",
                 "AWS_SECRET_ACCESS_KEY": "secret_key",
                 "AWS_SESSION_TOKEN": "token",
-                "AWS_DEFAULT_REGION": "region",
+                "AWS_REGION": "region",
             },
             {
                 "model": "anthropic.claude-3-sonnet-20240229-v1:0",
@@ -66,7 +67,6 @@ class TestBedrockStandard(ChatModelUnitTests):
                 "aws_access_key_id": "key_id",
                 "aws_secret_access_key": "secret_key",
                 "aws_session_token": "token",
-                "region_name": "region",
             },
         )
 

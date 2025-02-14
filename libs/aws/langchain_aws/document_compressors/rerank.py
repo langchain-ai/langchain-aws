@@ -6,7 +6,6 @@ from langchain_core.callbacks.manager import Callbacks
 from langchain_core.documents import BaseDocumentCompressor, Document
 from langchain_core.utils import from_env
 from pydantic import ConfigDict, Field, model_validator
-from typing_extensions import Self
 
 
 class BedrockRerank(BaseDocumentCompressor):

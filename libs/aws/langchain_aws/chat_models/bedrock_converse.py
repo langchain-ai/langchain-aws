@@ -1,7 +1,6 @@
 import base64
 import json
 import logging
-import os
 import re
 from operator import itemgetter
 from typing import (
@@ -21,7 +20,6 @@ from typing import (
     cast,
 )
 
-import boto3
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.language_models.chat_models import LangSmithParams
@@ -54,6 +52,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
+from langchain_aws.utils import get_aws_client
 
 logger = logging.getLogger(__name__)
 _BM = TypeVar("_BM", bound=BaseModel)
@@ -303,7 +302,7 @@ class ChatBedrockConverse(BaseChatModel):
     region_name: Optional[str] = None
     """The aws region, e.g., `us-west-2`. 
     
-    Falls back to AWS_DEFAULT_REGION env variable or region specified in ~/.aws/config 
+    Falls back to AWS_REGION/AWS_DEFAULT_REGION env variable or region specified in ~/.aws/config 
     in case it is not provided here.
     """
 
@@ -454,52 +453,16 @@ class ChatBedrockConverse(BaseChatModel):
 
         # Skip creating new client if passed in constructor
         if self.client is None:
-            creds = {
-                "aws_access_key_id": self.aws_access_key_id,
-                "aws_secret_access_key": self.aws_secret_access_key,
-                "aws_session_token": self.aws_session_token,
-            }
-            if creds["aws_access_key_id"] and creds["aws_secret_access_key"]:
-                session_params = {
-                    k: v.get_secret_value() for k, v in creds.items() if v
-                }
-            elif any(creds.values()):
-                raise ValueError(
-                    f"If any of aws_access_key_id, aws_secret_access_key, or "
-                    f"aws_session_token are specified then both aws_access_key_id and "
-                    f"aws_secret_access_key must be specified. Only received "
-                    f"{(k for k, v in creds.items() if v)}."
-                )
-            elif self.credentials_profile_name is not None:
-                session_params = {"profile_name": self.credentials_profile_name}
-            else:
-                # use default credentials
-                session_params = {}
-
-            try:
-                session = boto3.Session(**session_params)
-
-                self.region_name = (
-                    self.region_name
-                    or os.getenv("AWS_DEFAULT_REGION")
-                    or session.region_name
-                )
-
-                client_params = {
-                    "endpoint_url": self.endpoint_url,
-                    "config": self.config,
-                    "region_name": self.region_name,
-                }
-                client_params = {k: v for k, v in client_params.items() if v}
-                self.client = session.client("bedrock-runtime", **client_params)
-            except ValueError as e:
-                raise ValueError(f"Error raised by bedrock service:\n\n{e}") from e
-            except Exception as e:
-                raise ValueError(
-                    "Could not load credentials to authenticate with AWS client. "
-                    "Please check that credentials in the specified "
-                    f"profile name are valid. Bedrock error:\n\n{e}"
-                ) from e
+            self.client = get_aws_client(
+                region_name=self.region_name,
+                credentials_profile_name=self.credentials_profile_name,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                aws_session_token=self.aws_session_token,
+                endpoint_url=self.endpoint_url,
+                config=self.config,
+                service_name="bedrock-runtime",
+            )
 
         return self
 
@@ -511,7 +474,6 @@ class ChatBedrockConverse(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         """Top Level call"""
-        logger.info(f"The input message: {messages}")
         bedrock_messages, system = _messages_to_bedrock(messages)
         logger.debug(f"input message to bedrock: {bedrock_messages}")
         logger.debug(f"System message to bedrock: {system}")
@@ -543,7 +505,12 @@ class ChatBedrockConverse(BaseChatModel):
         )
         for event in response["stream"]:
             if message_chunk := _parse_stream_event(event):
-                yield ChatGenerationChunk(message=message_chunk)
+                generation_chunk = ChatGenerationChunk(message=message_chunk)
+                if run_manager:
+                    run_manager.on_llm_new_token(
+                        generation_chunk.text, chunk=generation_chunk
+                    )
+                yield generation_chunk
 
     # TODO: Add async support once there are async bedrock.converse methods.
 
