@@ -11,6 +11,7 @@ license = "MIT"
 "Source Code" = "https://github.com/langchain-ai/langchain-aws/tree/main/libs/aws"
 
 [tool.poetry.dependencies]
+
 python = ">=3.9,<4.0"
 langchain-core = "^0.3.27"
 boto3 = ">=1.35.74"
@@ -19,6 +20,8 @@ numpy = [
   { version = "^1", python = "<3.12" },
   { version = ">=1.26.0,<3", python = ">=3.12" },
 ]
+pymongo = "^4.6.3"
+motor = "^3.3.1"
 
 [tool.poetry.group.test]
 optional = true
@@ -31,6 +34,7 @@ pytest-asyncio = "^0.23.2"
 pytest-watcher = "^0.3.4"
 langchain-tests = "0.3.1"
 langchain = "^0.3.7"
+langchain-openai = "^0.3"
 
 [tool.poetry.group.codespell]
 optional = true
@@ -78,8 +82,8 @@ select = [
 ]
 
 [tool.mypy]
-ignore_missing_imports = "True"
-disallow_untyped_defs = "True"
+ignore_missing_imports = true
+disallow_untyped_defs = true
 exclude = ["notebooks", "samples"]
 
 [tool.coverage.run]

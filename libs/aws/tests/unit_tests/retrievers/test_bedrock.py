@@ -335,7 +335,7 @@ def test_retriever_no_retrieval_config_invoke_with_score(
             ],
             [
                 Document(
-                    page_content='[{"columnName": "someName1", "columnValue": "someValue1"}, '
+                    page_content='[{"columnName": "someName1", "columnValue": "someValue1"}, '  # noqa: E501
                     '{"columnName": "someName2", "columnValue": "someValue2"}]',
                     metadata={
                         "score": 1,
@@ -345,7 +345,7 @@ def test_retriever_no_retrieval_config_invoke_with_score(
                     },
                 ),
                 Document(
-                    page_content='[{"columnName": "someName1", "columnValue": "someValue1"}, '
+                    page_content='[{"columnName": "someName1", "columnValue": "someValue1"}, '  # noqa: E501
                     '{"columnName": "someName2", "columnValue": "someValue2"}]',
                     metadata={
                         "score": 0.5,

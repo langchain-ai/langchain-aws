@@ -11,6 +11,7 @@ from langchain_aws.retrievers import (
     AmazonKendraRetriever,
     AmazonKnowledgeBasesRetriever,
 )
+from langchain_aws.vectorstores.documentdb import DocumentDBVectorSearch
 from langchain_aws.vectorstores.inmemorydb import (
     InMemorySemanticCache,
     InMemoryVectorStore,
@@ -39,6 +40,7 @@ __all__ = [
     "BedrockEmbeddings",
     "BedrockLLM",
     "ChatBedrock",
+    "DocumentDBVectorSearch",
     "ChatBedrockConverse",
     "SagemakerEndpoint",
     "AmazonKendraRetriever",
