@@ -2,6 +2,7 @@
 
 """Test chat model integration."""
 
+import os
 from contextlib import nullcontext
 from typing import Any, Callable, Dict, Literal, Type, cast
 
@@ -493,3 +494,37 @@ def test__get_provider(model_id, provider, expected_provider, expectation) -> No
     llm = ChatBedrock(model_id=model_id, provider=provider, region_name="us-west-2")
     with expectation:
         assert llm._get_provider() == expected_provider
+
+
+def test_chat_bedrock_different_regions() -> None:
+    regions = ["us-east-1", "us-west-2", "ap-south-2"]
+    for region in regions:
+        llm = ChatBedrock(model_id="anthropic.claude-3-sonnet-20240229-v1:0", region_name=region)
+        assert llm.region_name == region
+
+
+def test_chat_bedrock_environment_variable() -> None:
+    regions = ["us-east-1", "us-west-2", "ap-south-2"]
+    for region in regions:
+        os.environ["AWS_REGION"] = region
+        llm = ChatBedrock(model_id="anthropic.claude-3-sonnet-20240229-v1:0")
+        assert llm.region_name == region
+
+
+def test_chat_bedrock_scenarios() -> None:
+    scenarios = [
+        {"model_id": "anthropic.claude-3-sonnet-20240229-v1:0", "temperature": 0.5},
+        {"model_id": "anthropic.claude-3-sonnet-20240229-v1:0", "max_tokens": 50},
+        {
+            "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
+            "temperature": 0.5,
+            "max_tokens": 50,
+        },
+    ]
+    for scenario in scenarios:
+        llm = ChatBedrock(region_name="us-west-2", **scenario)
+        assert llm.model_id == scenario["model_id"]
+        if "temperature" in scenario:
+            assert llm.temperature == scenario["temperature"]
+        if "max_tokens" in scenario:
+            assert llm.max_tokens == scenario["max_tokens"]

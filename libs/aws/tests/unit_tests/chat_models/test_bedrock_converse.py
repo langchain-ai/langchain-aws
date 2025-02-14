@@ -1,6 +1,7 @@
 """Test chat model integration."""
 
 import base64
+import os
 from typing import Dict, List, Tuple, Type, Union, cast
 
 import pytest
@@ -503,3 +504,39 @@ def test__extract_response_metadata() -> None:
     }
     response_metadata = _extract_response_metadata(response)
     assert response_metadata["metrics"]["latencyMs"] == [191]
+
+
+def test_chat_bedrock_converse_different_regions() -> None:
+    regions = ["us-east-1", "us-west-2", "ap-south-2"]
+    for region in regions:
+        llm = ChatBedrockConverse(
+            model="anthropic.claude-3-sonnet-20240229-v1:0", region_name=region
+        )
+        assert llm.region_name == region
+
+
+def test_chat_bedrock_converse_environment_variable() -> None:
+    regions = ["us-east-1", "us-west-2", "ap-south-2"]
+    for region in regions:
+        os.environ["AWS_REGION"] = region
+        llm = ChatBedrockConverse(model="anthropic.claude-3-sonnet-20240229-v1:0")
+        assert llm.region_name == region
+
+
+def test_chat_bedrock_converse_scenarios() -> None:
+    scenarios = [
+        {"model": "anthropic.claude-3-sonnet-20240229-v1:0", "temperature": 0.5},
+        {"model": "anthropic.claude-3-sonnet-20240229-v1:0", "max_tokens": 50},
+        {
+            "model": "anthropic.claude-3-sonnet-20240229-v1:0",
+            "temperature": 0.5,
+            "max_tokens": 50,
+        },
+    ]
+    for scenario in scenarios:
+        llm = ChatBedrockConverse(region_name="us-west-2", **scenario)
+        assert llm.model_id == scenario["model"]
+        if "temperature" in scenario:
+            assert llm.temperature == scenario["temperature"]
+        if "max_tokens" in scenario:
+            assert llm.max_tokens == scenario["max_tokens"]
