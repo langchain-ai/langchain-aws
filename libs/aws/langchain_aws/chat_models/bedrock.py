@@ -873,6 +873,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         if self.temperature is not None:
             kwargs["temperature"] = self.temperature
         return ChatBedrockConverse(
+            client=self.client,
             model=self.model_id,
             region_name=self.region_name,
             credentials_profile_name=self.credentials_profile_name,
