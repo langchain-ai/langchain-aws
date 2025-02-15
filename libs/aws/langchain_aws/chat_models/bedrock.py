@@ -873,6 +873,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             kwargs["max_tokens"] = self.max_tokens
         if self.temperature is not None:
             kwargs["temperature"] = self.temperature
+        if self.stop_sequences:
+            kwargs["stop_sequences"] = self.stop_sequences
+
         return ChatBedrockConverse(
             model=self.model_id,
             region_name=self.region_name,
