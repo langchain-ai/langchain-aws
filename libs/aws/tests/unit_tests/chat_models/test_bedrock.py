@@ -339,6 +339,23 @@ def openai_function() -> Dict:
         },
     }
 
+@pytest.fixture()
+def tool_with_empty_description() -> Dict:
+    return {
+        "name": "dummy_function",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "arg1": {"description": "foo", "type": "integer"},
+                "arg2": {
+                    "description": "one of 'bar', 'baz'",
+                    "enum": ["bar", "baz"],
+                    "type": "string",
+                },
+            },
+            "required": ["arg1", "arg2"],
+        },
+    }
 
 def test_convert_to_anthropic_tool(
     pydantic: Type[BaseModel],
@@ -346,6 +363,7 @@ def test_convert_to_anthropic_tool(
     dummy_tool: BaseTool,
     json_schema: Dict,
     openai_function: Dict,
+    tool_with_empty_description: Dict,
 ) -> None:
     expected = {
         "name": "dummy_function",
@@ -368,6 +386,9 @@ def test_convert_to_anthropic_tool(
         actual = convert_to_anthropic_tool(fn)  # type: ignore[arg-type]
         assert actual == expected
 
+    expected["description"] = expected["name"]
+    actual = convert_to_anthropic_tool(tool_with_empty_description)
+    assert actual == expected
 
 class GetWeather(BaseModel):
     """Get the current weather in a given location"""

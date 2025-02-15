@@ -511,7 +511,6 @@ class ChatBedrockConverse(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         """Top Level call"""
-        logger.info(f"The input message: {messages}")
         bedrock_messages, system = _messages_to_bedrock(messages)
         logger.debug(f"input message to bedrock: {bedrock_messages}")
         logger.debug(f"System message to bedrock: {system}")
@@ -543,7 +542,12 @@ class ChatBedrockConverse(BaseChatModel):
         )
         for event in response["stream"]:
             if message_chunk := _parse_stream_event(event):
-                yield ChatGenerationChunk(message=message_chunk)
+                generation_chunk = ChatGenerationChunk(message=message_chunk)
+                if run_manager:
+                    run_manager.on_llm_new_token(
+                        generation_chunk.text, chunk=generation_chunk
+                    )
+                yield generation_chunk
 
     # TODO: Add async support once there are async bedrock.converse methods.
 
@@ -1030,6 +1034,9 @@ def _format_tools(
             spec = convert_to_openai_tool(tool)["function"]
             spec["inputSchema"] = {"json": spec.pop("parameters")}
             formatted_tools.append({"toolSpec": spec})
+        
+        tool_spec = formatted_tools[-1]["toolSpec"]
+        tool_spec["description"] = tool_spec.get("description") or tool_spec["name"]
     return formatted_tools
 
 

@@ -532,10 +532,15 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         **kwargs: Any,
     ) -> ChatResult:
         if self.beta_use_converse_api:
-            return self._as_converse._generate(
-                messages, stop=stop, run_manager=run_manager, **kwargs
-            )
-        logger.info(f"The input message: {messages}")
+            if not self.streaming:
+                return self._as_converse._generate(
+                    messages, stop=stop, run_manager=run_manager, **kwargs
+                )
+            else:
+                stream_iter = self._as_converse._stream(
+                    messages, stop=stop, run_manager=run_manager, **kwargs
+                )
+                return generate_from_stream(stream_iter)
         completion = ""
         llm_output: Dict[str, Any] = {}
         tool_calls: List[ToolCall] = []
@@ -877,6 +882,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             kwargs["stop_sequences"] = self.stop_sequences
 
         return ChatBedrockConverse(
+            client=self.client,
             model=self.model_id,
             region_name=self.region_name,
             credentials_profile_name=self.credentials_profile_name,
