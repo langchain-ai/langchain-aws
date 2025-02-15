@@ -8,8 +8,4 @@ from langchain_aws.agents.types import (
     BedrockAgentFinish,
 )
 
-from langchain_aws.agents.inline_chat import (
-    BedrockInlineAgentsChatModel,
-)
-
-__all__ = ["BedrockAgentAction", "BedrockAgentFinish", "BedrockAgentsRunnable", "BedrockInlineAgentsRunnable", "BedrockInlineAgentsChatModel"]
+__all__ = ["BedrockAgentAction", "BedrockAgentFinish", "BedrockAgentsRunnable", "BedrockInlineAgentsRunnable"]

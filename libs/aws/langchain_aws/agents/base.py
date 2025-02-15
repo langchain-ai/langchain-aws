@@ -3,35 +3,38 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
 
 from botocore.exceptions import UnknownServiceError
-from langchain_core.callbacks import CallbackManager
+from collections import defaultdict
+from langchain_core.callbacks import CallbackManager, CallbackManagerForLLMRun
+from langchain_core.language_models import BaseChatModel
 from langchain_core.load import dumpd
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolCall
+from langchain_core.outputs import ChatResult, ChatGeneration
 from langchain_core.runnables import RunnableConfig, RunnableSerializable, ensure_config
 from langchain_core.tools import BaseTool
-from pydantic import model_validator
+from pydantic import model_validator, Field
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from langchain_aws.agents.types import (
+    _DEFAULT_ACTION_GROUP_NAME,
+    _TEST_AGENT_ALIAS_ID,
     BedrockAgentAction,
+    BedrockAgentFinish,
     GuardrailConfiguration,
     InlineAgentConfiguration,
     OutputType,
-    _TEST_AGENT_ALIAS_ID,
-    _DEFAULT_ACTION_GROUP_NAME,
 )
 
 from langchain_aws.agents.utils import (
-    get_boto_session,
+    _create_bedrock_action_groups,
+    _create_bedrock_agent,
+    _get_action_group_and_function_names,
     _get_bedrock_agent,
     _prepare_agent,
-    _create_bedrock_agent,
-    _create_bedrock_action_groups,
-    parse_agent_response,
-    _get_action_group_and_function_names,
-    _tool_to_function
+    _tool_to_function,
+    get_boto_session,
+    parse_agent_response
 )
 
 logger = logging.getLogger(__name__)
@@ -317,53 +320,44 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
 
         return None, None
 
+class BedrockInlineAgentsRunnable(BaseChatModel):
+    """Invoke a Bedrock Inline Agent as a chat model."""
 
-class BedrockInlineAgentsRunnable(RunnableSerializable[Dict, OutputType]):
-    """
-    Invoke a Bedrock Inline Agent
-    """
-
-    client: Any
+    client: Any = Field(default=None)
     """Boto3 client"""
+    
     region_name: Optional[str] = None
     """Region"""
+    
     credentials_profile_name: Optional[str] = None
     """Credentials to use to invoke the agent"""
+    
     endpoint_url: Optional[str] = None
     """Endpoint URL"""
+    
     inline_agent_config: Optional[InlineAgentConfiguration] = None
+    """Configuration for the inline agent"""
+    
+    session_id: Optional[str] = None
+    """Session identifier to be used with requests"""
 
-    @model_validator(mode="before")
+    @property
+    def _llm_type(self) -> str:
+        """Return type of LLM."""
+        return "bedrock-inline-agent"
+
+    @property
+    def _identifying_params(self) -> Dict[str, Any]:
+        """Get identifying parameters."""
+        return {
+            "region_name": self.region_name,
+            "endpoint_url": self.endpoint_url,
+            "inline_agent_config": self.inline_agent_config,
+        }
+
     @classmethod
-    def validate_client(cls, values: dict) -> Any:
-        if values.get("client") is not None:
-            return values
-
-        try:
-            client_params, session = get_boto_session(
-                credentials_profile_name=values["credentials_profile_name"],
-                region_name=values["region_name"],
-                endpoint_url=values["endpoint_url"],
-            )
-
-            values["client"] = session.client("bedrock-agent-runtime", **client_params)
-            return values
-        except ImportError:
-            raise ModuleNotFoundError(
-                "Could not import boto3 python package. "
-                "Please install it with `pip install boto3`."
-            )
-        except UnknownServiceError as e:
-            raise ModuleNotFoundError(
-                "Ensure that you have installed the latest boto3 package "
-                "that contains the API for `bedrock-runtime-agent`."
-            ) from e
-        except Exception as e:
-            raise ValueError(
-                "Could not load credentials to authenticate with AWS client. "
-                "Please check that credentials in the specified "
-                "profile name are valid."
-            ) from e
+    def is_lc_serializable(cls) -> bool:
+        return True
 
     @classmethod
     def create(
@@ -373,22 +367,10 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[Dict, OutputType]):
         region_name: Optional[str] = None,
         endpoint_url: Optional[str] = None,
         inline_agent_config: Optional[InlineAgentConfiguration] = None,
+        session_id: Optional[str] = None,
         **kwargs: Any,
     ) -> BedrockInlineAgentsRunnable:
-        """
-        Creates a Bedrock Inline Agent Runnable that can be used with an AgentExecutor
-        or with LangGraph.
-
-        Args:
-            credentials_profile_name: The profile name to use if different from default
-            region_name: Region for the Bedrock agent
-            endpoint_url: Endpoint URL for bedrock agent runtime
-            enable_trace: Boolean flag to specify whether trace should be enabled when
-                invoking the agent
-            **kwargs: Additional arguments
-        Returns:
-            BedrockInlineAgentsRunnable configured to invoke the Bedrock inline agent
-        """
+        """Create a new instance of BedrockInlineAgentsRunnable."""
         try:
             client_params, session = get_boto_session(
                 credentials_profile_name=credentials_profile_name,
@@ -403,111 +385,126 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                 credentials_profile_name=credentials_profile_name,
                 endpoint_url=endpoint_url,
                 inline_agent_config=inline_agent_config,
+                session_id=session_id,
                 **kwargs,
             )
         except Exception as e:
-            raise ValueError(
-                f"Error creating BedrockInlineAgentsRunnable: {str(e)}"
-            ) from e
+            raise ValueError(f"Error creating BedrockInlineAgentsRunnable: {str(e)}") from e
 
-    # Check: can the input be of TypedDict:
-    def invoke(
-        self, input: Dict, config: Optional[RunnableConfig] = None, **kwargs: Any
-    ) -> OutputType:
-        """
-        Invoke the Bedrock Inline agent.
+    def _generate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Generate chat completion."""
+        input_text = self._convert_messages_to_text(messages)
+        input_dict = {
+            "input_text": input_text,
+            **kwargs,
+        }
 
-        Args:
-            input: The input dictionary containing:
-                input_text: The input text to the agent
-                session_id: The session id to use. If not provided, a new session will
-                    be started
-                end_session: Boolean indicating whether to end a session or not
-                inline_agent_config: Optional configuration to override default config
-            config: Optional RunnableConfig
-            **kwargs: Additional arguments
-
-        Returns:
-            Union[List[BedrockAgentAction], BedrockAgentFinish]
-        """
-        config = ensure_config(config)
-        callback_manager = CallbackManager.configure(
-            inheritable_callbacks=config.get("callbacks"),
-            inheritable_tags=config.get("tags"),
-            inheritable_metadata=config.get("metadata"),
-        )
-        run_manager = callback_manager.on_chain_start(
-            dumpd(self), input, name=config.get("run_name")
-        )
-
-        try:
-            
-            # Merge configurations, giving priority to invoke-time config
-            runtime_config = input.get("inline_agent_config", {})
-            self.inline_agent_config = self.inline_agent_config or {} # Ensure it's never None to unpack
-            effective_config = {**self.inline_agent_config, **runtime_config}
-            
-            # Convert tools to action groups format
-            action_groups = self._get_action_groups(
-                tools=effective_config.get("tools", []), 
-                enableHumanInput=effective_config.get("enable_human_input", False),
-                enableCodeInterpreter=effective_config.get("enable_code_interpreter", False),
+        response = self._invoke_inline_agent(input_dict, run_manager=run_manager)
+        if isinstance(response, BedrockAgentFinish):
+            message = AIMessage(
+                content=response.return_values["output"],
+                additional_kwargs={
+                    "session_id": response.session_id,
+                    "trace_log": response.trace_log
+                }
             )
+        else:  # BedrockAgentAction
+            # Handle tool use response
+            tool_calls:list[ToolCall] = []
+            # parse_agent_response() returns BedrockAgentAction list
+            for action in response:
+                tool_calls.append({
+                    "name": action.tool,
+                    "args": action.tool_input,
+                    "id": str(uuid.uuid4())
+                })
 
-            # Prepare the invoke_inline_agent request
-            agent_input: Dict[str, Any] = {
-                "foundationModel": effective_config["foundation_model"],
-                "instruction": effective_config["instruction"],
-                "actionGroups": action_groups,
-                "enableTrace": effective_config["enable_trace"],
-                "endSession": bool(input.get("end_session", False)),
-            }
+            message = AIMessage(
+                content="",  # Empty content for tool calls
+                additional_kwargs={
+                    "session_id": response[0].session_id,
+                    "trace_log": response[0].trace_log,
+                    "roc_log": response[0].log
+                },
+                tool_calls=tool_calls
+            )
+        
+        return ChatResult(generations=[ChatGeneration(message=message)])
 
-            # Add optional configurations
-            optional_params_name_map = {
-                "customerEncryptionKeyArn": "customer_encryption_key_arn",
-                "idleSessionTTLInSeconds": "idle_session_ttl_in_seconds",
-                "guardrailConfiguration": "guardrail_configuration",
-                "knowledgeBases": "knowledge_bases",
-                "promptOverrideConfiguration": "prompt_override_configuration",
-                "inlineSessionState": "inline_session_state",
-            }
-
-            for param_name, input_key in optional_params_name_map.items():
-                if effective_config.get(input_key):
-                    agent_input[param_name] = effective_config[input_key]
-
-            if input.get("intermediate_steps"):
-                self.session_id, session_state = self._parse_intermediate_steps(
-                    input.get("intermediate_steps")
-                )
-                if session_state:
-                    agent_input["inlineSessionState"] = session_state
+    def _convert_messages_to_text(self, messages: List[BaseMessage]) -> str:
+        """Convert a list of messages to a single text input for the agent."""
+        text_parts = []
+        for message in messages:
+            if isinstance(message, SystemMessage):
+                text_parts.append(f"System: {message.content}")
+            elif isinstance(message, HumanMessage):
+                text_parts.append(f"Human: {message.content}")
+            elif isinstance(message, AIMessage):
+                text_parts.append(f"Assistant: {message.content}")
             else:
-                agent_input["inputText"] = input.get("input_text", "")
+                text_parts.append(str(message.content))
+        return "\n".join(text_parts)
 
-           # Use existing session_id from input, or from intermediate steps, or generate new one
-            self.session_id = input.get("session_id") or self.session_id or str(uuid.uuid4())
+    def _invoke_inline_agent(
+        self,
+        input_dict: Dict[str, Any],
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+    ) -> Union[BedrockAgentAction, BedrockAgentFinish]:
+        """Invoke the inline agent with the given input."""
+        # Merge configurations
+        runtime_config = input_dict.get("inline_agent_config", {})
+        self.inline_agent_config = self.inline_agent_config or {}
+        effective_config = {**self.inline_agent_config, **runtime_config}
+        
+        # Convert tools to action groups format
+        action_groups = self._get_action_groups(
+            tools=effective_config.get("tools", []) or [],
+            enableHumanInput=effective_config.get("enable_human_input", False),
+            enableCodeInterpreter=effective_config.get("enable_code_interpreter", False),
+        )
 
-            # Make the InvokeInlineAgent request to bedrock
-            output = self.client.invoke_inline_agent(
-                sessionId=self.session_id, **agent_input
-            )
+        # Prepare the invoke_inline_agent request
+        agent_input: Dict[str, Any] = {
+            "foundationModel": effective_config.get("foundation_model"),
+            "instruction": effective_config.get("instruction"),
+            "actionGroups": action_groups,
+            "enableTrace": effective_config.get("enable_trace", False),
+            "endSession": bool(input_dict.get("end_session", False)),
+            "inputText": input_dict.get("input_text", ""),
+        }
 
-        except Exception as e:
-            run_manager.on_chain_error(e)
-            raise e
+        # Add optional configurations
+        optional_params = {
+            "customerEncryptionKeyArn": "customer_encryption_key_arn",
+            "idleSessionTTLInSeconds": "idle_session_ttl_in_seconds",
+            "guardrailConfiguration": "guardrail_configuration",
+            "knowledgeBases": "knowledge_bases",
+            "promptOverrideConfiguration": "prompt_override_configuration",
+            "inlineSessionState": "inline_session_state",
+        }
 
-        try:
-            response = parse_agent_response(output)
-        except Exception as e:
-            run_manager.on_chain_error(e)
-            raise e
-        else:
-            run_manager.on_chain_end(response)
-            return response
+        for param_name, config_key in optional_params.items():
+            if effective_config.get(config_key):
+                agent_input[param_name] = effective_config[config_key]
 
-    def _get_action_groups(self, tools: List[BaseTool], enableHumanInput: bool, enableCodeInterpreter: bool) -> List:
+        # Use existing session_id from input, or from intermediate steps, or generate new one
+        self.session_id = input_dict.get("session_id") or self.session_id or str(uuid.uuid4())
+        
+        output = self.client.invoke_inline_agent(
+            sessionId=self.session_id,
+            **agent_input
+        )
+        return parse_agent_response(output)
+
+
+    def _get_action_groups(self, tools: List[Any], enableHumanInput: bool, enableCodeInterpreter: bool) -> List:
+        """Convert tools to Bedrock action groups format."""
         action_groups = []
         tools_by_action_group = defaultdict(list)
 
@@ -516,74 +513,24 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             tools_by_action_group[action_group_name].append(tool)
 
         for action_group_name, functions in tools_by_action_group.items():
-            action_groups.append(
-                {
-                    "actionGroupName": action_group_name,
-                    "actionGroupExecutor": {"customControl": "RETURN_CONTROL"},
-                    "functionSchema": {
-                        "functions": [
-                            _tool_to_function(function) for function in functions
-                        ]
-                    },
-                }
-            )
+            action_groups.append({
+                "actionGroupName": action_group_name,
+                "actionGroupExecutor": {"customControl": "RETURN_CONTROL"},
+                "functionSchema": {
+                    "functions": [_tool_to_function(function) for function in functions]
+                },
+            })
 
         if enableHumanInput:
-            action_groups.append(
-                {
-                    "actionGroupName": "UserInputAction",
-                    "parentActionGroupSignature": "AMAZON.UserInput",
-                }
-            )
+            action_groups.append({
+                "actionGroupName": "UserInputAction",
+                "parentActionGroupSignature": "AMAZON.UserInput",
+            })
         
         if enableCodeInterpreter:
-            action_groups.append(
-                {
-                    "actionGroupName": "CodeInterpreterAction",
-                    "parentActionGroupSignature": "AMAZON.CodeInterpreter",
-                }
-            )
+            action_groups.append({
+                "actionGroupName": "CodeInterpreterAction",
+                "parentActionGroupSignature": "AMAZON.CodeInterpreter",
+            })
+
         return action_groups
-
-    # ToDo: move to common.
-    def _parse_intermediate_steps(
-        self, intermediate_steps: List[Tuple[BedrockAgentAction, str]]
-    ) -> Tuple[Union[str, None], Union[Dict[str, Any], None]]:
-        """Parse intermediate steps for inline agent invocation"""
-        last_step = max(0, len(intermediate_steps) - 1)
-        action = intermediate_steps[last_step][0]
-        tool_invoked = action.tool
-        messages = action.messages
-        session_id = action.session_id
-
-        if tool_invoked:
-            action_group_name = _DEFAULT_ACTION_GROUP_NAME
-            function_name = tool_invoked
-            tool_name_split = tool_invoked.split("::")
-            if len(tool_name_split) > 1:
-                action_group_name = tool_name_split[0]
-                function_name = tool_name_split[1]
-
-            if messages:
-                last_message = max(0, len(messages) - 1)
-                message = messages[last_message]
-                if type(message) is AIMessage:
-                    response = intermediate_steps[last_step][1]
-                    session_state = {
-                        "invocationId": json.loads(message.content)
-                        .get("returnControl", {})
-                        .get("invocationId", ""),
-                        "returnControlInvocationResults": [
-                            {
-                                "functionResult": {
-                                    "actionGroup": action_group_name,
-                                    "function": function_name,
-                                    "responseBody": {"TEXT": {"body": response}},
-                                }
-                            }
-                        ],
-                    }
-
-                    return session_id, session_state
-
-        return None, None
