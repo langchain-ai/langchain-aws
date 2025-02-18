@@ -3,6 +3,7 @@
 import base64
 import os
 from typing import Dict, List, Tuple, Type, Union, cast
+from unittest import mock
 
 import pytest
 from langchain_core.language_models import BaseChatModel
@@ -27,7 +28,6 @@ from langchain_aws.chat_models.bedrock_converse import (
     _snake_to_camel,
     _snake_to_camel_keys,
 )
-from unittest import mock
 
 
 class TestBedrockStandard(ChatModelUnitTests):
