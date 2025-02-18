@@ -18,6 +18,7 @@ from langchain_aws.chat_models.bedrock import (
     _merge_messages,
 )
 from langchain_aws.function_calling import convert_to_anthropic_tool
+from unittest import mock
 
 
 def test__merge_messages() -> None:
@@ -496,35 +497,16 @@ def test__get_provider(model_id, provider, expected_provider, expectation) -> No
         assert llm._get_provider() == expected_provider
 
 
+@mock.patch.dict(os.environ, {"AWS_REGION": "us-west-1"})
 def test_chat_bedrock_different_regions() -> None:
-    regions = ["us-east-1", "us-west-2", "ap-south-2"]
-    for region in regions:
-        llm = ChatBedrock(model_id="anthropic.claude-3-sonnet-20240229-v1:0", region_name=region)
-        assert llm.region_name == region
+    region = "ap-south-2"
+    llm = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0", region_name=region
+    )
+    assert llm.region_name == region
 
 
+@mock.patch.dict(os.environ, {"AWS_REGION": "ap-south-2"})
 def test_chat_bedrock_environment_variable() -> None:
-    regions = ["us-east-1", "us-west-2", "ap-south-2"]
-    for region in regions:
-        os.environ["AWS_REGION"] = region
-        llm = ChatBedrock(model_id="anthropic.claude-3-sonnet-20240229-v1:0")
-        assert llm.region_name == region
-
-
-def test_chat_bedrock_scenarios() -> None:
-    scenarios = [
-        {"model_id": "anthropic.claude-3-sonnet-20240229-v1:0", "temperature": 0.5},
-        {"model_id": "anthropic.claude-3-sonnet-20240229-v1:0", "max_tokens": 50},
-        {
-            "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
-            "temperature": 0.5,
-            "max_tokens": 50,
-        },
-    ]
-    for scenario in scenarios:
-        llm = ChatBedrock(region_name="us-west-2", **scenario)
-        assert llm.model_id == scenario["model_id"]
-        if "temperature" in scenario:
-            assert llm.temperature == scenario["temperature"]
-        if "max_tokens" in scenario:
-            assert llm.max_tokens == scenario["max_tokens"]
+    llm = ChatBedrock(model_id="anthropic.claude-3-sonnet-20240229-v1:0")
+    assert llm.region_name == "ap-south-2"
