@@ -1,7 +1,9 @@
 """Test chat model integration."""
 
 import base64
+import os
 from typing import Dict, List, Tuple, Type, Union, cast
+from unittest import mock
 
 import pytest
 from langchain_core.language_models import BaseChatModel
@@ -503,3 +505,18 @@ def test__extract_response_metadata() -> None:
     }
     response_metadata = _extract_response_metadata(response)
     assert response_metadata["metrics"]["latencyMs"] == [191]
+
+
+@mock.patch.dict(os.environ, {"AWS_REGION": "us-west-1"})
+def test_chat_bedrock_converse_different_regions() -> None:
+    region = "ap-south-2"
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0", region_name=region
+    )
+    assert llm.region_name == region
+
+
+@mock.patch.dict(os.environ, {"AWS_REGION": "ap-south-2"})
+def test_chat_bedrock_converse_environment_variable() -> None:
+    llm = ChatBedrockConverse(model="anthropic.claude-3-sonnet-20240229-v1:0")
+    assert llm.region_name == "ap-south-2"

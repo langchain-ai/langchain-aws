@@ -641,11 +641,14 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 return get_token_ids_anthropic(text)
             else:
                 warnings.warn(
-                    f"Falling back to default token method due to missing or incompatible `anthropic` installation "
-                    f"(needs <=0.38.0).\n\nIf using `anthropic>0.38.0`, it is recommended to provide the model "
-                    f"class with a custom_get_token_ids method implementing a more accurate tokenizer for Anthropic. "
-                    f"For get_num_tokens, as another alternative, you can implement your own token counter method "
-                    f"using the ChatAnthropic or AnthropicLLM classes."
+                    "Falling back to default token method due to missing or "
+                    "incompatible `anthropic` installation "
+                    "(needs <=0.38.0).\n\nIf using `anthropic>0.38.0`, "
+                    "it is recommended to provide the model class with a "
+                    "custom_get_token_ids method implementing a more accurate "
+                    "tokenizer for Anthropic. For get_num_tokens, as another "
+                    "alternative, you can implement your own token counter method "
+                    "using the ChatAnthropic or AnthropicLLM classes."
                 )
         return super().get_token_ids(text)
 
