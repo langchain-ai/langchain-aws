@@ -534,3 +534,65 @@ def test_weather_agent_with_human_input():
             _delete_agent_role(agent_resource_role_arn)
         if agent:
             _delete_agent(agent.agent_id)
+
+
+@pytest.mark.skip
+def test_weather_agent_with_code_interpreter():
+    @tool
+    def get_weather(location: str) -> str:
+        """
+        Get the weather of a location
+
+        Args:
+            location: location of the place
+        """
+        if location.lower() == "seattle":
+            return f"It is raining in {location}"
+        return f"It is hot and humid in {location}"
+
+    foundation_model = "anthropic.claude-3-sonnet-20240229-v1:0"
+    tools = [get_weather]
+    agent_resource_role_arn = None
+    agent = None
+    try:
+        agent_resource_role_arn = _create_agent_role(
+            agent_region="us-west-2", foundation_model=foundation_model
+        )
+        agent = BedrockAgentsRunnable.create_agent(
+            agent_name="weather_agent",
+            agent_resource_role_arn=agent_resource_role_arn,
+            foundation_model=foundation_model,
+            instruction="""
+                You are an agent who helps with getting weather for a given location.
+                If the user does not provide a location then ask for the location and be
+                sure to use the word 'location'. """,
+            tools=tools,
+            enable_code_interpreter=True,
+        )
+
+        # check human input is in the action groups
+        bedrock_client = boto3.client("bedrock-agent")
+        version = get_latest_agent_version(agent.agent_id)
+        paginator = bedrock_client.get_paginator("list_agent_action_groups")
+        has_code_interpreter = False
+        for page in paginator.paginate(
+            agentId=agent.agent_id,
+            agentVersion=version,
+            PaginationConfig={"PageSize": 10},
+        ):
+            for summary in page["actionGroupSummaries"]:
+                if (
+                    str(summary["actionGroupName"]).lower() == "codeinterpreteraction"
+                    and str(summary["actionGroupState"]).lower() == "enabled"
+                ):
+                    has_code_interpreter = True
+                    break
+
+        assert has_code_interpreter
+    except Exception as ex:
+        raise ex
+    finally:
+        if agent_resource_role_arn:
+            _delete_agent_role(agent_resource_role_arn)
+        if agent:
+            _delete_agent(agent.agent_id)
