@@ -7,7 +7,8 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 from langchain_core.embeddings import Embeddings
 from langchain_core.runnables.config import run_in_executor
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from langchain_core.utils import secret_from_env
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 
@@ -30,7 +31,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         .. code-block:: python
 
             from langchain_community.bedrock_embeddings import BedrockEmbeddings
-            
+
             region_name ="us-east-1"
             credentials_profile_name = "default"
             model_id = "amazon.titan-embed-text-v1"
@@ -55,6 +56,44 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    """
+
+    aws_access_key_id: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
+    )
+    """AWS access key id.
+
+    If provided, aws_secret_access_key must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+    """
+
+    aws_secret_access_key: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
+    )
+    """AWS secret_access_key.
+
+    If provided, aws_access_key_id must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+    """
+
+    aws_session_token: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
+    )
+    """AWS session token.
+
+    If provided, aws_access_key_id and aws_secret_access_key must 
+    also be provided. Not required unless using temporary credentials.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
     """
 
     model_id: str = "amazon.titan-embed-text-v1"
@@ -87,41 +126,62 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
 
-        if self.client is not None:
-            return self
-
-        try:
-            import boto3
-
-            if self.credentials_profile_name is not None:
-                session = boto3.Session(profile_name=self.credentials_profile_name)
+        # Skip creating new client if passed in constructor
+        if self.client is None:
+            creds = {
+                "aws_access_key_id": self.aws_access_key_id,
+                "aws_secret_access_key": self.aws_secret_access_key,
+                "aws_session_token": self.aws_session_token,
+            }
+            if creds["aws_access_key_id"] and creds["aws_secret_access_key"]:
+                session_params = {
+                    k: v.get_secret_value() for k, v in creds.items() if v
+                }
+            elif any(creds.values()):
+                raise ValueError(
+                    f"If any of aws_access_key_id, aws_secret_access_key, or "
+                    f"aws_session_token are specified then both aws_access_key_id and "
+                    f"aws_secret_access_key must be specified. Only received "
+                    f"{(k for k, v in creds.items() if v)}."
+                )
+            elif self.credentials_profile_name is not None:
+                session_params = {"profile_name": self.credentials_profile_name}
             else:
                 # use default credentials
-                session = boto3.Session()
+                session_params = {}
 
-            client_params = {}
-            if self.region_name:
-                client_params["region_name"] = self.region_name
+            try:
+                import boto3
+                session = boto3.Session(**session_params)
 
-            if self.endpoint_url:
-                client_params["endpoint_url"] = self.endpoint_url
+                self.region_name = (
+                    self.region_name
+                    or os.getenv("AWS_REGION")
+                    or os.getenv("AWS_DEFAULT_REGION")
+                    or session.region_name
+                )
 
-            if self.config:
-                client_params["config"] = self.config
+                client_params = {
+                    "endpoint_url": self.endpoint_url,
+                    "config": self.config,
+                    "region_name": self.region_name,
+                }
+                client_params = {k: v for k, v in client_params.items() if v}
+                self.client = session.client("bedrock-runtime", **client_params)
 
-            self.client = session.client("bedrock-runtime", **client_params)
-
-        except ImportError:
-            raise ModuleNotFoundError(
-                "Could not import boto3 python package. "
-                "Please install it with `pip install boto3`."
-            )
-        except Exception as e:
-            raise ValueError(
-                "Could not load credentials to authenticate with AWS client. "
-                "Please check that credentials in the specified "
-                f"profile name are valid. Bedrock error: {e}"
-            ) from e
+            except ImportError:
+                raise ModuleNotFoundError(
+                    "Could not import boto3 python package. "
+                    "Please install it with `pip install boto3`."
+                )
+            except ValueError as e:
+                raise ValueError(f"Error raised by bedrock service:\n\n{e}") from e
+            except Exception as e:
+                raise ValueError(
+                    "Could not load credentials to authenticate with AWS client. "
+                    "Please check that credentials in the specified "
+                    f"profile name are valid. Bedrock error:\n\n{e}"
+                ) from e
 
         return self
 
