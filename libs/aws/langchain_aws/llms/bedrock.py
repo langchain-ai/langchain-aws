@@ -841,7 +841,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             ) = LLMInputOutputAdapter.prepare_output(provider, response).values()
             logger.debug(f"Response received from Bedrock: {response}")
         except Exception as e:
-            logging.error(f"Error raised by bedrock service: {e}")
+            logger.exception("Error raised by bedrock service")
             if run_manager is not None:
                 run_manager.on_llm_error(e)
             raise e
@@ -968,7 +968,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             response = self.client.invoke_model_with_response_stream(**request_options)
 
         except Exception as e:
-            logging.error(f"Error raised by bedrock service: {e}")
+            logger.exception("Error raised by bedrock service")
             if run_manager is not None:
                 run_manager.on_llm_error(e)
             raise e

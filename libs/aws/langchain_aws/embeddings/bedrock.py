@@ -10,6 +10,8 @@ from langchain_core.runnables.config import run_in_executor
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import Self
 
+logger = logging.getLogger(__name__)
+
 
 class BedrockEmbeddings(BaseModel, Embeddings):
     """Bedrock embedding models.
@@ -174,7 +176,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
             response_body = json.loads(response.get("body").read())
             return response_body
         except Exception as e:
-            logging.error(f"Error raised by inference endpoint: {e}")
+            logger.exception("Error raised by inference endpoint")
             raise e
 
     def _normalize_vector(self, embeddings: List[float]) -> List[float]:
