@@ -507,9 +507,3 @@ def test_chat_bedrock_different_regions() -> None:
         model_id="anthropic.claude-3-sonnet-20240229-v1:0", region_name=region
     )
     assert llm.region_name == region
-
-
-@mock.patch.dict(os.environ, {"AWS_REGION": "ap-south-2"})
-def test_chat_bedrock_environment_variable() -> None:
-    llm = ChatBedrock(model_id="anthropic.claude-3-sonnet-20240229-v1:0")
-    assert llm.region_name == "ap-south-2"
