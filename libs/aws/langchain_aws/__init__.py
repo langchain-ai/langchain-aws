@@ -49,5 +49,5 @@ __all__ = [
     "NeptuneGraph",
     "InMemoryVectorStore",
     "InMemorySemanticCache",
-    "BedrockRerank"
+    "BedrockRerank",
 ]

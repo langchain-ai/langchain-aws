@@ -302,8 +302,8 @@ class ChatBedrockConverse(BaseChatModel):
     region_name: Optional[str] = None
     """The aws region, e.g., `us-west-2`. 
     
-    Falls back to AWS_REGION/AWS_DEFAULT_REGION env variable or region specified in ~/.aws/config 
-    in case it is not provided here.
+    Falls back to AWS_REGION or AWS_DEFAULT_REGION env variable or region specified in 
+    ~/.aws/config in case it is not provided here.
     """
 
     credentials_profile_name: Optional[str] = Field(default=None, exclude=True)
@@ -997,7 +997,7 @@ def _format_tools(
             spec = convert_to_openai_tool(tool)["function"]
             spec["inputSchema"] = {"json": spec.pop("parameters")}
             formatted_tools.append({"toolSpec": spec})
-        
+
         tool_spec = formatted_tools[-1]["toolSpec"]
         tool_spec["description"] = tool_spec.get("description") or tool_spec["name"]
     return formatted_tools

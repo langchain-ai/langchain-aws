@@ -60,7 +60,7 @@ class BedrockRerank(BaseDocumentCompressor):
             query: The query to use for reranking.
             documents: A sequence of documents to rerank.
             top_n: The number of top-ranked results to return. Defaults to self.top_n.
-            additional_model_request_fields: A dictionary of additional fields to pass to the model.
+            additional_model_request_fields: Additional fields to pass to the model.
 
         Returns:
             List[Dict[str, Any]]: A list of ranked documents with relevance scores.

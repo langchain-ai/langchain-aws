@@ -13,7 +13,7 @@ def enforce_stop_tokens(text: str, stop: List[str]) -> str:
 
 
 def anthropic_tokens_supported() -> bool:
-    """Check if we have all requirements for Anthropic count_tokens() and get_tokenizer()."""
+    """Check if all requirements for Anthropic count_tokens() are met."""
     try:
         import anthropic
     except ImportError:
