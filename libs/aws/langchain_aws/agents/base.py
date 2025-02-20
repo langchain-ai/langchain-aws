@@ -411,7 +411,8 @@ class BedrockInlineAgentsRunnable(BaseChatModel):
                 content=response.return_values["output"],
                 additional_kwargs={
                     "session_id": response.session_id,
-                    "trace_log": response.trace_log
+                    "trace_log": response.trace_log,
+                    **({"files": response.return_values["files"]} if response.return_values.get("files") else {})
                 }
             )
         else:  # BedrockAgentAction
