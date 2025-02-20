@@ -13,7 +13,7 @@ from langchain_core.runnables import Runnable, RunnablePassthrough
 
 from langchain_aws.graphs import NeptuneRdfGraph
 
-from chains.graph_qa.prompts import (
+from .prompts import (
     NEPTUNE_SPARQL_GENERATION_PROMPT,
     NEPTUNE_SPARQL_GENERATION_TEMPLATE,
     SPARQL_QA_PROMPT,

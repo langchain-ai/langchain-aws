@@ -9,7 +9,7 @@ from langchain_core.runnables import Runnable, RunnablePassthrough
 
 from langchain_aws.graphs import BaseNeptuneGraph
 
-from chains.graph_qa.prompts import (
+from .prompts import (
     CYPHER_QA_PROMPT,
     NEPTUNE_OPENCYPHER_GENERATION_PROMPT,
     NEPTUNE_OPENCYPHER_GENERATION_SIMPLE_PROMPT,
