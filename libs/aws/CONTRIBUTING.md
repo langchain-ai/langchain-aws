@@ -29,10 +29,10 @@ Install Poetry: **[documentation on how to install it](https://python-poetry.org
 ❗Note: If you use `Conda` or `Pyenv` as your environment/package manager, after installing Poetry,
 tell Poetry to use the virtualenv python environment (`poetry config virtualenvs.prefer-active-python true`)
 
-The instructions here assume that you run all commands from the `libs/aws/langchain-aws` directory. 
+The instructions here assume that you run all commands from the `libs/aws` directory. 
 
 ```bash
-cd libs/aws/langchain-aws
+cd libs/aws
 ```
 
 ### Install for development
