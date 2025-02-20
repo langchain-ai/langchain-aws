@@ -8,7 +8,7 @@ repository = "https://github.com/langchain-ai/langchain-aws"
 license = "MIT"
 
 [tool.poetry.urls]
-"Source Code" = "https://github.com/langchain-ai/langchain-aws/tree/main/libs/aws/langchain-aws"
+"Source Code" = "https://github.com/langchain-ai/langchain-aws/tree/main/libs/aws"
 
 [tool.poetry.dependencies]
 python = ">=3.9,<4.0"

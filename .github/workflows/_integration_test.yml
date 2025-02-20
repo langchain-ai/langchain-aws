@@ -7,8 +7,8 @@ on:
         required: true
         type: choice
         options:
-          - libs/aws/langchain-aws
-          - libs/aws/langgraph-checkpoint-aws
+          - libs/aws
+          - libs/langgraph-checkpoint-aws
       fork:
         required: true
         type: string
