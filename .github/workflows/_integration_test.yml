@@ -5,8 +5,10 @@ on:
     inputs:
       working-directory:
         required: true
-        type: string
-        default: 'libs/aws'
+        type: choice
+        options:
+          - libs/aws
+          - libs/langgraph-checkpoint-aws
       fork:
         required: true
         type: string
