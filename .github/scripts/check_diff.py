@@ -33,7 +33,7 @@ if __name__ == "__main__":
             for dir_ in LIB_DIRS:
                 if file.startswith(dir_):
                     dirs_to_run["test"].add(dir_)
-        elif file == "libs/aws/langgraph-checkpoint-aws": # Remove this after checkpointer is implemented
+        elif "langgraph-checkpoint-aws" in file: # Remove this after checkpointer is implemented
             pass
         elif file.startswith("libs/"):
             raise ValueError(
