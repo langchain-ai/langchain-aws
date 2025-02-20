@@ -11,8 +11,10 @@ on:
     inputs:
       working-directory:
         required: true
-        type: string
-        default: 'libs/aws'
+        type: choice
+        options:
+          - libs/aws/langchain-aws
+          - libs/aws/langgraph-checkpoint-aws
       dangerous-nonmaster-release:
         required: false
         type: boolean

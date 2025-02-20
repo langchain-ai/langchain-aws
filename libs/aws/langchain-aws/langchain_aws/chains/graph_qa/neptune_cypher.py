@@ -1,72 +1,98 @@
-"""
-Question answering over an RDF or OWL graph using SPARQL.
-"""
-
 from __future__ import annotations
 
-from typing import Any, Optional, Union
+import re
+from typing import Optional, Union
 
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.prompts.base import BasePromptTemplate
-from langchain_core.prompts.prompt import PromptTemplate
 from langchain_core.runnables import Runnable, RunnablePassthrough
 
-from langchain_aws.graphs import NeptuneRdfGraph
+from langchain_aws.graphs import BaseNeptuneGraph
 
-from .prompts import (
-    NEPTUNE_SPARQL_GENERATION_PROMPT,
-    NEPTUNE_SPARQL_GENERATION_TEMPLATE,
-    SPARQL_QA_PROMPT,
+from chains.graph_qa.prompts import (
+    CYPHER_QA_PROMPT,
+    NEPTUNE_OPENCYPHER_GENERATION_PROMPT,
+    NEPTUNE_OPENCYPHER_GENERATION_SIMPLE_PROMPT,
 )
 
 INTERMEDIATE_STEPS_KEY = "intermediate_steps"
 
 
-def extract_sparql(query: str) -> str:
-    """Extract SPARQL code from a text.
+def trim_query(query: str) -> str:
+    """Trim the query to only include Cypher keywords."""
+    keywords = (
+        "CALL",
+        "CREATE",
+        "DELETE",
+        "DETACH",
+        "LIMIT",
+        "MATCH",
+        "MERGE",
+        "OPTIONAL",
+        "ORDER",
+        "REMOVE",
+        "RETURN",
+        "SET",
+        "SKIP",
+        "UNWIND",
+        "WITH",
+        "WHERE",
+        "//",
+    )
 
-    Args:
-        query: Text to extract SPARQL code from.
+    lines = query.split("\n")
+    new_query = ""
 
-    Returns:
-        SPARQL code extracted from the text.
-    """
-    query = query.strip()
-    querytoks = query.split("```")
-    if len(querytoks) == 3:
-        query = querytoks[1]
+    for line in lines:
+        if line.strip().upper().startswith(keywords):
+            new_query += line + "\n"
 
-        if query.startswith("sparql"):
-            query = query[6:]
-    elif query.startswith("<sparql>") and query.endswith("</sparql>"):
-        query = query[8:-9]
-    return query
+    return new_query
 
 
-def get_prompt(examples: str) -> BasePromptTemplate:
-    """Selects the final prompt."""
-    template_to_use = NEPTUNE_SPARQL_GENERATION_TEMPLATE
-    if examples:
-        template_to_use = template_to_use.replace("Examples:", "Examples: " + examples)
-        return PromptTemplate(
-            input_variables=["schema", "prompt"], template=template_to_use
-        )
-    return NEPTUNE_SPARQL_GENERATION_PROMPT
+def extract_cypher(text: str) -> str:
+    """Extract Cypher code from text using Regex."""
+    # The pattern to find Cypher code enclosed in triple backticks
+    pattern = r"```(.*?)```"
+
+    # Find all matches in the input text
+    matches = re.findall(pattern, text, re.DOTALL)
+
+    return matches[0] if matches else text
 
 
-def create_neptune_sparql_qa_chain(
+def use_simple_prompt(llm: BaseLanguageModel) -> bool:
+    """Decides whether to use the simple prompt"""
+    if llm._llm_type and "anthropic" in llm._llm_type:  # type: ignore
+        return True
+
+    # Bedrock anthropic
+    if hasattr(llm, "model_id") and "anthropic" in llm.model_id:  # type: ignore
+        return True
+
+    return False
+
+
+def get_prompt(llm: BaseLanguageModel) -> BasePromptTemplate:
+    """Selects the final prompt"""
+    if use_simple_prompt(llm):
+        return NEPTUNE_OPENCYPHER_GENERATION_SIMPLE_PROMPT
+    else:
+        return NEPTUNE_OPENCYPHER_GENERATION_PROMPT
+
+
+def create_neptune_opencypher_qa_chain(
     llm: BaseLanguageModel,
-    graph: NeptuneRdfGraph,
-    qa_prompt: BasePromptTemplate = SPARQL_QA_PROMPT,
-    sparql_prompt: Optional[BasePromptTemplate] = None,
+    graph: BaseNeptuneGraph,
+    qa_prompt: BasePromptTemplate = CYPHER_QA_PROMPT,
+    cypher_prompt: Optional[BasePromptTemplate] = None,
     return_intermediate_steps: bool = False,
     return_direct: bool = False,
     extra_instructions: Optional[str] = None,
     allow_dangerous_requests: bool = False,
-    examples: Optional[str] = None,
-) -> Runnable[Any, dict]:
+) -> Runnable:
     """Chain for question-answering against a Neptune graph
-    by generating SPARQL statements.
+    by generating openCypher statements.
 
     *Security note*: Make sure that the database connection uses credentials
         that are narrowly-scoped to only include necessary permissions.
@@ -82,12 +108,13 @@ def create_neptune_sparql_qa_chain(
     Example:
         .. code-block:: python
 
-        chain = create_neptune_sparql_qa_chain(
+        chain = create_neptune_opencypher_qa_chain(
             llm=llm,
             graph=graph
         )
         response = chain.invoke({"query": "your_query_here"})
     """
+
     if allow_dangerous_requests is not True:
         raise ValueError(
             "In order to use this chain, you must acknowledge that it can make "
@@ -103,32 +130,32 @@ def create_neptune_sparql_qa_chain(
 
     qa_chain = qa_prompt | llm
 
-    _sparql_prompt = sparql_prompt or get_prompt(examples)
-    sparql_generation_chain = _sparql_prompt | llm
+    _cypher_prompt = cypher_prompt or get_prompt(llm)
+    cypher_generation_chain = _cypher_prompt | llm
 
     def normalize_input(raw_input: Union[str, dict]) -> dict:
         if isinstance(raw_input, str):
             return {"query": raw_input}
         return raw_input
 
-    def execute_graph_query(sparql_query: str) -> dict:
-        return graph.query(sparql_query)
+    def execute_graph_query(cypher_query: str) -> dict:
+        return graph.query(cypher_query)
 
-    def get_sparql_inputs(inputs: dict) -> dict:
+    def get_cypher_inputs(inputs: dict) -> dict:
         return {
-            "prompt": inputs["query"],
+            "question": inputs["query"],
             "schema": graph.get_schema,
             "extra_instructions": extra_instructions or "",
         }
 
     def get_qa_inputs(inputs: dict) -> dict:
         return {
-            "prompt": inputs["query"],
+            "question": inputs["query"],
             "context": inputs["context"],
         }
 
     def format_response(inputs: dict) -> dict:
-        intermediate_steps = [{"query": inputs["sparql"]}]
+        intermediate_steps = [{"query": inputs["cypher"]}]
 
         if return_direct:
             final_response = {"result": inputs["context"]}
@@ -143,14 +170,15 @@ def create_neptune_sparql_qa_chain(
 
     chain_result = (
         normalize_input
-        | RunnablePassthrough.assign(sparql_generation_inputs=get_sparql_inputs)
+        | RunnablePassthrough.assign(cypher_generation_inputs=get_cypher_inputs)
         | {
             "query": lambda x: x["query"],
-            "sparql": (lambda x: x["sparql_generation_inputs"])
-            | sparql_generation_chain
-            | (lambda x: extract_sparql(x.content)),
+            "cypher": (lambda x: x["cypher_generation_inputs"])
+            | cypher_generation_chain
+            | (lambda x: extract_cypher(x.content))
+            | trim_query,
         }
-        | RunnablePassthrough.assign(context=lambda x: execute_graph_query(x["sparql"]))
+        | RunnablePassthrough.assign(context=lambda x: execute_graph_query(x["cypher"]))
         | RunnablePassthrough.assign(qa_result=(lambda x: get_qa_inputs(x)) | qa_chain)
         | format_response
     )

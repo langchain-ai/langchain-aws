@@ -29,10 +29,10 @@ Install Poetry: **[documentation on how to install it](https://python-poetry.org
 ❗Note: If you use `Conda` or `Pyenv` as your environment/package manager, after installing Poetry,
 tell Poetry to use the virtualenv python environment (`poetry config virtualenvs.prefer-active-python true`)
 
-The instructions here assume that you run all commands from the `libs/aws` directory. 
+The instructions here assume that you run all commands from the `libs/aws/langchain-aws` directory. 
 
 ```bash
-cd libs/aws
+cd libs/aws/langchain-aws
 ```
 
 ### Install for development
@@ -81,7 +81,7 @@ make integration_test
 Formatting ensures that the code in this repo has consistent style so that the
 code looks more presentable and readable. It corrects these errors when you run
 the formatting command. Linting finds and highlights the code errors and helps 
-avoid coding practicies that can lead to errors. 
+avoid coding practices that can lead to errors. 
 
 Run both of these locally before submitting a PR. The CI scripts will run these
 when you submit a PR, and you won't be able to merge changes without fixing 
