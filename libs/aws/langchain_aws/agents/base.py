@@ -320,8 +320,8 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
 
         return None, None
 
-class BedrockInlineAgentsRunnable(BaseChatModel):
-    """Invoke a Bedrock Inline Agent as a chat model."""
+class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMessage]):
+    """Invoke Bedrock Inline Agent as a runnable chat model."""
 
     client: Any = Field(default=None)
     """Boto3 client"""
@@ -355,9 +355,34 @@ class BedrockInlineAgentsRunnable(BaseChatModel):
             "inline_agent_config": self.inline_agent_config,
         }
 
+    @model_validator(mode='before')
     @classmethod
-    def is_lc_serializable(cls) -> bool:
-        return True
+    def validate_environment(cls, values: Dict) -> Dict:
+        try:
+            if values.get("client") is None:
+                client_params, session = get_boto_session(
+                    credentials_profile_name=values.get("credentials_profile_name"),
+                    region_name=values.get("region_name"),
+                    endpoint_url=values.get("endpoint_url"),
+                )
+                values["client"] = session.client("bedrock-agent-runtime", **client_params)
+        except ImportError:
+            raise ModuleNotFoundError(
+                "Could not import boto3 python package. "
+                "Please install it with `pip install boto3`."
+            )
+        except UnknownServiceError as e:
+            raise ModuleNotFoundError(
+                "Ensure that you have installed the latest boto3 package "
+                "that contains the API for `bedrock-runtime-agent`."
+            ) from e
+        except Exception as e:
+            raise ValueError(
+                "Could not load credentials to authenticate with AWS client. "
+                "Please check that credentials in the specified "
+                "profile name are valid."
+            ) from e
+        return values
 
     @classmethod
     def create(
@@ -391,21 +416,36 @@ class BedrockInlineAgentsRunnable(BaseChatModel):
         except Exception as e:
             raise ValueError(f"Error creating BedrockInlineAgentsRunnable: {str(e)}") from e
 
-    def _generate(
+    def invoke(
         self,
-        messages: List[BaseMessage],
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
-        **kwargs: Any,
-    ) -> ChatResult:
-        """Generate chat completion."""
-        input_text = self._convert_messages_to_text(messages)
+        input: List[BaseMessage],
+        config: Optional[Dict[str, Any]] = None,
+        **kwargs: Any
+    ) -> BaseMessage:
+        """Call InvokeInlineAgent to generate a chat completion"""
+        
+        config = ensure_config(config)
+        callback_manager = CallbackManager.configure(
+            inheritable_callbacks=config.get("callbacks"),
+            inheritable_tags=config.get("tags"),
+            inheritable_metadata=config.get("metadata"),
+        )
+        run_manager = callback_manager.on_chain_start(
+            dumpd(self), input, name=config.get("run_name")
+        )
+        
+        input_text = self._convert_messages_to_text(input)
         input_dict = {
             "input_text": input_text,
             **kwargs,
         }
-
-        response = self._invoke_inline_agent(input_dict, run_manager=run_manager)
+        
+        try:
+            response = self._invoke_inline_agent(input_dict)
+        except Exception as e:
+            run_manager.on_chain_error(e)
+            raise e
+        
         if isinstance(response, BedrockAgentFinish):
             message = AIMessage(
                 content=response.return_values["output"],
@@ -416,15 +456,14 @@ class BedrockInlineAgentsRunnable(BaseChatModel):
                 }
             )
         else:  # BedrockAgentAction
-            # Handle tool use response
-            tool_calls:list[ToolCall] = []
-            # parse_agent_response() returns BedrockAgentAction list
-            for action in response:
-                tool_calls.append({
+            # Handle tool use response: parse_agent_response() returns BedrockAgentAction list
+            tool_calls:list[ToolCall] = [
+                {
                     "name": action.tool,
                     "args": action.tool_input,
                     "id": str(uuid.uuid4())
-                })
+                } for action in response
+            ]
 
             message = AIMessage(
                 content="",  # Empty content for tool calls
@@ -435,8 +474,8 @@ class BedrockInlineAgentsRunnable(BaseChatModel):
                 },
                 tool_calls=tool_calls
             )
-        
-        return ChatResult(generations=[ChatGeneration(message=message)])
+        run_manager.on_chain_end(message)
+        return message
 
     def _convert_messages_to_text(self, messages: List[BaseMessage]) -> str:
         """Convert a list of messages to a single text input for the agent."""
@@ -455,7 +494,6 @@ class BedrockInlineAgentsRunnable(BaseChatModel):
     def _invoke_inline_agent(
         self,
         input_dict: Dict[str, Any],
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
     ) -> Union[BedrockAgentAction, BedrockAgentFinish]:
         """Invoke the inline agent with the given input."""
         # Merge configurations
@@ -535,3 +573,19 @@ class BedrockInlineAgentsRunnable(BaseChatModel):
             })
 
         return action_groups
+    
+    # Serialization helpers
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize the runnable to a dictionary."""
+        return {
+            "class_name": self.__class__.__name__,
+            "region_name": self.region_name,
+            "endpoint_url": self.endpoint_url,
+            "inline_agent_config": self.inline_agent_config,
+            "session_id": self.session_id,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "BedrockInlineAgentsRunnable":
+        """Deserialize the runnable from a dictionary."""
+        return cls(**data)
