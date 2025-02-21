@@ -4,7 +4,7 @@ import io
 import logging
 import re
 from abc import abstractmethod
-from typing import Any, Dict, Generic, Iterator, List, Mapping, Optional, TypeVar, Union
+from typing import Any, Dict, Generic, Iterator, List, Mapping, Optional, TypeVar, Union, Literal
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.llms import LLM
@@ -12,9 +12,11 @@ from langchain_core.outputs import GenerationChunk
 from pydantic import ConfigDict, model_validator
 from typing_extensions import Self
 
-INPUT_TYPE = TypeVar("INPUT_TYPE", bound=Union[str, List[str]])
-OUTPUT_TYPE = TypeVar("OUTPUT_TYPE", bound=Union[str, List[List[float]], Iterator])
+MESSAGE_ROLES = Literal["system", "user", "assistant"]
+MESSAGE_FORMAT = Dict[Literal["role", "content"], Union[MESSAGE_ROLES, str]]
 
+INPUT_TYPE = TypeVar("INPUT_TYPE", bound=Union[str, List[str], MESSAGE_FORMAT, List[MESSAGE_FORMAT]])
+OUTPUT_TYPE = TypeVar("OUTPUT_TYPE", bound=Union[str, List[List[float]], MESSAGE_FORMAT, List[MESSAGE_FORMAT], Iterator])
 
 def enforce_stop_tokens(text: str, stop: List[str]) -> str:
     """Cut off the text as soon as any stop words occur."""
@@ -317,28 +319,6 @@ class SagemakerEndpoint(LLM):
         """Return type of llm."""
         return "sagemaker_endpoint"
 
-    @classmethod
-    def prepare_input(
-        cls,
-        model_kwargs: Dict[str, Any],
-        prompt: Optional[str] = None,
-        system: Optional[str] = None,
-        messages: Optional[List[Dict]] = None,
-        tools: Optional[List[AnthropicTool]] = None,
-        *,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-    ) -> Dict[str, Any]:
-        input_body = {**model_kwargs}
-        continue
-
-    @classmethod
-    def prepare_output(cls, provider: str, response: Any) -> dict:
-        text = ""
-        tool_calls = []
-        response_body = json.loads(response.get("body").read().decode())
-        continue
-
     def _stream(
         self,
         prompt: str,
@@ -444,62 +424,3 @@ class SagemakerEndpoint(LLM):
             text = enforce_stop_tokens(text, stop)
 
         return text
-
-    def _prepare_input_and_invoke(
-        self,
-        prompt: Optional[str] = None,
-        system: Optional[str] = None,
-        messages: Optional[List[Dict]] = None,
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
-        **kwargs: Any,
-    ) -> Tuple[
-        str,
-        List[ToolCall],
-        Dict[str, Any],
-    ]:
-        _model_kwargs = self.model_kwargs or {}
-        params = {**_model_kwargs, **kwargs}
-
-        input_body = self.prepare_input(
-                model_kwargs=params,
-                prompt=prompt,
-                system=system,
-                messages=messages,
-                tools=params["tools"],
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-            )
-
-        body = json.dumps(input_body)
-        accept = "application/json"
-        contentType = "application/json"
-
-        invocation_params = {
-            "EndpointName": self.endpoint_name,
-            "Body": self.content_handler.transform_input(prompt, _model_kwargs),
-            "ContentType": self.content_handler.content_type,
-            **_endpoint_kwargs,
-        }
-
-        if self.inference_component_name:
-            invocation_params["InferenceComponentName"] = self.inference_component_name
-
-        try:
-            logger.debug(f"Request body sent to sagemaker: {request_options}")
-            logger.info("Using SageMaker Invoke Endpoint API to generate response")
-            response = self.client.invoke_endpoint(**invocation_params)
-            (
-                text,
-                tool_calls,
-                body,
-                usage_info,
-                stop_reason,
-            ) = self.prepare_output(provider, response).values()
-            logger.debug(f"Response received from Bedrock: {response}")
-        except Exception as e:
-            logging.error(f"Error raised by bedrock service: {e}")
-            if run_manager is not None:
-                run_manager.on_llm_error(e)
-            raise e
-        continue
