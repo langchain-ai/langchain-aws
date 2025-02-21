@@ -23,7 +23,7 @@ from langchain_core.language_models import (
     LangSmithParams,
     LanguageModelInput,
 )
-from nibernie_pr.llms.sagemaker_endpoint import (
+from langchain_aws.llms.sagemaker_endpoint import (
     SagemakerEndpoint
 )
 from langchain_core.language_models.chat_models import generate_from_stream
