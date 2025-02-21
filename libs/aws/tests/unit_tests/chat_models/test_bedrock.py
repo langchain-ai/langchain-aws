@@ -2,8 +2,10 @@
 
 """Test chat model integration."""
 
+import os
 from contextlib import nullcontext
 from typing import Any, Callable, Dict, Literal, Type, cast
+from unittest import mock
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -339,6 +341,7 @@ def openai_function() -> Dict:
         },
     }
 
+
 @pytest.fixture()
 def tool_with_empty_description() -> Dict:
     return {
@@ -356,6 +359,7 @@ def tool_with_empty_description() -> Dict:
             "required": ["arg1", "arg2"],
         },
     }
+
 
 def test_convert_to_anthropic_tool(
     pydantic: Type[BaseModel],
@@ -389,6 +393,7 @@ def test_convert_to_anthropic_tool(
     expected["description"] = expected["name"]
     actual = convert_to_anthropic_tool(tool_with_empty_description)
     assert actual == expected
+
 
 class GetWeather(BaseModel):
     """Get the current weather in a given location"""
@@ -493,3 +498,18 @@ def test__get_provider(model_id, provider, expected_provider, expectation) -> No
     llm = ChatBedrock(model_id=model_id, provider=provider, region_name="us-west-2")
     with expectation:
         assert llm._get_provider() == expected_provider
+
+
+@mock.patch.dict(os.environ, {"AWS_REGION": "us-west-1"})
+def test_chat_bedrock_different_regions() -> None:
+    region = "ap-south-2"
+    llm = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0", region_name=region
+    )
+    assert llm.region_name == region
+
+
+@mock.patch.dict(os.environ, {"AWS_REGION": "ap-south-2"})
+def test_chat_bedrock_environment_variable() -> None:
+    llm = ChatBedrock(model_id="anthropic.claude-3-sonnet-20240229-v1:0")
+    assert llm.region_name == "ap-south-2"
