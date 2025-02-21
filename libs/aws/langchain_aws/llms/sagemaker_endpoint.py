@@ -12,6 +12,8 @@ from langchain_core.outputs import GenerationChunk
 from pydantic import ConfigDict, model_validator
 from typing_extensions import Self
 
+logger = logging.getLogger(__name__)
+
 MESSAGE_ROLES = Literal["system", "user", "assistant"]
 MESSAGE_FORMAT = Dict[Literal["role", "content"], Union[MESSAGE_ROLES, str]]
 
@@ -358,7 +360,7 @@ class SagemakerEndpoint(LLM):
                         run_manager.on_llm_new_token(chunk.text)
 
         except Exception as e:
-            logging.error(f"Error raised by streaming inference endpoint: {e}")
+            logger.exception("Error raised by streaming inference endpoint")
             if run_manager is not None:
                 run_manager.on_llm_error(e)
             raise e
@@ -414,7 +416,7 @@ class SagemakerEndpoint(LLM):
         try:
             response = self.client.invoke_endpoint(**invocation_params)
         except Exception as e:
-            logging.error(f"Error raised by inference endpoint: {e}")
+            logger.exception("Error raised by inference endpoint")
             if run_manager is not None:
                 run_manager.on_llm_error(e)
             raise e
