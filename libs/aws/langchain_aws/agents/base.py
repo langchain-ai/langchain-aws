@@ -18,6 +18,8 @@ from langchain_core.runnables import RunnableConfig, RunnableSerializable, ensur
 from langchain_core.tools import BaseTool
 from pydantic import model_validator
 
+logger = logging.getLogger(__name__)
+
 _DEFAULT_ACTION_GROUP_NAME = "DEFAULT_AG_"
 _TEST_AGENT_ALIAS_ID = "TSTALIASID"
 
@@ -165,7 +167,7 @@ def _create_bedrock_agent(
 
     create_agent_response = bedrock_client.create_agent(**create_agent_request)
     request_id = create_agent_response.get("ResponseMetadata", {}).get("RequestId", "")
-    logging.info(f"Create bedrock agent call successful with request id: {request_id}")
+    logger.info(f"Create bedrock agent call successful with request id: {request_id}")
     agent_id = create_agent_response["agent"]["agentId"]
     create_agent_start_time = time.time()
     while time.time() - create_agent_start_time < 10:
@@ -179,7 +181,7 @@ def _create_bedrock_agent(
         else:
             time.sleep(2)
 
-    logging.error(f"Failed to create bedrock agent {agent_id}")
+    logger.error(f"Failed to create bedrock agent {agent_id}")
     raise Exception(f"Failed to create bedrock agent {agent_id}")
 
 
@@ -509,7 +511,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                 )
                 _prepare_agent(bedrock_client, agent_id)
             except Exception as exception:
-                logging.error(f"Error in create agent call: {exception}")
+                logger.exception("Error in create agent call")
                 raise exception
 
         return cls(
