@@ -1,60 +1,29 @@
+"""Sagemaker Chat Model."""
+
+
 import logging
-import re
-import warnings
-from collections import defaultdict
-from operator import itemgetter
 from typing import (
     Any,
-    Callable,
     Dict,
-    Iterator,
     List,
-    Literal,
     Optional,
-    Sequence,
-    Tuple,
-    Union,
-    cast,
 )
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import (
     BaseChatModel,
-    LangSmithParams,
-    LanguageModelInput,
 )
-from langchain_aws.llms.sagemaker_endpoint import (
-    SagemakerEndpoint
-)
-from langchain_core.language_models.chat_models import generate_from_stream
 from langchain_core.messages import (
     AIMessage,
-    AIMessageChunk,
     BaseMessage,
-    ChatMessage,
     HumanMessage,
     SystemMessage,
     merge_message_runs,
 )
-from langchain_core.messages.ai import UsageMetadata
-from langchain_core.messages.tool import ToolCall, ToolMessage
-from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
-from langchain_core.tools import BaseTool
-from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
-from pydantic import BaseModel, ConfigDict, model_validator
-from langchain_aws.function_calling import (
-    ToolsOutputParser,
-    _lc_tool_calls_to_anthropic_tool_use_blocks,
-    convert_to_anthropic_tool,
-    get_system_message,
-)
-from langchain_aws.utils import (
-    anthropic_tokens_supported,
-    get_num_tokens_anthropic,
-    get_token_ids_anthropic,
-)
+from langchain_core.outputs import ChatGeneration, ChatResult
+from pydantic import ConfigDict
 
+from langchain_aws.llms.sagemaker_endpoint import SagemakerEndpoint
 
 logger = logging.getLogger(__name__)
 
@@ -101,20 +70,18 @@ class ChatSagemakerEndpoint(BaseChatModel, SagemakerEndpoint):
         _model_kwargs = self.model_kwargs or {}
         _model_kwargs = {**_model_kwargs, **kwargs}
         _endpoint_kwargs = self.endpoint_kwargs or {}
-        completion = ""
-        llm_output: Dict[str, Any] = {}
-        tool_calls: List[ToolCall] = []
-
         sagemaker_messages = _messages_to_sagemaker(messages)
         logger.debug(f"input message to sagemaker: {sagemaker_messages}")
         invocation_params = {
             "EndpointName": self.endpoint_name,
-            "Body": self.content_handler.transform_input(sagemaker_messages, _model_kwargs),
+            "Body": self.content_handler.transform_input(
+                sagemaker_messages, _model_kwargs
+            ),
             "ContentType": self.content_handler.content_type,
             "Accept": self.content_handler.accepts,
             **_endpoint_kwargs,
         }
-        
+
         # If inference_compoent_name is specified, append it to invocation_params
         if self.inference_component_name:
             invocation_params["InferenceComponentName"] = self.inference_component_name
@@ -128,20 +95,20 @@ class ChatSagemakerEndpoint(BaseChatModel, SagemakerEndpoint):
             raise e
         logger.info(f"The message received from SageMaker: {response['Body']}")
 
-        response_message = self.content_handler.transform_output(response["Body"]) 
+        response_message = self.content_handler.transform_output(response["Body"])
 
         return ChatResult(generations=[ChatGeneration(message=response_message)])
-        
+
 
 def _messages_to_sagemaker(
     messages: List[BaseMessage],
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+) -> List[Dict[str, Any]]:
     # Merge system, human, ai message runs because Anthropic expects (at most) 1
     # system message then alternating human/ai messages.
     sagemaker_messages: List[Dict[str, Any]] = []
     if not isinstance(messages, list):
         messages = [messages]
-        
+
     messages = merge_message_runs(messages)
     for msg in messages:
         content = msg.content

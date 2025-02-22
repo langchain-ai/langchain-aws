@@ -4,7 +4,18 @@ import io
 import logging
 import re
 from abc import abstractmethod
-from typing import Any, Dict, Generic, Iterator, List, Mapping, Optional, TypeVar, Union, Literal
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    Iterator,
+    List,
+    Literal,
+    Mapping,
+    Optional,
+    TypeVar,
+    Union,
+)
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.llms import LLM
@@ -17,8 +28,14 @@ logger = logging.getLogger(__name__)
 MESSAGE_ROLES = Literal["system", "user", "assistant"]
 MESSAGE_FORMAT = Dict[Literal["role", "content"], Union[MESSAGE_ROLES, str]]
 
-INPUT_TYPE = TypeVar("INPUT_TYPE", bound=Union[str, List[str], MESSAGE_FORMAT, List[MESSAGE_FORMAT]])
-OUTPUT_TYPE = TypeVar("OUTPUT_TYPE", bound=Union[str, List[List[float]], MESSAGE_FORMAT, List[MESSAGE_FORMAT], Iterator])
+INPUT_TYPE = TypeVar(
+    "INPUT_TYPE", bound=Union[str, List[str], MESSAGE_FORMAT, List[MESSAGE_FORMAT]]
+)
+OUTPUT_TYPE = TypeVar(
+    "OUTPUT_TYPE",
+    bound=Union[str, List[List[float]], MESSAGE_FORMAT, List[MESSAGE_FORMAT], Iterator],
+)
+
 
 def enforce_stop_tokens(text: str, stop: List[str]) -> str:
     """Cut off the text as soon as any stop words occur."""

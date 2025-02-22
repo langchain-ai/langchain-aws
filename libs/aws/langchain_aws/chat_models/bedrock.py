@@ -184,61 +184,6 @@ def convert_messages_to_prompt_mistral(messages: List[BaseMessage]) -> str:
         [_convert_one_message_to_text_mistral(message) for message in messages]
     )
 
-def convert_messages_to_prompt_sagemaker(messages: List[BaseMessage]) -> str:
-    """Convert a list of messages to a prompt for sagemaker."""
-    continue
-
-
-class ChatPromptAdapter:
-    """Adapter class to prepare the inputs from Langchain to prompt format
-    that Chat model expects.
-    """
-
-    @classmethod
-    def convert_messages_to_prompt(
-        cls, provider: str, messages: List[BaseMessage], model: str, fromSagemaker: bool = False
-    ) -> str:
-        if fromSagemaker:
-            continue
-        if provider == "anthropic":
-            prompt = convert_messages_to_prompt_anthropic(messages=messages)
-        elif provider == "meta":
-            if "llama3" in model:
-                prompt = convert_messages_to_prompt_llama3(messages=messages)
-            else:
-                prompt = convert_messages_to_prompt_llama(messages=messages)
-        elif provider == "mistral":
-            prompt = convert_messages_to_prompt_mistral(messages=messages)
-        elif provider == "amazon":
-            prompt = convert_messages_to_prompt_anthropic(
-                messages=messages,
-                human_prompt="\n\nUser:",
-                ai_prompt="\n\nBot:",
-            )
-        else:
-            raise NotImplementedError(
-                f"Provider {provider} model does not support chat."
-            )
-        return prompt
-
-    @classmethod
-    def format_messages(
-        cls, provider: str, messages: List[BaseMessage]
-    ) -> Tuple[Optional[str], List[Dict]]:
-        if provider == "anthropic":
-            return _format_anthropic_messages(messages)
-
-        raise NotImplementedError(
-            f"Provider {provider} not supported for format_messages"
-        )
-
-
-_message_type_lookups = {
-    "human": "user",
-    "ai": "assistant",
-    "AIMessageChunk": "assistant",
-    "HumanMessageChunk": "user",
-}
 
 def _format_image(image_url: str) -> Dict:
     """
@@ -392,6 +337,56 @@ def _format_anthropic_messages(
 
         formatted_messages.append({"role": role, "content": content})
     return system, formatted_messages
+
+
+class ChatPromptAdapter:
+    """Adapter class to prepare the inputs from Langchain to prompt format
+    that Chat model expects.
+    """
+
+    @classmethod
+    def convert_messages_to_prompt(
+        cls, provider: str, messages: List[BaseMessage], model: str
+    ) -> str:
+        if provider == "anthropic":
+            prompt = convert_messages_to_prompt_anthropic(messages=messages)
+        elif provider == "meta":
+            if "llama3" in model:
+                prompt = convert_messages_to_prompt_llama3(messages=messages)
+            else:
+                prompt = convert_messages_to_prompt_llama(messages=messages)
+        elif provider == "mistral":
+            prompt = convert_messages_to_prompt_mistral(messages=messages)
+        elif provider == "amazon":
+            prompt = convert_messages_to_prompt_anthropic(
+                messages=messages,
+                human_prompt="\n\nUser:",
+                ai_prompt="\n\nBot:",
+            )
+        else:
+            raise NotImplementedError(
+                f"Provider {provider} model does not support chat."
+            )
+        return prompt
+
+    @classmethod
+    def format_messages(
+        cls, provider: str, messages: List[BaseMessage]
+    ) -> Tuple[Optional[str], List[Dict]]:
+        if provider == "anthropic":
+            return _format_anthropic_messages(messages)
+
+        raise NotImplementedError(
+            f"Provider {provider} not supported for format_messages"
+        )
+
+
+_message_type_lookups = {
+    "human": "user",
+    "ai": "assistant",
+    "AIMessageChunk": "assistant",
+    "HumanMessageChunk": "user",
+}
 
 
 class ChatBedrock(BaseChatModel, BedrockBase):
