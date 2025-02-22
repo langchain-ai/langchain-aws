@@ -15,6 +15,8 @@ from typing_extensions import Self
 
 from langchain_aws.utils import get_aws_client
 
+logger = logging.getLogger(__name__)
+
 INPUT_TYPE = TypeVar("INPUT_TYPE", bound=Union[str, List[str]])
 OUTPUT_TYPE = TypeVar("OUTPUT_TYPE", bound=Union[str, List[List[float]], Iterator])
 
@@ -385,7 +387,7 @@ class SagemakerEndpoint(LLM):
                         run_manager.on_llm_new_token(chunk.text)
 
         except Exception as e:
-            logging.error(f"Error raised by streaming inference endpoint: {e}")
+            logger.exception("Error raised by streaming inference endpoint")
             if run_manager is not None:
                 run_manager.on_llm_error(e)
             raise e
@@ -441,7 +443,7 @@ class SagemakerEndpoint(LLM):
         try:
             response = self.client.invoke_endpoint(**invocation_params)
         except Exception as e:
-            logging.error(f"Error raised by inference endpoint: {e}")
+            logger.exception("Error raised by inference endpoint")
             if run_manager is not None:
                 run_manager.on_llm_error(e)
             raise e
