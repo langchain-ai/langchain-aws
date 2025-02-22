@@ -18,6 +18,8 @@ from langchain_core.runnables import RunnableConfig, RunnableSerializable, ensur
 from langchain_core.tools import BaseTool
 from pydantic import model_validator
 
+logger = logging.getLogger(__name__)
+
 _DEFAULT_ACTION_GROUP_NAME = "DEFAULT_AG_"
 _TEST_AGENT_ALIAS_ID = "TSTALIASID"
 
@@ -61,6 +63,7 @@ def parse_agent_response(response: Any) -> OutputType:
     event_stream = response["completion"]
     session_id = response["sessionId"]
     trace_log_elements = []
+    files = []
     for event in event_stream:
         if "trace" in event:
             trace_log_elements.append(event["trace"])
@@ -72,10 +75,13 @@ def parse_agent_response(response: Any) -> OutputType:
         if "chunk" in event:
             response_text = event["chunk"]["bytes"].decode("utf-8")
 
+        if "files" in event:
+            files = event["files"]["files"]
+
     trace_log = json.dumps(trace_log_elements)
 
     agent_finish = BedrockAgentFinish(
-        return_values={"output": response_text},
+        return_values={"output": response_text, "files": files},
         log=response_text,
         session_id=session_id,
         trace_log=trace_log,
@@ -161,7 +167,7 @@ def _create_bedrock_agent(
 
     create_agent_response = bedrock_client.create_agent(**create_agent_request)
     request_id = create_agent_response.get("ResponseMetadata", {}).get("RequestId", "")
-    logging.info(f"Create bedrock agent call successful with request id: {request_id}")
+    logger.info(f"Create bedrock agent call successful with request id: {request_id}")
     agent_id = create_agent_response["agent"]["agentId"]
     create_agent_start_time = time.time()
     while time.time() - create_agent_start_time < 10:
@@ -175,7 +181,7 @@ def _create_bedrock_agent(
         else:
             time.sleep(2)
 
-    logging.error(f"Failed to create bedrock agent {agent_id}")
+    logger.error(f"Failed to create bedrock agent {agent_id}")
     raise Exception(f"Failed to create bedrock agent {agent_id}")
 
 
@@ -197,6 +203,7 @@ def _create_bedrock_action_groups(
     agent_id: str,
     tools: List[BaseTool],
     enable_human_input: Optional[bool] = False,
+    enable_code_interpreter: Optional[bool] = False,
 ) -> None:
     """Create the bedrock action groups for the agent"""
 
@@ -221,6 +228,15 @@ def _create_bedrock_action_groups(
         bedrock_client.create_agent_action_group(
             actionGroupName="UserInputAction",
             parentActionGroupSignature="AMAZON.UserInput",
+            actionGroupState="ENABLED",
+            agentId=agent_id,
+            agentVersion="DRAFT",
+        )
+
+    if enable_code_interpreter:
+        bedrock_client.create_agent_action_group(
+            actionGroupName="CodeInterpreterAction",
+            parentActionGroupSignature="AMAZON.CodeInterpreter",
             actionGroupState="ENABLED",
             agentId=agent_id,
             agentVersion="DRAFT",
@@ -409,6 +425,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
         runtime_endpoint_url: Optional[str] = None,
         enable_trace: Optional[bool] = False,
         enable_human_input: Optional[bool] = False,
+        enable_code_interpreter: Optional[bool] = False,
         **kwargs: Any,
     ) -> BedrockAgentsRunnable:
         """
@@ -450,6 +467,8 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                 invoking the agent
             enable_human_input: Boolean flag to specify whether a human as a tool should
                  be enabled for the agent.
+            enable_code_interpreter: Boolean flag to specify whether a code interpreter
+            should be enabled for this session.
             **kwargs: Additional arguments
         Returns:
             BedrockAgentsRunnable configured to invoke the Bedrock agent
@@ -484,11 +503,15 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                     idle_session_ttl_in_seconds=idle_session_ttl_in_seconds,
                 )
                 _create_bedrock_action_groups(
-                    bedrock_client, agent_id, tools, enable_human_input
+                    bedrock_client,
+                    agent_id,
+                    tools,
+                    enable_human_input,
+                    enable_code_interpreter,
                 )
                 _prepare_agent(bedrock_client, agent_id)
             except Exception as exception:
-                logging.error(f"Error in create agent call: {exception}")
+                logger.exception("Error in create agent call")
                 raise exception
 
         return cls(
