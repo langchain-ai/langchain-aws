@@ -11,14 +11,15 @@ from botocore.client import Config
 from langchain_core.tools import BaseTool
 
 from langchain_aws.agents.types import (
+    _DEFAULT_ACTION_GROUP_NAME,
     BedrockAgentAction,
     BedrockAgentFinish,
     GuardrailConfiguration,
     OutputType,
-    _DEFAULT_ACTION_GROUP_NAME,
 )
 
 logger = logging.getLogger(__name__)
+
 
 def get_boto_session(
     credentials_profile_name: Optional[str] = None,
@@ -70,7 +71,7 @@ def parse_agent_response(response: Any) -> OutputType:
 
         if "chunk" in event:
             response_text = event["chunk"]["bytes"].decode("utf-8")
-            
+
         if "files" in event:
             files = event["files"]["files"]
 

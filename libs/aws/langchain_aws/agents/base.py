@@ -3,18 +3,22 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections import defaultdict
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from botocore.exceptions import UnknownServiceError
-from collections import defaultdict
-from langchain_core.callbacks import CallbackManager, CallbackManagerForLLMRun
-from langchain_core.language_models import BaseChatModel
+from langchain_core.callbacks import CallbackManager
 from langchain_core.load import dumpd
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolCall
-from langchain_core.outputs import ChatResult, ChatGeneration
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolCall,
+)
 from langchain_core.runnables import RunnableConfig, RunnableSerializable, ensure_config
 from langchain_core.tools import BaseTool
-from pydantic import model_validator, Field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from pydantic import Field, model_validator
 
 from langchain_aws.agents.types import (
     _DEFAULT_ACTION_GROUP_NAME,
@@ -25,7 +29,6 @@ from langchain_aws.agents.types import (
     InlineAgentConfiguration,
     OutputType,
 )
-
 from langchain_aws.agents.utils import (
     _create_bedrock_action_groups,
     _create_bedrock_agent,
@@ -34,10 +37,11 @@ from langchain_aws.agents.utils import (
     _prepare_agent,
     _tool_to_function,
     get_boto_session,
-    parse_agent_response
+    parse_agent_response,
 )
 
 logger = logging.getLogger(__name__)
+
 
 class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
     """
@@ -320,24 +324,25 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
 
         return None, None
 
+
 class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMessage]):
     """Invoke Bedrock Inline Agent as a runnable chat model."""
 
     client: Any = Field(default=None)
     """Boto3 client"""
-    
+
     region_name: Optional[str] = None
     """Region"""
-    
+
     credentials_profile_name: Optional[str] = None
     """Credentials to use to invoke the agent"""
-    
+
     endpoint_url: Optional[str] = None
     """Endpoint URL"""
-    
+
     inline_agent_config: Optional[InlineAgentConfiguration] = None
     """Configuration for the inline agent"""
-    
+
     session_id: Optional[str] = None
     """Session identifier to be used with requests"""
 
@@ -355,7 +360,7 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
             "inline_agent_config": self.inline_agent_config,
         }
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def validate_environment(cls, values: Dict) -> Dict:
         try:
@@ -365,7 +370,9 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
                     region_name=values.get("region_name"),
                     endpoint_url=values.get("endpoint_url"),
                 )
-                values["client"] = session.client("bedrock-agent-runtime", **client_params)
+                values["client"] = session.client(
+                    "bedrock-agent-runtime", **client_params
+                )
         except ImportError:
             raise ModuleNotFoundError(
                 "Could not import boto3 python package. "
@@ -414,16 +421,18 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
                 **kwargs,
             )
         except Exception as e:
-            raise ValueError(f"Error creating BedrockInlineAgentsRunnable: {str(e)}") from e
+            raise ValueError(
+                f"Error creating BedrockInlineAgentsRunnable: {str(e)}"
+            ) from e
 
     def invoke(
         self,
         input: List[BaseMessage],
         config: Optional[Dict[str, Any]] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> BaseMessage:
         """Call InvokeInlineAgent to generate a chat completion"""
-        
+
         config = ensure_config(config)
         callback_manager = CallbackManager.configure(
             inheritable_callbacks=config.get("callbacks"),
@@ -433,36 +442,41 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
         run_manager = callback_manager.on_chain_start(
             dumpd(self), input, name=config.get("run_name")
         )
-        
+
         input_text = self._convert_messages_to_text(input)
         input_dict = {
             "input_text": input_text,
             **kwargs,
         }
-        
+
         try:
             response = self._invoke_inline_agent(input_dict)
         except Exception as e:
             run_manager.on_chain_error(e)
             raise e
-        
+
         if isinstance(response, BedrockAgentFinish):
             message = AIMessage(
                 content=response.return_values["output"],
                 additional_kwargs={
                     "session_id": response.session_id,
                     "trace_log": response.trace_log,
-                    **({"files": response.return_values["files"]} if response.return_values.get("files") else {})
-                }
+                    **(
+                        {"files": response.return_values["files"]}
+                        if response.return_values.get("files")
+                        else {}
+                    ),
+                },
             )
         else:  # BedrockAgentAction
             # Handle tool use response: parse_agent_response() returns BedrockAgentAction list
-            tool_calls:list[ToolCall] = [
+            tool_calls: list[ToolCall] = [
                 {
                     "name": action.tool,
                     "args": action.tool_input,
-                    "id": str(uuid.uuid4())
-                } for action in response
+                    "id": str(uuid.uuid4()),
+                }
+                for action in response
             ]
 
             message = AIMessage(
@@ -470,9 +484,9 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
                 additional_kwargs={
                     "session_id": response[0].session_id,
                     "trace_log": response[0].trace_log,
-                    "roc_log": response[0].log
+                    "roc_log": response[0].log,
                 },
-                tool_calls=tool_calls
+                tool_calls=tool_calls,
             )
         run_manager.on_chain_end(message)
         return message
@@ -500,12 +514,14 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
         runtime_config = input_dict.get("inline_agent_config", {})
         self.inline_agent_config = self.inline_agent_config or {}
         effective_config = {**self.inline_agent_config, **runtime_config}
-        
+
         # Convert tools to action groups format
         action_groups = self._get_action_groups(
             tools=effective_config.get("tools", []) or [],
             enableHumanInput=effective_config.get("enable_human_input", False),
-            enableCodeInterpreter=effective_config.get("enable_code_interpreter", False),
+            enableCodeInterpreter=effective_config.get(
+                "enable_code_interpreter", False
+            ),
         )
 
         # Prepare the invoke_inline_agent request
@@ -533,16 +549,18 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
                 agent_input[param_name] = effective_config[config_key]
 
         # Use existing session_id from input, or from intermediate steps, or generate new one
-        self.session_id = input_dict.get("session_id") or self.session_id or str(uuid.uuid4())
-        
+        self.session_id = (
+            input_dict.get("session_id") or self.session_id or str(uuid.uuid4())
+        )
+
         output = self.client.invoke_inline_agent(
-            sessionId=self.session_id,
-            **agent_input
+            sessionId=self.session_id, **agent_input
         )
         return parse_agent_response(output)
 
-
-    def _get_action_groups(self, tools: List[Any], enableHumanInput: bool, enableCodeInterpreter: bool) -> List:
+    def _get_action_groups(
+        self, tools: List[Any], enableHumanInput: bool, enableCodeInterpreter: bool
+    ) -> List:
         """Convert tools to Bedrock action groups format."""
         action_groups = []
         tools_by_action_group = defaultdict(list)
@@ -552,28 +570,36 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
             tools_by_action_group[action_group_name].append(tool)
 
         for action_group_name, functions in tools_by_action_group.items():
-            action_groups.append({
-                "actionGroupName": action_group_name,
-                "actionGroupExecutor": {"customControl": "RETURN_CONTROL"},
-                "functionSchema": {
-                    "functions": [_tool_to_function(function) for function in functions]
-                },
-            })
+            action_groups.append(
+                {
+                    "actionGroupName": action_group_name,
+                    "actionGroupExecutor": {"customControl": "RETURN_CONTROL"},
+                    "functionSchema": {
+                        "functions": [
+                            _tool_to_function(function) for function in functions
+                        ]
+                    },
+                }
+            )
 
         if enableHumanInput:
-            action_groups.append({
-                "actionGroupName": "UserInputAction",
-                "parentActionGroupSignature": "AMAZON.UserInput",
-            })
-        
+            action_groups.append(
+                {
+                    "actionGroupName": "UserInputAction",
+                    "parentActionGroupSignature": "AMAZON.UserInput",
+                }
+            )
+
         if enableCodeInterpreter:
-            action_groups.append({
-                "actionGroupName": "CodeInterpreterAction",
-                "parentActionGroupSignature": "AMAZON.CodeInterpreter",
-            })
+            action_groups.append(
+                {
+                    "actionGroupName": "CodeInterpreterAction",
+                    "parentActionGroupSignature": "AMAZON.CodeInterpreter",
+                }
+            )
 
         return action_groups
-    
+
     # Serialization helpers
     def to_dict(self) -> Dict[str, Any]:
         """Serialize the runnable to a dictionary."""

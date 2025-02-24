@@ -199,83 +199,6 @@ def test_mortgage_bedrock_agent():
         if agent:
             _delete_agent(agent.agent_id)
 
-# @pytest.mark.skip
-def test_inline_agent_with_executor():
-    @tool
-    def get_weather(location: str = "") -> str:
-        """
-        Get the weather of a location
-
-        Args:
-            location: location of the place
-        """
-        if location.lower() == "seattle":
-            return f"It is raining in {location}"
-        return f"It is hot and humid in {location}"
-
-    foundation_model = "anthropic.claude-3-sonnet-20240229-v1:0"
-    tools = [get_weather]
-    try:
-        runnable = BedrockInlineAgentsRunnable.create(
-            region_name="us-west-2",
-            inline_agent_config={
-                "foundation_model": foundation_model,
-                "instruction": "You are an agent who helps with getting weather for a given location",
-                "tools": tools,
-                "enable_trace": True,
-            }
-        )
-        
-        agent_executor = AgentExecutor(agent=runnable, tools=tools)
-        output = agent_executor.invoke({
-            "input_text": "what is the weather in Seattle?"
-        })
-
-        assert output["output"] == "It is raining in Seattle"
-
-    except Exception as ex:
-        raise ex
-
-# @pytest.mark.skip    
-def test_inline_agent():
-    @tool
-    def get_weather(location: str = "") -> str:
-        """
-        Get the weather of a location
-
-        Args:
-            location: location of the place
-        """
-        if location.lower() == "seattle":
-            return f"It is raining in {location}"
-        return f"It is hot and humid in {location}"
-
-    foundation_model = "anthropic.claude-3-sonnet-20240229-v1:0"
-    tools = [get_weather]
-    try:
-        runnable = BedrockInlineAgentsRunnable.create(
-            region_name="us-west-2"
-        )
-        
-        output = runnable.invoke(
-            input={
-                "input_text": "what is the weather in Seattle?",
-                "inline_agent_config":{
-                    "foundation_model": foundation_model,
-                    "instruction": "You are an agent who helps with getting weather for a given location",
-                    "tools": tools,
-                    "enable_trace": True,
-                }
-            }
-        )
-        
-        # Check if the agent called for tool invocation
-        assert isinstance(output, list)
-        assert output[0].tool == "get_weather"
-        assert "Seattle" in output[0].tool_input["location"]
-
-    except Exception as ex:
-        raise ex
 
 @pytest.mark.skip
 def test_weather_agent():
@@ -674,3 +597,53 @@ def test_weather_agent_with_code_interpreter():
             _delete_agent_role(agent_resource_role_arn)
         if agent:
             _delete_agent(agent.agent_id)
+
+@pytest.mark.skip
+def test_inline_agent():
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    @tool
+    def get_weather(location: str = "") -> str:
+        """
+        Get the weather of a location
+
+        Args:
+            location: location of the place
+        """
+        if location.lower() == "seattle":
+            return f"It is raining in {location}"
+        return f"It is hot and humid in {location}"
+
+    foundation_model = "anthropic.claude-3-sonnet-20240229-v1:0"
+    instructions = (
+        "You are an agent who helps with getting weather for a given location"
+    )
+    tools = [get_weather]
+    try:
+        runnable = BedrockInlineAgentsRunnable.create(region_name="us-west-2")
+        inline_agent_config = {
+            "foundation_model": foundation_model,
+            "instruction": instructions,
+            "tools": tools,
+            "enable_trace": True,
+        }
+        messages = [HumanMessage(content="What is the weather in Seattle?")]
+        output = runnable.invoke(messages, inline_agent_config=inline_agent_config)
+
+        # Check if the agent called for tool invocation
+        assert isinstance(output, AIMessage)
+        assert hasattr(output, "tool_calls")
+        assert len(output.tool_calls) > 0
+
+        # Check the tool call details
+        tool_call = output.tool_calls[0]
+        assert tool_call["name"] == "get_weather"
+        assert tool_call["args"]["location"] == "Seattle"
+
+        # Check additional metadata
+        assert "session_id" in output.additional_kwargs
+        assert "trace_log" in output.additional_kwargs
+        assert "roc_log" in output.additional_kwargs
+
+    except Exception as ex:
+        raise ex

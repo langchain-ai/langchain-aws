@@ -1,10 +1,13 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, TypedDict, Union
+
+from typing import Dict, List, Optional, TypedDict, Union
+
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.tools import BaseTool
 
 _DEFAULT_ACTION_GROUP_NAME = "DEFAULT_AG_"
 _TEST_AGENT_ALIAS_ID = "TSTALIASID"
+
 
 class BedrockAgentFinish(AgentFinish):
     """AgentFinish with session id information.
@@ -55,13 +58,16 @@ class GuardrailConfiguration(TypedDict):
     guardrail_identifier: str
     guardrail_version: str
 
+
 class KnowledgebaseConfiguration(TypedDict, total=False):
     description: str
     knowledgeBaseId: str
     retrievalConfiguration: Dict
 
+
 class InlineAgentConfiguration(TypedDict, total=False):
     """Configurations for an Inline Agent."""
+
     foundation_model: str
     instruction: str
     enable_trace: Optional[bool]
