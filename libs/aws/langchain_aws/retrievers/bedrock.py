@@ -1,3 +1,4 @@
+import json
 from typing import Any, Dict, List, Literal, Optional, Union
 
 import boto3
@@ -65,11 +66,10 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
                 specified. If not specified, the default credential profile or, if on an
                 EC2 instance, credentials from IMDS will be used.
             client: boto3 client for bedrock agent runtime.
-            retrieval_config: Configuration for retrieval.
-
+            retrieval_config: Optional configuration for retrieval specified as a
+                Python object (RetrievalConfig) or as a dictionary
         Example:
             .. code-block:: python
-
                 from langchain_community.retrievers import AmazonKnowledgeBasesRetriever
 
     retriever = AmazonKnowledgeBasesRetriever(
@@ -87,7 +87,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
     credentials_profile_name: Optional[str] = None
     endpoint_url: Optional[str] = None
     client: Any
-    retrieval_config: RetrievalConfig
+    retrieval_config: Optional[Union[RetrievalConfig, Dict[str, Any]]] = None
     min_score_confidence: Annotated[
         Optional[float], Field(ge=0.0, le=1.0, default=None)
     ]
@@ -159,17 +159,53 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         *,
         run_manager: CallbackManagerForRetrieverRun,
     ) -> List[Document]:
-        response = self.client.retrieve(
-            retrievalQuery={"text": query.strip()},
-            knowledgeBaseId=self.knowledge_base_id,
-            retrievalConfiguration=self.retrieval_config.model_dump(
-                exclude_none=True, by_alias=True
-            ),
-        )
+        """
+        Get relevant document from a KnowledgeBase
+
+        :param query: the user's query
+        :param run_manager: The callback handler to use
+        :return: List of relevant documents
+        """
+        retrieve_request: Dict[str, Any] = self._get_retrieve_request(query)
+        response = self.client.retrieve(**retrieve_request)
         results = response["retrievalResults"]
+        documents: List[
+            Document
+        ] = AmazonKnowledgeBasesRetriever._retrieval_results_to_documents(results)
+
+        return self._filter_by_score_confidence(docs=documents)
+
+    def _get_retrieve_request(self, query: str) -> Dict[str, Any]:
+        """
+        Build a Retrieve request
+
+        :param query:
+        :return:
+        """
+        request: Dict[str, Any] = {
+            "retrievalQuery": {"text": query.strip()},
+            "knowledgeBaseId": self.knowledge_base_id,
+        }
+        if self.retrieval_config:
+            request["retrievalConfiguration"] = self.retrieval_config.model_dump(
+                exclude_none=True, by_alias=True
+            )
+        return request
+
+    @staticmethod
+    def _retrieval_results_to_documents(
+        results: List[Dict[str, Any]],
+    ) -> List[Document]:
+        """
+        Convert the Retrieve API results to LangChain Documents
+
+        :param results:  Retrieve API results list
+        :return: List of LangChain Documents
+        """
         documents = []
         for result in results:
-            content = result["content"]["text"]
+            content = AmazonKnowledgeBasesRetriever._get_content_from_result(result)
+            result["type"] = result.get("content", {}).get("type", "TEXT")
             result.pop("content")
             if "score" not in result:
                 result["score"] = 0
@@ -181,5 +217,33 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
                     metadata=result,
                 )
             )
+        return documents
 
-        return self._filter_by_score_confidence(docs=documents)
+    @staticmethod
+    def _get_content_from_result(result: Dict[str, Any]) -> Optional[str]:
+        """
+        Convert the content from one Retrieve API result to string
+
+        :param result: Retrieve API search result
+        :return: string representation of the content attribute
+        """
+        if not result:
+            raise ValueError("Invalid search result")
+        content: dict = result.get("content")
+        if not content:
+            raise ValueError(
+                "Invalid search result, content is missing from the result"
+            )
+        if not content.get("type"):
+            return content.get("text")
+        if content["type"] == "TEXT":
+            return content.get("text")
+        elif content["type"] == "IMAGE":
+            return content.get("byteContent")
+        elif content["type"] == "ROW":
+            row: Optional[List[dict]] = content.get("row", [])
+            return json.dumps(row if row else [])
+        else:
+            # future proofing this class to prevent code breaks if new types
+            # are introduced
+            return None
