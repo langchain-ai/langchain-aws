@@ -335,6 +335,8 @@ class LLMInputOutputAdapter:
                 content = response_body.get("content")
                 if len(content) == 1 and content[0]["type"] == "text":
                     text = content[0]["text"]
+                elif len(content) == 2 and content[1]["type"] == "text":
+                    text = content[1]["text"]
                 elif any(block["type"] == "tool_use" for block in content):
                     tool_calls = extract_tool_calls(content)
 
