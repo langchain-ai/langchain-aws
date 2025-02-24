@@ -112,7 +112,7 @@ class AmazonQ(Runnable[Union[str,ChatPromptValue], str]):
         except Exception as e:
             if "Prompt Length" in str(e):
                 logging.info(f"Prompt Length: {len(input)}")
-                print(f"""Prompt:
+                logging.info(f"""Prompt:
                 {input}""")
             raise ValueError(f"Error raised by Amazon Q service: {e}")
 
