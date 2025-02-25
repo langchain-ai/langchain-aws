@@ -152,7 +152,7 @@ class AmazonQ(Runnable[Union[str,BaseMessage], BaseMessage]):
                 "Please install it with `pip install boto3`."
             )
         return client
-    def convert_langchain_messages_to_q_input(self, input: Union[str,ChatPromptValue]) -> str:
+    def convert_langchain_messages_to_q_input(self, input: Union[str,BaseMessage]) -> str:
         #If it is just a string and not a ChatPromptTemplate collection just return string
         if type(input) is str:
             return input
