@@ -563,10 +563,15 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         **kwargs: Any,
     ) -> ChatResult:
         if self.beta_use_converse_api:
-            return self._as_converse._generate(
-                messages, stop=stop, run_manager=run_manager, **kwargs
-            )
-        logger.info(f"The input message: {messages}")
+            if not self.streaming:
+                return self._as_converse._generate(
+                    messages, stop=stop, run_manager=run_manager, **kwargs
+                )
+            else:
+                stream_iter = self._as_converse._stream(
+                    messages, stop=stop, run_manager=run_manager, **kwargs
+                )
+                return generate_from_stream(stream_iter)
         completion = ""
         llm_output: Dict[str, Any] = {}
         tool_calls: List[ToolCall] = []
@@ -673,11 +678,14 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 return get_token_ids_anthropic(text)
             else:
                 warnings.warn(
-                    f"Falling back to default token method due to missing or incompatible `anthropic` installation "
-                    f"(needs <=0.38.0).\n\nIf using `anthropic>0.38.0`, it is recommended to provide the model "
-                    f"class with a custom_get_token_ids method implementing a more accurate tokenizer for Anthropic. "
-                    f"For get_num_tokens, as another alternative, you can implement your own token counter method "
-                    f"using the ChatAnthropic or AnthropicLLM classes."
+                    "Falling back to default token method due to missing or "
+                    "incompatible `anthropic` installation "
+                    "(needs <=0.38.0).\n\nIf using `anthropic>0.38.0`, "
+                    "it is recommended to provide the model class with a "
+                    "custom_get_token_ids method implementing a more accurate "
+                    "tokenizer for Anthropic. For get_num_tokens, as another "
+                    "alternative, you can implement your own token counter method "
+                    "using the ChatAnthropic or AnthropicLLM classes."
                 )
         return super().get_token_ids(text)
 
@@ -905,6 +913,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         if self.temperature is not None:
             kwargs["temperature"] = self.temperature
         return ChatBedrockConverse(
+            client=self.client,
             model=self.model_id,
             region_name=self.region_name,
             credentials_profile_name=self.credentials_profile_name,
