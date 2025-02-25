@@ -118,8 +118,20 @@ def parse_agent_response(response: Any) -> OutputType:
                 trace_log=trace_log,
             )
         ]
+    except IndexError as ex:
+        raise IndexError(f"No invocation inputs available: {repr(ex)}") from ex
+    except KeyError as ex:
+        raise KeyError(
+            f"Missing required key for BedrockAgentAction in agent response: {repr(ex)}"
+        ) from ex
+    except (ValueError, TypeError) as ex:
+        raise ValueError(
+            f"Invalid arguments for BedrockAgentAction: {repr(ex)}"
+        ) from ex
     except Exception as ex:
-        raise Exception("Parse exception encountered {}".format(repr(ex)))
+        raise Exception(
+            "Exception encountered while parsing tool request {}".format(repr(ex))
+        ) from ex
 
 
 def _create_bedrock_agent(
@@ -162,7 +174,14 @@ def _create_bedrock_agent(
     if idle_session_ttl_in_seconds:
         create_agent_request["idleSessionTTLInSeconds"] = idle_session_ttl_in_seconds
 
-    create_agent_response = bedrock_client.create_agent(**create_agent_request)
+    try:
+        create_agent_response = bedrock_client.create_agent(**create_agent_request)
+    except Exception as ex:
+        # See full exception list here: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_CreateAgent.html#API_agent_CreateAgent_Errors
+        raise Exception(
+            "Exception encountered with create_agent {}".format(repr(ex))
+        ) from ex
+
     request_id = create_agent_response.get("ResponseMetadata", {}).get("RequestId", "")
     logger.info(f"Create bedrock agent call successful with request id: {request_id}")
     agent_id = create_agent_response["agent"]["agentId"]
@@ -179,7 +198,9 @@ def _create_bedrock_agent(
             time.sleep(2)
 
     logger.error(f"Failed to create bedrock agent {agent_id}")
-    raise Exception(f"Failed to create bedrock agent {agent_id}")
+    raise TimeoutError(
+        f"Failed to create bedrock agent within 10s. AgentId: {agent_id}"
+    )
 
 
 def _get_action_group_and_function_names(tool: BaseTool) -> Tuple[str, str]:

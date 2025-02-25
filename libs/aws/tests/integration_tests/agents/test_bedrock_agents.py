@@ -598,6 +598,7 @@ def test_weather_agent_with_code_interpreter():
         if agent:
             _delete_agent(agent.agent_id)
 
+
 @pytest.mark.skip
 def test_inline_agent():
     from langchain_core.messages import AIMessage, HumanMessage

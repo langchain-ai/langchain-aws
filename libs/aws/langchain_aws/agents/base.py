@@ -326,7 +326,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
 
 
 class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMessage]):
-    """Invoke Bedrock Inline Agent as a runnable chat model."""
+    """Invoke Bedrock Inline Agent as a Runnable."""
 
     client: Any = Field(default=None)
     """Boto3 client"""
@@ -469,7 +469,8 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
                 },
             )
         else:  # BedrockAgentAction
-            # Handle tool use response: parse_agent_response() returns BedrockAgentAction list
+            # Handle tool use response: parse_agent_response()
+            # returns BedrockAgentAction list
             tool_calls: list[ToolCall] = [
                 {
                     "name": action.tool,
@@ -548,7 +549,8 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
             if effective_config.get(config_key):
                 agent_input[param_name] = effective_config[config_key]
 
-        # Use existing session_id from input, or from intermediate steps, or generate new one
+        # Use existing session_id from input, or from intermediate steps,
+        # or generate new one
         self.session_id = (
             input_dict.get("session_id") or self.session_id or str(uuid.uuid4())
         )
