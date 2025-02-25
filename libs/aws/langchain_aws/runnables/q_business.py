@@ -6,11 +6,11 @@ from langchain_core.runnables import Runnable
 from langchain_core.runnables.config import RunnableConfig
 from pydantic import ConfigDict
 from typing_extensions import Self
-from langchain_core.prompt_values import ChatPromptValue
+from langchain_core.prompt_values import ChatPromptValue, BaseMessage
 
 
 @beta(message="This API is in beta and can change in future.")
-class AmazonQ(Runnable[Union[str,ChatPromptValue], str]):
+class AmazonQ(Runnable[Union[str,BaseMessage], BaseMessage]):
     """Amazon Q Runnable wrapper.
 
     To authenticate, the AWS client uses the following methods to
@@ -65,10 +65,10 @@ class AmazonQ(Runnable[Union[str,ChatPromptValue], str]):
 
     def invoke(
         self,
-        input: Union[str,ChatPromptValue],
+        input: Union[str,BaseMessage],
         config: Optional[RunnableConfig] = None,
         **kwargs: Any
-    ) -> str:
+    ) -> BaseMessage:
         """Call out to Amazon Q service.
 
         Args:
