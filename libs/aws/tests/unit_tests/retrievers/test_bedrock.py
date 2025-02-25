@@ -335,7 +335,7 @@ def test_retriever_no_retrieval_config_invoke_with_score(
             ],
             [
                 Document(
-                    page_content='[{"columnName": "someName1", "columnValue": "someValue1"}, '
+                    page_content='[{"columnName": "someName1", "columnValue": "someValue1"}, ' # noqa: E501
                     '{"columnName": "someName2", "columnValue": "someValue2"}]',
                     metadata={
                         "score": 1,
@@ -345,7 +345,7 @@ def test_retriever_no_retrieval_config_invoke_with_score(
                     },
                 ),
                 Document(
-                    page_content='[{"columnName": "someName1", "columnValue": "someValue1"}, '
+                    page_content='[{"columnName": "someName1", "columnValue": "someValue1"}, ' # noqa: E501
                     '{"columnName": "someName2", "columnValue": "someValue2"}]',
                     metadata={
                         "score": 0.5,
@@ -494,9 +494,7 @@ def test_when_get_content_from_result_then_get_expected_content(
     search_result_input, expected_output
 ):
     assert (
-        AmazonKnowledgeBasesRetriever._get_content_from_result(
-            search_result_input
-        )
+        AmazonKnowledgeBasesRetriever._get_content_from_result(search_result_input)
         == expected_output
     )
 
@@ -518,9 +516,7 @@ def test_when_get_content_from_result_with_invalid_content_then_raise_error(
     search_result_input,
 ):
     with pytest.raises(ValueError):
-        AmazonKnowledgeBasesRetriever._get_content_from_result(
-            search_result_input
-        )
+        AmazonKnowledgeBasesRetriever._get_content_from_result(search_result_input)
 
 
 def set_return_value_and_query(

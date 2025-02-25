@@ -10,6 +10,8 @@ from langchain_core.runnables.config import run_in_executor
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import Self
 
+logger = logging.getLogger(__name__)
+
 
 class BedrockEmbeddings(BaseModel, Embeddings):
     """Bedrock embedding models.
@@ -78,6 +80,11 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         protected_namespaces=(),
     )
 
+    @property
+    def provider(self) -> str:
+        """Provider of the model."""
+        return self.model_id.split(".")[0]
+
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
@@ -121,20 +128,38 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         return self
 
     def _embedding_func(self, text: str) -> List[float]:
-        """Call out to Bedrock embedding endpoint."""
+        """Call out to Bedrock embedding endpoint with a single text."""
         # replace newlines, which can negatively affect performance.
         text = text.replace(os.linesep, " ")
 
-        # format input body for provider
-        provider = self.model_id.split(".")[0]
-        input_body: Dict[str, Any] = {}
-        if provider == "cohere":
-            input_body["input_type"] = "search_document"
-            input_body["texts"] = [text]
+        if self.provider == "cohere":
+            response_body = self._invoke_model(
+                input_body={
+                    "input_type": "search_document",
+                    "texts": [text],
+                }
+            )
+            return response_body.get("embeddings")[0]
         else:
             # includes common provider == "amazon"
-            input_body["inputText"] = text
+            response_body = self._invoke_model(
+                input_body={"inputText": text},
+            )
+            return response_body.get("embedding")
 
+    def _cohere_multi_embedding(self, texts: List[str]) -> List[float]:
+        """Call out to Cohere Bedrock embedding endpoint with multiple inputs."""
+        # replace newlines, which can negatively affect performance.
+        texts = [text.replace(os.linesep, " ") for text in texts]
+
+        return self._invoke_model(
+            input_body={
+                "input_type": "search_document",
+                "texts": texts,
+            }
+        ).get("embeddings")
+
+    def _invoke_model(self, input_body: Dict[str, Any] = {}) -> Dict[str, Any]:
         if self.model_kwargs:
             input_body = {**input_body, **self.model_kwargs}
 
@@ -149,13 +174,9 @@ class BedrockEmbeddings(BaseModel, Embeddings):
             )
 
             response_body = json.loads(response.get("body").read())
-            if provider == "cohere":
-                return response_body.get("embeddings")[0]
-            else:
-                return response_body.get("embedding")
-
+            return response_body
         except Exception as e:
-            logging.error(f"Error raised by inference endpoint: {e}")
+            logger.exception("Error raised by inference endpoint")
             raise e
 
     def _normalize_vector(self, embeddings: List[float]) -> List[float]:
@@ -173,6 +194,22 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         Returns:
             List of embeddings, one for each text.
         """
+
+        # If we are able to make use of Cohere's multiple embeddings, use that
+        if self.provider == "cohere":
+            return self._embed_cohere_documents(texts)
+        else:
+            return self._iteratively_embed_documents(texts)
+
+    def _embed_cohere_documents(self, texts: List[str]) -> List[List[float]]:
+        response = self._cohere_multi_embedding(texts)
+
+        if self.normalize:
+            response = [self._normalize_vector(embedding) for embedding in response]
+
+        return response
+
+    def _iteratively_embed_documents(self, texts: List[str]) -> List[List[float]]:
         results = []
         for text in texts:
             response = self._embedding_func(text)

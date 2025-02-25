@@ -33,6 +33,7 @@ from typing_extensions import Self
 
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
+    anthropic_tokens_supported,
     enforce_stop_tokens,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
@@ -483,8 +484,8 @@ class BedrockBase(BaseLanguageModel, ABC):
     client: Any = Field(default=None, exclude=True)  #: :meta private:
 
     region_name: Optional[str] = Field(default=None, alias="region")
-    """The aws region e.g., `us-west-2`. Fallsback to AWS_DEFAULT_REGION env variable
-    or region specified in ~/.aws/config in case it is not provided here.
+    """The aws region e.g., `us-west-2`. Fallsback to AWS_REGION or AWS_DEFAULT_REGION 
+    env variable or region specified in ~/.aws/config in case it is not provided here.
     """
 
     credentials_profile_name: Optional[str] = Field(default=None, exclude=True)
@@ -676,6 +677,7 @@ class BedrockBase(BaseLanguageModel, ABC):
 
             self.region_name = (
                 self.region_name
+                or os.getenv("AWS_REGION")
                 or os.getenv("AWS_DEFAULT_REGION")
                 or session.region_name
             )
@@ -839,7 +841,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             ) = LLMInputOutputAdapter.prepare_output(provider, response).values()
             logger.debug(f"Response received from Bedrock: {response}")
         except Exception as e:
-            logging.error(f"Error raised by bedrock service: {e}")
+            logger.exception("Error raised by bedrock service")
             if run_manager is not None:
                 run_manager.on_llm_error(e)
             raise e
@@ -966,7 +968,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             response = self.client.invoke_model_with_response_stream(**request_options)
 
         except Exception as e:
-            logging.error(f"Error raised by bedrock service: {e}")
+            logger.exception("Error raised by bedrock service")
             if run_manager is not None:
                 run_manager.on_llm_error(e)
             raise e
@@ -1301,13 +1303,24 @@ class BedrockLLM(LLM, BedrockBase):
         return "".join([chunk.text for chunk in chunks])
 
     def get_num_tokens(self, text: str) -> int:
-        if self._model_is_anthropic:
-            return get_num_tokens_anthropic(text)
-        else:
-            return super().get_num_tokens(text)
+        if self._model_is_anthropic and not self.custom_get_token_ids:
+            if anthropic_tokens_supported():
+                return get_num_tokens_anthropic(text)
+        return super().get_num_tokens(text)
 
     def get_token_ids(self, text: str) -> List[int]:
-        if self._model_is_anthropic:
-            return get_token_ids_anthropic(text)
-        else:
-            return super().get_token_ids(text)
+        if self._model_is_anthropic and not self.custom_get_token_ids:
+            if anthropic_tokens_supported():
+                return get_token_ids_anthropic(text)
+            else:
+                warnings.warn(
+                    "Falling back to default token method due to missing or "
+                    "incompatible `anthropic` installation "
+                    "(needs <=0.38.0).\n\nIf using `anthropic>0.38.0`, "
+                    "it is recommended to provide the model class with a "
+                    "custom_get_token_ids method implementing a more accurate "
+                    "tokenizer for Anthropic. For get_num_tokens, as another "
+                    "alternative, you can implement your own token counter method "
+                    "using the ChatAnthropic or AnthropicLLM classes."
+                )
+        return super().get_token_ids(text)
