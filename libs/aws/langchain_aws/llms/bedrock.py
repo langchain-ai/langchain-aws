@@ -96,81 +96,99 @@ def _stream_response_to_generation_chunk(
     output_key: str,
     messages_api: bool,
     coerce_content_to_string: bool,
-) -> Union[GenerationChunk, AIMessageChunk, None]:  # type ignore[return]
+) -> Union[GenerationChunk, AIMessageChunk, None]:
     """Convert a stream response to a generation chunk."""
     if messages_api:
         msg_type = stream_response.get("type")
-
-        # Handle message start
         if msg_type == "message_start":
             return AIMessageChunk(
                 content="" if coerce_content_to_string else [],
             )
-
-        # Handle content blocks
-        elif msg_type == "content_block_start":
-            content_block = stream_response.get("content_block")
-            if not content_block:
-                return None
-
-            if content_block["type"] == "thinking":
+        elif (
+            msg_type == "content_block_start"
+            and stream_response["content_block"] is not None
+        ):
+            if stream_response["content_block"]["type"] == "tool_use":
+                content_block = stream_response["content_block"]
+                content_block["index"] = stream_response["index"]
+                tc_chunk = tool_call_chunk(
+                    index=stream_response["index"],
+                    id=stream_response["content_block"]["id"],
+                    name=stream_response["content_block"]["name"],
+                    args="",
+                )
                 return AIMessageChunk(
-                    content="",
+                    content=[content_block],
+                    tool_call_chunks=[tc_chunk],  # type: ignore
+                )
+            elif (
+                stream_response["content_block"]["type"] == "thinking"
+            ):  # Add thinking type
+                return AIMessageChunk(
+                    content="" if coerce_content_to_string else [],
                     additional_kwargs={
-                        "thinking": {
-                            "thought": content_block.get("thinking", ""),
-                            "signature": content_block.get("signature"),
-                        }
+                        "thinking": stream_response["content_block"].get("thinking", "")
                     },
                 )
-            elif content_block["type"] == "text":
-                return AIMessageChunk(content=content_block.get("text", ""))
-
-        # Handle content block deltas
+            return AIMessageChunk(content="" if coerce_content_to_string else [])
         elif msg_type == "content_block_delta":
-            delta = stream_response.get("delta", {})
-            if delta.get("type") == "text_delta":
-                return AIMessageChunk(content=delta.get("text", ""))
-            elif delta.get("type") == "thinking_delta":
+            if not stream_response["delta"]:
+                return AIMessageChunk(content="")
+            if stream_response["delta"]["type"] == "text_delta":
+                if coerce_content_to_string:
+                    return AIMessageChunk(content=stream_response["delta"]["text"])
+                else:
+                    content_block = stream_response["delta"]
+                    content_block["index"] = stream_response["index"]
+                    content_block["type"] = "text"
+                    return AIMessageChunk(content=[content_block])
+            elif stream_response["delta"]["type"] == "input_json_delta":
+                content_block = stream_response["delta"]
+                content_block["index"] = stream_response["index"]
+                content_block["type"] = "tool_use"
+                tc_chunk = {
+                    "index": stream_response["index"],
+                    "id": None,
+                    "name": None,
+                    "args": stream_response["delta"]["partial_json"],
+                }
                 return AIMessageChunk(
-                    content="",
+                    content=[content_block],
+                    tool_call_chunks=[tc_chunk],  # type: ignore
+                )
+            elif (
+                stream_response["delta"]["type"] == "thinking_delta"
+            ):  # Add thinking_delta type
+                return AIMessageChunk(
+                    content="" if coerce_content_to_string else [],
                     additional_kwargs={
-                        "thinking": {
-                            "thought": delta.get("thinking", ""),
-                            "signature": delta.get("signature"),
-                        }
+                        "thinking": stream_response["delta"].get("thinking", "")
                     },
                 )
-
-        # Handle message completion
         elif msg_type == "message_delta":
             return AIMessageChunk(
                 content="",
                 response_metadata={
-                    "stop_reason": stream_response.get("delta", {}).get("stop_reason"),
-                    "stop_sequence": stream_response.get("delta", {}).get(
-                        "stop_sequence"
-                    ),
+                    "stop_reason": stream_response["delta"].get("stop_reason"),
+                    "stop_sequence": stream_response["delta"].get("stop_sequence"),
                 },
             )
+        return None
 
-    # Handle non-messages API format
-    else:
-        generation_info = {
-            k: v
-            for k, v in stream_response.items()
-            if k not in [output_key, "prompt_token_count", "generation_token_count"]
-        }
-        return GenerationChunk(
-            text=(
-                stream_response.get(output_key, "")
-                if provider != "mistral"
-                else stream_response.get(output_key, [{}])[0].get("text", "")
-            ),
-            generation_info=generation_info,
-        )
-
-    return None
+    # chunk obj format varies with provider
+    generation_info = {
+        k: v
+        for k, v in stream_response.items()
+        if k not in [output_key, "prompt_token_count", "generation_token_count"]
+    }
+    return GenerationChunk(
+        text=(
+            stream_response[output_key]
+            if provider != "mistral"
+            else stream_response[output_key][0]["text"]
+        ),
+        generation_info=generation_info,
+    )
 
 
 def _combine_generation_info_for_llm_result(
@@ -273,6 +291,17 @@ class LLMInputOutputAdapter:
         input_body = {**model_kwargs}
         if provider == "anthropic":
             if messages:
+                converted_messages = []
+                for m in messages:
+                    if isinstance(m, dict):
+                        converted_messages.append(m)
+                    else:
+                        converted_messages.append(
+                            {
+                                "role": "user" if m.type == "human" else "assistant",
+                                "content": m.content,
+                            }
+                        )
                 if tools:
                     input_body["tools"] = tools
                 input_body["anthropic_version"] = "bedrock-2023-05-31"
@@ -283,8 +312,6 @@ class LLMInputOutputAdapter:
                     input_body["max_tokens"] = max_tokens
                 elif "max_tokens" not in input_body:
                     input_body["max_tokens"] = 1024
-                if "thinking" in model_kwargs:
-                    input_body["thinking"] = model_kwargs["thinking"]
 
             if prompt:
                 input_body["prompt"] = _human_assistant_format(prompt)
@@ -327,6 +354,7 @@ class LLMInputOutputAdapter:
     @classmethod
     def prepare_output(cls, provider: str, response: Any) -> dict:
         text = ""
+        thinking = ""
         tool_calls = []
         response_body = json.loads(response.get("body").read().decode())
 
@@ -335,10 +363,17 @@ class LLMInputOutputAdapter:
                 text = response_body.get("completion")
             elif "content" in response_body:
                 content = response_body.get("content")
-                if len(content) == 1 and content[0]["type"] == "text":
+                # Add handling for thinking type
+                if isinstance(content, list):
+                    for block in content:
+                        if block["type"] == "thinking":
+                            thinking = block.get("thinking")
+                        elif block["type"] == "text":
+                            text = block.get("text", "")
+                        elif block["type"] == "tool_use":
+                            tool_calls = extract_tool_calls(content)
+                elif isinstance(content[0]["type"], "text"):
                     text = content[0]["text"]
-                elif any(block["type"] == "tool_use" for block in content):
-                    tool_calls = extract_tool_calls(content)
 
         else:
             if provider == "ai21":
@@ -357,6 +392,7 @@ class LLMInputOutputAdapter:
         completion_tokens = int(headers.get("x-amzn-bedrock-output-token-count", 0))
         return {
             "text": text,
+            "thinking": thinking,
             "tool_calls": tool_calls,
             "body": response_body,
             "usage": {
@@ -626,6 +662,9 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
+    thinking: Optional[Dict[str, Any]] = Field(
+        default=None, description="Configuration for Claude's thinking mode"
+    )
 
     @property
     def lc_secrets(self) -> Dict[str, str]:
@@ -787,10 +826,6 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         provider = self._get_provider()
         params = {**_model_kwargs, **kwargs}
-        # Add thinking configuration if it exists
-        if hasattr(self, "thinking") and self.thinking:
-            params["thinking"] = self.thinking
-
         if "claude-3" in self._get_model() and _tools_in_params(params):
             input_body = LLMInputOutputAdapter.prepare_input(
                 provider=provider,
@@ -798,7 +833,6 @@ class BedrockBase(BaseLanguageModel, ABC):
                 prompt=prompt,
                 system=system,
                 messages=messages,
-                thinking=self.thinking if hasattr(self, "thinking") else None,
                 tools=params["tools"],
                 max_tokens=self.max_tokens,
                 temperature=self.temperature,
@@ -839,13 +873,13 @@ class BedrockBase(BaseLanguageModel, ABC):
             logger.info("Using Bedrock Invoke API to generate response")
             response = self.client.invoke_model(**request_options)
 
-            (
-                text,
-                tool_calls,
-                body,
-                usage_info,
-                stop_reason,
-            ) = LLMInputOutputAdapter.prepare_output(provider, response).values()
+            output = LLMInputOutputAdapter.prepare_output(provider, response)
+            text = output["text"]
+            tool_calls = output["tool_calls"]
+            body = output["body"]
+            usage_info = output["usage"]
+            stop_reason = output["stop_reason"]
+
             logger.debug(f"Response received from Bedrock: {response}")
         except Exception as e:
             logger.exception("Error raised by bedrock service")
@@ -856,7 +890,11 @@ class BedrockBase(BaseLanguageModel, ABC):
         if stop is not None:
             text = enforce_stop_tokens(text, stop)
 
-        llm_output = {"usage": usage_info, "stop_reason": stop_reason}
+        llm_output = {
+            "usage": usage_info,
+            "stop_reason": stop_reason,
+            "thinking": output.get("thinking"),
+        }
 
         # Verify and raise a callback error if any intervention occurs or a signal is
         # sent from a Bedrock service,

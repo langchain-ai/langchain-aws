@@ -15,6 +15,7 @@ from typing import (
     Tuple,
     Union,
     cast,
+    Optional,
 )
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
@@ -58,6 +59,14 @@ from langchain_aws.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class BedrockAIMessage(AIMessage):
+    thinking: Optional[str] = None
+
+    @classmethod
+    def from_response(cls, text: str, thinking: Optional[str] = None, **kwargs):
+        return cls(content=text, thinking=thinking, **kwargs)
 
 
 def _convert_one_message_to_text_llama(message: BaseMessage) -> str:
@@ -504,13 +513,15 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 else:
                     usage_metadata = None
                 generation_chunk = ChatGenerationChunk(
-                    message=AIMessageChunk(
-                        content=delta,
-                        response_metadata=chunk.generation_info,
-                        usage_metadata=usage_metadata,
+                    message=(
+                        AIMessageChunk(
+                            content=delta,
+                            response_metadata=chunk.generation_info,
+                            usage_metadata=usage_metadata,
+                        )
+                        if chunk.generation_info is not None
+                        else AIMessageChunk(content=delta)
                     )
-                    if chunk.generation_info is not None
-                    else AIMessageChunk(content=delta)
                 )
                 if run_manager:
                     run_manager.on_llm_new_token(
@@ -525,93 +536,88 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        if self.beta_use_converse_api:
-            if not self.streaming:
-                return self._as_converse._generate(
-                    messages, stop=stop, run_manager=run_manager, **kwargs
-                )
-            else:
-                stream_iter = self._as_converse._stream(
-                    messages, stop=stop, run_manager=run_manager, **kwargs
-                )
-                return generate_from_stream(stream_iter)
-        completion = ""
-        llm_output: Dict[str, Any] = {}
-        tool_calls: List[ToolCall] = []
-        provider_stop_reason_code = self.provider_stop_reason_key_map.get(
-            self._get_provider(), "stop_reason"
-        )
-        provider = self._get_provider()
         if self.streaming:
-            if provider == "anthropic":
-                stream_iter = self._stream(messages, stop, run_manager, **kwargs)
-                return generate_from_stream(stream_iter)
+            generations: List[ChatGenerationChunk] = []
+            generation: Optional[ChatGenerationChunk] = None
+            for chunk in self._stream(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            ):
+                if generation is None and chunk.message is not None:
+                    generation = chunk
+                elif generation is not None and chunk.message is not None:
+                    generation += chunk
+                elif generation is not None and chunk.message is None:
+                    if (
+                        chunk.generation_info and "usage" in chunk.generation_info
+                    ):  # Changed this line
+                        generation.generation_info = {
+                            "usage": chunk.generation_info["usage"],
+                            "stop_reason": chunk.generation_info.get(
+                                self.provider_stop_reason_key_map.get(
+                                    self._get_provider(), "stop_reason"
+                                )
+                            ),
+                        }
+                        generations.append(generation)
+                        generation = None
 
-            response_metadata: List[Dict[str, Any]] = []
-            for chunk in self._stream(messages, stop, run_manager, **kwargs):
-                completion += chunk.text
-                response_metadata.append(chunk.message.response_metadata)
-                if "tool_calls" in chunk.message.additional_kwargs.keys():
-                    tool_calls = chunk.message.additional_kwargs["tool_calls"]
-            llm_output = _combine_generation_info_for_llm_result(
-                response_metadata, provider_stop_reason_code
-            )
-        else:
-            prompt, system, formatted_messages = None, None, None
-            params: Dict[str, Any] = {**kwargs}
+                if run_manager:
+                    if chunk.message is not None:
+                        run_manager.on_llm_new_token(
+                            chunk.message.content,
+                            chunk=chunk.message.content,
+                        )
+                    elif chunk.delta:
+                        run_manager.on_llm_new_token(chunk.delta, chunk=chunk.delta)
+            if generation is not None and generation not in generations:
+                if (
+                    chunk.generation_info and "usage" in chunk.generation_info
+                ):  # Changed this line
+                    generation.generation_info = {
+                        "usage": chunk.generation_info["usage"],
+                        "stop_reason": chunk.generation_info.get(
+                            self.provider_stop_reason_key_map.get(
+                                self._get_provider(), "stop_reason"
+                            )
+                        ),
+                    }
+                generations.append(generation)
 
-            if provider == "anthropic":
-                system, formatted_messages = ChatPromptAdapter.format_messages(
-                    provider, messages
-                )
-                # use tools the new way with claude 3
-                if self.system_prompt_with_tools:
-                    if system:
-                        system = self.system_prompt_with_tools + f"\n{system}"
-                    else:
-                        system = self.system_prompt_with_tools
-            else:
-                prompt = ChatPromptAdapter.convert_messages_to_prompt(
-                    provider=provider, messages=messages, model=self._get_model()
-                )
+            return ChatResult(generations=generations)
 
-            if stop:
-                params["stop_sequences"] = stop
-
-            completion, tool_calls, llm_output = self._prepare_input_and_invoke(
-                prompt=prompt,
-                stop=stop,
-                run_manager=run_manager,
-                system=system,
-                messages=formatted_messages,
-                **params,
-            )
-        # usage metadata
-        if usage := llm_output.get("usage"):
-            input_tokens = usage.get("prompt_tokens", 0)
-            output_tokens = usage.get("completion_tokens", 0)
-            usage_metadata = UsageMetadata(
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                total_tokens=usage.get("total_tokens", input_tokens + output_tokens),
-            )
-        else:
-            usage_metadata = None
-        logger.info(f"The message received from Bedrock: {completion}")
-        llm_output["model_id"] = self.model_id
-        msg = AIMessage(
+        completion, tool_calls, llm_output = self._prepare_input_and_invoke(
+            messages=messages, stop=stop, run_manager=run_manager, **kwargs
+        )
+        message = AIMessage(
             content=completion,
-            additional_kwargs=llm_output,
-            tool_calls=cast(List[ToolCall], tool_calls),
-            usage_metadata=usage_metadata,
+            additional_kwargs=(
+                {"thinking": llm_output.get("thinking")}
+                if llm_output.get("thinking")
+                else {}
+            ),
+            tool_calls=tool_calls if tool_calls else [],
         )
         return ChatResult(
-            generations=[
-                ChatGeneration(
-                    message=msg,
-                )
-            ],
-            llm_output=llm_output,
+            generations=[ChatGeneration(message=message, generation_info=llm_output)]
+        )
+
+        completion, tool_calls, llm_output = self._prepare_input_and_invoke(
+            messages=messages, stop=stop, run_manager=run_manager, **kwargs
+        )
+
+        # Create AIMessage with thinking if present
+        message = AIMessage(
+            content=completion,
+            additional_kwargs=(
+                {"thinking": llm_output.get("thinking")}
+                if llm_output.get("thinking")
+                else {}
+            ),
+            tool_calls=tool_calls if tool_calls else [],
+        )
+
+        return ChatResult(
+            generations=[ChatGeneration(message=message, generation_info=llm_output)]
         )
 
     def _combine_llm_outputs(self, llm_outputs: List[Optional[dict]]) -> dict:
