@@ -787,7 +787,6 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         provider = self._get_provider()
         params = {**_model_kwargs, **kwargs}
-
         # Add thinking configuration if it exists
         if hasattr(self, "thinking") and self.thinking:
             params["thinking"] = self.thinking
