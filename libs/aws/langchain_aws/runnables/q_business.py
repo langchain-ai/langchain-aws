@@ -6,7 +6,7 @@ from langchain_core.runnables import Runnable
 from langchain_core.runnables.config import RunnableConfig
 from pydantic import ConfigDict
 from typing_extensions import Self
-from langchain_core.prompt_values import ChatPromptValue, BaseMessage
+from langchain_core.prompt_values import BaseMessage
 
 
 @beta(message="This API is in beta and can change in future.")
