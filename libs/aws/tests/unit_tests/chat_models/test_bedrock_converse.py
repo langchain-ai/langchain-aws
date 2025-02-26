@@ -2,7 +2,7 @@
 
 import base64
 import os
-from typing import Dict, List, Tuple, Type, Union, cast
+from typing import Any, Dict, List, Tuple, Type, Union, cast
 from unittest import mock
 
 import pytest
@@ -524,7 +524,7 @@ def test_chat_bedrock_converse_environment_variable() -> None:
 
 
 def test__bedrock_to_lc_anthropic_reasoning() -> None:
-    bedrock_content = [
+    bedrock_content: List[Dict[str, Any]] = [
         # Expected LC format for non-reasoning block
         {
             "text": "Thought text"
