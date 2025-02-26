@@ -12,6 +12,7 @@ from langchain_aws.agents.base import (
     BedrockAgentFinish,
     parse_agent_response,
 )
+from langchain_aws.agents.types import InlineAgentConfiguration
 
 
 class TestBedrockAgentResponseParser(unittest.TestCase):
@@ -83,7 +84,7 @@ class TestBedrockInlineAgentsRunnable(unittest.TestCase):
         self.tools = [test_tool]
 
         # Create mock configuration
-        self.inline_agent_config = {
+        self.inline_agent_config: InlineAgentConfiguration = {
             "foundation_model": "anthropic.claude-v3",
             "instruction": "Test instruction",
             "tools": self.tools,
@@ -100,7 +101,7 @@ class TestBedrockInlineAgentsRunnable(unittest.TestCase):
             inline_agent_config=self.inline_agent_config,
         )
 
-    def test_create_method(self):
+    def test_create_method(self) -> None:
         """Test the create class method"""
         with patch("boto3.Session") as mock_session:
             mock_client = Mock()
@@ -114,7 +115,7 @@ class TestBedrockInlineAgentsRunnable(unittest.TestCase):
             self.assertEqual(runnable.region_name, "us-west-2")
             self.assertEqual(runnable.inline_agent_config, self.inline_agent_config)
 
-    def test_get_action_groups(self):
+    def test_get_action_groups(self) -> None:
         """Test _get_action_groups method"""
         action_groups = self.runnable._get_action_groups(
             tools=self.tools, enableHumanInput=True, enableCodeInterpreter=True
@@ -152,7 +153,7 @@ class TestBedrockInlineAgentsRunnable(unittest.TestCase):
             "AMAZON.CodeInterpreter",
         )
 
-    def test_invoke_with_new_session(self):
+    def test_invoke_with_new_session(self) -> None:
         """Test invoke method with a new session"""
         # Mock the client response
         mock_response = {
@@ -183,7 +184,7 @@ class TestBedrockInlineAgentsRunnable(unittest.TestCase):
             call_args["inputText"], "System: System instruction\nHuman: Test input"
         )
 
-    def test_invoke_with_runtime_config_override(self):
+    def test_invoke_with_runtime_config_override(self) -> None:
         """Test invoke method with runtime configuration override"""
         mock_response = {
             "sessionId": "test-session",
@@ -211,7 +212,7 @@ class TestBedrockInlineAgentsRunnable(unittest.TestCase):
         self.assertEqual(call_args["instruction"], "Override instruction")
         self.assertFalse(call_args["enableTrace"])
 
-    def test_error_handling(self):
+    def test_error_handling(self) -> None:
         """Test error handling in invoke method"""
         self.mock_client.invoke_inline_agent.side_effect = Exception("Test error")
 

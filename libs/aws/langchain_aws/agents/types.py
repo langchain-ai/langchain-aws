@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional, TypedDict, Union
+from typing import Dict, List, Optional, Union
 
 from langchain_core.agents import AgentAction, AgentFinish
 from langchain_core.tools import BaseTool
+from typing_extensions import TypedDict
 
 _DEFAULT_ACTION_GROUP_NAME = "DEFAULT_AG_"
 _TEST_AGENT_ALIAS_ID = "TSTALIASID"
