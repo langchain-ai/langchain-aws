@@ -940,6 +940,29 @@ def _lc_content_to_bedrock(
             bedrock_content.append({"json": block["json"]})
         elif block["type"] == "guard_content":
             bedrock_content.append({"guardContent": {"text": {"text": block["text"]}}})
+        elif block["type"] == "thinking":
+            bedrock_content.append(
+                {
+                    "reasoningContent": {
+                        "reasoningText": {
+                            "text": block.get("thinking", ""),
+                            "signature": block.get("signature", "")
+                        }
+                    }
+                }
+            )
+        elif block["type"] == "reasoning_content":
+            reasoning_content = block.get("reasoningContent", {})
+            bedrock_content.append(
+                {
+                    "reasoningContent": {
+                        "reasoningText": {
+                            "text": reasoning_content.get("text", ""),
+                            "signature": reasoning_content.get("signature", "")
+                        }
+                    }
+                }
+            )
         else:
             raise ValueError(f"Unsupported content block type:\n{block}")
     # drop empty text blocks
@@ -1015,11 +1038,50 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     },
                 }
             )
+        elif "reasoning_content" in block:
+            reasoning_dict = block.get("reasoning_content", {})
+            # Invoke block format
+            if "reasoning_text" in reasoning_dict:
+                text = reasoning_dict.get("reasoning_text").get("text", "")
+                signature = reasoning_dict.get("reasoning_text").get("signature", "")
+                lc_content.append(
+                    {
+                        "type": "reasoning_content",
+                        "reasoning_content": {
+                            "type": "text",
+                            "text": text,
+                            "signature": signature,
+                        },
+                    }
+                )
+            # Streaming block format
+            else:
+                if "text" in reasoning_dict:
+                    lc_content.append(
+                        {
+                            "type": "reasoning_content",
+                            "reasoning_content": {
+                                "type": "text",
+                                "text": reasoning_dict.get("text")
+                            },
+                        }
+                    )
+                if "signature" in reasoning_dict:
+                    lc_content.append(
+                        {
+                            "type": "reasoning_content",
+                            "reasoning_content": {
+                                "type": "signature",
+                                "signature": reasoning_dict.get("signature")
+                            },
+                        }
+                    )
+
         else:
             raise ValueError(
                 "Unexpected content block type in content. Expected to have one of "
-                "'text', 'tool_use', 'image', or 'tool_result' keys. Received:\n\n"
-                f"{block}"
+                "'text', 'tool_use', 'image', 'video, 'document', 'tool_result', 'json', 'guard_content', or "
+                "'reasoning_content' keys. Received:\n\n{block}"
             )
     return lc_content
 
