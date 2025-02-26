@@ -1,11 +1,11 @@
 """Sagemaker Chat Model."""
 
-
 import logging
 from typing import (
     Any,
     Dict,
     List,
+    Mapping,
     Optional,
     Iterator
 )
@@ -22,14 +22,200 @@ from langchain_core.messages import (
     merge_message_runs,
 )
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from pydantic import ConfigDict
-from langchain_aws.llms.sagemaker_endpoint import SagemakerEndpoint, LineIterator, enforce_stop_tokens
+from pydantic import ConfigDict, model_validator
+from typing_extensions import Self
+from langchain_aws.llms.sagemaker_endpoint import LLMContentHandler, LineIterator, enforce_stop_tokens
 
 logger = logging.getLogger(__name__)
 
 
-class ChatSagemakerEndpoint(BaseChatModel, SagemakerEndpoint):
-    """A chat model that uses a HugguingFace TGI compatible SageMaker Endpoint."""
+class ChatSagemakerEndpoint(BaseChatModel):
+    """A chat model that uses a HugguingFace TGI compatible SageMaker Endpoint.
+
+    To use, you must supply the endpoint name from your deployed
+    Sagemaker model & the region where it is deployed.
+
+    To authenticate, the AWS client uses the following methods to
+    automatically load credentials:
+    https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If a specific credential profile should be used, you must pass
+    the name of the profile from the ~/.aws/credentials file that is to be used.
+
+    Make sure the credentials / roles used have the required policies to
+    access the Sagemaker endpoint.
+    See: https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html
+    """
+
+    """
+    Args:        
+
+        region_name: The aws region e.g., `us-west-2`.
+            Fallsback to AWS_DEFAULT_REGION env variable
+            or region specified in ~/.aws/config.
+
+        credentials_profile_name: The name of the profile in the ~/.aws/credentials
+            or ~/.aws/config files, which has either access keys or role information
+            specified. If not specified, the default credential profile or, if on an
+            EC2 instance, credentials from IMDS will be used.
+
+        client: boto3 client for Sagemaker Endpoint
+
+        content_handler: Implementation for model specific LLMContentHandler 
+
+
+    Example:
+        .. code-block:: python
+
+            from langchain_aws.chat_models.sagemaker_endpoint import 
+            ChatSagemakerEndpoint
+            endpoint_name = (
+                "my-endpoint-name"
+            )
+            region_name = (
+                "us-west-2"
+            )
+            credentials_profile_name = (
+                "default"
+            )
+            se = ChatSagemakerEndpoint(
+                endpoint_name=endpoint_name,
+                region_name=region_name,
+                credentials_profile_name=credentials_profile_name
+            )
+        
+            # Usage with Inference Component
+            se = ChatSagemakerEndpoint(
+                endpoint_name=endpoint_name,
+                inference_component_name=inference_component_name,
+                region_name=region_name,
+                credentials_profile_name=credentials_profile_name
+            )
+
+        #Use with boto3 client
+            client = boto3.client(
+                        "sagemaker-runtime",
+                        region_name=region_name
+                    )
+
+            se = ChatSagemakerEndpoint(
+                endpoint_name=endpoint_name,
+                client=client
+            )
+
+    """
+    client: Any = None
+    """Boto3 client for sagemaker runtime"""
+
+    endpoint_name: str = ""
+    """The name of the endpoint from the deployed Sagemaker model.
+    Must be unique within an AWS Region."""
+
+    inference_component_name: Optional[str] = None
+    """Optional name of the inference component to invoke 
+    if specified with endpoint name."""
+
+    region_name: str = ""
+    """The aws region where the Sagemaker model is deployed, eg. `us-west-2`."""
+
+    credentials_profile_name: Optional[str] = None
+    """The name of the profile in the ~/.aws/credentials or ~/.aws/config files, which
+    has either access keys or role information specified.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    """
+
+    content_handler: LLMContentHandler
+    """The content handler class that provides an input and
+    output transform functions to handle formats between LLM
+    and the endpoint.
+    """
+
+    streaming: bool = False
+    """Whether to stream the results."""
+
+    """
+     Example:
+        .. code-block:: python
+
+        from langchain_community.llms.sagemaker_endpoint import LLMContentHandler
+
+        class ContentHandler(LLMContentHandler):
+                content_type = "application/json"
+                accepts = "application/json"
+
+                def transform_input(self, prompt: str, model_kwargs: Dict) -> bytes:
+                    input_str = json.dumps({prompt: prompt, **model_kwargs})
+                    return input_str.encode('utf-8')
+                
+                def transform_output(self, output: bytes) -> str:
+                    response_json = json.loads(output.read().decode("utf-8"))
+                    return response_json[0]["generated_text"]
+    """
+
+    model_kwargs: Optional[Dict] = None
+    """Keyword arguments to pass to the model."""
+
+    endpoint_kwargs: Optional[Dict] = None
+    """Optional attributes passed to the invoke_endpoint
+    function. See `boto3`_. docs for more info.
+    .. _boto3: <https://boto3.amazonaws.com/v1/documentation/api/latest/index.html>
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    @model_validator(mode="after")
+    def validate_environment(self) -> Self:
+        """Dont do anything if client provided externally"""
+        if self.client is not None:
+            return self
+
+        """Validate that AWS credentials to and python package exists in environment."""
+        try:
+            import boto3
+
+            try:
+                if self.credentials_profile_name is not None:
+                    session = boto3.Session(profile_name=self.credentials_profile_name)
+                else:
+                    # use default credentials
+                    session = boto3.Session()
+
+                self.client = session.client(
+                    "sagemaker-runtime", region_name=self.region_name
+                )
+
+            except Exception as e:
+                raise ValueError(
+                    "Could not load credentials to authenticate with AWS client. "
+                    "Please check that credentials in the specified "
+                    "profile name are valid."
+                ) from e
+
+        except ImportError:
+            raise ImportError(
+                "Could not import boto3 python package. "
+                "Please install it with `pip install boto3`."
+            )
+        return self
+
+    @property
+    def _identifying_params(self) -> Mapping[str, Any]:
+        """Get the identifying parameters."""
+        _model_kwargs = self.model_kwargs or {}
+        return {
+            **{"endpoint_name": self.endpoint_name},
+            **{"inference_component_name": self.inference_component_name},
+            **{"model_kwargs": _model_kwargs},
+        }
+
+    @property
+    def _llm_type(self) -> str:
+        """Return type of llm."""
+        return "sagemaker_endpoint"
 
     @property
     def _llm_type(self) -> str:
