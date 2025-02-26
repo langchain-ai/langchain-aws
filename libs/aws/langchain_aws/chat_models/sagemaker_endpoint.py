@@ -7,6 +7,7 @@ from typing import (
     Dict,
     List,
     Optional,
+    Iterator
 )
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
@@ -20,10 +21,9 @@ from langchain_core.messages import (
     SystemMessage,
     merge_message_runs,
 )
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from pydantic import ConfigDict
-
-from langchain_aws.llms.sagemaker_endpoint import SagemakerEndpoint
+from langchain_aws.llms.sagemaker_endpoint import SagemakerEndpoint, LineIterator, enforce_stop_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +60,11 @@ class ChatSagemakerEndpoint(BaseChatModel, SagemakerEndpoint):
         populate_by_name=True,
     )
 
-    def _generate(
+    def _format_messages_request(
         self,
-        messages: List[BaseMessage],
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
-        **kwargs: Any,
-    ) -> ChatResult:
+        messages:  List[BaseMessage],
+        **kwargs: Any
+        ) -> Dict[str, Any]:
         _model_kwargs = self.model_kwargs or {}
         _model_kwargs = {**_model_kwargs, **kwargs}
         _endpoint_kwargs = self.endpoint_kwargs or {}
@@ -75,17 +73,62 @@ class ChatSagemakerEndpoint(BaseChatModel, SagemakerEndpoint):
         invocation_params = {
             "EndpointName": self.endpoint_name,
             "Body": self.content_handler.transform_input(
-                sagemaker_messages, _model_kwargs
-            ),
+                sagemaker_messages, _model_kwargs),
             "ContentType": self.content_handler.content_type,
             "Accept": self.content_handler.accepts,
             **_endpoint_kwargs,
         }
 
-        # If inference_compoent_name is specified, append it to invocation_params
+        # If inference_component_name is specified, append it to invocation_params
         if self.inference_component_name:
             invocation_params["InferenceComponentName"] = self.inference_component_name
+        return invocation_params
 
+    def _stream(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> Iterator[ChatGenerationChunk]:
+        invocation_params = self._format_messages_request(
+            messages=messages,
+            **kwargs
+            )
+        try:
+            resp = self.client.invoke_endpoint_with_response_stream(**invocation_params)
+            iterator = LineIterator(resp["Body"])
+
+            for line in iterator:
+                text = self.content_handler.transform_output(line)
+                if stop is not None:
+                    text = enforce_stop_tokens(text, stop)
+
+                if text:
+                    generation_chunk = ChatGenerationChunk(message=text)
+                    if run_manager:
+                        run_manager.on_llm_new_token(
+                            generation_chunk.text, chunk=generation_chunk
+                        )
+                    yield generation_chunk
+
+        except Exception as e:
+            logger.exception("Error raised by streaming inference endpoint")
+            if run_manager is not None:
+                run_manager.on_llm_error(e)
+            raise e
+
+    def _generate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        invocation_params = self._format_messages_request(
+            messages=messages,
+            **kwargs
+            )
         try:
             response = self.client.invoke_endpoint(**invocation_params)
         except Exception as e:
