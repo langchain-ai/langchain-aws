@@ -2,7 +2,6 @@
 
 from typing import Type
 
-import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_standard_tests.integration_tests import ChatModelIntegrationTests
 
@@ -22,10 +21,6 @@ class TestBedrockStandard(ChatModelIntegrationTests):
     def standard_chat_model_params(self) -> dict:
         return {"temperature": 0, "max_tokens": 100}
 
-    @pytest.mark.xfail(reason="Not implemented.")
-    def test_stop_sequence(self, model: BaseChatModel) -> None:
-        super().test_stop_sequence(model)
-
 
 class TestBedrockUseConverseStandard(ChatModelIntegrationTests):
     @property
@@ -44,6 +39,7 @@ class TestBedrockUseConverseStandard(ChatModelIntegrationTests):
         return {
             "temperature": 0,
             "max_tokens": 100,
+            "stop_sequences": [],
             "model_kwargs": {
                 "stop": [],
             },
@@ -52,7 +48,3 @@ class TestBedrockUseConverseStandard(ChatModelIntegrationTests):
     @property
     def supports_image_inputs(self) -> bool:
         return True
-
-    @pytest.mark.xfail(reason="Not implemented.")
-    def test_stop_sequence(self, model: BaseChatModel) -> None:
-        super().test_stop_sequence(model)
