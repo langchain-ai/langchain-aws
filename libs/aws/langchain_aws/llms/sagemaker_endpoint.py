@@ -90,12 +90,26 @@ class LineIterator:
                 return line[:-1]
             try:
                 chunk = next(self.byte_iterator)
+                if "PayloadPart" in chunk:
+                    self.buffer.seek(0, io.SEEK_END)
+                    self.buffer.write(chunk["PayloadPart"]["Bytes"])
+                    continue
+            except StopIteration:
+                if self.read_pos < self.buffer.getbuffer().nbytes:
+                    remaining = self.buffer.getvalue()[self.read_pos:]
+                    self.read_pos = self.buffer.getbuffer().nbytes
+                    return remaining
+                raise
+            if line:
+                self.read_pos += len(line)
+                return line[:-1] if line[-1] == ord('\n') else line
+            try:
+                chunk = next(self.byte_iterator)
             except StopIteration:
                 if self.read_pos < self.buffer.getbuffer().nbytes:
                     continue
                 raise
             if "PayloadPart" not in chunk:
-                # Unknown Event Type
                 continue
             self.buffer.seek(0, io.SEEK_END)
             self.buffer.write(chunk["PayloadPart"]["Bytes"])
