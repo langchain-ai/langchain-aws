@@ -1,16 +1,18 @@
 import logging
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from langchain_core._api.beta_decorator import beta
-from langchain_core.prompt_values import BaseMessage
+from langchain_core.prompt_values import ChatPromptValue
 from langchain_core.runnables import Runnable
 from langchain_core.runnables.config import RunnableConfig
 from pydantic import ConfigDict
 from typing_extensions import Self
+from langchain_core.messages.ai import AIMessage
+logger = logging.getLogger(__name__)
 
 
 @beta(message="This API is in beta and can change in future.")
-class AmazonQ(Runnable[Union[str,BaseMessage], BaseMessage]):
+class AmazonQ(Runnable[Union[str,ChatPromptValue, List[ChatPromptValue]], ChatPromptValue]):
     """Amazon Q Runnable wrapper.
 
     To authenticate, the AWS client uses the following methods to
@@ -32,7 +34,6 @@ class AmazonQ(Runnable[Union[str,BaseMessage], BaseMessage]):
 
     application_id: str = None
 
-    _last_response: Dict = None  # Add this to store the full response
     """Store the full response from Amazon Q."""
 
     parent_message_id: Optional[str] = None
@@ -65,10 +66,10 @@ class AmazonQ(Runnable[Union[str,BaseMessage], BaseMessage]):
 
     def invoke(
         self,
-        input: Union[str,BaseMessage],
+        input: Union[str,ChatPromptValue],
         config: Optional[RunnableConfig] = None,
         **kwargs: Any
-    ) -> BaseMessage:
+    ) -> ChatPromptValue:
         """Call out to Amazon Q service.
 
         Args:
@@ -101,24 +102,19 @@ class AmazonQ(Runnable[Union[str,BaseMessage], BaseMessage]):
 
             # Call Amazon Q
             response = self.client.chat_sync(**request)
-            self._last_response = response
 
             # Extract the response text
             if 'systemMessage' in response:
-                return response["systemMessage"]
+                return AIMessage(content=response["systemMessage"], response_metadata=response)
             else:
                 raise ValueError("Unexpected response format from Amazon Q")
 
         except Exception as e:
             if "Prompt Length" in str(e):
-                logging.info(f"Prompt Length: {len(input)}")
-                logging.info(f"""Prompt:
+                logger.info(f"Prompt Length: {len(input)}")
+                logger.info(f"""Prompt:
                 {input}""")
             raise ValueError(f"Error raised by Amazon Q service: {e}")
-
-    def get_last_response(self) -> Dict:
-        """Method to access the full response from the last call"""
-        return self._last_response
 
     def validate_environment(self) -> Self:
         """Don't do anything if client provided externally"""
@@ -152,7 +148,7 @@ class AmazonQ(Runnable[Union[str,BaseMessage], BaseMessage]):
                 "Please install it with `pip install boto3`."
             )
         return client
-    def convert_langchain_messages_to_q_input(self, input: Union[str,BaseMessage]) -> str:
+    def convert_langchain_messages_to_q_input(self, input: Union[str,ChatPromptValue,List[ChatPromptValue]]) -> str:
         #If it is just a string and not a ChatPromptTemplate collection just return string
         if type(input) is str:
             return input
