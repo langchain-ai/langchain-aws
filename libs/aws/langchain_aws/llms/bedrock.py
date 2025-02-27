@@ -294,7 +294,7 @@ class LLMInputOutputAdapter:
             if temperature is not None:
                 input_body["temperature"] = temperature
 
-        elif provider in ("ai21", "cohere", "meta", "mistral"):
+        elif provider in ("ai21", "cohere", "meta", "mistral", "deepseek"):
             input_body["prompt"] = prompt
             if max_tokens:
                 if provider == "cohere":
@@ -303,6 +303,8 @@ class LLMInputOutputAdapter:
                     input_body["max_gen_len"] = max_tokens
                 elif provider == "mistral":
                     input_body["max_tokens"] = max_tokens
+                elif provider == "deepseek":
+                    input_body["max_new_tokens"] = max_tokens
                 else:
                     # TODO: Add AI21 support, param depends on specific model.
                     pass
@@ -347,6 +349,8 @@ class LLMInputOutputAdapter:
                 text = response_body.get("generation")
             elif provider == "mistral":
                 text = response_body.get("outputs")[0].get("text")
+            elif provider == "deepseek":
+                text = response_body.get("choices")[0].get("text")
             else:
                 text = response_body.get("results")[0].get("outputText")
 

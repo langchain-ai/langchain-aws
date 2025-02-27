@@ -38,7 +38,7 @@ from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResu
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 from langchain_aws.function_calling import (
@@ -183,6 +183,41 @@ def convert_messages_to_prompt_mistral(messages: List[BaseMessage]) -> str:
     return "\n".join(
         [_convert_one_message_to_text_mistral(message) for message in messages]
     )
+
+
+def _convert_one_message_to_text_deepseek(message: BaseMessage) -> str:
+    if isinstance(message, ChatMessage):
+        message_text = (
+            f"<|{message.role}|>{message.content}"
+        )
+    elif isinstance(message, HumanMessage):
+        message_text = (
+            f"<|User|>{message.content}"
+        )
+    elif isinstance(message, AIMessage):
+        message_text = (
+            f"<|Assistant|>{message.content}"
+        )
+    elif isinstance(message, SystemMessage):
+        message_text = (
+            f"<|System|>{message.content}"
+        )
+    else:
+        raise ValueError(f"Got unknown type {message}")
+
+    return message_text
+
+
+def convert_messages_to_prompt_deepseek(messages: List[BaseMessage]) -> str:
+    """Convert a list of messages to a prompt for DeepSeek-R1."""
+    prompt = "\n<|begin_of_sentence|>"
+
+    for message in messages:
+        prompt += _convert_one_message_to_text_deepseek(message)
+
+    prompt += "<|Assistant|>\n\n"
+
+    return prompt
 
 
 def _format_image(image_url: str) -> Dict:
@@ -350,6 +385,8 @@ class ChatPromptAdapter:
     ) -> str:
         if provider == "anthropic":
             prompt = convert_messages_to_prompt_anthropic(messages=messages)
+        elif provider == "deepseek":
+            prompt = convert_messages_to_prompt_deepseek(messages=messages)
         elif provider == "meta":
             if "llama3" in model:
                 prompt = convert_messages_to_prompt_llama3(messages=messages)
@@ -396,6 +433,12 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     beta_use_converse_api: bool = False
     """Use the new Bedrock ``converse`` API which provides a standardized interface to 
     all Bedrock models. Support still in beta. See ChatBedrockConverse docs for more."""
+
+    stop_sequences: Optional[List[str]] = Field(default=None, alias="stop")
+    """Stop sequence inference parameter from new Bedrock ``converse`` API providing 
+    a sequence of characters that causes a model to stop generating a response. See 
+    https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_InferenceConfiguration.html 
+    for more."""
 
     @property
     def _llm_type(self) -> str:
@@ -875,6 +918,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             kwargs["max_tokens"] = self.max_tokens
         if self.temperature is not None:
             kwargs["temperature"] = self.temperature
+        if self.stop_sequences:
+            kwargs["stop_sequences"] = self.stop_sequences
+
         return ChatBedrockConverse(
             client=self.client,
             model=self.model_id,
