@@ -478,6 +478,9 @@ def test_standard_tracing_params() -> None:
         ("us.anthropic.claude-3-haiku-20240307-v1:0", False),
         ("cohere.command-r-v1:0", False),
         ("meta.llama3-1-405b-instruct-v1:0", "tool_calling"),
+        ("us.meta.llama3-3-70b-instruct-v1:0", "tool_calling"),
+        ("us.amazon.nova-lite-v1:0", False),
+        ("us.amazon.nonstreaming-model-v1:0", True),
     ],
 )
 def test_set_disable_streaming(
