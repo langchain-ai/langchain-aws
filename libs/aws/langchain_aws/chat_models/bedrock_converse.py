@@ -420,45 +420,58 @@ class ChatBedrockConverse(BaseChatModel):
     def set_disable_streaming(cls, values: Dict) -> Any:
         model_id = values.get("model_id", values.get("model"))
         model_parts = model_id.split(".")
-
-        # As of 2025-02-09: based on the AWS documentation: https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html
+        
         # Extract provider from the model_id (e.g., "amazon", "anthropic", "ai21", "meta", "mistral")
-        provider = values.get("provider") or (
-            model_parts[-2] if len(model_parts) > 1 else model_parts[0]
-        )
+        provider = values.get("provider") or (model_parts[-2] if len(model_parts) > 1 else model_parts[0])
         values["provider"] = provider
 
-        # Determine if the model supports streaming based on updated documentation:
-        streaming_supported = False
+        model_id_lower = model_id.lower()
 
-        # Providers that always support streaming
-        if provider in ["anthropic", "cohere", "ai21", "meta", "mistral"]:
-            streaming_supported = True
+        # Determine if the model supports plain-text streaming (ConverseStream)
+        # Here we check based on the updated AWS documentation.
+        if (
+            # AI21 Jamba 1.5 models
+            (provider == "ai21" and "jamba-1-5" in model_id_lower) or
+            # Some Amazon Nova models
+            (provider == "amazon" and any(x in model_id_lower for x in ["nova-lite", "nova-micro", "nova-pro"])) or
+            # Anthropic Claude 3 and newer models
+            (provider == "anthropic" and "claude-3" in model_id_lower) or
+            # Cohere Command R models
+            (provider == "cohere" and "command-r" in model_id_lower)
+        ):
+            streaming_support = True
+        elif (
+            # AI21 Jamba-Instruct model
+            (provider == "ai21" and "jamba-instruct" in model_id_lower) or
+            # Amazon Titan Text models
+            (provider == "amazon" and "titan-text" in model_id_lower) or
+            # Anthropic older Claude models (Claude 2, Claude 2.1, Claude Instant)
+            (provider == "anthropic" and any(x in model_id_lower for x in ["claude-v2", "claude-instant"])) or
+            # Cohere Command (non-R) models
+            (provider == "cohere" and "command" in model_id_lower and "command-r" not in model_id_lower) or
+            # All Meta Llama models
+            (provider == "meta") or
+            # All Mistral models
+            (provider == "mistral")
+        ):
+            streaming_support = "no_tools"
+        else:
+            streaming_support = False
 
-        # For Amazon, only specific models support streaming:
-        # e.g. amazon.nova-lite, amazon.nova-micro, amazon.nova-pro,
-        # amazon.titan-text-express, amazon.titan-text-lite, amazon.titan-text-premier
-        elif provider == "amazon":
-            amazon_streaming_keywords = [
-                "nova-lite",
-                "nova-micro",
-                "nova-pro",
-                "titan-text-express",
-                "titan-text-lite",
-                "titan-text-premier",
-            ]
-            if any(keyword in model_id for keyword in amazon_streaming_keywords):
-                streaming_supported = True
-
-        # Set the disable_streaming flag accordingly
-        # If streaming is supported, we want it enabled (i.e. disable_streaming == False)
-        # Otherwise, set it to "tool_calling" (which you can handle downstream as a validation error or alternative mode)
+        # Set the disable_streaming flag accordingly:
+        # - If streaming is supported (plain streaming), we want streaming enabled (i.e. disable_streaming == False).
+        # - If the model supports streaming only in non-tool mode ("no_tools"), then we must force disable streaming when tools are used.
+        # - Otherwise, if streaming is not supported, we set disable_streaming to True.
         if "disable_streaming" not in values:
-            values["disable_streaming"] = (
-                False if streaming_supported else "tool_calling"
-            )
+            if not streaming_support:
+                values["disable_streaming"] = True
+            elif streaming_support == "no_tools":
+                values["disable_streaming"] = "tool_calling"
+            else:
+                values["disable_streaming"] = False
 
         return values
+
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
