@@ -8,6 +8,27 @@
       'ChatBedrock',
     ]),
     'kwargs': dict({
+      'aws_access_key_id': dict({
+        'id': list([
+          'AWS_ACCESS_KEY_ID',
+        ]),
+        'lc': 1,
+        'type': 'secret',
+      }),
+      'aws_secret_access_key': dict({
+        'id': list([
+          'AWS_SECRET_ACCESS_KEY',
+        ]),
+        'lc': 1,
+        'type': 'secret',
+      }),
+      'aws_session_token': dict({
+        'id': list([
+          'AWS_SESSION_TOKEN',
+        ]),
+        'lc': 1,
+        'type': 'secret',
+      }),
       'beta_use_converse_api': True,
       'guardrails': dict({
         'guardrailIdentifier': None,
@@ -51,6 +72,27 @@
       'ChatBedrock',
     ]),
     'kwargs': dict({
+      'aws_access_key_id': dict({
+        'id': list([
+          'AWS_ACCESS_KEY_ID',
+        ]),
+        'lc': 1,
+        'type': 'secret',
+      }),
+      'aws_secret_access_key': dict({
+        'id': list([
+          'AWS_SECRET_ACCESS_KEY',
+        ]),
+        'lc': 1,
+        'type': 'secret',
+      }),
+      'aws_session_token': dict({
+        'id': list([
+          'AWS_SESSION_TOKEN',
+        ]),
+        'lc': 1,
+        'type': 'secret',
+      }),
       'guardrails': dict({
         'guardrailIdentifier': None,
         'guardrailVersion': None,
@@ -75,6 +117,108 @@
     }),
     'lc': 1,
     'name': 'ChatBedrock',
+    'type': 'constructor',
+  })
+# ---
+# serializer version: 1
+# name: TestBedrockAsConverseStandard.test_serdes[serialized]
+  dict({
+    'id': list([
+      'langchain',
+      'chat_models',
+      'bedrock',
+      'ChatBedrock',
+    ]),
+    'kwargs': dict({
+      'aws_access_key_id': dict({
+        'id': list([
+          'AWS_ACCESS_KEY_ID',
+        ]),
+        'lc': 1,
+        'type': 'secret',
+      }),
+      'aws_secret_access_key': dict({
+        'id': list([
+          'AWS_SECRET_ACCESS_KEY',
+        ]),
+        'lc': 1,
+        'type': 'secret',
+      }),
+      'aws_session_token': dict({
+        'id': list([
+          'AWS_SESSION_TOKEN',
+        ]),
+        'lc': 1,
+        'type': 'secret',
+      }),
+      'beta_use_converse_api': True,
+      'guardrails': dict({
+        'guardrailIdentifier': None,
+        'guardrailVersion': None,
+        'trace': None,
+      }),
+      'max_tokens': 100,
+      'model_id': 'anthropic.claude-3-sonnet-20240229-v1:0',
+      'model_kwargs': dict({
+        'stop': list([
+        ]),
+      }),
+      'provider_stop_reason_key_map': dict({
+        'ai21': 'finishReason',
+        'amazon': 'completionReason',
+        'anthropic': 'stop_reason',
+        'cohere': 'finish_reason',
+        'mistral': 'stop_reason',
+      }),
+      'provider_stop_sequence_key_name_map': dict({
+        'ai21': 'stop_sequences',
+        'amazon': 'stopSequences',
+        'anthropic': 'stop_sequences',
+        'cohere': 'stop_sequences',
+        'mistral': 'stop_sequences',
+      }),
+      'region_name': 'us-east-1',
+      'temperature': 0,
+    }),
+    'lc': 1,
+    'name': 'ChatBedrock',
+    'type': 'constructor',
+  })
+# ---
+# name: TestSageMakerStandard.test_serdes[serialized]
+  dict({
+    'id': list([
+      'langchain',
+      'chat_models',
+      'sagemaker',
+      'ChatSageMakerEndpoint',
+    ]),
+    'kwargs': dict({
+      'aws_access_key_id': dict({
+        'id': list([
+          'AWS_ACCESS_KEY_ID',
+        ]),
+        'lc': 1,
+        'type': 'secret',
+      }),
+      'aws_secret_access_key': dict({
+        'id': list([
+          'AWS_SECRET_ACCESS_KEY',
+        ]),
+        'lc': 1,
+        'type': 'secret',
+      }),
+      'aws_session_token': dict({
+        'id': list([
+          'AWS_SESSION_TOKEN',
+        ]),
+        'lc': 1,
+        'type': 'secret',
+      }),
+      'region_name': 'us-east-1',
+    }),
+    'lc': 1,
+    'name': 'ChatSageMakerEndpoint',
     'type': 'constructor',
   })
 # ---
