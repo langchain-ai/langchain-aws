@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from langchain_aws import BedrockEmbeddings
+from langchain_aws.embeddings import bedrock
 
 
 @pytest.fixture
@@ -123,6 +124,38 @@ def test_bedrock_cohere_embedding_documents_multiple(cohere_embeddings_v3) -> No
     documents = ["foo bar", "bar foo", "foo"]
     output = cohere_embeddings_v3.embed_documents(documents)
     assert len(output) == 3
+    assert len(output[0]) == 1024
+    assert len(output[1]) == 1024
+    assert len(output[2]) == 1024
+
+
+@pytest.mark.scheduled
+def test_bedrock_cohere_batching() -> None:
+    # Test maximum text batch
+    documents = [f"{val}" for val in range(200)]
+    assert len(list(bedrock._batch_cohere_embedding_texts(documents))) == 3
+
+    # Test large character batch
+    large_char_batch = ["foo", "bar", "a" * 2045, "baz"]
+    assert list(bedrock._batch_cohere_embedding_texts(large_char_batch)) == [
+        ["foo", "bar"],
+        ["a" * 2045, "baz"],
+    ]
+
+    # Should be fine with exactly 2048 characters
+    assert list(bedrock._batch_cohere_embedding_texts(["a" * 2048])) == [["a" * 2048]]
+
+    # But raise an error if it's more than that
+    with pytest.raises(ValueError):
+        list(bedrock._batch_cohere_embedding_texts(["a" * 2049]))
+
+
+@pytest.mark.scheduled
+def test_bedrock_cohere_embedding_large_document_set(cohere_embeddings_v3) -> None:
+    lots_of_documents = 200
+    documents = [f"text_{val}" for val in range(lots_of_documents)]
+    output = cohere_embeddings_v3.embed_documents(documents)
+    assert len(output) == 200
     assert len(output[0]) == 1024
     assert len(output[1]) == 1024
     assert len(output[2]) == 1024
