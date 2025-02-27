@@ -30,13 +30,14 @@ from langchain_core.outputs import Generation, GenerationChunk, LLMResult
 from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
+
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
-    thinking_in_params,
     anthropic_tokens_supported,
     enforce_stop_tokens,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
+    thinking_in_params,
 )
 
 logger = logging.getLogger(__name__)
