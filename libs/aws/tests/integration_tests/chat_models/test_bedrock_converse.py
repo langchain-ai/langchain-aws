@@ -266,13 +266,6 @@ def test_structured_output_tool_choice_not_supported() -> None:
             "thinking": {"type": "enabled", "budget_tokens": 2000}
         },
     )
-    with pytest.warns(match="Claude"):
-        structured_llm = llm.with_structured_output(ClassifyQuery)
-    response = structured_llm.invoke("How big are cats?")
-    assert isinstance(response, ClassifyQuery)
-
-    # Unsupported model
-    llm = ChatBedrockConverse(model="us.amazon.nova-lite-v1:0")
     with pytest.warns(match="structured output"):
         structured_llm = llm.with_structured_output(ClassifyQuery)
     response = structured_llm.invoke("How big are cats?")

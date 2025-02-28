@@ -679,10 +679,13 @@ class ChatBedrockConverse(BaseChatModel):
             tool_choice = "any"
         else:
             tool_choice = None
-        if tool_choice:
-            llm = self.bind_tools([schema], tool_choice=tool_choice)
-        else:
+        if tool_choice is None and "claude-3-7-sonnet" in self.model_id:
+            # TODO: remove restriction to Claude 3.7. If a model does not support
+            # forced tool calling, we we should raise an exception instead of
+            # returning None when no tool calls are generated.
             llm = self._get_llm_for_structured_output_no_tool_choice(schema)
+        else:
+            llm = self.bind_tools([schema], tool_choice=tool_choice)
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             if self.disable_streaming:
                 output_parser: OutputParserLike = ToolsOutputParser(
