@@ -254,8 +254,10 @@ def test_structured_output_tool_choice_not_supported() -> None:
         )
 
     llm = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
-    structured_llm = llm.with_structured_output(ClassifyQuery)
-    response = structured_llm.invoke("How big are cats?")
+    with pytest.warns(None) as record:  # type: ignore[call-overload]
+        structured_llm = llm.with_structured_output(ClassifyQuery)
+        response = structured_llm.invoke("How big are cats?")
+    assert len(record) == 0
     assert isinstance(response, ClassifyQuery)
 
     # Unsupported params
