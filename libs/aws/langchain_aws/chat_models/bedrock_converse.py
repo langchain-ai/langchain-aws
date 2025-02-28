@@ -485,9 +485,9 @@ class ChatBedrockConverse(BaseChatModel):
         if self.supports_tool_choice_values is None:
             if "claude-3" in self.model_id:
                 # Tool choice not supported when thinking is enabled
-                thinking_params = (
-                    self.additional_model_request_fields or {}
-                ).get("thinking", {})
+                thinking_params = (self.additional_model_request_fields or {}).get(
+                    "thinking", {}
+                )
                 if (
                     "claude-3-7-sonnet" in self.model_id
                     and thinking_params.get("type") == "enabled"

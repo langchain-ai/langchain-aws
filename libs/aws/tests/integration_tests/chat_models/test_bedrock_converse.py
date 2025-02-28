@@ -3,6 +3,7 @@
 from typing import Literal, Type
 
 import pytest
+from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from langchain_standard_tests.integration_tests import ChatModelIntegrationTests
@@ -242,3 +243,40 @@ def test_guardrails() -> None:
     )
     assert response.response_metadata["stopReason"] == "guardrail_intervened"
     assert response.response_metadata["trace"] is not None
+
+
+def test_structured_output_tool_choice_not_supported() -> None:
+    class ClassifyQuery(BaseModel):
+        """Classify a query."""
+
+        query_type: Literal["cat", "dog"] = Field(
+            description="Classify a query as related to cats or dogs."
+        )
+
+    llm = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+    structured_llm = llm.with_structured_output(ClassifyQuery)
+    response = structured_llm.invoke("How big are cats?")
+    assert isinstance(response, ClassifyQuery)
+
+    # Unsupported params
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        max_tokens=5000,
+        additional_model_request_fields={
+            "thinking": {"type": "enabled", "budget_tokens": 2000}
+        },
+    )
+    with pytest.warns(match="Claude"):
+        structured_llm = llm.with_structured_output(ClassifyQuery)
+    response = structured_llm.invoke("How big are cats?")
+    assert isinstance(response, ClassifyQuery)
+
+    # Unsupported model
+    llm = ChatBedrockConverse(model="us.amazon.nova-lite-v1:0")
+    with pytest.warns(match="structured output"):
+        structured_llm = llm.with_structured_output(ClassifyQuery)
+    response = structured_llm.invoke("How big are cats?")
+    assert isinstance(response, ClassifyQuery)
+
+    with pytest.raises(OutputParserException):
+        structured_llm.invoke("Hello!")
