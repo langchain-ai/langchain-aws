@@ -7,9 +7,13 @@ name = "langgraph-checkpoint-aws"
 version = "0.1.0"
 description = "A LangChain checkpointer implementation that uses Bedrock Session Management Service to enable stateful and resumable LangGraph agents."
 authors = []
-license = "LICENSE"
+license = "MIT"
 readme = "README.md"
+repository = "https://github.com/langchain-ai/langchain-aws"
 keywords = ["aws", "bedrock", "langchain", "langgraph", "checkpointer"]
+
+[tool.poetry.urls]
+"Source Code" = "https://github.com/langchain-ai/langchain-aws/tree/main/libs/langgraph-checkpoint-aws"
 
 [tool.poetry.dependencies]
 python = ">=3.9,<4.0"
@@ -31,6 +35,12 @@ optional = true
 [tool.poetry.group.test.dependencies]
 pytest = ">=7.4.3"
 pytest-cov = ">=4.1.0"
+
+[tool.poetry.group.test_integration]
+optional = true
+
+[tool.poetry.group.test_integration.dependencies]
+langchain-aws = ">=0.2.14"
 
 [tool.poetry.group.lint]
 optional = true
