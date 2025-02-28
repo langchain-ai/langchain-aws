@@ -1,0 +1,81 @@
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "langgraph-checkpoint-aws"
+version = "0.1.0"
+description = "A LangChain checkpointer implementation that uses Bedrock Session Management Service to enable stateful and resumable LangGraph agents."
+authors = []
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/langchain-ai/langchain-aws"
+keywords = ["aws", "bedrock", "langchain", "langgraph", "checkpointer"]
+
+[tool.poetry.urls]
+"Source Code" = "https://github.com/langchain-ai/langchain-aws/tree/main/libs/langgraph-checkpoint-aws"
+
+[tool.poetry.dependencies]
+python = ">=3.9,<4.0"
+langgraph-checkpoint = ">=2.0.0"
+langgraph = ">=0.2.55"
+boto3 = ">=1.37.3"
+
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+ruff = ">=0.1.9"
+mypy = ">=1.7.1"
+codespell = ">=2.2.6"
+
+[tool.poetry.group.test]
+optional = true
+
+[tool.poetry.group.test.dependencies]
+pytest = ">=7.4.3"
+pytest-cov = ">=4.1.0"
+
+[tool.poetry.group.test_integration]
+optional = true
+
+[tool.poetry.group.test_integration.dependencies]
+langchain-aws = ">=0.2.14"
+
+[tool.poetry.group.lint]
+optional = true
+
+[tool.poetry.group.lint.dependencies]
+ruff = ">=0.1.9"
+
+[tool.poetry.group.typing]
+optional = true
+
+[tool.poetry.group.typing.dependencies]
+mypy = ">=1.7.1"
+
+[tool.poetry.group.codespell]
+optional = true
+
+[tool.poetry.group.codespell.dependencies]
+codespell = ">=2.2.6"
+
+[tool.ruff]
+lint.select = [
+    "E",      # pycodestyle
+    "F",      # Pyflakes
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "I",      # isort
+    "T201",   # print
+]
+
+[tool.codespell]
+skip = '.git,*.pdf,*.svg'
+ignore-words-list = ''
+
+[tool.mypy]
+ignore_missing_imports = "True"
+
+[tool.coverage.run]
+omit = ["tests/*"]

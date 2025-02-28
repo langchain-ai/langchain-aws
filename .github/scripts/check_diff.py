@@ -2,7 +2,7 @@ import json
 import sys
 from typing import Dict
 
-LIB_DIRS = ["libs/aws"] # , "libs/langgraph-checkpoint-aws"]
+LIB_DIRS = ["libs/aws", "libs/langgraph-checkpoint-aws"]
 
 if __name__ == "__main__":
     files = sys.argv[1:]
@@ -33,8 +33,6 @@ if __name__ == "__main__":
             for dir_ in LIB_DIRS:
                 if file.startswith(dir_):
                     dirs_to_run["test"].add(dir_)
-        elif "langgraph-checkpoint-aws" in file: # Remove this after checkpointer is implemented
-            pass
         elif file.startswith("libs/"):
             raise ValueError(
                 f"Unknown lib: {file}. check_diff.py likely needs "
