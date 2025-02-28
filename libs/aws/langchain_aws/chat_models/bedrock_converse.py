@@ -20,9 +20,11 @@ from typing import (
     Union,
     cast,
 )
+import warnings
 
 import boto3
 from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.language_models.chat_models import LangSmithParams
 from langchain_core.messages import (
@@ -482,7 +484,17 @@ class ChatBedrockConverse(BaseChatModel):
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
         if self.supports_tool_choice_values is None:
             if "claude-3" in self.model_id:
-                self.supports_tool_choice_values = ("auto", "any", "tool")
+                # Tool choice not supported when thinking is enabled
+                thinking_params = (
+                    self.additional_model_request_fields or {}
+                ).get("thinking", {})
+                if (
+                    "claude-3-7-sonnet" in self.model_id
+                    and thinking_params.get("type") == "enabled"
+                ):
+                    self.supports_tool_choice_values = ()
+                else:
+                    self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "mistral-large" in self.model_id:
                 self.supports_tool_choice_values = ("auto", "any")
             elif "nova" in self.model_id:
@@ -588,6 +600,32 @@ class ChatBedrockConverse(BaseChatModel):
                     )
                 yield generation_chunk
 
+    def _get_llm_for_structured_output_no_tool_choice(
+        self,
+        schema: Union[Dict, type],
+    ) -> Runnable[LanguageModelInput, BaseMessage]:
+        admonition = (
+            "ChatBedrockConverse structured output relies on forced tool calling, "
+            "which is not supported for this model. This method will raise "
+            "langchain_core.exceptions.OutputParserException if tool calls are not "
+            "generated. Consider adjusting your prompt to ensure the tool is called."
+        )
+        if "claude-3-7-sonnet" in self.model_id:
+            additional_context = (
+                "For Claude 3.7 Sonnet models, you can also support forced tool use "
+                "by disabling `thinking`."
+            )
+            admonition = f"{admonition} {additional_context}"
+        warnings.warn(admonition)
+        llm = self.bind_tools([schema])
+
+        def _raise_if_no_tool_calls(message: AIMessage) -> AIMessage:
+            if not message.tool_calls:
+                raise OutputParserException(admonition)
+            return message
+
+        return llm | _raise_if_no_tool_calls
+
     # TODO: Add async support once there are async bedrock.converse methods.
 
     def bind_tools(
@@ -641,7 +679,10 @@ class ChatBedrockConverse(BaseChatModel):
             tool_choice = "any"
         else:
             tool_choice = None
-        llm = self.bind_tools([schema], tool_choice=tool_choice)
+        if tool_choice:
+            llm = self.bind_tools([schema], tool_choice=tool_choice)
+        else:
+            llm = self._get_llm_for_structured_output_no_tool_choice(schema)
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             if self.disable_streaming:
                 output_parser: OutputParserLike = ToolsOutputParser(
