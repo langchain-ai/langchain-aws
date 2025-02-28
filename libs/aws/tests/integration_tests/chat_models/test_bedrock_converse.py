@@ -298,7 +298,10 @@ def test_structured_output_thinking_force_tool_use() -> None:
                             "json": {
                                 "properties": {
                                     "queryType": {
-                                        "description": "Classify a query as related to cats or dogs.",
+                                        "description": (
+                                            "Classify a query as related to cats or "
+                                            "dogs."
+                                        ),
                                         "enum": ["cat", "dog"],
                                         "type": "string",
                                     }
