@@ -492,7 +492,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
     system_prompt_with_tools: str = ""
     beta_use_converse_api: bool = False
-    """Use the new Bedrock ``converse`` API which provides a standardized interface to 
+    """Use the new Bedrock ``converse`` API which provides a standardized interface to
     all Bedrock models. Support still in beta. See ChatBedrockConverse docs for more."""
 
     stop_sequences: Optional[List[str]] = Field(default=None, alias="stop")
