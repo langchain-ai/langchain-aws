@@ -50,11 +50,27 @@ spell_fix: ## Run code spell fix
 # TESTING
 ######################
 
-test: ## Run tests
-	poetry run pytest tests/ --cov=$(PACKAGE_NAME) --cov-report=term-missing
+# Define a variable for the test file path.
+test test_watch tests: TEST_FILE ?= tests/unit_tests/
+integration_test integration_tests: TEST_FILE = tests/integration_tests/
 
-test_watch: ## Run tests in watch mode
-	poetry run pytest tests/ --cov=$(PACKAGE_NAME) --cov-report=term-missing -f
+# Define a variable for Python and notebook files.
+PYTHON_FILES=.
+
+tests: ## Run all unit tests
+	poetry run pytest $(TEST_FILE)
+
+test:  ## Run individual unit test: make test TEST_FILE=tests/unit_test/test.py
+	poetry run pytest $(TEST_FILE)
+
+integration_tests: ## Run all integration tests
+	poetry run pytest $(TEST_FILE)
+
+integration_test: ## Run individual integration test: make integration_test TEST_FILE=tests/integration_tests/integ_test.py
+	poetry run pytest $(TEST_FILE)
+
+test_watch: ## Run and interactively watch unit tests
+	poetry run ptw --snapshot-update --now . -- -vv $(TEST_FILE)
 
 ######################
 # DEPENDENCIES
