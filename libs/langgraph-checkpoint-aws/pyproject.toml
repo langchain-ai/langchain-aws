@@ -73,3 +73,9 @@ lint.select = [
 [tool.codespell]
 skip = '.git,*.pdf,*.svg'
 ignore-words-list = ''
+
+[tool.mypy]
+ignore_missing_imports = "True"
+
+[tool.coverage.run]
+omit = ["tests/*"]
