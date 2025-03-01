@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 import numpy as np
 from langchain_core.embeddings import Embeddings
@@ -151,13 +151,20 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         """Call out to Cohere Bedrock embedding endpoint with multiple inputs."""
         # replace newlines, which can negatively affect performance.
         texts = [text.replace(os.linesep, " ") for text in texts]
+        results = []
 
-        return self._invoke_model(
-            input_body={
-                "input_type": "search_document",
-                "texts": texts,
-            }
-        ).get("embeddings")
+        # Iterate through the list of strings in batches
+        for text_batch in _batch_cohere_embedding_texts(texts):
+            batch_embeddings = self._invoke_model(
+                input_body={
+                    "input_type": "search_document",
+                    "texts": text_batch,
+                }
+            ).get("embeddings")
+
+            results += batch_embeddings
+
+        return results
 
     def _invoke_model(self, input_body: Dict[str, Any] = {}) -> Dict[str, Any]:
         if self.model_kwargs:
@@ -262,3 +269,39 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         result = await asyncio.gather(*[self.aembed_query(text) for text in texts])
 
         return list(result)
+
+
+def _batch_cohere_embedding_texts(texts: List[str]) -> Generator[List[str], None, None]:
+    """Batches a set of texts into chunks that are acceptable for the Cohere embedding API:
+    chunks of at most 96 items, or 2048 characters."""
+
+    # Cohere embeddings want a maximum of 96 items and 2048 characters
+    max_items = 96
+    max_chars = 2048
+
+    # Initialize batches
+    current_batch = []
+    current_chars = 0
+
+    for text in texts:
+        text_len = len(text)
+
+        if text_len > max_chars:
+            raise ValueError(
+                "The Cohere embedding API does not support texts longer than 2048 characters."
+            )
+
+        # Check if adding the current string would exceed the limits
+        if len(current_batch) >= max_items or current_chars + text_len > max_chars:
+            # Process the current batch if limits are exceeded
+            yield current_batch
+            # Start a new batch
+            current_batch = []
+            current_chars = 0
+
+        # Otherwise, add the string to the current batch
+        current_batch.append(text)
+        current_chars += text_len
+
+    if current_batch:
+        yield current_batch
