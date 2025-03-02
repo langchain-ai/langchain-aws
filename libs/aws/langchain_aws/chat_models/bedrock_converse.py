@@ -574,6 +574,8 @@ class ChatBedrockConverse(BaseChatModel):
             messages=bedrock_messages, system=system, **params
         )
         logger.debug(f"Response from Bedrock: {response}")
+        if 'output' not in response:
+            raise ValueError(f"AWS returns an invalid response, key 'output' is not in reponse.")
         response_message = _parse_response(response)
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
