@@ -1,7 +1,7 @@
 """Test SageMakerEndpoint chat model."""
 
 import json
-from typing import Dict, Tuple, Type
+from typing import Any, Dict, Tuple, Type
 from unittest.mock import Mock
 
 import pytest
@@ -10,6 +10,7 @@ from langchain_core.language_models import (
 )
 from langchain_core.messages import (
     AIMessage,
+    BaseMessage,
     HumanMessage,
     SystemMessage,
 )
@@ -25,10 +26,10 @@ class DefaultHandler(ChatModelContentHandler):
     content_type = "application/json"
     accepts = "application/json"
 
-    def transform_input(self, prompt, model_kwargs: Dict) -> bytes:
+    def transform_input(self, prompt: Any, model_kwargs: Dict) -> bytes:
         return json.dumps(prompt).encode("utf-8")
 
-    def transform_output(self, output: bytes) -> str:
+    def transform_output(self, output: bytes) -> BaseMessage:
         response_json = json.loads(output.decode())
         return AIMessage(content=response_json[0]["generated_text"])
 
@@ -82,20 +83,20 @@ class TestSageMakerStandard(ChatModelUnitTests):
         super().test_init_streaming()
     
     @pytest.mark.xfail(reason="Doesn't support binding tool.")
-    def test_bind_tool_pydantic(self) -> None:
-        super.test_bind_tool_pydantic()
+    def test_bind_tool_pydantic(self, model: BaseChatModel) -> None:
+        super().test_bind_tool_pydantic(model)
 
     @pytest.mark.xfail(reason="Doesn't support structured output.")
-    def test_with_structured_output(self) -> None:
-        super.test_with_structured_output()
+    def test_with_structured_output(self, model: BaseChatModel) -> None:
+        super().test_with_structured_output(model)
 
     @pytest.mark.xfail(reason="Doesn't support Langsmith parameters.")
-    def test_standard_params(self) -> None:
-        super.test_standard_params()
+    def test_standard_params(self, model: BaseChatModel) -> None:
+        super().test_standard_params(model)
     
     @pytest.mark.xfail(reason="Doesn't support Langsmith parameters.")
     def test_init_from_env(self) -> None:
-        super.test_init_from_env()
+        super().test_init_from_env()
 
 def test_sagemaker_endpoint_invoke() -> None:
     client = Mock()
