@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import re
+import warnings
 from operator import itemgetter
 from typing import (
     Any,
@@ -23,6 +24,7 @@ from typing import (
 
 import boto3
 from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.language_models.chat_models import LangSmithParams
 from langchain_core.messages import (
@@ -420,20 +422,58 @@ class ChatBedrockConverse(BaseChatModel):
     def set_disable_streaming(cls, values: Dict) -> Any:
         model_id = values.get("model_id", values.get("model"))
         model_parts = model_id.split(".")
-        values["provider"] = values.get("provider") or (
-            model_parts[-2] if len(model_parts) > 1 else model_parts[0]
-        )
+        
+        # Extract provider from the model_id (e.g., "amazon", "anthropic", "ai21", "meta", "mistral")
+        provider = values.get("provider") or (model_parts[-2] if len(model_parts) > 1 else model_parts[0])
+        values["provider"] = provider
 
-        # As of 12/03/24:
-        # Anthropic, Cohere and Amazon Nova models support streamed tool calling
+        model_id_lower = model_id.lower()
+
+        # Determine if the model supports plain-text streaming (ConverseStream)
+        # Here we check based on the updated AWS documentation.
+        if (
+            # AI21 Jamba 1.5 models
+            (provider == "ai21" and "jamba-1-5" in model_id_lower) or
+            # Some Amazon Nova models
+            (provider == "amazon" and any(x in model_id_lower for x in ["nova-lite", "nova-micro", "nova-pro"])) or
+            # Anthropic Claude 3 and newer models
+            (provider == "anthropic" and "claude-3" in model_id_lower) or
+            # Cohere Command R models
+            (provider == "cohere" and "command-r" in model_id_lower)
+        ):
+            streaming_support = True
+        elif (
+            # AI21 Jamba-Instruct model
+            (provider == "ai21" and "jamba-instruct" in model_id_lower) or
+            # Amazon Titan Text models
+            (provider == "amazon" and "titan-text" in model_id_lower) or
+            # Anthropic older Claude models (Claude 2, Claude 2.1, Claude Instant)
+            (provider == "anthropic" and any(x in model_id_lower for x in ["claude-v2", "claude-instant"])) or
+            # Cohere Command (non-R) models
+            (provider == "cohere" and "command" in model_id_lower and "command-r" not in model_id_lower) or
+            # All Meta Llama models
+            (provider == "meta") or
+            # All Mistral models
+            (provider == "mistral")
+        ):
+            streaming_support = "no_tools"
+        else:
+            streaming_support = False
+
+        # Set the disable_streaming flag accordingly:
+        # - If streaming is supported (plain streaming), we want streaming enabled (i.e. disable_streaming == False).
+        # - If the model supports streaming only in non-tool mode ("no_tools"), then we must force disable streaming when tools are used.
+        # - Otherwise, if streaming is not supported, we set disable_streaming to True.
         if "disable_streaming" not in values:
-            values["disable_streaming"] = (
-                False
-                if values["provider"] in ["anthropic", "cohere"]
-                or (values["provider"] == "amazon" and "nova" in model_id)
-                else "tool_calling"
-            )
+            if not streaming_support:
+                values["disable_streaming"] = True
+            elif streaming_support == "no_tools":
+                values["disable_streaming"] = "tool_calling"
+            else:
+                values["disable_streaming"] = False
+
         return values
+
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
@@ -444,7 +484,17 @@ class ChatBedrockConverse(BaseChatModel):
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
         if self.supports_tool_choice_values is None:
             if "claude-3" in self.model_id:
-                self.supports_tool_choice_values = ("auto", "any", "tool")
+                # Tool choice not supported when thinking is enabled
+                thinking_params = (self.additional_model_request_fields or {}).get(
+                    "thinking", {}
+                )
+                if (
+                    "claude-3-7-sonnet" in self.model_id
+                    and thinking_params.get("type") == "enabled"
+                ):
+                    self.supports_tool_choice_values = ()
+                else:
+                    self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "mistral-large" in self.model_id:
                 self.supports_tool_choice_values = ("auto", "any")
             elif "nova" in self.model_id:
@@ -550,6 +600,32 @@ class ChatBedrockConverse(BaseChatModel):
                     )
                 yield generation_chunk
 
+    def _get_llm_for_structured_output_no_tool_choice(
+        self,
+        schema: Union[Dict, type],
+    ) -> Runnable[LanguageModelInput, BaseMessage]:
+        admonition = (
+            "ChatBedrockConverse structured output relies on forced tool calling, "
+            "which is not supported for this model. This method will raise "
+            "langchain_core.exceptions.OutputParserException if tool calls are not "
+            "generated. Consider adjusting your prompt to ensure the tool is called."
+        )
+        if "claude-3-7-sonnet" in self.model_id:
+            additional_context = (
+                "For Claude 3.7 Sonnet models, you can also support forced tool use "
+                "by disabling `thinking`."
+            )
+            admonition = f"{admonition} {additional_context}"
+        warnings.warn(admonition)
+        llm = self.bind_tools([schema])
+
+        def _raise_if_no_tool_calls(message: AIMessage) -> AIMessage:
+            if not message.tool_calls:
+                raise OutputParserException(admonition)
+            return message
+
+        return llm | _raise_if_no_tool_calls
+
     # TODO: Add async support once there are async bedrock.converse methods.
 
     def bind_tools(
@@ -603,7 +679,13 @@ class ChatBedrockConverse(BaseChatModel):
             tool_choice = "any"
         else:
             tool_choice = None
-        llm = self.bind_tools([schema], tool_choice=tool_choice)
+        if tool_choice is None and "claude-3-7-sonnet" in self.model_id:
+            # TODO: remove restriction to Claude 3.7. If a model does not support
+            # forced tool calling, we we should raise an exception instead of
+            # returning None when no tool calls are generated.
+            llm = self._get_llm_for_structured_output_no_tool_choice(schema)
+        else:
+            llm = self.bind_tools([schema], tool_choice=tool_choice)
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             if self.disable_streaming:
                 output_parser: OutputParserLike = ToolsOutputParser(

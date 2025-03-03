@@ -106,3 +106,8 @@ def get_token_ids_anthropic(text: str) -> List[int]:
     tokenizer = client.get_tokenizer()
     encoded_text = tokenizer.encode(text)
     return encoded_text.ids
+
+
+def thinking_in_params(params: dict) -> bool:
+    """Check if the thinking parameter is enabled in the request."""
+    return params.get("thinking", {}).get("type") == "enabled"
