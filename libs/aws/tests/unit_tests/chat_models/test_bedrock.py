@@ -114,7 +114,8 @@ def test__format_anthropic_messages_with_tool_calls() -> None:
         "blurb",
         tool_call_id="1",
     )
-    messages = [system, human, ai, tool]
+    human_2 = HumanMessage("try again.")
+    messages = [system, human, ai, tool, human_2]
     expected = (
         "fuzz",
         [
@@ -133,7 +134,8 @@ def test__format_anthropic_messages_with_tool_calls() -> None:
             {
                 "role": "user",
                 "content": [
-                    {"type": "tool_result", "content": "blurb", "tool_use_id": "1"}
+                    {"type": "text", "text": "try again."},
+                    {"type": "tool_result", "content": "blurb", "tool_use_id": "1"},
                 ],
             },
         ],
