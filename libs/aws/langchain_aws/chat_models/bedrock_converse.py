@@ -1200,7 +1200,8 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         else:
             raise ValueError(
                 "Unexpected content block type in content. Expected to have one of "
-                "'text', 'tool_use', 'image', 'video, 'document', 'tool_result', 'json', 'guard_content', or "
+                "'text', 'tool_use', 'image', 'video, 'document', 'tool_result',"
+                "'json', 'guard_content', or "
                 "'reasoning_content' keys. Received:\n\n{block}"
             )
     return lc_content
