@@ -221,8 +221,8 @@ class ChatBedrockConverse(BaseChatModel):
         feature that outputs the step-by-step reasoning process that led to an
         answer.
 
-        To use it, specify the `thinking` parameter when initializing
-        `ChatBedrockConverse` as shown below.
+        To use it, specify the ``thinking`` parameter when initializing
+        ``ChatBedrockConverse`` as shown below.
 
         You will need to specify a token budget to use this feature. See usage example:
 
