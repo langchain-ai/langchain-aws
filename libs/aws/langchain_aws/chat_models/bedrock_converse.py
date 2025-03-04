@@ -216,6 +216,44 @@ class ChatBedrockConverse(BaseChatModel):
 
         See ``ChatBedrockConverse.with_structured_output()`` for more.
 
+    Extended thinking:
+        Some models, such as Claude 3.7 Sonnet, support an extended thinking
+        feature that outputs the step-by-step reasoning process that led to an
+        answer.
+
+        To use it, specify the `thinking` parameter when initializing
+        `ChatBedrockConverse` as shown below.
+
+        You will need to specify a token budget to use this feature. See usage example:
+
+        .. code-block:: python
+
+            from langchain_aws import ChatBedrockConverse
+
+            thinking_params= {
+                "thinking": {
+                    "type": "enabled",
+                    "budget_tokens": 2000
+                }
+            }
+
+            llm = ChatBedrockConverse(
+                model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+                max_tokens=5000,
+                region_name="us-west-2",
+                additional_model_request_fields=thinking_params,
+            )
+
+            response = llm.invoke("What is the cube root of 50.653?")
+            print(response.content)
+
+        .. code-block:: python
+
+            [
+                {'type': 'reasoning_content', 'reasoning_content': {'type': 'text', 'text': 'I need to calculate the cube root of... ', 'signature': '...'}},
+                {'type': 'text', 'text': 'The cube root of 50.653 is...'}
+            ]
+
     Image input:
         .. code-block:: python
 
