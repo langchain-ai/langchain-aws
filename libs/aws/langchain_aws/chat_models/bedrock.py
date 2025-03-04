@@ -364,7 +364,7 @@ def _format_anthropic_messages(
                     )
 
             # For assistant messages, when thinking blocks exist, ensure they come first
-            if role == "asistant":
+            if role == "assistant":
                 content = text_blocks + tool_blocks
                 if thinking_blocks:
                     content = thinking_blocks + content
