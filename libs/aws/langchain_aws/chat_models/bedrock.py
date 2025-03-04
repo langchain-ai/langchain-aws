@@ -364,15 +364,18 @@ def _format_anthropic_messages(
                     )
 
             # For assistant messages, when thinking blocks exist, ensure they come first
-            if role == "assistant" and thinking_blocks:
-                content = thinking_blocks + text_blocks + tool_blocks
+            if role == "asistant":
+                content = text_blocks + tool_blocks
+                if thinking_blocks:
+                    content = thinking_blocks + content
             elif role == "user" and tool_blocks and text_blocks:
                 content = tool_blocks + text_blocks  # tool result must precede text
+                if thinking_blocks:
+                    content = thinking_blocks + content
             else:
-                # For user messages or assistant messages without thinking,
-                # just combine all blocks in standard order
+                # combine all blocks in standard order
                 content = text_blocks + tool_blocks
-                # Only include thinking blocks if they exist (for assistant messages that might have them)
+                # Only include thinking blocks if they exist
                 if thinking_blocks:
                     content = thinking_blocks + content
 
