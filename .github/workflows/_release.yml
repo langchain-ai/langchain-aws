@@ -279,9 +279,9 @@ jobs:
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "dist/*"
+          artifacts: "${{ inputs.working-directory }}/dist/*"
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
           generateReleaseNotes: true
-          tag: v${{ needs.build.outputs.version }}
+          tag: ${{needs.build.outputs.pkg-name}}==${{ needs.build.outputs.version }}
           commit: ${{ github.sha }}
