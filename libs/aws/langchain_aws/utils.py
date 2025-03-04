@@ -10,7 +10,7 @@ def enforce_stop_tokens(text: str, stop: List[str]) -> str:
 
 
 def anthropic_tokens_supported() -> bool:
-    """Check if we have all requirements for Anthropic count_tokens() and get_tokenizer()."""
+    """Check if all requirements for Anthropic count_tokens() are met."""
     try:
         import anthropic
     except ImportError:
@@ -48,3 +48,8 @@ def get_token_ids_anthropic(text: str) -> List[int]:
     tokenizer = client.get_tokenizer()
     encoded_text = tokenizer.encode(text)
     return encoded_text.ids
+
+
+def thinking_in_params(params: dict) -> bool:
+    """Check if the thinking parameter is enabled in the request."""
+    return params.get("thinking", {}).get("type") == "enabled"

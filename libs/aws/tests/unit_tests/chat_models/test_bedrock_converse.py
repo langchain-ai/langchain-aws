@@ -1,7 +1,9 @@
 """Test chat model integration."""
 
 import base64
-from typing import Dict, List, Tuple, Type, Union, cast
+import os
+from typing import Any, Dict, List, Tuple, Type, Union, cast
+from unittest import mock
 
 import pytest
 from langchain_core.language_models import BaseChatModel
@@ -36,6 +38,7 @@ class TestBedrockStandard(ChatModelUnitTests):
     @property
     def chat_model_params(self) -> dict:
         return {
+            "client": None,
             "model": "anthropic.claude-3-sonnet-20240229-v1:0",
             "region_name": "us-west-1",
         }
@@ -470,10 +473,14 @@ def test_standard_tracing_params() -> None:
 @pytest.mark.parametrize(
     "model_id, disable_streaming",
     [
+        ("us.anthropic.claude-3-7-sonnet-20250219-v1:0", False),
         ("anthropic.claude-3-5-sonnet-20240620-v1:0", False),
         ("us.anthropic.claude-3-haiku-20240307-v1:0", False),
         ("cohere.command-r-v1:0", False),
         ("meta.llama3-1-405b-instruct-v1:0", "tool_calling"),
+        ("us.meta.llama3-3-70b-instruct-v1:0", "tool_calling"),
+        ("us.amazon.nova-lite-v1:0", False),
+        ("us.amazon.nonstreaming-model-v1:0", True),
     ],
 )
 def test_set_disable_streaming(
@@ -502,3 +509,212 @@ def test__extract_response_metadata() -> None:
     }
     response_metadata = _extract_response_metadata(response)
     assert response_metadata["metrics"]["latencyMs"] == [191]
+
+
+@mock.patch.dict(os.environ, {"AWS_REGION": "us-west-1"})
+def test_chat_bedrock_converse_different_regions() -> None:
+    region = "ap-south-2"
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0", region_name=region
+    )
+    assert llm.region_name == region
+
+
+@mock.patch.dict(os.environ, {"AWS_REGION": "ap-south-2"})
+def test_chat_bedrock_converse_environment_variable() -> None:
+    llm = ChatBedrockConverse(model="anthropic.claude-3-sonnet-20240229-v1:0")
+    assert llm.region_name == "ap-south-2"
+
+
+def test__bedrock_to_lc_anthropic_reasoning() -> None:
+    bedrock_content: List[Dict[str, Any]] = [
+        # Expected LC format for non-reasoning block
+        {
+            "text": "Thought text"
+        },
+        # Invoke format with reasoning_text
+        {
+            "reasoning_content": {
+                "reasoning_text": {
+                    "text": "Thought text",
+                    "signature": "sig"
+                }
+            }
+        },
+        # Streaming format with text only
+        {
+            "reasoning_content": {
+                "text": "Thought text"
+            }
+        },
+        # Streaming format with signature only
+        {
+            "reasoning_content": {
+                "signature": "sig"
+            }
+        },
+        # Expected LC format for reasoning with no text
+        {
+            "reasoning_content": {
+                "reasoning_text": {
+                    "text": "",
+                    "signature": "sig"
+                }
+            }
+        },
+        # Expected LC format for reasoning with no signature
+        {
+            "reasoning_content": {
+                "reasoning_text": {
+                    "text": "Another reasoning block",
+                    "signature": ""
+                }
+            }
+        }
+    ]
+
+    expected_lc = [
+        # Expected LC format for non-reasoning block
+        {
+            "type": "text",
+            "text": "Thought text"
+        },
+        # Expected LC format for invoke reasoning_text
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {
+                "type": "text",
+                "text": "Thought text",
+                "signature": "sig"
+            }
+        },
+        # Expected LC format for streaming text
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {
+                "type": "text",
+                "text": "Thought text"
+            }
+        },
+        # Expected LC format for streaming signature
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {
+                "type": "signature",
+                "signature": "sig"
+            }
+        },
+        # Expected LC format for reasoning with no text
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {
+                "type": "text",
+                "text": "",
+                "signature": "sig"
+            }
+        },
+        # Expected LC format for reasoning with no signature
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {
+                "type": "text",
+                "text": "Another reasoning block",
+                "signature": ""
+            }
+        }
+    ]
+
+    actual = _bedrock_to_lc(bedrock_content)
+    assert expected_lc == actual
+
+
+def test__lc_content_to_bedrock_anthropic_reasoning() -> None:
+    messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        # Anthropic "thinking" type
+        HumanMessage(content="Solve this problem step by step: what is 27 * 14?"),
+        AIMessage(content=[
+            {
+                "type": "thinking",
+                "thinking": "To solve 27 * 14, I'll break it down into steps...",
+                "signature": "sig-123"
+            },
+            {
+                "type": "text",
+                "text": "The answer is 378."
+            }
+        ]),
+        # Bedrock "reasoning_content" type
+        HumanMessage(content="Can you re-check your last answer?"),
+        AIMessage(content=[
+            {
+                "type": "reasoning_content",
+                "reasoning_content": {
+                    "text": "To solve 27 * 14, I'll break it down:\n1. First multiply 7 × 14 = 98\n2. Then multiply 20 × 14 = 280\n3. Add the results: 98 + 280 = 378",
+                    "signature": "math-sig-456"
+                }
+            },
+            {
+                "type": "text",
+                "text": "I've double-checked and confirm that 27 * 14 = 378."
+            }
+        ]),
+    ]
+
+    expected_messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "text": "Solve this problem step by step: what is 27 * 14?"
+                }
+            ]
+        },
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "reasoningContent": {
+                        "reasoningText": {
+                            "text": "To solve 27 * 14, I'll break it down into steps...",
+                            "signature": "sig-123"
+                        }
+                    }
+                },
+                {
+                    "text": "The answer is 378."
+                }
+            ]
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "text": "Can you re-check your last answer?"
+                }
+            ]
+        },
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "reasoningContent": {
+                        "reasoningText": {
+                            "text": "To solve 27 * 14, I'll break it down:\n1. First multiply 7 × 14 = 98\n2. Then multiply 20 × 14 = 280\n3. Add the results: 98 + 280 = 378",
+                            "signature": "math-sig-456"
+                        }
+                    }
+                },
+                {
+                    "text": "I've double-checked and confirm that 27 * 14 = 378."
+                }
+            ]
+        },
+    ]
+
+    expected_system = [{"text": "You are a helpful assistant."}]
+
+    actual_messages, actual_system = _messages_to_bedrock(messages)
+
+    assert expected_messages == actual_messages
+    assert expected_system == actual_system

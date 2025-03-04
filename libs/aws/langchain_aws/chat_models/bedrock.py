@@ -38,7 +38,7 @@ from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResu
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 from langchain_aws.function_calling import (
@@ -185,6 +185,41 @@ def convert_messages_to_prompt_mistral(messages: List[BaseMessage]) -> str:
     )
 
 
+def _convert_one_message_to_text_deepseek(message: BaseMessage) -> str:
+    if isinstance(message, ChatMessage):
+        message_text = (
+            f"<|{message.role}|>{message.content}"
+        )
+    elif isinstance(message, HumanMessage):
+        message_text = (
+            f"<|User|>{message.content}"
+        )
+    elif isinstance(message, AIMessage):
+        message_text = (
+            f"<|Assistant|>{message.content}"
+        )
+    elif isinstance(message, SystemMessage):
+        message_text = (
+            f"<|System|>{message.content}"
+        )
+    else:
+        raise ValueError(f"Got unknown type {message}")
+
+    return message_text
+
+
+def convert_messages_to_prompt_deepseek(messages: List[BaseMessage]) -> str:
+    """Convert a list of messages to a prompt for DeepSeek-R1."""
+    prompt = "\n<|begin_of_sentence|>"
+
+    for message in messages:
+        prompt += _convert_one_message_to_text_deepseek(message)
+
+    prompt += "<|Assistant|>\n\n"
+
+    return prompt
+
+
 def _format_image(image_url: str) -> Dict:
     """
     Formats an image of format data:image/jpeg;base64,{b64_string}
@@ -306,16 +341,21 @@ def _format_anthropic_messages(
 
             # populate content
             content = []
+            thinking_blocks = []
+            text_blocks = []
+            tool_blocks = []
+
+            # First collect all blocks by type
             for item in message.content:
                 if isinstance(item, str):
-                    content.append({"type": "text", "text": item})
+                    text_blocks.append({"type": "text", "text": item})
                 elif isinstance(item, dict):
                     if "type" not in item:
                         raise ValueError("Dict content item must have a type key")
                     elif item["type"] == "image_url":
                         # convert format
                         source = _format_image(item["image_url"]["url"])
-                        content.append({"type": "image", "source": source})
+                        tool_blocks.append({"type": "image", "source": source})
                     elif item["type"] == "tool_use":
                         # If a tool_call with the same id as a tool_use content block
                         # exists, the tool_call is preferred.
@@ -327,12 +367,15 @@ def _format_anthropic_messages(
                                 for tc in message.tool_calls
                                 if tc["id"] == item["id"]
                             ]
-                            content.extend(
+                            tool_blocks.extend(
                                 _lc_tool_calls_to_anthropic_tool_use_blocks(overlapping)
                             )
                         else:
                             item.pop("text", None)
-                            content.append(item)
+                            tool_blocks.append(item)
+                    elif item["type"] in ["thinking", "redacted_thinking"]:
+                        # Store thinking blocks separately
+                        thinking_blocks.append(item)
                     elif item["type"] == "text":
                         text = item.get("text", "")
                         # Only add non-empty strings for now as empty ones are not
@@ -346,24 +389,80 @@ def _format_anthropic_messages(
                             content_item["cache_control"] = {"type": "ephemeral"}
 
                         if text.strip():
-                            content.append(content_item)
+                            text_blocks.append({"type": "text", "text": text})
                     else:
-                        content.append(item)
+                        tool_blocks.append(item)
                 else:
                     raise ValueError(
                         f"Content items must be str or dict, instead was: {type(item)}"
                     )
-        elif isinstance(message, AIMessage) and message.tool_calls:
-            content = (
-                []
-                if not message.content
-                else [{"type": "text", "text": message.content}]
-            )
-            # Note: Anthropic can't have invalid tool calls as presently defined,
-            # since the model already returns dicts args not JSON strings, and invalid
-            # tool calls are those with invalid JSON for args.
-            content += _lc_tool_calls_to_anthropic_tool_use_blocks(message.tool_calls)
+
+            # For assistant messages, when thinking blocks exist, ensure they come first
+            if role == "assistant" and thinking_blocks:
+                content = thinking_blocks + text_blocks + tool_blocks
+            else:
+                # For user messages or assistant messages without thinking,
+                # just combine all blocks in standard order
+                content = text_blocks + tool_blocks
+                # Only include thinking blocks if they exist (for assistant messages that might have them)
+                if thinking_blocks:
+                    content = thinking_blocks + content
+
+        elif isinstance(message, AIMessage):
+            # For string content, create appropriate structure
+            content_list = []
+
+            # Add thinking blocks from additional_kwargs if present
+            if message.additional_kwargs and "thinking" in message.additional_kwargs:
+                thinking_data = message.additional_kwargs["thinking"]
+                if thinking_data and isinstance(thinking_data, dict):
+                    if "text" in thinking_data and "signature" in thinking_data:
+                        content_list.append(
+                            {
+                                "type": "thinking",
+                                "thinking": thinking_data["text"],
+                                "signature": thinking_data["signature"],
+                            }
+                        )
+
+            # Add base content as text block
+            if message.content:
+                content_list.append({"type": "text", "text": message.content})
+
+            # Add tool calls if present
+            if message.tool_calls:
+                content_list.extend(
+                    _lc_tool_calls_to_anthropic_tool_use_blocks(message.tool_calls)
+                )
+
+            # For assistant messages with thinking blocks, ensure they come first
+            if role == "assistant" and any(
+                block.get("type") in ["thinking", "redacted_thinking"]
+                for block in content_list
+                if isinstance(block, dict)
+            ):
+                # Separate thinking blocks and non-thinking blocks
+                thinking_blocks = [
+                    block
+                    for block in content_list
+                    if isinstance(block, dict)
+                    and block.get("type") in ["thinking", "redacted_thinking"]
+                ]
+                other_blocks = [
+                    block
+                    for block in content_list
+                    if not (
+                        isinstance(block, dict)
+                        and block.get("type") in ["thinking", "redacted_thinking"]
+                    )
+                ]
+                # Combine with thinking first
+                content = thinking_blocks + other_blocks
+            else:
+                # No thinking blocks or not an assistant message
+                content = content_list
         else:
+            # Simple string content
             content = message.content
 
         formatted_messages.append({"role": role, "content": content})
@@ -381,6 +480,8 @@ class ChatPromptAdapter:
     ) -> str:
         if provider == "anthropic":
             prompt = convert_messages_to_prompt_anthropic(messages=messages)
+        elif provider == "deepseek":
+            prompt = convert_messages_to_prompt_deepseek(messages=messages)
         elif provider == "meta":
             if "llama3" in model:
                 prompt = convert_messages_to_prompt_llama3(messages=messages)
@@ -427,6 +528,12 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     beta_use_converse_api: bool = False
     """Use the new Bedrock ``converse`` API which provides a standardized interface to 
     all Bedrock models. Support still in beta. See ChatBedrockConverse docs for more."""
+
+    stop_sequences: Optional[List[str]] = Field(default=None, alias="stop")
+    """Stop sequence inference parameter from new Bedrock ``converse`` API providing 
+    a sequence of characters that causes a model to stop generating a response. See 
+    https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_InferenceConfiguration.html 
+    for more."""
 
     @property
     def _llm_type(self) -> str:
@@ -557,10 +664,15 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         **kwargs: Any,
     ) -> ChatResult:
         if self.beta_use_converse_api:
-            return self._as_converse._generate(
-                messages, stop=stop, run_manager=run_manager, **kwargs
-            )
-        logger.info(f"The input message: {messages}")
+            if not self.streaming:
+                return self._as_converse._generate(
+                    messages, stop=stop, run_manager=run_manager, **kwargs
+                )
+            else:
+                stream_iter = self._as_converse._stream(
+                    messages, stop=stop, run_manager=run_manager, **kwargs
+                )
+                return generate_from_stream(stream_iter)
         completion = ""
         llm_output: Dict[str, Any] = {}
         tool_calls: List[ToolCall] = []
@@ -667,11 +779,14 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 return get_token_ids_anthropic(text)
             else:
                 warnings.warn(
-                    f"Falling back to default token method due to missing or incompatible `anthropic` installation "
-                    f"(needs <=0.38.0).\n\nIf using `anthropic>0.38.0`, it is recommended to provide the model "
-                    f"class with a custom_get_token_ids method implementing a more accurate tokenizer for Anthropic. "
-                    f"For get_num_tokens, as another alternative, you can implement your own token counter method "
-                    f"using the ChatAnthropic or AnthropicLLM classes."
+                    "Falling back to default token method due to missing or "
+                    "incompatible `anthropic` installation "
+                    "(needs <=0.38.0).\n\nIf using `anthropic>0.38.0`, "
+                    "it is recommended to provide the model class with a "
+                    "custom_get_token_ids method implementing a more accurate "
+                    "tokenizer for Anthropic. For get_num_tokens, as another "
+                    "alternative, you can implement your own token counter method "
+                    "using the ChatAnthropic or AnthropicLLM classes."
                 )
         return super().get_token_ids(text)
 
@@ -898,7 +1013,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             kwargs["max_tokens"] = self.max_tokens
         if self.temperature is not None:
             kwargs["temperature"] = self.temperature
+        if self.stop_sequences:
+            kwargs["stop_sequences"] = self.stop_sequences
+
         return ChatBedrockConverse(
+            client=self.client,
             model=self.model_id,
             region_name=self.region_name,
             credentials_profile_name=self.credentials_profile_name,
