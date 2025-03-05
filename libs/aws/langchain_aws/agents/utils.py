@@ -20,29 +20,62 @@ from langchain_aws.agents.types import (
 
 logger = logging.getLogger(__name__)
 
+__version__ = "0.1.0"
+SDK_USER_AGENT = f"LangChainAWS#Agents#{__version__}"
+
+# Set default client parameters
+DEFAULT_CONFIG = Config(
+    connect_timeout=120,
+    read_timeout=120,
+    retries={"max_attempts": 0},
+)
+
 
 def get_boto_session(
     credentials_profile_name: Optional[str] = None,
     region_name: Optional[str] = None,
     endpoint_url: Optional[str] = None,
+    config: Optional[Config] = None,
 ) -> Any:
     """
     Construct the boto3 session
+
+    Args:
+        credentials_profile_name: AWS profile name to use for credentials
+        region_name: AWS region to use
+        endpoint_url: Custom endpoint URL to use
+        config: Optional boto3 Config object
     """
     if credentials_profile_name:
         session = boto3.Session(profile_name=credentials_profile_name)
     else:
         # use default credentials
         session = boto3.Session()
-    client_params = {
-        "config": Config(
-            connect_timeout=120, read_timeout=120, retries={"max_attempts": 0}
-        )
-    }
+
+    # If a custom config is provided, ensure our defaults are maintained
+    if config:
+        # Check if each default property exists in the custom config
+        # If not, add the default value
+        if getattr(config, "connect_timeout", None) is None:
+            config.connect_timeout = DEFAULT_CONFIG.connect_timeout
+        if getattr(config, "read_timeout", None) is None:
+            config.read_timeout = DEFAULT_CONFIG.read_timeout
+        if getattr(config, "retries", None) is None:
+            config.retries = DEFAULT_CONFIG.retries
+    else:
+        config = DEFAULT_CONFIG
+
+    existing_user_agent = getattr(config, "user_agent_extra", "") or ""
+    new_user_agent = f"{existing_user_agent} md/sdk_user_agent/{SDK_USER_AGENT}".strip()
+    config.user_agent_extra = new_user_agent
+
+    client_params = {"config": config}
+
     if region_name:
         client_params["region_name"] = region_name
     if endpoint_url:
         client_params["endpoint_url"] = endpoint_url
+
     return client_params, session
 
 
