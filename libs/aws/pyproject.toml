@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langchain-aws"
-version = "0.2.13"
+version = "0.2.15"
 description = "An integration package connecting AWS and LangChain"
 authors = []
 readme = "README.md"
@@ -13,7 +13,7 @@ license = "MIT"
 [tool.poetry.dependencies]
 python = ">=3.9,<4.0"
 langchain-core = "^0.3.27"
-boto3 = ">=1.35.74"
+boto3 = ">=1.37.0"
 pydantic = ">=2,<3"
 numpy = [
   { version = "^1", python = "<3.12" },

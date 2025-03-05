@@ -131,3 +131,8 @@ def get_aws_client(
             "Please check that credentials in the specified profile name are valid. "
             f"Service error: {e}"
         ) from e
+
+        
+def thinking_in_params(params: dict) -> bool:
+    """Check if the thinking parameter is enabled in the request."""
+    return params.get("thinking", {}).get("type") == "enabled"

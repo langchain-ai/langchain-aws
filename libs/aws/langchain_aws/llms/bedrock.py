@@ -36,6 +36,7 @@ from langchain_aws.utils import (
     get_aws_client,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
+    thinking_in_params,
 )
 
 logger = logging.getLogger(__name__)
@@ -145,6 +146,16 @@ def _stream_response_to_generation_chunk(
                     content=[content_block],
                     tool_call_chunks=[tc_chunk],  # type: ignore
                 )
+            elif stream_response["delta"]["type"] == "thinking_delta":
+                content_block = stream_response["delta"]
+                content_block["index"] = stream_response["index"]
+                content_block["type"] = "thinking"
+                return AIMessageChunk(content=[content_block])
+            elif stream_response["delta"]["type"] == "signature_delta":
+                content_block = stream_response["delta"]
+                content_block["index"] = stream_response["index"]
+                content_block["type"] = "thinking"
+                return AIMessageChunk(content=[content_block])
         elif msg_type == "message_delta":
             return AIMessageChunk(
                 content="",
@@ -272,9 +283,60 @@ class LLMInputOutputAdapter:
         input_body = {**model_kwargs}
         if provider == "anthropic":
             if messages:
+                # Check if we're using extended thinking
+                thinking_enabled = thinking_in_params(model_kwargs)
+
                 if tools:
                     input_body["tools"] = tools
                 input_body["anthropic_version"] = "bedrock-2023-05-31"
+
+                # Special handling for tool results with thinking
+                if thinking_enabled:
+                    # Check if we have a tool_result in the last user message
+                    # and need to ensure the previous assistant message starts with thinking
+                    if (
+                        len(messages) >= 2
+                        and messages[-1]["role"] == "user"
+                        and messages[-2]["role"] == "assistant"
+                    ):
+                        # Check if the last user message contains tool_result
+                        last_user_msg = messages[-1].get("content", [])
+                        tool_result = False
+                        if isinstance(last_user_msg, list):
+                            tool_result = any(
+                                item.get("type") == "tool_result"
+                                for item in last_user_msg
+                                if isinstance(item, dict)
+                            )
+
+                        if tool_result:
+                            # Make sure the assistant message has thinking first
+                            asst_content = messages[-2].get("content", [])
+                            if isinstance(asst_content, list) and asst_content:
+                                # Find thinking blocks and move them to the front if needed
+                                thinking_blocks = [
+                                    block
+                                    for block in asst_content
+                                    if isinstance(block, dict)
+                                    and block.get("type")
+                                    in ["thinking", "redacted_thinking"]
+                                ]
+                                if thinking_blocks and asst_content[0].get(
+                                    "type"
+                                ) not in ["thinking", "redacted_thinking"]:
+                                    # Reorder to put thinking blocks first
+                                    new_content = thinking_blocks.copy()
+                                    new_content.extend(
+                                        [
+                                            block
+                                            for block in asst_content
+                                            if isinstance(block, dict)
+                                            and block.get("type")
+                                            not in ["thinking", "redacted_thinking"]
+                                        ]
+                                    )
+                                    messages[-2]["content"] = new_content
+
                 input_body["messages"] = messages
                 if system:
                     input_body["system"] = system
@@ -293,7 +355,7 @@ class LLMInputOutputAdapter:
             if temperature is not None:
                 input_body["temperature"] = temperature
 
-        elif provider in ("ai21", "cohere", "meta", "mistral"):
+        elif provider in ("ai21", "cohere", "meta", "mistral", "deepseek"):
             input_body["prompt"] = prompt
             if max_tokens:
                 if provider == "cohere":
@@ -302,6 +364,8 @@ class LLMInputOutputAdapter:
                     input_body["max_gen_len"] = max_tokens
                 elif provider == "mistral":
                     input_body["max_tokens"] = max_tokens
+                elif provider == "deepseek":
+                    input_body["max_new_tokens"] = max_tokens
                 else:
                     # TODO: Add AI21 support, param depends on specific model.
                     pass
@@ -325,16 +389,35 @@ class LLMInputOutputAdapter:
     def prepare_output(cls, provider: str, response: Any) -> dict:
         text = ""
         tool_calls = []
+        thinking = {}
         response_body = json.loads(response.get("body").read().decode())
 
         if provider == "anthropic":
             if "completion" in response_body:
                 text = response_body.get("completion")
             elif "content" in response_body:
-                content = response_body.get("content")
-                if len(content) == 1 and content[0]["type"] == "text":
-                    text = content[0]["text"]
-                elif any(block["type"] == "tool_use" for block in content):
+                content = response_body.get("content", [])
+                # Extract text content
+                text_blocks = [
+                    block["text"] for block in content if block.get("type") == "text"
+                ]
+                if text_blocks:
+                    text = "".join(text_blocks)
+
+                # Extract thinking content
+                thinking_blocks = [
+                    block for block in content if block.get("type") == "thinking"
+                ]
+                if thinking_blocks:
+                    # Get the first thinking block (there's typically just one)
+                    thinking_block = thinking_blocks[0]
+                    thinking = {
+                        "text": thinking_block.get("thinking", ""),
+                        "signature": thinking_block.get("signature", ""),
+                    }
+
+                # Extract tool calls if present
+                if any(block.get("type") == "tool_use" for block in content):
                     tool_calls = extract_tool_calls(content)
 
         else:
@@ -346,6 +429,8 @@ class LLMInputOutputAdapter:
                 text = response_body.get("generation")
             elif provider == "mistral":
                 text = response_body.get("outputs")[0].get("text")
+            elif provider == "deepseek":
+                text = response_body.get("choices")[0].get("text")
             else:
                 text = response_body.get("results")[0].get("outputText")
 
@@ -354,6 +439,7 @@ class LLMInputOutputAdapter:
         completion_tokens = int(headers.get("x-amzn-bedrock-output-token-count", 0))
         return {
             "text": text,
+            "thinking": thinking,
             "tool_calls": tool_calls,
             "body": response_body,
             "usage": {
@@ -747,6 +833,36 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         provider = self._get_provider()
         params = {**_model_kwargs, **kwargs}
+
+        # Pre-process for thinking with tool use
+        if messages and "claude-3" in self._get_model() and thinking_in_params(params):
+            # We need to ensure thinking blocks are first in assistant messages
+            # Process each message in the sequence
+            for i, message in enumerate(messages):
+                if message.get("role") == "assistant" and i > 0:
+                    content = message.get("content", [])
+                    if isinstance(content, list) and content:
+                        # Find any thinking blocks
+                        thinking_blocks = [
+                            j
+                            for j, item in enumerate(content)
+                            if isinstance(item, dict)
+                            and item.get("type") in ["thinking", "redacted_thinking"]
+                        ]
+
+                        # If thinking blocks exist but aren't first, reorder
+                        if thinking_blocks and thinking_blocks[0] > 0:
+                            # Extract thinking blocks
+                            thinking_content = [content[j] for j in thinking_blocks]
+                            # Extract non-thinking blocks
+                            other_content = [
+                                item
+                                for j, item in enumerate(content)
+                                if j not in thinking_blocks
+                            ]
+                            # Reorder with thinking first
+                            message["content"] = thinking_content + other_content
+
         if "claude-3" in self._get_model() and _tools_in_params(params):
             input_body = LLMInputOutputAdapter.prepare_input(
                 provider=provider,
@@ -796,6 +912,7 @@ class BedrockBase(BaseLanguageModel, ABC):
 
             (
                 text,
+                thinking,
                 tool_calls,
                 body,
                 usage_info,
@@ -810,8 +927,11 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         if stop is not None:
             text = enforce_stop_tokens(text, stop)
-
-        llm_output = {"usage": usage_info, "stop_reason": stop_reason}
+        llm_output = {
+            "usage": usage_info,
+            "stop_reason": stop_reason,
+            "thinking": thinking,
+        }
 
         # Verify and raise a callback error if any intervention occurs or a signal is
         # sent from a Bedrock service,
@@ -907,6 +1027,9 @@ class BedrockBase(BaseLanguageModel, ABC):
                     max_tokens=self.max_tokens,
                     temperature=self.temperature,
                 )
+            elif thinking_in_params(params):
+                coerce_content_to_string = False
+
         body = json.dumps(input_body)
 
         request_options = {
