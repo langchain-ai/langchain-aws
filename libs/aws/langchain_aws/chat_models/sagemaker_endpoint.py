@@ -24,9 +24,14 @@ from langchain_core.messages import (
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from pydantic import ConfigDict, model_validator
 from typing_extensions import Self
-from langchain_aws.llms.sagemaker_endpoint import LLMContentHandler, LineIterator, enforce_stop_tokens
+
+from langchain_aws.utils import ContentHandlerBase
 
 logger = logging.getLogger(__name__)
+
+
+class ChatModelContentHandler(ContentHandlerBase[List[Dict[str, Any]], BaseMessage]):
+    """Content handler for ChatSagemakerEndpoint class."""
 
 
 class ChatSagemakerEndpoint(BaseChatModel):
@@ -126,7 +131,7 @@ class ChatSagemakerEndpoint(BaseChatModel):
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     """
 
-    content_handler: LLMContentHandler
+    content_handler: ChatModelContentHandler
     """The content handler class that provides an input and
     output transform functions to handle formats between LLM
     and the endpoint.
@@ -223,11 +228,6 @@ class ChatSagemakerEndpoint(BaseChatModel):
         return "amazon_sagemaker_chat"
 
     @classmethod
-    def is_lc_serializable(cls) -> bool:
-        """Return whether this model can be serialized by Langchain."""
-        return True
-
-    @classmethod
     def get_lc_namespace(cls) -> List[str]:
         """Get the namespace of the langchain object."""
         return ["langchain", "chat_models", "sagemaker"]
@@ -240,11 +240,6 @@ class ChatSagemakerEndpoint(BaseChatModel):
             attributes["region_name"] = self.region_name
 
         return attributes
-
-    model_config = ConfigDict(
-        extra="forbid",
-        populate_by_name=True,
-    )
 
     def _format_messages_request(
         self,
