@@ -10,10 +10,10 @@ from langchain_core.language_models import (
 )
 from langchain_core.messages import (
     AIMessage,
+    AIMessageChunk,
     BaseMessage,
     HumanMessage,
     SystemMessage,
-    AIMessageChunk
 )
 from langchain_standard_tests.unit_tests import ChatModelUnitTests
 
@@ -34,11 +34,11 @@ class DefaultHandler(ChatModelContentHandler):
         response_json = json.loads(output.decode())
         return AIMessage(content=response_json[0]["generated_text"])
 
-class ContentHandlerStream(LLMContentHandler):
+class ContentHandlerStream(ChatModelContentHandler):
     content_type = "application/json"
     accepts = "application/json"
 
-    def transform_input(self, prompt, model_kwargs: Dict) -> bytes:
+    def transform_input(self, prompt: Any, model_kwargs: Dict) -> bytes:
         return json.dumps(prompt).encode("utf-8")
 
     def transform_output(self, output: bytes) -> AIMessageChunk:
@@ -57,40 +57,23 @@ class ContentHandlerStream(LLMContentHandler):
 
 
 class MockStreamingBody:
-        def __iter__(self):
-            return self
-            
-        def __next__(self):
-            return {
-                'PayloadPart': {
-                    'Bytes': json.dumps({
-                        "generated_text": "Test chunk"
-                    }).encode('utf-8')
-                }
-            }
+    def __init__(self):
+        self.data = [
+            b'{"generated_text": "Test chunk 1"}\n',
+            b'{"generated_text": "Test chunk 2"}\n',
+            b'{"generated_text": "Test chunk 3"}\n',
+        ]
+        self.index = 0
 
+    def __iter__(self):
+        return self
 
-def test_sagemaker_chat_streaming():
-    client = Mock()
-    
-    stream_response = {
-        "Body": MockStreamingBody()
-    }
-    client.invoke_endpoint_with_response_stream.return_value = stream_response
-
-    chat_model = ChatSagemakerEndpoint(
-        endpoint_name="test-endpoint",
-        region_name="us-west-2",
-        content_handler=ContentHandlerStream(),
-        streaming=True,
-        client=client
-    )
-
-    messages = [HumanMessage(content="Test streaming?")]
-    chunks = list(chat_model.stream(messages))
-    
-    assert len(chunks) > 0
-    assert all(isinstance(chunk, ChatGenerationChunk) for chunk in chunks)
+    def __next__(self):
+        if self.index < len(self.data):
+            chunk = {"PayloadPart": {"Bytes": self.data[self.index]}}
+            self.index += 1
+            return chunk
+        raise StopIteration
 
 
 class TestSageMakerStandard(ChatModelUnitTests):
@@ -136,11 +119,11 @@ class TestSageMakerStandard(ChatModelUnitTests):
                 "endpoint_name": "my-endpoint",
             },
         )
-
+    
     @pytest.mark.xfail(reason="Doesn't support streaming init param.")
     def test_init_streaming(self) -> None:
         super().test_init_streaming()
-    
+        
     @pytest.mark.xfail(reason="Doesn't support binding tool.")
     def test_bind_tool_pydantic(self, model: BaseChatModel) -> None:
         super().test_bind_tool_pydantic(model)
@@ -186,3 +169,24 @@ def test_sagemaker_endpoint_invoke() -> None:
 
     assert service_response.content == "SageMaker Endpoint"
     assert isinstance(service_response, AIMessage)
+
+def test_sagemaker_endpoint_stream() -> None:
+    client = Mock()
+    
+    stream_response = {
+        "Body": MockStreamingBody()
+    }
+    client.invoke_endpoint_with_response_stream.return_value = stream_response
+
+    chat_model = ChatSagemakerEndpoint(
+        endpoint_name="test-endpoint",
+        region_name="us-west-2",
+        content_handler=ContentHandlerStream(),
+        streaming=True,
+        client=client
+    )
+
+    messages = [HumanMessage(content="Test streaming?")]
+    chunks = list(chat_model.stream(messages))
+    assert len(chunks) > 0
+    assert all(isinstance(chunk, AIMessageChunk) for chunk in chunks)

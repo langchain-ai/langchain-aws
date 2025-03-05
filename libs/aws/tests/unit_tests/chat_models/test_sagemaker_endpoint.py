@@ -3,16 +3,17 @@
 import json
 from typing import Dict
 from unittest.mock import Mock
+
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from langchain_aws.chat_models.sagemaker_endpoint import (
+    ChatModelContentHandler,
+    ChatSagemakerEndpoint,
     _messages_to_sagemaker,
 )
-from langchain_aws.chat_models.sagemaker_endpoint import ChatSagemakerEndpoint
-from langchain_aws.llms.sagemaker_endpoint import LLMContentHandler
 
 
-class DefaultHandler(LLMContentHandler):
+class DefaultHandler(ChatModelContentHandler):
     content_type = "application/json"
     accepts = "application/json"
 
@@ -49,7 +50,8 @@ def test_format_messages_request() -> None:
 
     expected_invocation_params = {
         'EndpointName': 'my-endpoint', 
-        'Body': b'[{"role": "system", "content": "Output everything you have."}, {"role": "user", "content": "What is an llm?"}]', 
+        'Body': b'''[{"role": "system", "content": "Output everything you have."},
+         {"role": "user", "content": "What is an llm?"}]''', 
         'ContentType': 'application/json', 
         'Accept': 'application/json'
     }

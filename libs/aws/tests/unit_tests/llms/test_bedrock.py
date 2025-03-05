@@ -591,7 +591,8 @@ def test_prepare_output_with_thinking(anthropic_response_with_thinking):
 def test_prepare_output_with_thinking_and_tool_use(
     anthropic_response_with_thinking_and_tool_use,
 ):
-    """Test that thinking blocks and tool use are extracted properly from the response."""
+    """Test that thinking blocks and tool use are 
+    extracted properly from the response."""
     result = LLMInputOutputAdapter.prepare_output(
         "anthropic", anthropic_response_with_thinking_and_tool_use
     )
@@ -624,7 +625,8 @@ def test_prepare_output_with_thinking_and_tool_use(
 
 
 def test_prepare_output_after_tool_use(anthropic_response_after_tool_use):
-    """Test that responses after tool use (which don't have thinking blocks) are handled correctly."""
+    """Test that responses after tool use (which don't have thinking blocks)
+     are handled correctly."""
     result = LLMInputOutputAdapter.prepare_output(
         "anthropic", anthropic_response_after_tool_use
     )

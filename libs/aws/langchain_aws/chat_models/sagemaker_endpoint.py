@@ -1,14 +1,7 @@
 """Sagemaker Chat Model."""
-
+import io
 import logging
-from typing import (
-    Any,
-    Dict,
-    List,
-    Mapping,
-    Optional,
-    Iterator
-)
+from typing import Any, Dict, Iterator, List, Mapping, Optional
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import (
@@ -25,9 +18,82 @@ from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResu
 from pydantic import ConfigDict, model_validator
 from typing_extensions import Self
 
-from langchain_aws.utils import ContentHandlerBase
+from langchain_aws.utils import ContentHandlerBase, enforce_stop_tokens
 
 logger = logging.getLogger(__name__)
+
+
+class ChatLineIterator:
+    """
+    A helper class for parsing the byte stream input.
+
+    The output of the model will be in the following format:
+
+    b'{"outputs": [" a"]}\n'
+    b'{"outputs": [" challenging"]}\n'
+    b'{"outputs": [" problem"]}\n'
+    ...
+
+    While usually each PayloadPart event from the event stream will
+    contain a byte array with a full json, this is not guaranteed
+    and some of the json objects may be split acrossPayloadPart events.
+
+    For example:
+
+    {'PayloadPart': {'Bytes': b'{"outputs": '}}
+    {'PayloadPart': {'Bytes': b'[" problem"]}\n'}}
+
+
+    This class accounts for this by concatenating bytes written via the 'write' function
+    and then exposing a method which will return lines (ending with a '\n' character)
+    within the buffer via the 'scan_lines' function.
+    It maintains the position of the last read position to ensure
+    that previous bytes are not exposed again.
+
+    For more details see:
+    https://aws.amazon.com/blogs/machine-learning/elevating-the-generative-ai-experience-introducing-streaming-support-in-amazon-sagemaker-hosting/
+    """
+
+    def __init__(self, stream: Any) -> None:
+        self.byte_iterator = iter(stream)
+        self.buffer = io.BytesIO()
+        self.read_pos = 0
+
+    def __iter__(self) -> "ChatLineIterator":
+        return self
+
+    def __next__(self) -> Any:
+        while True:
+            self.buffer.seek(self.read_pos)
+            line = self.buffer.readline()
+            if line and line[-1] == ord("\n"):
+                self.read_pos += len(line)
+                return line[:-1]
+            try:
+                chunk = next(self.byte_iterator)
+                if "PayloadPart" in chunk:
+                    self.buffer.seek(0, io.SEEK_END)
+                    self.buffer.write(chunk["PayloadPart"]["Bytes"])
+                    continue
+            except StopIteration:
+                if self.read_pos < self.buffer.getbuffer().nbytes:
+                    remaining = self.buffer.getvalue()[self.read_pos:]
+                    self.read_pos = self.buffer.getbuffer().nbytes
+                    return remaining
+                raise
+            if line:
+                self.read_pos += len(line)
+                return line[:-1] if line[-1] == ord('\n') else line
+            try:
+                chunk = next(self.byte_iterator)
+            except StopIteration:
+                if self.read_pos < self.buffer.getbuffer().nbytes:
+                    continue
+                raise
+            if "PayloadPart" not in chunk:
+                continue
+            self.buffer.seek(0, io.SEEK_END)
+            self.buffer.write(chunk["PayloadPart"]["Bytes"])
 
 
 class ChatModelContentHandler(ContentHandlerBase[List[Dict[str, Any]], BaseMessage]):
@@ -278,7 +344,7 @@ class ChatSagemakerEndpoint(BaseChatModel):
             )
         try:
             resp = self.client.invoke_endpoint_with_response_stream(**invocation_params)
-            iterator = LineIterator(resp["Body"])
+            iterator = ChatLineIterator(resp["Body"])
 
             for line in iterator:
                 text = self.content_handler.transform_output(line)
