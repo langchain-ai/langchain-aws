@@ -1,6 +1,6 @@
 import os
 from unittest import mock
-from typing import Dict, Tuple
+from typing import Dict, Generator, Tuple
 
 import pytest
 from botocore.config import Config
@@ -10,7 +10,7 @@ from langchain_aws.utils import get_aws_client
 
 
 @pytest.fixture
-def mock_session() -> Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]:
+def mock_session() -> Generator[Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock], None, None]:
     with mock.patch('boto3.Session') as m:
         mock_session_instance = mock.MagicMock()
         m.return_value = mock_session_instance
@@ -30,7 +30,7 @@ def mock_session() -> Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]:
 )
 def test_invalid_creds(creds: Dict[str, SecretStr]) -> None:
     with pytest.raises(ValueError, match="both aws_access_key_id and aws_secret_access_key must be specified"):
-        get_aws_client('bedrock-runtime', **creds)
+        get_aws_client('bedrock-runtime', **creds)  # type: ignore
 
 
 def test_valid_creds(mock_session: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
