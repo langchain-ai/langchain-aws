@@ -712,7 +712,7 @@ class BedrockBase(BaseLanguageModel, ABC):
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
 
-    max_parallel_requests: int = os.cpu_count() * 5 if os.cpu_count() else 10
+    max_parallel_requests: int = (os.cpu_count() or 10) * 5
     """
     The maximum number of network requests that can be resolved in parallel by
     an instance of this class. This sets the number of worker threads available
