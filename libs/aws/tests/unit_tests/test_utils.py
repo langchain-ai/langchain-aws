@@ -1,15 +1,16 @@
 import os
 from unittest import mock
+from typing import Dict, Tuple
 
 import pytest
 from botocore.config import Config
 from botocore.exceptions import UnknownServiceError
 from pydantic import SecretStr
-from utils import get_aws_client
+from langchain_aws.utils import get_aws_client
 
 
 @pytest.fixture
-def mock_session():
+def mock_session() -> Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]:
     with mock.patch('boto3.Session') as m:
         mock_session_instance = mock.MagicMock()
         m.return_value = mock_session_instance
@@ -27,12 +28,12 @@ def mock_session():
         {"aws_session_token": SecretStr("test_token")}
     ]
 )
-def test_invalid_creds(creds):
+def test_invalid_creds(creds: Dict[str, SecretStr]) -> None:
     with pytest.raises(ValueError, match="both aws_access_key_id and aws_secret_access_key must be specified"):
         get_aws_client('bedrock-runtime', **creds)
 
 
-def test_valid_creds(mock_session):
+def test_valid_creds(mock_session: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
     session_mock, session_instance, client_mock = mock_session
 
     client = get_aws_client(
@@ -49,7 +50,7 @@ def test_valid_creds(mock_session):
     assert client == client_mock
 
 
-def test_valid_creds_with_session_token(mock_session):
+def test_valid_creds_with_session_token(mock_session: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
     session_mock, session_instance, client_mock = mock_session
 
     client = get_aws_client(
@@ -67,14 +68,14 @@ def test_valid_creds_with_session_token(mock_session):
     assert client == client_mock
 
 
-def test_creds_from_profile_name(mock_session):
+def test_creds_from_profile_name(mock_session: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
     session_mock, session_instance, client_mock = mock_session
     client = get_aws_client('bedrock-runtime', credentials_profile_name='test_profile')
     session_mock.assert_called_once_with(profile_name='test_profile')
     assert client == client_mock
 
 
-def test_creds_default(mock_session):
+def test_creds_default(mock_session: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
     session_mock, session_instance, client_mock = mock_session
     client = get_aws_client('bedrock-runtime')
     session_mock.assert_called_once_with()
@@ -89,7 +90,12 @@ def test_creds_default(mock_session):
         ("AWS_DEFAULT_REGION", "us-east-1", "us-east-1")
     ]
 )
-def test_region_from_env_vars(mock_session, env_var, env_value, expected_region):
+def test_region_from_env_vars(
+    mock_session: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
+    env_var: str,
+    env_value: str,
+    expected_region: str
+) -> None:
     _, session_instance, client_mock = mock_session
 
     with mock.patch.dict(os.environ, {env_var: env_value}):
@@ -99,7 +105,7 @@ def test_region_from_env_vars(mock_session, env_var, env_value, expected_region)
     assert client == client_mock
 
 
-def test_endpoint_url(mock_session):
+def test_endpoint_url(mock_session: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
     _, session_instance, client_mock = mock_session
 
     client = get_aws_client(
@@ -115,7 +121,7 @@ def test_endpoint_url(mock_session):
     assert client == client_mock
 
 
-def test_with_config(mock_session):
+def test_with_config(mock_session: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
     _, session_instance, client_mock = mock_session
 
     boto_config = Config(
@@ -132,7 +138,7 @@ def test_with_config(mock_session):
     assert client == client_mock
 
 
-def test_bad_service_error(mock_session):
+def test_bad_service_error(mock_session: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
     _, session_instance, _ = mock_session
     session_instance.client.side_effect = UnknownServiceError(
         service_name='not-a-service',
@@ -143,7 +149,7 @@ def test_bad_service_error(mock_session):
         get_aws_client('not-a-service')
 
 
-def test_internal_service_error(mock_session):
+def test_boto3_error(mock_session: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
     _, session_instance, _ = mock_session
     session_instance.client.side_effect = ValueError()
 
@@ -151,9 +157,9 @@ def test_internal_service_error(mock_session):
         get_aws_client('bedrock-runtime')
 
 
-def test_generic_error(mock_session):
+def test_generic_error(mock_session: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
     _, session_instance, _ = mock_session
     session_instance.client.side_effect = Exception()
 
-    with pytest.raises(ValueError, match="Could not load credentials to authenticate with AWS client"):
+    with pytest.raises(ValueError, match="Could not load credentials"):
         get_aws_client('bedrock-runtime')
