@@ -30,6 +30,7 @@ from langchain_core.outputs import Generation, GenerationChunk, LLMResult
 from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
+from concurrent.futures import ThreadPoolExecutor
 
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
@@ -711,6 +712,26 @@ class BedrockBase(BaseLanguageModel, ABC):
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
 
+    max_parallel_requests: int = os.cpu_count() * 5 if os.cpu_count() else 10
+    """
+    The maximum number of network requests that can be resolved in parallel by
+    an instance of this class. This sets the number of worker threads available
+    in the `ThreadPoolExecutor` used to run boto3 calls asynchronously.
+
+    The default chosen is the number of logical CPUs multiplied by 5. This is a
+    safe choice when the network request consumes >80% of the task time, which
+    will be true in most modern usage scenarios.
+
+    We recommend that users leave this value unchanged unless they know what
+    they are doing. If the value is set too low, then issuing requests
+    concurrently via `loop.create_task()` will be needlessly slow. If the value
+    is too high, then the CPU may stall other processes on the device.
+
+    The ideal number is determined by several factors, including CPU clock speed
+    and network latency. Users who need to maximize request throughput in their
+    applications should optimize this value through performance testing.
+    """
+
     @property
     def lc_secrets(self) -> Dict[str, str]:
         return {
@@ -1108,6 +1129,13 @@ class BedrockBase(BaseLanguageModel, ABC):
             if not isinstance(chunk, AIMessageChunk):
                 self._get_bedrock_services_signal(chunk.generation_info)  # type: ignore[arg-type]
 
+    @property
+    def _executor(self) -> ThreadPoolExecutor:
+        """Returns the thread pool executor used."""
+        if not self.__executor:
+            self.__executor = ThreadPoolExecutor(max_workers=self.max_parallel_requests)
+        return self.__executor
+
     async def _aprepare_input_and_invoke_stream(
         self,
         prompt: str,
@@ -1156,7 +1184,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         body = json.dumps(input_body)
 
         response = await asyncio.get_running_loop().run_in_executor(
-            None,
+            self._executor,
             lambda: self.client.invoke_model_with_response_stream(
                 body=body,
                 modelId=self.model_id,
