@@ -4,6 +4,7 @@ import logging
 import os
 import warnings
 from abc import ABC
+from concurrent.futures import ThreadPoolExecutor
 from typing import (
     Any,
     AsyncGenerator,
@@ -30,7 +31,6 @@ from langchain_core.outputs import Generation, GenerationChunk, LLMResult
 from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
-from concurrent.futures import ThreadPoolExecutor
 
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
