@@ -54,6 +54,7 @@ def get_token_ids_anthropic(text: str) -> List[int]:
 
 
 def get_aws_client(
+        service_name: str,
         region_name: str = None,
         credentials_profile_name: str = None,
         aws_access_key_id: SecretStr = None,
@@ -61,7 +62,6 @@ def get_aws_client(
         aws_session_token: SecretStr = None,
         endpoint_url: str = None,
         config: Any = None,
-        service_name: str = None,
     ):
     """Helper function to validate AWS credentials and create an AWS client."""
 

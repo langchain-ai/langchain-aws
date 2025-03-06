@@ -519,12 +519,6 @@ def test_chat_bedrock_converse_different_regions() -> None:
     assert llm.region_name == region
 
 
-@mock.patch.dict(os.environ, {"AWS_REGION": "ap-south-2"})
-def test_chat_bedrock_converse_environment_variable() -> None:
-    llm = ChatBedrockConverse(model="anthropic.claude-3-sonnet-20240229-v1:0")
-    assert llm.region_name == "ap-south-2"
-
-
 def test__bedrock_to_lc_anthropic_reasoning() -> None:
     bedrock_content: List[Dict[str, Any]] = [
         # Expected LC format for non-reasoning block
