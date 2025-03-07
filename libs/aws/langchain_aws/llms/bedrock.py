@@ -732,6 +732,8 @@ class BedrockBase(BaseLanguageModel, ABC):
     applications should optimize this value through performance testing.
     """
 
+    __executor: Optional[ThreadPoolExecutor] = None
+
     @property
     def lc_secrets(self) -> Dict[str, str]:
         return {
