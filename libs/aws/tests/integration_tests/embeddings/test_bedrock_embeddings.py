@@ -101,7 +101,7 @@ def test_embed_query_normalized(bedrock_embeddings) -> None:
 @pytest.mark.scheduled
 def test_embed_query_with_size(bedrock_embeddings_v2) -> None:
     prompt_data = """Priority should be funding retirement through ROTH/IRA/401K 
-    over HSA extra. You need to fund your HSA for reasonable and expected medical 
+    over HAS extra. You need to fund your HAS for reasonable and expected medical 
     expenses. 
     """
     response = bedrock_embeddings_v2.embed_documents([prompt_data])
