@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import warnings
@@ -5,6 +6,7 @@ from collections import defaultdict
 from operator import itemgetter
 from typing import (
     Any,
+    AsyncIterator,
     Callable,
     Dict,
     Iterator,
@@ -17,13 +19,19 @@ from typing import (
     cast,
 )
 
-from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.callbacks import (
+    AsyncCallbackManagerForLLMRun,
+    CallbackManagerForLLMRun,
+)
 from langchain_core.language_models import (
     BaseChatModel,
     LangSmithParams,
     LanguageModelInput,
 )
-from langchain_core.language_models.chat_models import generate_from_stream
+from langchain_core.language_models.chat_models import (
+    agenerate_from_stream,
+    generate_from_stream,
+)
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -506,6 +514,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_InferenceConfiguration.html 
     for more."""
 
+    _converse_instance: Optional[ChatBedrockConverse] = None
+
     @property
     def _llm_type(self) -> str:
         """Return type of chat model."""
@@ -627,6 +637,72 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     )
                 yield generation_chunk
 
+    async def _astream(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatGenerationChunk]:
+        if self.beta_use_converse_api:
+            async for chunk in self._as_converse._astream(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            ):
+                yield chunk
+            return
+        provider = self._get_provider()
+        prompt, system, formatted_messages = None, None, None
+
+        if provider == "anthropic":
+            system, formatted_messages = ChatPromptAdapter.format_messages(
+                provider, messages
+            )
+            if self.system_prompt_with_tools:
+                if system:
+                    system = self.system_prompt_with_tools + f"\n{system}"
+                else:
+                    system = self.system_prompt_with_tools
+        else:
+            prompt = ChatPromptAdapter.convert_messages_to_prompt(
+                provider=provider, messages=messages, model=self._get_model()
+            )
+
+        async for chunk in self._aprepare_input_and_invoke_stream(
+            prompt=prompt,
+            system=system,
+            messages=formatted_messages,
+            stop=stop,
+            run_manager=run_manager,
+            **kwargs
+        ):
+            if isinstance(chunk, AIMessageChunk):
+                generation_chunk = ChatGenerationChunk(message=chunk)
+                if run_manager:
+                    await run_manager.on_llm_new_token(
+                        generation_chunk.text, chunk=generation_chunk
+                    )
+                yield generation_chunk
+            else:
+                delta = chunk.text
+                if generation_info := chunk.generation_info:
+                    usage_metadata = generation_info.pop("usage_metadata", None)
+                else:
+                    usage_metadata = None
+                generation_chunk = ChatGenerationChunk(
+                    message=AIMessageChunk(
+                        content=delta,
+                        response_metadata=chunk.generation_info,
+                        usage_metadata=usage_metadata,
+                    )
+                    if chunk.generation_info is not None
+                    else AIMessageChunk(content=delta)
+                )
+                if run_manager:
+                    await run_manager.on_llm_new_token(
+                        generation_chunk.text, chunk=generation_chunk
+                    )
+                yield generation_chunk
+
     def _generate(
         self,
         messages: List[BaseMessage],
@@ -721,6 +797,35 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 )
             ],
             llm_output=llm_output,
+        )
+
+    async def _agenerate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        if self.beta_use_converse_api:
+            if not self.streaming:
+                return await self._as_converse._agenerate(
+                    messages, stop=stop, run_manager=run_manager, **kwargs
+                )
+            else:
+                async def stream_iter():
+                    async for chunk in self._as_converse._astream(
+                        messages, stop=stop, run_manager=run_manager, **kwargs
+                    ):
+                        yield chunk
+                return await agenerate_from_stream(stream_iter())
+        return await asyncio.get_running_loop().run_in_executor(
+            self._executor,
+            lambda: self._generate(
+                messages,
+                stop=stop,
+                run_manager=run_manager.get_sync() if run_manager else None,
+                **kwargs
+            )
         )
 
     def _combine_llm_outputs(self, llm_outputs: List[Optional[dict]]) -> dict:
