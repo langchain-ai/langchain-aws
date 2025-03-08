@@ -28,7 +28,10 @@ from langchain_core.language_models import (
     LangSmithParams,
     LanguageModelInput,
 )
-from langchain_core.language_models.chat_models import generate_from_stream
+from langchain_core.language_models.chat_models import (
+    agenerate_from_stream,
+    generate_from_stream,
+)
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -511,6 +514,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_InferenceConfiguration.html 
     for more."""
 
+    _converse_instance: Optional[ChatBedrockConverse] = None
+
     @property
     def _llm_type(self) -> str:
         """Return type of chat model."""
@@ -639,7 +644,12 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
-        # TODO: Create equivalent override in ChatBedrockConverse and call if self.beta_use_converse_api is True
+        if self.beta_use_converse_api:
+            async for chunk in self._as_converse._astream(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            ):
+                yield chunk
+            return
         provider = self._get_provider()
         prompt, system, formatted_messages = None, None, None
 
@@ -796,10 +806,26 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        # TODO: Create equivalent override in ChatBedrockConverse and call if self.beta_use_converse_api is True
+        if self.beta_use_converse_api:
+            if not self.streaming:
+                return await self._as_converse._agenerate(
+                    messages, stop=stop, run_manager=run_manager, **kwargs
+                )
+            else:
+                async def stream_iter():
+                    async for chunk in self._as_converse._astream(
+                        messages, stop=stop, run_manager=run_manager, **kwargs
+                    ):
+                        yield chunk
+                return await agenerate_from_stream(stream_iter())
         return await asyncio.get_running_loop().run_in_executor(
             self._executor,
-            lambda: self._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+            lambda: self._generate(
+                messages,
+                stop=stop,
+                run_manager=run_manager.get_sync() if run_manager else None,
+                **kwargs
+            )
         )
 
     def _combine_llm_outputs(self, llm_outputs: List[Optional[dict]]) -> dict:
