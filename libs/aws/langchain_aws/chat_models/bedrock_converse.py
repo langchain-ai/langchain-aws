@@ -38,7 +38,7 @@ from langchain_core.messages import (
     ToolMessage,
     merge_message_runs,
 )
-from langchain_core.messages.ai import AIMessageChunk, UsageMetadata
+from langchain_core.messages.ai import AIMessageChunk, InputTokenDetails, UsageMetadata
 from langchain_core.messages.tool import tool_call as create_tool_call
 from langchain_core.messages.tool import tool_call_chunk
 from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
@@ -427,9 +427,9 @@ class ChatBedrockConverse(BaseChatModel):
     additionalModelResponseFieldPaths.
     """
 
-    supports_tool_choice_values: Optional[
-        Sequence[Literal["auto", "any", "tool"]]
-    ] = None
+    supports_tool_choice_values: Optional[Sequence[Literal["auto", "any", "tool"]]] = (
+        None
+    )
     """Which types of tool_choice values the model supports.
     
     Inferred if not specified. Inferred as ('auto', 'any', 'tool') if a 'claude-3' 
@@ -613,7 +613,29 @@ class ChatBedrockConverse(BaseChatModel):
         )
         logger.debug(f"Response from Bedrock: {response}")
         response_message = _parse_response(response)
-        return ChatResult(generations=[ChatGeneration(message=response_message)])
+
+        usage_metadata: UsageMetadata = (
+            response_message.usage_metadata or UsageMetadata()
+        )
+        input_token_details: InputTokenDetails = (
+            usage_metadata.get("input_token_details") or InputTokenDetails()
+        )
+        llm_output = {
+            "usage": {
+                "prompt_tokens": usage_metadata.get("input_tokens", 0),
+                "prompt_tokens_cache_write": input_token_details.get(
+                    "cache_creation", 0
+                ),
+                "prompt_tokens_cache_read": input_token_details.get("cache_read", 0),
+                "completion_tokens": usage_metadata.get("output_tokens", 0),
+                "total_tokens": usage_metadata.get("total_tokens", 0),
+            },
+            "model_id": self.model_id,
+        }
+        return ChatResult(
+            generations=[ChatGeneration(message=response_message)],
+            llm_output=llm_output,
+        )
 
     def _stream(
         self,
@@ -894,13 +916,25 @@ def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:
     return response_metadata
 
 
+def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
+    usage: Dict[str, int] = response.pop("usage")  # type: ignore[misc]
+    return UsageMetadata(
+        input_tokens=usage.get("inputTokens", 0),
+        output_tokens=usage.get("outputTokens", 0),
+        total_tokens=usage.get("totalTokens", 0),
+        input_token_details=InputTokenDetails(
+            cache_creation=usage.get("cacheWriteInputTokensCount", 0),
+            cache_read=usage.get("cacheReadInputTokensCount", 0),
+        ),
+    )
+
+
 def _parse_response(response: Dict[str, Any]) -> AIMessage:
     lc_content = _bedrock_to_lc(response.pop("output")["message"]["content"])
     tool_calls = _extract_tool_calls(lc_content)
-    usage = UsageMetadata(_camel_to_snake_keys(response.pop("usage")))  # type: ignore[misc]
     return AIMessage(
         content=_str_if_single_text_block(lc_content),  # type: ignore[arg-type]
-        usage_metadata=usage,
+        usage_metadata=_extract_usage_metadata(response),
         response_metadata=_extract_response_metadata(response),
         tool_calls=tool_calls,
     )
@@ -955,9 +989,11 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         # TODO: snake case response metadata?
         return AIMessageChunk(content=[], response_metadata=event["messageStop"])
     elif "metadata" in event:
-        usage = UsageMetadata(_camel_to_snake_keys(event["metadata"].pop("usage")))  # type: ignore[misc]
+        usage_metadata = _extract_usage_metadata(event["metadata"])
         return AIMessageChunk(
-            content=[], response_metadata=event["metadata"], usage_metadata=usage
+            content=[],
+            response_metadata=event["metadata"],
+            usage_metadata=usage_metadata,
         )
     elif "Exception" in list(event.keys())[0]:
         name, info = list(event.items())[0]
