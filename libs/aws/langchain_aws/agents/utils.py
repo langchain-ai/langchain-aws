@@ -149,6 +149,7 @@ def parse_agent_response(response: Any) -> OutputType:
                 log=response_text,
                 session_id=session_id,
                 trace_log=trace_log,
+                invocation_id=return_control.get("invocationId"),
             )
         ]
     except IndexError as ex:
@@ -254,6 +255,7 @@ def _create_bedrock_action_groups(
     agent_id: str,
     tools: List[BaseTool],
     enable_human_input: Optional[bool] = False,
+    enable_code_interpreter: Optional[bool] = False,
 ) -> None:
     """Create the bedrock action groups for the agent"""
 
@@ -278,6 +280,15 @@ def _create_bedrock_action_groups(
         bedrock_client.create_agent_action_group(
             actionGroupName="UserInputAction",
             parentActionGroupSignature="AMAZON.UserInput",
+            actionGroupState="ENABLED",
+            agentId=agent_id,
+            agentVersion="DRAFT",
+        )
+
+    if enable_code_interpreter:
+        bedrock_client.create_agent_action_group(
+            actionGroupName="CodeInterpreterAction",
+            parentActionGroupSignature="AMAZON.CodeInterpreter",
             actionGroupState="ENABLED",
             agentId=agent_id,
             agentVersion="DRAFT",
