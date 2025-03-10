@@ -29,7 +29,7 @@ pytest-cov = "^4.1.0"
 syrupy = "^4.0.2"
 pytest-asyncio = "^0.23.2"
 pytest-watcher = "^0.3.4"
-langchain-tests = "0.3.1"
+langchain-tests = "0.3.13"
 langchain = "^0.3.7"
 
 [tool.poetry.group.codespell]
