@@ -1,12 +1,15 @@
+import asyncio
 import base64
 import json
 import logging
 import os
 import re
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from operator import itemgetter
 from typing import (
     Any,
+    AsyncIterator,
     Callable,
     Dict,
     Iterator,
@@ -23,7 +26,10 @@ from typing import (
 )
 
 import boto3
-from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.callbacks import (
+    AsyncCallbackManagerForLLMRun,
+    CallbackManagerForLLMRun,
+)
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.language_models.chat_models import LangSmithParams
@@ -450,6 +456,28 @@ class ChatBedrockConverse(BaseChatModel):
     request_metadata: Optional[Dict[str, str]] = None
     """Key-Value pairs that you can use to filter invocation logs."""
 
+    max_parallel_requests: int = (os.cpu_count() or 10) * 5
+    """
+    The maximum number of network requests that can be resolved in parallel by
+    an instance of this class. This sets the number of worker threads available
+    in the `ThreadPoolExecutor` used to run boto3 calls asynchronously.
+
+    The default chosen is the number of logical CPUs multiplied by 5. This is a
+    safe choice when the network request consumes >80% of the task time, which
+    will be true in most modern usage scenarios.
+
+    We recommend that users leave this value unchanged unless they know what
+    they are doing. If the value is set too low, then issuing requests
+    concurrently via `loop.create_task()` will be needlessly slow. If the value
+    is too high, then the CPU may stall other processes on the device.
+
+    The ideal number is determined by several factors, including CPU clock speed
+    and network latency. Users who need to maximize request throughput in their
+    applications should optimize this value through performance testing.
+    """
+
+    __executor: Optional[ThreadPoolExecutor] = None
+
     model_config = ConfigDict(
         extra="forbid",
         populate_by_name=True,
@@ -615,6 +643,23 @@ class ChatBedrockConverse(BaseChatModel):
         response_message = _parse_response(response)
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
+    async def _agenerate(
+        self,
+        messages: list[BaseMessage],
+        stop: Optional[list[str]] = None,
+        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        return await asyncio.get_running_loop().run_in_executor(
+            self._executor,
+            lambda: self._generate(
+                messages,
+                stop=stop,
+                run_manager=run_manager.get_sync() if run_manager else None,
+                **kwargs
+            )
+        )
+
     def _stream(
         self,
         messages: List[BaseMessage],
@@ -637,6 +682,35 @@ class ChatBedrockConverse(BaseChatModel):
                         generation_chunk.text, chunk=generation_chunk
                     )
                 yield generation_chunk
+
+    async def _astream(
+        self,
+        messages: list[BaseMessage],
+        stop: Optional[list[str]] = None,
+        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatGenerationChunk]:
+        iterator = await asyncio.get_running_loop().run_in_executor(
+            self._executor,
+            lambda: self._stream(
+                messages,
+                stop=stop,
+                run_manager=run_manager.get_sync() if run_manager else None,
+                **kwargs
+            )
+        )
+
+        done = object()
+        while True:
+            chunk = await asyncio.get_running_loop().run_in_executor(
+                self._executor,
+                next,
+                iterator,
+                done
+            )
+            if chunk is done:
+                break
+            yield chunk
 
     def _get_llm_for_structured_output_no_tool_choice(
         self,
@@ -816,6 +890,13 @@ class ChatBedrockConverse(BaseChatModel):
         if ls_stop := stop or params.get("stop", None):
             ls_params["ls_stop"] = ls_stop
         return ls_params
+
+    @property
+    def _executor(self) -> ThreadPoolExecutor:
+        """Returns the thread pool executor used."""
+        if not self.__executor:
+            self.__executor = ThreadPoolExecutor(max_workers=self.max_parallel_requests)
+        return self.__executor
 
     @property
     def _llm_type(self) -> str:

@@ -1083,6 +1083,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 "additional_model_response_field_paths",
                 "performance_config",
                 "request_metadata",
+                "max_parallel_requests",
             )
         }
         if self.max_tokens:
@@ -1091,6 +1092,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             kwargs["temperature"] = self.temperature
         if self.stop_sequences:
             kwargs["stop_sequences"] = self.stop_sequences
+        if self.max_parallel_requests:
+            kwargs["max_parallel_requests"] = self.max_parallel_requests
 
         return ChatBedrockConverse(
             client=self.client,
