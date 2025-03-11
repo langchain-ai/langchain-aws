@@ -7,6 +7,7 @@
       'ChatBedrockConverse',
     ]),
     'kwargs': dict({
+      'max_parallel_requests': 20,
       'max_tokens': 100,
       'model_id': 'anthropic.claude-3-sonnet-20240229-v1:0',
       'provider': 'anthropic',
