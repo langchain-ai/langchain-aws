@@ -269,7 +269,9 @@ def test_structured_output() -> None:
 
 @pytest.mark.scheduled
 def test_structured_output_anthropic_format() -> None:
-    chat = ChatBedrock(model_id="anthropic.claude-3-sonnet-20240229-v1:0")
+    chat = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0"
+    )  # type: ignore[call-arg]
     schema = {
         "name": "AnswerWithJustification",
         "description": (
