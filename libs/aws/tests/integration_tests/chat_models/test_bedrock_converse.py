@@ -6,6 +6,7 @@ import pytest
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
+from langchain_core.tools import BaseTool
 from langchain_tests.integration_tests import ChatModelIntegrationTests
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated, TypedDict
@@ -45,8 +46,10 @@ class TestBedrockMistralStandard(ChatModelIntegrationTests):
         return {"temperature": 0, "max_tokens": 100, "stop": []}
 
     @pytest.mark.xfail(reason="Human messages following AI messages not supported.")
-    def test_tool_message_histories_list_content(self, model: BaseChatModel) -> None:
-        super().test_tool_message_histories_list_content(model)
+    def test_tool_message_histories_list_content(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        super().test_tool_message_histories_list_content(model, my_adder_tool)
 
 
 class TestBedrockNovaStandard(ChatModelIntegrationTests):
@@ -67,12 +70,16 @@ class TestBedrockNovaStandard(ChatModelIntegrationTests):
         return "auto"
 
     @pytest.mark.xfail(reason="Tool choice 'Any' not supported.")
-    def test_structured_few_shot_examples(self, model: BaseChatModel) -> None:
-        super().test_structured_few_shot_examples(model)
+    def test_structured_few_shot_examples(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        super().test_structured_few_shot_examples(model, my_adder_tool)
 
     @pytest.mark.xfail(reason="Human messages following AI messages not supported.")
-    def test_tool_message_histories_list_content(self, model: BaseChatModel) -> None:
-        super().test_tool_message_histories_list_content(model)
+    def test_tool_message_histories_list_content(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        super().test_tool_message_histories_list_content(model, my_adder_tool)
 
 
 class TestBedrockCohereStandard(ChatModelIntegrationTests):
@@ -89,7 +96,9 @@ class TestBedrockCohereStandard(ChatModelIntegrationTests):
         return {"temperature": 0, "max_tokens": 100, "stop": []}
 
     @pytest.mark.xfail(reason="Cohere models don't support tool_choice.")
-    def test_structured_few_shot_examples(self, model: BaseChatModel) -> None:
+    def test_structured_few_shot_examples(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
         pass
 
     @pytest.mark.xfail(reason="Cohere models don't support tool_choice.")
@@ -111,7 +120,9 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
         return {"temperature": 0.1, "max_tokens": 100, "stop": []}
 
     @pytest.mark.xfail(reason="Meta models don't support tool_choice.")
-    def test_structured_few_shot_examples(self, model: BaseChatModel) -> None:
+    def test_structured_few_shot_examples(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
         pass
 
     # TODO: This needs investigation, if this is a bug with Bedrock or Llama models,
@@ -138,8 +149,10 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
     @pytest.mark.xfail(
         reason="Human messages following AI messages not supported by Bedrock."
     )
-    def test_tool_message_histories_list_content(self, model: BaseChatModel) -> None:
-        super().test_tool_message_histories_list_content(model)
+    def test_tool_message_histories_list_content(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        super().test_tool_message_histories_list_content(model, my_adder_tool)
 
 
 class ClassifyQuery(BaseModel):
