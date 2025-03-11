@@ -267,6 +267,30 @@ def test_structured_output() -> None:
 
     assert isinstance(response, AnswerWithJustification)
 
+@pytest.mark.scheduled
+def test_structured_output_anthropic_format() -> None:
+    chat = ChatBedrock(model_id="anthropic.claude-3-sonnet-20240229-v1:0")
+    schema = {
+        "name": "AnswerWithJustification",
+        "description": (
+            "An answer to the user question along with justification for the answer."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "answer": {"type": "string"},
+                "justification": {"type": "string"},
+            },
+            "required": ["answer", "justification"]
+        }
+    }
+    structured_llm = chat.with_structured_output(schema)
+    response = structured_llm.invoke(
+        "What weighs more a pound of bricks or a pound of feathers"
+    )
+    assert isinstance(response, dict)
+    assert isinstance(response["answer"], str)
+    assert isinstance(response["justification"], str)
 
 @pytest.mark.scheduled
 def test_tool_use_call_invoke() -> None:

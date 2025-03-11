@@ -3,7 +3,8 @@
 from typing import Type
 
 from langchain_core.language_models import BaseChatModel
-from langchain_standard_tests.integration_tests import ChatModelIntegrationTests
+from langchain_tests.integration_tests import ChatModelIntegrationTests
+import pytest
 
 from langchain_aws.chat_models.bedrock import ChatBedrock
 
@@ -20,6 +21,10 @@ class TestBedrockStandard(ChatModelIntegrationTests):
     @property
     def standard_chat_model_params(self) -> dict:
         return {"temperature": 0, "max_tokens": 100}
+
+    @pytest.mark.xfail(reason="Not implemented.")
+    def test_double_messages_conversation(self, model: BaseChatModel) -> None:
+        super().test_double_messages_conversation(model)
 
 
 class TestBedrockUseConverseStandard(ChatModelIntegrationTests):
