@@ -19,6 +19,7 @@ class TestBedrockStandard(ChatModelUnitTests):
         return {
             "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
             "region_name": "us-east-1",
+            "max_parallel_requests": 20,
         }
 
     @property
@@ -41,6 +42,7 @@ class TestBedrockAsConverseStandard(ChatModelUnitTests):
             "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
             "region_name": "us-east-1",
             "beta_use_converse_api": True,
+            "max_parallel_requests": 20,
         }
 
     @property
