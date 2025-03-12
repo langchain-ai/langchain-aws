@@ -36,7 +36,7 @@ langchain = "^0.3.7"
 optional = true
 
 [tool.codespell]
-ignore-words-list = "HSA, notIn"
+ignore-words-list = "HAS, notIn"
 
 [tool.poetry.group.codespell.dependencies]
 codespell = "^2.2.6"
