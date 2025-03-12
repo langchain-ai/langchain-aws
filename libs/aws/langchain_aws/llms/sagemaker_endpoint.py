@@ -19,8 +19,7 @@ from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
-from langchain_aws.utils import ContentHandlerBase
-from langchain_aws.utils import get_aws_client
+from langchain_aws.utils import ContentHandlerBase, get_aws_client
 
 logger = logging.getLogger(__name__)
 

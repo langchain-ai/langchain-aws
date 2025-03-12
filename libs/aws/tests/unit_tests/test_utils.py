@@ -1,11 +1,12 @@
 import os
-from unittest import mock
 from typing import Dict, Generator, Tuple
+from unittest import mock
 
 import pytest
 from botocore.config import Config
 from botocore.exceptions import UnknownServiceError
 from pydantic import SecretStr
+
 from langchain_aws.utils import get_aws_client
 
 
