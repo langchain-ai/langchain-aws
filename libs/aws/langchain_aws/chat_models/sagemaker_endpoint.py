@@ -132,7 +132,7 @@ class ChatSagemakerEndpoint(BaseChatModel):
 
         client: boto3 client for Sagemaker Endpoint
 
-        content_handler: Implementation for model specific LLMContentHandler 
+        content_handler: Implementation for model specific ChatContentHandler 
 
 
     Example:
@@ -210,9 +210,9 @@ class ChatSagemakerEndpoint(BaseChatModel):
      Example:
         .. code-block:: python
 
-        from langchain_community.llms.sagemaker_endpoint import LLMContentHandler
+        from langchain_community.llms.sagemaker_endpoint import ChatContentHandler
 
-        class ContentHandler(LLMContentHandler):
+        class ContentHandler(ChatContentHandler):
                 content_type = "application/json"
                 accepts = "application/json"
 
