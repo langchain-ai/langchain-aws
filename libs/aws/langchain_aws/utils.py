@@ -18,6 +18,7 @@ OUTPUT_TYPE = TypeVar(
 
 class ContentHandlerBase(Generic[INPUT_TYPE, OUTPUT_TYPE]):
     """A handler class to transform input from LLM and BaseChatModel to a
+
     format that SageMaker endpoint expects.
 
     Similarly, the class handles transforming output from the

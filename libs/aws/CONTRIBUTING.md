@@ -147,5 +147,5 @@ If codespell is incorrectly flagging a word, you can skip spellcheck for that wo
 [tool.codespell]
 ...
 # Add here:
-ignore-words-list = 'momento,collison,ned,foor,reworked,path,what's,apply,misogyny,unsecure'
+ignore-words-list = 'momento,collison,ned,foor,reworked,path,whats,apply,misogyny,unsecure'
 ```

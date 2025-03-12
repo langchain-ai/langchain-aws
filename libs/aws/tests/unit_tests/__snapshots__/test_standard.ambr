@@ -35,6 +35,7 @@
         'guardrailVersion': None,
         'trace': None,
       }),
+      'max_parallel_requests': 20,
       'max_tokens': 100,
       'model_id': 'anthropic.claude-3-sonnet-20240229-v1:0',
       'model_kwargs': dict({
@@ -98,6 +99,7 @@
         'guardrailVersion': None,
         'trace': None,
       }),
+      'max_parallel_requests': 20,
       'model_id': 'anthropic.claude-3-sonnet-20240229-v1:0',
       'provider_stop_reason_key_map': dict({
         'ai21': 'finishReason',

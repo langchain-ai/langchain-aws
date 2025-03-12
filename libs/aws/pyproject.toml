@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langchain-aws"
-version = "0.2.14"
+version = "0.2.15"
 description = "An integration package connecting AWS and LangChain"
 authors = []
 readme = "README.md"
