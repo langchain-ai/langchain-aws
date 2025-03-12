@@ -149,7 +149,7 @@ class ChatSagemakerEndpoint(BaseChatModel):
                 content_type = "application/json"
                 accepts = "application/json"
 
-                def transform_input(self, prompt: str, model_kwargs: Dict) -> bytes:
+                def transform_input(self, prompt: List[Dict[str, Any]], model_kwargs: Dict) -> bytes:
                     input_str = json.dumps({prompt: prompt, **model_kwargs})
                     return input_str.encode('utf-8')
                 
