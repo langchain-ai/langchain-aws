@@ -19,7 +19,6 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import RunnableConfig, RunnableSerializable, ensure_config
 from langchain_core.tools import BaseTool
-from langgraph_sdk.schema import Assistant
 from pydantic import Field, model_validator
 
 from langchain_aws.agents.types import (
