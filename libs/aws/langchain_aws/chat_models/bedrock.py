@@ -272,14 +272,37 @@ def _merge_messages(
                 )
         last = merged[-1] if merged else None
         if isinstance(last, HumanMessage) and isinstance(curr, HumanMessage):
+            # Extract content from both messages
             if isinstance(last.content, str):
-                new_content: List = [{"type": "text", "text": last.content}]
+                last_content = [{"type": "text", "text": last.content}]
             else:
-                new_content = last.content
+                last_content = last.content
+
             if isinstance(curr.content, str):
-                new_content.append({"type": "text", "text": curr.content})
+                curr_content = [{"type": "text", "text": curr.content}]
             else:
-                new_content.extend(curr.content)
+                curr_content = curr.content
+            
+            # Separate tool_result blocks from other content
+            tool_result_blocks = []
+            other_blocks = []
+            
+            # Process blocks from last message
+            for block in last_content:
+                if isinstance(block, dict) and block.get("type") == "tool_result":
+                    tool_result_blocks.append(block)
+                else:
+                    other_blocks.append(block)
+            
+            # Process blocks from current message
+            for block in curr_content:
+                if isinstance(block, dict) and block.get("type") == "tool_result":
+                    tool_result_blocks.append(block)
+                else:
+                    other_blocks.append(block)
+            
+            # Create new content with tool_result blocks at the beginning
+            new_content = tool_result_blocks + other_blocks
             last.content = new_content
         else:
             merged.append(curr)
