@@ -1,20 +1,26 @@
-"""Sagemaker InvokeEndpoint API."""
+"""Sagemaker Chat Model."""
 
-import io
 import logging
-import re
 from typing import (
     Any,
     Dict,
-    Iterator,
     List,
     Mapping,
     Optional,
 )
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
-from langchain_core.language_models.llms import LLM
-from langchain_core.outputs import GenerationChunk
+from langchain_core.language_models import (
+    BaseChatModel,
+)
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    merge_message_runs,
+)
+from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import ConfigDict, model_validator
 from typing_extensions import Self
 
@@ -23,76 +29,12 @@ from langchain_aws.utils import ContentHandlerBase
 logger = logging.getLogger(__name__)
 
 
-def enforce_stop_tokens(text: str, stop: List[str]) -> str:
-    """Cut off the text as soon as any stop words occur."""
-    return re.split("|".join(stop), text, maxsplit=1)[0]
+class ChatModelContentHandler(ContentHandlerBase[List[Dict[str, Any]], BaseMessage]):
+    """Content handler for ChatSagemakerEndpoint class."""
 
 
-class LineIterator:
-    """
-    A helper class for parsing the byte stream input.
-
-    The output of the model will be in the following format:
-
-    b'{"outputs": [" a"]}\n'
-    b'{"outputs": [" challenging"]}\n'
-    b'{"outputs": [" problem"]}\n'
-    ...
-
-    While usually each PayloadPart event from the event stream will
-    contain a byte array with a full json, this is not guaranteed
-    and some of the json objects may be split acrossPayloadPart events.
-
-    For example:
-
-    {'PayloadPart': {'Bytes': b'{"outputs": '}}
-    {'PayloadPart': {'Bytes': b'[" problem"]}\n'}}
-
-
-    This class accounts for this by concatenating bytes written via the 'write' function
-    and then exposing a method which will return lines (ending with a '\n' character)
-    within the buffer via the 'scan_lines' function.
-    It maintains the position of the last read position to ensure
-    that previous bytes are not exposed again.
-
-    For more details see:
-    https://aws.amazon.com/blogs/machine-learning/elevating-the-generative-ai-experience-introducing-streaming-support-in-amazon-sagemaker-hosting/
-    """
-
-    def __init__(self, stream: Any) -> None:
-        self.byte_iterator = iter(stream)
-        self.buffer = io.BytesIO()
-        self.read_pos = 0
-
-    def __iter__(self) -> "LineIterator":
-        return self
-
-    def __next__(self) -> Any:
-        while True:
-            self.buffer.seek(self.read_pos)
-            line = self.buffer.readline()
-            if line and line[-1] == ord("\n"):
-                self.read_pos += len(line)
-                return line[:-1]
-            try:
-                chunk = next(self.byte_iterator)
-            except StopIteration:
-                if self.read_pos < self.buffer.getbuffer().nbytes:
-                    continue
-                raise
-            if "PayloadPart" not in chunk:
-                # Unknown Event Type
-                continue
-            self.buffer.seek(0, io.SEEK_END)
-            self.buffer.write(chunk["PayloadPart"]["Bytes"])
-
-
-class LLMContentHandler(ContentHandlerBase[str, str]):
-    """Content handler for LLM class."""
-
-
-class SagemakerEndpoint(LLM):
-    """Sagemaker Inference Endpoint models.
+class ChatSagemakerEndpoint(BaseChatModel):
+    """A chat model that uses a HugguingFace TGI compatible SageMaker Endpoint.
 
     To use, you must supply the endpoint name from your deployed
     Sagemaker model & the region where it is deployed.
@@ -123,13 +65,14 @@ class SagemakerEndpoint(LLM):
 
         client: boto3 client for Sagemaker Endpoint
 
-        content_handler: Implementation for model specific LLMContentHandler 
+        content_handler: Implementation for model specific ChatContentHandler 
 
 
     Example:
         .. code-block:: python
 
-            from langchain_community.llms import SagemakerEndpoint
+            from langchain_aws.chat_models.sagemaker_endpoint import 
+            ChatSagemakerEndpoint
             endpoint_name = (
                 "my-endpoint-name"
             )
@@ -139,14 +82,14 @@ class SagemakerEndpoint(LLM):
             credentials_profile_name = (
                 "default"
             )
-            se = SagemakerEndpoint(
+            se = ChatSagemakerEndpoint(
                 endpoint_name=endpoint_name,
                 region_name=region_name,
                 credentials_profile_name=credentials_profile_name
             )
         
             # Usage with Inference Component
-            se = SagemakerEndpoint(
+            se = ChatSagemakerEndpoint(
                 endpoint_name=endpoint_name,
                 inference_component_name=inference_component_name,
                 region_name=region_name,
@@ -159,7 +102,7 @@ class SagemakerEndpoint(LLM):
                         region_name=region_name
                     )
 
-            se = SagemakerEndpoint(
+            se = ChatSagemakerEndpoint(
                 endpoint_name=endpoint_name,
                 client=client
             )
@@ -187,7 +130,7 @@ class SagemakerEndpoint(LLM):
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     """
 
-    content_handler: LLMContentHandler
+    content_handler: ChatModelContentHandler
     """The content handler class that provides an input and
     output transform functions to handle formats between LLM
     and the endpoint.
@@ -200,17 +143,17 @@ class SagemakerEndpoint(LLM):
      Example:
         .. code-block:: python
 
-        from langchain_community.llms.sagemaker_endpoint import LLMContentHandler
+        from langchain_community.llms.sagemaker_endpoint import ChatContentHandler
 
-        class ContentHandler(LLMContentHandler):
+        class ContentHandler(ChatContentHandler):
                 content_type = "application/json"
                 accepts = "application/json"
 
-                def transform_input(self, prompt: str, model_kwargs: Dict) -> bytes:
+                def transform_input(self, prompt: List[Dict[str, Any]], model_kwargs: Dict) -> bytes:
                     input_str = json.dumps({prompt: prompt, **model_kwargs})
                     return input_str.encode('utf-8')
                 
-                def transform_output(self, output: bytes) -> str:
+                def transform_output(self, output: bytes) -> BaseMessage:
                     response_json = json.loads(output.read().decode("utf-8"))
                     return response_json[0]["generated_text"]
     """
@@ -278,85 +221,44 @@ class SagemakerEndpoint(LLM):
         """Return type of llm."""
         return "sagemaker_endpoint"
 
-    def _stream(
+    @property
+    def _llm_type(self) -> str:
+        """Return type of chat model."""
+        return "amazon_sagemaker_chat"
+
+    @classmethod
+    def get_lc_namespace(cls) -> List[str]:
+        """Get the namespace of the langchain object."""
+        return ["langchain", "chat_models", "sagemaker"]
+
+    @property
+    def lc_attributes(self) -> Dict[str, Any]:
+        attributes: Dict[str, Any] = {}
+
+        if self.region_name:
+            attributes["region_name"] = self.region_name
+
+        return attributes
+        
+    def _generate(
         self,
-        prompt: str,
+        messages: List[BaseMessage],
         stop: Optional[List[str]] = None,
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
-    ) -> Iterator[GenerationChunk]:
+    ) -> ChatResult:
         _model_kwargs = self.model_kwargs or {}
         _model_kwargs = {**_model_kwargs, **kwargs}
         _endpoint_kwargs = self.endpoint_kwargs or {}
-
+        sagemaker_messages = _messages_to_sagemaker(messages)
+        logger.debug(f"input message to sagemaker: {sagemaker_messages}")
         invocation_params = {
             "EndpointName": self.endpoint_name,
-            "Body": self.content_handler.transform_input(prompt, _model_kwargs),
+            "Body": self.content_handler.transform_input(
+                sagemaker_messages, _model_kwargs
+            ),
             "ContentType": self.content_handler.content_type,
-            **_endpoint_kwargs,
-        }
-
-        # If inference_component_name is specified, append it to invocation_params
-        if self.inference_component_name:
-            invocation_params["InferenceComponentName"] = self.inference_component_name
-
-        try:
-            resp = self.client.invoke_endpoint_with_response_stream(**invocation_params)
-            iterator = LineIterator(resp["Body"])
-
-            for line in iterator:
-                text = self.content_handler.transform_output(line)
-
-                if stop is not None:
-                    text = enforce_stop_tokens(text, stop)
-
-                if text:
-                    chunk = GenerationChunk(text=text)
-                    yield chunk
-                    if run_manager:
-                        run_manager.on_llm_new_token(chunk.text)
-
-        except Exception as e:
-            logger.exception("Error raised by streaming inference endpoint")
-            if run_manager is not None:
-                run_manager.on_llm_error(e)
-            raise e
-
-    def _call(
-        self,
-        prompt: str,
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
-        **kwargs: Any,
-    ) -> str:
-        """Call out to SageMaker inference endpoint or inference component
-            of SageMaker inference endpoint.
-
-        Args:
-            prompt: The prompt to pass into the model.
-            stop: Optional list of stop words to use when generating.
-
-        Returns:
-            The string generated by the model.
-
-        Example:
-            .. code-block:: python
-
-                response = se("Tell me a joke.")
-        """
-        _model_kwargs = self.model_kwargs or {}
-        _model_kwargs = {**_model_kwargs, **kwargs}
-        _endpoint_kwargs = self.endpoint_kwargs or {}
-
-        body = self.content_handler.transform_input(prompt, _model_kwargs)
-        content_type = self.content_handler.content_type
-        accepts = self.content_handler.accepts
-
-        invocation_params = {
-            "EndpointName": self.endpoint_name,
-            "Body": body,
-            "ContentType": content_type,
-            "Accept": accepts,
+            "Accept": self.content_handler.accepts,
             **_endpoint_kwargs,
         }
 
@@ -364,22 +266,45 @@ class SagemakerEndpoint(LLM):
         if self.inference_component_name:
             invocation_params["InferenceComponentName"] = self.inference_component_name
 
-        if self.streaming and run_manager:
-            completion: str = ""
-            for chunk in self._stream(prompt, stop, run_manager, **kwargs):
-                completion += chunk.text
-            return completion
-
         try:
             response = self.client.invoke_endpoint(**invocation_params)
         except Exception as e:
-            logger.exception("Error raised by inference endpoint")
+            logging.error(f"Error raised by inference endpoint: {e}")
             if run_manager is not None:
                 run_manager.on_llm_error(e)
             raise e
+        logger.info(f"The message received from SageMaker: {response['Body']}")
 
-        text = self.content_handler.transform_output(response["Body"])
-        if stop is not None:
-            text = enforce_stop_tokens(text, stop)
+        response_message = self.content_handler.transform_output(response["Body"])
 
-        return text
+        return ChatResult(generations=[ChatGeneration(message=response_message)])
+
+
+def _messages_to_sagemaker(
+    messages: List[BaseMessage],
+) -> List[Dict[str, Any]]:
+    # Merge system, human, ai message runs because Anthropic expects (at most) 1
+    # system message then alternating human/ai messages.
+    sagemaker_messages: List[Dict[str, Any]] = []
+    if not isinstance(messages, list):
+        messages = [messages]
+
+    messages = merge_message_runs(messages)
+    for msg in messages:
+        content = msg.content
+        if isinstance(msg, HumanMessage):
+            # If there's a human, tool, human message sequence, the
+            # tool message will be merged with the first human message, so the second
+            # human message will now be preceded by a human message and should also
+            # be merged with it.
+            if sagemaker_messages and sagemaker_messages[-1]["role"] == "user":
+                sagemaker_messages[-1]["content"].extend(content)
+            else:
+                sagemaker_messages.append({"role": "user", "content": content})
+        elif isinstance(msg, AIMessage):
+            sagemaker_messages.append({"role": "assistant", "content": content})
+        elif isinstance(msg, SystemMessage):
+            sagemaker_messages.insert(0, {"role": "system", "content": content})
+        else:
+            raise ValueError(f"Unsupported message type {type(msg)}")
+    return sagemaker_messages
