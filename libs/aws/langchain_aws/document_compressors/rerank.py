@@ -29,6 +29,7 @@ class BedrockRerank(BaseDocumentCompressor):
     model_config = ConfigDict(
         extra="forbid",
         arbitrary_types_allowed=True,
+        protected_namespaces=(),
     )
 
     @model_validator(mode="before")
