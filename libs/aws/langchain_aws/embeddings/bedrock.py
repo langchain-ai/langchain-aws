@@ -276,6 +276,7 @@ def _batch_cohere_embedding_texts(texts: List[str]) -> Generator[List[str], None
     chunks of at most 96 items, or 2048 characters."""
 
     # Cohere embeddings want a maximum of 96 items and 2048 characters
+    # See: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-embed.html
     max_items = 96
     max_chars = 2048
 
