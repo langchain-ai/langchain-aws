@@ -177,7 +177,7 @@ def _stream_response_to_generation_chunk(
     return GenerationChunk(
         text=(
             stream_response[output_key]
-            if provider != "mistral"
+            if provider not in ["mistral", "deepseek"]
             else stream_response[output_key][0]["text"]
         ),
         generation_info=generation_info,
@@ -264,6 +264,7 @@ class LLMInputOutputAdapter:
         "anthropic": "completion",
         "amazon": "outputText",
         "cohere": "text",
+        "deepseek": "choices",
         "meta": "generation",
         "mistral": "outputs",
     }
@@ -497,7 +498,11 @@ class LLMInputOutputAdapter:
             if generation_chunk:
                 yield generation_chunk
 
-            if (
+            if provider == "deepseek" and chunk_obj.get(output_key)[0].get("stop_reason", "") == "stop":
+                yield _get_invocation_metrics_chunk(chunk_obj)
+                return
+
+            elif (
                 provider == "mistral"
                 and chunk_obj.get(output_key, [{}])[0].get("stop_reason", "") == "stop"
             ):
