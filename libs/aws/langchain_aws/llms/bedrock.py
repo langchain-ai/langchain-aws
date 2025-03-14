@@ -4,7 +4,6 @@ import logging
 import os
 import warnings
 from abc import ABC
-from concurrent.futures import ThreadPoolExecutor
 from typing import (
     Any,
     AsyncGenerator,
@@ -178,7 +177,7 @@ def _stream_response_to_generation_chunk(
     return GenerationChunk(
         text=(
             stream_response[output_key]
-            if provider != "mistral"
+            if provider not in ["mistral", "deepseek"]
             else stream_response[output_key][0]["text"]
         ),
         generation_info=generation_info,
@@ -265,6 +264,7 @@ class LLMInputOutputAdapter:
         "anthropic": "completion",
         "amazon": "outputText",
         "cohere": "text",
+        "deepseek": "choices",
         "meta": "generation",
         "mistral": "outputs",
     }
@@ -498,7 +498,11 @@ class LLMInputOutputAdapter:
             if generation_chunk:
                 yield generation_chunk
 
-            if (
+            if provider == "deepseek" and chunk_obj.get(output_key)[0].get("stop_reason", "") == "stop":
+                yield _get_invocation_metrics_chunk(chunk_obj)
+                return
+
+            elif (
                 provider == "mistral"
                 and chunk_obj.get(output_key, [{}])[0].get("stop_reason", "") == "stop"
             ):
@@ -711,28 +715,6 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
-
-    max_parallel_requests: int = (os.cpu_count() or 10) * 5
-    """
-    The maximum number of network requests that can be resolved in parallel by
-    an instance of this class. This sets the number of worker threads available
-    in the `ThreadPoolExecutor` used to run boto3 calls asynchronously.
-
-    The default chosen is the number of logical CPUs multiplied by 5. This is a
-    safe choice when the network request consumes >80% of the task time, which
-    will be true in most modern usage scenarios.
-
-    We recommend that users leave this value unchanged unless they know what
-    they are doing. If the value is set too low, then issuing requests
-    concurrently via `loop.create_task()` will be needlessly slow. If the value
-    is too high, then the CPU may stall other processes on the device.
-
-    The ideal number is determined by several factors, including CPU clock speed
-    and network latency. Users who need to maximize request throughput in their
-    applications should optimize this value through performance testing.
-    """
-
-    __executor: Optional[ThreadPoolExecutor] = None
 
     @property
     def lc_secrets(self) -> Dict[str, str]:
@@ -1131,13 +1113,6 @@ class BedrockBase(BaseLanguageModel, ABC):
             if not isinstance(chunk, AIMessageChunk):
                 self._get_bedrock_services_signal(chunk.generation_info)  # type: ignore[arg-type]
 
-    @property
-    def _executor(self) -> ThreadPoolExecutor:
-        """Returns the thread pool executor used."""
-        if not self.__executor:
-            self.__executor = ThreadPoolExecutor(max_workers=self.max_parallel_requests)
-        return self.__executor
-
     async def _aprepare_input_and_invoke_stream(
         self,
         prompt: str,
@@ -1186,7 +1161,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         body = json.dumps(input_body)
 
         response = await asyncio.get_running_loop().run_in_executor(
-            self._executor,
+            None,
             lambda: self.client.invoke_model_with_response_stream(
                 body=body,
                 modelId=self.model_id,

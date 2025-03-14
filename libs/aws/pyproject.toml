@@ -14,7 +14,7 @@ license = "MIT"
 python = ">=3.9,<4.0"
 langchain-core = "^0.3.43"
 boto3 = ">=1.37.0"
-pydantic = ">=2,<3"
+pydantic = ">=2.10.0,<3"
 numpy = [
   { version = "^1", python = "<3.12" },
   { version = ">=1.26.0,<3", python = ">=3.12" },
@@ -36,7 +36,7 @@ langchain = "^0.3.7"
 optional = true
 
 [tool.codespell]
-ignore-words-list = "HSA, notIn"
+ignore-words-list = "HAS, notIn"
 
 [tool.poetry.group.codespell.dependencies]
 codespell = "^2.2.6"
