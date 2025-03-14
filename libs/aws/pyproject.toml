@@ -12,9 +12,9 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = ">=3.9,<4.0"
-langchain-core = "^0.3.27"
+langchain-core = "^0.3.43"
 boto3 = ">=1.37.0"
-pydantic = ">=2,<3"
+pydantic = ">=2.10.0,<3"
 numpy = [
   { version = "^1", python = "<3.12" },
   { version = ">=1.26.0,<3", python = ">=3.12" },
@@ -29,7 +29,7 @@ pytest-cov = "^4.1.0"
 syrupy = "^4.0.2"
 pytest-asyncio = "^0.23.2"
 pytest-watcher = "^0.3.4"
-langchain-tests = "0.3.1"
+langchain-tests = "0.3.14"
 langchain = "^0.3.7"
 
 [tool.poetry.group.codespell]
