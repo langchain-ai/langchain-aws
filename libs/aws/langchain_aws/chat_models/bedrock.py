@@ -37,6 +37,7 @@ from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -942,7 +943,14 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
 
         tool_name = convert_to_anthropic_tool(schema)["name"]
-        llm = self.bind_tools([schema], tool_choice=tool_name)
+        llm = self.bind_tools(
+            [schema],
+            tool_choice=tool_name,
+            ls_structured_output_format={
+                "kwargs": {"method": "function_calling"},
+                "schema": convert_to_openai_tool(schema),
+            },
+        )
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             output_parser = ToolsOutputParser(
                 first_tool_only=True, pydantic_schemas=[schema]
