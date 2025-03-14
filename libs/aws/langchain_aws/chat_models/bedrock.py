@@ -302,13 +302,12 @@ def _format_anthropic_messages(
             if isinstance(message.content, str):
                 system = message.content
             elif isinstance(message.content, list):
-                text_chunks: list[str] = []
+                text_chunks = []
                 for item in message.content:
                     if isinstance(item, str):
                         text_chunks.append(item)
                     elif isinstance(item, dict):
-                        item_type = item.get("type", None)
-                        if item_type != "text":
+                        if item.get("type") != "text":
                             raise ValueError(
                                 "System message content item must be type 'text'"
                             )
@@ -385,9 +384,7 @@ def _format_anthropic_messages(
 
                         if text.strip():
                             content_item = {"type": "text", "text": text}
-
-                            cache_point = item.get("cache_control", None)
-                            if cache_point:
+                            if item.get("cache_control"):
                                 content_item["cache_control"] = {"type": "ephemeral"}
                             text_blocks.append(content_item)
                     else:
