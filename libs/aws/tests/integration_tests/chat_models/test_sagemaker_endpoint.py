@@ -14,7 +14,7 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
 )
-from langchain_standard_tests.unit_tests import ChatModelUnitTests
+from langchain_tests.unit_tests import ChatModelUnitTests
 
 from langchain_aws.chat_models.sagemaker_endpoint import (
     ChatModelContentHandler,
