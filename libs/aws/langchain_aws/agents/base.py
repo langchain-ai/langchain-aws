@@ -15,6 +15,7 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
     ToolCall,
+    ToolMessage,
 )
 from langchain_core.runnables import RunnableConfig, RunnableSerializable, ensure_config
 from langchain_core.tools import BaseTool
@@ -444,6 +445,29 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
         )
 
         input_text = self._convert_messages_to_text(input)
+        last_message = input[-1]
+        if isinstance(last_message, ToolMessage):
+            roc_bloc = self._get_roc_block(input)
+            function_name = roc_bloc["invocationInputs"][0]["functionInvocationInput"][
+                "function"
+            ]
+            action_group = roc_bloc["invocationInputs"][0]["functionInvocationInput"][
+                "actionGroup"
+            ]
+            roc_input = {
+                "invocationId": last_message.tool_call_id,
+                "returnControlInvocationResults": [
+                    {
+                        "functionResult": {
+                            "actionGroup": action_group,
+                            "function": function_name,
+                            "responseBody": {"TEXT": {"body": last_message.content}},
+                        }
+                    }
+                ],
+            }
+            self.inline_agent_config["inline_session_state"] = roc_input
+
         input_dict = {
             "input_text": input_text,
             **kwargs,
@@ -475,7 +499,9 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
                 {
                     "name": action.tool,
                     "args": action.tool_input,
-                    "id": str(uuid.uuid4()),
+                    "id": action.invocation_id
+                    if action.invocation_id is not None
+                    else str(uuid.uuid4()),
                 }
                 for action in response
             ]
@@ -505,6 +531,22 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
             else:
                 text_parts.append(str(message.content))
         return "\n".join(text_parts)
+
+    def _get_roc_block(self, messages: List[BaseMessage]) -> str:
+        msg_index = len(messages) - 1
+        while msg_index >= 0:
+            last_message = messages[msg_index]
+            if (
+                isinstance(last_message, AIMessage)
+                and last_message.additional_kwargs is not None
+                and "roc_log" in last_message.additional_kwargs
+            ):
+                return json.loads(
+                    last_message.additional_kwargs.get("roc_log", "{}")
+                ).get("returnControl", {})
+            msg_index -= 1
+
+        return None
 
     def _invoke_inline_agent(
         self,

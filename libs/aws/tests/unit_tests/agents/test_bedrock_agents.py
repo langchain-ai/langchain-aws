@@ -1,9 +1,17 @@
+import json
 import unittest
 from base64 import b64encode
 from typing import List, Union
 from unittest.mock import Mock, patch
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolCall,
+    ToolMessage,
+)
 from langchain_core.tools import tool
 
 from langchain_aws.agents import BedrockInlineAgentsRunnable
@@ -211,6 +219,71 @@ class TestBedrockInlineAgentsRunnable(unittest.TestCase):
         self.assertEqual(call_args["sessionId"], new_session_id)
         self.assertEqual(call_args["instruction"], "Override instruction")
         self.assertFalse(call_args["enableTrace"])
+
+    def test_invoke_with_tool_message_response(self) -> None:
+        """Test invoke method with runtime configuration override"""
+        mock_response = {
+            "sessionId": "test-session",
+            "completion": [{"chunk": {"bytes": b64encode(b"Test response")}}],
+        }
+        self.mock_client.invoke_inline_agent.return_value = mock_response
+
+        roc_block = {
+            "returnControl": {
+                "invocationId": "fake_tool_call_id",
+                "invocationInputs": [
+                    {
+                        "functionInvocationInput": {
+                            "actionGroup": "fake_group",
+                            "actionInvocationType": "RESULT",
+                            "agentId": "INLINE_AGENT",
+                            "function": "my_tool_name",
+                            "parameters": [
+                                {
+                                    "name": "fake_parameter",
+                                    "type": "string",
+                                    "value": "fake value",
+                                }
+                            ],
+                        }
+                    }
+                ],
+            }
+        }
+
+        my_tool_call_id = "my_tool_call_id"
+        # Create test messages
+        messages: List[BaseMessage] = [
+            SystemMessage(content="System instruction"),
+            HumanMessage(content="Test input"),
+            AIMessage(
+                content="Tool Response",
+                tool_calls=[
+                    ToolCall(
+                        name="my_tool_name",
+                        args={"args": "value"},
+                        id=my_tool_call_id,
+                        type="tool_call",
+                    )
+                ],
+                additional_kwargs={
+                    "session_id": "test-session",
+                    "roc_log": json.dumps(roc_block),
+                },
+            ),
+            ToolMessage(
+                "tool response", tool_call_id=my_tool_call_id, name="my_tool_name"
+            ),
+        ]
+
+        self.runnable.invoke(messages)
+
+        # verify the call took place with the tool result
+        call_args = self.mock_client.invoke_inline_agent.call_args[1]
+        # verify the tool call id is the ToolMessageId we supplied
+        self.assertEqual(
+            call_args["inlineSessionState"]["invocationId"], my_tool_call_id
+        )
 
     def test_error_handling(self) -> None:
         """Test error handling in invoke method"""

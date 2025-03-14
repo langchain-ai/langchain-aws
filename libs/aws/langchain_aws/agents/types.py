@@ -41,6 +41,7 @@ class BedrockAgentAction(AgentAction):
 
     session_id: str
     trace_log: Optional[str]
+    invocation_id: Optional[str]
 
     @classmethod
     def is_lc_serializable(cls) -> bool:
