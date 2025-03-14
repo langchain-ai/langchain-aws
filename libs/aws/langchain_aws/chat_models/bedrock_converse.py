@@ -655,7 +655,16 @@ class ChatBedrockConverse(BaseChatModel):
             )
             admonition = f"{admonition} {additional_context}"
         warnings.warn(admonition)
-        llm = self.bind_tools([schema])
+        try:
+            llm = self.bind_tools(
+                [schema],
+                ls_structured_output_format={
+                    "kwargs": {"method": "function_calling"},
+                    "schema": convert_to_openai_tool(schema),
+                },
+            )
+        except Exception:
+            llm = self.bind_tools([schema])
 
         def _raise_if_no_tool_calls(message: AIMessage) -> AIMessage:
             if not message.tool_calls:
@@ -723,7 +732,17 @@ class ChatBedrockConverse(BaseChatModel):
             # returning None when no tool calls are generated.
             llm = self._get_llm_for_structured_output_no_tool_choice(schema)
         else:
-            llm = self.bind_tools([schema], tool_choice=tool_choice)
+            try:
+                llm = self.bind_tools(
+                    [schema],
+                    tool_choice=tool_choice,
+                    ls_structured_output_format={
+                        "kwargs": {"method": "function_calling"},
+                        "schema": convert_to_openai_tool(schema),
+                    },
+                )
+            except Exception:
+                llm = self.bind_tools([schema], tool_choice=tool_choice)
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             if self.disable_streaming:
                 output_parser: OutputParserLike = ToolsOutputParser(
