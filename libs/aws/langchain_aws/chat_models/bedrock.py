@@ -383,14 +383,13 @@ def _format_anthropic_messages(
                         # accepted.
                         # https://github.com/anthropics/anthropic-sdk-python/issues/461
 
-                        content_item = {"type": "text", "text": text}
-
-                        cache_point = item.get("cache_control", None)
-                        if cache_point:
-                            content_item["cache_control"] = {"type": "ephemeral"}
-
                         if text.strip():
-                            text_blocks.append({"type": "text", "text": text})
+                            content_item = {"type": "text", "text": text}
+
+                            cache_point = item.get("cache_control", None)
+                            if cache_point:
+                                content_item["cache_control"] = {"type": "ephemeral"}
+                            text_blocks.append(content_item)
                     else:
                         tool_blocks.append(item)
                 else:
