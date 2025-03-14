@@ -575,7 +575,15 @@ class ChatBedrockConverse(BaseChatModel):
         )
         logger.debug(f"Response from Bedrock: {response}")
         if 'output' not in response:
-            raise ValueError(f"AWS returns an invalid response, key 'output' is not in reponse.")
+            if self.endpoint_url:
+                raise ValueError(
+                    "The AWS response is invalid as it does not contain the expected 'output' key. "
+                    "Please verify that the correct bedrock-runtime endpoint is being used."
+                )
+            else:
+                raise ValueError(
+                    "The AWS response is invalid as it does not contain the expected 'output' key. "
+                )
         response_message = _parse_response(response)
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
