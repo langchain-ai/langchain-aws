@@ -14,7 +14,7 @@ license = "MIT"
 python = ">=3.9,<4.0"
 langchain-core = "^0.3.27"
 boto3 = ">=1.37.0"
-pydantic = ">=2,<3"
+pydantic = ">=2.10.0,<3"
 numpy = [
   { version = "^1", python = "<3.12" },
   { version = ">=1.26.0,<3", python = ">=3.12" },
