@@ -299,12 +299,35 @@ def _format_anthropic_messages(
         if message.type == "system":
             if i != 0:
                 raise ValueError("System message must be at beginning of message list.")
-            if not isinstance(message.content, str):
+            if isinstance(message.content, str):
+                system = message.content
+            elif isinstance(message.content, list):
+                text_chunks = []
+                for item in message.content:
+                    if isinstance(item, str):
+                        text_chunks.append(item)
+                    elif isinstance(item, dict):
+                        if item.get("type") != "text":
+                            raise ValueError(
+                                "System message content item must be type 'text'"
+                            )
+                        if "text" not in item:
+                            raise ValueError(
+                                "System message content item must have a 'text' key"
+                            )
+                        text_chunks.append(item["text"])
+                    else:
+                        raise ValueError(
+                            "System message content list must be a string or dict, "
+                            f"instead was: {type(item)}"
+                        )
+                system = "".join(text_chunks)
+            else:
                 raise ValueError(
-                    "System message must be a string, "
+                    "System message content must be a string or list, "
                     f"instead was: {type(message.content)}"
                 )
-            system = message.content
+
             continue
 
         role = _message_type_lookups[message.type]
@@ -355,8 +378,15 @@ def _format_anthropic_messages(
                         thinking_blocks.append(item)
                     elif item["type"] == "text":
                         text = item.get("text", "")
+                        # Only add non-empty strings for now as empty ones are not
+                        # accepted.
+                        # https://github.com/anthropics/anthropic-sdk-python/issues/461
+
                         if text.strip():
-                            text_blocks.append({"type": "text", "text": text})
+                            content_item = {"type": "text", "text": text}
+                            if item.get("cache_control"):
+                                content_item["cache_control"] = {"type": "ephemeral"}
+                            text_blocks.append(content_item)
                     else:
                         tool_blocks.append(item)
                 else:
