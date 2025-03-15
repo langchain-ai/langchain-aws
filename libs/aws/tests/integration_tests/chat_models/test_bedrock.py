@@ -121,6 +121,59 @@ def test_chat_bedrock_streaming_llama3() -> None:
 
 
 @pytest.mark.scheduled
+def test_chat_bedrock_streaming_deepseek_r1() -> None:
+    chat = ChatBedrock(  # type: ignore[call-arg]
+        model="us.deepseek.r1-v1:0",
+        region_name="us-west-2"
+    )
+    message = HumanMessage(content="Hello")
+
+    response = AIMessageChunk(content="")
+    for chunk in chat.stream([message]):
+        response += chunk  # type: ignore[assignment]
+
+    assert response.content
+    assert response.response_metadata
+    assert response.usage_metadata
+
+
+@pytest.mark.xfail(reason="Provisioned instance unavailable.")
+def test_chat_bedrock_streaming_deepseek_r1_distill_llama() -> None:
+    chat = ChatBedrock(  # type: ignore[call-arg]
+        provider="deepseek",
+        model_id="arn:aws:sagemaker:us-east-2:xxxxxxxxxxxx:endpoint/endpoint-quick-start-xxxxx",
+        region_name="us-east-2"
+    )
+    message = HumanMessage(content="Hello. Please limit your response to 10 words or less.")
+
+    response = AIMessageChunk(content="")
+    for chunk in chat.stream([message]):
+        response += chunk # type: ignore[assignment]
+
+    assert response.content
+    assert response.response_metadata
+    assert response.usage_metadata
+
+
+@pytest.mark.xfail(reason="Provisioned instance unavailable.")
+def test_chat_bedrock_streaming_deepseek_r1_distill_qwen() -> None:
+    chat = ChatBedrock(  # type: ignore[call-arg]
+        provider="deepseek",
+        model_id="arn:aws:sagemaker:us-east-2:xxxxxxxxxxxx:endpoint/endpoint-quick-start-xxxxx",
+        region_name="us-east-2"
+    )
+    message = HumanMessage(content="Hello")
+
+    response = AIMessageChunk(content="")
+    for chunk in chat.stream([message]):
+        response += chunk  # type: ignore[assignment]
+
+    assert response.content
+    assert response.response_metadata
+    assert response.usage_metadata
+
+
+@pytest.mark.scheduled
 def test_chat_bedrock_streaming_generation_info() -> None:
     """Test that generation info is preserved when streaming."""
 
