@@ -27,6 +27,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _messages_to_bedrock,
     _snake_to_camel,
     _snake_to_camel_keys,
+    _lc_content_to_bedrock
 )
 
 
@@ -707,6 +708,371 @@ def test__lc_content_to_bedrock_anthropic_reasoning() -> None:
                 },
                 {
                     "text": "I've double-checked and confirm that 27 * 14 = 378."
+                }
+            ]
+        },
+    ]
+
+    expected_system = [{"text": "You are a helpful assistant."}]
+
+    actual_messages, actual_system = _messages_to_bedrock(messages)
+
+    assert expected_messages == actual_messages
+    assert expected_system == actual_system
+
+def test__lc_content_to_bedrock_empty_signature() -> None:
+    """Test that thinking and reasoning blocks without signatures are omitted."""
+    messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        # Human message with a question
+        HumanMessage(content="Tell me about machine learning."),
+        # AI message with thinking block that has NO signature (should be omitted)
+        AIMessage(content=[
+            {
+                "type": "thinking",
+                "thinking": "I'll explain machine learning concepts...",
+                "signature": ""  # Empty signature
+            },
+            {
+                "type": "text",
+                "text": "Machine learning is a field of AI that enables systems to learn from data."
+            }
+        ]),
+        # Human follow-up
+        HumanMessage(content="What about deep learning?"),
+        # AI message with reasoning_content block that has NO signature (should be omitted)
+        AIMessage(content=[
+            {
+                "type": "reasoning_content",
+                "reasoningContent": {
+                    "text": "Deep learning is a subset of machine learning using neural networks.",
+                    "signature": ""  # Empty signature
+                }
+            },
+            {
+                "type": "text",
+                "text": "Deep learning is a subfield of machine learning that uses neural networks with many layers."
+            }
+        ]),
+    ]
+
+    expected_messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "text": "Tell me about machine learning."
+                }
+            ]
+        },
+        {
+            "role": "assistant",
+            "content": [
+                # No reasoning block because signature is empty
+                {
+                    "text": "Machine learning is a field of AI that enables systems to learn from data."
+                }
+            ]
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "text": "What about deep learning?"
+                }
+            ]
+        },
+        {
+            "role": "assistant",
+            "content": [
+                # No reasoning block because signature is empty
+                {
+                    "text": "Deep learning is a subfield of machine learning that uses neural networks with many layers."
+                }
+            ]
+        },
+    ]
+
+    expected_system = [{"text": "You are a helpful assistant."}]
+
+    actual_messages, actual_system = _messages_to_bedrock(messages)
+
+    assert expected_messages == actual_messages
+    assert expected_system == actual_system
+
+def test__lc_content_to_bedrock_mixed_signatures() -> None:
+    """Test a mix of thinking/reasoning blocks with and without signatures."""
+    messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        # Human message
+        HumanMessage(content="Explain AI and machine learning."),
+        # AI message with mixed thinking/reasoning blocks (with/without signatures)
+        AIMessage(content=[
+            {
+                "type": "thinking",
+                "thinking": "I should start with AI definitions...",
+                "signature": ""  # Empty signature - should be omitted
+            },
+            {
+                "type": "text",
+                "text": "AI is a broad field of computer science."
+            },
+            {
+                "type": "thinking",
+                "thinking": "Now I'll explain machine learning...",
+                "signature": "signature-xyz"  # Has signature - should be included
+            },
+            {
+                "type": "text",
+                "text": "Machine learning is a subset of AI."
+            }
+        ]),
+        # Human follow-up
+        HumanMessage(content="What about neural networks?"),
+        # AI response with mixed reasoning_content blocks
+        AIMessage(content=[
+            {
+                "type": "reasoning_content",
+                "reasoningContent": {
+                    "text": "Neural networks are inspired by biological neurons.",
+                    "signature": "nn-signature"  # Has signature - should be included
+                }
+            },
+            {
+                "type": "reasoning_content",
+                "reasoningContent": {
+                    "text": "They consist of interconnected layers of nodes.",
+                    "signature": ""  # Empty signature - should be omitted
+                }
+            },
+            {
+                "type": "text",
+                "text": "Neural networks are computing systems inspired by biological neural networks."
+            }
+        ]),
+    ]
+
+    expected_messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "text": "Explain AI and machine learning."
+                }
+            ]
+        },
+        {
+            "role": "assistant",
+            "content": [
+                # First thinking block omitted (empty signature)
+                {
+                    "text": "AI is a broad field of computer science."
+                },
+                {
+                    "reasoningContent": {
+                        "reasoningText": {
+                            "text": "Now I'll explain machine learning...",
+                            "signature": "signature-xyz"
+                        }
+                    }
+                },
+                {
+                    "text": "Machine learning is a subset of AI."
+                }
+            ]
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "text": "What about neural networks?"
+                }
+            ]
+        },
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "reasoningContent": {
+                        "reasoningText": {
+                            "text": "Neural networks are inspired by biological neurons.",
+                            "signature": "nn-signature"
+                        }
+                    }
+                },
+                # Second reasoning block omitted (empty signature)
+                {
+                    "text": "Neural networks are computing systems inspired by biological neural networks."
+                }
+            ]
+        },
+    ]
+
+    expected_system = [{"text": "You are a helpful assistant."}]
+
+    actual_messages, actual_system = _messages_to_bedrock(messages)
+
+    assert expected_messages == actual_messages
+    assert expected_system == actual_system
+    """Test that reasoning_content blocks without signatures are omitted."""
+    # Test with empty signature
+    content = [
+        {"type": "text", "text": "Some text"},
+        {"type": "reasoning_content", "reasoningContent": {"text": "This is reasoning", "signature": ""}}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    # Verify that the reasoning_content block was omitted because it has an empty signature
+    assert len(bedrock_content) == 1
+    assert bedrock_content[0] == {"text": "Some text"}
+    
+    # Test with signature present
+    content = [
+        {"type": "text", "text": "Some text"},
+        {"type": "reasoning_content", "reasoningContent": {"text": "This is reasoning", "signature": "some-signature"}}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    # Verify that the reasoning_content block is included when it has a signature
+    assert len(bedrock_content) == 2
+    assert bedrock_content[0] == {"text": "Some text"}
+    assert bedrock_content[1] == {
+        "reasoningContent": {
+            "reasoningText": {
+                "text": "This is reasoning",
+                "signature": "some-signature",
+            }
+        }
+    }
+
+
+def test__lc_content_to_bedrock_reasoning_content_signature() -> None:
+    """Test that reasoning_content blocks with and without signatures are handled correctly."""
+    messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        # Human message with a question
+        HumanMessage(content="Explain quantum computing."),
+        # AI message with reasoning_content blocks with and without signatures
+        AIMessage(content=[
+            {
+                "type": "reasoning_content",
+                "reasoningContent": {
+                    "text": "Quantum computing uses quantum bits or qubits...",
+                    "signature": "qc-signature"  # Has signature - should be included
+                }
+            },
+            {
+                "type": "text",
+                "text": "Quantum computing is a type of computation that harnesses quantum mechanics."
+            },
+        ]),
+        # Human follow-up
+        HumanMessage(content="How does it differ from classical computing?"),
+        # AI response with reasoning_content block without signature
+        AIMessage(content=[
+            {
+                "type": "reasoning_content",
+                "reasoningContent": {
+                    "text": "Unlike classical bits that are either 0 or 1, qubits can be in superposition.",
+                    "signature": ""  # Empty signature - should be omitted
+                }
+            },
+            {
+                "type": "text",
+                "text": "Classical computers use bits as the smallest unit of data, while quantum computers use qubits which can exist in multiple states simultaneously."
+            }
+        ]),
+        # Another follow-up
+        HumanMessage(content="What are the practical applications?"),
+        # AI response with multiple reasoning_content blocks with mixed signatures
+        AIMessage(content=[
+            {
+                "type": "reasoning_content",
+                "reasoningContent": {
+                    "text": "Quantum computing excels at certain types of problems...",
+                    "signature": "apps-signature"  # Has signature - should be included
+                }
+            },
+            {
+                "type": "reasoning_content",
+                "reasoningContent": {
+                    "text": "Examples include cryptography, optimization, and simulation.",
+                    "signature": ""  # Empty signature - should be omitted
+                }
+            },
+            {
+                "type": "text",
+                "text": "Practical applications include cryptography, drug discovery, materials science, and complex optimization problems."
+            }
+        ]),
+    ]
+
+    expected_messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "text": "Explain quantum computing."
+                }
+            ]
+        },
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "reasoningContent": {
+                        "reasoningText": {
+                            "text": "Quantum computing uses quantum bits or qubits...",
+                            "signature": "qc-signature"
+                        }
+                    }
+                },
+                {
+                    "text": "Quantum computing is a type of computation that harnesses quantum mechanics."
+                }
+            ]
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "text": "How does it differ from classical computing?"
+                }
+            ]
+        },
+        {
+            "role": "assistant",
+            "content": [
+                # No reasoning block because signature is empty
+                {
+                    "text": "Classical computers use bits as the smallest unit of data, while quantum computers use qubits which can exist in multiple states simultaneously."
+                }
+            ]
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "text": "What are the practical applications?"
+                }
+            ]
+        },
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "reasoningContent": {
+                        "reasoningText": {
+                            "text": "Quantum computing excels at certain types of problems...",
+                            "signature": "apps-signature"
+                        }
+                    }
+                },
+                # Second reasoning block omitted (empty signature)
+                {
+                    "text": "Practical applications include cryptography, drug discovery, materials science, and complex optimization problems."
                 }
             ]
         },

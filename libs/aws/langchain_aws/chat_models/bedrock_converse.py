@@ -1080,28 +1080,30 @@ def _lc_content_to_bedrock(
         elif block["type"] == "guard_content":
             bedrock_content.append({"guardContent": {"text": {"text": block["text"]}}})
         elif block["type"] == "thinking":
-            bedrock_content.append(
-                {
-                    "reasoningContent": {
-                        "reasoningText": {
-                            "text": block.get("thinking", ""),
-                            "signature": block.get("signature", "")
+            if block.get("signature", ""):
+                bedrock_content.append(
+                    {
+                        "reasoningContent": {
+                            "reasoningText": {
+                                "text": block.get("thinking", ""),
+                                "signature": block.get("signature", ""),
+                            }
                         }
                     }
-                }
-            )
+                )
         elif block["type"] == "reasoning_content":
             reasoning_content = block.get("reasoningContent", {})
-            bedrock_content.append(
-                {
-                    "reasoningContent": {
-                        "reasoningText": {
-                            "text": reasoning_content.get("text", ""),
-                            "signature": reasoning_content.get("signature", "")
+            if reasoning_content.get("signature", ""):
+                bedrock_content.append(
+                    {
+                        "reasoningContent": {
+                            "reasoningText": {
+                                "text": reasoning_content.get("text", ""),
+                                "signature": reasoning_content.get("signature", ""),
+                            }
                         }
                     }
-                }
-            )
+                )
         else:
             raise ValueError(f"Unsupported content block type:\n{block}")
     # drop empty text blocks
