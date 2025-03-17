@@ -137,7 +137,7 @@ def test_chat_bedrock_streaming_deepseek_r1() -> None:
     assert response.usage_metadata
 
 
-@pytest.mark.xfail(reason="Provisioned instance unavailable.")
+@pytest.mark.skip("Needs provisioned instance setup.")
 def test_chat_bedrock_streaming_deepseek_r1_distill_llama() -> None:
     chat = ChatBedrock(  # type: ignore[call-arg]
         provider="deepseek",
@@ -155,7 +155,7 @@ def test_chat_bedrock_streaming_deepseek_r1_distill_llama() -> None:
     assert response.usage_metadata
 
 
-@pytest.mark.xfail(reason="Provisioned instance unavailable.")
+@pytest.mark.skip("Needs provisioned instance setup.")
 def test_chat_bedrock_streaming_deepseek_r1_distill_qwen() -> None:
     chat = ChatBedrock(  # type: ignore[call-arg]
         provider="deepseek",
