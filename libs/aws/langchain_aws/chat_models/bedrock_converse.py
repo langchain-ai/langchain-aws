@@ -492,7 +492,9 @@ class ChatBedrockConverse(BaseChatModel):
             # All Meta Llama models
             (provider == "meta") or
             # All Mistral models
-            (provider == "mistral")
+            (provider == "mistral") or
+            # DeepSeek-R1 models
+            (provider == "deepseek" and "r1" in model_id_lower)
         ):
             streaming_support = "no_tools"
         else:
