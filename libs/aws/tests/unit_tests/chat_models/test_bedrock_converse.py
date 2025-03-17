@@ -875,7 +875,7 @@ def test__lc_content_to_bedrock_mixed_signatures() -> None:
     assert expected_system == actual_system
     """Test that reasoning_content blocks without signatures are omitted."""
     # Test with empty signature
-    content: List[str | Dict[str, Any]] = [
+    content: List[Union[str, Dict[str, Any]]] = [
         {"type": "text", "text": "Some text"},
         {
             "type": "reasoning_content",
