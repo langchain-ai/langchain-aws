@@ -264,6 +264,47 @@ def test__format_anthropic_messages_with_tool_use_blocks_and_tool_calls() -> Non
     assert expected == actual
 
 
+def test__format_anthropic_messages_with_cache_control() -> None:
+    system = SystemMessage(
+        [
+            {
+                "type": "text",
+                "text": "fuzz",
+                "cache_control": {"type": "ephemeral"},
+            },
+            "bar",
+        ],
+    )
+    human = HumanMessage(
+        [
+            {
+                "type": "text",
+                "text": "foo",
+                "cache_control": {"type": "ephemeral"},
+            },
+        ],
+    )
+    messages = [system, human]
+    expected = (
+        "fuzzbar",
+        [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "foo",
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            },
+        ],
+    )
+
+    actual = _format_anthropic_messages(messages)
+    assert expected == actual
+
+
 @pytest.fixture()
 def pydantic() -> Type[BaseModel]:
     class dummy_function(BaseModel):
