@@ -127,15 +127,18 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
         return self
 
-    def _embedding_func(self, text: str) -> List[float]:
+    def _embedding_func(self, text: str, input_type: str = "search_document") -> List[float]:
         """Call out to Bedrock embedding endpoint with a single text."""
         # replace newlines, which can negatively affect performance.
         text = text.replace(os.linesep, " ")
 
         if self.provider == "cohere":
+            # Cohere input_type depends on usage
+            # for embedding documents use "search_document"
+            # for embedding queries for retrieval use "search_query"
             response_body = self._invoke_model(
                 input_body={
-                    "input_type": "search_document",
+                    "input_type": input_type,
                     "texts": [text],
                 }
             )
@@ -230,7 +233,10 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         Returns:
             Embeddings for the text.
         """
-        embedding = self._embedding_func(text)
+        if self.provider == "cohere":
+            embedding = self._embedding_func(text, input_type="search_query")
+        else:
+            embedding = self._embedding_func(text)
 
         if self.normalize:
             return self._normalize_vector(embedding)
