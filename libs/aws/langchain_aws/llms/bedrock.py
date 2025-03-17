@@ -172,7 +172,7 @@ def _stream_response_to_generation_chunk(
     generation_info = {
         k: v
         for k, v in stream_response.items()
-        if k not in [output_key, "prompt_token_count", "generation_token_count"]
+        if k not in [output_key, "prompt_token_count", "generation_token_count", "created"]
     }
     return GenerationChunk(
         text=(
@@ -498,9 +498,11 @@ class LLMInputOutputAdapter:
             if generation_chunk:
                 yield generation_chunk
 
-            if provider == "deepseek" and chunk_obj.get(output_key)[0].get("stop_reason", "") == "stop":
-                yield _get_invocation_metrics_chunk(chunk_obj)
-                return
+            if provider == "deepseek":
+                opt = chunk_obj.get(output_key, [{}])[0]
+                if opt.get("stop_reason") == "stop" or opt.get("finish_reason") == "eos_token":
+                    yield _get_invocation_metrics_chunk(chunk_obj)
+                    return
 
             elif (
                 provider == "mistral"
