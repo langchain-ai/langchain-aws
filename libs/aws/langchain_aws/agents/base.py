@@ -532,19 +532,20 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
                 text_parts.append(str(message.content))
         return "\n".join(text_parts)
 
-    def _get_roc_block(self, messages: List[BaseMessage]) -> str:
-        msg_index = len(messages) - 1
-        while msg_index >= 0:
-            last_message = messages[msg_index]
-            if (
-                isinstance(last_message, AIMessage)
-                and last_message.additional_kwargs is not None
-                and "roc_log" in last_message.additional_kwargs
-            ):
-                return json.loads(
-                    last_message.additional_kwargs.get("roc_log", "{}")
-                ).get("returnControl", {})
-            msg_index -= 1
+    def _get_roc_block(self, messages: List[BaseMessage]) -> Optional[Dict[str, Any]]:
+        for message in reversed(messages):
+            if not isinstance(message, AIMessage):
+                continue
+
+            roc_log = message.additional_kwargs.get("roc_log")
+            if not roc_log:
+                continue
+
+            try:
+                return json.loads(roc_log).get("returnControl", {})
+            except json.JSONDecodeError:
+                # log error
+                continue
 
         return None
 

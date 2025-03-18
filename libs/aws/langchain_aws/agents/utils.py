@@ -20,15 +20,17 @@ from langchain_aws.agents.types import (
 
 logger = logging.getLogger(__name__)
 
-__version__ = "0.1.0"
-SDK_USER_AGENT = f"LangChainAWS#Agents#{__version__}"
+# Bedrock agents version is being used to specify the version of the agent impl on langchain.
+# This should be updated on any major change where we want to detect usage increase/decrease from the change.
+__bedrock_agents_version__ = "0.1.0"
+SDK_USER_AGENT = f"LangChainAWS#Agents#{__bedrock_agents_version__}"
 
 # Set default client parameters
-DEFAULT_CONFIG = Config(
-    connect_timeout=120,
-    read_timeout=120,
-    retries={"max_attempts": 0},
-)
+DEFAULT_CONFIG_VALUES = {
+    "connect_timeout": 120,
+    "read_timeout": 120,
+    "retries": {"max_attempts": 0},
+}
 
 
 def get_boto_session(
@@ -53,22 +55,17 @@ def get_boto_session(
         session = boto3.Session()
 
     # If a custom config is provided, ensure our defaults are maintained
-    if config:
-        # Check if each default property exists in the custom config
-        # If not, add the default value
-        if getattr(config, "connect_timeout", None) is None:
-            config.connect_timeout = DEFAULT_CONFIG.connect_timeout
-        if getattr(config, "read_timeout", None) is None:
-            config.read_timeout = DEFAULT_CONFIG.read_timeout
-        if getattr(config, "retries", None) is None:
-            config.retries = DEFAULT_CONFIG.retries
-    else:
-        config = DEFAULT_CONFIG
+    config = config or Config(**DEFAULT_CONFIG_VALUES)
+    # Set default values if not present in custom config
+    for key, default_value in DEFAULT_CONFIG_VALUES.items():
+        if getattr(config, key, None) is None:
+            setattr(config, key, default_value)
 
+    # Update user agent
     existing_user_agent = getattr(config, "user_agent_extra", "") or ""
-    new_user_agent = f"{existing_user_agent} md/sdk_user_agent/{SDK_USER_AGENT}".strip()
-    config.user_agent_extra = new_user_agent
-
+    config.user_agent_extra = (
+        f"{existing_user_agent} md/sdk_user_agent/{SDK_USER_AGENT}".strip()
+    )
     client_params = {"config": config}
 
     if region_name:
