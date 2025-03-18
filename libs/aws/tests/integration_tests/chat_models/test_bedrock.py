@@ -104,6 +104,28 @@ def test_chat_bedrock_token_counts() -> None:
 
 
 @pytest.mark.scheduled
+def test_chat_bedrock_token_counts_deepseek_r1() -> None:
+    chat = ChatBedrock(  # type: ignore[call-arg]
+        model_id="us.deepseek.r1-v1:0",
+        temperature=0,
+        max_tokens=6,
+    )
+
+    invoke_response = chat.invoke("hi")
+    assert isinstance(invoke_response, AIMessage)
+    assert invoke_response.usage_metadata is not None
+    assert invoke_response.usage_metadata["output_tokens"] <= 6
+
+    stream = chat.stream("hi")
+    stream_response = next(stream)
+    for chunk in stream:
+        stream_response += chunk
+    assert isinstance(stream_response, AIMessage)
+    assert stream_response.usage_metadata is not None
+    assert stream_response.usage_metadata["output_tokens"] <= 6
+
+
+@pytest.mark.scheduled
 def test_chat_bedrock_streaming_llama3() -> None:
     """Test that streaming correctly streams message chunks"""
     chat = ChatBedrock(  # type: ignore[call-arg]
