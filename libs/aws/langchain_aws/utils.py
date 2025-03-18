@@ -123,39 +123,13 @@ def get_aws_client(
     ):
     """Helper function to validate AWS credentials and create an AWS client."""
 
-    creds = {
-        "aws_access_key_id": aws_access_key_id,
-        "aws_secret_access_key": aws_secret_access_key,
-        "aws_session_token": aws_session_token,
-    }
-
-    if creds["aws_access_key_id"] and creds["aws_secret_access_key"]:
-        session_params = {
-            k: v.get_secret_value() for k, v in creds.items() if v
-        }
-    elif any(creds.values()):
-        raise ValueError(
-            f"If any of aws_access_key_id, aws_secret_access_key, or aws_session_token "
-            f"are specified, then both aws_access_key_id and aws_secret_access_key "
-            f"must be specified. Only received "
-            f"{[(k, v) for k, v in creds.items() if v]}."
-        )
-    elif credentials_profile_name:
-        session_params = {"profile_name": credentials_profile_name}
-    else:
-        # Use default credentials
-        session_params = {}
-
     try:
         import boto3
-
-        session = boto3.Session(**session_params)
 
         region_name = (
             region_name
             or os.getenv("AWS_REGION")
             or os.getenv("AWS_DEFAULT_REGION")
-            or session.region_name
         )
 
         client_params = {
@@ -167,9 +141,42 @@ def get_aws_client(
             k: v for k, v in client_params.items() if v
         }
 
-        return session.client(
-            service_name, **client_params
-        )
+        cred_params_provided = credentials_profile_name is not None or any([
+            aws_access_key_id, aws_secret_access_key, aws_session_token
+        ])
+
+        if cred_params_provided:
+            creds = {
+                "aws_access_key_id": aws_access_key_id,
+                "aws_secret_access_key": aws_secret_access_key,
+                "aws_session_token": aws_session_token,
+            }
+
+            if creds["aws_access_key_id"] and creds["aws_secret_access_key"]:
+                session_params = {
+                    k: v.get_secret_value() for k, v in creds.items() if v
+                }
+            elif any(creds.values()):
+                raise ValueError(
+                    f"If any of aws_access_key_id, aws_secret_access_key, or aws_session_token "
+                    f"are specified, then both aws_access_key_id and aws_secret_access_key "
+                    f"must be specified. Only received "
+                    f"{[(k, v) for k, v in creds.items() if v]}."
+                )
+            elif credentials_profile_name:
+                session_params = {"profile_name": credentials_profile_name}
+            else:
+                # Use default credentials
+                session_params = {}
+
+            session = boto3.Session(**session_params)
+
+            if not client_params.get("region_name") and session.region_name:
+                client_params["region_name"] = session.region_name
+
+            return session.client(service_name, **client_params)
+
+        return boto3.client(service_name, **client_params)
 
     except ImportError:
         raise ModuleNotFoundError(
@@ -190,7 +197,7 @@ def get_aws_client(
             f"Service error: {e}"
         ) from e
 
-        
+
 def thinking_in_params(params: dict) -> bool:
     """Check if the thinking parameter is enabled in the request."""
     return params.get("thinking", {}).get("type") == "enabled"
