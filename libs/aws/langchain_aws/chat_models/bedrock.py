@@ -37,6 +37,7 @@ from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -298,12 +299,35 @@ def _format_anthropic_messages(
         if message.type == "system":
             if i != 0:
                 raise ValueError("System message must be at beginning of message list.")
-            if not isinstance(message.content, str):
+            if isinstance(message.content, str):
+                system = message.content
+            elif isinstance(message.content, list):
+                text_chunks = []
+                for item in message.content:
+                    if isinstance(item, str):
+                        text_chunks.append(item)
+                    elif isinstance(item, dict):
+                        if item.get("type") != "text":
+                            raise ValueError(
+                                "System message content item must be type 'text'"
+                            )
+                        if "text" not in item:
+                            raise ValueError(
+                                "System message content item must have a 'text' key"
+                            )
+                        text_chunks.append(item["text"])
+                    else:
+                        raise ValueError(
+                            "System message content list must be a string or dict, "
+                            f"instead was: {type(item)}"
+                        )
+                system = "".join(text_chunks)
+            else:
                 raise ValueError(
-                    "System message must be a string, "
+                    "System message content must be a string or list, "
                     f"instead was: {type(message.content)}"
                 )
-            system = message.content
+
             continue
 
         role = _message_type_lookups[message.type]
@@ -354,8 +378,15 @@ def _format_anthropic_messages(
                         thinking_blocks.append(item)
                     elif item["type"] == "text":
                         text = item.get("text", "")
+                        # Only add non-empty strings for now as empty ones are not
+                        # accepted.
+                        # https://github.com/anthropics/anthropic-sdk-python/issues/461
+
                         if text.strip():
-                            text_blocks.append({"type": "text", "text": text})
+                            content_item = {"type": "text", "text": text}
+                            if item.get("cache_control"):
+                                content_item["cache_control"] = {"type": "ephemeral"}
+                            text_blocks.append(content_item)
                     else:
                         tool_blocks.append(item)
                 else:
@@ -942,7 +973,14 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
 
         tool_name = convert_to_anthropic_tool(schema)["name"]
-        llm = self.bind_tools([schema], tool_choice=tool_name)
+        llm = self.bind_tools(
+            [schema],
+            tool_choice=tool_name,
+            ls_structured_output_format={
+                "kwargs": {"method": "function_calling"},
+                "schema": convert_to_openai_tool(schema),
+            },
+        )
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             output_parser = ToolsOutputParser(
                 first_tool_only=True, pydantic_schemas=[schema]
