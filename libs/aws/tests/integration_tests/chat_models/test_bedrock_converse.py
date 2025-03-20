@@ -105,6 +105,10 @@ class TestBedrockCohereStandard(ChatModelIntegrationTests):
     ) -> None:
         pass
 
+    @pytest.mark.xfail(reason="Generates invalid tool call.")
+    def test_tool_calling_with_no_arguments(self, model: BaseChatModel) -> None:
+        pass
+
 
 class TestBedrockMetaStandard(ChatModelIntegrationTests):
     @property
