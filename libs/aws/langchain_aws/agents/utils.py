@@ -20,29 +20,59 @@ from langchain_aws.agents.types import (
 
 logger = logging.getLogger(__name__)
 
+# Bedrock agents version is being used to specify the version of the agent impl on langchain.
+# This should be updated on any major change where we want to detect usage increase/decrease from the change.
+__bedrock_agents_version__ = "0.1.0"
+SDK_USER_AGENT = f"LangChainAWS#Agents#{__bedrock_agents_version__}"
+
+# Set default client parameters
+DEFAULT_CONFIG_VALUES = {
+    "connect_timeout": 120,
+    "read_timeout": 120,
+    "retries": {"max_attempts": 0},
+}
+
 
 def get_boto_session(
     credentials_profile_name: Optional[str] = None,
     region_name: Optional[str] = None,
     endpoint_url: Optional[str] = None,
+    config: Optional[Config] = None,
 ) -> Any:
     """
     Construct the boto3 session
+
+    Args:
+        credentials_profile_name: AWS profile name to use for credentials
+        region_name: AWS region to use
+        endpoint_url: Custom endpoint URL to use
+        config: Optional boto3 Config object
     """
     if credentials_profile_name:
         session = boto3.Session(profile_name=credentials_profile_name)
     else:
         # use default credentials
         session = boto3.Session()
-    client_params = {
-        "config": Config(
-            connect_timeout=120, read_timeout=120, retries={"max_attempts": 0}
-        )
-    }
+
+    # If a custom config is provided, ensure our defaults are maintained
+    config = config or Config(**DEFAULT_CONFIG_VALUES)
+    # Set default values if not present in custom config
+    for key, default_value in DEFAULT_CONFIG_VALUES.items():
+        if getattr(config, key, None) is None:
+            setattr(config, key, default_value)
+
+    # Update user agent
+    existing_user_agent = getattr(config, "user_agent_extra", "") or ""
+    config.user_agent_extra = (
+        f"{existing_user_agent} md/sdk_user_agent/{SDK_USER_AGENT}".strip()
+    )
+    client_params = {"config": config}
+
     if region_name:
         client_params["region_name"] = region_name
     if endpoint_url:
         client_params["endpoint_url"] = endpoint_url
+
     return client_params, session
 
 
@@ -116,6 +146,7 @@ def parse_agent_response(response: Any) -> OutputType:
                 log=response_text,
                 session_id=session_id,
                 trace_log=trace_log,
+                invocation_id=return_control.get("invocationId"),
             )
         ]
     except IndexError as ex:
@@ -221,6 +252,7 @@ def _create_bedrock_action_groups(
     agent_id: str,
     tools: List[BaseTool],
     enable_human_input: Optional[bool] = False,
+    enable_code_interpreter: Optional[bool] = False,
 ) -> None:
     """Create the bedrock action groups for the agent"""
 
@@ -245,6 +277,15 @@ def _create_bedrock_action_groups(
         bedrock_client.create_agent_action_group(
             actionGroupName="UserInputAction",
             parentActionGroupSignature="AMAZON.UserInput",
+            actionGroupState="ENABLED",
+            agentId=agent_id,
+            agentVersion="DRAFT",
+        )
+
+    if enable_code_interpreter:
+        bedrock_client.create_agent_action_group(
+            actionGroupName="CodeInterpreterAction",
+            parentActionGroupSignature="AMAZON.CodeInterpreter",
             actionGroupState="ENABLED",
             agentId=agent_id,
             agentVersion="DRAFT",
