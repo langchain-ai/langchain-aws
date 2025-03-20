@@ -45,6 +45,10 @@ class TestBedrockMistralStandard(ChatModelIntegrationTests):
     def standard_chat_model_params(self) -> dict:
         return {"temperature": 0, "max_tokens": 100, "stop": []}
 
+    @property
+    def has_tool_choice(self) -> bool:
+        return False
+
     @pytest.mark.xfail(reason="Human messages following AI messages not supported.")
     def test_tool_message_histories_list_content(
         self, model: BaseChatModel, my_adder_tool: BaseTool
@@ -64,10 +68,6 @@ class TestBedrockNovaStandard(ChatModelIntegrationTests):
     @property
     def standard_chat_model_params(self) -> dict:
         return {"max_tokens": 300, "stop": []}
-
-    @property
-    def tool_choice_value(self) -> str:
-        return "auto"
 
     @pytest.mark.xfail(reason="Tool choice 'Any' not supported.")
     def test_structured_few_shot_examples(
@@ -95,14 +95,14 @@ class TestBedrockCohereStandard(ChatModelIntegrationTests):
     def standard_chat_model_params(self) -> dict:
         return {"temperature": 0, "max_tokens": 100, "stop": []}
 
+    @property
+    def has_tool_choice(self) -> bool:
+        return False
+
     @pytest.mark.xfail(reason="Cohere models don't support tool_choice.")
     def test_structured_few_shot_examples(
         self, model: BaseChatModel, my_adder_tool: BaseTool
     ) -> None:
-        pass
-
-    @pytest.mark.xfail(reason="Cohere models don't support tool_choice.")
-    def test_tool_calling_with_no_arguments(self, model: BaseChatModel) -> None:
         pass
 
 
@@ -118,6 +118,10 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
     @property
     def standard_chat_model_params(self) -> dict:
         return {"temperature": 0.1, "max_tokens": 100, "stop": []}
+
+    @property
+    def has_tool_choice(self) -> bool:
+        return False
 
     @pytest.mark.xfail(reason="Meta models don't support tool_choice.")
     def test_structured_few_shot_examples(
