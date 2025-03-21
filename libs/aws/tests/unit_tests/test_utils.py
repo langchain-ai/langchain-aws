@@ -295,7 +295,7 @@ def test_generic_error_with_session(mock_boto3: Tuple[mock.MagicMock, mock.Magic
 
     session_instance.client.side_effect = Exception("Generic error")
 
-    with pytest.raises(ValueError, match="Could not load credentials"):
+    with pytest.raises(ValueError, match="Error raised by service:\n\nGeneric error"):
         get_aws_client(
             'bedrock-runtime',
             aws_access_key_id=SecretStr('test_key'),
@@ -308,5 +308,5 @@ def test_generic_error_with_direct_client(mock_boto3: Tuple[mock.MagicMock, mock
 
     client_mock.side_effect = Exception("Generic error")
 
-    with pytest.raises(ValueError, match="Could not load credentials"):
+    with pytest.raises(ValueError, match="Error raised by service:\n\nGeneric error"):
         get_aws_client('bedrock-runtime')

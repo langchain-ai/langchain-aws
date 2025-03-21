@@ -3,7 +3,7 @@ import re
 from abc import abstractmethod
 from typing import Any, Dict, Generic, Iterator, List, Literal, Optional, TypeVar, Union
 
-from botocore.exceptions import UnknownServiceError
+from botocore.exceptions import BotoCoreError, UnknownServiceError
 from packaging import version
 from pydantic import SecretStr
 
@@ -178,24 +178,19 @@ def get_aws_client(
 
         return boto3.client(service_name, **client_params)
 
-    except ImportError:
-        raise ModuleNotFoundError(
-            "Could not import boto3 python package. "
-            "Please install it with `pip install boto3`."
-        )
     except UnknownServiceError as e:
         raise ModuleNotFoundError(
             f"Ensure that you have installed the latest boto3 package "
             f"that contains the API for `{service_name}`."
         ) from e
-    except ValueError as e:
-        raise ValueError(f"Error raised by service:\n\n{e}") from e
-    except Exception as e:
+    except BotoCoreError as e:
         raise ValueError(
             "Could not load credentials to authenticate with AWS client. "
-            "Please check that credentials in the specified profile name are valid. "
+            "Please check that the specified profile name and/or its credentials are valid. "
             f"Service error: {e}"
         ) from e
+    except Exception as e:
+        raise ValueError(f"Error raised by service:\n\n{e}") from e
 
 
 def thinking_in_params(params: dict) -> bool:
