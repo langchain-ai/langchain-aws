@@ -1078,3 +1078,115 @@ def test__lc_content_to_bedrock_reasoning_content_signature() -> None:
 
     assert expected_messages == actual_messages
     assert expected_system == actual_system
+
+
+def test__get_provider() -> None:
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2"
+    )
+
+    assert llm.provider == "anthropic"
+
+    llm = ChatBedrockConverse(
+        model="arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
+        provider="anthropic",
+        region_name="us-west-2"
+    )
+
+    assert llm.provider == "anthropic"
+
+    with pytest.raises(ValueError,
+                       match="Model provider should be supplied when passing a model ARN as model_id."):
+        ChatBedrockConverse(
+            model="arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
+            region_name="us-west-2"
+        )
+
+
+def test__get_model_name() -> None:
+    llm_model_only = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2"
+    )
+
+    assert llm_model_only._get_model_name() == "anthropic.claude-3-sonnet-20240229-v1:0"
+
+    llm_with_base_model = ChatBedrockConverse(
+        model="arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
+        base_model="anthropic.claude-3-sonnet-20240229-v1:0",
+        provider="anthropic",
+        region_name="us-west-2"
+    )
+
+    assert llm_with_base_model._get_model_name() == "anthropic.claude-3-sonnet-20240229-v1:0"
+
+
+@pytest.mark.parametrize(
+    "arn_model_id, base_model_id, provider, expected_disable_streaming",
+    [
+        (
+            "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
+            "anthropic.claude-3-sonnet-20240229-v1:0",
+            "anthropic",
+            False
+        ),
+        (
+            "arn:aws:bedrock:us-west-2::custom-model/anthropic.claude-v2:1/MyModel",
+            "anthropic.claude-v2:1",
+            "anthropic",
+            "tool_calling"
+        ),
+        (
+            "arn:aws:bedrock:us-west-2::custom-model/meta.llama3-8b-instruct-v1:0/MyModel",
+            "meta.llama3-8b-instruct-v1:0",
+            "meta",
+            "tool_calling"
+        ),
+        (
+            "arn:aws:bedrock:us-west-2::custom-model/meta.llama2-70b-chat-v1/MyModel",
+            "meta.llama2-70b-chat-v1",
+            "meta",
+            "tool_calling"
+        ),
+        (
+            "arn:aws:bedrock:us-west-2::custom-model/mistral.mistral-large-2402-v1:0/MyModel",
+            "mistral.mistral-large-2402-v1:0",
+            "mistral",
+            "tool_calling"
+        ),
+        (
+            "arn:aws:bedrock:us-west-2::custom-model/cohere.command-r-v1:0/MyModel",
+            "cohere.command-r-v1:0",
+            "cohere",
+            False
+        ),
+        (
+            "arn:aws:bedrock:us-west-2::custom-model/amazon.nova-8b/MyModel",
+            "amazon.nova-8b",
+            "amazon",
+            True
+        ),
+        (
+            "arn:aws:bedrock:us-west-2::custom-model/amazon.titan-text-express-v1/MyModel",
+            "amazon.titan-text-express-v1",
+            "amazon",
+            "tool_calling"
+        ),
+        (
+            "arn:aws:sagemaker:us-west-2::endpoint/endpoint-quick-start-xxxxx",
+            "deepseek.r1-v1:0",
+            "deepseek",
+            "tool_calling"
+        ),
+    ]
+)
+def test_disable_streaming_with_arn(arn_model_id, base_model_id, provider, expected_disable_streaming) -> None:
+    """Test that disable_streaming is properly set when base_model is provided."""
+    llm = ChatBedrockConverse(
+        model=arn_model_id,
+        base_model=base_model_id,
+        provider=provider,
+        region_name="us-west-2"
+    )
+    assert llm.disable_streaming == expected_disable_streaming

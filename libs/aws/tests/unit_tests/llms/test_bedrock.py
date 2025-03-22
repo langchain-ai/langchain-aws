@@ -694,3 +694,27 @@ def test_prepare_output_after_tool_use(anthropic_response_after_tool_use):
     assert result["usage"]["prompt_tokens"] == 60
     assert result["usage"]["completion_tokens"] == 20
     assert result["usage"]["total_tokens"] == 80
+
+
+def test__get_model_name():
+    """Test that _get_model_name returns the expected result."""
+    llm = BedrockLLM(
+        model_id="meta.llama3-8b-instruct-v1:0",
+        region_name="us-west-2"
+    )
+    assert llm._get_model_name() == "llama3-8b-instruct-v1:0"
+
+    llm = BedrockLLM(
+        model_id="arn:aws:bedrock:us-east-1::custom-model/meta.llama3-8b-instruct-v1:0/MyModel",
+        base_model_id="meta.llama3-8b-instruct-v1:0",
+        provider="meta",
+        region_name="us-west-2"
+    )
+    assert llm._get_model_name() == "meta.llama3-8b-instruct-v1:0"
+
+    llm = BedrockLLM(
+        model_id="meta.llama2-70b-v1",
+        base_model_id="meta.llama3-8b-instruct-v1:0",
+        region_name="us-west-2"
+    )
+    assert llm._get_model_name() == "meta.llama3-8b-instruct-v1:0"
