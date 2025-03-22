@@ -569,7 +569,7 @@ class ChatBedrockConverse(BaseChatModel):
             elif "mistral-large" in self._get_model_name():
                 self.supports_tool_choice_values = ("auto", "any")
             elif "nova" in self._get_model_name():
-                self.supports_tool_choice_values = ["auto"]
+                self.supports_tool_choice_values = ("auto", "any", "tool")
             else:
                 self.supports_tool_choice_values = ()
 

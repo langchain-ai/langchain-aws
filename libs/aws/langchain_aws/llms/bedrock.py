@@ -367,7 +367,7 @@ class LLMInputOutputAdapter:
                 elif provider == "mistral":
                     input_body["max_tokens"] = max_tokens
                 elif provider == "deepseek":
-                    input_body["max_new_tokens"] = max_tokens
+                    input_body["max_tokens"] = max_tokens
                 else:
                     # TODO: Add AI21 support, param depends on specific model.
                     pass
@@ -500,7 +500,7 @@ class LLMInputOutputAdapter:
 
             if provider == "deepseek":
                 opt = chunk_obj.get(output_key, [{}])[0]
-                if opt.get("stop_reason") == "stop" or opt.get("finish_reason") == "eos_token":
+                if opt.get("stop_reason") in ["stop", "length"] or opt.get("finish_reason") == "eos_token":
                     yield _get_invocation_metrics_chunk(chunk_obj)
                     return
 

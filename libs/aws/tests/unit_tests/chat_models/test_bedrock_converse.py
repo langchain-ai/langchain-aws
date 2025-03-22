@@ -115,20 +115,19 @@ def test_amazon_bind_tools_tool_choice() -> None:
     chat_model = ChatBedrockConverse(
         model="us.amazon.nova-lite-v1:0", region_name="us-east-1"
     )  # type: ignore[call-arg]
-    with pytest.raises(ValueError):
-        chat_model.bind_tools(
-            [GetWeather], tool_choice={"tool": {"name": "GetWeather"}}
-        )
-
-    with pytest.raises(ValueError):
-        chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
-
-    with pytest.raises(ValueError):
-        chat_model.bind_tools([GetWeather], tool_choice="any")
-
+    chat_model_with_tools = chat_model.bind_tools(
+        [GetWeather], tool_choice="GetWeather"
+    )
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "tool": {"name": "GetWeather"}
+    }
     chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="auto")
     assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
         "auto": {}
+    }
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="any")
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "any": {}
     }
 
 
