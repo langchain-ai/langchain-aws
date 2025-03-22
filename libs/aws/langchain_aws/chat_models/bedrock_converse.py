@@ -943,7 +943,16 @@ def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _parse_response(response: Dict[str, Any]) -> AIMessage:
-    lc_content = _bedrock_to_lc(response.pop("output")["message"]["content"])
+    try:
+        response_content = response.pop("output")["message"]["content"]
+    except KeyError:
+        raise ValueError(
+            "No 'output' key found in the response from the Bedrock Converse API.  This usually "
+            "happens due to misconfiguration of endpoint or region, ensure that you are using valid "
+            "values for endpoint_url (on AWS this starts with bedrock-runtime), see: "
+            "https://docs.aws.amazon.com/general/latest/gr/bedrock.html"
+        )
+    lc_content = _bedrock_to_lc(response_content)
     tool_calls = _extract_tool_calls(lc_content)
     usage = UsageMetadata(_camel_to_snake_keys(response.pop("usage")))  # type: ignore[misc]
     return AIMessage(
