@@ -1180,7 +1180,12 @@ def test__get_model_name() -> None:
         ),
     ]
 )
-def test_disable_streaming_with_arn(arn_model_id, base_model_id, provider, expected_disable_streaming) -> None:
+def test_disable_streaming_with_arn(
+    arn_model_id: str,
+    base_model_id: str,
+    provider: str, 
+    expected_disable_streaming: Union[bool, str]
+) -> None:
     """Test that disable_streaming is properly set when base_model is provided."""
     llm = ChatBedrockConverse(
         model=arn_model_id,
