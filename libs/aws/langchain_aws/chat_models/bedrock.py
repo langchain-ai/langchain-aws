@@ -737,7 +737,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
         else:
             usage_metadata = None
-        logger.info(f"The message received from Bedrock: {completion}")
+        logger.debug(f"The message received from Bedrock: {completion}")
         llm_output["model_id"] = self.model_id
         msg = AIMessage(
             content=completion,

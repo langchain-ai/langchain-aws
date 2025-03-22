@@ -273,7 +273,7 @@ class ChatSagemakerEndpoint(BaseChatModel):
             if run_manager is not None:
                 run_manager.on_llm_error(e)
             raise e
-        logger.info(f"The message received from SageMaker: {response['Body']}")
+        logger.debug(f"The message received from SageMaker: {response['Body']}")
 
         response_message = self.content_handler.transform_output(response["Body"])
 
