@@ -460,9 +460,12 @@ class ChatBedrockConverse(BaseChatModel):
     def set_disable_streaming(cls, values: Dict) -> Any:
         model_id = values.get("model_id", values.get("model"))
         model_parts = model_id.split(".")
-        
-        # Extract provider from the model_id (e.g., "amazon", "anthropic", "ai21", "meta", "mistral")
-        provider = values.get("provider") or (model_parts[-2] if len(model_parts) > 1 else model_parts[0])
+
+        # Extract provider from the model_id
+        # (e.g., "amazon", "anthropic", "ai21", "meta", "mistral")
+        provider = values.get("provider") or (
+            model_parts[-2] if len(model_parts) > 1 else model_parts[0]
+        )
         values["provider"] = provider
 
         model_id_lower = model_id.lower()
@@ -471,36 +474,60 @@ class ChatBedrockConverse(BaseChatModel):
         # Here we check based on the updated AWS documentation.
         if (
             # AI21 Jamba 1.5 models
-            (provider == "ai21" and "jamba-1-5" in model_id_lower) or
+            (provider == "ai21" and "jamba-1-5" in model_id_lower)
+            or
             # Some Amazon Nova models
-            (provider == "amazon" and any(x in model_id_lower for x in ["nova-lite", "nova-micro", "nova-pro"])) or
+            (
+                provider == "amazon"
+                and any(
+                    x in model_id_lower for x in ["nova-lite", "nova-micro", "nova-pro"]
+                )
+            )
+            or
             # Anthropic Claude 3 and newer models
-            (provider == "anthropic" and "claude-3" in model_id_lower) or
+            (provider == "anthropic" and "claude-3" in model_id_lower)
+            or
             # Cohere Command R models
             (provider == "cohere" and "command-r" in model_id_lower)
         ):
             streaming_support = True
         elif (
             # AI21 Jamba-Instruct model
-            (provider == "ai21" and "jamba-instruct" in model_id_lower) or
+            (provider == "ai21" and "jamba-instruct" in model_id_lower)
+            or
             # Amazon Titan Text models
-            (provider == "amazon" and "titan-text" in model_id_lower) or
+            (provider == "amazon" and "titan-text" in model_id_lower)
+            or
             # Anthropic older Claude models (Claude 2, Claude 2.1, Claude Instant)
-            (provider == "anthropic" and any(x in model_id_lower for x in ["claude-v2", "claude-instant"])) or
+            (
+                provider == "anthropic"
+                and any(x in model_id_lower for x in ["claude-v2", "claude-instant"])
+            )
+            or
             # Cohere Command (non-R) models
-            (provider == "cohere" and "command" in model_id_lower and "command-r" not in model_id_lower) or
+            (
+                provider == "cohere"
+                and "command" in model_id_lower
+                and "command-r" not in model_id_lower
+            )
+            or
             # All Meta Llama models
-            (provider == "meta") or
+            (provider == "meta")
+            or
             # All Mistral models
-            (provider == "mistral")
+            (provider == "mistral") or
+            # DeepSeek-R1 models
+            (provider == "deepseek" and "r1" in model_id_lower)
         ):
             streaming_support = "no_tools"
         else:
             streaming_support = False
 
         # Set the disable_streaming flag accordingly:
-        # - If streaming is supported (plain streaming), we want streaming enabled (i.e. disable_streaming == False).
-        # - If the model supports streaming only in non-tool mode ("no_tools"), then we must force disable streaming when tools are used.
+        # - If streaming is supported (plain streaming),
+        #       we want streaming enabled (i.e. disable_streaming == False).
+        # - If the model supports streaming only in non-tool mode ("no_tools"),
+        #       then we must force disable streaming when tools are used.
         # - Otherwise, if streaming is not supported, we set disable_streaming to True.
         if "disable_streaming" not in values:
             if not streaming_support:
@@ -511,7 +538,6 @@ class ChatBedrockConverse(BaseChatModel):
                 values["disable_streaming"] = False
 
         return values
-
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
@@ -536,7 +562,7 @@ class ChatBedrockConverse(BaseChatModel):
             elif "mistral-large" in self.model_id:
                 self.supports_tool_choice_values = ("auto", "any")
             elif "nova" in self.model_id:
-                self.supports_tool_choice_values = ["auto"]
+                self.supports_tool_choice_values = ("auto", "any", "tool")
             else:
                 self.supports_tool_choice_values = ()
 
@@ -655,7 +681,16 @@ class ChatBedrockConverse(BaseChatModel):
             )
             admonition = f"{admonition} {additional_context}"
         warnings.warn(admonition)
-        llm = self.bind_tools([schema])
+        try:
+            llm = self.bind_tools(
+                [schema],
+                ls_structured_output_format={
+                    "kwargs": {"method": "function_calling"},
+                    "schema": convert_to_openai_tool(schema),
+                },
+            )
+        except Exception:
+            llm = self.bind_tools([schema])
 
         def _raise_if_no_tool_calls(message: AIMessage) -> AIMessage:
             if not message.tool_calls:
@@ -723,7 +758,17 @@ class ChatBedrockConverse(BaseChatModel):
             # returning None when no tool calls are generated.
             llm = self._get_llm_for_structured_output_no_tool_choice(schema)
         else:
-            llm = self.bind_tools([schema], tool_choice=tool_choice)
+            try:
+                llm = self.bind_tools(
+                    [schema],
+                    tool_choice=tool_choice,
+                    ls_structured_output_format={
+                        "kwargs": {"method": "function_calling"},
+                        "schema": convert_to_openai_tool(schema),
+                    },
+                )
+            except Exception:
+                llm = self.bind_tools([schema], tool_choice=tool_choice)
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             if self.disable_streaming:
                 output_parser: OutputParserLike = ToolsOutputParser(
@@ -790,10 +835,13 @@ class ChatBedrockConverse(BaseChatModel):
                 "modelId": modelId or self.model_id,
                 "inferenceConfig": inferenceConfig,
                 "toolConfig": toolConfig,
-                "additionalModelRequestFields": additionalModelRequestFields
-                or self.additional_model_request_fields,
-                "additionalModelResponseFieldPaths": additionalModelResponseFieldPaths
-                or self.additional_model_response_field_paths,
+                "additionalModelRequestFields": (
+                    additionalModelRequestFields or self.additional_model_request_fields
+                ),
+                "additionalModelResponseFieldPaths": (
+                    additionalModelResponseFieldPaths
+                    or self.additional_model_response_field_paths
+                ),
                 "guardrailConfig": guardrailConfig or self.guardrail_config,
                 "performanceConfig": performanceConfig or self.performance_config,
                 "requestMetadata": requestMetadata or self.request_metadata,
@@ -1061,28 +1109,30 @@ def _lc_content_to_bedrock(
         elif block["type"] == "guard_content":
             bedrock_content.append({"guardContent": {"text": {"text": block["text"]}}})
         elif block["type"] == "thinking":
-            bedrock_content.append(
-                {
-                    "reasoningContent": {
-                        "reasoningText": {
-                            "text": block.get("thinking", ""),
-                            "signature": block.get("signature", "")
+            if block.get("signature", ""):
+                bedrock_content.append(
+                    {
+                        "reasoningContent": {
+                            "reasoningText": {
+                                "text": block.get("thinking", ""),
+                                "signature": block.get("signature", ""),
+                            }
                         }
                     }
-                }
-            )
+                )
         elif block["type"] == "reasoning_content":
             reasoning_content = block.get("reasoningContent", {})
-            bedrock_content.append(
-                {
-                    "reasoningContent": {
-                        "reasoningText": {
-                            "text": reasoning_content.get("text", ""),
-                            "signature": reasoning_content.get("signature", "")
+            if reasoning_content.get("signature", ""):
+                bedrock_content.append(
+                    {
+                        "reasoningContent": {
+                            "reasoningText": {
+                                "text": reasoning_content.get("text", ""),
+                                "signature": reasoning_content.get("signature", ""),
+                            }
                         }
                     }
-                }
-            )
+                )
         else:
             raise ValueError(f"Unsupported content block type:\n{block}")
     # drop empty text blocks
@@ -1182,7 +1232,7 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                             "type": "reasoning_content",
                             "reasoning_content": {
                                 "type": "text",
-                                "text": reasoning_dict.get("text")
+                                "text": reasoning_dict.get("text"),
                             },
                         }
                     )
@@ -1192,7 +1242,7 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                             "type": "reasoning_content",
                             "reasoning_content": {
                                 "type": "signature",
-                                "signature": reasoning_dict.get("signature")
+                                "signature": reasoning_dict.get("signature"),
                             },
                         }
                     )
