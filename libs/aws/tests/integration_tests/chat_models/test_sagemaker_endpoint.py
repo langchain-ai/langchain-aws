@@ -34,23 +34,27 @@ class DefaultHandler(ChatModelContentHandler):
         response_json = json.loads(output.decode())
         return AIMessage(content=response_json[0]["generated_text"])
 
+
 class ContentHandlerStream(ChatModelContentHandler):
     content_type = "application/json"
     accepts = "application/json"
 
-    def transform_input(self, prompt: Any, model_kwargs: Dict) -> bytes:
-        return json.dumps(prompt).encode("utf-8")
+    def transform_input(self, prompt, model_kwargs: Dict) -> bytes:
+        body = {"messages": prompt, "stream": True}
+        return json.dumps(body).encode("utf-8")
 
     def transform_output(self, output: bytes) -> AIMessageChunk:
+        stop_token = "[DONE]"
         try:
             response_text = output.decode("utf-8").strip()
             if not response_text:
-                return AIMessageChunk(content="")  
-            try:
-                response_json = json.loads(response_text)
-                content = response_json.get("generated_text", "")
-            except json.JSONDecodeError:
-                content = response_text
+                return AIMessageChunk(content="")
+            # Remove the "data: " prefix
+            response_text = response_text[6:]
+            response_json = json.loads(response_text)
+            if response_json["choices"][0]["delta"]["content"] != stop_token:
+                content = response_json["choices"][0]["delta"]["content"]
+
             return AIMessageChunk(content=content)
         except Exception as e:
             return AIMessageChunk(content=f"Error processing response: {str(e)}")
@@ -59,9 +63,12 @@ class ContentHandlerStream(ChatModelContentHandler):
 class MockStreamingBody:
     def __init__(self):
         self.data = [
-            b'{"generated_text": "Test chunk 1"}\n',
-            b'{"generated_text": "Test chunk 2"}\n',
-            b'{"generated_text": "Test chunk 3"}\n',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":"An"},"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":" L"},"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":"LM"},"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":" is"},"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696408,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":" an"},"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696408,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":" acronym"},"logprobs":null,"finish_reason":null}],"usage":null}',
         ]
         self.index = 0
 
@@ -94,9 +101,7 @@ class TestSageMakerStandard(ChatModelUnitTests):
     @property
     def standard_chat_model_params(self) -> dict:
         return {
-            "model_kwargs": {
-                "temperature": 0.7
-            },
+            "model_kwargs": {"temperature": 0.7},
         }
 
     @property
@@ -119,11 +124,11 @@ class TestSageMakerStandard(ChatModelUnitTests):
                 "endpoint_name": "my-endpoint",
             },
         )
-    
+
     @pytest.mark.xfail(reason="Doesn't support streaming init param.")
     def test_init_streaming(self) -> None:
         super().test_init_streaming()
-        
+
     @pytest.mark.xfail(reason="Doesn't support binding tool.")
     def test_bind_tool_pydantic(self, model: BaseChatModel) -> None:
         super().test_bind_tool_pydantic(model)
@@ -135,10 +140,11 @@ class TestSageMakerStandard(ChatModelUnitTests):
     @pytest.mark.xfail(reason="Doesn't support Langsmith parameters.")
     def test_standard_params(self, model: BaseChatModel) -> None:
         super().test_standard_params(model)
-    
+
     @pytest.mark.xfail(reason="Doesn't support Langsmith parameters.")
     def test_init_from_env(self) -> None:
         super().test_init_from_env()
+
 
 def test_sagemaker_endpoint_invoke() -> None:
     client = Mock()
@@ -170,12 +176,11 @@ def test_sagemaker_endpoint_invoke() -> None:
     assert service_response.content == "SageMaker Endpoint"
     assert isinstance(service_response, AIMessage)
 
+
 def test_sagemaker_endpoint_stream() -> None:
     client = Mock()
-    
-    stream_response = {
-        "Body": MockStreamingBody()
-    }
+
+    stream_response = {"Body": MockStreamingBody()}
     client.invoke_endpoint_with_response_stream.return_value = stream_response
 
     chat_model = ChatSagemakerEndpoint(
@@ -183,10 +188,10 @@ def test_sagemaker_endpoint_stream() -> None:
         region_name="us-west-2",
         content_handler=ContentHandlerStream(),
         streaming=True,
-        client=client
+        client=client,
     )
 
-    messages = [HumanMessage(content="Test streaming?")]
+    messages = [HumanMessage(content="What is an LLM?")]
     chunks = list(chat_model.stream(messages))
     assert len(chunks) > 0
     assert all(isinstance(chunk, AIMessageChunk) for chunk in chunks)

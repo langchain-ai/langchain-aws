@@ -77,13 +77,13 @@ class ChatLineIterator:
                     continue
             except StopIteration:
                 if self.read_pos < self.buffer.getbuffer().nbytes:
-                    remaining = self.buffer.getvalue()[self.read_pos:]
+                    remaining = self.buffer.getvalue()[self.read_pos :]
                     self.read_pos = self.buffer.getbuffer().nbytes
                     return remaining
                 raise
             if line:
                 self.read_pos += len(line)
-                return line[:-1] if line[-1] == ord('\n') else line
+                return line[:-1] if line[-1] == ord("\n") else line
             try:
                 chunk = next(self.byte_iterator)
             except StopIteration:
@@ -308,10 +308,8 @@ class ChatSagemakerEndpoint(BaseChatModel):
         return attributes
 
     def _format_messages_request(
-        self,
-        messages:  List[BaseMessage],
-        **kwargs: Any
-        ) -> Dict[str, Any]:
+        self, messages: List[BaseMessage], **kwargs: Any
+    ) -> Dict[str, Any]:
         _model_kwargs = self.model_kwargs or {}
         _model_kwargs = {**_model_kwargs, **kwargs}
         _endpoint_kwargs = self.endpoint_kwargs or {}
@@ -320,7 +318,8 @@ class ChatSagemakerEndpoint(BaseChatModel):
         invocation_params = {
             "EndpointName": self.endpoint_name,
             "Body": self.content_handler.transform_input(
-                sagemaker_messages, _model_kwargs),
+                sagemaker_messages, _model_kwargs
+            ),
             "ContentType": self.content_handler.content_type,
             "Accept": self.content_handler.accepts,
             **_endpoint_kwargs,
@@ -338,10 +337,7 @@ class ChatSagemakerEndpoint(BaseChatModel):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
-        invocation_params = self._format_messages_request(
-            messages=messages,
-            **kwargs
-            )
+        invocation_params = self._format_messages_request(messages=messages, **kwargs)
         try:
             resp = self.client.invoke_endpoint_with_response_stream(**invocation_params)
             iterator = ChatLineIterator(resp["Body"])
@@ -372,10 +368,7 @@ class ChatSagemakerEndpoint(BaseChatModel):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        invocation_params = self._format_messages_request(
-            messages=messages,
-            **kwargs
-            )
+        invocation_params = self._format_messages_request(messages=messages, **kwargs)
         try:
             response = self.client.invoke_endpoint(**invocation_params)
         except Exception as e:

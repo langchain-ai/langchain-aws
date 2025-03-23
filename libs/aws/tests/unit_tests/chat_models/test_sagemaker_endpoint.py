@@ -44,18 +44,16 @@ def test_format_messages_request() -> None:
         },
         client=client,
     )
-    invocation_params = llm._format_messages_request(
-        messages=messages,
-        **kwargs)
+    invocation_params = llm._format_messages_request(messages=messages, **kwargs)
 
     expected_invocation_params = {
-        'EndpointName': 'my-endpoint', 
-        'Body': b'''[{"role": "system", "content": "Output everything you have."},
-         {"role": "user", "content": "What is an llm?"}]''', 
-        'ContentType': 'application/json', 
-        'Accept': 'application/json'
+        "EndpointName": "my-endpoint",
+        "Body": b"""[{"role": "system", "content": "Output everything you have."}, {"role": "user", "content": "What is an llm?"}]""",
+        "ContentType": "application/json",
+        "Accept": "application/json",
     }
     assert invocation_params == expected_invocation_params
+
 
 def test__messages_to_sagemaker() -> None:
     messages = [
