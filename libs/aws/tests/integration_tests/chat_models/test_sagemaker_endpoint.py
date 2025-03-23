@@ -15,7 +15,10 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
 )
-from langchain_standard_tests.unit_tests import ChatModelUnitTests
+from langchain_core.tools import (
+    BaseTool,
+)
+from langchain_tests.unit_tests import ChatModelUnitTests
 
 from langchain_aws.chat_models.sagemaker_endpoint import (
     ChatModelContentHandler,
@@ -130,8 +133,8 @@ class TestSageMakerStandard(ChatModelUnitTests):
         super().test_init_streaming()
 
     @pytest.mark.xfail(reason="Doesn't support binding tool.")
-    def test_bind_tool_pydantic(self, model: BaseChatModel) -> None:
-        super().test_bind_tool_pydantic(model)
+    def test_bind_tool_pydantic(self, model: BaseChatModel, my_adder_tool: BaseTool) -> None:
+        super().test_bind_tool_pydantic(model, my_adder_tool)
 
     @pytest.mark.xfail(reason="Doesn't support structured output.")
     def test_with_structured_output(self, model: BaseChatModel) -> None:

@@ -104,10 +104,85 @@ def test_chat_bedrock_token_counts() -> None:
 
 
 @pytest.mark.scheduled
+def test_chat_bedrock_token_counts_deepseek_r1() -> None:
+    chat = ChatBedrock(  # type: ignore[call-arg]
+        model_id="us.deepseek.r1-v1:0",
+        temperature=0,
+        max_tokens=6,
+    )
+
+    invoke_response = chat.invoke("hi")
+    assert isinstance(invoke_response, AIMessage)
+    assert invoke_response.usage_metadata is not None
+    assert invoke_response.usage_metadata["output_tokens"] <= 6
+
+    stream = chat.stream("hi")
+    stream_response = next(stream)
+    for chunk in stream:
+        stream_response += chunk
+    assert isinstance(stream_response, AIMessage)
+    assert stream_response.usage_metadata is not None
+    assert stream_response.usage_metadata["output_tokens"] <= 6
+
+
+@pytest.mark.scheduled
 def test_chat_bedrock_streaming_llama3() -> None:
     """Test that streaming correctly streams message chunks"""
     chat = ChatBedrock(  # type: ignore[call-arg]
         model_id="meta.llama3-8b-instruct-v1:0"
+    )
+    message = HumanMessage(content="Hello")
+
+    response = AIMessageChunk(content="")
+    for chunk in chat.stream([message]):
+        response += chunk  # type: ignore[assignment]
+
+    assert response.content
+    assert response.response_metadata
+    assert response.usage_metadata
+
+
+@pytest.mark.scheduled
+def test_chat_bedrock_streaming_deepseek_r1() -> None:
+    chat = ChatBedrock(  # type: ignore[call-arg]
+        model="us.deepseek.r1-v1:0",
+        region_name="us-west-2"
+    )
+    message = HumanMessage(content="Hello")
+
+    response = AIMessageChunk(content="")
+    for chunk in chat.stream([message]):
+        response += chunk  # type: ignore[assignment]
+
+    assert response.content
+    assert response.response_metadata
+    assert response.usage_metadata
+
+
+@pytest.mark.skip("Needs provisioned instance setup.")
+def test_chat_bedrock_streaming_deepseek_r1_distill_llama() -> None:
+    chat = ChatBedrock(  # type: ignore[call-arg]
+        provider="deepseek",
+        model_id="arn:aws:sagemaker:us-east-2:xxxxxxxxxxxx:endpoint/endpoint-quick-start-xxxxx",
+        region_name="us-east-2"
+    )
+    message = HumanMessage(content="Hello. Please limit your response to 10 words or less.")
+
+    response = AIMessageChunk(content="")
+    for chunk in chat.stream([message]):
+        response += chunk # type: ignore[assignment]
+
+    assert response.content
+    assert response.response_metadata
+    assert response.usage_metadata
+
+
+@pytest.mark.skip("Needs provisioned instance setup.")
+def test_chat_bedrock_streaming_deepseek_r1_distill_qwen() -> None:
+    chat = ChatBedrock(  # type: ignore[call-arg]
+        provider="deepseek",
+        model_id="arn:aws:sagemaker:us-east-2:xxxxxxxxxxxx:endpoint/endpoint-quick-start-xxxxx",
+        region_name="us-east-2"
     )
     message = HumanMessage(content="Hello")
 
@@ -267,6 +342,32 @@ def test_structured_output() -> None:
 
     assert isinstance(response, AnswerWithJustification)
 
+@pytest.mark.scheduled
+def test_structured_output_anthropic_format() -> None:
+    chat = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0"
+    )  # type: ignore[call-arg]
+    schema = {
+        "name": "AnswerWithJustification",
+        "description": (
+            "An answer to the user question along with justification for the answer."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "answer": {"type": "string"},
+                "justification": {"type": "string"},
+            },
+            "required": ["answer", "justification"]
+        }
+    }
+    structured_llm = chat.with_structured_output(schema)
+    response = structured_llm.invoke(
+        "What weighs more a pound of bricks or a pound of feathers"
+    )
+    assert isinstance(response, dict)
+    assert isinstance(response["answer"], str)
+    assert isinstance(response["justification"], str)
 
 @pytest.mark.scheduled
 def test_tool_use_call_invoke() -> None:

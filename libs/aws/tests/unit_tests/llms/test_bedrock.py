@@ -275,6 +275,11 @@ MOCK_STREAMING_RESPONSE_MISTRAL = [
     {"chunk": {"bytes": b'{"outputs": [{"text": "you.","stop_reason": "stop"}]}'}},
 ]
 
+MOCK_STREAMING_RESPONSE_DEEPSEEK = [
+    {"chunk": {"bytes": b'{"choices": [{"text": "Thank","stop_reason": null}]}'}},
+    {"chunk": {"bytes": b'{"choices": [{"text": "you.","stop_reason": "stop"}]}'}},
+]
+
 
 async def async_gen_mock_streaming_response() -> AsyncGenerator[Dict, None]:
     for item in MOCK_STREAMING_RESPONSE:
@@ -339,6 +344,31 @@ def mistral_response():
 @pytest.fixture
 def mistral_streaming_response():
     response = dict(body=MOCK_STREAMING_RESPONSE_MISTRAL)
+    return response
+
+
+@pytest.fixture
+def deepseek_response():
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {"choices": [{"text": "This is the DeepSeek output text."}]}
+    ).encode()
+    response = dict(
+        body=body,
+        ResponseMetadata={
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "41",
+                "x-amzn-bedrock-output-token-count": "51",
+            }
+        },
+    )
+
+    return response
+
+
+@pytest.fixture
+def deepseek_streaming_response():
+    response = dict(body=MOCK_STREAMING_RESPONSE_DEEPSEEK)
     return response
 
 
@@ -428,6 +458,27 @@ def test_prepare_output_stream_for_mistral(mistral_streaming_response) -> None:
         chunk.text
         for chunk in LLMInputOutputAdapter.prepare_output_stream(
             "mistral", mistral_streaming_response
+        )
+    ]
+
+    assert results[0] == "Thank"
+    assert results[1] == "you."
+
+
+def test_prepare_output_for_deepseek(deepseek_response):
+    result = LLMInputOutputAdapter.prepare_output("deepseek", deepseek_response)
+    assert result["text"] == "This is the DeepSeek output text."
+    assert result["usage"]["prompt_tokens"] == 41
+    assert result["usage"]["completion_tokens"] == 51
+    assert result["usage"]["total_tokens"] == 92
+    assert result["stop_reason"] is None
+
+
+def test_prepare_output_stream_for_deepseek(deepseek_streaming_response) -> None:
+    results = [
+        chunk.text
+        for chunk in LLMInputOutputAdapter.prepare_output_stream(
+            "deepseek", deepseek_streaming_response
         )
     ]
 
