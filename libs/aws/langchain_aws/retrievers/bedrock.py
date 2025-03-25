@@ -1,14 +1,15 @@
 import json
 from typing import Any, Dict, List, Literal, Optional, Union
 
-import boto3
 from botocore.client import Config
-from botocore.exceptions import UnknownServiceError
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from langchain_core.utils import secret_from_env
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Annotated
+
+from langchain_aws.utils import create_aws_client
 
 FilterValue = Union[Dict[str, Any], List[Any], int, float, str, bool, None]
 Filter = Dict[str, FilterValue]
@@ -58,35 +59,71 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
 
         Args:
             knowledge_base_id: Knowledge Base ID.
+
             region_name: The aws region e.g., `us-west-2`.
-                Fallback to AWS_DEFAULT_REGION env variable or region specified in
+                Fallback to AWS_REGION/AWS_DEFAULT_REGION env variable or region specified in
                 ~/.aws/config.
+
             credentials_profile_name: The name of the profile in the ~/.aws/credentials
                 or ~/.aws/config files, which has either access keys or role information
                 specified. If not specified, the default credential profile or, if on an
                 EC2 instance, credentials from IMDS will be used.
+
+            aws_access_key_id: AWS access key id. If provided, aws_secret_access_key must
+                also be provided. If not specified, the default credential profile or, if
+                on an EC2 instance, credentials from IMDS will be used. See:
+                https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+                If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+
+            aws_secret_access_key: AWS secret_access_key. If provided, aws_access_key_id
+                must also be provided. If not specified, the default credential profile or,
+                if on an EC2 instance, credentials from IMDS will be used. See:
+                https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+                If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+
+            aws_session_token: AWS session token. If provided, aws_access_key_id and
+                aws_secret_access_key must also be provided. Not required unless using temporary
+                credentials. See:
+                https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+                If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
+
+            endpoint_url: Needed if you don't want to default to us-east-1 endpoint.
+
+            config: An optional botocore.config.Config instance to pass to the client.
+
             client: boto3 client for bedrock agent runtime.
+
             retrieval_config: Optional configuration for retrieval specified as a
                 Python object (RetrievalConfig) or as a dictionary
+
         Example:
             .. code-block:: python
                 from langchain_community.retrievers import AmazonKnowledgeBasesRetriever
-
-    retriever = AmazonKnowledgeBasesRetriever(
-        knowledge_base_id="<knowledge-base-id>",
-        retrieval_config={
-            "vectorSearchConfiguration": {
-                "numberOfResults": 4
-            }
-        },
-    )
+                retriever = AmazonKnowledgeBasesRetriever(
+                    knowledge_base_id="<knowledge-base-id>",
+                    retrieval_config={
+                        "vectorSearchConfiguration": {
+                            "numberOfResults": 4
+                        }
+                    },
+                )
     """
 
     knowledge_base_id: str
     region_name: Optional[str] = None
     credentials_profile_name: Optional[str] = None
+    aws_access_key_id: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
+    )
+    aws_secret_access_key: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
+    )
+    aws_session_token: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
+    )
     endpoint_url: Optional[str] = None
-    client: Any
+    config: Any = None
+    client: Any = None
     retrieval_config: Optional[Union[RetrievalConfig, Dict[str, Any]]] = None
     min_score_confidence: Annotated[
         Optional[float], Field(ge=0.0, le=1.0, default=None)
@@ -95,46 +132,21 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
     @model_validator(mode="before")
     @classmethod
     def create_client(cls, values: Dict[str, Any]) -> Any:
-        if values.get("client") is not None:
-            return values
-
-        try:
-            if values.get("credentials_profile_name"):
-                session = boto3.Session(profile_name=values["credentials_profile_name"])
-            else:
-                # use default credentials
-                session = boto3.Session()
-
-            client_params = {
-                "config": Config(
+        if values.get("client") is None:
+            values["client"] = create_aws_client(
+                region_name=values.get("region_name"),
+                credentials_profile_name=values.get("credentials_profile_name"),
+                aws_access_key_id=values.get("aws_access_key_id"),
+                aws_secret_access_key=values.get("aws_secret_access_key"),
+                aws_session_token=values.get("aws_session_token"),
+                endpoint_url=values.get("endpoint_url"),
+                config=values.get("config") or Config(
                     connect_timeout=120, read_timeout=120, retries={"max_attempts": 0}
-                )
-            }
-            if values.get("region_name"):
-                client_params["region_name"] = values["region_name"]
-
-            if values.get("endpoint_url"):
-                client_params["endpoint_url"] = values["endpoint_url"]
-
-            values["client"] = session.client("bedrock-agent-runtime", **client_params)
-
-            return values
-        except ImportError:
-            raise ModuleNotFoundError(
-                "Could not import boto3 python package. "
-                "Please install it with `pip install boto3`."
+                ),
+                service_name="bedrock-agent-runtime",
             )
-        except UnknownServiceError as e:
-            raise ModuleNotFoundError(
-                "Ensure that you have installed the latest boto3 package "
-                "that contains the API for `bedrock-runtime-agent`."
-            ) from e
-        except Exception as e:
-            raise ValueError(
-                "Could not load credentials to authenticate with AWS client. "
-                "Please check that credentials in the specified "
-                "profile name are valid."
-            ) from e
+
+        return values
 
     def _filter_by_score_confidence(self, docs: List[Document]) -> List[Document]:
         """

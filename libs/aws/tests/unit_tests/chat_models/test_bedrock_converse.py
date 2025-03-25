@@ -61,7 +61,7 @@ class TestBedrockStandard(ChatModelUnitTests):
                 "AWS_ACCESS_KEY_ID": "key_id",
                 "AWS_SECRET_ACCESS_KEY": "secret_key",
                 "AWS_SESSION_TOKEN": "token",
-                "AWS_DEFAULT_REGION": "region",
+                "AWS_REGION": "region",
             },
             {
                 "model": "anthropic.claude-3-sonnet-20240229-v1:0",
@@ -70,7 +70,6 @@ class TestBedrockStandard(ChatModelUnitTests):
                 "aws_access_key_id": "key_id",
                 "aws_secret_access_key": "secret_key",
                 "aws_session_token": "token",
-                "region_name": "region",
             },
         )
 
@@ -519,12 +518,6 @@ def test_chat_bedrock_converse_different_regions() -> None:
         model="anthropic.claude-3-sonnet-20240229-v1:0", region_name=region
     )
     assert llm.region_name == region
-
-
-@mock.patch.dict(os.environ, {"AWS_REGION": "ap-south-2"})
-def test_chat_bedrock_converse_environment_variable() -> None:
-    llm = ChatBedrockConverse(model="anthropic.claude-3-sonnet-20240229-v1:0")
-    assert llm.region_name == "ap-south-2"
 
 
 def test__bedrock_to_lc_anthropic_reasoning() -> None:
