@@ -33,8 +33,8 @@ from typing_extensions import Self
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
     anthropic_tokens_supported,
-    enforce_stop_tokens,
     create_aws_client,
+    enforce_stop_tokens,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
     thinking_in_params,
