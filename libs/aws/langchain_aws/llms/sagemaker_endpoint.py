@@ -15,10 +15,11 @@ from typing import (
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models.llms import LLM
 from langchain_core.outputs import GenerationChunk
-from pydantic import ConfigDict, model_validator
+from langchain_core.utils import secret_from_env
+from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
-from langchain_aws.utils import ContentHandlerBase
+from langchain_aws.utils import ContentHandlerBase, create_aws_client
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +114,7 @@ class SagemakerEndpoint(LLM):
     Args:        
 
         region_name: The aws region e.g., `us-west-2`.
-            Fallsback to AWS_DEFAULT_REGION env variable
+            Falls back to AWS_REGION/AWS_DEFAULT_REGION env variable
             or region specified in ~/.aws/config.
 
         credentials_profile_name: The name of the profile in the ~/.aws/credentials
@@ -187,6 +188,50 @@ class SagemakerEndpoint(LLM):
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     """
 
+    aws_access_key_id: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
+    )
+    """AWS access key id. 
+
+    If provided, aws_secret_access_key must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+    """
+
+    aws_secret_access_key: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
+    )
+    """AWS secret_access_key. 
+
+    If provided, aws_access_key_id must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+    """
+
+    aws_session_token: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
+    )
+    """AWS session token. 
+
+    If provided, aws_access_key_id and aws_secret_access_key must also be provided.
+    Not required unless using temporary credentials.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
+    """
+
+    config: Any = None
+    """An optional botocore.config.Config instance to pass to the client."""
+
+    endpoint_url: Optional[str] = None
+    """Needed if you don't want to default to us-east-1 endpoint"""
+
     content_handler: LLMContentHandler
     """The content handler class that provides an input and
     output transform functions to handle formats between LLM
@@ -231,36 +276,18 @@ class SagemakerEndpoint(LLM):
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Dont do anything if client provided externally"""
-        if self.client is not None:
-            return self
-
-        """Validate that AWS credentials to and python package exists in environment."""
-        try:
-            import boto3
-
-            try:
-                if self.credentials_profile_name is not None:
-                    session = boto3.Session(profile_name=self.credentials_profile_name)
-                else:
-                    # use default credentials
-                    session = boto3.Session()
-
-                self.client = session.client(
-                    "sagemaker-runtime", region_name=self.region_name
-                )
-
-            except Exception as e:
-                raise ValueError(
-                    "Could not load credentials to authenticate with AWS client. "
-                    "Please check that credentials in the specified "
-                    "profile name are valid."
-                ) from e
-
-        except ImportError:
-            raise ImportError(
-                "Could not import boto3 python package. "
-                "Please install it with `pip install boto3`."
+        if self.client is None:
+            self.client = create_aws_client(
+                region_name=self.region_name,
+                credentials_profile_name=self.credentials_profile_name,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                aws_session_token=self.aws_session_token,
+                endpoint_url=self.endpoint_url,
+                config=self.config,
+                service_name="sagemaker-runtime",
             )
+
         return self
 
     @property
