@@ -24,7 +24,7 @@ from pydantic import (
 )
 from typing_extensions import Annotated
 
-from langchain_aws.utils import get_aws_client
+from langchain_aws.utils import create_aws_client
 
 
 def clean_excerpt(excerpt: str) -> str:
@@ -418,7 +418,7 @@ class AmazonKendraRetriever(BaseRetriever):
     @classmethod
     def create_client(cls, values: Dict[str, Any]) -> Any:
         if values.get("client") is None:
-            values["client"] = get_aws_client(
+            values["client"] = create_aws_client(
                 region_name=values.get("region_name"),
                 credentials_profile_name=values.get("credentials_profile_name"),
                 aws_access_key_id=values.get("aws_access_key_id"),

@@ -34,7 +34,7 @@ from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
     anthropic_tokens_supported,
     enforce_stop_tokens,
-    get_aws_client,
+    create_aws_client,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
     thinking_in_params,
@@ -743,7 +743,7 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         # Skip creating new client if passed in constructor
         if self.client is None:
-            self.client = get_aws_client(
+            self.client = create_aws_client(
                 region_name=self.region_name,
                 credentials_profile_name=self.credentials_profile_name,
                 aws_access_key_id=self.aws_access_key_id,

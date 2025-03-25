@@ -111,17 +111,31 @@ def get_token_ids_anthropic(text: str) -> List[int]:
     return encoded_text.ids
 
 
-def get_aws_client(
-        service_name: str,
-        region_name: str = None,
-        credentials_profile_name: str = None,
-        aws_access_key_id: SecretStr = None,
-        aws_secret_access_key: SecretStr = None,
-        aws_session_token: SecretStr = None,
-        endpoint_url: str = None,
-        config: Any = None,
-    ):
-    """Helper function to validate AWS credentials and create an AWS client."""
+def create_aws_client(
+    service_name: str,
+    region_name: Optional[str] = None,
+    credentials_profile_name: Optional[str] = None,
+    aws_access_key_id: Optional[SecretStr] = None,
+    aws_secret_access_key: Optional[SecretStr] = None,
+    aws_session_token: Optional[SecretStr] = None,
+    endpoint_url: Optional[str] = None,
+    config: Any = None,
+):
+    """Helper function to validate AWS credentials and create an AWS client.
+
+    Args:
+        service_name: The name of the AWS service to create a client for.
+        region_name: AWS region name. If not provided, will try to get from environment variables.
+        credentials_profile_name: The name of the AWS credentials profile to use.
+        aws_access_key_id: AWS access key ID.
+        aws_secret_access_key: AWS secret access key.
+        aws_session_token: AWS session token.
+        endpoint_url: The complete URL to use for the constructed client.
+        config: Advanced client configuration options.
+    Returns:
+        boto3.client: An AWS service client instance.
+
+    """
 
     try:
         import boto3
@@ -133,6 +147,7 @@ def get_aws_client(
         )
 
         client_params = {
+            "service_name": service_name,
             "region_name": region_name,
             "endpoint_url": endpoint_url,
             "config": config,
@@ -141,42 +156,36 @@ def get_aws_client(
             k: v for k, v in client_params.items() if v
         }
 
-        cred_params_provided = credentials_profile_name is not None or any([
-            aws_access_key_id, aws_secret_access_key, aws_session_token
-        ])
+        needs_session = bool(
+            credentials_profile_name or
+            aws_access_key_id or
+            aws_secret_access_key or
+            aws_session_token
+        )
 
-        if cred_params_provided:
-            creds = {
-                "aws_access_key_id": aws_access_key_id,
-                "aws_secret_access_key": aws_secret_access_key,
-                "aws_session_token": aws_session_token,
+        if not needs_session:
+            return boto3.client(**client_params)
+
+        if credentials_profile_name:
+            session = boto3.Session(profile_name=credentials_profile_name)
+        elif aws_access_key_id and aws_secret_access_key:
+            session_params = {
+                "aws_access_key_id": aws_access_key_id.get_secret_value(),
+                "aws_secret_access_key": aws_secret_access_key.get_secret_value(),
             }
-
-            if creds["aws_access_key_id"] and creds["aws_secret_access_key"]:
-                session_params = {
-                    k: v.get_secret_value() for k, v in creds.items() if v
-                }
-            elif any(creds.values()):
-                raise ValueError(
-                    f"If any of aws_access_key_id, aws_secret_access_key, or aws_session_token "
-                    f"are specified, then both aws_access_key_id and aws_secret_access_key "
-                    f"must be specified. Only received "
-                    f"{[(k, v) for k, v in creds.items() if v]}."
-                )
-            elif credentials_profile_name:
-                session_params = {"profile_name": credentials_profile_name}
-            else:
-                # Use default credentials
-                session_params = {}
-
+            if aws_session_token:
+                session_params["aws_session_token"] = aws_session_token.get_secret_value()
             session = boto3.Session(**session_params)
+        else:
+            raise ValueError(
+                "If providing credentials, both aws_access_key_id and "
+                "aws_secret_access_key must be specified."
+            )
 
-            if not client_params.get("region_name") and session.region_name:
-                client_params["region_name"] = session.region_name
+        if not client_params.get("region_name") and session.region_name:
+            client_params["region_name"] = session.region_name
 
-            return session.client(service_name, **client_params)
-
-        return boto3.client(service_name, **client_params)
+        return session.client(**client_params)
 
     except UnknownServiceError as e:
         raise ModuleNotFoundError(

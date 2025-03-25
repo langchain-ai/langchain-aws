@@ -7,7 +7,7 @@ from botocore.config import Config
 from botocore.exceptions import UnknownServiceError
 from pydantic import SecretStr
 
-from langchain_aws.utils import get_aws_client
+from langchain_aws.utils import create_aws_client
 
 
 @pytest.fixture
@@ -35,13 +35,13 @@ def mock_boto3() -> Generator[Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMo
 def test_invalid_creds(creds: Dict[str, SecretStr],
                        mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
     with pytest.raises(ValueError, match="both aws_access_key_id and aws_secret_access_key must be specified"):
-        get_aws_client('bedrock-runtime', **creds)  # type: ignore
+        create_aws_client('bedrock-runtime', **creds)  # type: ignore
 
 
 def test_valid_creds(mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
     session_mock, client_mock, client_instance = mock_boto3
 
-    client = get_aws_client(
+    client = create_aws_client(
         'bedrock-runtime',
         aws_access_key_id=SecretStr('test_key'),
         aws_secret_access_key=SecretStr('test_secret')
@@ -58,7 +58,7 @@ def test_valid_creds(mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.Magi
 def test_valid_creds_with_session_token(mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
     session_mock, client_mock, client_instance = mock_boto3
 
-    client = get_aws_client(
+    client = create_aws_client(
         'bedrock-runtime',
         aws_access_key_id=SecretStr('test_key'),
         aws_secret_access_key=SecretStr('test_secret'),
@@ -77,7 +77,7 @@ def test_valid_creds_with_session_token(mock_boto3: Tuple[mock.MagicMock, mock.M
 def test_creds_from_profile_name(mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
     session_mock, client_mock, client_instance = mock_boto3
 
-    client = get_aws_client('bedrock-runtime', credentials_profile_name='test_profile')
+    client = create_aws_client('bedrock-runtime', credentials_profile_name='test_profile')
 
     session_mock.assert_called_once_with(profile_name='test_profile')
     client_mock.assert_not_called()
@@ -87,10 +87,10 @@ def test_creds_from_profile_name(mock_boto3: Tuple[mock.MagicMock, mock.MagicMoc
 def test_creds_default(mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
     session_mock, client_mock, client_instance = mock_boto3
 
-    client = get_aws_client('bedrock-runtime')
+    client = create_aws_client('bedrock-runtime')
 
     session_mock.assert_not_called()
-    client_mock.assert_called_once_with('bedrock-runtime')
+    client_mock.assert_called_once_with(service_name='bedrock-runtime')
     assert client == client_instance
 
 
@@ -110,25 +110,25 @@ def test_region_from_env_vars(
     session_mock, client_mock, client_instance = mock_boto3
 
     with mock.patch.dict(os.environ, {env_var: env_value}):
-        client = get_aws_client('bedrock-runtime')
+        client = create_aws_client('bedrock-runtime')
 
     session_mock.assert_not_called()
 
-    client_mock.assert_called_once_with('bedrock-runtime', region_name=expected_region)
+    client_mock.assert_called_once_with(service_name='bedrock-runtime', region_name=expected_region)
     assert client == client_instance
 
 
 def test_endpoint_url(mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
     session_mock, client_mock, client_instance = mock_boto3
 
-    client = get_aws_client(
+    client = create_aws_client(
         'bedrock-runtime',
         endpoint_url='https://bedrock-runtime.us-west-2.amazonaws.com'
     )
 
     session_mock.assert_not_called()
     client_mock.assert_called_once_with(
-        'bedrock-runtime',
+        service_name='bedrock-runtime',
         endpoint_url='https://bedrock-runtime.us-west-2.amazonaws.com'
     )
     assert client == client_instance
@@ -141,11 +141,11 @@ def test_with_config(mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.Magi
         max_pool_connections=10
     )
 
-    client = get_aws_client('bedrock-runtime', config=boto_config)
+    client = create_aws_client('bedrock-runtime', config=boto_config)
 
     session_mock.assert_not_called()
     client_mock.assert_called_once_with(
-        'bedrock-runtime',
+        service_name='bedrock-runtime',
         config=boto_config
     )
     assert client == client_instance
@@ -155,7 +155,7 @@ def test_endpoint_url_with_creds(mock_boto3: Tuple[mock.MagicMock, mock.MagicMoc
     session_mock, client_mock, client_instance = mock_boto3
     session_instance = session_mock.return_value
 
-    client = get_aws_client(
+    client = create_aws_client(
         'bedrock-runtime',
         aws_access_key_id=SecretStr('test_key'),
         aws_secret_access_key=SecretStr('test_secret'),
@@ -167,7 +167,7 @@ def test_endpoint_url_with_creds(mock_boto3: Tuple[mock.MagicMock, mock.MagicMoc
         aws_secret_access_key='test_secret',
     )
     session_instance.client.assert_called_once_with(
-        'bedrock-runtime',
+        service_name='bedrock-runtime',
         region_name='us-west-2',
         endpoint_url='https://bedrock-runtime.us-west-2.amazonaws.com'
     )
@@ -179,7 +179,7 @@ def test_region_with_creds(mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, moc
     session_mock, client_mock, client_instance = mock_boto3
     session_instance = session_mock.return_value
 
-    client = get_aws_client(
+    client = create_aws_client(
         'bedrock-runtime',
         aws_access_key_id=SecretStr('test_key'),
         aws_secret_access_key=SecretStr('test_secret'),
@@ -191,7 +191,7 @@ def test_region_with_creds(mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, moc
         aws_secret_access_key='test_secret',
     )
     session_instance.client.assert_called_once_with(
-        'bedrock-runtime',
+        service_name='bedrock-runtime',
         region_name='us-east-1',
     )
     client_mock.assert_not_called()
@@ -204,7 +204,7 @@ def test_session_region_fallback(mock_boto3: Tuple[mock.MagicMock, mock.MagicMoc
 
     session_instance.region_name = 'us-west-2'
 
-    client = get_aws_client(
+    client = create_aws_client(
         'bedrock-runtime',
         aws_access_key_id=SecretStr('test_key'),
         aws_secret_access_key=SecretStr('test_secret')
@@ -212,7 +212,7 @@ def test_session_region_fallback(mock_boto3: Tuple[mock.MagicMock, mock.MagicMoc
 
     session_mock.assert_called_once()
     session_instance.client.assert_called_once_with(
-        'bedrock-runtime',
+        service_name='bedrock-runtime',
         region_name='us-west-2'
     )
     assert client == client_instance
@@ -246,7 +246,7 @@ def test_bad_service_error_with_session(
     )
 
     with pytest.raises(ModuleNotFoundError, match="Ensure that you have installed the latest boto3 package"):
-        get_aws_client(
+        create_aws_client(
             'not-a-service',
             aws_access_key_id=SecretStr('test_key'),
             aws_secret_access_key=SecretStr('test_secret')
@@ -263,7 +263,7 @@ def test_bad_service_error_with_direct_client(
     )
 
     with pytest.raises(ModuleNotFoundError, match="Ensure that you have installed the latest boto3 package"):
-        get_aws_client('not-a-service')
+        create_aws_client('not-a-service')
 
 
 def test_boto3_error_with_session(mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
@@ -273,7 +273,7 @@ def test_boto3_error_with_session(mock_boto3: Tuple[mock.MagicMock, mock.MagicMo
     session_instance.client.side_effect = ValueError("Service error")
 
     with pytest.raises(ValueError, match="Error raised by service"):
-        get_aws_client(
+        create_aws_client(
             'bedrock-runtime',
             aws_access_key_id=SecretStr('test_key'),
             aws_secret_access_key=SecretStr('test_secret')
@@ -286,7 +286,7 @@ def test_boto3_error_with_direct_client(mock_boto3: Tuple[mock.MagicMock, mock.M
     client_mock.side_effect = ValueError("Service error")
 
     with pytest.raises(ValueError, match="Error raised by service"):
-        get_aws_client('bedrock-runtime')
+        create_aws_client('bedrock-runtime')
 
 
 def test_generic_error_with_session(mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock]) -> None:
@@ -296,7 +296,7 @@ def test_generic_error_with_session(mock_boto3: Tuple[mock.MagicMock, mock.Magic
     session_instance.client.side_effect = Exception("Generic error")
 
     with pytest.raises(ValueError, match="Error raised by service:\n\nGeneric error"):
-        get_aws_client(
+        create_aws_client(
             'bedrock-runtime',
             aws_access_key_id=SecretStr('test_key'),
             aws_secret_access_key=SecretStr('test_secret')
@@ -309,4 +309,4 @@ def test_generic_error_with_direct_client(mock_boto3: Tuple[mock.MagicMock, mock
     client_mock.side_effect = Exception("Generic error")
 
     with pytest.raises(ValueError, match="Error raised by service:\n\nGeneric error"):
-        get_aws_client('bedrock-runtime')
+        create_aws_client('bedrock-runtime')

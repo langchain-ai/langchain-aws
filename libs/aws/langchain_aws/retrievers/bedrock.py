@@ -9,7 +9,7 @@ from langchain_core.utils import secret_from_env
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Annotated
 
-from langchain_aws.utils import get_aws_client
+from langchain_aws.utils import create_aws_client
 
 FilterValue = Union[Dict[str, Any], List[Any], int, float, str, bool, None]
 Filter = Dict[str, FilterValue]
@@ -133,7 +133,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
     @classmethod
     def create_client(cls, values: Dict[str, Any]) -> Any:
         if values.get("client") is None:
-            values["client"] = get_aws_client(
+            values["client"] = create_aws_client(
                 region_name=values.get("region_name"),
                 credentials_profile_name=values.get("credentials_profile_name"),
                 aws_access_key_id=values.get("aws_access_key_id"),
