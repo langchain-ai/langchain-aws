@@ -1,7 +1,6 @@
 import base64
 import json
 import logging
-import os
 import re
 import warnings
 from operator import itemgetter
@@ -22,7 +21,6 @@ from typing import (
     cast,
 )
 
-import boto3
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
@@ -56,6 +54,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
+from langchain_aws.utils import create_aws_client
 
 logger = logging.getLogger(__name__)
 _BM = TypeVar("_BM", bound=BaseModel)
@@ -568,53 +567,16 @@ class ChatBedrockConverse(BaseChatModel):
 
         # Skip creating new client if passed in constructor
         if self.client is None:
-            creds = {
-                "aws_access_key_id": self.aws_access_key_id,
-                "aws_secret_access_key": self.aws_secret_access_key,
-                "aws_session_token": self.aws_session_token,
-            }
-            if creds["aws_access_key_id"] and creds["aws_secret_access_key"]:
-                session_params = {
-                    k: v.get_secret_value() for k, v in creds.items() if v
-                }
-            elif any(creds.values()):
-                raise ValueError(
-                    f"If any of aws_access_key_id, aws_secret_access_key, or "
-                    f"aws_session_token are specified then both aws_access_key_id and "
-                    f"aws_secret_access_key must be specified. Only received "
-                    f"{(k for k, v in creds.items() if v)}."
-                )
-            elif self.credentials_profile_name is not None:
-                session_params = {"profile_name": self.credentials_profile_name}
-            else:
-                # use default credentials
-                session_params = {}
-
-            try:
-                session = boto3.Session(**session_params)
-
-                self.region_name = (
-                    self.region_name
-                    or os.getenv("AWS_REGION")
-                    or os.getenv("AWS_DEFAULT_REGION")
-                    or session.region_name
-                )
-
-                client_params = {
-                    "endpoint_url": self.endpoint_url,
-                    "config": self.config,
-                    "region_name": self.region_name,
-                }
-                client_params = {k: v for k, v in client_params.items() if v}
-                self.client = session.client("bedrock-runtime", **client_params)
-            except ValueError as e:
-                raise ValueError(f"Error raised by bedrock service:\n\n{e}") from e
-            except Exception as e:
-                raise ValueError(
-                    "Could not load credentials to authenticate with AWS client. "
-                    "Please check that credentials in the specified "
-                    f"profile name are valid. Bedrock error:\n\n{e}"
-                ) from e
+            self.client = create_aws_client(
+                region_name=self.region_name,
+                credentials_profile_name=self.credentials_profile_name,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                aws_session_token=self.aws_session_token,
+                endpoint_url=self.endpoint_url,
+                config=self.config,
+                service_name="bedrock-runtime",
+            )
 
         return self
 
