@@ -1,11 +1,12 @@
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence, Union
 
-import boto3
 from langchain_core.callbacks.manager import Callbacks
 from langchain_core.documents import BaseDocumentCompressor, Document
-from langchain_core.utils import from_env
-from pydantic import ConfigDict, Field, model_validator
+from langchain_core.utils import from_env, secret_from_env
+from pydantic import ConfigDict, Field, SecretStr, model_validator
+
+from langchain_aws.utils import create_aws_client
 
 
 class BedrockRerank(BaseDocumentCompressor):
@@ -13,18 +14,68 @@ class BedrockRerank(BaseDocumentCompressor):
 
     model_arn: str
     """The ARN of the reranker model."""
-    client: Any = None
+
+    client: Any = Field(default=None, exclude=True)  #: :meta private:
     """Bedrock client to use for compressing documents."""
+
     top_n: Optional[int] = 3
     """Number of documents to return."""
-    region_name: str = Field(
-        default_factory=from_env("AWS_DEFAULT_REGION", default=None)
-    )
-    """AWS region to initialize the Bedrock client."""
+
+    region_name: Optional[str] = None
+    """The aws region, e.g., `us-west-2`. 
+
+    Falls back to AWS_REGION or AWS_DEFAULT_REGION env variable or region specified in 
+    ~/.aws/config in case it is not provided here.
+    """
+
     credentials_profile_name: Optional[str] = Field(
         default_factory=from_env("AWS_PROFILE", default=None)
     )
     """AWS profile for authentication, optional."""
+
+    aws_access_key_id: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
+    )
+    """AWS access key id. 
+
+    If provided, aws_secret_access_key must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+    """
+
+    aws_secret_access_key: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
+    )
+    """AWS secret_access_key. 
+
+    If provided, aws_access_key_id must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+    """
+
+    aws_session_token: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
+    )
+    """AWS session token. 
+
+    If provided, aws_access_key_id and aws_secret_access_key must 
+    also be provided. Not required unless using temporary credentials.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
+    """
+
+    endpoint_url: Optional[str] = Field(default=None, alias="base_url")
+    """Needed if you don't want to default to us-east-1 endpoint"""
+
+    config: Any = None
+    """An optional botocore.config.Config instance to pass to the client."""
 
     model_config = ConfigDict(
         extra="forbid",
@@ -36,14 +87,15 @@ class BedrockRerank(BaseDocumentCompressor):
     def initialize_client(cls, values: Dict[str, Any]) -> Any:
         """Initialize the AWS Bedrock client."""
         if not values.get("client"):
-            session = (
-                boto3.Session(profile_name=values.get("credentials_profile_name"))
-                if values.get("credentials_profile_name", None)
-                else boto3.Session()
-            )
-            values["client"] = session.client(
-                "bedrock-agent-runtime",
+            values["client"] = create_aws_client(
                 region_name=values.get("region_name"),
+                credentials_profile_name=values.get("credentials_profile_name"),
+                aws_access_key_id=values.get("aws_access_key_id"),
+                aws_secret_access_key=values.get("aws_secret_access_key"),
+                aws_session_token=values.get("aws_session_token"),
+                endpoint_url=values.get("endpoint_url"),
+                config=values.get("config"),
+                service_name="bedrock-agent-runtime",
             )
         return values
 
