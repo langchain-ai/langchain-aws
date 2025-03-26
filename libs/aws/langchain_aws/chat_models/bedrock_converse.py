@@ -1180,7 +1180,6 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     {
                         "type": "reasoning_content",
                         "reasoning_content": {
-                            "type": "text",
                             "text": text,
                             "signature": signature,
                         },
@@ -1193,7 +1192,6 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                         {
                             "type": "reasoning_content",
                             "reasoning_content": {
-                                "type": "text",
                                 "text": reasoning_dict.get("text"),
                             },
                         }
@@ -1203,7 +1201,6 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                         {
                             "type": "reasoning_content",
                             "reasoning_content": {
-                                "type": "signature",
                                 "signature": reasoning_dict.get("signature"),
                             },
                         }
