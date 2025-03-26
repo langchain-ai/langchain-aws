@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import os
 import warnings
 from abc import ABC
 from typing import (

@@ -602,7 +602,7 @@ class ChatBedrockConverse(BaseChatModel):
         logger.debug(f"input message to bedrock: {bedrock_messages}")
         logger.debug(f"System message to bedrock: {system}")
         params = self._converse_params(
-            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
+            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema", "function"})
         )
         logger.debug(f"Input params: {params}")
         logger.info("Using Bedrock Converse API to generate response")
@@ -622,7 +622,7 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> Iterator[ChatGenerationChunk]:
         bedrock_messages, system = _messages_to_bedrock(messages)
         params = self._converse_params(
-            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
+            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema", "function"})
         )
         response = self.client.converse_stream(
             messages=bedrock_messages, system=system, **params
