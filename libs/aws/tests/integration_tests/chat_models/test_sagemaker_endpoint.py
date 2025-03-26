@@ -42,7 +42,7 @@ class ContentHandlerStream(ChatModelContentHandler):
     content_type = "application/json"
     accepts = "application/json"
 
-    def transform_input(self, prompt, model_kwargs: Dict) -> bytes:
+    def transform_input(self, prompt: Any, model_kwargs: Dict) -> bytes:
         body = {"messages": prompt, "stream": True}
         return json.dumps(body).encode("utf-8")
 
@@ -64,7 +64,7 @@ class ContentHandlerStream(ChatModelContentHandler):
 
 
 class MockStreamingBody:
-    def __init__(self):
+    def __init__(self) -> None:
         self.data = [
             b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":"An"},"logprobs":null,"finish_reason":null}],"usage":null}',
             b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":" L"},"logprobs":null,"finish_reason":null}],"usage":null}',
@@ -75,10 +75,10 @@ class MockStreamingBody:
         ]
         self.index = 0
 
-    def __iter__(self):
+    def __iter__(self) -> Any:
         return self
 
-    def __next__(self):
+    def __next__(self) -> Any:
         if self.index < len(self.data):
             chunk = {"PayloadPart": {"Bytes": self.data[self.index]}}
             self.index += 1
