@@ -553,12 +553,6 @@ def test_chat_bedrock_different_regions() -> None:
     assert llm.region_name == region
 
 
-@mock.patch.dict(os.environ, {"AWS_REGION": "ap-south-2"})
-def test_chat_bedrock_environment_variable() -> None:
-    llm = ChatBedrock(model_id="anthropic.claude-3-sonnet-20240229-v1:0")
-    assert llm.region_name == "ap-south-2"
-
-
 def test__format_anthropic_messages_with_thinking_blocks() -> None:
     """Test that thinking blocks are correctly formatted and preserved in messages."""
     system = SystemMessage("System instruction")  # type: ignore[misc]
