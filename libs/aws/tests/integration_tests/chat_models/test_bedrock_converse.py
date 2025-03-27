@@ -197,7 +197,7 @@ def test_tool_calling_snake_case() -> None:
 
     full = None
     for chunk in chat.stream("How big are cats?"):
-        full = chunk if full is None else full + chunk  # type: ignore[operator]
+        full = chunk if full is None else full + chunk  # type: ignore[assignment]
     assert isinstance(full, AIMessageChunk)
     assert len(full.tool_calls) == 1
     tool_call = full.tool_calls[0]
