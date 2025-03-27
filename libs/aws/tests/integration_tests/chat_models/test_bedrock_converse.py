@@ -1,11 +1,11 @@
 """Standard LangChain interface tests"""
 
-from typing import Literal, Type
+from typing import Literal, Optional, Type
 
 import pytest
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, BaseMessageChunk, HumanMessage
 from langchain_core.tools import BaseTool
 from langchain_tests.integration_tests import ChatModelIntegrationTests
 from pydantic import BaseModel, Field
@@ -179,6 +179,30 @@ def test_structured_output_snake_case() -> None:
     chat = model.with_structured_output(ClassifyQuery)
     for chunk in chat.stream("How big are cats?"):
         assert isinstance(chunk, ClassifyQuery)
+
+
+def test_tool_calling_snake_case() -> None:
+    model = ChatBedrockConverse(model="anthropic.claude-3-sonnet-20240229-v1:0")
+
+    def classify_query(query_type: Literal["cat", "dog"]) -> None:
+        pass
+
+    chat = model.bind_tools([classify_query], tool_choice="any")
+    response = chat.invoke("How big are cats?")
+    assert isinstance(response, AIMessage)
+    assert len(response.tool_calls) == 1
+    tool_call = response.tool_calls[0]
+    assert tool_call["name"] == "classify_query"
+    assert tool_call["args"] == {"query_type": "cat"}
+
+    full: Optional[BaseMessageChunk] = None
+    for chunk in chat.stream("How big are cats?"):
+        full = chunk if full is None else full + chunk
+    assert isinstance(full, AIMessage)
+    assert len(full.tool_calls) == 1
+    tool_call = full.tool_calls[0]
+    assert tool_call["name"] == "classify_query"
+    assert tool_call["args"] == {"query_type": "cat"}
 
 
 def test_structured_output_streaming() -> None:
