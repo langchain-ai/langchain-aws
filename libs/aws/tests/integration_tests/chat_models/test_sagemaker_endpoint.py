@@ -190,7 +190,6 @@ def test_sagemaker_endpoint_stream() -> None:
         endpoint_name="test-endpoint",
         region_name="us-west-2",
         content_handler=ContentHandlerStream(),
-        streaming=True,
         client=client,
     )
 
