@@ -2,9 +2,9 @@
 
 from typing import Type
 
+import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_tests.integration_tests import ChatModelIntegrationTests
-import pytest
 
 from langchain_aws.chat_models.bedrock import ChatBedrock
 
