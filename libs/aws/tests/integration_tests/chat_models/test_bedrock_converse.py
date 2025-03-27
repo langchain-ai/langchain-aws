@@ -5,7 +5,7 @@ from typing import Literal, Optional, Type
 import pytest
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessageChunk, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.tools import BaseTool
 from langchain_tests.integration_tests import ChatModelIntegrationTests
 from pydantic import BaseModel, Field
@@ -195,7 +195,7 @@ def test_tool_calling_snake_case() -> None:
     assert tool_call["name"] == "classify_query"
     assert tool_call["args"] == {"query_type": "cat"}
 
-    full: Optional[BaseMessageChunk] = None
+    full: Optional[BaseMessage] = None
     for chunk in chat.stream("How big are cats?"):
         full = chunk if full is None else full + chunk
     assert isinstance(full, AIMessage)
