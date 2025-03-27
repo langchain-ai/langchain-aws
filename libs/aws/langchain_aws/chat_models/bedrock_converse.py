@@ -601,6 +601,7 @@ class ChatBedrockConverse(BaseChatModel):
         )
         logger.debug(f"Response from Bedrock: {response}")
         response_message = _parse_response(response)
+        response_message.response_metadata["model_name"] = self.model_id
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
     def _stream(
@@ -617,8 +618,16 @@ class ChatBedrockConverse(BaseChatModel):
         response = self.client.converse_stream(
             messages=bedrock_messages, system=system, **params
         )
+        added_model_name = False
         for event in response["stream"]:
             if message_chunk := _parse_stream_event(event):
+                if (
+                    hasattr(message_chunk, "usage_metadata")
+                    and message_chunk.usage_metadata
+                    and not added_model_name
+                ):
+                    message_chunk.response_metadata["model_name"] = self.model_id
+                    added_model_name = True
                 generation_chunk = ChatGenerationChunk(message=message_chunk)
                 if run_manager:
                     run_manager.on_llm_new_token(
