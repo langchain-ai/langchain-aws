@@ -551,7 +551,6 @@ def test__bedrock_to_lc_anthropic_reasoning() -> None:
         {
             "type": "reasoning_content",
             "reasoning_content": {
-                "type": "text",
                 "text": "Thought text",
                 "signature": "sig",
             },
@@ -559,23 +558,22 @@ def test__bedrock_to_lc_anthropic_reasoning() -> None:
         # Expected LC format for streaming text
         {
             "type": "reasoning_content",
-            "reasoning_content": {"type": "text", "text": "Thought text"},
+            "reasoning_content": {"text": "Thought text"},
         },
         # Expected LC format for streaming signature
         {
             "type": "reasoning_content",
-            "reasoning_content": {"type": "signature", "signature": "sig"},
+            "reasoning_content": {"signature": "sig"},
         },
         # Expected LC format for reasoning with no text
         {
             "type": "reasoning_content",
-            "reasoning_content": {"type": "text", "text": "", "signature": "sig"},
+            "reasoning_content": {"text": "", "signature": "sig"},
         },
         # Expected LC format for reasoning with no signature
         {
             "type": "reasoning_content",
             "reasoning_content": {
-                "type": "text",
                 "text": "Another reasoning block",
                 "signature": "",
             },

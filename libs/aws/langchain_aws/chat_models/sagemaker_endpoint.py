@@ -1,13 +1,7 @@
 """Sagemaker Chat Model."""
-
+import io
 import logging
-from typing import (
-    Any,
-    Dict,
-    List,
-    Mapping,
-    Optional,
-)
+from typing import Any, Dict, Iterator, List, Mapping, Optional
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import (
@@ -20,14 +14,91 @@ from langchain_core.messages import (
     SystemMessage,
     merge_message_runs,
 )
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
-from langchain_aws.utils import ContentHandlerBase, create_aws_client
+from langchain_aws.utils import (
+    ContentHandlerBase,
+    create_aws_client,
+    enforce_stop_tokens,
+)
 
 logger = logging.getLogger(__name__)
+
+
+class ChatLineIterator:
+    """
+    A helper class for parsing the byte stream input.
+
+    The output of the model will be in the following format:
+
+    b'{"outputs": [" a"]}\n'
+    b'{"outputs": [" challenging"]}\n'
+    b'{"outputs": [" problem"]}\n'
+    ...
+
+    While usually each PayloadPart event from the event stream will
+    contain a byte array with a full json, this is not guaranteed
+    and some of the json objects may be split acrossPayloadPart events.
+
+    For example:
+
+    {'PayloadPart': {'Bytes': b'{"outputs": '}}
+    {'PayloadPart': {'Bytes': b'[" problem"]}\n'}}
+
+
+    This class accounts for this by concatenating bytes written via the 'write' function
+    and then exposing a method which will return lines (ending with a '\n' character)
+    within the buffer via the 'scan_lines' function.
+    It maintains the position of the last read position to ensure
+    that previous bytes are not exposed again.
+
+    For more details see:
+    https://aws.amazon.com/blogs/machine-learning/elevating-the-generative-ai-experience-introducing-streaming-support-in-amazon-sagemaker-hosting/
+    """
+
+    def __init__(self, stream: Any) -> None:
+        self.byte_iterator = iter(stream)
+        self.buffer = io.BytesIO()
+        self.read_pos = 0
+
+    def __iter__(self) -> "ChatLineIterator":
+        return self
+
+    def __next__(self) -> Any:
+        while True:
+            self.buffer.seek(self.read_pos)
+            line = self.buffer.readline()
+            if line and line[-1] == ord("\n"):
+                self.read_pos += len(line)
+                return line[:-1]
+            try:
+                chunk = next(self.byte_iterator)
+                if "PayloadPart" in chunk:
+                    self.buffer.seek(0, io.SEEK_END)
+                    self.buffer.write(chunk["PayloadPart"]["Bytes"])
+                    continue
+            except StopIteration:
+                if self.read_pos < self.buffer.getbuffer().nbytes:
+                    remaining = self.buffer.getvalue()[self.read_pos :]
+                    self.read_pos = self.buffer.getbuffer().nbytes
+                    return remaining
+                raise
+            if line:
+                self.read_pos += len(line)
+                return line[:-1] if line[-1] == ord("\n") else line
+            try:
+                chunk = next(self.byte_iterator)
+            except StopIteration:
+                if self.read_pos < self.buffer.getbuffer().nbytes:
+                    continue
+                raise
+            if "PayloadPart" not in chunk:
+                continue
+            self.buffer.seek(0, io.SEEK_END)
+            self.buffer.write(chunk["PayloadPart"]["Bytes"])
 
 
 class ChatModelContentHandler(ContentHandlerBase[List[Dict[str, Any]], BaseMessage]):
@@ -273,14 +344,10 @@ class ChatSagemakerEndpoint(BaseChatModel):
             attributes["region_name"] = self.region_name
 
         return attributes
-        
-    def _generate(
-        self,
-        messages: List[BaseMessage],
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
-        **kwargs: Any,
-    ) -> ChatResult:
+
+    def _format_messages_request(
+        self, messages: List[BaseMessage], **kwargs: Any
+    ) -> Dict[str, Any]:
         _model_kwargs = self.model_kwargs or {}
         _model_kwargs = {**_model_kwargs, **kwargs}
         _endpoint_kwargs = self.endpoint_kwargs or {}
@@ -296,10 +363,50 @@ class ChatSagemakerEndpoint(BaseChatModel):
             **_endpoint_kwargs,
         }
 
-        # If inference_compoent_name is specified, append it to invocation_params
+        # If inference_component_name is specified, append it to invocation_params
         if self.inference_component_name:
             invocation_params["InferenceComponentName"] = self.inference_component_name
+        return invocation_params
 
+    def _stream(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> Iterator[ChatGenerationChunk]:
+        invocation_params = self._format_messages_request(messages=messages, **kwargs)
+        try:
+            resp = self.client.invoke_endpoint_with_response_stream(**invocation_params)
+            iterator = ChatLineIterator(resp["Body"])
+
+            for line in iterator:
+                text = self.content_handler.transform_output(line)
+                if stop is not None:
+                    text = enforce_stop_tokens(text, stop)
+
+                if text:
+                    generation_chunk = ChatGenerationChunk(message=text)
+                    if run_manager:
+                        run_manager.on_llm_new_token(
+                            generation_chunk.text, chunk=generation_chunk
+                        )
+                    yield generation_chunk
+
+        except Exception as e:
+            logger.exception("Error raised by streaming inference endpoint")
+            if run_manager is not None:
+                run_manager.on_llm_error(e)
+            raise e
+
+    def _generate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        invocation_params = self._format_messages_request(messages=messages, **kwargs)
         try:
             response = self.client.invoke_endpoint(**invocation_params)
         except Exception as e:

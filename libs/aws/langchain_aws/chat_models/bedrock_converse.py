@@ -602,7 +602,7 @@ class ChatBedrockConverse(BaseChatModel):
         logger.debug(f"input message to bedrock: {bedrock_messages}")
         logger.debug(f"System message to bedrock: {system}")
         params = self._converse_params(
-            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema", "function"})
+            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema", "properties"})
         )
         logger.debug(f"Input params: {params}")
         logger.info("Using Bedrock Converse API to generate response")
@@ -611,6 +611,7 @@ class ChatBedrockConverse(BaseChatModel):
         )
         logger.debug(f"Response from Bedrock: {response}")
         response_message = _parse_response(response)
+        response_message.response_metadata["model_name"] = self.model_id
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
     def _stream(
@@ -622,13 +623,21 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> Iterator[ChatGenerationChunk]:
         bedrock_messages, system = _messages_to_bedrock(messages)
         params = self._converse_params(
-            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema", "function"})
+            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema", "properties"})
         )
         response = self.client.converse_stream(
             messages=bedrock_messages, system=system, **params
         )
+        added_model_name = False
         for event in response["stream"]:
             if message_chunk := _parse_stream_event(event):
+                if (
+                    hasattr(message_chunk, "usage_metadata")
+                    and message_chunk.usage_metadata
+                    and not added_model_name
+                ):
+                    message_chunk.response_metadata["model_name"] = self.model_id
+                    added_model_name = True
                 generation_chunk = ChatGenerationChunk(message=message_chunk)
                 if run_manager:
                     run_manager.on_llm_new_token(
@@ -915,6 +924,13 @@ def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _parse_response(response: Dict[str, Any]) -> AIMessage:
+    if "output" not in response:
+        raise ValueError(
+            "No 'output' key found in the response from the Bedrock Converse API.  This usually "
+            "happens due to misconfiguration of endpoint or region, ensure that you are using valid "
+            "values for endpoint_url (on AWS this starts with bedrock-runtime), see: "
+            "https://docs.aws.amazon.com/general/latest/gr/bedrock.html"
+        )
     lc_content = _bedrock_to_lc(response.pop("output")["message"]["content"])
     tool_calls = _extract_tool_calls(lc_content)
     usage = UsageMetadata(_camel_to_snake_keys(response.pop("usage")))  # type: ignore[misc]
@@ -1190,7 +1206,6 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     {
                         "type": "reasoning_content",
                         "reasoning_content": {
-                            "type": "text",
                             "text": text,
                             "signature": signature,
                         },
@@ -1203,7 +1218,6 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                         {
                             "type": "reasoning_content",
                             "reasoning_content": {
-                                "type": "text",
                                 "text": reasoning_dict.get("text"),
                             },
                         }
@@ -1213,7 +1227,6 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                         {
                             "type": "reasoning_content",
                             "reasoning_content": {
-                                "type": "signature",
                                 "signature": reasoning_dict.get("signature"),
                             },
                         }
