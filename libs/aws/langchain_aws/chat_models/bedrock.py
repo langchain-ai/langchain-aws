@@ -622,6 +622,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 provider=provider, messages=messages, model=self._get_model()
             )
 
+        added_model_name = False
         for chunk in self._prepare_input_and_invoke_stream(
             prompt=prompt,
             system=system,
@@ -639,17 +640,22 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 yield generation_chunk
             else:
                 delta = chunk.text
+                response_metadata = None
                 if generation_info := chunk.generation_info:
                     usage_metadata = generation_info.pop("usage_metadata", None)
+                    response_metadata = generation_info
+                    if not added_model_name:
+                        response_metadata["model_name"] = self.model_id
+                        added_model_name = True
                 else:
                     usage_metadata = None
                 generation_chunk = ChatGenerationChunk(
                     message=AIMessageChunk(
                         content=delta,
-                        response_metadata=chunk.generation_info,
+                        response_metadata=response_metadata,
                         usage_metadata=usage_metadata,
                     )
-                    if chunk.generation_info is not None
+                    if response_metadata is not None
                     else AIMessageChunk(content=delta)
                 )
                 if run_manager:
@@ -738,7 +744,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         else:
             usage_metadata = None
         logger.debug(f"The message received from Bedrock: {completion}")
-        llm_output["model_id"] = self.model_id
+        llm_output["model_id"] = self.model_id  # backward-compatibility
+        llm_output["model_name"] = self.model_id
         msg = AIMessage(
             content=completion,
             additional_kwargs=llm_output,
