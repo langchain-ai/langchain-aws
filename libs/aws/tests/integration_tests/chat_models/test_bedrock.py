@@ -101,6 +101,8 @@ def test_chat_bedrock_token_counts() -> None:
     assert isinstance(stream_response, AIMessage)
     assert stream_response.usage_metadata is not None
     assert stream_response.usage_metadata["output_tokens"] <= 6
+    model_name = stream_response.response_metadata["model_name"]
+    assert model_name == "anthropic.claude-3-sonnet-20240229-v1:0"
 
 
 @pytest.mark.scheduled

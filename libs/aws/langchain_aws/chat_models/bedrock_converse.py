@@ -1,7 +1,6 @@
 import base64
 import json
 import logging
-import os
 import re
 import warnings
 from operator import itemgetter
@@ -22,7 +21,6 @@ from typing import (
     cast,
 )
 
-import boto3
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
@@ -56,6 +54,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
+from langchain_aws.utils import create_aws_client
 
 logger = logging.getLogger(__name__)
 _BM = TypeVar("_BM", bound=BaseModel)
@@ -568,53 +567,16 @@ class ChatBedrockConverse(BaseChatModel):
 
         # Skip creating new client if passed in constructor
         if self.client is None:
-            creds = {
-                "aws_access_key_id": self.aws_access_key_id,
-                "aws_secret_access_key": self.aws_secret_access_key,
-                "aws_session_token": self.aws_session_token,
-            }
-            if creds["aws_access_key_id"] and creds["aws_secret_access_key"]:
-                session_params = {
-                    k: v.get_secret_value() for k, v in creds.items() if v
-                }
-            elif any(creds.values()):
-                raise ValueError(
-                    f"If any of aws_access_key_id, aws_secret_access_key, or "
-                    f"aws_session_token are specified then both aws_access_key_id and "
-                    f"aws_secret_access_key must be specified. Only received "
-                    f"{(k for k, v in creds.items() if v)}."
-                )
-            elif self.credentials_profile_name is not None:
-                session_params = {"profile_name": self.credentials_profile_name}
-            else:
-                # use default credentials
-                session_params = {}
-
-            try:
-                session = boto3.Session(**session_params)
-
-                self.region_name = (
-                    self.region_name
-                    or os.getenv("AWS_REGION")
-                    or os.getenv("AWS_DEFAULT_REGION")
-                    or session.region_name
-                )
-
-                client_params = {
-                    "endpoint_url": self.endpoint_url,
-                    "config": self.config,
-                    "region_name": self.region_name,
-                }
-                client_params = {k: v for k, v in client_params.items() if v}
-                self.client = session.client("bedrock-runtime", **client_params)
-            except ValueError as e:
-                raise ValueError(f"Error raised by bedrock service:\n\n{e}") from e
-            except Exception as e:
-                raise ValueError(
-                    "Could not load credentials to authenticate with AWS client. "
-                    "Please check that credentials in the specified "
-                    f"profile name are valid. Bedrock error:\n\n{e}"
-                ) from e
+            self.client = create_aws_client(
+                region_name=self.region_name,
+                credentials_profile_name=self.credentials_profile_name,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                aws_session_token=self.aws_session_token,
+                endpoint_url=self.endpoint_url,
+                config=self.config,
+                service_name="bedrock-runtime",
+            )
 
         return self
 
@@ -630,7 +592,7 @@ class ChatBedrockConverse(BaseChatModel):
         logger.debug(f"input message to bedrock: {bedrock_messages}")
         logger.debug(f"System message to bedrock: {system}")
         params = self._converse_params(
-            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
+            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema", "properties"})
         )
         logger.debug(f"Input params: {params}")
         logger.info("Using Bedrock Converse API to generate response")
@@ -639,6 +601,7 @@ class ChatBedrockConverse(BaseChatModel):
         )
         logger.debug(f"Response from Bedrock: {response}")
         response_message = _parse_response(response)
+        response_message.response_metadata["model_name"] = self.model_id
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
     def _stream(
@@ -650,13 +613,21 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> Iterator[ChatGenerationChunk]:
         bedrock_messages, system = _messages_to_bedrock(messages)
         params = self._converse_params(
-            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
+            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema", "properties"})
         )
         response = self.client.converse_stream(
             messages=bedrock_messages, system=system, **params
         )
+        added_model_name = False
         for event in response["stream"]:
             if message_chunk := _parse_stream_event(event):
+                if (
+                    hasattr(message_chunk, "usage_metadata")
+                    and message_chunk.usage_metadata
+                    and not added_model_name
+                ):
+                    message_chunk.response_metadata["model_name"] = self.model_id
+                    added_model_name = True
                 generation_chunk = ChatGenerationChunk(message=message_chunk)
                 if run_manager:
                     run_manager.on_llm_new_token(
@@ -955,6 +926,13 @@ def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
     return usage
 
 def _parse_response(response: Dict[str, Any]) -> AIMessage:
+    if "output" not in response:
+        raise ValueError(
+            "No 'output' key found in the response from the Bedrock Converse API.  This usually "
+            "happens due to misconfiguration of endpoint or region, ensure that you are using valid "
+            "values for endpoint_url (on AWS this starts with bedrock-runtime), see: "
+            "https://docs.aws.amazon.com/general/latest/gr/bedrock.html"
+        )
     lc_content = _bedrock_to_lc(response.pop("output")["message"]["content"])
     tool_calls = _extract_tool_calls(lc_content)
     usage = _extract_usage_metadata(response)
@@ -1230,7 +1208,6 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     {
                         "type": "reasoning_content",
                         "reasoning_content": {
-                            "type": "text",
                             "text": text,
                             "signature": signature,
                         },
@@ -1243,7 +1220,6 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                         {
                             "type": "reasoning_content",
                             "reasoning_content": {
-                                "type": "text",
                                 "text": reasoning_dict.get("text"),
                             },
                         }
@@ -1253,7 +1229,6 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                         {
                             "type": "reasoning_content",
                             "reasoning_content": {
-                                "type": "signature",
                                 "signature": reasoning_dict.get("signature"),
                             },
                         }
