@@ -916,13 +916,22 @@ def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
     usage_dict = response.pop("usage")
     snake_key_dict = _camel_to_snake_keys(usage_dict)
 
-    input_token_details = {}
-    if "cacheReadInputTokens" in usage_dict:
-        input_token_details["cache_read"] = usage_dict.pop("cacheReadInputTokens")
-    if "cacheWriteInputTokens" in usage_dict:
-        input_token_details["cache_creation"] = usage_dict.pop("cacheWriteInputTokens")
-    snake_key_dict["input_token_details"] = input_token_details
-    usage = UsageMetadata(snake_key_dict)  # type: ignore[misc]
+    input_tokens = usage_dict.get("inputTokens", 0)
+    output_tokens = usage_dict.get("outputTokens", 0)
+    total_tokens = usage_dict.get("totalTokens", 0)
+    cache_read_input_tokens = usage_dict.get("cacheReadInputTokenCount", 0)
+    cache_write_input_tokens = usage_dict.get("cacheWriteInputTokenCount", 0)
+
+    usage = UsageMetadata(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        input_token_details={
+            "cache_read_input_tokens": cache_read_input_tokens,
+            "cache_write_input_tokens": cache_write_input_tokens,
+        },
+        total_tokens=total_tokens,
+
+    )
     return usage
 
 def _parse_response(response: Dict[str, Any]) -> AIMessage:
