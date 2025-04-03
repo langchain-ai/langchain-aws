@@ -2,13 +2,18 @@ import asyncio
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 import numpy as np
 from langchain_core.embeddings import Embeddings
 from langchain_core.runnables.config import run_in_executor
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from langchain_core.utils import secret_from_env
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
+
+from langchain_aws.utils import create_aws_client
+
+logger = logging.getLogger(__name__)
 
 
 class BedrockEmbeddings(BaseModel, Embeddings):
@@ -45,7 +50,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     client: Any = Field(default=None, exclude=True)  #: :meta private:
     """Bedrock client."""
     region_name: Optional[str] = None
-    """The aws region e.g., `us-west-2`. Fallsback to AWS_DEFAULT_REGION env variable
+    """The aws region e.g., `us-west-2`. Falls back to AWS_REGION/AWS_DEFAULT_REGION env variable
     or region specified in ~/.aws/config in case it is not provided here.
     """
 
@@ -55,6 +60,44 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+    """
+
+    aws_access_key_id: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
+    )
+    """AWS access key id. 
+
+    If provided, aws_secret_access_key must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+    """
+
+    aws_secret_access_key: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
+    )
+    """AWS secret_access_key. 
+
+    If provided, aws_access_key_id must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+    """
+
+    aws_session_token: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
+    )
+    """AWS session token. 
+
+    If provided, aws_access_key_id and aws_secret_access_key must also be provided.
+    Not required unless using temporary credentials.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
     """
 
     model_id: str = "amazon.titan-embed-text-v1"
@@ -78,63 +121,71 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         protected_namespaces=(),
     )
 
+    @property
+    def provider(self) -> str:
+        """Provider of the model."""
+        return self.model_id.split(".")[0]
+
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
-
-        if self.client is not None:
-            return self
-
-        try:
-            import boto3
-
-            if self.credentials_profile_name is not None:
-                session = boto3.Session(profile_name=self.credentials_profile_name)
-            else:
-                # use default credentials
-                session = boto3.Session()
-
-            client_params = {}
-            if self.region_name:
-                client_params["region_name"] = self.region_name
-
-            if self.endpoint_url:
-                client_params["endpoint_url"] = self.endpoint_url
-
-            if self.config:
-                client_params["config"] = self.config
-
-            self.client = session.client("bedrock-runtime", **client_params)
-
-        except ImportError:
-            raise ModuleNotFoundError(
-                "Could not import boto3 python package. "
-                "Please install it with `pip install boto3`."
+        if self.client is None:
+            self.client = create_aws_client(
+                region_name=self.region_name,
+                credentials_profile_name=self.credentials_profile_name,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                aws_session_token=self.aws_session_token,
+                endpoint_url=self.endpoint_url,
+                config=self.config,
+                service_name="bedrock-runtime",
             )
-        except Exception as e:
-            raise ValueError(
-                "Could not load credentials to authenticate with AWS client. "
-                "Please check that credentials in the specified "
-                f"profile name are valid. Bedrock error: {e}"
-            ) from e
 
         return self
 
-    def _embedding_func(self, text: str) -> List[float]:
-        """Call out to Bedrock embedding endpoint."""
+    def _embedding_func(self, text: str, input_type: str = "search_document") -> List[float]:
+        """Call out to Bedrock embedding endpoint with a single text."""
         # replace newlines, which can negatively affect performance.
         text = text.replace(os.linesep, " ")
 
-        # format input body for provider
-        provider = self.model_id.split(".")[0]
-        input_body: Dict[str, Any] = {}
-        if provider == "cohere":
-            input_body["input_type"] = "search_document"
-            input_body["texts"] = [text]
+        if self.provider == "cohere":
+            # Cohere input_type depends on usage
+            # for embedding documents use "search_document"
+            # for embedding queries for retrieval use "search_query"
+            response_body = self._invoke_model(
+                input_body={
+                    "input_type": input_type,
+                    "texts": [text],
+                }
+            )
+            return response_body.get("embeddings")[0]
         else:
             # includes common provider == "amazon"
-            input_body["inputText"] = text
+            response_body = self._invoke_model(
+                input_body={"inputText": text},
+            )
+            return response_body.get("embedding")
 
+    def _cohere_multi_embedding(self, texts: List[str]) -> List[float]:
+        """Call out to Cohere Bedrock embedding endpoint with multiple inputs."""
+        # replace newlines, which can negatively affect performance.
+        texts = [text.replace(os.linesep, " ") for text in texts]
+        results = []
+
+        # Iterate through the list of strings in batches
+        for text_batch in _batch_cohere_embedding_texts(texts):
+            batch_embeddings = self._invoke_model(
+                input_body={
+                    "input_type": "search_document",
+                    "texts": text_batch,
+                }
+            ).get("embeddings")
+
+            results += batch_embeddings
+
+        return results
+
+    def _invoke_model(self, input_body: Dict[str, Any] = {}) -> Dict[str, Any]:
         if self.model_kwargs:
             input_body = {**input_body, **self.model_kwargs}
 
@@ -149,13 +200,9 @@ class BedrockEmbeddings(BaseModel, Embeddings):
             )
 
             response_body = json.loads(response.get("body").read())
-            if provider == "cohere":
-                return response_body.get("embeddings")[0]
-            else:
-                return response_body.get("embedding")
-
+            return response_body
         except Exception as e:
-            logging.error(f"Error raised by inference endpoint: {e}")
+            logger.exception("Error raised by inference endpoint")
             raise e
 
     def _normalize_vector(self, embeddings: List[float]) -> List[float]:
@@ -173,6 +220,22 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         Returns:
             List of embeddings, one for each text.
         """
+
+        # If we are able to make use of Cohere's multiple embeddings, use that
+        if self.provider == "cohere":
+            return self._embed_cohere_documents(texts)
+        else:
+            return self._iteratively_embed_documents(texts)
+
+    def _embed_cohere_documents(self, texts: List[str]) -> List[List[float]]:
+        response = self._cohere_multi_embedding(texts)
+
+        if self.normalize:
+            response = [self._normalize_vector(embedding) for embedding in response]
+
+        return response
+
+    def _iteratively_embed_documents(self, texts: List[str]) -> List[List[float]]:
         results = []
         for text in texts:
             response = self._embedding_func(text)
@@ -193,7 +256,10 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         Returns:
             Embeddings for the text.
         """
-        embedding = self._embedding_func(text)
+        if self.provider == "cohere":
+            embedding = self._embedding_func(text, input_type="search_query")
+        else:
+            embedding = self._embedding_func(text)
 
         if self.normalize:
             return self._normalize_vector(embedding)
@@ -225,3 +291,40 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         result = await asyncio.gather(*[self.aembed_query(text) for text in texts])
 
         return list(result)
+
+
+def _batch_cohere_embedding_texts(texts: List[str]) -> Generator[List[str], None, None]:
+    """Batches a set of texts into chunks that are acceptable for the Cohere embedding API:
+    chunks of at most 96 items, or 2048 characters."""
+
+    # Cohere embeddings want a maximum of 96 items and 2048 characters
+    # See: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-embed.html
+    max_items = 96
+    max_chars = 2048
+
+    # Initialize batches
+    current_batch = []
+    current_chars = 0
+
+    for text in texts:
+        text_len = len(text)
+
+        if text_len > max_chars:
+            raise ValueError(
+                "The Cohere embedding API does not support texts longer than 2048 characters."
+            )
+
+        # Check if adding the current string would exceed the limits
+        if len(current_batch) >= max_items or current_chars + text_len > max_chars:
+            # Process the current batch if limits are exceeded
+            yield current_batch
+            # Start a new batch
+            current_batch = []
+            current_chars = 0
+
+        # Otherwise, add the string to the current batch
+        current_batch.append(text)
+        current_chars += text_len
+
+    if current_batch:
+        yield current_batch

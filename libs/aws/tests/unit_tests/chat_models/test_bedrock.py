@@ -2,8 +2,10 @@
 
 """Test chat model integration."""
 
+import os
 from contextlib import nullcontext
 from typing import Any, Callable, Dict, Literal, Type, cast
+from unittest import mock
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -112,7 +114,8 @@ def test__format_anthropic_messages_with_tool_calls() -> None:
         "blurb",
         tool_call_id="1",
     )
-    messages = [system, human, ai, tool]
+    human_2 = HumanMessage("try again.")
+    messages = [system, human, ai, tool, human_2]
     expected = (
         "fuzz",
         [
@@ -131,7 +134,8 @@ def test__format_anthropic_messages_with_tool_calls() -> None:
             {
                 "role": "user",
                 "content": [
-                    {"type": "tool_result", "content": "blurb", "tool_use_id": "1"}
+                    {"type": "tool_result", "content": "blurb", "tool_use_id": "1"},
+                    {"type": "text", "text": "try again."},
                 ],
             },
         ],
@@ -260,6 +264,47 @@ def test__format_anthropic_messages_with_tool_use_blocks_and_tool_calls() -> Non
     assert expected == actual
 
 
+def test__format_anthropic_messages_with_cache_control() -> None:
+    system = SystemMessage(
+        [
+            {
+                "type": "text",
+                "text": "fuzz",
+                "cache_control": {"type": "ephemeral"},
+            },
+            "bar",
+        ],
+    )
+    human = HumanMessage(
+        [
+            {
+                "type": "text",
+                "text": "foo",
+                "cache_control": {"type": "ephemeral"},
+            },
+        ],
+    )
+    messages = [system, human]
+    expected = (
+        "fuzzbar",
+        [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "foo",
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+            },
+        ],
+    )
+
+    actual = _format_anthropic_messages(messages)
+    assert expected == actual
+
+
 @pytest.fixture()
 def pydantic() -> Type[BaseModel]:
     class dummy_function(BaseModel):
@@ -340,12 +385,32 @@ def openai_function() -> Dict:
     }
 
 
+@pytest.fixture()
+def tool_with_empty_description() -> Dict:
+    return {
+        "name": "dummy_function",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "arg1": {"description": "foo", "type": "integer"},
+                "arg2": {
+                    "description": "one of 'bar', 'baz'",
+                    "enum": ["bar", "baz"],
+                    "type": "string",
+                },
+            },
+            "required": ["arg1", "arg2"],
+        },
+    }
+
+
 def test_convert_to_anthropic_tool(
     pydantic: Type[BaseModel],
     function: Callable,
     dummy_tool: BaseTool,
     json_schema: Dict,
     openai_function: Dict,
+    tool_with_empty_description: Dict,
 ) -> None:
     expected = {
         "name": "dummy_function",
@@ -367,6 +432,10 @@ def test_convert_to_anthropic_tool(
     for fn in (pydantic, function, dummy_tool, json_schema, expected, openai_function):
         actual = convert_to_anthropic_tool(fn)  # type: ignore[arg-type]
         assert actual == expected
+
+    expected["description"] = expected["name"]
+    actual = convert_to_anthropic_tool(tool_with_empty_description)
+    assert actual == expected
 
 
 class GetWeather(BaseModel):
@@ -428,6 +497,22 @@ def test_standard_tracing_params() -> None:
     }
 
 
+def test_beta_use_converse_api() -> None:
+    llm = ChatBedrock(model_id="nova.foo", region_name="us-west-2")  # type: ignore[call-arg]
+    assert llm.beta_use_converse_api
+
+    llm = ChatBedrock(
+        model="nova.foo", region_name="us-west-2", beta_use_converse_api=False
+    )
+    assert not llm.beta_use_converse_api
+
+    llm = ChatBedrock(model="foo", region_name="us-west-2", beta_use_converse_api=True)
+    assert llm.beta_use_converse_api
+
+    llm = ChatBedrock(model="foo", region_name="us-west-2", beta_use_converse_api=False)
+    assert not llm.beta_use_converse_api
+
+
 @pytest.mark.parametrize(
     "model_id, provider, expected_provider, expectation, region_name",
     [
@@ -466,3 +551,183 @@ def test__get_provider(model_id, provider, expected_provider, expectation, regio
     llm = ChatBedrock(model_id=model_id, provider=provider, region_name=region_name)
     with expectation:
         assert llm._get_provider() == expected_provider
+
+
+@mock.patch.dict(os.environ, {"AWS_REGION": "us-west-1"})
+def test_chat_bedrock_different_regions() -> None:
+    region = "ap-south-2"
+    llm = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0", region_name=region
+    )
+    assert llm.region_name == region
+
+
+def test__format_anthropic_messages_with_thinking_blocks() -> None:
+    """Test that thinking blocks are correctly formatted and preserved in messages."""
+    system = SystemMessage("System instruction")  # type: ignore[misc]
+    human = HumanMessage("What is the weather in NYC?")  # type: ignore[misc]
+    ai = AIMessage(  # type: ignore[misc]
+        "",
+        additional_kwargs={
+            "thinking": {
+                "text": "I need to check the weather in NYC.",
+                "signature": "SIG123",
+            }
+        },
+        tool_calls=[{"name": "get_weather", "id": "1", "args": {"city": "nyc"}}],
+    )
+    tool = ToolMessage(  # type: ignore[misc]
+        "It might be cloudy in nyc",
+        tool_call_id="1",
+    )
+
+    messages = [system, human, ai, tool]
+    expected_system, expected_messages = (
+        "System instruction",
+        [
+            {"role": "user", "content": "What is the weather in NYC?"},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "thinking",
+                        "thinking": "I need to check the weather in NYC.",
+                        "signature": "SIG123",
+                    },
+                    {
+                        "type": "tool_use",
+                        "name": "get_weather",
+                        "id": "1",
+                        "input": {"city": "nyc"},
+                    },
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "content": "It might be cloudy in nyc",
+                        "tool_use_id": "1",
+                    }
+                ],
+            },
+        ],
+    )
+
+    actual_system, actual_messages = _format_anthropic_messages(messages)
+    assert expected_system == actual_system
+    assert expected_messages == actual_messages
+
+
+def test__format_anthropic_messages_with_thinking_in_content_blocks() -> None:
+    """Test that thinking blocks in content are correctly ordered (first) in messages."""
+    system = SystemMessage("System instruction")  # type: ignore[misc]
+    human = HumanMessage("What is the weather in NYC?")  # type: ignore[misc]
+
+    # Create AIMessage with content list that has thinking block not at the start
+    ai = AIMessage(  # type: ignore[misc]
+        [
+            {"type": "text", "text": "Let me check the weather."},
+            {
+                "type": "thinking",
+                "thinking": "I should use the get_weather tool.",
+                "signature": "SIG456",
+            },
+            {
+                "type": "tool_use",
+                "id": "tool1",
+                "name": "get_weather",
+                "input": {"city": "nyc"},
+            },
+        ],
+    )
+    tool = ToolMessage("It might be cloudy in nyc", tool_call_id="tool1")  # type: ignore[misc]
+
+    messages = [system, human, ai, tool]
+    expected_system, expected_messages = (
+        "System instruction",
+        [
+            {"role": "user", "content": "What is the weather in NYC?"},
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "thinking",
+                        "thinking": "I should use the get_weather tool.",
+                        "signature": "SIG456",
+                    },
+                    {"type": "text", "text": "Let me check the weather."},
+                    {
+                        "type": "tool_use",
+                        "id": "tool1",
+                        "name": "get_weather",
+                        "input": {"city": "nyc"},
+                    },
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "content": "It might be cloudy in nyc",
+                        "tool_use_id": "tool1",
+                    }
+                ],
+            },
+        ],
+    )
+
+    actual_system, actual_messages = _format_anthropic_messages(messages)
+    assert expected_system == actual_system
+
+    # Verify thinking blocks are placed first in the content array
+    assert actual_messages[1]["content"][0]["type"] == "thinking"
+    assert expected_messages == actual_messages
+
+
+def test__format_anthropic_messages_after_tool_use_no_thinking() -> None:
+    """Test message formatting for assistant responses after tool use (which shouldn't have thinking)."""
+    system = SystemMessage("System instruction")  # type: ignore[misc]
+    human = HumanMessage("What is the weather in NYC?")  # type: ignore[misc]
+
+    # First assistant turn with thinking and tool use
+    assistant1 = AIMessage(  # type: ignore[misc]
+        "",
+        additional_kwargs={
+            "thinking": {
+                "text": "I need to check the weather in NYC.",
+                "signature": "SIG123",
+            }
+        },
+        tool_calls=[{"name": "get_weather", "id": "1", "args": {"city": "nyc"}}],
+    )
+
+    # Tool result from user
+    tool_result = ToolMessage("It might be cloudy in nyc", tool_call_id="1")  # type: ignore[misc]
+
+    # Final assistant response without thinking
+    assistant2 = AIMessage("Based on the data, it's cloudy in NYC.")  # type: ignore[misc]
+
+    messages = [system, human, assistant1, tool_result, assistant2]
+    _, actual_messages = _format_anthropic_messages(messages)
+
+    # Check that the final assistant message has no thinking blocks
+    assert len(actual_messages) == 4  # system isn't included in the array
+    assert actual_messages[3]["role"] == "assistant"
+
+    # The content should be a list with a single text block
+    assert isinstance(actual_messages[3]["content"], list)
+    assert len(actual_messages[3]["content"]) == 1
+    assert actual_messages[3]["content"][0]["type"] == "text"
+    assert (
+        actual_messages[3]["content"][0]["text"]
+        == "Based on the data, it's cloudy in NYC."
+    )
+
+    # Verify no thinking blocks in the final message
+    assert not any(
+        block.get("type") in ["thinking", "redacted_thinking"]
+        for block in actual_messages[3]["content"]
+    )

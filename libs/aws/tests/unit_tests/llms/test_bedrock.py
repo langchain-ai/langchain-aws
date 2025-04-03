@@ -275,6 +275,11 @@ MOCK_STREAMING_RESPONSE_MISTRAL = [
     {"chunk": {"bytes": b'{"outputs": [{"text": "you.","stop_reason": "stop"}]}'}},
 ]
 
+MOCK_STREAMING_RESPONSE_DEEPSEEK = [
+    {"chunk": {"bytes": b'{"choices": [{"text": "Thank","stop_reason": null}]}'}},
+    {"chunk": {"bytes": b'{"choices": [{"text": "you.","stop_reason": "stop"}]}'}},
+]
+
 
 async def async_gen_mock_streaming_response() -> AsyncGenerator[Dict, None]:
     for item in MOCK_STREAMING_RESPONSE:
@@ -339,6 +344,31 @@ def mistral_response():
 @pytest.fixture
 def mistral_streaming_response():
     response = dict(body=MOCK_STREAMING_RESPONSE_MISTRAL)
+    return response
+
+
+@pytest.fixture
+def deepseek_response():
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {"choices": [{"text": "This is the DeepSeek output text."}]}
+    ).encode()
+    response = dict(
+        body=body,
+        ResponseMetadata={
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "41",
+                "x-amzn-bedrock-output-token-count": "51",
+            }
+        },
+    )
+
+    return response
+
+
+@pytest.fixture
+def deepseek_streaming_response():
+    response = dict(body=MOCK_STREAMING_RESPONSE_DEEPSEEK)
     return response
 
 
@@ -435,6 +465,27 @@ def test_prepare_output_stream_for_mistral(mistral_streaming_response) -> None:
     assert results[1] == "you."
 
 
+def test_prepare_output_for_deepseek(deepseek_response):
+    result = LLMInputOutputAdapter.prepare_output("deepseek", deepseek_response)
+    assert result["text"] == "This is the DeepSeek output text."
+    assert result["usage"]["prompt_tokens"] == 41
+    assert result["usage"]["completion_tokens"] == 51
+    assert result["usage"]["total_tokens"] == 92
+    assert result["stop_reason"] is None
+
+
+def test_prepare_output_stream_for_deepseek(deepseek_streaming_response) -> None:
+    results = [
+        chunk.text
+        for chunk in LLMInputOutputAdapter.prepare_output_stream(
+            "deepseek", deepseek_streaming_response
+        )
+    ]
+
+    assert results[0] == "Thank"
+    assert results[1] == "you."
+
+
 def test_prepare_output_for_cohere(cohere_response):
     result = LLMInputOutputAdapter.prepare_output("cohere", cohere_response)
     assert result["text"] == "This is the Cohere output text."
@@ -481,3 +532,167 @@ def test_standard_tracing_params():
         "ls_model_type": "llm",
         "ls_model_name": "foo",
     }
+
+
+@pytest.fixture
+def anthropic_response_with_thinking():
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {
+            "content": [
+                {
+                    "type": "thinking",
+                    "thinking": "Let me think through this step by step...",
+                    "signature": "SIGNATURE123",
+                },
+                {"type": "text", "text": "This is the output text."},
+            ]
+        }
+    ).encode()
+    response = dict(
+        body=body,
+        ResponseMetadata={
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "10",
+                "x-amzn-bedrock-output-token-count": "30",
+            }
+        },
+    )
+    return response
+
+
+@pytest.fixture
+def anthropic_response_with_thinking_and_tool_use():
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {
+            "content": [
+                {
+                    "type": "thinking",
+                    "thinking": "I need to use a tool to answer this question...",
+                    "signature": "SIGNATURE456",
+                },
+                {"type": "text", "text": "Let me check that for you."},
+                {
+                    "type": "tool_use",
+                    "id": "tool_1",
+                    "name": "get_weather",
+                    "input": {"city": "nyc"},
+                },
+            ],
+            "stop_reason": "tool_use",
+        }
+    ).encode()
+    response = dict(
+        body=body,
+        ResponseMetadata={
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "15",
+                "x-amzn-bedrock-output-token-count": "40",
+            }
+        },
+    )
+    return response
+
+
+@pytest.fixture
+def anthropic_response_after_tool_use():
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {
+            "content": [
+                {"type": "text", "text": "Based on the data, it's cloudy in NYC."},
+            ],
+            "stop_reason": "end_turn",
+        }
+    ).encode()
+    response = dict(
+        body=body,
+        ResponseMetadata={
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "60",
+                "x-amzn-bedrock-output-token-count": "20",
+            }
+        },
+    )
+    return response
+
+
+def test_prepare_output_with_thinking(anthropic_response_with_thinking):
+    """Test that thinking blocks are extracted properly from the response."""
+    result = LLMInputOutputAdapter.prepare_output(
+        "anthropic", anthropic_response_with_thinking
+    )
+
+    # Check that the text content was extracted correctly
+    assert result["text"] == "This is the output text."
+
+    # Check that the thinking block was extracted correctly
+    assert "thinking" in result
+    assert isinstance(result["thinking"], dict)
+    assert result["thinking"]["text"] == "Let me think through this step by step..."
+    assert result["thinking"]["signature"] == "SIGNATURE123"
+
+    # Check that token counts are correct
+    assert result["usage"]["prompt_tokens"] == 10
+    assert result["usage"]["completion_tokens"] == 30
+    assert result["usage"]["total_tokens"] == 40
+
+
+def test_prepare_output_with_thinking_and_tool_use(
+    anthropic_response_with_thinking_and_tool_use,
+):
+    """Test that thinking blocks and tool use are 
+    extracted properly from the response."""
+    result = LLMInputOutputAdapter.prepare_output(
+        "anthropic", anthropic_response_with_thinking_and_tool_use
+    )
+
+    # Check that the text content was extracted correctly
+    assert result["text"] == "Let me check that for you."
+
+    # Check that the thinking block was extracted correctly
+    assert "thinking" in result
+    assert isinstance(result["thinking"], dict)
+    assert (
+        result["thinking"]["text"] == "I need to use a tool to answer this question..."
+    )
+    assert result["thinking"]["signature"] == "SIGNATURE456"
+
+    # Check that tool calls are extracted correctly
+    assert "tool_calls" in result
+    assert len(result["tool_calls"]) == 1
+    assert result["tool_calls"][0]["name"] == "get_weather"
+    assert result["tool_calls"][0]["args"] == {"city": "nyc"}
+    assert result["tool_calls"][0]["id"] == "tool_1"
+
+    # Check that stop reason is correctly extracted
+    assert result["stop_reason"] == "tool_use"
+
+    # Check that token counts are correct
+    assert result["usage"]["prompt_tokens"] == 15
+    assert result["usage"]["completion_tokens"] == 40
+    assert result["usage"]["total_tokens"] == 55
+
+
+def test_prepare_output_after_tool_use(anthropic_response_after_tool_use):
+    """Test that responses after tool use (which don't have thinking blocks)
+     are handled correctly."""
+    result = LLMInputOutputAdapter.prepare_output(
+        "anthropic", anthropic_response_after_tool_use
+    )
+
+    # Check that the text content was extracted correctly
+    assert result["text"] == "Based on the data, it's cloudy in NYC."
+
+    # Check that thinking is an empty dictionary when no thinking blocks are present
+    assert "thinking" in result
+    assert result["thinking"] == {}
+
+    # Check that stop reason is correctly extracted
+    assert result["stop_reason"] == "end_turn"
+
+    # Check that token counts are correct
+    assert result["usage"]["prompt_tokens"] == 60
+    assert result["usage"]["completion_tokens"] == 20
+    assert result["usage"]["total_tokens"] == 80

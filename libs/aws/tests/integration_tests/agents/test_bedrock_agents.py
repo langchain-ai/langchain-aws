@@ -4,19 +4,20 @@ import json
 import operator
 import time
 import uuid
-from typing import Any, Tuple, TypedDict, Union
+from typing import Any, Tuple, Union
 
 import boto3
 import pytest
 from langchain.agents import AgentExecutor
 from langchain_core.tools import tool
-from typing_extensions import Annotated
+from typing_extensions import Annotated, TypedDict
 
 import langchain_aws.agents.base
 from langchain_aws.agents import (
     BedrockAgentAction,
     BedrockAgentFinish,
     BedrockAgentsRunnable,
+    BedrockInlineAgentsRunnable,
 )
 
 
@@ -435,3 +436,215 @@ def test_bedrock_agent_langgraph():
             _delete_agent_role(agent_resource_role_arn=agent_resource_role_arn)
         if agent_runnable:
             _delete_agent(agent_id=agent_runnable.agent_id)
+
+
+def get_latest_agent_version(agent_id: str) -> str:
+    """
+    Gets the latest version of a Bedrock Agent by creation date.
+
+    Args:
+        agent_id (str): The ID of the Bedrock Agent
+
+    Returns:
+        dict: The latest agent version information
+
+    Raises:
+        Exception: If no agent versions are found or if API call fails
+    """
+    # Initialize Bedrock Agents client
+    client = boto3.client("bedrock-agent")
+
+    try:
+        # Get all versions of the agent
+        response = client.list_agent_versions(agentId=agent_id, maxResults=100)
+
+        if not response.get("agentVersionSummaries"):
+            raise Exception(f"No versions found for agent {agent_id}")
+
+        # Sort versions by creation date
+        versions = sorted(
+            response["agentVersionSummaries"],
+            key=lambda x: x["updatedAt"],
+            reverse=True,
+        )
+
+        # Return the most recent version
+        return str(versions[0]["agentVersion"])
+
+    except Exception as e:
+        raise Exception(f"Error getting agent versions: {str(e)}")
+
+
+@pytest.mark.skip
+def test_weather_agent_with_human_input():
+    @tool
+    def get_weather(location: str) -> str:
+        """
+        Get the weather of a location
+
+        Args:
+            location: location of the place
+        """
+        if location.lower() == "seattle":
+            return f"It is raining in {location}"
+        return f"It is hot and humid in {location}"
+
+    foundation_model = "anthropic.claude-3-sonnet-20240229-v1:0"
+    tools = [get_weather]
+    agent_resource_role_arn = None
+    agent = None
+    try:
+        agent_resource_role_arn = _create_agent_role(
+            agent_region="us-west-2", foundation_model=foundation_model
+        )
+        agent = BedrockAgentsRunnable.create_agent(
+            agent_name="weather_agent",
+            agent_resource_role_arn=agent_resource_role_arn,
+            foundation_model=foundation_model,
+            instruction="""
+                You are an agent who helps with getting weather for a given location.
+                If the user does not provide a location then ask for the location and be
+                sure to use the word 'location'. """,
+            tools=tools,
+            enable_human_input=True,
+        )
+
+        # check human input is in the action groups
+        bedrock_client = boto3.client("bedrock-agent")
+        version = get_latest_agent_version(agent.agent_id)
+        paginator = bedrock_client.get_paginator("list_agent_action_groups")
+        has_human_input_tool = False
+        for page in paginator.paginate(
+            agentId=agent.agent_id,
+            agentVersion=version,
+            PaginationConfig={"PageSize": 10},
+        ):
+            for summary in page["actionGroupSummaries"]:
+                if (
+                    str(summary["actionGroupName"]).lower() == "userinputaction"
+                    and str(summary["actionGroupState"]).lower() == "enabled"
+                ):
+                    has_human_input_tool = True
+                    break
+
+        assert has_human_input_tool
+    except Exception as ex:
+        raise ex
+    finally:
+        if agent_resource_role_arn:
+            _delete_agent_role(agent_resource_role_arn)
+        if agent:
+            _delete_agent(agent.agent_id)
+
+
+@pytest.mark.skip
+def test_weather_agent_with_code_interpreter():
+    @tool
+    def get_weather(location: str) -> str:
+        """
+        Get the weather of a location
+
+        Args:
+            location: location of the place
+        """
+        if location.lower() == "seattle":
+            return f"It is raining in {location}"
+        return f"It is hot and humid in {location}"
+
+    foundation_model = "anthropic.claude-3-sonnet-20240229-v1:0"
+    tools = [get_weather]
+    agent_resource_role_arn = None
+    agent = None
+    try:
+        agent_resource_role_arn = _create_agent_role(
+            agent_region="us-west-2", foundation_model=foundation_model
+        )
+        agent = BedrockAgentsRunnable.create_agent(
+            agent_name="weather_agent",
+            agent_resource_role_arn=agent_resource_role_arn,
+            foundation_model=foundation_model,
+            instruction="""
+                You are an agent who helps with getting weather for a given location.
+                If the user does not provide a location then ask for the location and be
+                sure to use the word 'location'. """,
+            tools=tools,
+            enable_code_interpreter=True,
+        )
+
+        # check human input is in the action groups
+        bedrock_client = boto3.client("bedrock-agent")
+        version = get_latest_agent_version(agent.agent_id)
+        paginator = bedrock_client.get_paginator("list_agent_action_groups")
+        has_code_interpreter = False
+        for page in paginator.paginate(
+            agentId=agent.agent_id,
+            agentVersion=version,
+            PaginationConfig={"PageSize": 10},
+        ):
+            for summary in page["actionGroupSummaries"]:
+                if (
+                    str(summary["actionGroupName"]).lower() == "codeinterpreteraction"
+                    and str(summary["actionGroupState"]).lower() == "enabled"
+                ):
+                    has_code_interpreter = True
+                    break
+
+        assert has_code_interpreter
+    except Exception as ex:
+        raise ex
+    finally:
+        if agent_resource_role_arn:
+            _delete_agent_role(agent_resource_role_arn)
+        if agent:
+            _delete_agent(agent.agent_id)
+
+
+@pytest.mark.skip
+def test_inline_agent():
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    @tool
+    def get_weather(location: str = "") -> str:
+        """
+        Get the weather of a location
+
+        Args:
+            location: location of the place
+        """
+        if location.lower() == "seattle":
+            return f"It is raining in {location}"
+        return f"It is hot and humid in {location}"
+
+    foundation_model = "anthropic.claude-3-sonnet-20240229-v1:0"
+    instructions = (
+        "You are an agent who helps with getting weather for a given location"
+    )
+    tools = [get_weather]
+    try:
+        runnable = BedrockInlineAgentsRunnable.create(region_name="us-west-2")
+        inline_agent_config = {
+            "foundation_model": foundation_model,
+            "instruction": instructions,
+            "tools": tools,
+            "enable_trace": True,
+        }
+        messages = [HumanMessage(content="What is the weather in Seattle?")]
+        output = runnable.invoke(messages, inline_agent_config=inline_agent_config)
+
+        # Check if the agent called for tool invocation
+        assert isinstance(output, AIMessage)
+        assert hasattr(output, "tool_calls")
+        assert len(output.tool_calls) > 0
+
+        # Check the tool call details
+        tool_call = output.tool_calls[0]
+        assert tool_call["name"] == "get_weather"
+        assert tool_call["args"]["location"] == "Seattle"
+
+        # Check additional metadata
+        assert "session_id" in output.additional_kwargs
+        assert "trace_log" in output.additional_kwargs
+        assert "roc_log" in output.additional_kwargs
+
+    except Exception as ex:
+        raise ex

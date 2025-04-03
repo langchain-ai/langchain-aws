@@ -14,13 +14,17 @@ from typing import (
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
+from langchain_core.utils import secret_from_env
 from pydantic import (
     BaseModel,
     Field,
+    SecretStr,
     field_validator,
     model_validator,
 )
 from typing_extensions import Annotated
+
+from langchain_aws.utils import create_aws_client
 
 
 def clean_excerpt(excerpt: str) -> str:
@@ -330,13 +334,35 @@ class AmazonKendraRetriever(BaseRetriever):
         index_id: Kendra index id
 
         region_name: The aws region e.g., `us-west-2`.
-            Fallsback to AWS_DEFAULT_REGION env variable
+            Falls back to AWS_REGION/AWS_DEFAULT_REGION env variable
             or region specified in ~/.aws/config.
 
         credentials_profile_name: The name of the profile in the ~/.aws/credentials
             or ~/.aws/config files, which has either access keys or role information
             specified. If not specified, the default credential profile or, if on an
             EC2 instance, credentials from IMDS will be used.
+
+        aws_access_key_id: AWS access key id. If provided, aws_secret_access_key must
+            also be provided. If not specified, the default credential profile or, if
+            on an EC2 instance, credentials from IMDS will be used. See:
+            https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+            If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+
+        aws_secret_access_key: AWS secret_access_key. If provided, aws_access_key_id
+            must also be provided. If not specified, the default credential profile or,
+            if on an EC2 instance, credentials from IMDS will be used. See:
+            https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+            If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+
+        aws_session_token: AWS session token. If provided, aws_access_key_id and
+            aws_secret_access_key must also be provided. Not required unless using temporary
+            credentials. See:
+            https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+            If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
+
+        endpoint_url: Needed if you don't want to default to us-east-1 endpoint.
+
+        config: An optional botocore.config.Config instance to pass to the client.
 
         top_k: No of results to return
 
@@ -364,10 +390,21 @@ class AmazonKendraRetriever(BaseRetriever):
     index_id: str
     region_name: Optional[str] = None
     credentials_profile_name: Optional[str] = None
+    aws_access_key_id: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
+    )
+    aws_secret_access_key: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
+    )
+    aws_session_token: Optional[SecretStr] = Field(
+        default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
+    )
+    endpoint_url: Optional[str] = None
+    config: Any = None
+    client: Any = None
     top_k: int = 3
     attribute_filter: Optional[Dict] = None
     page_content_formatter: Callable[[ResultItem], str] = combined_text
-    client: Any
     user_context: Optional[Dict] = None
     min_score_confidence: Annotated[Optional[float], Field(ge=0.0, le=1.0)]
 
@@ -380,36 +417,19 @@ class AmazonKendraRetriever(BaseRetriever):
     @model_validator(mode="before")
     @classmethod
     def create_client(cls, values: Dict[str, Any]) -> Any:
-        if values.get("client") is not None:
-            return values
-
-        try:
-            import boto3
-
-            if values.get("credentials_profile_name"):
-                session = boto3.Session(profile_name=values["credentials_profile_name"])
-            else:
-                # use default credentials
-                session = boto3.Session()
-
-            client_params = {}
-            if values.get("region_name"):
-                client_params["region_name"] = values["region_name"]
-
-            values["client"] = session.client("kendra", **client_params)
-
-            return values
-        except ImportError:
-            raise ModuleNotFoundError(
-                "Could not import boto3 python package. "
-                "Please install it with `pip install boto3`."
+        if values.get("client") is None:
+            values["client"] = create_aws_client(
+                region_name=values.get("region_name"),
+                credentials_profile_name=values.get("credentials_profile_name"),
+                aws_access_key_id=values.get("aws_access_key_id"),
+                aws_secret_access_key=values.get("aws_secret_access_key"),
+                aws_session_token=values.get("aws_session_token"),
+                endpoint_url=values.get("endpoint_url"),
+                config=values.get("config"),
+                service_name="kendra",
             )
-        except Exception as e:
-            raise ValueError(
-                "Could not load credentials to authenticate with AWS client. "
-                "Please check that credentials in the specified "
-                "profile name are valid."
-            ) from e
+
+        return values
 
     def _kendra_query(self, query: str) -> Sequence[ResultItem]:
         kendra_kwargs = {

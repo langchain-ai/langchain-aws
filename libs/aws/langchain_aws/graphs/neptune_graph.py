@@ -2,6 +2,52 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from pydantic import SecretStr
+
+from langchain_aws.utils import create_aws_client
+
+
+def _format_triples(triples: List[dict]) -> List[str]:
+    triple_template = "(:`{a}`)-[:`{e}`]->(:`{b}`)"
+    triple_schema = []
+    for t in triples:
+        triple = triple_template.format(a=t["~from"], e=t["~type"], b=t["~to"])
+        triple_schema.append(triple)
+
+    return triple_schema
+
+
+def _format_node_properties(n_labels: dict) -> List:
+    node_properties = []
+
+    for label, props_item in n_labels.items():
+        props = props_item["properties"]
+        np = {
+            "properties": [
+                {"property": k, "type": v["datatypes"][0]} for k, v in props.items()
+            ],
+            "labels": label,
+        }
+        node_properties.append(np)
+
+    return node_properties
+
+
+def _format_edge_properties(e_labels: dict) -> List:
+    edge_properties = []
+
+    for label, props_item in e_labels.items():
+        props = props_item["properties"]
+        np = {
+            "type": label,
+            "properties": [
+                {"property": k, "type": v["datatypes"][0]} for k, v in props.items()
+            ],
+        }
+        edge_properties.append(np)
+
+    return edge_properties
+
 
 class NeptuneQueryException(Exception):
     """Exception for the Neptune queries."""
@@ -171,47 +217,29 @@ class NeptuneAnalyticsGraph(BaseNeptuneGraph):
         client: Any = None,
         credentials_profile_name: Optional[str] = None,
         region_name: Optional[str] = None,
+        aws_access_key_id: Optional[SecretStr] = None,
+        aws_secret_access_key: Optional[SecretStr] = None,
+        aws_session_token: Optional[SecretStr] = None,
+        endpoint_url: Optional[str] = None,
+        config: Any = None,
     ) -> None:
         """Create a new Neptune Analytics graph wrapper instance."""
 
-        try:
-            if client is not None:
-                self.client = client
-            else:
-                import boto3
+        self.graph_identifier = graph_identifier
 
-                if credentials_profile_name is not None:
-                    session = boto3.Session(profile_name=credentials_profile_name)
-                else:
-                    # use default credentials
-                    session = boto3.Session()
-
-                self.graph_identifier = graph_identifier
-
-                if region_name:
-                    self.client = session.client(
-                        "neptune-graph", region_name=region_name
-                    )
-                else:
-                    self.client = session.client("neptune-graph")
-
-        except ImportError:
-            raise ModuleNotFoundError(
-                "Could not import boto3 python package. "
-                "Please install it with `pip install boto3`."
+        if client is not None:
+            self.client = client
+        else:
+            self.client = create_aws_client(
+                region_name=region_name,
+                credentials_profile_name=credentials_profile_name,
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
+                aws_session_token=aws_session_token,
+                endpoint_url=endpoint_url,
+                config=config,
+                service_name="neptune-graph",
             )
-        except Exception as e:
-            if type(e).__name__ == "UnknownServiceError":
-                raise ModuleNotFoundError(
-                    "NeptuneGraph requires a boto3 version 1.34.40 or greater."
-                    "Please install it with `pip install -U boto3`."
-                ) from e
-            else:
-                raise ValueError(
-                    "Could not load credentials to authenticate with AWS client. "
-                    "Please check that credentials in the specified "
-                    "profile name are valid."
-                ) from e
 
         try:
             self._refresh_schema()
@@ -266,6 +294,31 @@ class NeptuneAnalyticsGraph(BaseNeptuneGraph):
         else:
             return summary
 
+    def _refresh_schema(self) -> None:
+        """
+        Refreshes the Neptune graph schema information.
+        """
+        pg_schema_query = """
+        CALL neptune.graph.pg_schema() 
+        YIELD schema
+        RETURN schema
+        """
+
+        data = self.query(pg_schema_query)
+        raw_schema = data[0]["schema"]
+        triple_schema = _format_triples(raw_schema["labelTriples"])
+        node_properties = _format_node_properties(raw_schema["nodeLabelDetails"])
+        edge_properties = _format_edge_properties(raw_schema["edgeLabelDetails"])
+
+        self.schema = f"""
+        Node properties are the following:
+        {node_properties}
+        Relationship properties are the following:
+        {edge_properties}
+        The relationships are the following:
+        {triple_schema}
+        """
+
 
 class NeptuneGraph(BaseNeptuneGraph):
     """Neptune wrapper for graph operations.
@@ -309,6 +362,11 @@ class NeptuneGraph(BaseNeptuneGraph):
         credentials_profile_name: Optional[str] = None,
         region_name: Optional[str] = None,
         sign: bool = True,
+        aws_access_key_id: Optional[SecretStr] = None,
+        aws_secret_access_key: Optional[SecretStr] = None,
+        aws_session_token: Optional[SecretStr] = None,
+        endpoint_url: Optional[str] = None,
+        config: Any = None,
     ) -> None:
         """Create a new Neptune graph wrapper instance."""
 
@@ -318,31 +376,56 @@ class NeptuneGraph(BaseNeptuneGraph):
             else:
                 import boto3
 
-                if credentials_profile_name is not None:
-                    session = boto3.Session(profile_name=credentials_profile_name)
-                else:
-                    # use default credentials
+                any_creds = bool(
+                    credentials_profile_name or
+                    aws_access_key_id or
+                    aws_secret_access_key or
+                    aws_session_token
+                )
+
+                if not any_creds:
                     session = boto3.Session()
+                elif credentials_profile_name:
+                    session = boto3.Session(profile_name=credentials_profile_name)
+                elif aws_access_key_id and aws_secret_access_key:
+                    session_params = {
+                        "aws_access_key_id": aws_access_key_id.get_secret_value(),
+                        "aws_secret_access_key": aws_secret_access_key.get_secret_value(),
+                    }
+                    if aws_session_token:
+                        session_params["aws_session_token"] = aws_session_token.get_secret_value()
+                    session = boto3.Session(**session_params)
+                else:
+                    raise ValueError(
+                        "If providing credentials, both aws_access_key_id and "
+                        "aws_secret_access_key must be specified."
+                    )
 
                 client_params = {}
                 if region_name:
                     client_params["region_name"] = region_name
 
-                protocol = "https" if use_https else "http"
-
-                client_params["endpoint_url"] = f"{protocol}://{host}:{port}"
-
-                if sign:
-                    self.client = session.client("neptunedata", **client_params)
+                if endpoint_url is not None:
+                    client_params["endpoint_url"] = endpoint_url
                 else:
+                    protocol = "https" if use_https else "http"
+                    client_params["endpoint_url"] = f"{protocol}://{host}:{port}"
+
+                if config is not None:
+                    client_params["config"] = config
+
+                if not sign:
                     from botocore import UNSIGNED
                     from botocore.config import Config
 
-                    self.client = session.client(
-                        "neptunedata",
-                        **client_params,
-                        config=Config(signature_version=UNSIGNED),
-                    )
+                    if "config" in client_params:
+                        client_params["config"] = client_params["config"].merge(
+                            Config(signature_version=UNSIGNED)
+                        )
+                    else:
+                        client_params["config"] = Config(signature_version=UNSIGNED)
+
+                self.client = session.client("neptunedata", **client_params)
 
         except ImportError:
             raise ModuleNotFoundError(

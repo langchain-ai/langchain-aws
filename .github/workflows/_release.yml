@@ -11,8 +11,10 @@ on:
     inputs:
       working-directory:
         required: true
-        type: string
-        default: 'libs/aws'
+        type: choice
+        options:
+          - libs/aws
+          - libs/langgraph-checkpoint-aws
       dangerous-nonmaster-release:
         required: false
         type: boolean
@@ -194,8 +196,11 @@ jobs:
           unset AWS_ACCESS_KEY_ID
           unset AWS_SECRET_ACCESS_KEY
           unset AWS_REGION
+          unset AWS_DEFAULT_REGION
           # Verify they are removed
           if [ -z "$AWS_ACCESS_KEY_ID" ]; then echo "AWS_ACCESS_KEY_ID is unset"; else echo "AWS_ACCESS_KEY_ID is still set"; fi
+          if [ -z "$AWS_REGION" ]; then echo "AWS_REGION is unset"; else echo "AWS_REGION is still set"; fi
+          if [ -z "$AWS_DEFAULT_REGION" ]; then echo "AWS_DEFAULT_REGION is unset"; else echo "AWS_DEFAULT_REGION is still set"; fi
           
           make tests
         working-directory: ${{ inputs.working-directory }}
@@ -277,9 +282,9 @@ jobs:
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "dist/*"
+          artifacts: "${{ inputs.working-directory }}/dist/*"
           token: ${{ secrets.GITHUB_TOKEN }}
           draft: false
           generateReleaseNotes: true
-          tag: v${{ needs.build.outputs.version }}
+          tag: ${{ needs.build.outputs.pkg-name }}==${{ needs.build.outputs.version }}
           commit: ${{ github.sha }}

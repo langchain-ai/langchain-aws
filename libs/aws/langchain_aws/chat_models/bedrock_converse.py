@@ -1,7 +1,8 @@
 import base64
 import json
-import os
+import logging
 import re
+import warnings
 from operator import itemgetter
 from typing import (
     Any,
@@ -10,6 +11,7 @@ from typing import (
     Iterator,
     List,
     Literal,
+    Mapping,
     Optional,
     Sequence,
     Tuple,
@@ -19,8 +21,8 @@ from typing import (
     cast,
 )
 
-import boto3
 from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.language_models.chat_models import LangSmithParams
 from langchain_core.messages import (
@@ -52,8 +54,11 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
+from langchain_aws.utils import create_aws_client
 
+logger = logging.getLogger(__name__)
 _BM = TypeVar("_BM", bound=BaseModel)
+
 _DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
 
 
@@ -210,6 +215,44 @@ class ChatBedrockConverse(BaseChatModel):
 
         See ``ChatBedrockConverse.with_structured_output()`` for more.
 
+    Extended thinking:
+        Some models, such as Claude 3.7 Sonnet, support an extended thinking
+        feature that outputs the step-by-step reasoning process that led to an
+        answer.
+
+        To use it, specify the ``thinking`` parameter when initializing
+        ``ChatBedrockConverse`` as shown below.
+
+        You will need to specify a token budget to use this feature. See usage example:
+
+        .. code-block:: python
+
+            from langchain_aws import ChatBedrockConverse
+
+            thinking_params= {
+                "thinking": {
+                    "type": "enabled",
+                    "budget_tokens": 2000
+                }
+            }
+
+            llm = ChatBedrockConverse(
+                model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+                max_tokens=5000,
+                region_name="us-west-2",
+                additional_model_request_fields=thinking_params,
+            )
+
+            response = llm.invoke("What is the cube root of 50.653?")
+            print(response.content)
+
+        .. code-block:: python
+
+            [
+                {'type': 'reasoning_content', 'reasoning_content': {'type': 'text', 'text': 'I need to calculate the cube root of... ', 'signature': '...'}},
+                {'type': 'text', 'text': 'The cube root of 50.653 is...'}
+            ]
+
     Image input:
         .. code-block:: python
 
@@ -299,8 +342,8 @@ class ChatBedrockConverse(BaseChatModel):
     region_name: Optional[str] = None
     """The aws region, e.g., `us-west-2`. 
     
-    Falls back to AWS_DEFAULT_REGION env variable or region specified in ~/.aws/config 
-    in case it is not provided here.
+    Falls back to AWS_REGION or AWS_DEFAULT_REGION env variable or region specified in 
+    ~/.aws/config in case it is not provided here.
     """
 
     credentials_profile_name: Optional[str] = Field(default=None, exclude=True)
@@ -389,8 +432,22 @@ class ChatBedrockConverse(BaseChatModel):
     """Which types of tool_choice values the model supports.
     
     Inferred if not specified. Inferred as ('auto', 'any', 'tool') if a 'claude-3' 
-    model is used, ('auto', 'any') if a 'mistral-large' model is used, empty otherwise.
+    model is used, ('auto', 'any') if a 'mistral-large' model is used, 
+    ('auto') if a 'nova' model is used, empty otherwise.
     """
+
+    performance_config: Optional[Mapping[str, Any]] = Field(
+        default=None,
+        description="""Performance configuration settings for latency optimization.
+        
+        Example:
+            performance_config={'latency': 'optimized'}
+        If not provided, defaults to standard latency.
+        """,
+    )
+
+    request_metadata: Optional[Dict[str, str]] = None
+    """Key-Value pairs that you can use to filter invocation logs."""
 
     model_config = ConfigDict(
         extra="forbid",
@@ -402,81 +459,124 @@ class ChatBedrockConverse(BaseChatModel):
     def set_disable_streaming(cls, values: Dict) -> Any:
         model_id = values.get("model_id", values.get("model"))
         model_parts = model_id.split(".")
-        values["provider"] = values.get("provider") or (
+
+        # Extract provider from the model_id
+        # (e.g., "amazon", "anthropic", "ai21", "meta", "mistral")
+        provider = values.get("provider") or (
             model_parts[-2] if len(model_parts) > 1 else model_parts[0]
         )
+        values["provider"] = provider
 
-        # As of 09/15/24 Anthropic and Cohere models support streamed tool calling
-        if "disable_streaming" not in values:
-            values["disable_streaming"] = (
-                False
-                if values["provider"] in ["anthropic", "cohere"]
-                else "tool_calling"
+        model_id_lower = model_id.lower()
+
+        # Determine if the model supports plain-text streaming (ConverseStream)
+        # Here we check based on the updated AWS documentation.
+        if (
+            # AI21 Jamba 1.5 models
+            (provider == "ai21" and "jamba-1-5" in model_id_lower)
+            or
+            # Some Amazon Nova models
+            (
+                provider == "amazon"
+                and any(
+                    x in model_id_lower for x in ["nova-lite", "nova-micro", "nova-pro"]
+                )
             )
+            or
+            # Anthropic Claude 3 and newer models
+            (provider == "anthropic" and "claude-3" in model_id_lower)
+            or
+            # Cohere Command R models
+            (provider == "cohere" and "command-r" in model_id_lower)
+        ):
+            streaming_support = True
+        elif (
+            # AI21 Jamba-Instruct model
+            (provider == "ai21" and "jamba-instruct" in model_id_lower)
+            or
+            # Amazon Titan Text models
+            (provider == "amazon" and "titan-text" in model_id_lower)
+            or
+            # Anthropic older Claude models (Claude 2, Claude 2.1, Claude Instant)
+            (
+                provider == "anthropic"
+                and any(x in model_id_lower for x in ["claude-v2", "claude-instant"])
+            )
+            or
+            # Cohere Command (non-R) models
+            (
+                provider == "cohere"
+                and "command" in model_id_lower
+                and "command-r" not in model_id_lower
+            )
+            or
+            # All Meta Llama models
+            (provider == "meta")
+            or
+            # All Mistral models
+            (provider == "mistral") or
+            # DeepSeek-R1 models
+            (provider == "deepseek" and "r1" in model_id_lower)
+        ):
+            streaming_support = "no_tools"
+        else:
+            streaming_support = False
+
+        # Set the disable_streaming flag accordingly:
+        # - If streaming is supported (plain streaming),
+        #       we want streaming enabled (i.e. disable_streaming == False).
+        # - If the model supports streaming only in non-tool mode ("no_tools"),
+        #       then we must force disable streaming when tools are used.
+        # - Otherwise, if streaming is not supported, we set disable_streaming to True.
+        if "disable_streaming" not in values:
+            if not streaming_support:
+                values["disable_streaming"] = True
+            elif streaming_support == "no_tools":
+                values["disable_streaming"] = "tool_calling"
+            else:
+                values["disable_streaming"] = False
+
         return values
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
 
-        # As of 08/05/24 only claude-3 and mistral-large models support tool choice:
+        # As of 12/03/24:
+        # only claude-3, mistral-large, and nova models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
         if self.supports_tool_choice_values is None:
             if "claude-3" in self.model_id:
-                self.supports_tool_choice_values = ("auto", "any", "tool")
+                # Tool choice not supported when thinking is enabled
+                thinking_params = (self.additional_model_request_fields or {}).get(
+                    "thinking", {}
+                )
+                if (
+                    "claude-3-7-sonnet" in self.model_id
+                    and thinking_params.get("type") == "enabled"
+                ):
+                    self.supports_tool_choice_values = ()
+                else:
+                    self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "mistral-large" in self.model_id:
                 self.supports_tool_choice_values = ("auto", "any")
+            elif "nova" in self.model_id:
+                self.supports_tool_choice_values = ("auto", "any", "tool")
             else:
                 self.supports_tool_choice_values = ()
 
         # Skip creating new client if passed in constructor
         if self.client is None:
-            creds = {
-                "aws_access_key_id": self.aws_access_key_id,
-                "aws_secret_access_key": self.aws_secret_access_key,
-                "aws_session_token": self.aws_session_token,
-            }
-            if creds["aws_access_key_id"] and creds["aws_secret_access_key"]:
-                session_params = {
-                    k: v.get_secret_value() for k, v in creds.items() if v
-                }
-            elif any(creds.values()):
-                raise ValueError(
-                    f"If any of aws_access_key_id, aws_secret_access_key, or "
-                    f"aws_session_token are specified then both aws_access_key_id and "
-                    f"aws_secret_access_key must be specified. Only received "
-                    f"{(k for k, v in creds.items() if v)}."
-                )
-            elif self.credentials_profile_name is not None:
-                session_params = {"profile_name": self.credentials_profile_name}
-            else:
-                # use default credentials
-                session_params = {}
-
-            try:
-                session = boto3.Session(**session_params)
-
-                self.region_name = (
-                    self.region_name
-                    or os.getenv("AWS_DEFAULT_REGION")
-                    or session.region_name
-                )
-
-                client_params = {
-                    "endpoint_url": self.endpoint_url,
-                    "config": self.config,
-                    "region_name": self.region_name,
-                }
-                client_params = {k: v for k, v in client_params.items() if v}
-                self.client = session.client("bedrock-runtime", **client_params)
-            except ValueError as e:
-                raise ValueError(f"Error raised by bedrock service:\n\n{e}") from e
-            except Exception as e:
-                raise ValueError(
-                    "Could not load credentials to authenticate with AWS client. "
-                    "Please check that credentials in the specified "
-                    f"profile name are valid. Bedrock error:\n\n{e}"
-                ) from e
+            self.client = create_aws_client(
+                region_name=self.region_name,
+                credentials_profile_name=self.credentials_profile_name,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                aws_session_token=self.aws_session_token,
+                endpoint_url=self.endpoint_url,
+                config=self.config,
+                service_name="bedrock-runtime",
+            )
 
         return self
 
@@ -489,13 +589,19 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> ChatResult:
         """Top Level call"""
         bedrock_messages, system = _messages_to_bedrock(messages)
+        logger.debug(f"input message to bedrock: {bedrock_messages}")
+        logger.debug(f"System message to bedrock: {system}")
         params = self._converse_params(
-            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
+            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema", "properties", "thinking"})
         )
+        logger.debug(f"Input params: {params}")
+        logger.info("Using Bedrock Converse API to generate response")
         response = self.client.converse(
             messages=bedrock_messages, system=system, **params
         )
+        logger.debug(f"Response from Bedrock: {response}")
         response_message = _parse_response(response)
+        response_message.response_metadata["model_name"] = self.model_id
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
     def _stream(
@@ -507,14 +613,62 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> Iterator[ChatGenerationChunk]:
         bedrock_messages, system = _messages_to_bedrock(messages)
         params = self._converse_params(
-            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema"})
+            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema", "properties", "thinking"})
         )
         response = self.client.converse_stream(
             messages=bedrock_messages, system=system, **params
         )
+        added_model_name = False
         for event in response["stream"]:
             if message_chunk := _parse_stream_event(event):
-                yield ChatGenerationChunk(message=message_chunk)
+                if (
+                    hasattr(message_chunk, "usage_metadata")
+                    and message_chunk.usage_metadata
+                    and not added_model_name
+                ):
+                    message_chunk.response_metadata["model_name"] = self.model_id
+                    added_model_name = True
+                generation_chunk = ChatGenerationChunk(message=message_chunk)
+                if run_manager:
+                    run_manager.on_llm_new_token(
+                        generation_chunk.text, chunk=generation_chunk
+                    )
+                yield generation_chunk
+
+    def _get_llm_for_structured_output_no_tool_choice(
+        self,
+        schema: Union[Dict, type],
+    ) -> Runnable[LanguageModelInput, BaseMessage]:
+        admonition = (
+            "ChatBedrockConverse structured output relies on forced tool calling, "
+            "which is not supported for this model. This method will raise "
+            "langchain_core.exceptions.OutputParserException if tool calls are not "
+            "generated. Consider adjusting your prompt to ensure the tool is called."
+        )
+        if "claude-3-7-sonnet" in self.model_id:
+            additional_context = (
+                "For Claude 3.7 Sonnet models, you can also support forced tool use "
+                "by disabling `thinking`."
+            )
+            admonition = f"{admonition} {additional_context}"
+        warnings.warn(admonition)
+        try:
+            llm = self.bind_tools(
+                [schema],
+                ls_structured_output_format={
+                    "kwargs": {"method": "function_calling"},
+                    "schema": convert_to_openai_tool(schema),
+                },
+            )
+        except Exception:
+            llm = self.bind_tools([schema])
+
+        def _raise_if_no_tool_calls(message: AIMessage) -> AIMessage:
+            if not message.tool_calls:
+                raise OutputParserException(admonition)
+            return message
+
+        return llm | _raise_if_no_tool_calls
 
     # TODO: Add async support once there are async bedrock.converse methods.
 
@@ -552,6 +706,7 @@ class ChatBedrockConverse(BaseChatModel):
                     f"for the latest documentation on models that support tool choice."
                 )
             kwargs["tool_choice"] = _format_tool_choice(tool_choice)
+
         return self.bind(tools=formatted_tools, **kwargs)
 
     def with_structured_output(
@@ -568,7 +723,23 @@ class ChatBedrockConverse(BaseChatModel):
             tool_choice = "any"
         else:
             tool_choice = None
-        llm = self.bind_tools([schema], tool_choice=tool_choice)
+        if tool_choice is None and "claude-3-7-sonnet" in self.model_id:
+            # TODO: remove restriction to Claude 3.7. If a model does not support
+            # forced tool calling, we we should raise an exception instead of
+            # returning None when no tool calls are generated.
+            llm = self._get_llm_for_structured_output_no_tool_choice(schema)
+        else:
+            try:
+                llm = self.bind_tools(
+                    [schema],
+                    tool_choice=tool_choice,
+                    ls_structured_output_format={
+                        "kwargs": {"method": "function_calling"},
+                        "schema": convert_to_openai_tool(schema),
+                    },
+                )
+            except Exception:
+                llm = self.bind_tools([schema], tool_choice=tool_choice)
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             if self.disable_streaming:
                 output_parser: OutputParserLike = ToolsOutputParser(
@@ -616,6 +787,8 @@ class ChatBedrockConverse(BaseChatModel):
         additionalModelRequestFields: Optional[dict] = None,
         additionalModelResponseFieldPaths: Optional[List[str]] = None,
         guardrailConfig: Optional[dict] = None,
+        performanceConfig: Optional[Mapping[str, Any]] = None,
+        requestMetadata: Optional[dict] = None,
     ) -> Dict[str, Any]:
         if not inferenceConfig:
             inferenceConfig = {
@@ -633,11 +806,16 @@ class ChatBedrockConverse(BaseChatModel):
                 "modelId": modelId or self.model_id,
                 "inferenceConfig": inferenceConfig,
                 "toolConfig": toolConfig,
-                "additionalModelRequestFields": additionalModelRequestFields
-                or self.additional_model_request_fields,
-                "additionalModelResponseFieldPaths": additionalModelResponseFieldPaths
-                or self.additional_model_response_field_paths,
+                "additionalModelRequestFields": (
+                    additionalModelRequestFields or self.additional_model_request_fields
+                ),
+                "additionalModelResponseFieldPaths": (
+                    additionalModelResponseFieldPaths
+                    or self.additional_model_response_field_paths
+                ),
                 "guardrailConfig": guardrailConfig or self.guardrail_config,
+                "performanceConfig": performanceConfig or self.performance_config,
+                "requestMetadata": requestMetadata or self.request_metadata,
             }
         )
 
@@ -690,7 +868,7 @@ def _messages_to_bedrock(
     # system message then alternating human/ai messages.
     messages = merge_message_runs(messages)
     for msg in messages:
-        content = _anthropic_to_bedrock(msg.content)
+        content = _lc_content_to_bedrock(msg.content)
         if isinstance(msg, HumanMessage):
             # If there's a human, tool, human message sequence, the
             # tool message will be merged with the first human message, so the second
@@ -736,13 +914,18 @@ def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _parse_response(response: Dict[str, Any]) -> AIMessage:
-    anthropic_content = _bedrock_to_anthropic(
-        response.pop("output")["message"]["content"]
-    )
-    tool_calls = _extract_tool_calls(anthropic_content)
+    if "output" not in response:
+        raise ValueError(
+            "No 'output' key found in the response from the Bedrock Converse API.  This usually "
+            "happens due to misconfiguration of endpoint or region, ensure that you are using valid "
+            "values for endpoint_url (on AWS this starts with bedrock-runtime), see: "
+            "https://docs.aws.amazon.com/general/latest/gr/bedrock.html"
+        )
+    lc_content = _bedrock_to_lc(response.pop("output")["message"]["content"])
+    tool_calls = _extract_tool_calls(lc_content)
     usage = UsageMetadata(_camel_to_snake_keys(response.pop("usage")))  # type: ignore[misc]
     return AIMessage(
-        content=_str_if_single_text_block(anthropic_content),  # type: ignore[arg-type]
+        content=_str_if_single_text_block(lc_content),  # type: ignore[arg-type]
         usage_metadata=usage,
         response_metadata=_extract_response_metadata(response),
         tool_calls=tool_calls,
@@ -759,7 +942,7 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         )
     elif "contentBlockStart" in event:
         block = {
-            **_bedrock_to_anthropic([event["contentBlockStart"]["start"]])[0],
+            **_bedrock_to_lc([event["contentBlockStart"]["start"]])[0],
             "index": event["contentBlockStart"]["contentBlockIndex"],
         }
         tool_call_chunks = []
@@ -775,7 +958,7 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         return AIMessageChunk(content=[block], tool_call_chunks=tool_call_chunks)
     elif "contentBlockDelta" in event:
         block = {
-            **_bedrock_to_anthropic([event["contentBlockDelta"]["delta"]])[0],
+            **_bedrock_to_lc([event["contentBlockDelta"]["delta"]])[0],
             "index": event["contentBlockDelta"]["contentBlockIndex"],
         }
         tool_call_chunks = []
@@ -811,7 +994,7 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         raise ValueError(f"Received unsupported stream event:\n\n{event}")
 
 
-def _anthropic_to_bedrock(
+def _lc_content_to_bedrock(
     content: Union[str, List[Union[str, Dict[str, Any]]]],
 ) -> List[Dict[str, Any]]:
     if isinstance(content, str):
@@ -845,6 +1028,36 @@ def _anthropic_to_bedrock(
             bedrock_content.append(
                 {"image": _format_openai_image_url(block["imageUrl"]["url"])}
             )
+        elif block["type"] == "video":
+            # Assume block is already in bedrock format.
+            if "video" in block:
+                bedrock_content.append({"video": block["video"]})
+            else:
+                if block["source"]["type"] == "base64":
+                    bedrock_content.append(
+                        {
+                            "video": {
+                                "format": block["source"]["mediaType"].split("/")[1],
+                                "source": {
+                                    "bytes": _b64str_to_bytes(block["source"]["data"])
+                                },
+                            }
+                        }
+                    )
+                elif block["source"]["type"] == "s3Location":
+                    bedrock_content.append(
+                        {
+                            "video": {
+                                "format": block["source"]["mediaType"].split("/")[1],
+                                "source": {"s3Location": block["source"]["data"]},
+                            }
+                        }
+                    )
+        elif block["type"] == "video_url":
+            # Support OpenAI image format as well.
+            bedrock_content.append(
+                {"video": _format_openai_video_url(block["videoUrl"]["url"])}
+            )
         elif block["type"] == "document":
             # Assume block in bedrock document format
             bedrock_content.append({"document": block["document"]})
@@ -863,7 +1076,7 @@ def _anthropic_to_bedrock(
                 {
                     "toolResult": {
                         "toolUseId": block["toolUseId"],
-                        "content": _anthropic_to_bedrock(block["content"]),
+                        "content": _lc_content_to_bedrock(block["content"]),
                         "status": "error" if block.get("isError") else "success",
                     }
                 }
@@ -873,22 +1086,47 @@ def _anthropic_to_bedrock(
             bedrock_content.append({"json": block["json"]})
         elif block["type"] == "guard_content":
             bedrock_content.append({"guardContent": {"text": {"text": block["text"]}}})
+        elif block["type"] == "thinking":
+            if block.get("signature", ""):
+                bedrock_content.append(
+                    {
+                        "reasoningContent": {
+                            "reasoningText": {
+                                "text": block.get("thinking", ""),
+                                "signature": block.get("signature", ""),
+                            }
+                        }
+                    }
+                )
+        elif block["type"] == "reasoning_content":
+            reasoning_content = block.get("reasoningContent", {})
+            if reasoning_content.get("signature", ""):
+                bedrock_content.append(
+                    {
+                        "reasoningContent": {
+                            "reasoningText": {
+                                "text": reasoning_content.get("text", ""),
+                                "signature": reasoning_content.get("signature", ""),
+                            }
+                        }
+                    }
+                )
         else:
             raise ValueError(f"Unsupported content block type:\n{block}")
     # drop empty text blocks
     return [block for block in bedrock_content if block.get("text", True)]
 
 
-def _bedrock_to_anthropic(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    anthropic_content = []
+def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    lc_content = []
     for block in _camel_to_snake_keys(content):
         if "text" in block:
-            anthropic_content.append({"type": "text", "text": block["text"]})
+            lc_content.append({"type": "text", "text": block["text"]})
         elif "tool_use" in block:
             block["tool_use"]["id"] = block["tool_use"].pop("tool_use_id", None)
-            anthropic_content.append({"type": "tool_use", **block["tool_use"]})
+            lc_content.append({"type": "tool_use", **block["tool_use"]})
         elif "image" in block:
-            anthropic_content.append(
+            lc_content.append(
                 {
                     "type": "image",
                     "source": {
@@ -898,20 +1136,48 @@ def _bedrock_to_anthropic(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]
                     },
                 }
             )
+        elif "video" in block:
+            if "bytes" in block["video"]["source"]:
+                lc_content.append(
+                    {
+                        "type": "video",
+                        "source": {
+                            "media_type": f"video/{block['video']['format']}",
+                            "type": "base64",
+                            "data": _bytes_to_b64_str(
+                                block["video"]["source"]["bytes"]
+                            ),
+                        },
+                    }
+                )
+            if "s3location" in block["video"]["source"]:
+                lc_content.append(
+                    {
+                        "type": "video",
+                        "source": {
+                            "media_type": f"video/{block['video']['format']}",
+                            "type": "s3Location",
+                            "data": block["video"]["source"]["s3location"],
+                        },
+                    }
+                )
+        elif "document" in block:
+            # Request syntax assumes bedrock format; returning in same bedrock format
+            lc_content.append({"type": "document", **block})
         elif "tool_result" in block:
-            anthropic_content.append(
+            lc_content.append(
                 {
                     "type": "tool_result",
                     "tool_use_id": block["tool_result"]["tool_use_id"],
                     "is_error": block["tool_result"].get("status") == "error",
-                    "content": _bedrock_to_anthropic(block["tool_result"]["content"]),
+                    "content": _bedrock_to_lc(block["tool_result"]["content"]),
                 }
             )
         # Only occurs in content blocks of a tool_result:
         elif "json" in block:
-            anthropic_content.append({"type": "json", **block})
+            lc_content.append({"type": "json", **block})
         elif "guard_content" in block:
-            anthropic_content.append(
+            lc_content.append(
                 {
                     "type": "guard_content",
                     "guard_content": {
@@ -920,13 +1186,50 @@ def _bedrock_to_anthropic(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]
                     },
                 }
             )
+        elif "reasoning_content" in block:
+            reasoning_dict = block.get("reasoning_content", {})
+            # Invoke block format
+            if "reasoning_text" in reasoning_dict:
+                text = reasoning_dict.get("reasoning_text").get("text", "")
+                signature = reasoning_dict.get("reasoning_text").get("signature", "")
+                lc_content.append(
+                    {
+                        "type": "reasoning_content",
+                        "reasoning_content": {
+                            "text": text,
+                            "signature": signature,
+                        },
+                    }
+                )
+            # Streaming block format
+            else:
+                if "text" in reasoning_dict:
+                    lc_content.append(
+                        {
+                            "type": "reasoning_content",
+                            "reasoning_content": {
+                                "text": reasoning_dict.get("text"),
+                            },
+                        }
+                    )
+                if "signature" in reasoning_dict:
+                    lc_content.append(
+                        {
+                            "type": "reasoning_content",
+                            "reasoning_content": {
+                                "signature": reasoning_dict.get("signature"),
+                            },
+                        }
+                    )
+
         else:
             raise ValueError(
                 "Unexpected content block type in content. Expected to have one of "
-                "'text', 'tool_use', 'image', or 'tool_result' keys. Received:\n\n"
-                f"{block}"
+                "'text', 'tool_use', 'image', 'video, 'document', 'tool_result',"
+                "'json', 'guard_content', or "
+                "'reasoning_content' keys. Received:\n\n{block}"
             )
-    return anthropic_content
+    return lc_content
 
 
 def _format_tools(
@@ -940,6 +1243,9 @@ def _format_tools(
             spec = convert_to_openai_tool(tool)["function"]
             spec["inputSchema"] = {"json": spec.pop("parameters")}
             formatted_tools.append({"toolSpec": spec})
+
+        tool_spec = formatted_tools[-1]["toolSpec"]
+        tool_spec["description"] = tool_spec.get("description") or tool_spec["name"]
     return formatted_tools
 
 
@@ -1026,11 +1332,11 @@ def _bytes_to_b64_str(bytes_: bytes) -> str:
 
 
 def _str_if_single_text_block(
-    anthropic_content: List[Dict[str, Any]],
+    content: List[Dict[str, Any]],
 ) -> Union[str, List[Dict[str, Any]]]:
-    if len(anthropic_content) == 1 and anthropic_content[0]["type"] == "text":
-        return anthropic_content[0]["text"]
-    return anthropic_content
+    if len(content) == 1 and content[0]["type"] == "text":
+        return content[0]["text"]
+    return content
 
 
 def _upsert_tool_calls_to_bedrock_content(
@@ -1072,8 +1378,28 @@ def _format_openai_image_url(image_url: str) -> Dict:
     match = re.match(regex, image_url)
     if match is None:
         raise ValueError(
-            "Bedrock does not currently support OpenAI-format image URLs, only "
+            "The image URL provided is not supported. Expected image URL format is "
             "base64-encoded images. Example: data:image/png;base64,'/9j/4AAQSk'..."
+        )
+    return {
+        "format": match.group("media_type"),
+        "source": {"bytes": _b64str_to_bytes(match.group("data"))},
+    }
+
+
+def _format_openai_video_url(video_url: str) -> Dict:
+    """
+    Formats a video of format data:video/mp4;base64,{b64_string}
+    to a dict for bedrock api.
+
+    And throws an error if url is not a b64 video.
+    """
+    regex = r"^data:video/(?P<media_type>.+);base64,(?P<data>.+)$"
+    match = re.match(regex, video_url)
+    if match is None:
+        raise ValueError(
+            "The video URL provided is not supported. Expected video URL format is "
+            "base64-encoded video. Example: data:video/mp4;base64,'/9j/4AAQSk'..."
         )
     return {
         "format": match.group("media_type"),

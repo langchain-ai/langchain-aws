@@ -81,7 +81,7 @@ make integration_test
 Formatting ensures that the code in this repo has consistent style so that the
 code looks more presentable and readable. It corrects these errors when you run
 the formatting command. Linting finds and highlights the code errors and helps 
-avoid coding practicies that can lead to errors. 
+avoid coding practices that can lead to errors. 
 
 Run both of these locally before submitting a PR. The CI scripts will run these
 when you submit a PR, and you won't be able to merge changes without fixing 
@@ -147,5 +147,5 @@ If codespell is incorrectly flagging a word, you can skip spellcheck for that wo
 [tool.codespell]
 ...
 # Add here:
-ignore-words-list = 'momento,collison,ned,foor,reworkd,parth,whats,aapply,mysogyny,unsecure'
+ignore-words-list = 'momento,collison,ned,foor,reworked,path,whats,apply,misogyny,unsecure'
 ```
