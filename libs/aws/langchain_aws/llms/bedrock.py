@@ -798,7 +798,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         parts = self.model_id.split(".", maxsplit=2)
         return (
             parts[1]
-            if (len(parts) > 1 and parts[0].lower() in {"eu", "us", "ap", "sa"})
+            if (len(parts) > 1 and parts[0].lower() in {"eu", "us", "us-gov", "apac", "sa"})
             else parts[0]
         )
 
