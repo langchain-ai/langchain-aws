@@ -912,6 +912,25 @@ def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:
 
     return response_metadata
 
+def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
+    usage_dict = response.pop("usage")
+
+    input_tokens = usage_dict.get("inputTokens", 0)
+    output_tokens = usage_dict.get("outputTokens", 0)
+    total_tokens = usage_dict.get("totalTokens", 0)
+    cache_read_input_tokens = usage_dict.get("cacheReadInputTokens", 0)
+    cache_write_input_tokens = usage_dict.get("cacheWriteInputTokens", 0)
+
+    usage = UsageMetadata(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        input_token_details={
+            "cache_read": cache_read_input_tokens,
+            "cache_creation": cache_write_input_tokens,
+        },
+        total_tokens=total_tokens,
+    )
+    return usage
 
 def _parse_response(response: Dict[str, Any]) -> AIMessage:
     if "output" not in response:
@@ -923,7 +942,7 @@ def _parse_response(response: Dict[str, Any]) -> AIMessage:
         )
     lc_content = _bedrock_to_lc(response.pop("output")["message"]["content"])
     tool_calls = _extract_tool_calls(lc_content)
-    usage = UsageMetadata(_camel_to_snake_keys(response.pop("usage")))  # type: ignore[misc]
+    usage = _extract_usage_metadata(response)
     return AIMessage(
         content=_str_if_single_text_block(lc_content),  # type: ignore[arg-type]
         usage_metadata=usage,
@@ -981,7 +1000,7 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         # TODO: snake case response metadata?
         return AIMessageChunk(content=[], response_metadata=event["messageStop"])
     elif "metadata" in event:
-        usage = UsageMetadata(_camel_to_snake_keys(event["metadata"].pop("usage")))  # type: ignore[misc]
+        usage = _extract_usage_metadata(event["metadata"])
         return AIMessageChunk(
             content=[], response_metadata=event["metadata"], usage_metadata=usage
         )
