@@ -528,13 +528,13 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
     system_prompt_with_tools: str = ""
     beta_use_converse_api: bool = False
-    """Use the new Bedrock ``converse`` API which provides a standardized interface to 
+    """Use the new Bedrock ``converse`` API which provides a standardized interface to
     all Bedrock models. Support still in beta. See ChatBedrockConverse docs for more."""
 
     stop_sequences: Optional[List[str]] = Field(default=None, alias="stop")
-    """Stop sequence inference parameter from new Bedrock ``converse`` API providing 
-    a sequence of characters that causes a model to stop generating a response. See 
-    https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_InferenceConfiguration.html 
+    """Stop sequence inference parameter from new Bedrock ``converse`` API providing
+    a sequence of characters that causes a model to stop generating a response. See
+    https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_InferenceConfiguration.html
     for more."""
 
     @property
@@ -736,9 +736,15 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         if usage := llm_output.get("usage"):
             input_tokens = usage.get("prompt_tokens", 0)
             output_tokens = usage.get("completion_tokens", 0)
+            cache_read_input_tokens = usage.get("cache_read_input_tokens", 0)
+            cache_write_input_tokens = usage.get("cache_write_input_tokens", 0)
             usage_metadata = UsageMetadata(
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                input_token_details={
+                    "cache_read": cache_read_input_tokens,
+                    "cache_creation": cache_write_input_tokens,
+                },
                 total_tokens=usage.get("total_tokens", input_tokens + output_tokens),
             )
         else:
