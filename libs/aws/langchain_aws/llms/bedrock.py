@@ -797,7 +797,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             else parts[0]
         )
 
-    def _get_model_name(self) -> str:
+    def _get_base_model(self) -> str:
         return self.base_model_id if self.base_model_id else self.model_id.split(".", maxsplit=1)[-1]
 
     @property
@@ -848,7 +848,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         params = {**_model_kwargs, **kwargs}
 
         # Pre-process for thinking with tool use
-        if messages and "claude-3" in self._get_model_name() and thinking_in_params(params):
+        if messages and "claude-3" in self._get_base_model() and thinking_in_params(params):
             # We need to ensure thinking blocks are first in assistant messages
             # Process each message in the sequence
             for i, message in enumerate(messages):
@@ -876,7 +876,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                             # Reorder with thinking first
                             message["content"] = thinking_content + other_content
 
-        if "claude-3" in self._get_model_name() and _tools_in_params(params):
+        if "claude-3" in self._get_base_model() and _tools_in_params(params):
             input_body = LLMInputOutputAdapter.prepare_input(
                 provider=provider,
                 model_kwargs=params,
@@ -1027,7 +1027,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             temperature=self.temperature,
         )
         coerce_content_to_string = True
-        if "claude-3" in self._get_model_name():
+        if "claude-3" in self._get_base_model():
             if _tools_in_params(params):
                 coerce_content_to_string = False
                 input_body = LLMInputOutputAdapter.prepare_input(
@@ -1107,7 +1107,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             _model_kwargs["stream"] = True
 
         params = {**_model_kwargs, **kwargs}
-        if "claude-3" in self._get_model_name() and _tools_in_params(params):
+        if "claude-3" in self._get_base_model() and _tools_in_params(params):
             input_body = LLMInputOutputAdapter.prepare_input(
                 provider=provider,
                 model_kwargs=params,

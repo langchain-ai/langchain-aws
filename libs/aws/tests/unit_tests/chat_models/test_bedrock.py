@@ -767,7 +767,7 @@ def test_chat_prompt_adapter_with_model_detection(model_id, base_model_id, provi
         region_name="us-west-2"
     )
 
-    model_name = chat._get_model_name()
+    model_name = chat._get_base_model()
     provider_name = chat._get_provider()
 
     prompt = ChatPromptAdapter.convert_messages_to_prompt(

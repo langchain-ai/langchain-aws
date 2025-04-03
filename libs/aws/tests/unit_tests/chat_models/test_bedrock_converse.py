@@ -1094,13 +1094,13 @@ def test__get_provider() -> None:
         )
 
 
-def test__get_model_name() -> None:
+def test__get_base_model() -> None:
     llm_model_only = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0",
         region_name="us-west-2"
     )
 
-    assert llm_model_only._get_model_name() == "anthropic.claude-3-sonnet-20240229-v1:0"
+    assert llm_model_only._get_base_model() == "anthropic.claude-3-sonnet-20240229-v1:0"
 
     llm_with_base_model = ChatBedrockConverse(
         model="arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
@@ -1109,7 +1109,7 @@ def test__get_model_name() -> None:
         region_name="us-west-2"
     )
 
-    assert llm_with_base_model._get_model_name() == "anthropic.claude-3-sonnet-20240229-v1:0"
+    assert llm_with_base_model._get_base_model() == "anthropic.claude-3-sonnet-20240229-v1:0"
 
 
 @pytest.mark.parametrize(

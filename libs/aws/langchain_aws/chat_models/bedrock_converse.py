@@ -553,21 +553,21 @@ class ChatBedrockConverse(BaseChatModel):
         # only claude-3, mistral-large, and nova models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
         if self.supports_tool_choice_values is None:
-            if "claude-3" in self._get_model_name():
+            if "claude-3" in self._get_base_model():
                 # Tool choice not supported when thinking is enabled
                 thinking_params = (self.additional_model_request_fields or {}).get(
                     "thinking", {}
                 )
                 if (
-                    "claude-3-7-sonnet" in self._get_model_name()
+                    "claude-3-7-sonnet" in self._get_base_model()
                     and thinking_params.get("type") == "enabled"
                 ):
                     self.supports_tool_choice_values = ()
                 else:
                     self.supports_tool_choice_values = ("auto", "any", "tool")
-            elif "mistral-large" in self._get_model_name():
+            elif "mistral-large" in self._get_base_model():
                 self.supports_tool_choice_values = ("auto", "any")
-            elif "nova" in self._get_model_name():
+            elif "nova" in self._get_base_model():
                 self.supports_tool_choice_values = ("auto", "any", "tool")
             else:
                 self.supports_tool_choice_values = ()
@@ -587,7 +587,7 @@ class ChatBedrockConverse(BaseChatModel):
 
         return self
 
-    def _get_model_name(self) -> str:
+    def _get_base_model(self) -> str:
         return self.base_model_id if self.base_model_id else self.model_id
 
     def _generate(
@@ -655,7 +655,7 @@ class ChatBedrockConverse(BaseChatModel):
             "langchain_core.exceptions.OutputParserException if tool calls are not "
             "generated. Consider adjusting your prompt to ensure the tool is called."
         )
-        if "claude-3-7-sonnet" in self._get_model_name():
+        if "claude-3-7-sonnet" in self._get_base_model():
             additional_context = (
                 "For Claude 3.7 Sonnet models, you can also support forced tool use "
                 "by disabling `thinking`."
@@ -701,13 +701,13 @@ class ChatBedrockConverse(BaseChatModel):
             if tool_choice_type not in list(self.supports_tool_choice_values or []):
                 if self.supports_tool_choice_values:
                     supported = (
-                        f"Model {self._get_model_name()} does not currently support tool_choice "
+                        f"Model {self._get_base_model()} does not currently support tool_choice "
                         f"of type {tool_choice_type}. The following tool_choice types "
                         f"are supported: {self.supports_tool_choice_values}."
                     )
                 else:
                     supported = (
-                        f"Model {self._get_model_name()} does not currently support tool_choice."
+                        f"Model {self._get_base_model()} does not currently support tool_choice."
                     )
 
                 raise ValueError(
@@ -733,7 +733,7 @@ class ChatBedrockConverse(BaseChatModel):
             tool_choice = "any"
         else:
             tool_choice = None
-        if tool_choice is None and "claude-3-7-sonnet" in self._get_model_name():
+        if tool_choice is None and "claude-3-7-sonnet" in self._get_base_model():
             # TODO: remove restriction to Claude 3.7. If a model does not support
             # forced tool calling, we we should raise an exception instead of
             # returning None when no tool calls are generated.
