@@ -619,7 +619,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     system = self.system_prompt_with_tools
         else:
             prompt = ChatPromptAdapter.convert_messages_to_prompt(
-                provider=provider, messages=messages, model=self._get_model()
+                provider=provider, messages=messages, model=self._get_base_model()
             )
 
         added_model_name = False
@@ -718,7 +718,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                         system = self.system_prompt_with_tools
             else:
                 prompt = ChatPromptAdapter.convert_messages_to_prompt(
-                    provider=provider, messages=messages, model=self._get_model()
+                    provider=provider, messages=messages, model=self._get_base_model()
                 )
 
             if stop:
@@ -843,7 +843,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
 
             # true if the model is a claude 3 model
-            if "claude-3" in self._get_model():
+            if "claude-3" in self._get_base_model():
                 if not tool_choice:
                     pass
                 elif isinstance(tool_choice, dict):
@@ -980,9 +980,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             return self._as_converse.with_structured_output(
                 schema, include_raw=include_raw, **kwargs
             )
-        if "claude-3" not in self._get_model():
+        if "claude-3" not in self._get_base_model():
             raise ValueError(
-                f"Structured output is not supported for model {self._get_model()}"
+                f"Structured output is not supported for model {self._get_base_model()}"
             )
 
         tool_name = convert_to_anthropic_tool(schema)["name"]

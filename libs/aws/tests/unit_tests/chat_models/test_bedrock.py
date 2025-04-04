@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from langchain_aws import ChatBedrock
 from langchain_aws.chat_models.bedrock import (
+    ChatPromptAdapter,
     _format_anthropic_messages,
     _merge_messages,
 )
@@ -745,3 +746,58 @@ def test__format_anthropic_messages_after_tool_use_no_thinking() -> None:
         block.get("type") in ["thinking", "redacted_thinking"]
         for block in actual_messages[3]["content"]
     )
+
+
+@pytest.mark.parametrize(
+    "model_id, base_model_id, provider, expected_format_marker",
+    [
+        (
+            "arn:aws:bedrock:us-west-2::custom-model/meta.llama3-8b-instruct-v1:0/MyModel",
+            "meta.llama3-8b-instruct-v1:0",
+            "meta",
+            "<|begin_of_text|>"
+        ),
+        (
+            "arn:aws:bedrock:us-west-2::custom-model/meta.llama2-70b-chat-v1/MyModel",
+            "meta.llama2-70b-chat-v1",
+            "meta",
+            "[INST]"
+        ),
+        (
+            "meta.llama2-70b-chat-v1",
+            "meta.llama3-8b-instruct-v1:0",
+            "meta",
+            "<|begin_of_text|>"
+        ),
+        (
+            "arn:aws:sagemaker:us-west-2::endpoint/endpoint-quick-start-xxxxx",
+            "deepseek.r1-v1:0",
+            "deepseek",
+            "<|begin_of_sentence|>"
+        ),
+    ]
+)
+def test_chat_prompt_adapter_with_model_detection(model_id, base_model_id, provider, expected_format_marker):
+    """Test that ChatPromptAdapter correctly formats prompts when base_model is provided."""
+    messages = [
+        SystemMessage(content="You are a helpful assistant"),
+        HumanMessage(content="Hello")
+    ]
+
+    chat = ChatBedrock(
+        model_id=model_id,
+        base_model_id=base_model_id,
+        provider=provider,
+        region_name="us-west-2"
+    )
+
+    model_name = chat._get_base_model()
+    provider_name = chat._get_provider()
+
+    prompt = ChatPromptAdapter.convert_messages_to_prompt(
+        provider=provider_name,
+        messages=messages,
+        model=model_name
+    )
+
+    assert expected_format_marker in prompt
