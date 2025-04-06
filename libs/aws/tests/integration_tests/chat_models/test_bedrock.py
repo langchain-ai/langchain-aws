@@ -372,6 +372,16 @@ def test_structured_output_anthropic_format() -> None:
     assert isinstance(response["justification"], str)
 
 @pytest.mark.scheduled
+def test_unsupported_structured_output() -> None:
+    chat = ChatBedrock(
+        model_id="meta.llama3-8b-instruct-v1:0",
+        model_kwargs={"temperature": 0.001},
+    )  # type: ignore[call-arg]
+    with pytest.raises(ValueError):
+        _ = chat.with_structured_output(AnswerWithJustification)
+
+
+@pytest.mark.scheduled
 def test_tool_use_call_invoke() -> None:
     chat = ChatBedrock(
         model_id="anthropic.claude-3-sonnet-20240229-v1:0",
