@@ -652,6 +652,11 @@ class BedrockBase(BaseLanguageModel, ABC):
     equivalent to the modelId property in the list-foundation-models api. For custom and
     provisioned models, an ARN value is expected."""
 
+    base_model_id: Optional[str] = Field(default=None, alias="base_model")
+    """An optional field to pass the base model id. If provided, this will be used over 
+    the value of model_id to identify the base model.
+    """
+
     model_kwargs: Optional[Dict[str, Any]] = None
     """Keyword arguments to pass to the model."""
 
@@ -771,6 +776,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         _model_kwargs = self.model_kwargs or {}
         return {
             "model_id": self.model_id,
+            "base_model_id": self.base_model_id,
             "provider": self._get_provider(),
             "stream": self.streaming,
             "trace": self.guardrails.get("trace"),  # type: ignore[union-attr]
@@ -802,8 +808,8 @@ class BedrockBase(BaseLanguageModel, ABC):
             else parts[0]
         )
 
-    def _get_model(self) -> str:
-        return self.model_id.split(".", maxsplit=1)[-1]
+    def _get_base_model(self) -> str:
+        return self.base_model_id if self.base_model_id else self.model_id.split(".", maxsplit=1)[-1]
 
     @property
     def _model_is_anthropic(self) -> bool:
@@ -853,7 +859,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         params = {**_model_kwargs, **kwargs}
 
         # Pre-process for thinking with tool use
-        if messages and "claude-3" in self._get_model() and thinking_in_params(params):
+        if messages and "claude-3" in self._get_base_model() and thinking_in_params(params):
             # We need to ensure thinking blocks are first in assistant messages
             # Process each message in the sequence
             for i, message in enumerate(messages):
@@ -881,7 +887,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                             # Reorder with thinking first
                             message["content"] = thinking_content + other_content
 
-        if "claude-3" in self._get_model() and _tools_in_params(params):
+        if "claude-3" in self._get_base_model() and _tools_in_params(params):
             input_body = LLMInputOutputAdapter.prepare_input(
                 provider=provider,
                 model_kwargs=params,
@@ -1032,7 +1038,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             temperature=self.temperature,
         )
         coerce_content_to_string = True
-        if "claude-3" in self._get_model():
+        if "claude-3" in self._get_base_model():
             if _tools_in_params(params):
                 coerce_content_to_string = False
                 input_body = LLMInputOutputAdapter.prepare_input(
@@ -1112,7 +1118,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             _model_kwargs["stream"] = True
 
         params = {**_model_kwargs, **kwargs}
-        if "claude-3" in self._get_model() and _tools_in_params(params):
+        if "claude-3" in self._get_base_model() and _tools_in_params(params):
             input_body = LLMInputOutputAdapter.prepare_input(
                 provider=provider,
                 model_kwargs=params,
@@ -1184,7 +1190,7 @@ class BedrockLLM(LLM, BedrockBase):
 
     @model_validator(mode="after")
     def validate_environment_llm(self) -> Self:
-        model_id = self.model_id
+        model_id = self.base_model_id if self.base_model_id else self.model_id
         if model_id.startswith("anthropic.claude-3"):
             raise ValueError(
                 "Claude v3 models are not supported by this LLM."
