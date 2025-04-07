@@ -227,10 +227,17 @@ def _get_invocation_metrics_chunk(chunk: Dict[str, Any]) -> GenerationChunk:
     if metrics := chunk.get("amazon-bedrock-invocationMetrics"):
         input_tokens = metrics.get("inputTokenCount", 0)
         output_tokens = metrics.get("outputTokenCount", 0)
+        cache_read_input_tokens = metrics.get("cacheReadInputTokenCount", 0)
+        cache_write_input_tokens = metrics.get("cacheWriteInputTokenCount", 0)
         generation_info["usage_metadata"] = {
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": input_tokens + output_tokens,
+            "input_token_details": {
+                "cache_creation": cache_write_input_tokens,
+                "cache_read": cache_read_input_tokens,
+            }
+
         }
     return GenerationChunk(text="", generation_info=generation_info)
 
@@ -438,6 +445,8 @@ class LLMInputOutputAdapter:
         headers = response.get("ResponseMetadata", {}).get("HTTPHeaders", {})
         prompt_tokens = int(headers.get("x-amzn-bedrock-input-token-count", 0))
         completion_tokens = int(headers.get("x-amzn-bedrock-output-token-count", 0))
+        cache_read_input_tokens = int(headers.get("x-amzn-bedrock-cache-read-input-token-count", 0))
+        cache_write_input_tokens = int(headers.get("x-amzn-bedrock-cache-write-input-token-count", 0))
         return {
             "text": text,
             "thinking": thinking,
@@ -446,7 +455,9 @@ class LLMInputOutputAdapter:
             "usage": {
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens,
+                "cache_read_input_tokens": cache_read_input_tokens,
+                "cache_write_input_tokens": cache_write_input_tokens,
+                "total_tokens": prompt_tokens + cache_read_input_tokens + completion_tokens,
             },
             "stop_reason": response_body.get("stop_reason"),
         }
@@ -591,38 +602,38 @@ class BedrockBase(BaseLanguageModel, ABC):
     aws_access_key_id: Optional[SecretStr] = Field(
         default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
     )
-    """AWS access key id. 
-    
+    """AWS access key id.
+
     If provided, aws_secret_access_key must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-    
+
     If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
     """
 
     aws_secret_access_key: Optional[SecretStr] = Field(
         default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
     )
-    """AWS secret_access_key. 
-    
+    """AWS secret_access_key.
+
     If provided, aws_access_key_id must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-    
+
     If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
     """
 
     aws_session_token: Optional[SecretStr] = Field(
         default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
     )
-    """AWS session token. 
-    
+    """AWS session token.
+
     If provided, aws_access_key_id and aws_secret_access_key must also be provided.
     Not required unless using temporary credentials.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-    
+
     If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
     """
 
@@ -631,7 +642,7 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     provider: Optional[str] = None
     """The model provider, e.g., amazon, cohere, ai21, etc. When not supplied, provider
-    is extracted from the first part of the model_id e.g. 'amazon' in 
+    is extracted from the first part of the model_id e.g. 'amazon' in
     'amazon.titan-text-express-v1'. This value should be provided for model ids that do
     not have the provider in them, e.g., custom and provisioned models that have an ARN
     associated with them."""
@@ -793,7 +804,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         parts = self.model_id.split(".", maxsplit=2)
         return (
             parts[1]
-            if (len(parts) > 1 and parts[0].lower() in {"eu", "us", "ap", "sa"})
+            if (len(parts) > 1 and parts[0].lower() in {"eu", "us", "us-gov", "apac", "sa"})
             else parts[0]
         )
 
