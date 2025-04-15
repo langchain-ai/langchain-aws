@@ -667,14 +667,14 @@ xai = ["langchain-xai"]
 
 [[package]]
 name = "langchain-core"
-version = "0.3.50"
+version = "0.3.52"
 description = "Building applications with LLMs through composability"
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main", "test"]
 files = [
-    {file = "langchain_core-0.3.50-py3-none-any.whl", hash = "sha256:76b7ff99125d160427801ea47c4b5202363856603e8382208a889fdd914d7d4d"},
-    {file = "langchain_core-0.3.50.tar.gz", hash = "sha256:8e141b89f2be6020e94c32d7d5141fc6eb5acf1e04e4d80ebd2c74bf30de9f77"},
+    {file = "langchain_core-0.3.52-py3-none-any.whl", hash = "sha256:cd137109c1e3d04f5a582c2cae9539b2cd5e4b795f486b58969dbc3d0387fe7c"},
+    {file = "langchain_core-0.3.52.tar.gz", hash = "sha256:f1981ec9efa4fceb11ff5ca57f5f9c8e22859cea3a94f8a044e6de8815afbd57"},
 ]
 
 [package.dependencies]
@@ -691,20 +691,23 @@ typing-extensions = ">=4.7"
 
 [[package]]
 name = "langchain-tests"
-version = "0.3.17"
+version = "0.3.18"
 description = "Standard tests for LangChain implementations"
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["test"]
 files = [
-    {file = "langchain_tests-0.3.17-py3-none-any.whl", hash = "sha256:7b156322d6579f3fd0028930f6a0172d6e0a3270bf0efbfa8118c5fcc3d50d14"},
-    {file = "langchain_tests-0.3.17.tar.gz", hash = "sha256:d4e27c8a6cdc680988f2261f892b927f835711a41facc74b2e31ffd4d56c86c2"},
+    {file = "langchain_tests-0.3.18-py3-none-any.whl", hash = "sha256:d8f3542050f13f0c3e452a10027cd31bd02f5e1d16f7710c35fff2ba3cbfe67d"},
+    {file = "langchain_tests-0.3.18.tar.gz", hash = "sha256:2c6c1fd94b6773b2f97f93c99dd3d6cb62481887b95efadf464232b0fd288b1c"},
 ]
 
 [package.dependencies]
 httpx = ">=0.25.0,<1"
-langchain-core = ">=0.3.49,<1.0.0"
-numpy = ">=1.26.2,<3"
+langchain-core = ">=0.3.52,<1.0.0"
+numpy = [
+    {version = ">=1.26.2", markers = "python_version < \"3.13\""},
+    {version = ">=2.1.0", markers = "python_version >= \"3.13\""},
+]
 pytest = ">=7,<9"
 pytest-asyncio = ">=0.20,<1"
 pytest-socket = ">=0.6.0,<1"
@@ -1902,4 +1905,4 @@ cffi = ["cffi (>=1.11)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9,<4.0"
-content-hash = "7da22694f2bd2f9983a55228ebd8a417eda9dcae28c2efe287fe906ece0e2c5e"
+content-hash = "de3e5a6a946deacfef9c771f7a383826ea6677761d8d88ff4960db1b747fd1fe"
