@@ -31,6 +31,7 @@ from langchain_core.messages import (
     ChatMessage,
     HumanMessage,
     SystemMessage,
+    is_data_content_block,
 )
 from langchain_core.messages.ai import UsageMetadata
 from langchain_core.messages.tool import ToolCall, ToolMessage
@@ -248,6 +249,32 @@ def _format_image(image_url: str) -> Dict:
     }
 
 
+def _format_data_content_block(block: dict) -> dict:
+    """Format standard data content block to format expected by Converse API."""
+    if block["type"] == "image":
+        if block["source_type"] == "base64":
+            if "mime_type" not in block:
+                error_message = "mime_type key is required for base64 data."
+                raise ValueError(error_message)
+            formatted_block = {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": block["mime_type"],
+                    "data": block["data"],
+                }
+            }
+        else:
+            error_message = "Image data only supported through in-line base64 format."
+            raise ValueError(error_message)
+
+    else:
+        error_message = f"Blocks of type {block['type']} not supported."
+        raise ValueError(error_message)
+
+    return formatted_block
+
+
 def _merge_messages(
     messages: Sequence[BaseMessage],
 ) -> List[Union[SystemMessage, AIMessage, HumanMessage]]:
@@ -352,6 +379,8 @@ def _format_anthropic_messages(
                 elif isinstance(item, dict):
                     if "type" not in item:
                         raise ValueError("Dict content item must have a type key")
+                    elif is_data_content_block(item):
+                        tool_blocks.append(_format_data_content_block(item))
                     elif item["type"] == "image_url":
                         # convert format
                         source = _format_image(item["image_url"]["url"])
