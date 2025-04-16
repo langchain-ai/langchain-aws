@@ -22,6 +22,10 @@ class TestBedrockStandard(ChatModelIntegrationTests):
     def standard_chat_model_params(self) -> dict:
         return {"temperature": 0, "max_tokens": 100}
 
+    @property
+    def supports_image_inputs(self) -> bool:
+        return True
+
     @pytest.mark.xfail(reason="Not implemented.")
     def test_double_messages_conversation(self, model: BaseChatModel) -> None:
         super().test_double_messages_conversation(model)
