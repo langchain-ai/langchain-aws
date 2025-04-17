@@ -12,7 +12,7 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = ">=3.9,<4.0"
-langchain-core = "^0.3.52"
+langchain-core = "^0.3.53"
 boto3 = ">=1.37.24"
 pydantic = ">=2.10.0,<3"
 numpy = [

@@ -383,7 +383,7 @@ def test_bedrock_pdf_inputs() -> None:
                 "source_type": "base64",
                 "mime_type": "application/pdf",
                 "data": pdf_data,
-                "metadata": {"name": "my-pdf"},  # Converse requires a filename
+                "name": "my-pdf",  # Converse requires a filename
             },
         ]
     )
