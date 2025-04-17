@@ -53,7 +53,7 @@ from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
-from langchain_aws.function_calling import ToolsOutputParser
+from langchain_aws.function_calling import ToolsOutputParser, is_cache_point
 from langchain_aws.utils import create_aws_client
 
 logger = logging.getLogger(__name__)
@@ -459,6 +459,16 @@ class ChatBedrockConverse(BaseChatModel):
         populate_by_name=True,
     )
 
+    @classmethod
+    def create_cache_point(cls, cache_type: str = "default") -> Dict[str, Any]:
+        """Create a prompt caching configuration for Bedrock.
+        Args:
+            cache_type: Type of cache point. Default is "default".
+        Returns:
+            Dictionary containing prompt caching configuration.
+        """
+        return {"cachePoint": {"type": cache_type}}
+
     @model_validator(mode="before")
     @classmethod
     def set_disable_streaming(cls, values: Dict) -> Any:
@@ -689,12 +699,15 @@ class ChatBedrockConverse(BaseChatModel):
         tool_choice: Optional[Union[dict, str, Literal["auto", "any"]]] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, BaseMessage]:
-        try:
-            formatted_tools: list[dict] = [
-                convert_to_openai_tool(tool) for tool in tools
-            ]
-        except Exception:
-            formatted_tools = _format_tools(tools)
+        formatted_tools = []
+        for tool in tools:
+            if is_cache_point(tool):
+                formatted_tools.append(tool)
+            else:
+                try:
+                    formatted_tools.append(convert_to_openai_tool(tool))
+                except Exception:
+                    formatted_tools.append(_format_tools([tool])[0])
         if tool_choice:
             tool_choice = _format_tool_choice(tool_choice)
             tool_choice_type = list(tool_choice.keys())[0]
@@ -1262,19 +1275,22 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _format_tools(
-    tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool],],
+    tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool]],
 ) -> List[Dict[Literal["toolSpec"], Dict[str, Union[Dict[str, Any], str]]]]:
     formatted_tools: List = []
     for tool in tools:
-        if isinstance(tool, dict) and "toolSpec" in tool:
+        if is_cache_point(tool):
             formatted_tools.append(tool)
         else:
-            spec = convert_to_openai_tool(tool)["function"]
-            spec["inputSchema"] = {"json": spec.pop("parameters")}
-            formatted_tools.append({"toolSpec": spec})
+            if isinstance(tool, dict) and "toolSpec" in tool:
+                formatted_tools.append(tool)
+            else:
+                spec = convert_to_openai_tool(tool)["function"]
+                spec["inputSchema"] = {"json": spec.pop("parameters")}
+                formatted_tools.append({"toolSpec": spec})
 
-        tool_spec = formatted_tools[-1]["toolSpec"]
-        tool_spec["description"] = tool_spec.get("description") or tool_spec["name"]
+            tool_spec = formatted_tools[-1]["toolSpec"]
+            tool_spec["description"] = tool_spec.get("description") or tool_spec["name"]
     return formatted_tools
 
 

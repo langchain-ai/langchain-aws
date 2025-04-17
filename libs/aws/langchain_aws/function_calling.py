@@ -63,6 +63,17 @@ TOOL_PARAMETER_FORMAT = """<parameter>
 <description>{parameter_description}</description>
 </parameter>"""
 
+class CachePointType(TypedDict):
+    """Configuration for prompt caching in Bedrock toolConfig."""
+    
+    type: Literal["default"]
+
+
+class CachePoint(TypedDict):
+    """Configuration for prompt caching in Bedrock."""
+    
+    cachePoint: CachePointType
+
 
 class AnthropicTool(TypedDict):
     name: str
@@ -203,12 +214,23 @@ class ToolsOutputParser(BaseGenerationOutputParser):
         ]
         return cls_(**tool_call["args"])
 
+def is_cache_point(cache_point: Any) -> bool:
+    return (
+        isinstance(cache_point, dict) 
+        and len(cache_point) == 1
+        and "cachePoint" in cache_point 
+        and isinstance(cache_point["cachePoint"], dict)
+        and len(cache_point["cachePoint"]) == 1
+        and "type" in cache_point["cachePoint"]
+    )
 
 def convert_to_anthropic_tool(
     tool: Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool],
-) -> AnthropicTool:
+) -> Union[AnthropicTool, CachePoint]:
     # already in Anthropic tool format
-    if isinstance(tool, dict) and all(
+    if is_cache_point(tool):
+        return tool
+    elif isinstance(tool, dict) and all(
         k in tool for k in ("name", "description", "input_schema")
     ):
         tool["description"] = tool["description"] or tool["name"]
