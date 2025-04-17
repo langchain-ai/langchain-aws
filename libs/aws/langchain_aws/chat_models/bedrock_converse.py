@@ -34,6 +34,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolCall,
     ToolMessage,
+    is_data_content_block,
     merge_message_runs,
 )
 from langchain_core.messages.ai import AIMessageChunk, UsageMetadata
@@ -1036,6 +1037,56 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         raise ValueError(f"Received unsupported stream event:\n\n{event}")
 
 
+def _format_data_content_block(block: dict) -> dict:
+    """Format standard data content block to format expected by Converse API."""
+    if block["type"] == "image":
+        if block["sourceType"] == "base64":
+            if "mimeType" not in block:
+                error_message = "mime_type key is required for base64 data."
+                raise ValueError(error_message)
+            formatted_block = {
+                "image": {
+                    "format": block["mimeType"].split("/")[1],
+                    "source": {
+                        "bytes": _b64str_to_bytes(block["data"])
+                    },
+                }
+            }
+        else:
+            error_message = "Image data only supported through in-line base64 format."
+            raise ValueError(error_message)
+
+    elif block["type"] == "file":
+        if block["sourceType"] == "base64":
+            if "mimeType" not in block:
+                error_message = "mime_type key is required for base64 data."
+                raise ValueError(error_message)
+            formatted_block = {
+                "document": {
+                    "format": block["mimeType"].split("/")[1],
+                    "source": {
+                        "bytes": _b64str_to_bytes(block["data"])
+                    },
+                }
+            }
+            if name := block.get("name"):
+                formatted_block["document"]["name"] = name
+            elif (metadata := block.get("metadata")) and "name" in metadata:
+                formatted_block["document"]["name"] = metadata["name"]
+            else:
+                warnings.warn(
+                    "Bedrock Converse may require a filename for file inputs. Specify "
+                    "a filename in the content block: {'type': 'file', 'source_type': "
+                    "'base64', 'mime_type': 'application/pdf', 'data': '...', "
+                    "'name': 'my-pdf'}"
+                )
+        else:
+            error_message = "File data only supported through in-line base64 format."
+            raise ValueError(error_message)
+
+    return formatted_block
+
+
 def _lc_content_to_bedrock(
     content: Union[str, List[Union[str, Dict[str, Any]]]],
 ) -> List[Dict[str, Any]]:
@@ -1048,6 +1099,11 @@ def _lc_content_to_bedrock(
         # Assume block is already in bedrock format.
         elif "type" not in block:
             bedrock_content.append(block)
+        elif (
+            isinstance(block, dict)
+            and is_data_content_block(_camel_to_snake_keys(block))
+        ):
+            bedrock_content.append(_format_data_content_block(block))
         elif block["type"] == "text":
             bedrock_content.append({"text": block["text"]})
         elif block["type"] == "image":

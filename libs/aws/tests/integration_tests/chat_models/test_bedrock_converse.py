@@ -1,7 +1,9 @@
 """Standard LangChain interface tests"""
 
-from typing import Literal, Optional, Type
+import base64
+from typing import Literal, Type
 
+import httpx
 import pytest
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
@@ -422,3 +424,23 @@ def test_structured_output_thinking_force_tool_use() -> None:
     }
     with pytest.raises(llm.client.exceptions.ValidationException):
         response = llm.client.converse(messages=messages, **params)
+
+
+def test_bedrock_pdf_inputs() -> None:
+    model = ChatBedrockConverse(model="anthropic.claude-3-sonnet-20240229-v1:0")
+    url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
+    pdf_data = base64.b64encode(httpx.get(url).content).decode("utf-8")
+
+    message = HumanMessage(
+        [
+            {"type": "text", "text": "Summarize this document:"},
+            {
+                "type": "file",
+                "source_type": "base64",
+                "mime_type": "application/pdf",
+                "data": pdf_data,
+                "name": "my-pdf",  # Converse requires a filename
+            },
+        ]
+    )
+    _ = model.invoke([message])
