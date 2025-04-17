@@ -1056,14 +1056,16 @@ def _format_data_content_block(block: dict) -> dict:
                     },
                 }
             }
-            if (metadata := block.get("metadata")) and "name" in metadata:
+            if name := block.get("name"):
+                formatted_block["document"]["name"] = name
+            elif (metadata := block.get("metadata")) and "name" in metadata:
                 formatted_block["document"]["name"] = metadata["name"]
             else:
                 warnings.warn(
                     "Bedrock Converse may require a filename for file inputs. Specify "
-                    "a filename in the metadata: {'type': 'file', 'source_type': "
+                    "a filename in the content block: {'type': 'file', 'source_type': "
                     "'base64', 'mime_type': 'application/pdf', 'data': '...', "
-                    "'metadata': {'name': 'my-pdf'}}"
+                    "'name': 'my-pdf'}"
                 )
         else:
             error_message = "File data only supported through in-line base64 format."
