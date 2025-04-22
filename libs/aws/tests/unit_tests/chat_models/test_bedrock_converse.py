@@ -29,9 +29,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _snake_to_camel,
     _snake_to_camel_keys,
 )
-from langchain_aws.function_calling import (
-    convert_to_anthropic_tool
-)
+from langchain_aws.function_calling import convert_to_anthropic_tool
 
 
 class TestBedrockStandard(ChatModelUnitTests):
@@ -1075,8 +1073,7 @@ def test__lc_content_to_bedrock_reasoning_content_signature() -> None:
 
 def test__get_provider() -> None:
     llm = ChatBedrockConverse(
-        model="anthropic.claude-3-sonnet-20240229-v1:0",
-        region_name="us-west-2"
+        model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
     )
 
     assert llm.provider == "anthropic"
@@ -1084,23 +1081,24 @@ def test__get_provider() -> None:
     llm = ChatBedrockConverse(
         model="arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
         provider="anthropic",
-        region_name="us-west-2"
+        region_name="us-west-2",
     )
 
     assert llm.provider == "anthropic"
 
-    with pytest.raises(ValueError,
-                       match="Model provider should be supplied when passing a model ARN as model_id."):
+    with pytest.raises(
+        ValueError,
+        match="Model provider should be supplied when passing a model ARN as model_id.",
+    ):
         ChatBedrockConverse(
             model="arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
-            region_name="us-west-2"
+            region_name="us-west-2",
         )
 
 
 def test__get_base_model() -> None:
     llm_model_only = ChatBedrockConverse(
-        model="anthropic.claude-3-sonnet-20240229-v1:0",
-        region_name="us-west-2"
+        model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
     )
 
     assert llm_model_only._get_base_model() == "anthropic.claude-3-sonnet-20240229-v1:0"
@@ -1109,10 +1107,13 @@ def test__get_base_model() -> None:
         model="arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
         base_model="anthropic.claude-3-sonnet-20240229-v1:0",
         provider="anthropic",
-        region_name="us-west-2"
+        region_name="us-west-2",
     )
 
-    assert llm_with_base_model._get_base_model() == "anthropic.claude-3-sonnet-20240229-v1:0"
+    assert (
+        llm_with_base_model._get_base_model()
+        == "anthropic.claude-3-sonnet-20240229-v1:0"
+    )
 
 
 @pytest.mark.parametrize(
@@ -1122,70 +1123,70 @@ def test__get_base_model() -> None:
             "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
             "anthropic.claude-3-sonnet-20240229-v1:0",
             "anthropic",
-            False
+            False,
         ),
         (
             "arn:aws:bedrock:us-west-2::custom-model/anthropic.claude-v2:1/MyModel",
             "anthropic.claude-v2:1",
             "anthropic",
-            "tool_calling"
+            "tool_calling",
         ),
         (
             "arn:aws:bedrock:us-west-2::custom-model/meta.llama3-8b-instruct-v1:0/MyModel",
             "meta.llama3-8b-instruct-v1:0",
             "meta",
-            "tool_calling"
+            "tool_calling",
         ),
         (
             "arn:aws:bedrock:us-west-2::custom-model/meta.llama2-70b-chat-v1/MyModel",
             "meta.llama2-70b-chat-v1",
             "meta",
-            "tool_calling"
+            "tool_calling",
         ),
         (
             "arn:aws:bedrock:us-west-2::custom-model/mistral.mistral-large-2402-v1:0/MyModel",
             "mistral.mistral-large-2402-v1:0",
             "mistral",
-            "tool_calling"
+            "tool_calling",
         ),
         (
             "arn:aws:bedrock:us-west-2::custom-model/cohere.command-r-v1:0/MyModel",
             "cohere.command-r-v1:0",
             "cohere",
-            False
+            False,
         ),
         (
             "arn:aws:bedrock:us-west-2::custom-model/amazon.nova-8b/MyModel",
             "amazon.nova-8b",
             "amazon",
-            True
+            True,
         ),
         (
             "arn:aws:bedrock:us-west-2::custom-model/amazon.titan-text-express-v1/MyModel",
             "amazon.titan-text-express-v1",
             "amazon",
-            "tool_calling"
+            "tool_calling",
         ),
         (
             "arn:aws:sagemaker:us-west-2::endpoint/endpoint-quick-start-xxxxx",
             "deepseek.r1-v1:0",
             "deepseek",
-            "tool_calling"
+            "tool_calling",
         ),
-    ]
+    ],
 )
 def test_disable_streaming_with_arn(
     arn_model_id: str,
     base_model_id: str,
-    provider: str, 
-    expected_disable_streaming: Union[bool, str]
+    provider: str,
+    expected_disable_streaming: Union[bool, str],
 ) -> None:
     """Test that disable_streaming is properly set when base_model is provided."""
     llm = ChatBedrockConverse(
         model=arn_model_id,
         base_model=base_model_id,
         provider=provider,
-        region_name="us-west-2"
+        region_name="us-west-2",
     )
     assert llm.disable_streaming == expected_disable_streaming
 
@@ -1193,7 +1194,7 @@ def test_disable_streaming_with_arn(
 def test_create_cache_point() -> None:
     """Test creating a cache point configuration"""
     cache_point = ChatBedrockConverse.create_cache_point()
-    assert cache_point["cachePoint"]["type"] == "default"    
+    assert cache_point["cachePoint"]["type"] == "default"
 
 
 def test_anthropic_tool_with_cache_point() -> None:
@@ -1205,7 +1206,7 @@ def test_anthropic_tool_with_cache_point() -> None:
     tool_dict = {
         "name": "calculator",
         "description": "A tool that performs calculations",
-        "input_schema": {"properties": {}}
+        "input_schema": {"properties": {}},
     }
     result = convert_to_anthropic_tool(tool_dict)
     assert result["name"] == "calculator"
@@ -1214,18 +1215,16 @@ def test_anthropic_tool_with_cache_point() -> None:
     # Test bind_tools with cache point
     chat_model = ChatBedrockConverse(
         model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", region_name="us-east-1"
-    )  
-    chat_model_with_tools = chat_model.bind_tools(
-        [tool_dict, cache_point]
     )
-    
+    chat_model_with_tools = chat_model.bind_tools([tool_dict, cache_point])
+
     # Verify that both the tool_dict and cache_point are in the tools list
     runnable_binding = cast(RunnableBinding, chat_model_with_tools)
     tools = runnable_binding.kwargs.get("tools", [])
-    
+
     # Assert that we have two tools
     assert len(tools) == 2
-    
+
     # Check that the cache_point was passed through unchanged
     cache_points = [t for t in tools if "cachePoint" in t]
     assert len(cache_points) == 1

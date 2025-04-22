@@ -247,9 +247,9 @@ def test_structured_output_streaming() -> None:
 
 def test_tool_use_with_cache_point() -> None:
     """Test toolUse with cachepoint to verify cache metrics are being reported.
-    
-    This test creates tools with a length exceeding 1024 tokens to ensure 
-    caching is triggered, and verifies the response metrics indicate cache 
+
+    This test creates tools with a length exceeding 1024 tokens to ensure
+    caching is triggered, and verifies the response metrics indicate cache
     activity.
     """
     # Define a large number of tools to exceed 1024 tokens
@@ -259,9 +259,9 @@ def test_tool_use_with_cache_point() -> None:
     for i in range(1, 20):
         # Creating a unique class for each tool
         tool_class_name = f"CalculateTool{i}"
-        
+
         # Define the class using a closure to properly scope the fields
-        def create_tool_class(i):
+        def create_tool_class(i: int) -> Type[BaseModel]:
             class ToolClass(BaseModel):
                 number1: float = Field(description=f"First number for calculation {i}")
                 number2: float = Field(description=f"Second number for calculation {i}")
@@ -275,24 +275,23 @@ def test_tool_use_with_cache_point() -> None:
         tool_class = create_tool_class(i)
         tool_class.__name__ = tool_class_name
         tool_classes.append(tool_class)
-    
+
     # Create the model instance
     model = ChatBedrockConverse(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-        temperature=0
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", temperature=0
     )
-    
+
     # Create cache point configuration
     cache_point = ChatBedrockConverse.create_cache_point()
-    
+
     # Bind tools with cache point
     chat = model.bind_tools(tool_classes + [cache_point], tool_choice="any")
-    
+
     # Invocation
     response = chat.invoke("What's 5 + 3?")
     assert isinstance(response, AIMessage)
     assert len(response.tool_calls) == 1
-    
+
     # Verify the response has cache metrics
     assert response.usage_metadata is not None
     input_token_details = response.usage_metadata["input_token_details"]

@@ -203,6 +203,7 @@ class ToolsOutputParser(BaseGenerationOutputParser):
         ]
         return cls_(**tool_call["args"])
 
+
 def convert_to_anthropic_tool(
     tool: Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool],
 ) -> Union[AnthropicTool, Dict]:
