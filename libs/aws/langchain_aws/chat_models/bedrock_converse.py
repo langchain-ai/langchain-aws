@@ -54,7 +54,7 @@ from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
-from langchain_aws.function_calling import ToolsOutputParser, is_cache_point
+from langchain_aws.function_calling import ToolsOutputParser
 from langchain_aws.utils import create_aws_client
 
 logger = logging.getLogger(__name__)
@@ -702,7 +702,7 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> Runnable[LanguageModelInput, BaseMessage]:
         formatted_tools = []
         for tool in tools:
-            if is_cache_point(tool):
+            if _is_cache_point(tool):
                 formatted_tools.append(tool)
             else:
                 try:
@@ -1335,7 +1335,7 @@ def _format_tools(
 ) -> List[Dict[Literal["toolSpec"], Dict[str, Union[Dict[str, Any], str]]]]:
     formatted_tools: List = []
     for tool in tools:
-        if is_cache_point(tool):
+        if _is_cache_point(tool):
             formatted_tools.append(tool)
         else:
             if isinstance(tool, dict) and "toolSpec" in tool:
@@ -1506,3 +1506,10 @@ def _format_openai_video_url(video_url: str) -> Dict:
         "format": match.group("media_type"),
         "source": {"bytes": _b64str_to_bytes(match.group("data"))},
     }
+
+def _is_cache_point(cache_point: Any) -> bool:
+    return (
+        isinstance(cache_point, dict)
+        and "cachePoint" in cache_point
+        and cache_point.get("cachePoint").get("type") is not None
+    )

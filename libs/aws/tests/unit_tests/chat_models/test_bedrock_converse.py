@@ -30,8 +30,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _snake_to_camel_keys,
 )
 from langchain_aws.function_calling import (
-    convert_to_anthropic_tool,
-    is_cache_point,
+    convert_to_anthropic_tool
 )
 
 
@@ -1196,31 +1195,12 @@ def test_create_cache_point() -> None:
     cache_point = ChatBedrockConverse.create_cache_point()
     assert cache_point["cachePoint"]["type"] == "default"    
 
-def test_is_cache_point() -> None:
-    """Test the is_cache_point function for identifying cache point configurations"""
-    # Valid cache points
-    assert is_cache_point({"cachePoint": {"type": "default"}})
-    
-    # Invalid cases
-    assert not is_cache_point({"cachePoint": {}})  # Missing type
-    assert not is_cache_point(
-        {
-            "cachePoint": {"type": "default", "extra": "field"}
-        }
-    )  # Extra field
-    assert not is_cache_point({})  # Empty dict
-    assert not is_cache_point({"other": "value"})  # Wrong key
-    assert not is_cache_point("string")  # Not a dict
-    assert not is_cache_point(None)  # None
-
 
 def test_anthropic_tool_with_cache_point() -> None:
     """Test convert_to_anthropic_tool with cache point"""
     # Test with cache point
     cache_point = {"cachePoint": {"type": "default"}}
-    result = convert_to_anthropic_tool(cache_point)
-    assert result == cache_point
-    
+
     # Test with other tool types
     tool_dict = {
         "name": "calculator",
