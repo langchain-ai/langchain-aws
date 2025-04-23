@@ -460,6 +460,16 @@ class ChatBedrockConverse(BaseChatModel):
         populate_by_name=True,
     )
 
+    @classmethod
+    def create_cache_point(cls, cache_type: str = "default") -> Dict[str, Any]:
+        """Create a prompt caching configuration for Bedrock.
+        Args:
+            cache_type: Type of cache point. Default is "default".
+        Returns:
+            Dictionary containing prompt caching configuration.
+        """
+        return {"cachePoint": {"type": cache_type}}
+
     @model_validator(mode="before")
     @classmethod
     def set_disable_streaming(cls, values: Dict) -> Any:
@@ -469,13 +479,19 @@ class ChatBedrockConverse(BaseChatModel):
         # (e.g., "amazon", "anthropic", "ai21", "meta", "mistral")
         if "provider" not in values:
             if model_id.startswith("arn"):
-                raise ValueError("Model provider should be supplied when passing a model ARN as model_id.")
+                raise ValueError(
+                    "Model provider should be supplied when passing a model ARN as model_id."
+                )
             model_parts = model_id.split(".")
-            values["provider"] = model_parts[-2] if len(model_parts) > 1 else model_parts[0]
+            values["provider"] = (
+                model_parts[-2] if len(model_parts) > 1 else model_parts[0]
+            )
 
         provider = values["provider"]
 
-        model_id_lower = values.get("base_model_id", values.get("base_model", model_id)).lower()
+        model_id_lower = values.get(
+            "base_model_id", values.get("base_model", model_id)
+        ).lower()
 
         # Determine if the model supports plain-text streaming (ConverseStream)
         # Here we check based on the updated AWS documentation.
@@ -522,7 +538,8 @@ class ChatBedrockConverse(BaseChatModel):
             (provider == "meta")
             or
             # All Mistral models
-            (provider == "mistral") or
+            (provider == "mistral")
+            or
             # DeepSeek-R1 models
             (provider == "deepseek" and "r1" in model_id_lower)
         ):
@@ -603,7 +620,10 @@ class ChatBedrockConverse(BaseChatModel):
         logger.debug(f"input message to bedrock: {bedrock_messages}")
         logger.debug(f"System message to bedrock: {system}")
         params = self._converse_params(
-            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema", "properties", "thinking"})
+            stop=stop,
+            **_snake_to_camel_keys(
+                kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
+            ),
         )
         logger.debug(f"Input params: {params}")
         logger.info("Using Bedrock Converse API to generate response")
@@ -624,7 +644,10 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> Iterator[ChatGenerationChunk]:
         bedrock_messages, system = _messages_to_bedrock(messages)
         params = self._converse_params(
-            stop=stop, **_snake_to_camel_keys(kwargs, excluded_keys={"inputSchema", "properties", "thinking"})
+            stop=stop,
+            **_snake_to_camel_keys(
+                kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
+            ),
         )
         response = self.client.converse_stream(
             messages=bedrock_messages, system=system, **params
@@ -690,12 +713,15 @@ class ChatBedrockConverse(BaseChatModel):
         tool_choice: Optional[Union[dict, str, Literal["auto", "any"]]] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, BaseMessage]:
-        try:
-            formatted_tools: list[dict] = [
-                convert_to_openai_tool(tool) for tool in tools
-            ]
-        except Exception:
-            formatted_tools = _format_tools(tools)
+        formatted_tools = []
+        for tool in tools:
+            if _is_cache_point(tool):
+                formatted_tools.append(tool)
+            else:
+                try:
+                    formatted_tools.append(convert_to_openai_tool(tool))
+                except Exception:
+                    formatted_tools.append(_format_tools([tool])[0])
         if tool_choice:
             tool_choice = _format_tool_choice(tool_choice)
             tool_choice_type = list(tool_choice.keys())[0]
@@ -707,9 +733,7 @@ class ChatBedrockConverse(BaseChatModel):
                         f"are supported: {self.supports_tool_choice_values}."
                     )
                 else:
-                    supported = (
-                        f"Model {self._get_base_model()} does not currently support tool_choice."
-                    )
+                    supported = f"Model {self._get_base_model()} does not currently support tool_choice."
 
                 raise ValueError(
                     f"{supported} Please see "
@@ -923,6 +947,7 @@ def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:
 
     return response_metadata
 
+
 def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
     usage_dict = response.pop("usage")
 
@@ -942,6 +967,7 @@ def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
         total_tokens=total_tokens,
     )
     return usage
+
 
 def _parse_response(response: Dict[str, Any]) -> AIMessage:
     if "output" not in response:
@@ -1034,9 +1060,7 @@ def _format_data_content_block(block: dict) -> dict:
             formatted_block = {
                 "image": {
                     "format": block["mimeType"].split("/")[1],
-                    "source": {
-                        "bytes": _b64str_to_bytes(block["data"])
-                    },
+                    "source": {"bytes": _b64str_to_bytes(block["data"])},
                 }
             }
         else:
@@ -1051,9 +1075,7 @@ def _format_data_content_block(block: dict) -> dict:
             formatted_block = {
                 "document": {
                     "format": block["mimeType"].split("/")[1],
-                    "source": {
-                        "bytes": _b64str_to_bytes(block["data"])
-                    },
+                    "source": {"bytes": _b64str_to_bytes(block["data"])},
                 }
             }
             if name := block.get("name"):
@@ -1086,9 +1108,8 @@ def _lc_content_to_bedrock(
         # Assume block is already in bedrock format.
         elif "type" not in block:
             bedrock_content.append(block)
-        elif (
-            isinstance(block, dict)
-            and is_data_content_block(_camel_to_snake_keys(block))
+        elif isinstance(block, dict) and is_data_content_block(
+            _camel_to_snake_keys(block)
         ):
             bedrock_content.append(_format_data_content_block(block))
         elif block["type"] == "text":
@@ -1318,19 +1339,22 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _format_tools(
-    tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool],],
+    tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool]],
 ) -> List[Dict[Literal["toolSpec"], Dict[str, Union[Dict[str, Any], str]]]]:
     formatted_tools: List = []
     for tool in tools:
-        if isinstance(tool, dict) and "toolSpec" in tool:
+        if _is_cache_point(tool):
             formatted_tools.append(tool)
         else:
-            spec = convert_to_openai_tool(tool)["function"]
-            spec["inputSchema"] = {"json": spec.pop("parameters")}
-            formatted_tools.append({"toolSpec": spec})
+            if isinstance(tool, dict) and "toolSpec" in tool:
+                formatted_tools.append(tool)
+            else:
+                spec = convert_to_openai_tool(tool)["function"]
+                spec["inputSchema"] = {"json": spec.pop("parameters")}
+                formatted_tools.append({"toolSpec": spec})
 
-        tool_spec = formatted_tools[-1]["toolSpec"]
-        tool_spec["description"] = tool_spec.get("description") or tool_spec["name"]
+            tool_spec = formatted_tools[-1]["toolSpec"]
+            tool_spec["description"] = tool_spec.get("description") or tool_spec["name"]
     return formatted_tools
 
 
@@ -1490,3 +1514,11 @@ def _format_openai_video_url(video_url: str) -> Dict:
         "format": match.group("media_type"),
         "source": {"bytes": _b64str_to_bytes(match.group("data"))},
     }
+
+
+def _is_cache_point(cache_point: Any) -> bool:
+    return (
+        isinstance(cache_point, dict)
+        and "cachePoint" in cache_point
+        and cache_point.get("cachePoint").get("type") is not None
+    )
