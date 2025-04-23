@@ -206,7 +206,7 @@ class ToolsOutputParser(BaseGenerationOutputParser):
 
 def convert_to_anthropic_tool(
     tool: Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool],
-) -> AnthropicTool:
+) -> Union[AnthropicTool, Dict]:
     # already in Anthropic tool format
     if isinstance(tool, dict) and all(
         k in tool for k in ("name", "description", "input_schema")
