@@ -1228,3 +1228,25 @@ def test_anthropic_tool_with_cache_point() -> None:
     # Check that the cache_point was passed through unchanged
     cache_points = [t for t in tools if "cachePoint" in t]
     assert len(cache_points) == 1
+
+
+def test_model_kwargs() -> None:
+    """Test we can transfer unknown params to model_kwargs."""
+    llm = ChatBedrockConverse(
+        model="my-model",
+        region_name="us-west-2",
+        model_kwargs={"foo": "bar"},
+    )
+    assert llm.model_id == "my-model"
+    assert llm.region_name == "us-west-2"
+    assert llm.model_kwargs == {"foo": "bar"}
+
+    with pytest.warns(match="transferred to model_kwargs"):
+        llm = ChatBedrockConverse(
+            model="my-model",
+            region_name="us-west-2",
+            foo="bar",
+        )
+    assert llm.model_id == "my-model"
+    assert llm.region_name == "us-west-2"
+    assert llm.model_kwargs == {"foo": "bar"}

@@ -801,3 +801,25 @@ def test_chat_prompt_adapter_with_model_detection(model_id, base_model_id, provi
     )
 
     assert expected_format_marker in prompt
+
+
+def test_model_kwargs() -> None:
+    """Test we can transfer unknown params to model_kwargs."""
+    llm = ChatBedrock(
+        model_id="my-model",
+        region_name="us-west-2",
+        model_kwargs={"foo": "bar"},
+    )
+    assert llm.model_id == "my-model"
+    assert llm.region_name == "us-west-2"
+    assert llm.model_kwargs == {"foo": "bar"}
+
+    with pytest.warns(match="transferred to model_kwargs"):
+        llm = ChatBedrock(
+            model_id="my-model",
+            region_name="us-west-2",
+            foo="bar",
+        )
+    assert llm.model_id == "my-model"
+    assert llm.region_name == "us-west-2"
+    assert llm.model_kwargs == {"foo": "bar"}
