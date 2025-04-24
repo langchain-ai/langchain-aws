@@ -1080,6 +1080,8 @@ def _format_data_content_block(block: dict) -> dict:
             }
             if name := block.get("name"):
                 formatted_block["document"]["name"] = name
+            elif name := block.get("filename"):  # OpenAI uses `filename`
+                formatted_block["document"]["name"] = name
             elif (metadata := block.get("metadata")) and "name" in metadata:
                 formatted_block["document"]["name"] = metadata["name"]
             else:

@@ -443,3 +443,21 @@ def test_bedrock_pdf_inputs() -> None:
         ]
     )
     _ = model.invoke([message])
+
+    # Test OpenAI Chat Completions format
+    message = HumanMessage(
+        [
+            {
+                "type": "text",
+                "text": "Summarize this document:",
+            },
+            {
+                "type": "file",
+                "file": {
+                    "filename": "my-pdf",
+                    "file_data": f"data:application/pdf;base64,{pdf_data}",
+                },
+            },
+        ]
+    )
+    _ = model.invoke([message])
