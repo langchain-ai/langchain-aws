@@ -823,3 +823,14 @@ def test_model_kwargs() -> None:
     assert llm.model_id == "my-model"
     assert llm.region_name == "us-west-2"
     assert llm.model_kwargs == {"foo": "bar"}
+
+    with pytest.warns(match="transferred to model_kwargs"):
+        llm = ChatBedrock(
+            model_id="my-model",
+            region_name="us-west-2",
+            foo="bar",
+            model_kwargs={"baz": "qux"},
+        )
+    assert llm.model_id == "my-model"
+    assert llm.region_name == "us-west-2"
+    assert llm.model_kwargs == {"foo": "bar", "baz": "qux"}
