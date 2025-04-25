@@ -57,6 +57,8 @@
         'trace': None,
       }),
       'model_id': 'anthropic.claude-3-sonnet-20240229-v1:0',
+      'model_kwargs': dict({
+      }),
       'provider_stop_reason_key_map': dict({
         'ai21': 'finishReason',
         'amazon': 'completionReason',

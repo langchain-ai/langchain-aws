@@ -1228,3 +1228,46 @@ def test_anthropic_tool_with_cache_point() -> None:
     # Check that the cache_point was passed through unchanged
     cache_points = [t for t in tools if "cachePoint" in t]
     assert len(cache_points) == 1
+
+
+def test_model_kwargs() -> None:
+    """Test we can transfer unknown params to model_kwargs."""
+    llm = ChatBedrockConverse(
+        model="my-model",
+        region_name="us-west-2",
+        additional_model_request_fields={"foo": "bar"},
+    )
+    assert llm.model_id == "my-model"
+    assert llm.region_name == "us-west-2"
+    assert llm.additional_model_request_fields == {"foo": "bar"}
+
+    with pytest.warns(match="transferred to model_kwargs"):
+        llm = ChatBedrockConverse(  # type: ignore[call-arg]
+            model="my-model",
+            region_name="us-west-2",
+            foo="bar",
+        )
+    assert llm.model_id == "my-model"
+    assert llm.region_name == "us-west-2"
+    assert llm.additional_model_request_fields == {"foo": "bar"}
+
+    with pytest.warns(match="transferred to model_kwargs"):
+        llm = ChatBedrockConverse(  # type: ignore[call-arg]
+            model="my-model",
+            region_name="us-west-2",
+            foo="bar",
+            additional_model_request_fields={"baz": "qux"},
+        )
+    assert llm.model_id == "my-model"
+    assert llm.region_name == "us-west-2"
+    assert llm.additional_model_request_fields == {"foo": "bar", "baz": "qux"}
+
+    # For backward compatibility, test that we don't transfer known parameters out
+    # of model_kwargs
+    llm = ChatBedrockConverse(
+        model="my-model",
+        region_name="us-west-2",
+        additional_model_request_fields={"temperature": 0.2},
+    )
+    assert llm.additional_model_request_fields == {"temperature": 0.2}
+    assert llm.temperature is None
