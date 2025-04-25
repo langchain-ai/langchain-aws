@@ -456,9 +456,6 @@ class ChatBedrockConverse(BaseChatModel):
     request_metadata: Optional[Dict[str, str]] = None
     """Key-Value pairs that you can use to filter invocation logs."""
 
-    model_kwargs: dict[str, Any] = Field(default_factory=dict)
-    """Holds any unexpected initialization parameters."""
-
     model_config = ConfigDict(
         extra="forbid",
         populate_by_name=True,
@@ -480,6 +477,17 @@ class ChatBedrockConverse(BaseChatModel):
         """Build extra kwargs from additional params that were passed in."""
         all_required_field_names = get_pydantic_field_names(cls)
         values = _build_model_kwargs(values, all_required_field_names)
+
+        # Merge model_kwargs (name assumed in langchain-core) and
+        # additional_model_request_fields (name used in ChatBedrockConverse)
+        model_kwargs = values.pop("model_kwargs", {})
+        additional_model_request_fields = values.pop(
+            "additional_model_request_fields", {}
+        )
+        if additional_model_request_fields or model_kwargs:
+            values["additional_model_request_fields"] = {
+                **model_kwargs, **additional_model_request_fields
+            }
         return values
 
     @model_validator(mode="before")

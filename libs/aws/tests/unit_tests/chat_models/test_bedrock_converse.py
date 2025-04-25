@@ -1235,11 +1235,11 @@ def test_model_kwargs() -> None:
     llm = ChatBedrockConverse(
         model="my-model",
         region_name="us-west-2",
-        model_kwargs={"foo": "bar"},
+        additional_model_request_fields={"foo": "bar"},
     )
     assert llm.model_id == "my-model"
     assert llm.region_name == "us-west-2"
-    assert llm.model_kwargs == {"foo": "bar"}
+    assert llm.additional_model_request_fields == {"foo": "bar"}
 
     with pytest.warns(match="transferred to model_kwargs"):
         llm = ChatBedrockConverse(  # type: ignore[call-arg]
@@ -1249,4 +1249,15 @@ def test_model_kwargs() -> None:
         )
     assert llm.model_id == "my-model"
     assert llm.region_name == "us-west-2"
-    assert llm.model_kwargs == {"foo": "bar"}
+    assert llm.additional_model_request_fields == {"foo": "bar"}
+
+    with pytest.warns(match="transferred to model_kwargs"):
+        llm = ChatBedrockConverse(  # type: ignore[call-arg]
+            model="my-model",
+            region_name="us-west-2",
+            foo="bar",
+            additional_model_request_fields={"baz": "qux"},
+        )
+    assert llm.model_id == "my-model"
+    assert llm.region_name == "us-west-2"
+    assert llm.additional_model_request_fields == {"foo": "bar", "baz": "qux"}
