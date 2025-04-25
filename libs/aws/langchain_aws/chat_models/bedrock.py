@@ -38,8 +38,10 @@ from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
+from langchain_core.utils import get_pydantic_field_names
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
+from langchain_core.utils.utils import _build_model_kwargs
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
@@ -588,6 +590,23 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
         if model_id and "beta_use_converse_api" not in values:
             values["beta_use_converse_api"] = "nova" in model_id
+        return values
+
+    @model_validator(mode="before")
+    @classmethod
+    def build_extra(cls, values: dict[str, Any]) -> Any:
+        """Build extra kwargs from additional params that were passed in."""
+        all_required_field_names = get_pydantic_field_names(cls)
+
+        # For backwards compatibility, we don't transfer known parameters out of
+        # model_kwargs
+        model_kwargs = values.pop("model_kwargs", {})
+        values = _build_model_kwargs(values, all_required_field_names)
+        if model_kwargs or values.get("model_kwargs", {}):
+            values["model_kwargs"] = {
+                **values.get("model_kwargs", {}),
+                **model_kwargs,
+            }
         return values
 
     @property

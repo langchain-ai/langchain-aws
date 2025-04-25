@@ -45,12 +45,13 @@ from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
-from langchain_core.utils import secret_from_env
+from langchain_core.utils import get_pydantic_field_names, secret_from_env
 from langchain_core.utils.function_calling import (
     convert_to_openai_function,
     convert_to_openai_tool,
 )
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
+from langchain_core.utils.utils import _build_model_kwargs
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
@@ -469,6 +470,25 @@ class ChatBedrockConverse(BaseChatModel):
             Dictionary containing prompt caching configuration.
         """
         return {"cachePoint": {"type": cache_type}}
+
+    @model_validator(mode="before")
+    @classmethod
+    def build_extra(cls, values: dict[str, Any]) -> Any:
+        """Build extra kwargs from additional params that were passed in."""
+        all_required_field_names = get_pydantic_field_names(cls)
+        values = _build_model_kwargs(values, all_required_field_names)
+
+        # Merge model_kwargs (name assumed in langchain-core) and
+        # additional_model_request_fields (name used in ChatBedrockConverse)
+        model_kwargs = values.pop("model_kwargs", {})
+        additional_model_request_fields = values.pop(
+            "additional_model_request_fields", {}
+        )
+        if additional_model_request_fields or model_kwargs:
+            values["additional_model_request_fields"] = {
+                **model_kwargs, **additional_model_request_fields
+            }
+        return values
 
     @model_validator(mode="before")
     @classmethod
