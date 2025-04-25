@@ -1242,7 +1242,7 @@ def test_model_kwargs() -> None:
     assert llm.model_kwargs == {"foo": "bar"}
 
     with pytest.warns(match="transferred to model_kwargs"):
-        llm = ChatBedrockConverse(
+        llm = ChatBedrockConverse(  # type: ignore[call-arg]
             model="my-model",
             region_name="us-west-2",
             foo="bar",
