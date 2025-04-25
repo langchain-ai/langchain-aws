@@ -834,3 +834,9 @@ def test_model_kwargs() -> None:
     assert llm.model_id == "my-model"
     assert llm.region_name == "us-west-2"
     assert llm.model_kwargs == {"foo": "bar", "baz": "qux"}
+
+    # For backward compatibility, test that we don't transfer known parameters out
+    # of model_kwargs
+    llm = ChatBedrock(model_id="my-model", model_kwargs={"stop_sequences": ["test"]})
+    assert llm.model_kwargs == {"stop_sequences": ["test"]}
+    assert llm.stop_sequences is None

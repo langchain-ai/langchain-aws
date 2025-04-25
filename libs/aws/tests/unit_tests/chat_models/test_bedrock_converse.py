@@ -1261,3 +1261,11 @@ def test_model_kwargs() -> None:
     assert llm.model_id == "my-model"
     assert llm.region_name == "us-west-2"
     assert llm.additional_model_request_fields == {"foo": "bar", "baz": "qux"}
+
+    # For backward compatibility, test that we don't transfer known parameters out
+    # of model_kwargs
+    llm = ChatBedrockConverse(
+        model="my-model", additional_model_request_fields={"temperature": 0.2}
+    )
+    assert llm.additional_model_request_fields == {"temperature": 0.2}
+    assert llm.temperature is None
