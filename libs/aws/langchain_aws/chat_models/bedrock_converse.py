@@ -532,6 +532,9 @@ class ChatBedrockConverse(BaseChatModel):
             or
             # Cohere Command R models
             (provider == "cohere" and "command-r" in model_id_lower)
+            or
+            # Writer Palmyra models
+            (provider == "writer" and "palmyra" in model_id_lower)
         ):
             streaming_support = True
         elif (
