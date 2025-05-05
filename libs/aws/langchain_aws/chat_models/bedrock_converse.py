@@ -562,6 +562,9 @@ class ChatBedrockConverse(BaseChatModel):
             or
             # DeepSeek-R1 models
             (provider == "deepseek" and "r1" in model_id_lower)
+            or
+            # Writer Palmyra models
+            (provider == "writer" and "palmyra" in model_id_lower)
         ):
             streaming_support = "no_tools"
         else:
