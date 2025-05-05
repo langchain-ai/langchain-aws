@@ -1,11 +1,12 @@
 import base64
 import datetime
 import json
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock, Mock, AsyncMock
 from uuid import uuid4
 
 import pytest
 from botocore.client import BaseClient
+from aiobotocore.client import AioBaseClient
 from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata
 from langgraph.constants import TASKS
 
@@ -16,7 +17,6 @@ from langgraph_checkpoint_aws.models import (
     SessionCheckpoint,
     SessionPendingWrite,
 )
-
 
 @pytest.fixture
 def mock_boto_client():
@@ -35,6 +35,24 @@ def mock_boto_client():
     mock_client.list_invocation_steps = MagicMock()
     return mock_client
 
+@pytest.fixture
+def mock_aioboto_client():
+    mock_client = AsyncMock(spec=AioBaseClient)
+
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    mock_client.create_session = AsyncMock()
+    mock_client.get_session = AsyncMock()
+    mock_client.end_session = AsyncMock()
+    mock_client.delete_session = AsyncMock()
+    mock_client.create_invocation = AsyncMock()
+    mock_client.list_invocations = AsyncMock()
+    mock_client.put_invocation_step = AsyncMock()
+    mock_client.get_invocation_step = AsyncMock()
+    mock_client.list_invocation_steps = AsyncMock()
+    
+    return mock_client
 
 @pytest.fixture
 def sample_session_id():
@@ -228,7 +246,7 @@ def sample_session_checkpoint(sample_invocation_step_summary):
         thread_id=sample_invocation_step_summary["sessionId"],
         checkpoint_ns=sample_invocation_step_summary["invocationId"],
         checkpoint_id=sample_invocation_step_summary["invocationStepId"],
-        checkpoint={},
+        checkpoint=('json', b'e30='),
         metadata=json.dumps({"key": "value"}),
         parent_checkpoint_id=None,
         channel_values={},
