@@ -23,9 +23,9 @@ from langgraph_checkpoint_aws.async_saver import (
 
 class TestAsyncBedrockSessionSaver:
     @pytest.fixture
-    def session_saver(self, mock_aioboto_client):
-        with patch("aioboto3.Session") as mock_aioboto_session:
-            mock_aioboto_session.return_value.client.return_value = mock_aioboto_client
+    def session_saver(self, mock_boto_client):
+        with patch("boto3.Session") as mock_aioboto_session:
+            mock_aioboto_session.return_value.client.return_value = mock_boto_client
             yield AsyncBedrockSessionSaver()
 
     @pytest.fixture
@@ -38,52 +38,13 @@ class TestAsyncBedrockSessionSaver:
         )
 
     @pytest.mark.asyncio
-    async def test_init_with_default_client(self, session_saver, mock_aioboto_client):
-        # Assert type of session_client
-        assert isinstance(session_saver.session_client, AsyncBedrockAgentRuntimeSessionClient)
-
-        # Assert that the session is set correctly
-        assert session_saver.session_client.session.client.return_value == mock_aioboto_client
-
-        # test _get_client logic
-        client = await session_saver.session_client._get_client()
-        assert client == mock_aioboto_client
-
-
-    @pytest.mark.asyncio
-    async def test_init_with_all_parameters(self, mock_aioboto_client):
-        # Mock both the Session and the AsyncBedrockAgentRuntimeSessionClient
-        with patch("aioboto3.Session") as mock_aioboto_session:
-            
-            # Configure the mock to return our mock client
-            mock_aioboto_session.return_value.client.return_value = mock_aioboto_client
-            
-            # Set up test parameters
-            config = Config(retries=dict(max_attempts=5))
-            endpoint_url = "https://custom-endpoint.amazonaws.com"
-
-            # Create the AsyncBedrockSessionSaver instance
-            saver = AsyncBedrockSessionSaver(
-                region_name="us-west-2",
-                credentials_profile_name="test-profile",
-                aws_access_key_id=SecretStr("test-access-key"),
-                aws_secret_access_key=SecretStr("test-secret-key"),
-                aws_session_token=SecretStr("test-session-token"),
-                endpoint_url=endpoint_url,
-                config=config,
-            )
-
-            # Assert that AsyncBedrockAgentRuntimeSessionClient was initialized with the correct parameters
-            assert isinstance(saver.session_client, AsyncBedrockAgentRuntimeSessionClient)
-
-    @pytest.mark.asyncio
     async def test__create_session_invocation_success(
-        self, mock_aioboto_client, session_saver, sample_create_invocation_response
+        self, mock_boto_client, session_saver, sample_create_invocation_response
     ):
         # Arrange
         thread_id = "test_thread_id"
         invocation_id = "test_invocation_id"
-        mock_aioboto_client.create_invocation.return_value = (
+        mock_boto_client.create_invocation.return_value = (
             sample_create_invocation_response
         )
 
@@ -91,13 +52,13 @@ class TestAsyncBedrockSessionSaver:
         await session_saver._create_session_invocation(thread_id, invocation_id)
 
         # Assert
-        mock_aioboto_client.create_invocation.assert_called_once()
+        mock_boto_client.create_invocation.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test__create_session_invocation_conflict(self, mock_aioboto_client, session_saver):
+    async def test__create_session_invocation_conflict(self, mock_boto_client, session_saver):
         # Arrange
         error_response = {"Error": {"Code": "ConflictException", "Message": "Conflict"}}
-        mock_aioboto_client.create_invocation.side_effect = ClientError(
+        mock_boto_client.create_invocation.side_effect = ClientError(
             error_response=error_response,
             operation_name="CreateInvocation",
         )
@@ -108,18 +69,18 @@ class TestAsyncBedrockSessionSaver:
         await session_saver._create_session_invocation(thread_id, invocation_id)
 
         # Assert
-        mock_aioboto_client.create_invocation.assert_called_once()
+        mock_boto_client.create_invocation.assert_called_once()
 
     @pytest.mark.asyncio
     async def test__create_session_invocation_raises_error(
-        self, mock_aioboto_client, session_saver
+        self, mock_boto_client, session_saver
     ):
         # Arrange
         thread_id = "test_thread_id"
         invocation_id = "test_invocation_id"
 
         error_response = {"Error": {"Code": "SomeOtherError", "Message": "Other error"}}
-        mock_aioboto_client.create_invocation.side_effect = ClientError(
+        mock_boto_client.create_invocation.side_effect = ClientError(
             error_response=error_response,
             operation_name="CreateInvocation",
         )
@@ -129,12 +90,12 @@ class TestAsyncBedrockSessionSaver:
             await session_saver._create_session_invocation(thread_id, invocation_id)
 
         assert exc_info.value.response["Error"]["Code"] == "SomeOtherError"
-        mock_aioboto_client.create_invocation.assert_called_once()
+        mock_boto_client.create_invocation.assert_called_once()
 
     @pytest.mark.asyncio
     async def test__get_checkpoint_pending_writes_success(
         self,
-        mock_aioboto_client,
+        mock_boto_client,
         session_saver,
         sample_session_pending_write,
         sample_list_invocation_steps_response,
@@ -149,10 +110,10 @@ class TestAsyncBedrockSessionSaver:
         sample_get_invocation_step_response["invocationStep"]["payload"][
             "contentBlocks"
         ][0]["text"] = sample_session_pending_write.model_dump_json()
-        mock_aioboto_client.list_invocation_steps.return_value = (
+        mock_boto_client.list_invocation_steps.return_value = (
             sample_list_invocation_steps_response
         )
-        mock_aioboto_client.get_invocation_step.return_value = (
+        mock_boto_client.get_invocation_step.return_value = (
             sample_get_invocation_step_response
         )
 
@@ -163,19 +124,19 @@ class TestAsyncBedrockSessionSaver:
 
         # Assert
         assert len(result) == 1
-        mock_aioboto_client.list_invocation_steps.assert_called_once()
-        mock_aioboto_client.get_invocation_step.assert_called_once()
+        mock_boto_client.list_invocation_steps.assert_called_once()
+        mock_boto_client.get_invocation_step.assert_called_once()
 
     @pytest.mark.asyncio
     async def test__get_checkpoint_pending_writes_no_invocation_steps(
         self,
-        mock_aioboto_client,
+        mock_boto_client,
         session_saver,
         sample_list_invocation_steps_response,
     ):
         # Arrange
         sample_list_invocation_steps_response["invocationStepSummaries"] = []
-        mock_aioboto_client.list_invocation_steps.return_value = (
+        mock_boto_client.list_invocation_steps.return_value = (
             sample_list_invocation_steps_response
         )
         
@@ -186,15 +147,15 @@ class TestAsyncBedrockSessionSaver:
         
         # Assert
         assert result == []
-        mock_aioboto_client.list_invocation_steps.assert_called_once()
+        mock_boto_client.list_invocation_steps.assert_called_once()
 
     @pytest.mark.asyncio
     async def test__get_checkpoint_pending_writes_resource_not_found(
-        self, mock_aioboto_client, session_saver
+        self, mock_boto_client, session_saver
     ):
         # Arrange
         error_response = {"Error": {"Code": "ResourceNotFoundException", "Message": "Resource not found"}}
-        mock_aioboto_client.list_invocation_steps.side_effect = ClientError(
+        mock_boto_client.list_invocation_steps.side_effect = ClientError(
             error_response=error_response,
             operation_name="ListInvocationSteps",
         )
@@ -206,15 +167,15 @@ class TestAsyncBedrockSessionSaver:
         
         # Assert
         assert result == []
-        mock_aioboto_client.list_invocation_steps.assert_called_once()
+        mock_boto_client.list_invocation_steps.assert_called_once()
 
     @pytest.mark.asyncio
     async def test__get_checkpoint_pending_writes_client_error(
-        self, mock_aioboto_client, session_saver, sample_invocation_step_payload
+        self, mock_boto_client, session_saver, sample_invocation_step_payload
     ):
         # Arrange
         error_response = {"Error": {"Code": "SomeError", "Message": "Error occurred"}}
-        mock_aioboto_client.list_invocation_steps.side_effect = ClientError(
+        mock_boto_client.list_invocation_steps.side_effect = ClientError(
             error_response=error_response,
             operation_name="ListInvocationSteps",
         )
@@ -225,12 +186,12 @@ class TestAsyncBedrockSessionSaver:
                 "thread_id", "ns", "checkpoint_id"
             )
         
-        mock_aioboto_client.list_invocation_steps.assert_called_once()
+        mock_boto_client.list_invocation_steps.assert_called_once()
 
     @pytest.mark.asyncio
     async def test__save_invocation_step_success(
         self,
-        mock_aioboto_client,
+        mock_boto_client,
         session_saver,
         sample_invocation_step_payload,
         sample_put_invocation_step_response,
@@ -239,7 +200,7 @@ class TestAsyncBedrockSessionSaver:
         thread_id = "test_thread_id"
         invocation_identifier = "test_invocation_identifier"
         invocation_step_id = "test_invocation_step_id"
-        mock_aioboto_client.put_invocation_step.return_value = (
+        mock_boto_client.put_invocation_step.return_value = (
             sample_put_invocation_step_response
         )
 
@@ -255,15 +216,15 @@ class TestAsyncBedrockSessionSaver:
             )
 
         # Assert
-        mock_aioboto_client.put_invocation_step.assert_called_once()
+        mock_boto_client.put_invocation_step.assert_called_once()
 
     @pytest.mark.asyncio
     async def test__save_invocation_step_client_error(
-        self, mock_aioboto_client, session_saver, sample_invocation_step_payload
+        self, mock_boto_client, session_saver, sample_invocation_step_payload
     ):
         # Arrange
         error_response = {"Error": {"Code": "SomeError", "Message": "Error occurred"}}
-        mock_aioboto_client.put_invocation_step.side_effect = ClientError(
+        mock_boto_client.put_invocation_step.side_effect = ClientError(
             error_response=error_response,
             operation_name="PutInvocationStep",
         )
@@ -274,12 +235,12 @@ class TestAsyncBedrockSessionSaver:
                 "thread_id", "inv_id", "step_id", sample_invocation_step_payload
             )
         
-        mock_aioboto_client.put_invocation_step.assert_called_once()
+        mock_boto_client.put_invocation_step.assert_called_once()
 
     @pytest.mark.asyncio
     async def test__find_most_recent_checkpoint_step_success(
         self,
-        mock_aioboto_client,
+        mock_boto_client,
         session_saver,
         sample_session_checkpoint,
         sample_list_invocation_steps_response,
@@ -293,10 +254,10 @@ class TestAsyncBedrockSessionSaver:
         sample_get_invocation_step_response["invocationStep"]["payload"][
             "contentBlocks"
         ][0]["text"] = sample_session_checkpoint.model_dump_json()
-        mock_aioboto_client.list_invocation_steps.return_value = (
+        mock_boto_client.list_invocation_steps.return_value = (
             sample_list_invocation_steps_response
         )
-        mock_aioboto_client.get_invocation_step.return_value = (
+        mock_boto_client.get_invocation_step.return_value = (
             sample_get_invocation_step_response
         )
 
@@ -307,13 +268,13 @@ class TestAsyncBedrockSessionSaver:
 
         # Assert
         assert result is not None
-        mock_aioboto_client.list_invocation_steps.assert_called_once()
-        mock_aioboto_client.get_invocation_step.assert_called_once()
+        mock_boto_client.list_invocation_steps.assert_called_once()
+        mock_boto_client.get_invocation_step.assert_called_once()
 
     @pytest.mark.asyncio
     async def test__find_most_recent_checkpoint_step_skips_writes(
         self,
-        mock_aioboto_client,
+        mock_boto_client,
         session_saver,
         sample_session_pending_write,
         sample_list_invocation_steps_response,
@@ -327,10 +288,10 @@ class TestAsyncBedrockSessionSaver:
         sample_get_invocation_step_response["invocationStep"]["payload"][
             "contentBlocks"
         ][0]["text"] = sample_session_pending_write.model_dump_json()
-        mock_aioboto_client.list_invocation_steps.return_value = (
+        mock_boto_client.list_invocation_steps.return_value = (
             sample_list_invocation_steps_response
         )
-        mock_aioboto_client.get_invocation_step.return_value = (
+        mock_boto_client.get_invocation_step.return_value = (
             sample_get_invocation_step_response
         )
 
@@ -341,19 +302,19 @@ class TestAsyncBedrockSessionSaver:
 
         # Assert
         assert result is None
-        mock_aioboto_client.list_invocation_steps.assert_called_once()
-        mock_aioboto_client.get_invocation_step.assert_called_once()
+        mock_boto_client.list_invocation_steps.assert_called_once()
+        mock_boto_client.get_invocation_step.assert_called_once()
 
     @pytest.mark.asyncio
     async def test__find_most_recent_checkpoint_step_no_invocation_steps(
         self,
-        mock_aioboto_client,
+        mock_boto_client,
         session_saver,
         sample_list_invocation_steps_response,
     ):
         # Arrange
         sample_list_invocation_steps_response["invocationStepSummaries"] = []
-        mock_aioboto_client.list_invocation_steps.return_value = (
+        mock_boto_client.list_invocation_steps.return_value = (
             sample_list_invocation_steps_response
         )
         
@@ -362,12 +323,12 @@ class TestAsyncBedrockSessionSaver:
         
         # Assert
         assert result is None
-        mock_aioboto_client.list_invocation_steps.assert_called_once()
+        mock_boto_client.list_invocation_steps.assert_called_once()
 
     @pytest.mark.asyncio
     async def test__get_checkpoint_step_with_checkpoint_id(
         self,
-        mock_aioboto_client,
+        mock_boto_client,
         session_saver,
         sample_get_invocation_step_response,
     ):
@@ -376,7 +337,7 @@ class TestAsyncBedrockSessionSaver:
         checkpoint_ns = "test_namespace"
         checkpoint_id = "test_checkpoint_id"
         session_saver._find_most_recent_checkpoint_step = Mock()
-        mock_aioboto_client.get_invocation_step.return_value = (
+        mock_boto_client.get_invocation_step.return_value = (
             sample_get_invocation_step_response
         )
 
@@ -385,12 +346,12 @@ class TestAsyncBedrockSessionSaver:
 
         # Assert
         session_saver._find_most_recent_checkpoint_step.assert_not_called()
-        mock_aioboto_client.get_invocation_step.assert_called_once()
+        mock_boto_client.get_invocation_step.assert_called_once()
 
     @pytest.mark.asyncio
     async def test__get_checkpoint_step_without_checkpoint_id(
         self,
-        mock_aioboto_client,
+        mock_boto_client,
         session_saver,
         sample_invocation_step_payload,
         sample_get_invocation_step_response,
@@ -411,12 +372,12 @@ class TestAsyncBedrockSessionSaver:
             thread_id,
             checkpoint_ns,
         )
-        mock_aioboto_client.get_invocation_step.assert_not_called()
+        mock_boto_client.get_invocation_step.assert_not_called()
 
     @pytest.mark.asyncio
     async def test__get_checkpoint_step_empty_without_checkpoint_id(
         self,
-        mock_aioboto_client,
+        mock_boto_client,
         session_saver,
         sample_invocation_step_payload,
         sample_get_invocation_step_response,
@@ -435,7 +396,7 @@ class TestAsyncBedrockSessionSaver:
             thread_id,
             checkpoint_ns,
         )
-        mock_aioboto_client.get_invocation_step.assert_not_called()
+        mock_boto_client.get_invocation_step.assert_not_called()
 
     @pytest.mark.asyncio
     async def test__get_task_sends_without_parent_checkpoint_id(

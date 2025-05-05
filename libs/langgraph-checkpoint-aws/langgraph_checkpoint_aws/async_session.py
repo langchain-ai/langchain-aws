@@ -2,7 +2,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from contextvars import copy_context
-from typing import Any, Callable, Optional, TypeVar, Union, cast
+from typing import Any, Callable, Optional, TypeVar, cast
 
 import boto3
 from botocore.config import Config
@@ -37,17 +37,17 @@ async def run_boto3_in_executor(
     **kwargs: Any
 ) -> T:
     """Run a boto3 function in an executor to prevent blocking the event loop."""
-    def wrapper() -> T:
+    loop = asyncio.get_running_loop()
+    ctx = copy_context()
+
+    def wrapper():
         try:
+            # Execute the actual boto3 call with parameters inside the executor
             return func(*args, **kwargs)
         except StopIteration as exc:
             raise RuntimeError from exc
 
-    # Use copy_context to preserve context vars across thread boundaries
-    return await asyncio.get_running_loop().run_in_executor(
-        None,
-        cast("Callable[..., T]", partial(copy_context().run, wrapper))
-    )
+    return await loop.run_in_executor(None, ctx.run, wrapper)
 
 
 class AsyncBedrockAgentRuntimeSessionClient:
@@ -78,7 +78,7 @@ class AsyncBedrockAgentRuntimeSessionClient:
             config,
         )
         
-        # Create a standard boto3 session instead of aioboto3
+        # Create a standard boto3 session
         self.session = boto3.Session(**_session_kwargs)
         # Pre-create the client to avoid creating it for each operation
         self.client = self.session.client("bedrock-agent-runtime", **self._client_kwargs)

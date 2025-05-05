@@ -35,24 +35,6 @@ def mock_boto_client():
     mock_client.list_invocation_steps = MagicMock()
     return mock_client
 
-@pytest.fixture
-def mock_aioboto_client():
-    mock_client = AsyncMock(spec=AioBaseClient)
-
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=None)
-
-    mock_client.create_session = AsyncMock()
-    mock_client.get_session = AsyncMock()
-    mock_client.end_session = AsyncMock()
-    mock_client.delete_session = AsyncMock()
-    mock_client.create_invocation = AsyncMock()
-    mock_client.list_invocations = AsyncMock()
-    mock_client.put_invocation_step = AsyncMock()
-    mock_client.get_invocation_step = AsyncMock()
-    mock_client.list_invocation_steps = AsyncMock()
-    
-    return mock_client
 
 @pytest.fixture
 def sample_session_id():

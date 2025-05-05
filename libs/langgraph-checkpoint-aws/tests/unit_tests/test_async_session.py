@@ -26,18 +26,18 @@ from langgraph_checkpoint_aws.async_saver import AsyncBedrockAgentRuntimeSession
 
 class TestAsyncBedrockAgentRuntimeSessionClient:
     @pytest.fixture
-    def mock_session_client(self, mock_aioboto_client):
-        with patch("aioboto3.Session") as mock_aioboto_session:
-            mock_aioboto_session.return_value.client.return_value = mock_aioboto_client
+    def mock_session_client(self, mock_boto_client):
+        with patch("boto3.Session") as mock_aioboto_session:
+            mock_aioboto_session.return_value.client.return_value = mock_boto_client
             yield AsyncBedrockAgentRuntimeSessionClient()
 
     class TestSession:
         @pytest.mark.asyncio
         async def test_create_async_session(
-            self, mock_session_client, mock_aioboto_client, sample_create_session_response
+            self, mock_session_client, mock_boto_client, sample_create_session_response
         ):
             # Arrange
-            mock_aioboto_client.create_session.return_value = (
+            mock_boto_client.create_session.return_value = (
                 sample_create_session_response
             )
             request = CreateSessionRequest()
@@ -47,14 +47,14 @@ class TestAsyncBedrockAgentRuntimeSessionClient:
 
             # Assert
             assert isinstance(response, CreateSessionResponse)
-            mock_aioboto_client.create_session.assert_called_once()
+            mock_boto_client.create_session.assert_called_once()
 
         @pytest.mark.asyncio
         async def test_create_session_with_user_attr(
-            self, mock_session_client, mock_aioboto_client, sample_create_session_response
+            self, mock_session_client, mock_boto_client, sample_create_session_response
         ):
             # Arrange
-            mock_aioboto_client.create_session.return_value = (
+            mock_boto_client.create_session.return_value = (
                 sample_create_session_response
             )
             request = CreateSessionRequest(
@@ -68,18 +68,18 @@ class TestAsyncBedrockAgentRuntimeSessionClient:
 
             # Assert
             assert isinstance(response, CreateSessionResponse)
-            mock_aioboto_client.create_session.assert_called_once()
+            mock_boto_client.create_session.assert_called_once()
 
         @pytest.mark.asyncio
         async def test_get_session(
             self,
             mock_session_client,
-            mock_aioboto_client,
+            mock_boto_client,
             sample_get_session_response,
             sample_session_id,
         ):
             # Arrange
-            mock_aioboto_client.get_session.return_value = sample_get_session_response
+            mock_boto_client.get_session.return_value = sample_get_session_response
             request = GetSessionRequest(session_identifier=sample_session_id)
 
             # Act
@@ -87,18 +87,18 @@ class TestAsyncBedrockAgentRuntimeSessionClient:
 
             # Assert
             assert isinstance(response, GetSessionResponse)
-            mock_aioboto_client.get_session.assert_called_once()
+            mock_boto_client.get_session.assert_called_once()
 
         @pytest.mark.asyncio
         async def test_end_session(
             self,
             mock_session_client,
-            mock_aioboto_client,
+            mock_boto_client,
             sample_get_session_response,
             sample_session_id,
         ):
             # Arrange
-            mock_aioboto_client.end_session.return_value = sample_get_session_response
+            mock_boto_client.end_session.return_value = sample_get_session_response
             request = EndSessionRequest(session_identifier=sample_session_id)
 
             # Act
@@ -106,11 +106,11 @@ class TestAsyncBedrockAgentRuntimeSessionClient:
 
             # Assert
             assert isinstance(response, EndSessionResponse)
-            mock_aioboto_client.end_session.assert_called_once()
+            mock_boto_client.end_session.assert_called_once()
 
         @pytest.mark.asyncio
         async def test_delete_session(
-            self, mock_session_client, mock_aioboto_client, sample_session_id
+            self, mock_session_client, mock_boto_client, sample_session_id
         ):
             # Arrange
             request = DeleteSessionRequest(session_identifier=sample_session_id)
@@ -119,19 +119,19 @@ class TestAsyncBedrockAgentRuntimeSessionClient:
             await mock_session_client.delete_session(request)
 
             # Assert
-            mock_aioboto_client.delete_session.assert_called_once()
+            mock_boto_client.delete_session.assert_called_once()
 
     class TestInvocation:
         @pytest.mark.asyncio
         async def test_create_invocation(
             self,
             mock_session_client,
-            mock_aioboto_client,
+            mock_boto_client,
             sample_session_id,
             sample_create_invocation_response,
         ):
             # Arrange
-            mock_aioboto_client.create_invocation.return_value = (
+            mock_boto_client.create_invocation.return_value = (
                 sample_create_invocation_response
             )
             request = CreateInvocationRequest(session_identifier=sample_session_id)
@@ -141,19 +141,19 @@ class TestAsyncBedrockAgentRuntimeSessionClient:
 
             # Assert
             assert isinstance(response, CreateInvocationResponse)
-            mock_aioboto_client.create_invocation.assert_called_once()
+            mock_boto_client.create_invocation.assert_called_once()
 
         @pytest.mark.asyncio
         async def test_create_invocation_with_user_attr(
             self,
             mock_session_client,
-            mock_aioboto_client,
+            mock_boto_client,
             sample_session_id,
             sample_invocation_id,
             sample_create_invocation_response,
         ):
             # Arrange
-            mock_aioboto_client.create_invocation.return_value = (
+            mock_boto_client.create_invocation.return_value = (
                 sample_create_invocation_response
             )
             request = CreateInvocationRequest(
@@ -167,18 +167,18 @@ class TestAsyncBedrockAgentRuntimeSessionClient:
 
             # Assert
             assert isinstance(response, CreateInvocationResponse)
-            mock_aioboto_client.create_invocation.assert_called_once()
+            mock_boto_client.create_invocation.assert_called_once()
 
         @pytest.mark.asyncio
         async def test_list_invocation(
             self,
             mock_session_client,
-            mock_aioboto_client,
+            mock_boto_client,
             sample_session_id,
             sample_list_invocation_response,
         ):
             # Arrange
-            mock_aioboto_client.list_invocations.return_value = (
+            mock_boto_client.list_invocations.return_value = (
                 sample_list_invocation_response
             )
             request = ListInvocationsRequest(
@@ -190,14 +190,14 @@ class TestAsyncBedrockAgentRuntimeSessionClient:
 
             # Assert
             assert isinstance(response, ListInvocationsResponse)
-            mock_aioboto_client.list_invocations.assert_called_once()
+            mock_boto_client.list_invocations.assert_called_once()
 
     class TestInvocationStep:
         @pytest.mark.asyncio
         async def test_put_invocation_step(
             self,
             mock_session_client,
-            mock_aioboto_client,
+            mock_boto_client,
             sample_session_id,
             sample_invocation_id,
             sample_invocation_step_id,
@@ -206,7 +206,7 @@ class TestAsyncBedrockAgentRuntimeSessionClient:
             sample_put_invocation_step_response,
         ):
             # Arrange
-            mock_aioboto_client.put_invocation_step.return_value = (
+            mock_boto_client.put_invocation_step.return_value = (
                 sample_put_invocation_step_response
             )
             request = PutInvocationStepRequest(
@@ -222,20 +222,20 @@ class TestAsyncBedrockAgentRuntimeSessionClient:
 
             # Assert
             assert isinstance(response, PutInvocationStepResponse)
-            mock_aioboto_client.put_invocation_step.assert_called_once()
+            mock_boto_client.put_invocation_step.assert_called_once()
 
         @pytest.mark.asyncio
         async def test_get_invocation_step(
             self,
             mock_session_client,
-            mock_aioboto_client,
+            mock_boto_client,
             sample_session_id,
             sample_invocation_id,
             sample_invocation_step_id,
             sample_get_invocation_step_response,
         ):
             # Arrange
-            mock_aioboto_client.get_invocation_step.return_value = (
+            mock_boto_client.get_invocation_step.return_value = (
                 sample_get_invocation_step_response
             )
             request = GetInvocationStepRequest(
@@ -249,18 +249,18 @@ class TestAsyncBedrockAgentRuntimeSessionClient:
 
             # Assert
             assert isinstance(response, GetInvocationStepResponse)
-            mock_aioboto_client.get_invocation_step.assert_called_once()
+            mock_boto_client.get_invocation_step.assert_called_once()
 
         @pytest.mark.asyncio
         async def test_list_invocation_steps(
             self,
             mock_session_client,
-            mock_aioboto_client,
+            mock_boto_client,
             sample_session_id,
             sample_list_invocation_steps_response,
         ):
             # Arrange
-            mock_aioboto_client.list_invocation_steps.return_value = (
+            mock_boto_client.list_invocation_steps.return_value = (
                 sample_list_invocation_steps_response
             )
             request = ListInvocationStepsRequest(
@@ -273,19 +273,19 @@ class TestAsyncBedrockAgentRuntimeSessionClient:
 
             # Assert
             assert isinstance(response, ListInvocationStepsResponse)
-            mock_aioboto_client.list_invocation_steps.assert_called_once()
+            mock_boto_client.list_invocation_steps.assert_called_once()
 
         @pytest.mark.asyncio
         async def test_list_invocation_steps_by_invocation(
             self,
             mock_session_client,
-            mock_aioboto_client,
+            mock_boto_client,
             sample_session_id,
             sample_invocation_id,
             sample_list_invocation_steps_response,
         ):
             # Arrange
-            mock_aioboto_client.list_invocation_steps.return_value = (
+            mock_boto_client.list_invocation_steps.return_value = (
                 sample_list_invocation_steps_response
             )
             request = ListInvocationStepsRequest(
@@ -299,4 +299,4 @@ class TestAsyncBedrockAgentRuntimeSessionClient:
 
             # Assert
             assert isinstance(response, ListInvocationStepsResponse)
-            mock_aioboto_client.list_invocation_steps.assert_called_once()
+            mock_boto_client.list_invocation_steps.assert_called_once()
