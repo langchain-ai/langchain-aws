@@ -1,8 +1,4 @@
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-from functools import partial
-from contextvars import copy_context
-from typing import Any, Callable, Optional, TypeVar, cast
+from typing import Any, Optional
 
 import boto3
 from botocore.config import Config
@@ -27,27 +23,7 @@ from langgraph_checkpoint_aws.models import (
     PutInvocationStepRequest,
     PutInvocationStepResponse,
 )
-from langgraph_checkpoint_aws.utils import process_aws_client_args, to_boto_params
-
-T = TypeVar('T')
-
-async def run_boto3_in_executor(
-    func: Callable[..., T],
-    *args: Any,
-    **kwargs: Any
-) -> T:
-    """Run a boto3 function in an executor to prevent blocking the event loop."""
-    loop = asyncio.get_running_loop()
-    ctx = copy_context()
-
-    def wrapper():
-        try:
-            # Execute the actual boto3 call with parameters inside the executor
-            return func(*args, **kwargs)
-        except StopIteration as exc:
-            raise RuntimeError from exc
-
-    return await loop.run_in_executor(None, ctx.run, wrapper)
+from langgraph_checkpoint_aws.utils import process_aws_client_args, to_boto_params, run_boto3_in_executor
 
 
 class AsyncBedrockAgentRuntimeSessionClient:
