@@ -1,6 +1,10 @@
-from typing import Optional
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+from contextvars import copy_context
+from typing import Any, Callable, Optional, TypeVar, Union, cast
 
-import aioboto3
+import boto3
 from botocore.config import Config
 from pydantic import SecretStr
 
@@ -25,22 +29,30 @@ from langgraph_checkpoint_aws.models import (
 )
 from langgraph_checkpoint_aws.utils import process_aws_client_args, to_boto_params
 
+T = TypeVar('T')
+
+async def run_boto3_in_executor(
+    func: Callable[..., T],
+    *args: Any,
+    **kwargs: Any
+) -> T:
+    """Run a boto3 function in an executor to prevent blocking the event loop."""
+    def wrapper() -> T:
+        try:
+            return func(*args, **kwargs)
+        except StopIteration as exc:
+            raise RuntimeError from exc
+
+    # Use copy_context to preserve context vars across thread boundaries
+    return await asyncio.get_running_loop().run_in_executor(
+        None,
+        cast("Callable[..., T]", partial(copy_context().run, wrapper))
+    )
+
 
 class AsyncBedrockAgentRuntimeSessionClient:
     """
-    Asynchronous client for AWS Bedrock Agent Runtime API
-
-    This class provides an asynchronous interface to interact with AWS Bedrock Agent Runtime service.
-    It handles session management, invocations and invocation steps through the Bedrock Agent Runtime API.
-
-    The client supports operations like:
-    - Session management (create, get, end, delete)
-    - Invocation management (create, list)
-    - Invocation step management (put, get, list)
-
-    Attributes:
-        session: Aioboto3 session for bedrock-agent-runtime service
-        _client_kwargs: Arguments for client creation
+    Asynchronous client for AWS Bedrock Agent Runtime API using standard boto3 with async executor.
     """
 
     def __init__(
@@ -55,15 +67,6 @@ class AsyncBedrockAgentRuntimeSessionClient:
     ):
         """
         Initialize AsyncBedrockAgentRuntime with AWS configuration
-
-        Args:
-            region_name: AWS region (e.g., us-west-2)
-            credentials_profile_name: AWS credentials profile name
-            aws_access_key_id: AWS access key ID
-            aws_secret_access_key: AWS secret access key
-            aws_session_token: AWS session token
-            endpoint_url: Custom endpoint URL
-            config: Boto3 config object
         """
         _session_kwargs, self._client_kwargs = process_aws_client_args(
             region_name,
@@ -74,149 +77,92 @@ class AsyncBedrockAgentRuntimeSessionClient:
             endpoint_url,
             config,
         )
-        self.session = aioboto3.Session(**_session_kwargs)
-
-    async def _get_client(self):
-        """
-        Get an async bedrock-agent-runtime client
         
-        Returns:
-            Async client for bedrock-agent-runtime
-        """
-        return self.session.client("bedrock-agent-runtime", **self._client_kwargs)
-
+        # Create a standard boto3 session instead of aioboto3
+        self.session = boto3.Session(**_session_kwargs)
+        # Pre-create the client to avoid creating it for each operation
+        self.client = self.session.client("bedrock-agent-runtime", **self._client_kwargs)
+        
     async def create_session(
         self, request: Optional[CreateSessionRequest] = None
     ) -> CreateSessionResponse:
-        """
-        Create a new session asynchronously
-
-        Args:
-            request (CreateSessionRequest): Optional object containing session creation details
-
-        Returns:
-            CreateSessionResponse: Response object containing session identifier and metadata
-        """
-        async with await self._get_client() as client:
-            response = await client.create_session(
-                **to_boto_params(request) if request else {}
-            )
-            return CreateSessionResponse(**response)
+        """Create a new session asynchronously"""
+        params = to_boto_params(request) if request else {}
+        response = await run_boto3_in_executor(
+            self.client.create_session,
+            **params
+        )
+        return CreateSessionResponse(**response)
 
     async def get_session(self, request: GetSessionRequest) -> GetSessionResponse:
-        """
-        Get details of an existing session asynchronously
-
-        Args:
-            request (GetSessionRequest): Object containing session identifier
-
-        Returns:
-            GetSessionResponse: Response object containing session details and metadata
-        """
-        async with await self._get_client() as client:
-            response = await client.get_session(**to_boto_params(request))
-            return GetSessionResponse(**response)
+        """Get details of an existing session asynchronously"""
+        response = await run_boto3_in_executor(
+            self.client.get_session,
+            **to_boto_params(request)
+        )
+        return GetSessionResponse(**response)
 
     async def end_session(self, request: EndSessionRequest) -> EndSessionResponse:
-        """
-        End an existing session asynchronously
-
-        Args:
-            request (EndSessionRequest): Object containing session identifier
-
-        Returns:
-            EndSessionResponse: Response object containing the ended session details
-        """
-        async with await self._get_client() as client:
-            response = await client.end_session(**to_boto_params(request))
-            return EndSessionResponse(**response)
+        """End an existing session asynchronously"""
+        response = await run_boto3_in_executor(
+            self.client.end_session,
+            **to_boto_params(request)
+        )
+        return EndSessionResponse(**response)
 
     async def delete_session(self, request: DeleteSessionRequest) -> None:
-        """
-        Delete an existing session asynchronously
-
-        Args:
-            request (DeleteSessionRequest): Object containing session identifier
-        """
-        async with await self._get_client() as client:
-            await client.delete_session(**to_boto_params(request))
+        """Delete an existing session asynchronously"""
+        await run_boto3_in_executor(
+            self.client.delete_session,
+            **to_boto_params(request)
+        )
 
     async def create_invocation(
         self, request: CreateInvocationRequest
     ) -> CreateInvocationResponse:
-        """
-        Create a new invocation asynchronously
-
-        Args:
-            request (CreateInvocationRequest): Object containing invocation details
-
-        Returns:
-            CreateInvocationResponse: Response object containing invocation identifier and metadata
-        """
-        async with await self._get_client() as client:
-            response = await client.create_invocation(**to_boto_params(request))
-            return CreateInvocationResponse(**response)
+        """Create a new invocation asynchronously"""
+        response = await run_boto3_in_executor(
+            self.client.create_invocation,
+            **to_boto_params(request)
+        )
+        return CreateInvocationResponse(**response)
 
     async def list_invocations(
         self, request: ListInvocationsRequest
     ) -> ListInvocationsResponse:
-        """
-        List invocations for a session asynchronously
-
-        Args:
-            request (ListInvocationsRequest): Object containing session identifier
-
-        Returns:
-            ListInvocationsResponse: Response object containing list of invocations and pagination token
-        """
-        async with await self._get_client() as client:
-            response = await client.list_invocations(**to_boto_params(request))
-            return ListInvocationsResponse(**response)
+        """List invocations for a session asynchronously"""
+        response = await run_boto3_in_executor(
+            self.client.list_invocations,
+            **to_boto_params(request)
+        )
+        return ListInvocationsResponse(**response)
 
     async def put_invocation_step(
         self, request: PutInvocationStepRequest
     ) -> PutInvocationStepResponse:
-        """
-        Put a step in an invocation asynchronously
-
-        Args:
-            request (PutInvocationStepRequest): Object containing invocation identifier and step payload
-
-        Returns:
-            PutInvocationStepResponse: Response object containing invocation step identifier
-        """
-        async with await self._get_client() as client:
-            response = await client.put_invocation_step(**to_boto_params(request))
-            return PutInvocationStepResponse(**response)
+        """Put a step in an invocation asynchronously"""
+        response = await run_boto3_in_executor(
+            self.client.put_invocation_step,
+            **to_boto_params(request)
+        )
+        return PutInvocationStepResponse(**response)
 
     async def get_invocation_step(
         self, request: GetInvocationStepRequest
     ) -> GetInvocationStepResponse:
-        """
-        Get a step in an invocation asynchronously
-
-        Args:
-            request (GetInvocationStepRequest): Object containing invocation and step identifiers
-
-        Returns:
-            GetInvocationStepResponse: Response object containing invocation step identifier and payload
-        """
-        async with await self._get_client() as client:
-            response = await client.get_invocation_step(**to_boto_params(request))
-            return GetInvocationStepResponse(**response)
+        """Get a step in an invocation asynchronously"""
+        response = await run_boto3_in_executor(
+            self.client.get_invocation_step,
+            **to_boto_params(request)
+        )
+        return GetInvocationStepResponse(**response)
 
     async def list_invocation_steps(
         self, request: ListInvocationStepsRequest
     ) -> ListInvocationStepsResponse:
-        """
-        List steps in an invocation asynchronously
-
-        Args:
-            request (ListInvocationStepsRequest): Object containing invocation step id and pagination token
-
-        Returns:
-            ListInvocationStepsResponse: Response object containing list of invocation steps and pagination token
-        """
-        async with await self._get_client() as client:
-            response = await client.list_invocation_steps(**to_boto_params(request))
-            return ListInvocationStepsResponse(**response)
+        """List steps in an invocation asynchronously"""
+        response = await run_boto3_in_executor(
+            self.client.list_invocation_steps,
+            **to_boto_params(request)
+        )
+        return ListInvocationStepsResponse(**response)
