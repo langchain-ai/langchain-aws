@@ -20,7 +20,6 @@ python = ">=3.9,<4.0"
 langgraph-checkpoint = ">=2.0.0"
 langgraph = ">=0.2.55"
 boto3 = ">=1.37.3"
-aioboto3 = ">=14.2.0"
 
 [tool.poetry.group.dev]
 optional = true
