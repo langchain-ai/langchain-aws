@@ -6,7 +6,6 @@ from uuid import uuid4
 
 import pytest
 from botocore.client import BaseClient
-from aiobotocore.client import AioBaseClient
 from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata
 from langgraph.constants import TASKS
 
