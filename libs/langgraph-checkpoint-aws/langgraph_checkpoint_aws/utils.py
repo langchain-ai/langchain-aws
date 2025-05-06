@@ -10,17 +10,24 @@ from typing import Any, Callable, Optional, Tuple, TypeVar, Union, cast
 
 from botocore.config import Config
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.base import (WRITES_IDX_MAP, ChannelVersions,
-                                       Checkpoint, CheckpointMetadata,
-                                       CheckpointTuple)
+from langgraph.checkpoint.base import (
+    WRITES_IDX_MAP,
+    ChannelVersions,
+    Checkpoint,
+    CheckpointMetadata,
+    CheckpointTuple,
+)
 from langgraph.checkpoint.serde.base import SerializerProtocol
 from langgraph.constants import TASKS
+from pydantic import BaseModel
+
 from langgraph_checkpoint_aws import SDK_USER_AGENT
 from langgraph_checkpoint_aws.constants import CHECKPOINT_PREFIX, WRITES_PREFIX
-from langgraph_checkpoint_aws.models import (BedrockSessionContentBlock,
-                                             SessionCheckpoint,
-                                             SessionPendingWrite)
-from pydantic import BaseModel
+from langgraph_checkpoint_aws.models import (
+    BedrockSessionContentBlock,
+    SessionCheckpoint,
+    SessionPendingWrite,
+)
 
 T = TypeVar("T")
 

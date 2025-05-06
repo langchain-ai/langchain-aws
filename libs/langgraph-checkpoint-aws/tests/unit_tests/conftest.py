@@ -1,7 +1,7 @@
 import base64
 import datetime
 import json
-from unittest.mock import MagicMock, Mock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, Mock
 from uuid import uuid4
 
 import pytest

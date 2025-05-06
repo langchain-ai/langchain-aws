@@ -8,7 +8,7 @@ from langgraph.checkpoint.base import Checkpoint, uuid6
 from langgraph.prebuilt import create_react_agent
 
 from langgraph_checkpoint_aws.async_saver import AsyncBedrockSessionSaver
-from langgraph_checkpoint_aws.models import EndSessionRequest, DeleteSessionRequest
+from langgraph_checkpoint_aws.models import DeleteSessionRequest, EndSessionRequest
 
 
 @tool
