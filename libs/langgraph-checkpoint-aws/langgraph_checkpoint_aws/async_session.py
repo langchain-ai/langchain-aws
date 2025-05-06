@@ -23,7 +23,11 @@ from langgraph_checkpoint_aws.models import (
     PutInvocationStepRequest,
     PutInvocationStepResponse,
 )
-from langgraph_checkpoint_aws.utils import process_aws_client_args, to_boto_params, run_boto3_in_executor
+from langgraph_checkpoint_aws.utils import (
+    process_aws_client_args,
+    to_boto_params,
+    run_boto3_in_executor,
+)
 
 
 class AsyncBedrockAgentRuntimeSessionClient:
@@ -53,44 +57,40 @@ class AsyncBedrockAgentRuntimeSessionClient:
             endpoint_url,
             config,
         )
-        
+
         # Create a standard boto3 session
         self.session = boto3.Session(**_session_kwargs)
         # Pre-create the client to avoid creating it for each operation
-        self.client = self.session.client("bedrock-agent-runtime", **self._client_kwargs)
-        
+        self.client = self.session.client(
+            "bedrock-agent-runtime", **self._client_kwargs
+        )
+
     async def create_session(
         self, request: Optional[CreateSessionRequest] = None
     ) -> CreateSessionResponse:
         """Create a new session asynchronously"""
         params = to_boto_params(request) if request else {}
-        response = await run_boto3_in_executor(
-            self.client.create_session,
-            **params
-        )
+        response = await run_boto3_in_executor(self.client.create_session, **params)
         return CreateSessionResponse(**response)
 
     async def get_session(self, request: GetSessionRequest) -> GetSessionResponse:
         """Get details of an existing session asynchronously"""
         response = await run_boto3_in_executor(
-            self.client.get_session,
-            **to_boto_params(request)
+            self.client.get_session, **to_boto_params(request)
         )
         return GetSessionResponse(**response)
 
     async def end_session(self, request: EndSessionRequest) -> EndSessionResponse:
         """End an existing session asynchronously"""
         response = await run_boto3_in_executor(
-            self.client.end_session,
-            **to_boto_params(request)
+            self.client.end_session, **to_boto_params(request)
         )
         return EndSessionResponse(**response)
 
     async def delete_session(self, request: DeleteSessionRequest) -> None:
         """Delete an existing session asynchronously"""
         await run_boto3_in_executor(
-            self.client.delete_session,
-            **to_boto_params(request)
+            self.client.delete_session, **to_boto_params(request)
         )
 
     async def create_invocation(
@@ -98,8 +98,7 @@ class AsyncBedrockAgentRuntimeSessionClient:
     ) -> CreateInvocationResponse:
         """Create a new invocation asynchronously"""
         response = await run_boto3_in_executor(
-            self.client.create_invocation,
-            **to_boto_params(request)
+            self.client.create_invocation, **to_boto_params(request)
         )
         return CreateInvocationResponse(**response)
 
@@ -108,8 +107,7 @@ class AsyncBedrockAgentRuntimeSessionClient:
     ) -> ListInvocationsResponse:
         """List invocations for a session asynchronously"""
         response = await run_boto3_in_executor(
-            self.client.list_invocations,
-            **to_boto_params(request)
+            self.client.list_invocations, **to_boto_params(request)
         )
         return ListInvocationsResponse(**response)
 
@@ -118,8 +116,7 @@ class AsyncBedrockAgentRuntimeSessionClient:
     ) -> PutInvocationStepResponse:
         """Put a step in an invocation asynchronously"""
         response = await run_boto3_in_executor(
-            self.client.put_invocation_step,
-            **to_boto_params(request)
+            self.client.put_invocation_step, **to_boto_params(request)
         )
         return PutInvocationStepResponse(**response)
 
@@ -128,8 +125,7 @@ class AsyncBedrockAgentRuntimeSessionClient:
     ) -> GetInvocationStepResponse:
         """Get a step in an invocation asynchronously"""
         response = await run_boto3_in_executor(
-            self.client.get_invocation_step,
-            **to_boto_params(request)
+            self.client.get_invocation_step, **to_boto_params(request)
         )
         return GetInvocationStepResponse(**response)
 
@@ -138,7 +134,6 @@ class AsyncBedrockAgentRuntimeSessionClient:
     ) -> ListInvocationStepsResponse:
         """List steps in an invocation asynchronously"""
         response = await run_boto3_in_executor(
-            self.client.list_invocation_steps,
-            **to_boto_params(request)
+            self.client.list_invocation_steps, **to_boto_params(request)
         )
         return ListInvocationStepsResponse(**response)

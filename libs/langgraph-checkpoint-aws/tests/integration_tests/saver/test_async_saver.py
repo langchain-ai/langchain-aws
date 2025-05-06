@@ -52,7 +52,9 @@ class TestAsyncBedrockMemorySaver:
         assert get_weather.invoke("nyc") == "It might be cloudy in nyc"
 
     @pytest.mark.asyncio
-    async def test_checkpoint_save_and_retrieve(self, boto_session_client, session_saver):
+    async def test_checkpoint_save_and_retrieve(
+        self, boto_session_client, session_saver
+    ):
         # Create session
         session_response = await boto_session_client.create_session()
         session_id = session_response.session_id
@@ -92,8 +94,12 @@ class TestAsyncBedrockMemorySaver:
 
         finally:
             # Create proper request objects
-            await boto_session_client.end_session(EndSessionRequest(session_identifier=session_id))
-            await boto_session_client.delete_session(DeleteSessionRequest(session_identifier=session_id))
+            await boto_session_client.end_session(
+                EndSessionRequest(session_identifier=session_id)
+            )
+            await boto_session_client.delete_session(
+                DeleteSessionRequest(session_identifier=session_id)
+            )
 
     @pytest.mark.asyncio
     async def test_weather_query_and_checkpointing(
@@ -121,10 +127,14 @@ class TestAsyncBedrockMemorySaver:
             # Test checkpoint listing
             checkpoint_tuples = [tup async for tup in session_saver.alist(config)]
             assert checkpoint_tuples, "Checkpoint tuples should not be empty"
-            assert isinstance(
-                checkpoint_tuples, list
-            ), "Checkpoint tuples should be a list"
+            assert isinstance(checkpoint_tuples, list), (
+                "Checkpoint tuples should be a list"
+            )
         finally:
             # Create proper request objects
-            await boto_session_client.end_session(EndSessionRequest(session_identifier=session_id))
-            await boto_session_client.delete_session(DeleteSessionRequest(session_identifier=session_id))
+            await boto_session_client.end_session(
+                EndSessionRequest(session_identifier=session_id)
+            )
+            await boto_session_client.delete_session(
+                DeleteSessionRequest(session_identifier=session_id)
+            )

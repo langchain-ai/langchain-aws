@@ -55,7 +55,9 @@ class TestAsyncBedrockSessionSaver:
         mock_boto_client.create_invocation.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test__create_session_invocation_conflict(self, mock_boto_client, session_saver):
+    async def test__create_session_invocation_conflict(
+        self, mock_boto_client, session_saver
+    ):
         # Arrange
         error_response = {"Error": {"Code": "ConflictException", "Message": "Conflict"}}
         mock_boto_client.create_invocation.side_effect = ClientError(
@@ -139,12 +141,12 @@ class TestAsyncBedrockSessionSaver:
         mock_boto_client.list_invocation_steps.return_value = (
             sample_list_invocation_steps_response
         )
-        
+
         # Act
         result = await session_saver._get_checkpoint_pending_writes(
             "thread_id", "ns", "checkpoint_id"
         )
-        
+
         # Assert
         assert result == []
         mock_boto_client.list_invocation_steps.assert_called_once()
@@ -154,17 +156,22 @@ class TestAsyncBedrockSessionSaver:
         self, mock_boto_client, session_saver
     ):
         # Arrange
-        error_response = {"Error": {"Code": "ResourceNotFoundException", "Message": "Resource not found"}}
+        error_response = {
+            "Error": {
+                "Code": "ResourceNotFoundException",
+                "Message": "Resource not found",
+            }
+        }
         mock_boto_client.list_invocation_steps.side_effect = ClientError(
             error_response=error_response,
             operation_name="ListInvocationSteps",
         )
-        
+
         # Act
         result = await session_saver._get_checkpoint_pending_writes(
             "thread_id", "ns", "checkpoint_id"
         )
-        
+
         # Assert
         assert result == []
         mock_boto_client.list_invocation_steps.assert_called_once()
@@ -185,7 +192,7 @@ class TestAsyncBedrockSessionSaver:
             await session_saver._get_checkpoint_pending_writes(
                 "thread_id", "ns", "checkpoint_id"
             )
-        
+
         mock_boto_client.list_invocation_steps.assert_called_once()
 
     @pytest.mark.asyncio
@@ -234,7 +241,7 @@ class TestAsyncBedrockSessionSaver:
             await session_saver._save_invocation_step(
                 "thread_id", "inv_id", "step_id", sample_invocation_step_payload
             )
-        
+
         mock_boto_client.put_invocation_step.assert_called_once()
 
     @pytest.mark.asyncio
@@ -317,10 +324,12 @@ class TestAsyncBedrockSessionSaver:
         mock_boto_client.list_invocation_steps.return_value = (
             sample_list_invocation_steps_response
         )
-        
+
         # Act
-        result = await session_saver._find_most_recent_checkpoint_step("thread_id", "ns")
-        
+        result = await session_saver._find_most_recent_checkpoint_step(
+            "thread_id", "ns"
+        )
+
         # Assert
         assert result is None
         mock_boto_client.list_invocation_steps.assert_called_once()
@@ -342,7 +351,9 @@ class TestAsyncBedrockSessionSaver:
         )
 
         # Act
-        await session_saver._get_checkpoint_step(thread_id, checkpoint_ns, checkpoint_id)
+        await session_saver._get_checkpoint_step(
+            thread_id, checkpoint_ns, checkpoint_id
+        )
 
         # Assert
         session_saver._find_most_recent_checkpoint_step.assert_not_called()
@@ -476,7 +487,9 @@ class TestAsyncBedrockSessionSaver:
         ][0]["text"] = sample_session_checkpoint.model_dump_json()
 
         # Mock all required internal methods
-        session_saver._generate_checkpoint_id = AsyncMock(return_value="test_checkpoint_id")
+        session_saver._generate_checkpoint_id = AsyncMock(
+            return_value="test_checkpoint_id"
+        )
         session_saver._get_checkpoint_step = AsyncMock(
             return_value=InvocationStep(
                 **sample_get_invocation_step_response["invocationStep"]
@@ -494,7 +507,6 @@ class TestAsyncBedrockSessionSaver:
         # Assert
         assert isinstance(result, CheckpointTuple)
 
-
     @pytest.mark.asyncio
     async def test_aget_tuple_success_empty(self, session_saver, runnable_config):
         # Arrange
@@ -508,9 +520,16 @@ class TestAsyncBedrockSessionSaver:
         session_saver._get_checkpoint_step.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_aget_tuple_resource_not_found_error(self, session_saver, runnable_config):
+    async def test_aget_tuple_resource_not_found_error(
+        self, session_saver, runnable_config
+    ):
         # Arrange
-        error_response = {"Error": {"Code": "ResourceNotFoundException", "Message": "Resource not found"}}
+        error_response = {
+            "Error": {
+                "Code": "ResourceNotFoundException",
+                "Message": "Resource not found",
+            }
+        }
         session_saver._get_checkpoint_step = AsyncMock(
             side_effect=ClientError(
                 error_response=error_response,
@@ -528,7 +547,9 @@ class TestAsyncBedrockSessionSaver:
     @pytest.mark.asyncio
     async def test_aget_tuple_error(self, session_saver, runnable_config):
         # Arrange
-        error_response = {"Error": {"Code": "SomeOtherError", "Message": "Some other error"}}
+        error_response = {
+            "Error": {"Code": "SomeOtherError", "Message": "Some other error"}
+        }
         session_saver._get_checkpoint_step = AsyncMock(
             side_effect=ClientError(
                 error_response=error_response,
@@ -539,7 +560,7 @@ class TestAsyncBedrockSessionSaver:
         # Act and Assert
         with pytest.raises(ClientError):
             await session_saver.aget_tuple(runnable_config)
-        
+
         session_saver._get_checkpoint_step.assert_called_once()
 
     @pytest.mark.asyncio
@@ -556,8 +577,8 @@ class TestAsyncBedrockSessionSaver:
 
         # Act
         await session_saver.aput(
-                runnable_config, sample_checkpoint, sample_checkpoint_metadata, {}
-            )
+            runnable_config, sample_checkpoint, sample_checkpoint_metadata, {}
+        )
 
         # Assert
         session_saver._create_session_invocation.assert_called_once_with(
@@ -678,7 +699,7 @@ class TestAsyncBedrockSessionSaver:
             None,
             ANY,
         )
-    
+
     @pytest.mark.asyncio
     @patch("langgraph_checkpoint_aws.async_saver.construct_checkpoint_tuple")
     async def test_alist_success(
@@ -696,7 +717,9 @@ class TestAsyncBedrockSessionSaver:
         ][0]["text"] = sample_session_checkpoint.model_dump_json()
 
         # Mock all required internal methods
-        session_saver._generate_checkpoint_id = AsyncMock(return_value="test_checkpoint_id")
+        session_saver._generate_checkpoint_id = AsyncMock(
+            return_value="test_checkpoint_id"
+        )
         session_saver.session_client.get_invocation_step = AsyncMock(
             return_value=GetInvocationStepResponse(
                 **sample_get_invocation_step_response
@@ -712,7 +735,9 @@ class TestAsyncBedrockSessionSaver:
         mock_construct_checkpoint.return_value = AsyncMock(spec=CheckpointTuple)
 
         # Act
-        result = [checkpoint async for checkpoint in session_saver.alist(runnable_config)]
+        result = [
+            checkpoint async for checkpoint in session_saver.alist(runnable_config)
+        ]
 
         # Assert
         assert len(list(result)) == 1
@@ -732,7 +757,9 @@ class TestAsyncBedrockSessionSaver:
         ][0]["text"] = sample_session_pending_write.model_dump_json()
 
         # Mock all required internal methods
-        session_saver._generate_checkpoint_id = AsyncMock(return_value="test_checkpoint_id")
+        session_saver._generate_checkpoint_id = AsyncMock(
+            return_value="test_checkpoint_id"
+        )
         session_saver.session_client.get_invocation_step = AsyncMock(
             return_value=GetInvocationStepResponse(
                 **sample_get_invocation_step_response
@@ -745,12 +772,12 @@ class TestAsyncBedrockSessionSaver:
         )
 
         # Act
-        result = [checkpoint async for checkpoint in session_saver.alist(runnable_config)]
+        result = [
+            checkpoint async for checkpoint in session_saver.alist(runnable_config)
+        ]
 
         # Assert
         assert len(list(result)) == 0
-
-            
 
     @pytest.mark.asyncio
     @patch("langgraph_checkpoint_aws.async_saver.construct_checkpoint_tuple")
@@ -769,7 +796,9 @@ class TestAsyncBedrockSessionSaver:
         ][0]["text"] = sample_session_checkpoint.model_dump_json()
 
         # Mock all required internal methods
-        session_saver._generate_checkpoint_id = AsyncMock(return_value="test_checkpoint_id")
+        session_saver._generate_checkpoint_id = AsyncMock(
+            return_value="test_checkpoint_id"
+        )
         session_saver.session_client.get_invocation_step = AsyncMock(
             return_value=GetInvocationStepResponse(
                 **sample_get_invocation_step_response
@@ -787,7 +816,10 @@ class TestAsyncBedrockSessionSaver:
         mock_construct_checkpoint.return_value = AsyncMock(spec=CheckpointTuple)
 
         # Act
-        result = [checkpoint async for checkpoint in session_saver.alist(runnable_config, limit=3)]
+        result = [
+            checkpoint
+            async for checkpoint in session_saver.alist(runnable_config, limit=3)
+        ]
 
         # Assert
         assert len(list(result)) == 3
@@ -807,7 +839,9 @@ class TestAsyncBedrockSessionSaver:
         ][0]["text"] = sample_session_checkpoint.model_dump_json()
 
         # Mock all required internal methods
-        session_saver._generate_checkpoint_id = AsyncMock(return_value="test_checkpoint_id")
+        session_saver._generate_checkpoint_id = AsyncMock(
+            return_value="test_checkpoint_id"
+        )
         session_saver.session_client.get_invocation_step = AsyncMock(
             return_value=GetInvocationStepResponse(
                 **sample_get_invocation_step_response
@@ -825,8 +859,12 @@ class TestAsyncBedrockSessionSaver:
         )
 
         # Act
-        result = [checkpoint async for checkpoint in session_saver.alist(runnable_config, filter={"key": "value1"})]
-
+        result = [
+            checkpoint
+            async for checkpoint in session_saver.alist(
+                runnable_config, filter={"key": "value1"}
+            )
+        ]
 
         # Assert
         assert len(list(result)) == 0
@@ -856,7 +894,9 @@ class TestAsyncBedrockSessionSaver:
         ][0]["text"] = sample_session_checkpoint.model_dump_json()
 
         # Mock all required internal methods
-        session_saver._generate_checkpoint_id = AsyncMock(return_value="test_checkpoint_id")
+        session_saver._generate_checkpoint_id = AsyncMock(
+            return_value="test_checkpoint_id"
+        )
         session_saver.session_client.get_invocation_step = AsyncMock(
             return_value=GetInvocationStepResponse(
                 **sample_get_invocation_step_response
@@ -869,7 +909,10 @@ class TestAsyncBedrockSessionSaver:
         )
 
         # Act
-        result = [checkpoint async for checkpoint in session_saver.alist(runnable_config, before=before)]
+        result = [
+            checkpoint
+            async for checkpoint in session_saver.alist(runnable_config, before=before)
+        ]
 
         # Assert
         assert len(list(result)) == 0
@@ -886,7 +929,9 @@ class TestAsyncBedrockSessionSaver:
         )
 
         # Act
-        result = [checkpoint async for checkpoint in session_saver.alist(runnable_config)]
+        result = [
+            checkpoint async for checkpoint in session_saver.alist(runnable_config)
+        ]
 
         # Assert
         assert len(result) == 0
@@ -899,7 +944,12 @@ class TestAsyncBedrockSessionSaver:
         runnable_config,
     ):
         # Arrange
-        error_response = {"Error": {"Code": "ResourceNotFoundException", "Message": "Resource not found"}}
+        error_response = {
+            "Error": {
+                "Code": "ResourceNotFoundException",
+                "Message": "Resource not found",
+            }
+        }
         session_saver.session_client.list_invocation_steps = AsyncMock(
             side_effect=ClientError(
                 error_response=error_response,
@@ -908,7 +958,9 @@ class TestAsyncBedrockSessionSaver:
         )
 
         # Act
-        result = [checkpoint async for checkpoint in session_saver.alist(runnable_config)]
+        result = [
+            checkpoint async for checkpoint in session_saver.alist(runnable_config)
+        ]
 
         # Assert
         assert len(result) == 0
@@ -921,7 +973,9 @@ class TestAsyncBedrockSessionSaver:
         runnable_config,
     ):
         # Arrange
-        error_response = {"Error": {"Code": "SomeOtherError", "Message": "Some other error"}}
+        error_response = {
+            "Error": {"Code": "SomeOtherError", "Message": "Some other error"}
+        }
         session_saver.session_client.list_invocation_steps = AsyncMock(
             side_effect=ClientError(
                 error_response=error_response,
@@ -933,7 +987,5 @@ class TestAsyncBedrockSessionSaver:
         with pytest.raises(ClientError):
             async for _ in session_saver.alist(runnable_config):
                 pass
-        
+
         session_saver.session_client.list_invocation_steps.assert_called_once()
-
-

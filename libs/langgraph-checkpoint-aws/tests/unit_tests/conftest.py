@@ -17,6 +17,7 @@ from langgraph_checkpoint_aws.models import (
     SessionPendingWrite,
 )
 
+
 @pytest.fixture
 def mock_boto_client():
     mock_client = Mock(spec=BaseClient)
@@ -227,7 +228,7 @@ def sample_session_checkpoint(sample_invocation_step_summary):
         thread_id=sample_invocation_step_summary["sessionId"],
         checkpoint_ns=sample_invocation_step_summary["invocationId"],
         checkpoint_id=sample_invocation_step_summary["invocationStepId"],
-        checkpoint=('json', b'e30='),
+        checkpoint=("json", b"e30="),
         metadata=json.dumps({"key": "value"}),
         parent_checkpoint_id=None,
         channel_values={},

@@ -251,7 +251,9 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
             InvocationStep if found, None otherwise
         """
         if checkpoint_id is None:
-            step = await self._find_most_recent_checkpoint_step(thread_id, invocation_id)
+            step = await self._find_most_recent_checkpoint_step(
+                thread_id, invocation_id
+            )
             if step is None:
                 return None
             return step
@@ -519,7 +521,9 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
                     )
                 )
 
-                payload = json.loads(step_detail.invocation_step.payload.content_blocks[0].text)
+                payload = json.loads(
+                    step_detail.invocation_step.payload.content_blocks[0].text
+                )
 
                 # Append checkpoints and ignore writes
                 if payload["step_type"] != CHECKPOINT_PREFIX:

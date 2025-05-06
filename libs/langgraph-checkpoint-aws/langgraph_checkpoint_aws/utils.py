@@ -29,7 +29,8 @@ from langgraph_checkpoint_aws.models import (
     SessionPendingWrite,
 )
 
-T = TypeVar('T')
+T = TypeVar("T")
+
 
 def to_boto_params(model: BaseModel) -> dict:
     """
@@ -449,14 +450,14 @@ def create_client_config(config: Optional[Config] = None) -> Config:
 
     return Config(user_agent_extra=new_user_agent, **config_kwargs)
 
-async def run_boto3_in_executor(
-    func: Callable[..., T],
-    *args: Any,
-    **kwargs: Any
-) -> T:
+
+async def run_boto3_in_executor(func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
     """Run a boto3 function in an executor to prevent blocking the event loop."""
 
     return await asyncio.get_running_loop().run_in_executor(
-            None,
-            cast("Callable[..., T]", partial(copy_context().run, lambda: func(*args, **kwargs))),
-        )
+        None,
+        cast(
+            "Callable[..., T]",
+            partial(copy_context().run, lambda: func(*args, **kwargs)),
+        ),
+    )
