@@ -684,6 +684,8 @@ class ChatBedrockConverse(BaseChatModel):
                     and not added_model_name
                 ):
                     message_chunk.response_metadata["model_name"] = self.model_id
+                    if metadata := response.get("ResponseMetadata"):
+                        message_chunk.response_metadata["ResponseMetadata"] = metadata
                     added_model_name = True
                 generation_chunk = ChatGenerationChunk(message=message_chunk)
                 if run_manager:
