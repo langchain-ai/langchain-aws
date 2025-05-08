@@ -206,6 +206,14 @@ def test_tool_calling_snake_case() -> None:
     assert tool_call["name"] == "classify_query"
     assert tool_call["args"] == {"query_type": "cat"}
 
+    # Also test for response metadata, though this is not relevant to tool-calling
+    invoke_metadata = response.response_metadata
+    stream_metadata = full.response_metadata
+    for result in [invoke_metadata, stream_metadata]:
+        for expected_key in ["RequestId", "HTTPStatusCode", "HTTPHeaders"]:
+            assert result["ResponseMetadata"][expected_key]
+        assert isinstance(result["ResponseMetadata"]["RetryAttempts"], int)
+
 
 def test_structured_output_streaming() -> None:
     model = ChatBedrockConverse(
