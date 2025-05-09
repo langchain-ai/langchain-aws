@@ -112,12 +112,49 @@ def _convert_one_message_to_text_llama3(message: BaseMessage) -> str:
 
 
 def convert_messages_to_prompt_llama3(messages: List[BaseMessage]) -> str:
-    """Convert a list of messages to a prompt for llama."""
+    """Convert a list of messages to a prompt for Llama 3."""
 
     return "\n".join(
         ["<|begin_of_text|>"]
         + [_convert_one_message_to_text_llama3(message) for message in messages]
         + ["<|start_header_id|>assistant<|end_header_id|>\n\n"]
+    )
+
+
+def _convert_one_message_to_text_llama4(message: BaseMessage) -> str:
+    if isinstance(message, ChatMessage):
+        message_text = (
+            f"<|header_start|>{message.role}<|header_end|>{message.content}<|eot|>"
+        )
+    elif isinstance(message, HumanMessage):
+        message_text = (
+            f"<|header_start|>user<|header_end|>{message.content}<|eot|>"
+        )
+    elif isinstance(message, AIMessage):
+        message_text = (
+            f"<|header_start|>assistant<|header_end|>{message.content}<|eot|>"
+        )
+    elif isinstance(message, SystemMessage):
+        message_text = (
+            f"<|header_start|>system<|header_end|>{message.content}<|eot|>"
+        )
+    elif isinstance(message, ToolMessage):
+        message_text = (
+            f"<|header_start|>ipython<|header_end|>{message.content}<|eom|>"
+        )
+    else:
+        raise ValueError(f"Got unknown type {message}")
+
+    return message_text
+
+
+def convert_messages_to_prompt_llama4(messages: List[BaseMessage]) -> str:
+    """Convert a list of messages to a prompt for Llama 4."""
+
+    return "\n".join(
+        ["<|begin_of_text|>"]
+        + [_convert_one_message_to_text_llama4(message) for message in messages]
+        + ["<|header_start|>assistant<|header_end|>"]
     )
 
 
@@ -516,7 +553,9 @@ class ChatPromptAdapter:
         elif provider == "deepseek":
             prompt = convert_messages_to_prompt_deepseek(messages=messages)
         elif provider == "meta":
-            if "llama3" in model:
+            if "llama4" in model:
+                prompt = convert_messages_to_prompt_llama4(messages=messages)
+            elif "llama3" in model:
                 prompt = convert_messages_to_prompt_llama3(messages=messages)
             else:
                 prompt = convert_messages_to_prompt_llama(messages=messages)
