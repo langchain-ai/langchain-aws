@@ -18,6 +18,7 @@ from langchain_aws.chat_models.bedrock import (
     ChatPromptAdapter,
     _format_anthropic_messages,
     _merge_messages,
+    convert_messages_to_prompt_anthropic
 )
 from langchain_aws.function_calling import convert_to_anthropic_tool
 
@@ -633,6 +634,16 @@ def test__format_anthropic_messages_with_thinking_blocks() -> None:
     actual_system, actual_messages = _format_anthropic_messages(messages)
     assert expected_system == actual_system
     assert expected_messages == actual_messages
+
+
+def test__convert_messages_to_prompt_anthropic_message_is_none() -> None:
+    messages = None
+    assert convert_messages_to_prompt_anthropic(messages) == ""
+
+
+def test__convert_messages_to_prompt_anthropic_message_is_empty() -> None:
+    messages = []
+    assert convert_messages_to_prompt_anthropic(messages) == ""
 
 
 def test__format_anthropic_messages_with_thinking_in_content_blocks() -> None:
