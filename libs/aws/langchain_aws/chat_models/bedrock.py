@@ -154,10 +154,13 @@ def convert_messages_to_prompt_anthropic(
     Returns:
         str: Combined string with necessary human_prompt and ai_prompt tags.
     """
-
+    if messages is None:
+        return ""
+    
     messages = messages.copy()  # don't mutate the original list
-    if not isinstance(messages[-1], AIMessage):
-        messages.append(AIMessage(content=""))
+    if messages:
+        if not isinstance(messages[-1], AIMessage):
+            messages.append(AIMessage(content=""))
 
     text = "".join(
         _convert_one_message_to_text_anthropic(message, human_prompt, ai_prompt)
