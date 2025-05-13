@@ -280,6 +280,21 @@ MOCK_STREAMING_RESPONSE_DEEPSEEK = [
     {"chunk": {"bytes": b'{"choices": [{"text": "you.","stop_reason": "stop"}]}'}},
 ]
 
+MOCK_STREAMING_RESPONSE_WRITER = [
+    {"chunk": {'bytes': b'{"id":"cmpl-ec61121fa19443caa7f614bde08e926c",'
+              b'"object":"text_completion",'
+              b'"created":1747106231,'
+              b'"model":"writer.palmyra-x5-v1:0",'
+              b'"choices":[{"index":0,"text":"Hel","logprobs":null,"finish_reason":null,"stop_reason":null}],'
+              b'"usage":null}'}},
+    {"chunk": {'bytes': b'{"id":"cmpl-ec61121fa19443caa7f614bde08e926c",'
+              b'"object":"text_completion",'
+              b'"created":1747106231,'
+              b'"model":"writer.palmyra-x5-v1:0",'
+              b'"choices":[{"index":0,"text":"lo.","logprobs":null,"finish_reason":"length","stop_reason":null}],'
+              b'"usage":null}'}},
+    {"chunk": {'bytes': b'"[DONE]"'}},
+]
 
 async def async_gen_mock_streaming_response() -> AsyncGenerator[Dict, None]:
     for item in MOCK_STREAMING_RESPONSE:
@@ -369,6 +384,31 @@ def deepseek_response():
 @pytest.fixture
 def deepseek_streaming_response():
     response = dict(body=MOCK_STREAMING_RESPONSE_DEEPSEEK)
+    return response
+
+
+@pytest.fixture
+def writer_response():
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {'choices': [{'text': ' This is the Writer output text.'}]}
+    ).encode()
+    response = dict(
+        body=body,
+        ResponseMetadata={
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "17",
+                "x-amzn-bedrock-output-token-count": "8",
+            }
+        },
+    )
+
+    return response
+
+
+@pytest.fixture
+def writer_streaming_response():
+    response = dict(body=MOCK_STREAMING_RESPONSE_WRITER)
     return response
 
 
@@ -484,6 +524,27 @@ def test_prepare_output_stream_for_deepseek(deepseek_streaming_response) -> None
 
     assert results[0] == "Thank"
     assert results[1] == "you."
+
+
+def test_prepare_output_for_writer(writer_response):
+    result = LLMInputOutputAdapter.prepare_output("writer", writer_response)
+    assert result["text"] == " This is the Writer output text."
+    assert result["usage"]["prompt_tokens"] == 17
+    assert result["usage"]["completion_tokens"] == 8
+    assert result["usage"]["total_tokens"] == 25
+    assert result["stop_reason"] is None
+
+
+def test_prepare_output_stream_for_writer(writer_streaming_response) -> None:
+    results = [
+        chunk.text
+        for chunk in LLMInputOutputAdapter.prepare_output_stream(
+            "writer", writer_streaming_response
+        )
+    ]
+
+    assert results[0] == "Hel"
+    assert results[1] == "lo."
 
 
 def test_prepare_output_for_cohere(cohere_response):
