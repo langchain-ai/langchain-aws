@@ -35,9 +35,13 @@ optional = true
 [tool.poetry.group.test.dependencies]
 pytest = ">=7.4.3"
 pytest-cov = ">=4.1.0"
+pytest-asyncio = ">=0.26.0"
 
 [tool.poetry.group.test_integration]
 optional = true
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.poetry.group.test_integration.dependencies]
 langchain-aws = ">=0.2.14"
