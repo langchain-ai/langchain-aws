@@ -51,9 +51,17 @@ def test_compress_documents(mock_rerank: MagicMock, reranker: BedrockRerank) -> 
         {"index": 1, "relevance_score": 0.85},
     ]
 
-    documents = [Document(page_content="Content 1"), Document(page_content="Content 2")]
+    documents = [
+        Document(page_content="Content 1", id="doc1"),
+        Document(page_content="Content 2", id="doc2"),
+    ]
     query = "Relevant query"
     compressed_docs = reranker.compress_documents(documents, query)
+
+    assert compressed_docs[0].id == "doc1"
+    assert compressed_docs[0].page_content == "Content 1"
+    assert compressed_docs[1].id == "doc2"
+    assert compressed_docs[1].page_content == "Content 2"
 
     assert len(compressed_docs) == 2
     assert compressed_docs[0].metadata["relevance_score"] == 0.95
