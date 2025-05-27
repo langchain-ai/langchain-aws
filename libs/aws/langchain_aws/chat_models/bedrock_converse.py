@@ -1041,9 +1041,14 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
                     index=event["contentBlockStart"]["contentBlockIndex"],
                 )
             )
-        # Apply the same content formatting as _parse_response
-        content = _str_if_single_text_block([block])
+            # Keep tool calls as list to preserve type information
+            content = [block]
+        else:
+            # Convert text content to string for consistency with other LangChain models
+            content = _str_if_single_text_block([block])
+        
         return AIMessageChunk(content=content, tool_call_chunks=tool_call_chunks)
+        
     elif "contentBlockDelta" in event:
         block = {
             **_bedrock_to_lc([event["contentBlockDelta"]["delta"]])[0],
@@ -1059,9 +1064,14 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
                     index=event["contentBlockDelta"]["contentBlockIndex"],
                 )
             )
-        # Apply the same content formatting as _parse_response
-        content = _str_if_single_text_block([block])
+            # Keep tool calls as list to preserve type information
+            content = [block]
+        else:
+            # Convert text content to string for consistency with other LangChain models
+            content = _str_if_single_text_block([block])
+        
         return AIMessageChunk(content=content, tool_call_chunks=tool_call_chunks)
+        
     elif "contentBlockStop" in event:
         # TODO: needed?
         return AIMessageChunk(content="")
