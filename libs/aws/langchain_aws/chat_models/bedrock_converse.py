@@ -1170,9 +1170,9 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
     if "messageStart" in event:
         # TODO: needed?
         return (
-            AIMessageChunk(content="")
+            AIMessageChunk(content=[])
             if event["messageStart"]["role"] == "assistant"
-            else HumanMessageChunk(content="")
+            else HumanMessageChunk(content=[])
         )
     elif "contentBlockStart" in event:
         block = {
@@ -1189,8 +1189,9 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
                     index=event["contentBlockStart"]["contentBlockIndex"],
                 )
             )
-        # Keep content as list during streaming to preserve merging compatibility
+        # always keep block inside a list to preserve merging compatibility
         content = [block]
+        
         return AIMessageChunk(content=content, tool_call_chunks=tool_call_chunks)
     elif "contentBlockDelta" in event:
         block = {
@@ -1207,12 +1208,13 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
                     index=event["contentBlockDelta"]["contentBlockIndex"],
                 )
             )
-        # Keep content as list during streaming to preserve merging compatibility
+        # always keep block inside a list to preserve merging compatibility
         content = [block]
+        
         return AIMessageChunk(content=content, tool_call_chunks=tool_call_chunks)
     elif "contentBlockStop" in event:
         # TODO: needed?
-        return AIMessageChunk(content="")
+        return AIMessageChunk(content=[])
     elif "messageStop" in event:
         # TODO: snake case response metadata?
         return AIMessageChunk(content="", response_metadata=event["messageStop"])
