@@ -16,7 +16,7 @@ class TestBedrockStandard(ChatModelIntegrationTests):
 
     @property
     def chat_model_params(self) -> dict:
-        return {"model_id": "anthropic.claude-3-sonnet-20240229-v1:0"}
+        return {"model_id": "us.anthropic.claude-sonnet-4-20250514-v1:0"}
 
     @property
     def standard_chat_model_params(self) -> dict:
