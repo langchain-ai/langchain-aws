@@ -635,6 +635,50 @@ def test__format_anthropic_messages_with_thinking_blocks() -> None:
     assert expected_system == actual_system
     assert expected_messages == actual_messages
 
+def test__format_anthropic_messages_with_image_conversion_in_tool() -> None:
+    """Test that ToolMessage with OpenAI-style image content is correctly converted to Anthropic format."""
+    # Create a dummy base64 image string
+    dummy_base64_image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    
+    messages = [
+        ToolMessage(  # type: ignore[misc]
+            content=[
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{dummy_base64_image}"
+                    }
+                }
+            ],
+            tool_call_id="test_tool_call_123"
+        ),
+        HumanMessage("What do you see in the image?"),  # type: ignore[misc]
+    ]
+    
+    expected = [
+        HumanMessage(  # type: ignore[misc]
+            content=[
+                {
+                    "type": "tool_result",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png", 
+                                "data": dummy_base64_image
+                            }
+                        }
+                    ],
+                    "tool_use_id": "test_tool_call_123"
+                },
+                {"type": "text", "text": "What do you see in the image?"}
+            ]
+        )
+    ]
+    
+    actual = _format_anthropic_messages(messages)
+    assert expected == actual
 
 def test__convert_messages_to_prompt_anthropic_message_is_none() -> None:
     messages = None
