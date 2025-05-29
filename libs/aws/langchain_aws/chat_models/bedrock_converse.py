@@ -528,7 +528,12 @@ class ChatBedrockConverse(BaseChatModel):
             )
             or
             # Anthropic Claude 3 and newer models
-            (provider == "anthropic" and "claude-3" in model_id_lower)
+            (
+                provider == "anthropic"
+                and any(
+                    x in model_id_lower for x in ["claude-3", "claude-sonnet-4", "claude-opus-4"]
+                )
+            )
             or
             # Cohere Command R models
             (provider == "cohere" and "command-r" in model_id_lower)
