@@ -176,7 +176,7 @@ def _stream_response_to_generation_chunk(
     return GenerationChunk(
         text=(
             stream_response[output_key]
-            if provider not in ["mistral", "deepseek"]
+            if provider not in ["mistral", "deepseek", "writer"]
             else stream_response[output_key][0]["text"]
         ),
         generation_info=generation_info,
@@ -273,6 +273,7 @@ class LLMInputOutputAdapter:
         "deepseek": "choices",
         "meta": "generation",
         "mistral": "outputs",
+        "writer": "choices"
     }
 
     @classmethod
@@ -363,7 +364,7 @@ class LLMInputOutputAdapter:
             if temperature is not None:
                 input_body["temperature"] = temperature
 
-        elif provider in ("ai21", "cohere", "meta", "mistral", "deepseek"):
+        elif provider in ("ai21", "cohere", "meta", "mistral", "deepseek", "writer"):
             input_body["prompt"] = prompt
             if max_tokens:
                 if provider == "cohere":
@@ -373,6 +374,8 @@ class LLMInputOutputAdapter:
                 elif provider == "mistral":
                     input_body["max_tokens"] = max_tokens
                 elif provider == "deepseek":
+                    input_body["max_tokens"] = max_tokens
+                elif provider == "writer":
                     input_body["max_tokens"] = max_tokens
                 else:
                     # TODO: Add AI21 support, param depends on specific model.
@@ -429,7 +432,9 @@ class LLMInputOutputAdapter:
                     tool_calls = extract_tool_calls(content)
 
         else:
-            if provider == "ai21":
+            if provider in ["deepseek", "writer"]:
+                text = response_body.get("choices")[0].get("text")
+            elif provider == "ai21":
                 text = response_body.get("completions")[0].get("data").get("text")
             elif provider == "cohere":
                 text = response_body.get("generations")[0].get("text")
@@ -437,8 +442,6 @@ class LLMInputOutputAdapter:
                 text = response_body.get("generation")
             elif provider == "mistral":
                 text = response_body.get("outputs")[0].get("text")
-            elif provider == "deepseek":
-                text = response_body.get("choices")[0].get("text")
             else:
                 text = response_body.get("results")[0].get("outputText")
 
@@ -493,7 +496,10 @@ class LLMInputOutputAdapter:
 
             chunk_obj = json.loads(chunk.get("bytes").decode())
 
-            if provider == "cohere" and (
+            if provider == "writer" and chunk_obj == "[DONE]":
+                return
+
+            elif provider == "cohere" and (
                 chunk_obj["is_finished"] or chunk_obj[output_key] == "<EOS_TOKEN>"
             ):
                 return
