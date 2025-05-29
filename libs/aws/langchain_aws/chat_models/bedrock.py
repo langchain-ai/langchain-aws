@@ -411,6 +411,29 @@ def _format_anthropic_messages(
                         # convert format
                         source = _format_image(item["image_url"]["url"])
                         tool_blocks.append({"type": "image", "source": source})
+                    elif item["type"] == "tool_result":
+                        # Process content within tool_result
+                        content_item = item["content"]
+                        if isinstance(content_item, list):
+                            # Handle list content inside tool_result
+                            processed_list = []
+                            for list_item in content_item:
+                                if isinstance(list_item, dict) and list_item.get("type") == "image_url":
+                                    # Process image in list
+                                    source = _format_image(list_item["image_url"]["url"])
+                                    processed_list.append({"type": "image", "source": source})
+                                else:
+                                    # Keep other items as is
+                                    processed_list.append(list_item)
+                            # Add processed list to tool_result
+                            tool_blocks.append({
+                                "type": "tool_result",
+                                "tool_use_id": item.get("tool_use_id"),
+                                "content": processed_list
+                            })
+                        else:
+                            # For other content types, keep as is
+                            tool_blocks.append(item)
                     elif item["type"] == "tool_use":
                         # If a tool_call with the same id as a tool_use content block
                         # exists, the tool_call is preferred.
@@ -917,7 +940,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
 
             # true if the model is a claude 3 model
-            if "claude-3" in self._get_base_model():
+            if "claude-" in self._get_base_model():
                 if not tool_choice:
                     pass
                 elif isinstance(tool_choice, dict):
@@ -1054,7 +1077,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             return self._as_converse.with_structured_output(
                 schema, include_raw=include_raw, **kwargs
             )
-        if "claude-3" not in self._get_base_model():
+        if "claude-" not in self._get_base_model():
             raise ValueError(
                 f"Structured output is not supported for model {self._get_base_model()}"
             )

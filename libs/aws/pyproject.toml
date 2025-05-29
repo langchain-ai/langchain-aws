@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langchain-aws"
-version = "0.2.23"
+version = "0.2.24"
 description = "An integration package connecting AWS and LangChain"
 authors = []
 readme = "README.md"
@@ -11,8 +11,8 @@ license = "MIT"
 "Source Code" = "https://github.com/langchain-ai/langchain-aws/tree/main/libs/aws"
 
 [tool.poetry.dependencies]
-python = ">=3.9,<4.0"
-langchain-core = "^0.3.59"
+python = ">=3.9"
+langchain-core = "^0.3.62"
 boto3 = ">=1.37.24"
 pydantic = ">=2.10.0,<3"
 numpy = [
@@ -26,11 +26,11 @@ optional = true
 [tool.poetry.group.test.dependencies]
 pytest = "^7.4.3"
 pytest-cov = "^4.1.0"
-syrupy = "^4.0.2"
+syrupy = { version = "^4.0.2", python = "<4.0" }
 pytest-asyncio = "^0.23.2"
-pytest-watcher = "^0.3.4"
-langchain-tests = "0.3.18"
-langchain = "^0.3.7"
+pytest-watcher = { version = "^0.3.4", python = "<4.0" }
+langchain-tests = { version = "^0.3.18", python = "<4.0" }
+langchain = { version = "^0.3.7", python = "<4.0" }
 
 [tool.poetry.group.codespell]
 optional = true
