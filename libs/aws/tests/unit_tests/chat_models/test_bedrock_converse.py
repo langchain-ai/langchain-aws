@@ -473,8 +473,9 @@ def test_standard_tracing_params() -> None:
 @pytest.mark.parametrize(
     "model_id, disable_streaming",
     [
+        ("us.anthropic.claude-sonnet-4-20250514-v1:0", False),
+        ("us.anthropic.claude-opus-4-20250514-v1:0", False),
         ("us.anthropic.claude-3-7-sonnet-20250219-v1:0", False),
-        ("anthropic.claude-3-5-sonnet-20240620-v1:0", False),
         ("us.anthropic.claude-3-haiku-20240307-v1:0", False),
         ("cohere.command-r-v1:0", False),
         ("meta.llama3-1-405b-instruct-v1:0", "tool_calling"),
