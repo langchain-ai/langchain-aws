@@ -568,3 +568,81 @@ def validate_query_response_with_cutoff(documents: List[Document]):
         "location": "testLocation",
         "type": "TEXT",
     }
+
+
+def test_guardrail_config(mock_client):
+    retriever = AmazonKnowledgeBasesRetriever(
+        knowledge_base_id="test_kb_id",
+        client=mock_client,
+        guardrail_config={
+            "guardrailId": "test-guardrail-id",
+            "guardrailVersion": "test-guardrail-version",
+        },
+    )
+    
+    mock_client.retrieve.return_value = {
+        "retrievalResults": [
+            {"content": {"text": "result1"}, "metadata": {"key": "value1"}},
+        ]
+    }
+    
+    retriever.invoke("test query")
+
+    mock_client.retrieve.assert_called_once_with(
+        retrievalQuery={"text": "test query"},
+        knowledgeBaseId="test_kb_id",
+        guardrailConfiguration={
+            "guardrailId": "test-guardrail-id",
+            "guardrailVersion": "test-guardrail-version",
+        },
+    )
+
+
+def test_guardrail_config_validation(mock_client):
+    retriever = AmazonKnowledgeBasesRetriever(
+        knowledge_base_id="test_kb_id",
+        client=mock_client,
+        guardrail_config={
+            "guardrailVersion": "test-guardrail-version",
+        },
+    )
+    
+    with pytest.raises(TypeError) as excinfo:
+        retriever.invoke("test query")
+    
+    assert "Guardrail configuration must be a dictionary with both 'guardrailId'" in str(excinfo.value)
+
+
+def test_guardrail_config_with_retrieval_config(mock_client, mock_retriever_config):
+    retriever = AmazonKnowledgeBasesRetriever(
+        knowledge_base_id="test_kb_id",
+        client=mock_client,
+        guardrail_config={
+            "guardrailId": "test-guardrail-id",
+            "guardrailVersion": "test-guardrail-version",
+        },
+        retrieval_config=mock_retriever_config,
+    )
+    
+    mock_client.retrieve.return_value = {
+        "retrievalResults": [
+            {"content": {"text": "result1"}, "metadata": {"key": "value1"}},
+        ]
+    }
+    
+    retriever.invoke("test query")
+
+    mock_client.retrieve.assert_called_once_with(
+        retrievalQuery={"text": "test query"},
+        knowledgeBaseId="test_kb_id",
+        guardrailConfiguration={
+            "guardrailId": "test-guardrail-id",
+            "guardrailVersion": "test-guardrail-version",
+        },
+        retrievalConfiguration={
+            "vectorSearchConfiguration": {
+                "numberOfResults": 5,
+                "filter": {"in": {"key": "key", "value": ["value1", "value2"]}},
+            }
+        },
+    )
