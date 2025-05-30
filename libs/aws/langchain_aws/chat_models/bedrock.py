@@ -263,6 +263,28 @@ def convert_messages_to_prompt_deepseek(messages: List[BaseMessage]) -> str:
     return prompt
 
 
+def _convert_one_message_to_text_writer(message: BaseMessage) -> str:
+    if isinstance(message, ChatMessage):
+        message_text = f"\n\n{message.role.capitalize()}: {message.content}"
+    elif isinstance(message, HumanMessage):
+        message_text = f"[INST] {message.content} [/INST]"
+    elif isinstance(message, AIMessage):
+        message_text = f"{message.content}"
+    elif isinstance(message, SystemMessage):
+        message_text = f"<<SYS>> {message.content} <</SYS>>"
+    else:
+        raise ValueError(f"Got unknown type {message}")
+    return message_text
+
+
+def convert_messages_to_prompt_writer(messages: List[BaseMessage]) -> str:
+    """Convert a list of messages to a prompt for Writer."""
+
+    return "\n".join(
+        [_convert_one_message_to_text_llama(message) for message in messages]
+    )
+
+
 def _format_image(image_url: str) -> Dict:
     """
     Formats an image of format data:image/jpeg;base64,{b64_string}
@@ -592,6 +614,8 @@ class ChatPromptAdapter:
                 human_prompt="\n\nUser:",
                 ai_prompt="\n\nBot:",
             )
+        elif provider == "writer":
+            prompt = convert_messages_to_prompt_writer(messages=messages)
         else:
             raise NotImplementedError(
                 f"Provider {provider} model does not support chat."

@@ -93,6 +93,9 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
 
             client: boto3 client for bedrock agent runtime.
 
+            guardrail_config: Configuration information for a guardrail that you want
+                to use in the request.
+
             retrieval_config: Optional configuration for retrieval specified as a
                 Python object (RetrievalConfig) or as a dictionary
 
@@ -124,6 +127,9 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
     endpoint_url: Optional[str] = None
     config: Any = None
     client: Any = None
+    guardrail_config: Optional[Dict[str, Any]] = Field(
+        default=None, alias="guardrails"
+    )
     retrieval_config: Optional[Union[RetrievalConfig, Dict[str, Any]]] = None
     min_score_confidence: Annotated[
         Optional[float], Field(ge=0.0, le=1.0, default=None)
@@ -132,6 +138,8 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
     @model_validator(mode="before")
     @classmethod
     def create_client(cls, values: Dict[str, Any]) -> Any:
+        if "guardrail_config" in values and "guardrails" not in values:
+            values["guardrails"] = values.pop("guardrail_config")
         if values.get("client") is None:
             values["client"] = create_aws_client(
                 region_name=values.get("region_name"),
@@ -198,10 +206,21 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
             "retrievalQuery": {"text": query.strip()},
             "knowledgeBaseId": self.knowledge_base_id,
         }
+        if self.guardrail_config:
+            if not (self.guardrail_config.get("guardrailId")
+                    and self.guardrail_config.get("guardrailVersion")):
+                raise TypeError(
+                    "Guardrail configuration must be a dictionary with both 'guardrailId' "
+                    "and 'guardrailVersion' keys."
+                )
+            request["guardrailConfiguration"] = self.guardrail_config
         if self.retrieval_config:
-            request["retrievalConfiguration"] = self.retrieval_config.model_dump(
-                exclude_none=True, by_alias=True
-            )
+            if isinstance(self.retrieval_config, dict):
+                request["retrievalConfiguration"] = self.retrieval_config
+            else:
+                request["retrievalConfiguration"] = self.retrieval_config.model_dump(
+                    exclude_none=True, by_alias=True
+                )
         return request
 
     @staticmethod
