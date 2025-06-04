@@ -432,13 +432,13 @@ def _format_anthropic_messages(
             # populate content
             content = []
             thinking_blocks = []
-            text_blocks = []
+            native_blocks = []
             tool_blocks = []
 
             # First collect all blocks by type
             for item in message.content:
                 if isinstance(item, str):
-                    text_blocks.append({"type": "text", "text": item})
+                    native_blocks.append({"type": "text", "text": item})
                 elif isinstance(item, dict):
                     if "type" not in item:
                         raise ValueError("Dict content item must have a type key")
@@ -447,7 +447,9 @@ def _format_anthropic_messages(
                     elif item["type"] == "image_url":
                         # convert format
                         source = _format_image(item["image_url"]["url"])
-                        tool_blocks.append({"type": "image", "source": source})
+                        native_blocks.append({"type": "image", "source": source})
+                    elif item["type"] == "image":
+                        native_blocks.append(item)
                     elif item["type"] == "tool_result":
                         # Process content within tool_result
                         content_item = item["content"]
@@ -501,7 +503,7 @@ def _format_anthropic_messages(
                             content_item = {"type": "text", "text": text}
                             if item.get("cache_control"):
                                 content_item["cache_control"] = {"type": "ephemeral"}
-                            text_blocks.append(content_item)
+                            native_blocks.append(content_item)
                     else:
                         tool_blocks.append(item)
                 else:
@@ -511,16 +513,16 @@ def _format_anthropic_messages(
 
             # For assistant messages, when thinking blocks exist, ensure they come first
             if role == "assistant":
-                content = text_blocks + tool_blocks
+                content = native_blocks + tool_blocks
                 if thinking_blocks:
                     content = thinking_blocks + content
-            elif role == "user" and tool_blocks and text_blocks:
-                content = tool_blocks + text_blocks  # tool result must precede text
+            elif role == "user" and tool_blocks and native_blocks:
+                content = tool_blocks + native_blocks  # tool result must precede text
                 if thinking_blocks:
                     content = thinking_blocks + content
             else:
                 # combine all blocks in standard order
-                content = text_blocks + tool_blocks
+                content = native_blocks + tool_blocks
                 # Only include thinking blocks if they exist
                 if thinking_blocks:
                     content = thinking_blocks + content
