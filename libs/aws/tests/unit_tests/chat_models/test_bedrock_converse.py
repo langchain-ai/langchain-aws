@@ -346,12 +346,9 @@ def test__messages_to_bedrock() -> None:
     assert expected_system == actual_system
 
 
-def test_messages_to_bedrock_with_cache_point():
+def test_messages_to_bedrock_with_cache_point() -> None:
     messages = [
-        HumanMessage(content=[
-            "Hello!",
-            {"cachePoint": {"type": "default"}}
-        ]),
+        HumanMessage(content=["Hello!", {"cachePoint": {"type": "default"}}]),
         ToolMessage(
             content=[
                 {"type": "text", "text": "Tool response"},
