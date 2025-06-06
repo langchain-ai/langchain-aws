@@ -486,7 +486,8 @@ class ChatBedrockConverse(BaseChatModel):
         )
         if additional_model_request_fields or model_kwargs:
             values["additional_model_request_fields"] = {
-                **model_kwargs, **additional_model_request_fields
+                **model_kwargs,
+                **additional_model_request_fields,
             }
         return values
 
@@ -531,7 +532,8 @@ class ChatBedrockConverse(BaseChatModel):
             (
                 provider == "anthropic"
                 and any(
-                    x in model_id_lower for x in ["claude-3", "claude-sonnet-4", "claude-opus-4"]
+                    x in model_id_lower
+                    for x in ["claude-3", "claude-sonnet-4", "claude-opus-4"]
                 )
             )
             or
@@ -954,14 +956,26 @@ def _messages_to_bedrock(
             else:
                 curr = {"role": "user", "content": []}
 
-            curr["content"].append(
-                {
-                    "toolResult": {
-                        "content": content,
-                        "toolUseId": msg.tool_call_id,
-                        "status": msg.status,
-                    }
-                }
+            tool_result_content = []
+            special_blocks = []
+
+            for block in content:
+                if _is_cache_point(block):
+                    special_blocks.append(block)
+                else:
+                    tool_result_content.append(block)
+
+            curr["content"].extend(
+                [
+                    {
+                        "toolResult": {
+                            "content": tool_result_content,
+                            "toolUseId": msg.tool_call_id,
+                            "status": msg.status,
+                        }
+                    },
+                    *special_blocks,
+                ]
             )
             bedrock_messages.append(curr)
         else:
