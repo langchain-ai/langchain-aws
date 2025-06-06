@@ -18,7 +18,7 @@ from langchain_aws.chat_models.bedrock import (
     ChatPromptAdapter,
     _format_anthropic_messages,
     _merge_messages,
-    convert_messages_to_prompt_anthropic
+    convert_messages_to_prompt_anthropic,
 )
 from langchain_aws.function_calling import convert_to_anthropic_tool
 
@@ -803,6 +803,63 @@ def test__format_anthropic_messages_after_tool_use_no_thinking() -> None:
     assert not any(
         block.get("type") in ["thinking", "redacted_thinking"]
         for block in actual_messages[3]["content"]
+    )
+
+
+
+
+def test__format_anthropic_messages_preserves_content_order() -> None:
+    """Test that _format_anthropic_messages preserves the original order of mixed text and image content."""
+    content = [
+        {"type": "text", "text": "Some text..."},
+        {
+            "type": "image_url",
+            "image_url": {"url": "data:image/jpeg;base64,1337C0DE"},
+        },
+        {"type": "text", "text": "Caption for 1st image..."},
+        {
+            "type": "image_url",
+            "image_url": {"url": "data:image/jpeg;base64,FACADE42"},
+        },
+        {"type": "text", "text": "Another caption for 2nd image..."},
+        {"type": "text", "text": "Now, analyze the following image..."},
+        {
+            "type": "image_url",
+            "image_url": {"url": "data:image/jpeg;base64,C0FFEE42"},
+        },
+    ]
+
+    messages = [HumanMessage(content=content)]
+
+    _, formatted_messages = _format_anthropic_messages(messages)
+
+    assert len(formatted_messages) == 1
+    assert formatted_messages[0]["role"] == "user"
+
+    user_content = formatted_messages[0]["content"]
+
+    # The expected order should preserve the original interleaved sequence:
+    # text -> image -> text -> image -> text -> text -> image
+    expected_sequence = [
+        ("text", "Some text..."),
+        ("image", "1337C0DE"),
+        ("text", "Caption for 1st image..."),
+        ("image", "FACADE42"),
+        ("text", "Another caption for 2nd image..."),
+        ("text", "Now, analyze the following image..."),
+        ("image", "C0FFEE42"),
+    ]
+
+    actual_sequence = []
+    for item in user_content:
+        if item["type"] == "text":
+            actual_sequence.append(("text", item["text"]))
+        elif item["type"] == "image":
+            actual_sequence.append(("image", item["source"]["data"]))
+
+    assert actual_sequence == expected_sequence, (
+        f"Content order was not preserved. Expected: {expected_sequence}, "
+        f"but got: {actual_sequence}"
     )
 
 
