@@ -346,6 +346,41 @@ def test__messages_to_bedrock() -> None:
     assert expected_system == actual_system
 
 
+def test_messages_to_bedrock_with_cache_point() -> None:
+    messages = [
+        HumanMessage(content=["Hello!", {"cachePoint": {"type": "default"}}]),
+        ToolMessage(
+            content=[
+                {"type": "text", "text": "Tool response"},
+                {"cachePoint": {"type": "default"}},
+            ],
+            tool_call_id="tool-123",
+            status="success",
+        ),
+    ]
+
+    actual_messages, actual_system = _messages_to_bedrock(messages)
+    expected_messages = [
+        {
+            "role": "user",
+            "content": [
+                {"text": "Hello!"},
+                {"cachePoint": {"type": "default"}},
+                {
+                    "toolResult": {
+                        "content": [{"text": "Tool response"}],
+                        "status": "success",
+                        "toolUseId": "tool-123",
+                    }
+                },
+                {"cachePoint": {"type": "default"}},
+            ],
+        }
+    ]
+    assert expected_messages == actual_messages
+    assert [] == actual_system
+
+
 def test__bedrock_to_lc() -> None:
     bedrock: List[Dict] = [
         {"text": "text1"},
