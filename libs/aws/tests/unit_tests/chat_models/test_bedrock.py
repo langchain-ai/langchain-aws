@@ -806,6 +806,67 @@ def test__format_anthropic_messages_after_tool_use_no_thinking() -> None:
     )
 
 
+def test__format_anthropic_messages_tool_result_ordering() -> None:
+    """Test that tool type content blocks in UserMessage are moved to the beginning."""
+    human_message = HumanMessage(  # type: ignore[misc]
+        [
+            {"type": "text", "text": "I have a question about the data."},
+            {
+                "type": "tool_result",
+                "content": "Data analysis result",
+                "tool_use_id": "tool1"
+            },
+            {"type": "text", "text": "Can you explain this result?"},
+        ]
+    )
+
+    system = SystemMessage("You are a helpful assistant")  # type: ignore[misc]
+    ai = AIMessage("Let me think about that")  # type: ignore[misc]
+
+    messages = [system, human_message, ai]
+
+    _, formatted_messages = _format_anthropic_messages(messages)
+
+    user_content = formatted_messages[0]["content"]
+
+    assert user_content[0]["type"] == "tool_result"
+    assert user_content[0]["content"] == "Data analysis result"
+    assert user_content[1]["type"] == "text"
+    assert user_content[1]["text"] == "I have a question about the data."
+    assert user_content[2]["type"] == "text"
+    assert user_content[2]["text"] == "Can you explain this result?"
+
+
+def test__format_anthropic_messages_tool_use_ordering() -> None:
+    """Test that tool type content blocks in AssistantMessage are always moved to the end."""
+    ai_message = AIMessage(  # type: ignore[misc]
+        [
+            {"type": "text", "text": "Let me analyze this for you."},
+            {
+                "type": "tool_use",
+                "name": "data_analyzer",
+                "id": "tool1",
+                "input": {"data": "sample_data"}
+            },
+            {"type": "text", "text": "This will help us understand the pattern."},
+        ]
+    )
+
+    system = SystemMessage("You are a helpful assistant")  # type: ignore[misc]
+    human = HumanMessage("Can you analyze this data?")  # type: ignore[misc]
+
+    messages = [system, human, ai_message]
+
+    _, formatted_messages = _format_anthropic_messages(messages)
+
+    assistant_content = formatted_messages[1]["content"]
+
+    assert assistant_content[0]["type"] == "text"
+    assert assistant_content[0]["text"] == "Let me analyze this for you."
+    assert assistant_content[1]["type"] == "text"
+    assert assistant_content[1]["text"] == "This will help us understand the pattern."
+    assert assistant_content[2]["type"] == "tool_use"
+    assert assistant_content[2]["name"] == "data_analyzer"
 
 
 def test__format_anthropic_messages_preserves_content_order() -> None:
