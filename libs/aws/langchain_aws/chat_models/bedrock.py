@@ -443,7 +443,7 @@ def _format_anthropic_messages(
                     if "type" not in item:
                         raise ValueError("Dict content item must have a type key")
                     elif is_data_content_block(item):
-                        tool_blocks.append(_format_data_content_block(item))
+                        native_blocks.append(_format_data_content_block(item))
                     elif item["type"] == "image_url":
                         # convert format
                         source = _format_image(item["image_url"]["url"])
