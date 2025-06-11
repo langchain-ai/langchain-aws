@@ -188,8 +188,8 @@ def test__format_anthropic_messages_with_str_content_and_tool_calls() -> None:
 def test__format_anthropic_messages_with_list_content_and_tool_calls() -> None:
     system = SystemMessage("fuzz")  # type: ignore[misc]
     human = HumanMessage("foo")  # type: ignore[misc]
-    # If content and tool_calls are specified and content is a list, then content is
-    # preferred.
+    # If content and tool_calls are specified and content is a list, both are
+    # included
     ai = AIMessage(  # type: ignore[misc]
         [{"type": "text", "text": "thought"}],
         tool_calls=[{"name": "bar", "id": "1", "args": {"baz": "buzz"}}],
@@ -205,7 +205,15 @@ def test__format_anthropic_messages_with_list_content_and_tool_calls() -> None:
             {"role": "user", "content": "foo"},
             {
                 "role": "assistant",
-                "content": [{"type": "text", "text": "thought"}],
+                "content": [
+                    {"type": "text", "text": "thought"},
+                    {
+                        "type": "tool_use",
+                        "name": "bar",
+                        "id": "1",
+                        "input": {"baz": "buzz"},
+                    },
+                ],
             },
             {
                 "role": "user",
