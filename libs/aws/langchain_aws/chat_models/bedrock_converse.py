@@ -652,7 +652,7 @@ class ChatBedrockConverse(BaseChatModel):
         params = self._converse_params(
             stop=stop,
             **_snake_to_camel_keys(
-                kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
+                kwargs, excluded_keys={"inputSchema", "properties", "thinking", "stream"}
             ),
         )
         logger.debug(f"Input params: {params}")
@@ -676,7 +676,7 @@ class ChatBedrockConverse(BaseChatModel):
         params = self._converse_params(
             stop=stop,
             **_snake_to_camel_keys(
-                kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
+                kwargs, excluded_keys={"inputSchema", "properties", "thinking", "stream"}
             ),
         )
         response = self.client.converse_stream(
