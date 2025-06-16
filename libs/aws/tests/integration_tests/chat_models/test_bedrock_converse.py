@@ -216,7 +216,7 @@ def test_tool_calling_snake_case() -> None:
 
 
 def test_tool_calling_camel_case() -> None:
-    model = ChatBedrockConverse(model="anthropic.claude-3-sonnet-20240229-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-3-5-sonnet-20241022-v2:0")
 
     def classifyQuery(queryType: Literal["cat", "dog"]) -> None:
         pass
