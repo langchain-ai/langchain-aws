@@ -1271,7 +1271,10 @@ def _lc_content_to_bedrock(
 
 def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     lc_content = []
-    for block in _camel_to_snake_keys(content):
+    for block in _camel_to_snake_keys(
+        content,
+        excluded_keys={"input"},  # exclude 'input' key, which contains tool call args
+    ):
         if "text" in block:
             lc_content.append({"type": "text", "text": block["text"]})
         elif "tool_use" in block:
@@ -1440,13 +1443,21 @@ def _camel_to_snake(text: str) -> str:
 _T = TypeVar("_T")
 
 
-def _camel_to_snake_keys(obj: _T) -> _T:
+def _camel_to_snake_keys(obj: _T, excluded_keys: set = set()) -> _T:
     if isinstance(obj, list):
-        return cast(_T, [_camel_to_snake_keys(e) for e in obj])
-    elif isinstance(obj, dict):
         return cast(
-            _T, {_camel_to_snake(k): _camel_to_snake_keys(v) for k, v in obj.items()}
+            _T, [_camel_to_snake_keys(e, excluded_keys=excluded_keys) for e in obj]
         )
+    elif isinstance(obj, dict):
+        _dict = {}
+        for k, v in obj.items():
+            if k in excluded_keys:
+                _dict[k] = v
+            else:
+                _dict[_camel_to_snake(k)] = _camel_to_snake_keys(
+                    v, excluded_keys=excluded_keys
+                )
+        return cast(_T, _dict)
     else:
         return obj
 
