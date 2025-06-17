@@ -511,6 +511,25 @@ def _format_anthropic_messages(
                         f"Content items must be str or dict, instead was: {type(item)}"
                     )
 
+            # Add tool calls if present (for AIMessage)
+            if isinstance(message, AIMessage) and message.tool_calls:
+                # Track which tool call IDs we've already processed
+                used_tool_call_ids = {
+                    block["id"]
+                    for block in tool_blocks
+                    if block.get("type") == "tool_use"
+                }
+                # Only add tool calls that haven't been processed yet
+                new_tool_calls = [
+                    tc
+                    for tc in message.tool_calls
+                    if tc["id"] not in used_tool_call_ids
+                ]
+                if new_tool_calls:
+                    tool_blocks.extend(
+                        _lc_tool_calls_to_anthropic_tool_use_blocks(new_tool_calls)
+                    )
+
             # For assistant messages, when thinking blocks exist, ensure they come first
             if role == "assistant":
                 content = native_blocks + tool_blocks
