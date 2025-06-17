@@ -309,6 +309,42 @@ class ChatBedrockConverse(BaseChatModel):
               'RetryAttempts': 0},
              'stopReason': 'end_turn',
              'metrics': {'latencyMs': 1290}}
+
+    Prompt caching (1-hour TTL):
+        .. code-block:: python
+
+            from langchain_aws import ChatBedrockConverse
+            from langchain_core.messages import HumanMessage
+
+            # Initialize with beta header for extended cache TTL
+            llm = ChatBedrockConverse(
+                model="anthropic.claude-3-sonnet-20240229-v1:0",
+                additional_model_request_fields={
+                    "anthropicBeta": ["extended-cache-ttl-2025-04-11"]
+                }
+            )
+
+            # Create cache points
+            cache_1h = ChatBedrockConverse.create_cache_point(ttl="1h")
+            cache_5m = ChatBedrockConverse.create_cache_point()  # Default 5-minute
+
+            # Use caching with proper ordering (1-hour cache must come first)
+            messages = [
+                HumanMessage(content=[
+                    "You are an expert assistant with extensive knowledge.",
+                    cache_1h,  # Cache the system context for 1 hour
+                    "Current conversation context that changes more frequently.",
+                    cache_5m,  # Cache this for 5 minutes
+                    "What is the user's question?"
+                ])
+            ]
+
+            response = llm.invoke(messages)
+            
+            # Check cache usage in response
+            print(response.usage_metadata)
+            # {'input_tokens': 100, 'output_tokens': 50, 
+            #  'input_token_details': {'cache_read': 80, 'cache_creation': 20}}
     """  # noqa: E501
 
     client: Any = Field(default=None, exclude=True)  #: :meta private:
@@ -475,14 +511,51 @@ class ChatBedrockConverse(BaseChatModel):
     )
 
     @classmethod
-    def create_cache_point(cls, cache_type: str = "default") -> Dict[str, Any]:
+    def create_cache_point(
+        cls, cache_type: str = "ephemeral", ttl: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Create a prompt caching configuration for Bedrock.
+        
         Args:
-            cache_type: Type of cache point. Default is "default".
+            cache_type: Type of cache point. Options: "default" or "ephemeral".
+                Default is "ephemeral" to support TTL configuration.
+            ttl: Time-to-live for cache. E.g., "1h" for 1 hour, "5m" for 5 minutes.
+                Only valid with "ephemeral" type. If not specified with ephemeral type,
+                defaults to 5 minutes.
+                
         Returns:
             Dictionary containing prompt caching configuration.
+            
+        Example:
+            >>> # Create a 1-hour cache point
+            >>> cache_point = ChatBedrockConverse.create_cache_point(
+            ...     cache_type="ephemeral", 
+            ...     ttl="1h"
+            ... )
+            >>> # Returns: {"cachePoint": {"type": "ephemeral", "ttl": "1h"}}
+            
+            >>> # Create a default 5-minute cache point
+            >>> cache_point = ChatBedrockConverse.create_cache_point()
+            >>> # Returns: {"cachePoint": {"type": "ephemeral"}}
+            
+        Note:
+            To enable 1-hour caching, you must also pass the beta header through
+            additional_model_request_fields when initializing ChatBedrockConverse:
+            
+            llm = ChatBedrockConverse(
+                model="anthropic.claude-3-sonnet-20240229-v1:0",
+                additional_model_request_fields={
+                    "anthropicBeta": ["extended-cache-ttl-2025-04-11"]
+                }
+            )
+            
+            Important: 1-hour cache entries must appear before any 5-minute cache
+            entries in your message content.
         """
-        return {"cachePoint": {"type": cache_type}}
+        cache_config = {"type": cache_type}
+        if ttl and cache_type == "ephemeral":
+            cache_config["ttl"] = ttl
+        return {"cachePoint": cache_config}
 
     @model_validator(mode="before")
     @classmethod
