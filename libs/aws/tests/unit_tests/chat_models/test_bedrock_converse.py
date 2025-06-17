@@ -1307,3 +1307,70 @@ def test_model_kwargs() -> None:
     )
     assert llm.additional_model_request_fields == {"temperature": 0.2}
     assert llm.temperature is None
+
+
+def test_create_cache_point_default():
+    """Test creating a default cache point."""
+    cache_point = ChatBedrockConverse.create_cache_point()
+    assert cache_point == {"cachePoint": {"type": "ephemeral"}}
+
+
+def test_create_cache_point_with_ttl():
+    """Test creating a cache point with TTL."""
+    cache_point = ChatBedrockConverse.create_cache_point(ttl="1h")
+    assert cache_point == {"cachePoint": {"type": "ephemeral", "ttl": "1h"}}
+
+
+def test_create_cache_point_default_type():
+    """Test creating a cache point with default type (no TTL support)."""
+    cache_point = ChatBedrockConverse.create_cache_point(cache_type="default")
+    assert cache_point == {"cachePoint": {"type": "default"}}
+
+
+def test_create_cache_point_ttl_only_with_ephemeral():
+    """Test that TTL is only added with ephemeral type."""
+    cache_point = ChatBedrockConverse.create_cache_point(cache_type="default", ttl="1h")
+    assert cache_point == {"cachePoint": {"type": "default"}}
+    # TTL should not be included with default type
+
+
+def test_messages_with_cache_points():
+    """Test that messages with cache points are properly formatted."""
+    cache_1h = ChatBedrockConverse.create_cache_point(ttl="1h")
+    cache_5m = ChatBedrockConverse.create_cache_point()
+    
+    messages = [
+        HumanMessage(content=[
+            "System context to cache for 1 hour",
+            cache_1h,
+            "Context to cache for 5 minutes",
+            cache_5m,
+            "User question"
+        ])
+    ]
+    
+    bedrock_messages, _ = _messages_to_bedrock(messages)
+    assert len(bedrock_messages) == 1
+    assert bedrock_messages[0]["role"] == "user"
+    
+    content = bedrock_messages[0]["content"]
+    assert len(content) == 5
+    assert content[0] == {"text": "System context to cache for 1 hour"}
+    assert content[1] == {"cachePoint": {"type": "ephemeral", "ttl": "1h"}}
+    assert content[2] == {"text": "Context to cache for 5 minutes"}
+    assert content[3] == {"cachePoint": {"type": "ephemeral"}}
+    assert content[4] == {"text": "User question"}
+
+
+def test_beta_header_in_additional_fields():
+    """Test that beta headers can be passed through additional_model_request_fields."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        additional_model_request_fields={
+            "anthropicBeta": ["extended-cache-ttl-2025-04-11"]
+        }
+    )
+    assert llm.additional_model_request_fields == {
+        "anthropicBeta": ["extended-cache-ttl-2025-04-11"]
+    }
