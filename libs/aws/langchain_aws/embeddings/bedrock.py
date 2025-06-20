@@ -35,7 +35,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         .. code-block:: python
 
             from langchain_community.bedrock_embeddings import BedrockEmbeddings
-            
+
             region_name ="us-east-1"
             credentials_profile_name = "default"
             model_id = "amazon.titan-embed-text-v1"
@@ -107,6 +107,10 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     model_kwargs: Optional[Dict] = None
     """Keyword arguments to pass to the model."""
 
+    provider_name: Optional[str] = None
+    """Name of the provider, e.g., amazon, cohere, etc..
+    If not specified, the provider property will be inferred from the model_id."""
+
     endpoint_url: Optional[str] = None
     """Needed if you don't want to default to us-east-1 endpoint"""
 
@@ -124,7 +128,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     @property
     def provider(self) -> str:
         """Provider of the model."""
-        return self.model_id.split(".")[0]
+        return self.provider_name or self.model_id.split(".")[0]
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
