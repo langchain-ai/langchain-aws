@@ -30,7 +30,7 @@ def cohere_embeddings_v3() -> BedrockEmbeddings:
 def cohere_embeddings_model_arn() -> BedrockEmbeddings:
     return BedrockEmbeddings(
         model_id="arn:aws:bedrock:us-east-1::foundation-model/cohere.embed-english-v3",
-        provider_name="cohere",
+        provider="cohere",
     )
 
 
@@ -170,6 +170,6 @@ def test_bedrock_cohere_embedding_large_document_set(cohere_embeddings_v3) -> No
 
 @pytest.mark.scheduled
 def test_bedrock_embedding_provider_arg(bedrock_embeddings, cohere_embeddings_v3, cohere_embeddings_model_arn) -> None:
-    assert bedrock_embeddings.provider == "amazon"
-    assert cohere_embeddings_v3.provider == "cohere"
-    assert cohere_embeddings_model_arn.provider == "cohere"
+    assert bedrock_embeddings._inferred_provider == "amazon"
+    assert cohere_embeddings_v3._inferred_provider == "cohere"
+    assert cohere_embeddings_model_arn._inferred_provider == "cohere"
