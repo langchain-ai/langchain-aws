@@ -26,6 +26,14 @@ def cohere_embeddings_v3() -> BedrockEmbeddings:
     )
 
 
+@pytest.fixture
+def cohere_embeddings_model_arn() -> BedrockEmbeddings:
+    return BedrockEmbeddings(
+        model_id="arn:aws:bedrock:us-east-1::foundation-model/cohere.embed-english-v3",
+        provider="cohere",
+    )
+
+
 @pytest.mark.scheduled
 def test_bedrock_embedding_documents(bedrock_embeddings) -> None:
     documents = ["foo bar"]
@@ -159,3 +167,9 @@ def test_bedrock_cohere_embedding_large_document_set(cohere_embeddings_v3) -> No
     assert len(output[0]) == 1024
     assert len(output[1]) == 1024
     assert len(output[2]) == 1024
+
+@pytest.mark.scheduled
+def test_bedrock_embedding_provider_arg(bedrock_embeddings, cohere_embeddings_v3, cohere_embeddings_model_arn) -> None:
+    assert bedrock_embeddings._inferred_provider == "amazon"
+    assert cohere_embeddings_v3._inferred_provider == "cohere"
+    assert cohere_embeddings_model_arn._inferred_provider == "cohere"
