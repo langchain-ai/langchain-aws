@@ -52,7 +52,7 @@ jobs:
 
       - name: Install dependencies
         shell: bash
-        run: poetry install --with test
+        run: poetry install --with test,test_integration
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
