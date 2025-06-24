@@ -598,10 +598,10 @@ class ChatBedrockConverse(BaseChatModel):
         """Validate that AWS credentials to and python package exists in environment."""
 
         # As of 12/03/24:
-        # only claude-3, mistral-large, and nova models support tool choice:
+        # only claude-3/4, mistral-large, and nova models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
         if self.supports_tool_choice_values is None:
-            if "claude-3" in self._get_base_model():
+            if "claude" in self._get_base_model():
                 # Tool choice not supported when thinking is enabled
                 thinking_params = (self.additional_model_request_fields or {}).get(
                     "thinking", {}
