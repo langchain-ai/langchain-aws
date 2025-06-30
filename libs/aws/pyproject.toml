@@ -13,7 +13,7 @@ license = "MIT"
 [tool.poetry.dependencies]
 python = ">=3.9"
 langchain-core = "^0.3.66"
-boto3 = ">=1.37.24"
+boto3 = ">=1.39.0"
 pydantic = ">=2.10.0,<3"
 numpy = [
   { version = "^1", python = "<3.12" },
