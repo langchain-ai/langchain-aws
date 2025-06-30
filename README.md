@@ -3,8 +3,8 @@
 This monorepo provides LangChain and LangGraph components for various AWS services. It aims to replace and expand upon the existing LangChain AWS components found in the `langchain-community` package in the LangChain repository.
 
 The following packages are hosted in this repository:
-- `langchain-aws` ([PyPi](https://pypi.org/project/langchain-aws/))
-- `langgraph-checkpoint-aws` ([PyPi](https://pypi.org/project/langgraph-checkpoint-aws/))
+- `langchain-aws` ([PyPI](https://pypi.org/project/langchain-aws/))
+- `langgraph-checkpoint-aws` ([PyPI](https://pypi.org/project/langgraph-checkpoint-aws/))
 
 ## Features
 
