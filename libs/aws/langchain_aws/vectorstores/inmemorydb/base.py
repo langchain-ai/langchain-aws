@@ -1192,7 +1192,7 @@ class InMemoryVectorStore(VectorStore):
 
     def _create_index_if_not_exist(self, dim: int = 1536) -> None:
         try:
-            from redis.commands.search.indexDefinition import (  # type: ignore
+            from redis.commands.search.index_definition import (  # type: ignore
                 IndexDefinition,
                 IndexType,
             )
