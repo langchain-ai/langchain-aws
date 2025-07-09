@@ -9,6 +9,11 @@ pip install -U langchain-aws
 ```
 All integrations in this package assume that you have the credentials setup to connect with AWS services.
 
+## Authentication
+
+In order to use Amazon Bedrock models, you need to configure AWS credentials. One of the options is to set the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` environment variables. More information can be found [here](https://docs.aws.amazon.com/bedrock/latest/userguide/security-iam.html). 
+Alternatively, set the `AWS_BEARER_TOKEN_BEDROCK` environment variable locally for API Key authentication. For additional API key details, refer to [docs](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html).
+
 ## Chat Models
 
 `ChatBedrock` class exposes chat models from Bedrock.
