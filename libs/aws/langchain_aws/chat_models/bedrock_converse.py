@@ -524,7 +524,8 @@ class ChatBedrockConverse(BaseChatModel):
             (
                 provider == "amazon"
                 and any(
-                    x in model_id_lower for x in ["nova-lite", "nova-micro", "nova-pro"]
+                    x in model_id_lower
+                    for x in ["nova-lite", "nova-micro", "nova-pro", "nova-premier"]
                 )
             )
             or
@@ -598,10 +599,10 @@ class ChatBedrockConverse(BaseChatModel):
         """Validate that AWS credentials to and python package exists in environment."""
 
         # As of 12/03/24:
-        # only claude-3, mistral-large, and nova models support tool choice:
+        # only claude-3/4, mistral-large, and nova models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
         if self.supports_tool_choice_values is None:
-            if "claude-3" in self._get_base_model():
+            if "claude" in self._get_base_model():
                 # Tool choice not supported when thinking is enabled
                 thinking_params = (self.additional_model_request_fields or {}).get(
                     "thinking", {}
@@ -652,7 +653,7 @@ class ChatBedrockConverse(BaseChatModel):
         params = self._converse_params(
             stop=stop,
             **_snake_to_camel_keys(
-                kwargs, excluded_keys={"inputSchema", "properties", "thinking", "stream"}
+                kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
         )
         logger.debug(f"Input params: {params}")
@@ -676,7 +677,7 @@ class ChatBedrockConverse(BaseChatModel):
         params = self._converse_params(
             stop=stop,
             **_snake_to_camel_keys(
-                kwargs, excluded_keys={"inputSchema", "properties", "thinking", "stream"}
+                kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
         )
         response = self.client.converse_stream(
@@ -856,6 +857,7 @@ class ChatBedrockConverse(BaseChatModel):
         guardrailConfig: Optional[dict] = None,
         performanceConfig: Optional[Mapping[str, Any]] = None,
         requestMetadata: Optional[dict] = None,
+        stream: Optional[bool] = True,
     ) -> Dict[str, Any]:
         if not inferenceConfig:
             inferenceConfig = {
