@@ -1,15 +1,17 @@
 """Thread-aware browser tools that work with the browser session manager."""
 
-from typing import Dict, Optional, Any, Type
+import logging
+from typing import Any, Dict, Optional, Type
 from urllib.parse import urlparse
 
-from langchain_core.tools import BaseTool, ToolException
 from langchain_core.runnables.config import RunnableConfig
+from langchain_core.tools import BaseTool, ToolException
 from pydantic import BaseModel, Field
 
 from .browser_session_manager import BrowserSessionManager
 from .utils import aget_current_page, get_current_page
 
+logger = logging.getLogger(__name__)
 
 class NavigateToolInput(BaseModel):
     """Input for NavigateTool."""
@@ -92,11 +94,14 @@ class ThreadAwareNavigateTool(ThreadAwareBaseTool):
     def _run(
         self,
         url: str,
-        config: Optional[RunnableConfig] = None,
+        config: RunnableConfig,
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
         try:
+
+            logger.info("Passed config is {config}")
+
             # Get thread ID from config
             thread_id = self.get_thread_id(config)
 
@@ -118,7 +123,7 @@ class ThreadAwareNavigateTool(ThreadAwareBaseTool):
     async def _arun(
         self,
         url: str,
-        config: Optional[RunnableConfig] = None,
+        config: RunnableConfig,
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
@@ -164,7 +169,7 @@ class ThreadAwareClickTool(ThreadAwareBaseTool):
     def _run(
         self,
         selector: str,
-        config: Optional[RunnableConfig] = None,
+        config: RunnableConfig,
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
@@ -197,7 +202,7 @@ class ThreadAwareClickTool(ThreadAwareBaseTool):
     async def _arun(
         self,
         selector: str,
-        config: Optional[RunnableConfig] = None,
+        config: RunnableConfig,
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
@@ -236,7 +241,7 @@ class ThreadAwareNavigateBackTool(ThreadAwareBaseTool):
 
     def _run(
         self,
-        config: Optional[RunnableConfig] = None,
+        config: RunnableConfig,
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
@@ -258,7 +263,7 @@ class ThreadAwareNavigateBackTool(ThreadAwareBaseTool):
 
     async def _arun(
         self,
-        config: Optional[RunnableConfig] = None,
+        config: RunnableConfig,
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
@@ -287,7 +292,7 @@ class ThreadAwareExtractTextTool(ThreadAwareBaseTool):
 
     def _run(
         self,
-        config: Optional[RunnableConfig] = None,
+        config: RunnableConfig,
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
@@ -316,7 +321,7 @@ class ThreadAwareExtractTextTool(ThreadAwareBaseTool):
 
     async def _arun(
         self,
-        config: Optional[RunnableConfig] = None,
+        config: RunnableConfig,
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
@@ -352,15 +357,16 @@ class ThreadAwareExtractHyperlinksTool(ThreadAwareBaseTool):
 
     def _run(
         self,
-        config: Optional[RunnableConfig] = None,
+        config: RunnableConfig,
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
         try:
             # Import BeautifulSoup
             try:
-                from bs4 import BeautifulSoup
                 import json
+
+                from bs4 import BeautifulSoup
             except ImportError:
                 raise ImportError(
                     "The 'beautifulsoup4' package is required to use this tool."
@@ -392,15 +398,16 @@ class ThreadAwareExtractHyperlinksTool(ThreadAwareBaseTool):
 
     async def _arun(
         self,
-        config: Optional[RunnableConfig] = None,
+        config: RunnableConfig,
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
         try:
             # Import BeautifulSoup
             try:
-                from bs4 import BeautifulSoup
                 import json
+
+                from bs4 import BeautifulSoup
             except ImportError:
                 raise ImportError(
                     "The 'beautifulsoup4' package is required to use this tool."
@@ -440,7 +447,7 @@ class ThreadAwareGetElementsTool(ThreadAwareBaseTool):
     def _run(
         self,
         selector: str,
-        config: Optional[RunnableConfig] = None,
+        config: RunnableConfig,
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
@@ -468,7 +475,7 @@ class ThreadAwareGetElementsTool(ThreadAwareBaseTool):
     async def _arun(
         self,
         selector: str,
-        config: Optional[RunnableConfig] = None,
+        config: RunnableConfig,
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
@@ -502,7 +509,7 @@ class ThreadAwareCurrentWebPageTool(ThreadAwareBaseTool):
 
     def _run(
         self,
-        config: Optional[RunnableConfig] = None,
+        config: RunnableConfig,
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
@@ -522,7 +529,7 @@ class ThreadAwareCurrentWebPageTool(ThreadAwareBaseTool):
 
     async def _arun(
         self,
-        config: Optional[RunnableConfig] = None,
+        config: RunnableConfig,
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""

@@ -2,9 +2,9 @@ import json
 import logging
 from typing import Dict, List, Optional, Tuple
 
-from genesis.tools.code_interpreter_client import CodeInterpreter
-from langchain_core.tools import BaseTool, StructuredTool
+from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 from langchain_core.runnables.config import RunnableConfig
+from langchain_core.tools import BaseTool, StructuredTool
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class CodeInterpreterToolkit:
 
         import asyncio
         from langgraph.prebuilt import create_react_agent
-        from langchain_aws.toolkits import create_code_interpreter_toolkit
+        from langchain_aws.tools import create_code_interpreter_toolkit
 
         async def main():
             # Create and setup the code interpreter toolkit
@@ -46,10 +46,10 @@ class CodeInterpreterToolkit:
 
             # Create runnable config with thread ID
             config = {
-            "configurable": {
-                "thread_id": "session123"
+                "configurable": {
+                    "thread_id": "session123"
+                }
             }
-        }
 
             # Invoke the agent with a specific task using thread ID
             result = await agent.ainvoke(
@@ -65,7 +65,7 @@ class CodeInterpreterToolkit:
         # Run the example
         asyncio.run(main())
         ```
-    """
+    """  # noqa: E501
 
     def __init__(self, region: str = "us-west-2"):
         """
@@ -97,7 +97,7 @@ class CodeInterpreterToolkit:
         return {tool.name: tool for tool in self.tools}
 
     def _get_or_create_interpreter(
-        self, config: Optional[RunnableConfig] = None
+        self, config: RunnableConfig
     ) -> CodeInterpreter:
         """
         Get or create a code interpreter for a specific config
@@ -122,7 +122,7 @@ class CodeInterpreterToolkit:
         code_interpreter = CodeInterpreter(region=self.region)
         code_interpreter.start()
         logger.info(
-            f"Started code interpreter with session_id:{code_interpreter.session_id} for thread:{thread_id}"
+            f"Started code interpreter with session_id:{code_interpreter.session_id} for thread:{thread_id}"  # noqa: E501
         )
 
         # Store the interpreter
@@ -222,9 +222,9 @@ class CodeInterpreterToolkit:
     def _execute_code(
         self,
         code: str,
+        config: RunnableConfig,
         language: str = "python",
         clearContext: bool = False,
-        config: Optional[RunnableConfig] = None,
     ) -> str:
         """
         Executes code in the AWS code interpreter environment
@@ -253,7 +253,7 @@ class CodeInterpreterToolkit:
         return _extract_output_from_stream(response)
 
     def _execute_command(
-        self, command: str, config: Optional[RunnableConfig] = None
+        self, command: str, config: RunnableConfig
     ) -> str:
         """
         Execute a command synchronously
@@ -275,7 +275,7 @@ class CodeInterpreterToolkit:
         return _extract_output_from_stream(response)
 
     def _read_files(
-        self, paths: List[str], config: Optional[RunnableConfig] = None
+        self, paths: List[str], config: RunnableConfig
     ) -> str:
         """
         Read content of files
@@ -295,7 +295,7 @@ class CodeInterpreterToolkit:
         return _extract_output_from_stream(response)
 
     def _list_files(
-        self, directory_path: str = "", config: Optional[RunnableConfig] = None
+        self, config: RunnableConfig, directory_path: str = ""
     ) -> str:
         """
         List files in a directory
@@ -317,7 +317,7 @@ class CodeInterpreterToolkit:
         return _extract_output_from_stream(response)
 
     def _remove_files(
-        self, paths: List[str], config: Optional[RunnableConfig] = None
+        self, paths: List[str], config: RunnableConfig
     ) -> str:
         """
         Remove files from the system
@@ -339,7 +339,7 @@ class CodeInterpreterToolkit:
         return _extract_output_from_stream(response)
 
     def _write_files(
-        self, files: List[Dict[str, str]], config: Optional[RunnableConfig] = None
+        self, files: List[Dict[str, str]], config: RunnableConfig
     ) -> str:
         """
         Writes file content to the specified path in code env
@@ -367,7 +367,7 @@ class CodeInterpreterToolkit:
         return _extract_output_from_stream(response)
 
     def _start_command_execution(
-        self, command: str, config: Optional[RunnableConfig] = None
+        self, command: str, config: RunnableConfig
     ) -> str:
         """
         Start a long-running command asynchronously
@@ -388,7 +388,7 @@ class CodeInterpreterToolkit:
 
         return _extract_output_from_stream(response)
 
-    def _get_task(self, task_id: str, config: Optional[RunnableConfig] = None) -> str:
+    def _get_task(self, task_id: str, config: RunnableConfig) -> str:
         """
         Get status of an async task
 
@@ -406,7 +406,7 @@ class CodeInterpreterToolkit:
 
         return _extract_output_from_stream(response)
 
-    def _stop_task(self, task_id: str, config: Optional[RunnableConfig] = None) -> str:
+    def _stop_task(self, task_id: str, config: RunnableConfig) -> str:
         """
         Stop a running task
 

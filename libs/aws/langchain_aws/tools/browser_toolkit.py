@@ -23,7 +23,7 @@ class BrowserToolkit:
 
         import asyncio
         from langgraph.prebuilt import create_react_agent
-        from langchain_tools_exploration.toolkits.browser_toolkit import create_browser_toolkit
+        from langchain_aws.tools import create_browser_toolkit
 
         async def main():
             # Create and setup the browser toolkit
@@ -36,7 +36,11 @@ class BrowserToolkit:
             )
 
             # Create runnable config with thread ID
-            config = {"thread_id": "user-123"}
+            config = {
+                "configurable": {
+                    "thread_id": "session123"
+                }
+            }
 
             # Invoke the agent with a specific task using thread ID
             result = await agent.ainvoke(
