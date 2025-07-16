@@ -20,13 +20,8 @@ numpy = [
   { version = ">=1.26.0,<3", python = ">=3.12" },
 ]
 
-[tool.poetry.group.tools]
-optional = true
-
-[tool.poetry.group.tools.dependencies]
-bedrock-agentcore = { version = ">=0.1.0", python = ">=3.10" }
-playwright = ">=1.53.0"
-beautifulsoup4 = ">=4.13.4"
+[tool.poetry.extras]
+tools = ["bedrock-agentcore", "playwright", "beautifulsoup4"]
 
 [tool.poetry.group.test]
 optional = true
