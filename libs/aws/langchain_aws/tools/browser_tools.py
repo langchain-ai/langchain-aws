@@ -82,6 +82,22 @@ class ThreadAwareBaseTool(BaseTool):
         browser = self._session_manager.get_sync_browser(thread_id)
         page = get_current_page(browser)
         return page
+        
+    async def release_async_browser(self, thread_id: str) -> None:
+        """Release the async browser session after use."""
+        try:
+            await self._session_manager.release_async_browser(thread_id)
+            logger.debug(f"Released async browser for thread {thread_id}")
+        except Exception as e:
+            logger.warning(f"Error releasing async browser for thread {thread_id}: {e}")
+    
+    def release_sync_browser(self, thread_id: str) -> None:
+        """Release the sync browser session after use."""
+        try:
+            self._session_manager.release_sync_browser(thread_id)
+            logger.debug(f"Released sync browser for thread {thread_id}")
+        except Exception as e:
+            logger.warning(f"Error releasing sync browser for thread {thread_id}: {e}")
 
 
 class ThreadAwareNavigateTool(ThreadAwareBaseTool):
@@ -98,9 +114,9 @@ class ThreadAwareNavigateTool(ThreadAwareBaseTool):
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
+        thread_id = None
         try:
-
-            logger.info("Passed config is {config}")
+            logger.info(f"Passed config is {config}")
 
             # Get thread ID from config
             thread_id = self.get_thread_id(config)
@@ -116,8 +132,16 @@ class ThreadAwareNavigateTool(ThreadAwareBaseTool):
             # Navigate to URL
             response = page.goto(url)
             status = response.status if response else "unknown"
+            
+            self.release_sync_browser(thread_id)
+            
             return f"Navigating to {url} returned status code {status}"
         except Exception as e:
+            if thread_id:
+                try:
+                    self.release_sync_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
             raise ToolException(f"Error navigating to {url}: {str(e)}")
 
     async def _arun(
@@ -127,6 +151,7 @@ class ThreadAwareNavigateTool(ThreadAwareBaseTool):
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
+        thread_id = None
         try:
             # Get thread ID from config
             thread_id = self.get_thread_id(config)
@@ -142,8 +167,16 @@ class ThreadAwareNavigateTool(ThreadAwareBaseTool):
             # Navigate to URL
             response = await page.goto(url)
             status = response.status if response else "unknown"
+            
+            await self.release_async_browser(thread_id)
+            
             return f"Navigating to {url} returned status code {status}"
         except Exception as e:
+            if thread_id:
+                try:
+                    await self.release_async_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
             raise ToolException(f"Error navigating to {url}: {str(e)}")
 
 
@@ -173,6 +206,7 @@ class ThreadAwareClickTool(ThreadAwareBaseTool):
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
+        thread_id = None
         try:
             # Get thread ID from config
             thread_id = self.get_thread_id(config)
@@ -191,12 +225,21 @@ class ThreadAwareClickTool(ThreadAwareBaseTool):
                     timeout=self.playwright_timeout,
                 )
             except PlaywrightTimeoutError:
+                self.release_sync_browser(thread_id)
                 return f"Unable to click on element '{selector}'"
             except Exception as click_error:
+                self.release_sync_browser(thread_id)
                 return f"Unable to click on element '{selector}': {str(click_error)}"
+            
+            self.release_sync_browser(thread_id)
             
             return f"Clicked element '{selector}'"
         except Exception as e:
+            if thread_id:
+                try:
+                    self.release_sync_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
             raise ToolException(f"Error clicking on element: {str(e)}")
 
     async def _arun(
@@ -206,6 +249,7 @@ class ThreadAwareClickTool(ThreadAwareBaseTool):
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
+        thread_id = None
         try:
             # Get thread ID from config
             thread_id = self.get_thread_id(config)
@@ -224,12 +268,21 @@ class ThreadAwareClickTool(ThreadAwareBaseTool):
                     timeout=self.playwright_timeout,
                 )
             except PlaywrightTimeoutError:
+                await self.release_async_browser(thread_id)
                 return f"Unable to click on element '{selector}'"
             except Exception as click_error:
+                await self.release_async_browser(thread_id)
                 return f"Unable to click on element '{selector}': {str(click_error)}"
+            
+            await self.release_async_browser(thread_id)
             
             return f"Clicked element '{selector}'"
         except Exception as e:
+            if thread_id:
+                try:
+                    await self.release_async_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
             raise ToolException(f"Error clicking on element: {str(e)}")
 
 
@@ -245,6 +298,7 @@ class ThreadAwareNavigateBackTool(ThreadAwareBaseTool):
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
+        thread_id = None
         try:
             # Get thread ID from config
             thread_id = self.get_thread_id(config)
@@ -255,10 +309,17 @@ class ThreadAwareNavigateBackTool(ThreadAwareBaseTool):
             # Navigate back
             try:
                 page.go_back()
+                self.release_sync_browser(thread_id)
                 return "Navigated back to the previous page"
             except Exception as nav_error:
+                self.release_sync_browser(thread_id)
                 return f"Unable to navigate back: {str(nav_error)}"
         except Exception as e:
+            if thread_id:
+                try:
+                    self.release_sync_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
             raise ToolException(f"Error navigating back: {str(e)}")
 
     async def _arun(
@@ -267,6 +328,7 @@ class ThreadAwareNavigateBackTool(ThreadAwareBaseTool):
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
+        thread_id = None
         try:
             # Get thread ID from config
             thread_id = self.get_thread_id(config)
@@ -277,10 +339,17 @@ class ThreadAwareNavigateBackTool(ThreadAwareBaseTool):
             # Navigate back
             try:
                 await page.go_back()
+                await self.release_async_browser(thread_id)
                 return "Navigated back to the previous page"
             except Exception as nav_error:
+                await self.release_async_browser(thread_id)
                 return f"Unable to navigate back: {str(nav_error)}"
         except Exception as e:
+            if thread_id:
+                try:
+                    await self.release_async_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
             raise ToolException(f"Error navigating back: {str(e)}")
 
 
@@ -296,6 +365,7 @@ class ThreadAwareExtractTextTool(ThreadAwareBaseTool):
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
+        thread_id = None
         try:
             # Import BeautifulSoup
             try:
@@ -315,8 +385,16 @@ class ThreadAwareExtractTextTool(ThreadAwareBaseTool):
             # Extract text
             content = page.content()
             soup = BeautifulSoup(content, "html.parser")
+            
+            self.release_sync_browser(thread_id)
+            
             return soup.get_text(separator="\n").strip()
         except Exception as e:
+            if thread_id:
+                try:
+                    self.release_sync_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
             raise ToolException(f"Error extracting text: {str(e)}")
 
     async def _arun(
@@ -325,6 +403,7 @@ class ThreadAwareExtractTextTool(ThreadAwareBaseTool):
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
+        thread_id = None
         try:
             # Import BeautifulSoup
             try:
@@ -344,8 +423,16 @@ class ThreadAwareExtractTextTool(ThreadAwareBaseTool):
             # Extract text
             content = await page.content()
             soup = BeautifulSoup(content, "html.parser")
+            
+            await self.release_async_browser(thread_id)
+            
             return soup.get_text(separator="\n").strip()
         except Exception as e:
+            if thread_id:
+                try:
+                    await self.release_async_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
             raise ToolException(f"Error extracting text: {str(e)}")
 
 
@@ -361,6 +448,7 @@ class ThreadAwareExtractHyperlinksTool(ThreadAwareBaseTool):
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
+        thread_id = None
         try:
             # Import BeautifulSoup
             try:
@@ -389,11 +477,18 @@ class ThreadAwareExtractHyperlinksTool(ThreadAwareBaseTool):
                 if href.startswith("http") or href.startswith("https"):
                     links.append({"text": text, "url": href})
             
+            self.release_sync_browser(thread_id)
+            
             if not links:
                 return "No hyperlinks found on the current page."
             
             return json.dumps(links, indent=2)
         except Exception as e:
+            if thread_id:
+                try:
+                    self.release_sync_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
             raise ToolException(f"Error extracting hyperlinks: {str(e)}")
 
     async def _arun(
@@ -402,6 +497,7 @@ class ThreadAwareExtractHyperlinksTool(ThreadAwareBaseTool):
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
+        thread_id = None
         try:
             # Import BeautifulSoup
             try:
@@ -430,11 +526,18 @@ class ThreadAwareExtractHyperlinksTool(ThreadAwareBaseTool):
                 if href.startswith("http") or href.startswith("https"):
                     links.append({"text": text, "url": href})
             
+            await self.release_async_browser(thread_id)
+            
             if not links:
                 return "No hyperlinks found on the current page."
             
             return json.dumps(links, indent=2)
         except Exception as e:
+            if thread_id:
+                try:
+                    await self.release_async_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
             raise ToolException(f"Error extracting hyperlinks: {str(e)}")
 
 
@@ -451,6 +554,7 @@ class ThreadAwareGetElementsTool(ThreadAwareBaseTool):
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
+        thread_id = None
         try:
             # Get thread ID from config
             thread_id = self.get_thread_id(config)
@@ -461,6 +565,7 @@ class ThreadAwareGetElementsTool(ThreadAwareBaseTool):
             # Get elements
             elements = page.query_selector_all(selector)
             if not elements:
+                self.release_sync_browser(thread_id)
                 return f"No elements found with selector '{selector}'"
             
             elements_text = []
@@ -468,8 +573,15 @@ class ThreadAwareGetElementsTool(ThreadAwareBaseTool):
                 text = element.text_content()
                 elements_text.append(f"Element {i+1}: {text.strip()}")
             
+            self.release_sync_browser(thread_id)
+            
             return "\n".join(elements_text)
         except Exception as e:
+            if thread_id:
+                try:
+                    self.release_sync_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
             raise ToolException(f"Error getting elements: {str(e)}")
 
     async def _arun(
@@ -479,6 +591,7 @@ class ThreadAwareGetElementsTool(ThreadAwareBaseTool):
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
+        thread_id = None
         try:
             # Get thread ID from config
             thread_id = self.get_thread_id(config)
@@ -489,6 +602,7 @@ class ThreadAwareGetElementsTool(ThreadAwareBaseTool):
             # Get elements
             elements = await page.query_selector_all(selector)
             if not elements:
+                await self.release_async_browser(thread_id)
                 return f"No elements found with selector '{selector}'"
             
             elements_text = []
@@ -496,8 +610,15 @@ class ThreadAwareGetElementsTool(ThreadAwareBaseTool):
                 text = await element.text_content()
                 elements_text.append(f"Element {i+1}: {text.strip()}")
             
+            await self.release_async_browser(thread_id)
+            
             return "\n".join(elements_text)
         except Exception as e:
+            if thread_id:
+                try:
+                    await self.release_async_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
             raise ToolException(f"Error getting elements: {str(e)}")
 
 
@@ -513,6 +634,7 @@ class ThreadAwareCurrentWebPageTool(ThreadAwareBaseTool):
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
+        thread_id = None
         try:
             # Get thread ID from config
             thread_id = self.get_thread_id(config)
@@ -523,8 +645,16 @@ class ThreadAwareCurrentWebPageTool(ThreadAwareBaseTool):
             # Get information
             url = page.url
             title = page.title()
+            
+            self.release_sync_browser(thread_id)
+            
             return f"URL: {url}\nTitle: {title}"
         except Exception as e:
+            if thread_id:
+                try:
+                    self.release_sync_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
             raise ToolException(f"Error getting current webpage info: {str(e)}")
 
     async def _arun(
@@ -533,6 +663,7 @@ class ThreadAwareCurrentWebPageTool(ThreadAwareBaseTool):
         **_,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
+        thread_id = None
         try:
             # Get thread ID from config
             thread_id = self.get_thread_id(config)
@@ -543,8 +674,16 @@ class ThreadAwareCurrentWebPageTool(ThreadAwareBaseTool):
             # Get information
             url = page.url
             title = await page.title()
+            
+            await self.release_async_browser(thread_id)
+            
             return f"URL: {url}\nTitle: {title}"
         except Exception as e:
+            if thread_id:
+                try:
+                    await self.release_async_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
             raise ToolException(f"Error getting current webpage info: {str(e)}")
 
 
