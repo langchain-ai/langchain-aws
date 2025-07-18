@@ -19,6 +19,13 @@ class BrowserSessionManager:
     This class maintains separate browser sessions for different threads,
     enabling concurrent usage of browsers in multi-threaded environments.
     Browsers are created lazily only when needed by tools.
+    
+    Concurrency protection is also implemented. Each browser session is tied 
+    to a specific thread_id and includes protection against concurrent usage. 
+    When a browser is obtained via get_async_browser() or get_sync_browser(), 
+    it is marked as "in use", and subsequent attempts to access the same 
+    browser session will raise a RuntimeError until it is released. In general,
+    different callers should use different thread_ids to avoid concurrency issues.
     """
 
     def __init__(self, region: str = "us-west-2"):
@@ -29,8 +36,8 @@ class BrowserSessionManager:
             region: AWS region for browser client
         """
         self.region = region
-        self._async_sessions: Dict[str, Tuple[BrowserClient, AsyncBrowser]] = {}
-        self._sync_sessions: Dict[str, Tuple[BrowserClient, SyncBrowser]] = {}
+        self._async_sessions: Dict[str, Tuple[BrowserClient, AsyncBrowser, bool]] = {}
+        self._sync_sessions: Dict[str, Tuple[BrowserClient, SyncBrowser, bool]] = {}
 
     async def get_async_browser(self, thread_id: str) -> AsyncBrowser:
         """
@@ -41,9 +48,19 @@ class BrowserSessionManager:
 
         Returns:
             An async browser instance specific to the thread
+
+        Raises:
+            RuntimeError: If the browser session is already in use by another caller
         """
         if thread_id in self._async_sessions:
-            return self._async_sessions[thread_id][1]
+            client, browser, in_use = self._async_sessions[thread_id]
+            if in_use:
+                raise RuntimeError(
+                    f"Browser session for thread {thread_id} is already in use. "
+                    "Use a different thread_id for concurrent operations."
+                )
+            self._async_sessions[thread_id] = (client, browser, True)
+            return browser
 
         return await self._create_async_browser_session(thread_id)
 
@@ -56,9 +73,19 @@ class BrowserSessionManager:
 
         Returns:
             A sync browser instance specific to the thread
+            
+        Raises:
+            RuntimeError: If the browser session is already in use by another caller
         """
         if thread_id in self._sync_sessions:
-            return self._sync_sessions[thread_id][1]
+            client, browser, in_use = self._sync_sessions[thread_id]
+            if in_use:
+                raise RuntimeError(
+                    f"Browser session for thread {thread_id} is already in use. "
+                    "Use a different thread_id for concurrent operations."
+                )
+            self._sync_sessions[thread_id] = (client, browser, True)
+            return browser
 
         return self._create_sync_browser_session(thread_id)
 
@@ -99,8 +126,7 @@ class BrowserSessionManager:
                 f"Successfully connected to async browser for thread {thread_id}"
             )
 
-            # Store session resources
-            self._async_sessions[thread_id] = (browser_client, browser)
+            self._async_sessions[thread_id] = (browser_client, browser, True)
 
             return browser
 
@@ -155,8 +181,7 @@ class BrowserSessionManager:
                 f"Successfully connected to sync browser for thread {thread_id}"
             )
 
-            # Store session resources
-            self._sync_sessions[thread_id] = (browser_client, browser)
+            self._sync_sessions[thread_id] = (browser_client, browser, True)
 
             return browser
 
@@ -174,6 +199,40 @@ class BrowserSessionManager:
 
             raise
 
+    async def release_async_browser(self, thread_id: str) -> None:
+        """
+        Release the async browser session for the specified thread.
+
+        Args:
+            thread_id: Unique identifier for the thread
+            
+        Raises:
+            KeyError: If no browser session exists for the specified thread_id
+        """
+        if thread_id not in self._async_sessions:
+            raise KeyError(f"No async browser session found for thread {thread_id}")
+            
+        client, browser, _ = self._async_sessions[thread_id]
+        self._async_sessions[thread_id] = (client, browser, False)
+        logger.debug(f"Async browser session released for thread {thread_id}")
+        
+    def release_sync_browser(self, thread_id: str) -> None:
+        """
+        Release the sync browser session for the specified thread.
+
+        Args:
+            thread_id: Unique identifier for the thread
+            
+        Raises:
+            KeyError: If no browser session exists for the specified thread_id
+        """
+        if thread_id not in self._sync_sessions:
+            raise KeyError(f"No sync browser session found for thread {thread_id}")
+            
+        client, browser, _ = self._sync_sessions[thread_id]
+        self._sync_sessions[thread_id] = (client, browser, False)
+        logger.debug(f"Sync browser session released for thread {thread_id}")
+
     async def close_async_browser(self, thread_id: str) -> None:
         """
         Close the async browser session for the specified thread.
@@ -185,7 +244,7 @@ class BrowserSessionManager:
             logger.warning(f"No async browser session found for thread {thread_id}")
             return
 
-        browser_client, browser = self._async_sessions[thread_id]
+        browser_client, browser, _ = self._async_sessions[thread_id]
 
         # Close browser
         if browser:
@@ -220,7 +279,7 @@ class BrowserSessionManager:
             logger.warning(f"No sync browser session found for thread {thread_id}")
             return
 
-        browser_client, browser = self._sync_sessions[thread_id]
+        browser_client, browser, _ = self._sync_sessions[thread_id]
 
         # Close browser
         if browser:
