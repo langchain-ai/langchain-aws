@@ -1378,13 +1378,25 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                             },
                         }
                     )
+        elif "citations_content" in block:
+            citations_dict = block.get("citations_content", {})
+            content_items = citations_dict.get("content", [])
+            citations = citations_dict.get("citations", [])
+
+            for content_item in content_items:
+                if "text" in content_item:
+                    text_block = {"type": "text", "text": content_item["text"]}
+                    if citations:
+                        # Preserve original Bedrock citations format
+                        text_block["citations"] = citations
+                    lc_content.append(text_block)
 
         else:
             raise ValueError(
                 "Unexpected content block type in content. Expected to have one of "
                 "'text', 'tool_use', 'image', 'video, 'document', 'tool_result',"
-                "'json', 'guard_content', or "
-                "'reasoning_content' keys. Received:\n\n{block}"
+                "'json', 'guard_content', 'citations_content' or "
+                f"'reasoning_content' keys. Received:\n\n{block}"
             )
     return lc_content
 
