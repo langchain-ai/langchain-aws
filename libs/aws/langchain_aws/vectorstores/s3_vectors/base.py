@@ -87,7 +87,7 @@ class AmazonS3Vectors(VectorStore):
         data_type: Literal["float32"] = "float32",
         distance_metric: Literal["euclidean", "cosine"] = "cosine",
         non_filterable_metadata_keys: list[str] | None = None,
-        page_content_metadata_key: Optional[str] = "page_content",
+        page_content_metadata_key: Optional[str] = "_page_content",
         create_index_if_not_exist: bool = True,
         relevance_score_fn: Optional[Callable[[float], float]] = None,
         embedding: Optional[Embeddings] = None,
@@ -113,7 +113,7 @@ class AmazonS3Vectors(VectorStore):
             non_filterable_metadata_keys (list[str] | None): Non-filterable metadata
                 keys
             page_content_metadata_key (Optional[str]): Key to store page_content in
-                Document. Default is "page_content".
+                Document. Default is "_page_content".
             create_index_if_not_exist (bool): Automatically create vector index if it
                 does not exist. Default is True.
             relevance_score_fn (Optional[Callable[[float], float]]): The 'correct'
@@ -159,17 +159,20 @@ class AmazonS3Vectors(VectorStore):
         self.index_name = index_name
         self.data_type = data_type
         self.distance_metric = distance_metric
-        self.non_filterable_metadata_keys = non_filterable_metadata_keys or []
+        self.non_filterable_metadata_keys = non_filterable_metadata_keys
         self.page_content_metadata_key = page_content_metadata_key
         self.create_index_if_not_exist = create_index_if_not_exist
         self.relevance_score_fn = relevance_score_fn
         self._embedding = embedding
+        self.client = client
         if client is None:
-            aws_access_key_id = aws_access_key_id or os.getenv("AWS_ACCESS_KEY_ID")
+            aws_access_key_id = aws_access_key_id or os.getenv(
+                "AWS_ACCESS_KEY_ID")
             aws_secret_access_key = aws_secret_access_key or os.getenv(
                 "AWS_SECRET_ACCESS_KEY"
             )
-            aws_session_token = aws_session_token or os.getenv("AWS_SESSION_TOKEN")
+            aws_session_token = aws_session_token or os.getenv(
+                "AWS_SESSION_TOKEN")
             self.client = create_aws_client(
                 region_name=region_name,
                 credentials_profile_name=credentials_profile_name,
@@ -186,8 +189,6 @@ class AmazonS3Vectors(VectorStore):
                 config=config,
                 service_name="s3vectors",
             )
-        else:
-            self.client = client
 
     @property
     def embeddings(self) -> Optional[Embeddings]:
@@ -223,7 +224,8 @@ class AmazonS3Vectors(VectorStore):
         # type check for metadata
         if metadatas:
             if isinstance(metadatas, list) and len(metadatas) != len(texts):  # type: ignore
-                raise ValueError("Number of metadatas must match number of texts")
+                raise ValueError(
+                    "Number of metadatas must match number of texts")
             if not (isinstance(metadatas, list) and isinstance(metadatas[0], dict)):
                 raise ValueError("Metadatas must be a list of dicts")
         # check for ids
@@ -233,7 +235,7 @@ class AmazonS3Vectors(VectorStore):
         result_ids = []
         for i in range(0, len(texts), batch_size):
             vectors = []
-            sliced_texts = texts[i : i + batch_size]
+            sliced_texts = texts[i: i + batch_size]
             sliced_data = self.embeddings.embed_documents(sliced_texts)
             if i == 0 and self.create_index_if_not_exist:
                 if self._get_index() is None:
@@ -293,7 +295,7 @@ class AmazonS3Vectors(VectorStore):
                 self.client.delete_vectors(
                     vectorBucketName=self.vector_bucket_name,
                     indexName=self.index_name,
-                    keys=ids[i : i + batch_size],
+                    keys=ids[i: i + batch_size],
                 )
         return True
 
@@ -316,13 +318,14 @@ class AmazonS3Vectors(VectorStore):
             response = self.client.get_vectors(
                 vectorBucketName=self.vector_bucket_name,
                 indexName=self.index_name,
-                keys=ids[i : i + batch_size],
+                keys=ids[i: i + batch_size],
                 returnData=False,
                 returnMetadata=True,
             )
 
             docs.extend(
-                [self._create_document(vector) for vector in response["vectors"]]
+                [self._create_document(vector)
+                 for vector in response["vectors"]]
             )
         return docs
 
@@ -335,6 +338,7 @@ class AmazonS3Vectors(VectorStore):
             return _euclidean_relevance_score_fn
         if self.distance_metric == "cosine":
             return _cosine_relevance_score_fn
+
         msg = "distance_metric must be euclidean or cosine in relevance_score."
         raise ValueError(msg)
 
@@ -390,7 +394,8 @@ class AmazonS3Vectors(VectorStore):
             returnMetadata=True,
             returnDistance=True,
         )
-        docs = [self._create_document(vector) for vector in response["vectors"]]
+        docs = [self._create_document(vector)
+                for vector in response["vectors"]]
         distances = [vector["distance"] for vector in response["vectors"]]
         return list(zip(docs, distances, strict=True))
 
@@ -421,7 +426,7 @@ class AmazonS3Vectors(VectorStore):
             queryVector={self.data_type: embedding},
             filter=filter,
             returnMetadata=True,
-            returnDistance=True,
+            returnDistance=False,
         )
         return [self._create_document(vector) for vector in response["vectors"]]
 
@@ -443,7 +448,7 @@ class AmazonS3Vectors(VectorStore):
         data_type: Literal["float32"] = "float32",
         distance_metric: Literal["euclidean", "cosine"] = "cosine",
         non_filterable_metadata_keys: list[str] | None = None,
-        page_content_metadata_key: Optional[str] = "page_content",
+        page_content_metadata_key: Optional[str] = "_page_content",
         create_index_if_not_exist: bool = True,
         relevance_score_fn: Optional[Callable[[float], float]] = None,
         region_name: Optional[str] = None,
@@ -473,7 +478,7 @@ class AmazonS3Vectors(VectorStore):
             non_filterable_metadata_keys (list[str] | None): Non-filterable metadata
                 keys
             page_content_metadata_key (Optional[str]): Key to store page_content in
-                Document. Default is "page_content".
+                Document. Default is "_page_content".
             create_index_if_not_exist (bool): Automatically create vector index if it
                 does not exist. Default is True.
             relevance_score_fn (Optional[Callable[[float], float]]): The 'correct'
