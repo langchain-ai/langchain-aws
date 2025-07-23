@@ -150,7 +150,6 @@ def construct_checkpoint_tuple(
     checkpoint_ns: str,
     session_checkpoint: SessionCheckpoint,
     pending_writes: list[SessionPendingWrite],
-    sends: list,
     serde: SerializerProtocol,
 ) -> CheckpointTuple:
     """Construct checkpoint tuple from components.
@@ -160,7 +159,6 @@ def construct_checkpoint_tuple(
         checkpoint_ns: Checkpoint namespace
         session_checkpoint: Checkpoint payload data
         pending_writes: List of pending write operations
-        sends: List of task sends
         serde: Protocol for serialization and deserialization of objects
 
     Returns:
@@ -178,7 +176,6 @@ def construct_checkpoint_tuple(
             Checkpoint,
             {
                 **deserialize_from_base64(serde, *session_checkpoint.checkpoint),
-                "pending_sends": [serde.loads_typed(s[2]) for s in sends],
                 "channel_values": deserialize_from_base64(
                     serde, *session_checkpoint.channel_values
                 ),
@@ -260,9 +257,6 @@ def create_session_checkpoint(
     """
     # Create copy to avoid modifying original checkpoint
     checkpoint_copy = checkpoint.copy()
-
-    # Remove pending sends as they are handled separately
-    checkpoint_copy.pop("pending_sends")
 
     # Extract required config values
     thread_id = config["configurable"]["thread_id"]

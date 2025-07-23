@@ -263,27 +263,6 @@ class BedrockSessionSaver(BaseCheckpointSaver):
             )
         ).invocation_step
 
-    def _get_task_sends(
-        self, thread_id: str, checkpoint_ns: str, parent_checkpoint_id: Optional[str]
-    ) -> list:
-        """Get sorted task sends for parent checkpoint.
-
-        Args:
-            thread_id: Session thread identifier
-            checkpoint_ns: Checkpoint namespace
-            parent_checkpoint_id: Parent checkpoint identifier
-
-        Returns:
-            Sorted list of task sends
-        """
-        if not parent_checkpoint_id:
-            return []
-
-        pending_writes = self._get_checkpoint_pending_writes(
-            thread_id, checkpoint_ns, parent_checkpoint_id
-        )
-        return transform_pending_task_writes(pending_writes)
-
     def get_tuple(self, config: RunnableConfig) -> Optional[CheckpointTuple]:
         """Retrieve a checkpoint tuple from the Bedrock session.
 
@@ -319,18 +298,11 @@ class BedrockSessionSaver(BaseCheckpointSaver):
                 invocation_step.invocation_step_id,
             )
 
-            task_sends = self._get_task_sends(
-                session_thread_id,
-                checkpoint_namespace,
-                session_checkpoint.parent_checkpoint_id,
-            )
-
             return construct_checkpoint_tuple(
                 session_thread_id,
                 checkpoint_namespace,
                 session_checkpoint,
                 pending_write_ops,
-                task_sends,
                 self.serde,
             )
 
@@ -455,7 +427,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
     def list(
         self,
-        config: Optional[RunnableConfig],
+        config: Optional[RunnableConfig] = None,
         *,
         filter: Optional[dict[str, Any]] = None,
         before: Optional[RunnableConfig] = None,
@@ -553,15 +525,10 @@ class BedrockSessionSaver(BaseCheckpointSaver):
                 checkpoint.checkpoint_id,
             )
 
-            task_sends = self._get_task_sends(
-                thread_id, checkpoint.checkpoint_ns, checkpoint.parent_checkpoint_id
-            )
-
             yield construct_checkpoint_tuple(
                 thread_id,
                 checkpoint.checkpoint_ns,
                 checkpoint,
                 pending_write_ops,
-                task_sends,
                 self.serde,
             )

@@ -118,7 +118,6 @@ class TestUtils:
             checkpoint_ns,
             sample_session_checkpoint,
             [sample_session_pending_write],
-            [],
             serde,
         )
 
