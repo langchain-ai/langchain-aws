@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class AmazonS3Vectors(VectorStore):
     """S3Vectors is Amazon S3 Vectors database.
 
-    To use, you MUST first manually create a vector bucket.
+    To use, you MUST first manually create a S3 vector bucket.
     There is no need to create a vector index.
     See: https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-getting-started.html
 
@@ -106,7 +106,7 @@ class AmazonS3Vectors(VectorStore):
         """Create a AmazonS3Vectors.
 
         Args:
-            vector_bucket_name (str): The name of the S3 vector bucket
+            vector_bucket_name (str): The name of an existing S3 vector bucket
             index_name (str): The name of the S3 vector index
             data_type (Literal["float32"]): The data type of the vectors to be inserted
                 into the vector index. Default is "float32".
@@ -114,8 +114,9 @@ class AmazonS3Vectors(VectorStore):
                 used for similarity search. Default is "cosine".
             non_filterable_metadata_keys (list[str] | None): Non-filterable metadata
                 keys
-            page_content_metadata_key (Optional[str]): Key to store page_content in
-                Document. Default is "_page_content".
+            page_content_metadata_key (Optional[str]): Key of metadata to store
+                page_content in Document. If None, embedding page_content
+                but stored as an empty string. Default is "_page_content".
             create_index_if_not_exist (bool): Automatically create vector index if it
                 does not exist. Default is True.
             relevance_score_fn (Optional[Callable[[float], float]]): The 'correct'
@@ -476,7 +477,7 @@ class AmazonS3Vectors(VectorStore):
             metadatas: Optional list of metadatas associated with the texts.
                 Default is None.
             ids: Optional list of IDs associated with the texts.
-            vector_bucket_name (str): The name of the S3 vector bucket
+            vector_bucket_name (str): The name of an existing S3 vector bucket
             index_name (str): The name of the S3 vector index
             data_type (Literal["float32"]): The data type of the vectors to be inserted
                 into the vector index. Default is "float32".
@@ -484,8 +485,9 @@ class AmazonS3Vectors(VectorStore):
                 used for similarity search. Default is "cosine".
             non_filterable_metadata_keys (list[str] | None): Non-filterable metadata
                 keys
-            page_content_metadata_key (Optional[str]): Key to store page_content in
-                Document. Default is "_page_content".
+            page_content_metadata_key (Optional[str]): Key of metadata to store
+                page_content in Document. If None, embedding page_content
+                but stored as an empty string. Default is "_page_content".
             create_index_if_not_exist (bool): Automatically create vector index if it
                 does not exist. Default is True.
             relevance_score_fn (Optional[Callable[[float], float]]): The 'correct'

@@ -10,6 +10,7 @@ The following packages are hosted in this repository:
 
 ### LangChain
 - **LLMs**: Includes LLM classes for AWS services like [Bedrock](https://aws.amazon.com/bedrock) and [SageMaker Endpoints](https://aws.amazon.com/sagemaker/deploy/), allowing you to leverage their language models within LangChain.
+- **VectorStores**: Supports vectorstores for services like [Amazon MemoryDB](https://aws.amazon.com/memorydb/) and [Amazon S3 Vectors](https://aws.amazon.com/s3/features/vectors/), providing efficient and scalable vector database for your applications.
 - **Retrievers**: Supports retrievers for services like [Amazon Kendra](https://aws.amazon.com/kendra/) and [KnowledgeBases for Amazon Bedrock](https://aws.amazon.com/bedrock/knowledge-bases/), enabling efficient retrieval of relevant information in your RAG applications.
 - **Graphs**: Provides components for working with [AWS Neptune](https://aws.amazon.com/neptune/) graphs within LangChain.
 - **Agents**: Includes Runnables to support [Amazon Bedrock Agents](https://aws.amazon.com/bedrock/agents/), allowing you to leverage Bedrock Agents within LangChain and LangGraph.
