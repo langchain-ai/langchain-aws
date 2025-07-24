@@ -43,7 +43,7 @@ class AmazonS3Vectors(VectorStore):
         from langchain_aws.embeddings import BedrockEmbeddings
         from langchain_aws.vectorstores.s3_vectors import AmazonS3Vectors
 
-        embedding = BedrockEmbeddings(model_id="amazon.titan-embed-text-v2:0")
+        embedding = BedrockEmbeddings()
 
     Initialize, create vector index if not exist, and add texts
         .. code-block:: python
@@ -58,6 +58,8 @@ class AmazonS3Vectors(VectorStore):
     Initialize, create vector index if not exist, and add texts and add Documents
         .. code-block:: python
 
+            from langchain_core.documents import Document
+
             vector_store = AmazonS3Vectors(
                 vector_bucket_name="<vector bucket name>",
                 index_name="<vector index name>",
@@ -65,9 +67,9 @@ class AmazonS3Vectors(VectorStore):
             )
             vector_store.add_documents(
                 [
-                    Document("Star Wars", metadata={"genre": "scifi"}),
-                    Document("Jurassic Park", metadata={"genre": "scifi"}),
-                    Document("Finding Nemo", metadata={"genre": "family"}),
+                    Document("Star Wars", id="key1", metadata={"genre": "scifi"}),
+                    Document("Jurassic Park", id="key2", metadata={"genre": "scifi"}),
+                    Document("Finding Nemo", id="key3", metadata={"genre": "family"}),
                 ]
             )
 
@@ -166,14 +168,13 @@ class AmazonS3Vectors(VectorStore):
         self._embedding = embedding
         self.client = client
         if client is None:
-            aws_access_key_id = aws_access_key_id or os.getenv(
-                "AWS_ACCESS_KEY_ID")
+            aws_access_key_id = aws_access_key_id or os.getenv("AWS_ACCESS_KEY_ID")
             aws_secret_access_key = aws_secret_access_key or os.getenv(
                 "AWS_SECRET_ACCESS_KEY"
             )
-            aws_session_token = aws_session_token or os.getenv(
-                "AWS_SESSION_TOKEN")
+            aws_session_token = aws_session_token or os.getenv("AWS_SESSION_TOKEN")
             self.client = create_aws_client(
+                "s3vectors",
                 region_name=region_name,
                 credentials_profile_name=credentials_profile_name,
                 aws_access_key_id=SecretStr(aws_access_key_id)
@@ -187,7 +188,6 @@ class AmazonS3Vectors(VectorStore):
                 else None,
                 endpoint_url=endpoint_url,
                 config=config,
-                service_name="s3vectors",
             )
 
     @property
@@ -224,8 +224,7 @@ class AmazonS3Vectors(VectorStore):
         # type check for metadata
         if metadatas:
             if isinstance(metadatas, list) and len(metadatas) != len(texts):  # type: ignore
-                raise ValueError(
-                    "Number of metadatas must match number of texts")
+                raise ValueError("Number of metadatas must match number of texts")
             if not (isinstance(metadatas, list) and isinstance(metadatas[0], dict)):
                 raise ValueError("Metadatas must be a list of dicts")
         # check for ids
@@ -235,7 +234,7 @@ class AmazonS3Vectors(VectorStore):
         result_ids = []
         for i in range(0, len(texts), batch_size):
             vectors = []
-            sliced_texts = texts[i: i + batch_size]
+            sliced_texts = texts[i : i + batch_size]
             sliced_data = self.embeddings.embed_documents(sliced_texts)
             if i == 0 and self.create_index_if_not_exist:
                 if self._get_index() is None:
@@ -274,10 +273,11 @@ class AmazonS3Vectors(VectorStore):
     def delete(
         self, ids: Optional[list[str]] = None, *, batch_size: int = 500, **kwargs: Any
     ) -> Optional[bool]:
-        """Delete by vector ID or other criteria.
+        """Delete by vector ID or delete index.
 
         Args:
-            ids: List of ids to delete. If None, delete all with index. Default is None.
+            ids: List of ids to delete vectors. If None, delete index with all vectors.
+                Default is None.
             batch_size: Batch size for delete_vectors.
             **kwargs: Additional keyword arguments.
 
@@ -295,7 +295,7 @@ class AmazonS3Vectors(VectorStore):
                 self.client.delete_vectors(
                     vectorBucketName=self.vector_bucket_name,
                     indexName=self.index_name,
-                    keys=ids[i: i + batch_size],
+                    keys=ids[i : i + batch_size],
                 )
         return True
 
@@ -310,22 +310,32 @@ class AmazonS3Vectors(VectorStore):
 
         Returns:
             List of Documents.
-
-        .. versionadded:: 0.2.11
         """
+
         docs = []
         for i in range(0, len(ids), batch_size):
+            # get_vectors does not maintain order and ignores duplicates
+            # and non-existent keys.
             response = self.client.get_vectors(
                 vectorBucketName=self.vector_bucket_name,
                 indexName=self.index_name,
-                keys=ids[i: i + batch_size],
+                keys=ids[i : i + batch_size],
                 returnData=False,
                 returnMetadata=True,
             )
-
+            vector_map = {vector["key"]: vector for vector in response["vectors"]}
+            for id_ in ids[i : i + batch_size]:
+                if id_ not in vector_map:
+                    error_msg = f"Id '{id_}' not found in vector store."
+                    raise ValueError(error_msg)
+            has_duplicated_id = len(vector_map) < len(ids[i : i + batch_size])
             docs.extend(
-                [self._create_document(vector)
-                 for vector in response["vectors"]]
+                [
+                    self._create_document(
+                        vector_map[id_], deepcopy_metadata=has_duplicated_id
+                    )
+                    for id_ in ids[i : i + batch_size]
+                ]
             )
         return docs
 
@@ -357,12 +367,8 @@ class AmazonS3Vectors(VectorStore):
         Returns:
             List of Documents most similar to the query.
         """
-        return [
-            doc
-            for doc, _ in self.similarity_search_with_score(
-                query=query, k=k, filter=filter, **kwargs
-            )
-        ]
+        embedding = self.embeddings.embed_query(query)
+        return self.similarity_search_by_vector(embedding, k=k, filter=filter, **kwargs)
 
     def similarity_search_with_score(
         self,
@@ -394,10 +400,9 @@ class AmazonS3Vectors(VectorStore):
             returnMetadata=True,
             returnDistance=True,
         )
-        docs = [self._create_document(vector)
-                for vector in response["vectors"]]
+        docs = [self._create_document(vector) for vector in response["vectors"]]
         distances = [vector["distance"] for vector in response["vectors"]]
-        return list(zip(docs, distances, strict=True))
+        return list(zip(docs, distances))
 
     def similarity_search_by_vector(
         self,
@@ -431,6 +436,8 @@ class AmazonS3Vectors(VectorStore):
         return [self._create_document(vector) for vector in response["vectors"]]
 
     def as_retriever(self, **kwargs: Any) -> AmazonS3VectorsRetriever:
+        """Return AmazonS3VectorsRetriever initialized from this AmazonS3Vectors."""
+
         tags = kwargs.pop("tags", None) or []
         tags.extend(self._get_retriever_tags())
         return AmazonS3VectorsRetriever(vectorstore=self, **kwargs, tags=tags)
@@ -461,7 +468,7 @@ class AmazonS3Vectors(VectorStore):
         client: Any = None,
         **kwargs: Any,
     ) -> AmazonS3Vectors:
-        """Return VectorStore initialized from texts and embeddings.
+        """Return AmazonS3Vectors initialized from texts and embeddings.
 
         Args:
             texts: Texts to add to the vectorstore.
@@ -578,9 +585,13 @@ class AmazonS3Vectors(VectorStore):
                 distanceMetric=self.distance_metric,
             )
 
-    def _create_document(self, vector: dict) -> Document:
+    def _create_document(
+        self, vector: dict, *, deepcopy_metadata: bool = False
+    ) -> Document:
         page_content = ""
         metadata = vector.get("metadata", {})
+        if deepcopy_metadata:
+            metadata = copy.deepcopy(metadata)
         if self.page_content_metadata_key and isinstance(metadata, dict):
             page_content = metadata.pop(self.page_content_metadata_key, "")
         return Document(page_content=page_content, id=vector["key"], metadata=metadata)
