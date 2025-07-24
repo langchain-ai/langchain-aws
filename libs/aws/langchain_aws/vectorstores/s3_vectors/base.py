@@ -107,7 +107,9 @@ class AmazonS3Vectors(VectorStore):
 
         Args:
             vector_bucket_name (str): The name of an existing S3 vector bucket
-            index_name (str): The name of the S3 vector index
+            index_name (str): The name of the S3 vector index. The index names must be
+                3 to 63 characters long, start and end with a letter or number,
+                and contain only lowercase letters, numbers, hyphens and dots.
             data_type (Literal["float32"]): The data type of the vectors to be inserted
                 into the vector index. Default is "float32".
             distance_metric (Literal["euclidean","cosine"]): The distance metric to be
@@ -478,7 +480,9 @@ class AmazonS3Vectors(VectorStore):
                 Default is None.
             ids: Optional list of IDs associated with the texts.
             vector_bucket_name (str): The name of an existing S3 vector bucket
-            index_name (str): The name of the S3 vector index
+            index_name (str): The name of the S3 vector index. The index names must be
+                3 to 63 characters long, start and end with a letter or number,
+                and contain only lowercase letters, numbers, hyphens and dots.
             data_type (Literal["float32"]): The data type of the vectors to be inserted
                 into the vector index. Default is "float32".
             distance_metric (Literal["euclidean","cosine"]): The distance metric to be
