@@ -13,6 +13,7 @@ The following packages are hosted in this repository:
 - **Retrievers**: Supports retrievers for services like [Amazon Kendra](https://aws.amazon.com/kendra/) and [KnowledgeBases for Amazon Bedrock](https://aws.amazon.com/bedrock/knowledge-bases/), enabling efficient retrieval of relevant information in your RAG applications.
 - **Graphs**: Provides components for working with [AWS Neptune](https://aws.amazon.com/neptune/) graphs within LangChain.
 - **Agents**: Includes Runnables to support [Amazon Bedrock Agents](https://aws.amazon.com/bedrock/agents/), allowing you to leverage Bedrock Agents within LangChain and LangGraph.
+- **Tools**: Includes tools and toolkits to enable use of [Amazon Bedrock AgentCore](https://aws.amazon.com/bedrock/agentcore/)'s built-in tools with LangChain and LangGraph agents.
 
 ### LangGraph
 - **Checkpointers**: Provides a custom checkpointing solution for LangGraph agents using the [AWS Bedrock Session Management Service](https://docs.aws.amazon.com/bedrock/latest/userguide/sessions.html).
@@ -59,7 +60,7 @@ For more detailed usage examples and documentation, please refer to the [LangCha
 
 ### LangGraph
 
-You can find usage examples for `langgraph-checkpoint-aws` [here](https://github.com/michaelnchin/langchain-aws/blob/main/libs/langgraph-checkpoint-aws/README.md#usage).
+You can find usage examples for `langgraph-checkpoint-aws` [here](https://github.com/langchain-ai/langchain-aws/blob/main/libs/langgraph-checkpoint-aws/README.md).
 
 ## Contributing
 
