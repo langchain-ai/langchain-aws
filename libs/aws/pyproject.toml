@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langchain-aws"
-version = "0.2.28"
+version = "0.2.29"
 description = "An integration package connecting AWS and LangChain"
 authors = []
 readme = "README.md"
@@ -12,13 +12,19 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = ">=3.9"
-langchain-core = "^0.3.68"
-boto3 = ">=1.39.5"
+langchain-core = "^0.3.70"
+boto3 = ">=1.39.7"
 pydantic = ">=2.10.0,<3"
 numpy = [
   { version = "^1", python = "<3.12" },
   { version = ">=1.26.0,<3", python = ">=3.12" },
 ]
+bedrock-agentcore = { version = ">=0.1.0", python = ">=3.10", optional = true }
+playwright = { version = ">=1.53.0", optional = true }
+beautifulsoup4 = { version = ">=4.13.4", optional = true }
+
+[tool.poetry.extras]
+tools = ["bedrock-agentcore", "playwright", "beautifulsoup4"]
 
 [tool.poetry.group.test]
 optional = true
