@@ -22,8 +22,8 @@ poetry add langgraph-checkpoint-aws
 ## Requirements
 ```text
 Python >=3.9
-langgraph-checkpoint >=2.0.0
-langgraph >=0.2.55
+langgraph-checkpoint >=2.1.0
+langgraph >=0.5.3
 boto3 >=1.37.3
 ```
 

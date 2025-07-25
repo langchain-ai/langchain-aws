@@ -61,9 +61,8 @@ class TestBedrockMemorySaver:
             channel_values={"key": "value"},
             channel_versions={},
             versions_seen={},
-            pending_sends=[],
         )
-        checkpoint_metadata = {"source": "input", "step": 1, "writes": {"key": "value"}}
+        checkpoint_metadata = {"source": "input", "step": 1}
 
         try:
             saved_config = session_saver.put(

@@ -575,21 +575,21 @@ typing-extensions = ">=4.7"
 
 [[package]]
 name = "langgraph"
-version = "0.4.8"
+version = "0.5.4"
 description = "Building stateful, multi-actor applications with LLMs"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "langgraph-0.4.8-py3-none-any.whl", hash = "sha256:273b02782669a474ba55ef4296607ac3bac9e93639d37edc0d32d8cf1a41a45b"},
-    {file = "langgraph-0.4.8.tar.gz", hash = "sha256:48445ac8a351b7bdc6dee94e2e6a597f8582e0516ebd9dea0fd0164ae01b915e"},
+    {file = "langgraph-0.5.4-py3-none-any.whl", hash = "sha256:7122840225623e081be24ac30a691a24e5dac4c0361f593208f912838192d7f6"},
+    {file = "langgraph-0.5.4.tar.gz", hash = "sha256:ab8f6b7b9c50fd2ae35a2efb072fbbfe79500dfc18071ac4ba6f5de5fa181931"},
 ]
 
 [package.dependencies]
 langchain-core = ">=0.1"
-langgraph-checkpoint = ">=2.0.26"
-langgraph-prebuilt = ">=0.2.0"
-langgraph-sdk = ">=0.1.42"
+langgraph-checkpoint = ">=2.1.0,<3.0.0"
+langgraph-prebuilt = ">=0.5.0,<0.6.0"
+langgraph-sdk = ">=0.1.42,<0.2.0"
 pydantic = ">=2.7.4"
 xxhash = ">=3.5.0"
 
@@ -611,19 +611,19 @@ ormsgpack = ">=1.10.0"
 
 [[package]]
 name = "langgraph-prebuilt"
-version = "0.2.2"
+version = "0.5.1"
 description = "Library with high-level APIs for creating and executing LangGraph agents and tools."
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "langgraph_prebuilt-0.2.2-py3-none-any.whl", hash = "sha256:72de5ef1d969a8f02ad7adc7cc1915bb9b4467912d57ba60da34b5a70fdad1f6"},
-    {file = "langgraph_prebuilt-0.2.2.tar.gz", hash = "sha256:0a5d1f651f97c848cd1c3dd0ef017614f47ee74effb7375b59ac639e41b253f9"},
+    {file = "langgraph_prebuilt-0.5.1-py3-none-any.whl", hash = "sha256:60a752c62a954fab816e9047e1dd05df8f2fabbdf59e1c745d9e2f700202662f"},
+    {file = "langgraph_prebuilt-0.5.1.tar.gz", hash = "sha256:43a361612b8fb9784338bfc481245e3422ca366ca8e43f68c4c6723d7eb8b9f4"},
 ]
 
 [package.dependencies]
 langchain-core = ">=0.3.22"
-langgraph-checkpoint = ">=2.0.10"
+langgraph-checkpoint = ">=2.1.0"
 
 [[package]]
 name = "langgraph-sdk"
@@ -1785,4 +1785,4 @@ cffi = ["cffi (>=1.11)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9,<4.0"
-content-hash = "ec4602a5086ce90702d1b44800851a755d5ecd64973d1d4d0164c1d50f030967"
+content-hash = "c08cbfef87ee4b434348e470bd25cc3a48a232d4c2592fce2d3b134fade93c27"
