@@ -6,14 +6,18 @@ if TYPE_CHECKING:
         InMemorySemanticCache,
         InMemoryVectorStore,
     )
+    from langchain_aws.vectorstores.s3_vectors import AmazonS3Vectors
+
 __all__ = [
     "InMemoryVectorStore",
     "InMemorySemanticCache",
+    "AmazonS3Vectors",
 ]
 
 _module_lookup = {
     "InMemoryVectorStore": "langchain_aws.vectorstores.inmemorydb",
     "InMemorySemanticCache": "langchain_aws.vectorstores.inmemorydb",
+    "AmazonS3Vectors": "langchain_aws.vectorstores.s3_vectors",
 }
 
 

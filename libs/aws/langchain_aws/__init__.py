@@ -10,11 +10,13 @@ from langchain_aws.llms import BedrockLLM, SagemakerEndpoint
 from langchain_aws.retrievers import (
     AmazonKendraRetriever,
     AmazonKnowledgeBasesRetriever,
+    AmazonS3VectorsRetriever,
 )
 from langchain_aws.vectorstores.inmemorydb import (
     InMemorySemanticCache,
     InMemoryVectorStore,
 )
+from langchain_aws.vectorstores.s3_vectors import AmazonS3Vectors
 
 
 def setup_logging():
@@ -43,11 +45,13 @@ __all__ = [
     "SagemakerEndpoint",
     "AmazonKendraRetriever",
     "AmazonKnowledgeBasesRetriever",
+    "AmazonS3VectorsRetriever",
     "create_neptune_opencypher_qa_chain",
     "create_neptune_sparql_qa_chain",
     "NeptuneAnalyticsGraph",
     "NeptuneGraph",
     "InMemoryVectorStore",
     "InMemorySemanticCache",
+    "AmazonS3Vectors",
     "BedrockRerank",
 ]
