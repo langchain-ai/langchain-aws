@@ -1,3 +1,4 @@
+# mypy: disable-error-code="no-untyped-def"
 import math
 from unittest.mock import MagicMock, patch
 
@@ -37,7 +38,7 @@ def vector_store(mock_embedding, mock_client):
     )
 
 
-def test_add_texts(vector_store):
+def test_add_texts(vector_store) -> None:
     vector_store.client.get_index.return_value = {
         "vectorBucketName": vector_store.vector_bucket_name,
         "indexName": vector_store.index_name,
@@ -76,7 +77,7 @@ def test_add_texts(vector_store):
     assert result_ids == ids
 
 
-def test_add_texts_with_create_index(vector_store):
+def test_add_texts_with_create_index(vector_store) -> None:
     vector_store.client.get_index.side_effect = ClientError(
         {"Error": {"Code": "NotFoundException"}}, ""
     )
@@ -92,7 +93,7 @@ def test_add_texts_with_create_index(vector_store):
     assert len(result_ids) == len(texts)
 
 
-def test_add_texts_with_create_index_failed(vector_store):
+def test_add_texts_with_create_index_failed(vector_store) -> None:
     with pytest.raises(ClientError):
         vector_store.client.get_index.side_effect = ClientError(
             {"Error": {"Code": "AccessDeniedException"}}, ""
@@ -101,7 +102,9 @@ def test_add_texts_with_create_index_failed(vector_store):
         vector_store.add_texts(texts)
 
 
-def test_add_texts_with_create_index_and_non_filterable_metadata_keys(vector_store):
+def test_add_texts_with_create_index_and_non_filterable_metadata_keys(
+    vector_store,
+) -> None:
     vector_store.non_filterable_metadata_keys = ["non_filterable_key"]
     vector_store.client.get_index.side_effect = ClientError(
         {"Error": {"Code": "NotFoundException"}}, ""
@@ -121,28 +124,28 @@ def test_add_texts_with_create_index_and_non_filterable_metadata_keys(vector_sto
     assert len(result_ids) == len(texts)
 
 
-def test_add_texts_invalid_metadatas_length(vector_store):
+def test_add_texts_invalid_metadatas_length(vector_store) -> None:
     texts = ["text1", "text2"]
     metadatas = [{"meta": "a"}]
     with pytest.raises(ValueError):
         vector_store.add_texts(texts, metadatas=metadatas)
 
 
-def test_add_texts_invalid_metadatas_type(vector_store):
+def test_add_texts_invalid_metadatas_type(vector_store) -> None:
     texts = ["text1"]
     metadatas = ["not a dict"]
     with pytest.raises(ValueError):
         vector_store.add_texts(texts, metadatas=metadatas)
 
 
-def test_add_texts_invalid_ids_length(vector_store):
+def test_add_texts_invalid_ids_length(vector_store) -> None:
     texts = ["text1", "text2"]
     ids = ["id1"]
     with pytest.raises(ValueError):
         vector_store.add_texts(texts, ids=ids)
 
 
-def test_add_texts_without_page_content_metadata_key(vector_store):
+def test_add_texts_without_page_content_metadata_key(vector_store) -> None:
     vector_store.page_content_metadata_key = None
     vector_store.client.get_index.side_effect = ClientError(
         {"Error": {"Code": "NotFoundException"}}, ""
@@ -167,7 +170,9 @@ def test_add_texts_without_page_content_metadata_key(vector_store):
     )
 
 
-def test_add_texts_without_page_content_metadata_key_with_metadata(vector_store):
+def test_add_texts_without_page_content_metadata_key_with_metadata(
+    vector_store,
+) -> None:
     vector_store.page_content_metadata_key = None
     vector_store.client.get_index.side_effect = ClientError(
         {"Error": {"Code": "NotFoundException"}}, ""
@@ -196,7 +201,7 @@ def test_add_texts_without_page_content_metadata_key_with_metadata(vector_store)
     )
 
 
-def test_delete_all(vector_store):
+def test_delete_all(vector_store) -> None:
     result = vector_store.delete()
     assert result is True
     vector_store.client.delete_index.assert_called_once_with(
@@ -206,7 +211,7 @@ def test_delete_all(vector_store):
     vector_store.client.delete_vectors.assert_not_called()
 
 
-def test_delete_by_ids(vector_store):
+def test_delete_by_ids(vector_store) -> None:
     result = vector_store.delete(["id1", "id2", "id3"])
     assert result is True
     vector_store.client.delete_vectors.assert_called_once_with(
@@ -217,7 +222,7 @@ def test_delete_by_ids(vector_store):
     vector_store.client.delete_index.assert_not_called()
 
 
-def test_delete_by_ids_with_batch(vector_store):
+def test_delete_by_ids_with_batch(vector_store) -> None:
     result = vector_store.delete(["id1", "id2", "id3", "id4", "id5"], batch_size=2)
     assert result is True
     assert (
@@ -243,7 +248,7 @@ def test_delete_by_ids_with_batch(vector_store):
     vector_store.client.delete_index.assert_not_called()
 
 
-def test_get_by_ids(vector_store):
+def test_get_by_ids(vector_store) -> None:
     vector_store.client.get_vectors.return_value = {
         "vectors": [
             {
@@ -280,7 +285,7 @@ def test_get_by_ids(vector_store):
     )
 
 
-def test_get_by_ids_invalid(vector_store):
+def test_get_by_ids_invalid(vector_store) -> None:
     vector_store.client.get_vectors.return_value = {
         "vectors": [
             {
@@ -297,13 +302,13 @@ def test_get_by_ids_invalid(vector_store):
         vector_store.get_by_ids(["id42"])
 
 
-def test_get_by_ids_empty(vector_store):
+def test_get_by_ids_empty(vector_store) -> None:
     docs = vector_store.get_by_ids([])
     vector_store.client.get_vectors.asssert_not_called()
     assert docs == []
 
 
-def test_get_by_ids_with_batch(vector_store):
+def test_get_by_ids_with_batch(vector_store) -> None:
     vector_store.client.get_vectors.return_value = {
         "vectors": [
             {"key": "id1", "metadata": {"_page_content": "text"}},
@@ -338,7 +343,7 @@ def test_get_by_ids_with_batch(vector_store):
     ]
 
 
-def test_similarity_search(vector_store):
+def test_similarity_search(vector_store) -> None:
     vector_store.client.query_vectors.return_value = {
         "vectors": [
             {"key": "id1"},
@@ -361,7 +366,7 @@ def test_similarity_search(vector_store):
     assert result == [Document("", id="id1"), Document("", id="id2")]
 
 
-def test_similarity_search_with_score(vector_store):
+def test_similarity_search_with_score(vector_store) -> None:
     vector_store.client.query_vectors.return_value = {
         "vectors": [
             {"key": "id1", "metadata": {"_page_content": "text1"}, "distance": 0.1},
@@ -387,7 +392,7 @@ def test_similarity_search_with_score(vector_store):
     ]
 
 
-def test_similarity_search_by_vector(vector_store):
+def test_similarity_search_by_vector(vector_store) -> None:
     vector_store.client.query_vectors.return_value = {
         "vectors": [
             {"key": "id1", "metadata": {"_page_content": "text1"}},
@@ -410,33 +415,31 @@ def test_similarity_search_by_vector(vector_store):
     assert results == [Document("text1", id="id1"), Document("text2", id="id2")]
 
 
-def test_as_retriever_returns_retriever(vector_store):
+def test_as_retriever_returns_retriever(vector_store) -> None:
     retriever = vector_store.as_retriever()
     assert isinstance(retriever, AmazonS3VectorsRetriever)
 
 
-def test_from_texts():
-    texts = []
+def test_from_texts() -> None:
     vector_store = AmazonS3Vectors.from_texts(
-        texts,
+        [],
         vector_bucket_name="test-bucket",
         index_name="test-index",
-        embedding=mock_embedding,
+        embedding=mock_embedding,  # type: ignore[arg-type]
         client=mock_client,
     )
     assert isinstance(vector_store, AmazonS3Vectors)
 
 
 @patch("langchain_aws.vectorstores.s3_vectors.base.create_aws_client")
-def test_from_texts_without_client(mock_create_aws_client):
+def test_from_texts_without_client(mock_create_aws_client) -> None:
     mock_create_aws_client.return_value = MagicMock()
 
-    texts = []
     AmazonS3Vectors.from_texts(
-        texts,
+        [],
         vector_bucket_name="test-bucket",
         index_name="test-index",
-        embedding=mock_embedding,
+        embedding=mock_embedding,  # type: ignore[arg-type]
         region_name="us-west-2",
         credentials_profile_name="test-profile",
         aws_access_key_id="test-access-key",
@@ -457,7 +460,7 @@ def test_from_texts_without_client(mock_create_aws_client):
     )
 
 
-def test_similarity_search_with_relevance_scores(vector_store):
+def test_similarity_search_with_relevance_scores(vector_store) -> None:
     # cosine distance to similarity score [0, 1]
     vector_store.client.query_vectors.return_value = {
         "vectors": [
@@ -478,7 +481,7 @@ def test_similarity_search_with_relevance_scores(vector_store):
     ]
 
 
-def test_similarity_search_with_relevance_scores_euclidean(vector_store):
+def test_similarity_search_with_relevance_scores_euclidean(vector_store) -> None:
     # euclidean distance to similarity score [0, 1]
     vector_store.distance_metric = "euclidean"
     vector_store.client.query_vectors.return_value = {
@@ -500,7 +503,7 @@ def test_similarity_search_with_relevance_scores_euclidean(vector_store):
     ]
 
 
-def test_similarity_search_with_relevance_scores_custom(vector_store):
+def test_similarity_search_with_relevance_scores_custom(vector_store) -> None:
     vector_store.relevance_score_fn = lambda distance: 1.0 - distance / 2.0
     vector_store.client.query_vectors.return_value = {
         "vectors": [
@@ -519,7 +522,7 @@ def test_similarity_search_with_relevance_scores_custom(vector_store):
     ]
 
 
-def test_similarity_search_with_relevance_scores_invalid(vector_store):
+def test_similarity_search_with_relevance_scores_invalid(vector_store) -> None:
     vector_store.distance_metric = "unknown_metric"
     with pytest.raises(ValueError):
         vector_store.similarity_search_with_relevance_scores("query text")

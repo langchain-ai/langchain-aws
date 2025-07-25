@@ -7,7 +7,7 @@ from langchain_core.documents import Document
 from langchain_aws.embeddings import BedrockEmbeddings
 from langchain_aws.vectorstores.s3_vectors import AmazonS3Vectors
 
-vector_bucket_name = os.getenv("INTEGRATION_TEST_S3_VECTORS_VECTOR_BUCKET_NAME")
+vector_bucket_name = os.getenv("INTEGRATION_TEST_S3_VECTORS_VECTOR_BUCKET_NAME", "")
 
 
 @pytest.mark.skipif(not vector_bucket_name, reason="S3 vector bucket name not set")
