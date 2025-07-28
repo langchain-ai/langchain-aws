@@ -379,9 +379,9 @@ def _merge_messages(
 
 def _format_anthropic_messages(
     messages: List[BaseMessage],
-) -> Tuple[Optional[str], List[Dict]]:
+) -> Tuple[Optional[Union[str, List[Dict]]], List[Dict]]:
     """Format messages for anthropic."""
-    system: Optional[str] = None
+    system: Optional[Union[str, List[Dict]]] = None
     formatted_messages: List[Dict] = []
 
     merged_messages = _merge_messages(messages)
@@ -392,10 +392,10 @@ def _format_anthropic_messages(
             if isinstance(message.content, str):
                 system = message.content
             elif isinstance(message.content, list):
-                text_chunks = []
+                system_blocks = []
                 for item in message.content:
                     if isinstance(item, str):
-                        text_chunks.append(item)
+                        system_blocks.append({"type": "text", "text": item})
                     elif isinstance(item, dict):
                         if item.get("type") != "text":
                             raise ValueError(
@@ -405,13 +405,16 @@ def _format_anthropic_messages(
                             raise ValueError(
                                 "System message content item must have a 'text' key"
                             )
-                        text_chunks.append(item["text"])
+                        content_item = {"type": "text", "text": item["text"]}
+                        if item.get("cache_control"):
+                            content_item["cache_control"] = {"type": "ephemeral"}
+                        system_blocks.append(content_item)
                     else:
                         raise ValueError(
                             "System message content list must be a string or dict, "
                             f"instead was: {type(item)}"
                         )
-                system = "".join(text_chunks)
+                system = system_blocks
             else:
                 raise ValueError(
                     "System message content must be a string or list, "
