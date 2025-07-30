@@ -64,7 +64,8 @@ def get_boto_session(
     # Update user agent
     existing_user_agent = getattr(config, "user_agent_extra", "") or ""
     config.user_agent_extra = (
-        f"{existing_user_agent} md/sdk_user_agent/{SDK_USER_AGENT}".strip()
+        f"{existing_user_agent} x-client-framework:langchain-aws "
+        f"md/sdk_user_agent/{SDK_USER_AGENT}".strip()
     )
     client_params = {"config": config}
 
