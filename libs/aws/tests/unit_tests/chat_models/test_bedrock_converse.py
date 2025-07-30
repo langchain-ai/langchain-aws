@@ -1307,3 +1307,79 @@ def test_model_kwargs() -> None:
     )
     assert llm.additional_model_request_fields == {"temperature": 0.2}
     assert llm.temperature is None
+
+
+def _create_mock_llm_guard_last_turn_only() -> (
+    Tuple[ChatBedrockConverse, mock.MagicMock]
+):
+    """Utility to create an LLM with guard_last_turn_only=True and a mocked client."""
+    mocked_client = mock.MagicMock()
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        guard_last_turn_only=True,
+        guardrail_config={"guardrailId": "dummy-guardrail", "guardrailVersion": "1"},
+    )
+    return llm, mocked_client
+
+
+def test_guard_last_turn_only_no_guardrail_config() -> None:
+    """Test that an error is raised if guard_last_turn_only is True but no guardrail_config is provided."""
+    with pytest.raises(ValueError):
+        ChatBedrockConverse(
+            client=mock.MagicMock(),
+            model="anthropic.claude-3-sonnet-20240229-v1:0",
+            region_name="us-west-2",
+            guard_last_turn_only=True,
+        )
+
+
+def test_generate_guard_last_turn_only() -> None:
+    """Test that _generate() wraps ONLY the final user turn with guardContent."""
+    llm, mocked_client = _create_mock_llm_guard_last_turn_only()
+
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "ok"}]}},
+        "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+    }
+
+    messages = [
+        HumanMessage(content="First user message"),
+        AIMessage(content="Assistant reply"),
+        HumanMessage(content="Second user message"),
+    ]
+
+    llm.invoke(messages)
+    _, kwargs = mocked_client.converse.call_args
+    bedrock_msgs = kwargs["messages"]
+
+    assert bedrock_msgs[0]["content"][0] == {"text": "First user message"}
+    # Last user turn is wrapped in guardContent
+    assert bedrock_msgs[-1]["content"][0] == {
+        "guardContent": {"text": {"text": "Second user message"}}
+    }
+
+
+def test_stream_guard_last_turn_only() -> None:
+    """Test that stream() applies guardContent to final user turn."""
+    llm, mocked_client = _create_mock_llm_guard_last_turn_only()
+
+    mocked_client.converse_stream.return_value = {
+        "stream": [{"messageStart": {"role": "assistant"}}]
+    }
+
+    messages = [
+        HumanMessage(content="Hello"),
+        AIMessage(content="Hi!"),
+        HumanMessage(content="How are you?"),
+    ]
+    list(llm.stream(messages))
+
+    _, kwargs = mocked_client.converse_stream.call_args
+    bedrock_msgs = kwargs["messages"]
+
+    assert bedrock_msgs[0]["content"][0] == {"text": "Hello"}
+    assert bedrock_msgs[-1]["content"][0] == {
+        "guardContent": {"text": {"text": "How are you?"}}
+    }
