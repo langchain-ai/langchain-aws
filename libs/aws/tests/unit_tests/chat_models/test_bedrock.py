@@ -296,7 +296,14 @@ def test__format_anthropic_messages_with_cache_control() -> None:
     )
     messages = [system, human]
     expected = (
-        "fuzzbar",
+        [
+            {
+                "type": "text",
+                "text": "fuzz",
+                "cache_control": {"type": "ephemeral"},
+            },
+            {"type": "text", "text": "bar"},
+        ],
         [
             {
                 "role": "user",
@@ -308,6 +315,30 @@ def test__format_anthropic_messages_with_cache_control() -> None:
                     }
                 ],
             },
+        ],
+    )
+
+    actual = _format_anthropic_messages(messages)
+    assert expected == actual
+
+
+def test__format_anthropic_messages_system_message_list_content() -> None:
+    """Test that system messages with list content return as list of content blocks"""
+    system = SystemMessage(
+        [
+            {"type": "text", "text": "You are a helpful assistant."},
+            {"type": "text", "text": "Additional instructions here."},
+        ],
+    )
+    human = HumanMessage("Hello!")
+    messages = [system, human]
+    expected = (
+        [
+            {"type": "text", "text": "You are a helpful assistant."},
+            {"type": "text", "text": "Additional instructions here."},
+        ],
+        [
+            {"role": "user", "content": "Hello!"},
         ],
     )
 
