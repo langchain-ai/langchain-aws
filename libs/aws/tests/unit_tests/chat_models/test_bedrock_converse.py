@@ -1319,7 +1319,7 @@ def _create_mock_llm_guard_last_turn_only() -> (
         model="anthropic.claude-3-sonnet-20240229-v1:0",
         region_name="us-west-2",
         guard_last_turn_only=True,
-        guardrail_config={"guardrailId": "dummy-guardrail", "guardrailVersion": "1"},
+        guardrails={"guardrailId": "dummy-guardrail", "guardrailVersion": "1"},
     )
     return llm, mocked_client
 
