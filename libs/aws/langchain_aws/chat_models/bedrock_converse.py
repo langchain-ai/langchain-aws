@@ -456,6 +456,15 @@ class ChatBedrockConverse(BaseChatModel):
     request_metadata: Optional[Dict[str, str]] = None
     """Key-Value pairs that you can use to filter invocation logs."""
 
+    guard_last_turn_only: bool = False
+    """Boolean flag for applying the guardrail to only the last turn."""
+
+    raw_blocks: Optional[List[Dict[str, Any]]] = None
+    """Raw Bedrock message blocks that can be passed in.
+    LangChain will relay them unchanged, enabling any combination of content block types.
+    This is useful for custom guardrail wrapping
+    """
+
     model_config = ConfigDict(
         extra="forbid",
         populate_by_name=True,
@@ -634,10 +643,30 @@ class ChatBedrockConverse(BaseChatModel):
                 service_name="bedrock-runtime",
             )
 
+        if self.guard_last_turn_only and not self.guardrail_config:
+            raise ValueError(
+                "`guard_last_turn_only=True` but no `guardrail_config` supplied. "
+                "Provide a guardrail via `guardrail_config` or "
+                "disable `guard_last_turn_only`."
+            )
         return self
 
     def _get_base_model(self) -> str:
         return self.base_model_id if self.base_model_id else self.model_id
+
+    def _apply_guard_last_turn_only(self, messages: List[Dict[str, Any]]) -> None:
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                new_content = []
+                for block in msg["content"]:
+                    if "text" in block:
+                        new_content.append(
+                            {"guardContent": {"text": {"text": block["text"]}}}
+                        )
+                    else:
+                        new_content.append(block)
+                msg["content"] = new_content
+                break
 
     def _generate(
         self,
@@ -647,7 +676,16 @@ class ChatBedrockConverse(BaseChatModel):
         **kwargs: Any,
     ) -> ChatResult:
         """Top Level call"""
-        bedrock_messages, system = _messages_to_bedrock(messages)
+
+        if self.raw_blocks is not None:
+            logger.debug(f"Using raw blocks: {self.raw_blocks}")
+            bedrock_messages, system = self.raw_blocks, []
+        else:
+            bedrock_messages, system = _messages_to_bedrock(messages)
+            if self.guard_last_turn_only:
+                logger.debug("Applying selective guardrail to only the last turn")
+                self._apply_guard_last_turn_only(bedrock_messages)
+
         logger.debug(f"input message to bedrock: {bedrock_messages}")
         logger.debug(f"System message to bedrock: {system}")
         params = self._converse_params(
@@ -673,7 +711,15 @@ class ChatBedrockConverse(BaseChatModel):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
-        bedrock_messages, system = _messages_to_bedrock(messages)
+        if self.raw_blocks is not None:
+            logger.debug(f"Using raw blocks: {self.raw_blocks}")
+            bedrock_messages, system = self.raw_blocks, []
+        else:
+            bedrock_messages, system = _messages_to_bedrock(messages)
+            if self.guard_last_turn_only:
+                logger.debug("Applying selective guardrail to only the last turn")
+                self._apply_guard_last_turn_only(bedrock_messages)
+
         params = self._converse_params(
             stop=stop,
             **_snake_to_camel_keys(
