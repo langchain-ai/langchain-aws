@@ -35,6 +35,39 @@ def setup_logging():
 
 setup_logging()
 
+
+try:
+    import boto3
+    from botocore.config import Config
+
+    FRAMEWORK_UA = "x-client-framework:langchain-aws"
+    ORIGINAL_BOTO3_CLIENT = boto3.client
+    ORIGINAL_SESSION_CLIENT = boto3.session.Session.client
+
+    def _ensure_framework_ua(cfg: Config | None) -> Config:
+        """Return a Config guaranteed to contain our framework UA tag."""
+        if cfg is None:
+            return Config(user_agent_extra=FRAMEWORK_UA)
+        existing = getattr(cfg, "user_agent_extra", "") or ""
+        if FRAMEWORK_UA in existing:
+            return cfg
+        merged_extra = f"{existing} {FRAMEWORK_UA}".strip()
+        return cfg.merge(Config(user_agent_extra=merged_extra))
+
+    def _patched_boto3_client(*args, **kwargs):
+        kwargs["config"] = _ensure_framework_ua(kwargs.get("config"))
+        return ORIGINAL_BOTO3_CLIENT(*args, **kwargs)
+
+    def _patched_session_client(self, *args, **kwargs):
+        kwargs["config"] = _ensure_framework_ua(kwargs.get("config"))
+        return ORIGINAL_SESSION_CLIENT(self, *args, **kwargs)
+
+    boto3.client = _patched_boto3_client
+    boto3.session.Session.client = _patched_session_client
+except Exception:
+    pass
+
+
 __all__ = [
     "BedrockEmbeddings",
     "BedrockLLM",
