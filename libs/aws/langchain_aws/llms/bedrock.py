@@ -591,6 +591,10 @@ class BedrockBase(BaseLanguageModel, ABC):
     """Base class for Bedrock models."""
 
     client: Any = Field(default=None, exclude=True)  #: :meta private:
+    """The bedrock runtime client for making data plane API calls"""
+    
+    bedrock_client: Any = Field(default=None, exclude=True)  #: :meta private:
+    """The bedrock client for making control plane API calls"""
 
     region_name: Optional[str] = Field(default=None, alias="region")
     """The aws region e.g., `us-west-2`. Falls back to AWS_REGION or AWS_DEFAULT_REGION 
@@ -775,6 +779,19 @@ class BedrockBase(BaseLanguageModel, ABC):
                 service_name="bedrock-runtime",
             )
 
+        # Create bedrock client for control plane API call
+        if self.bedrock_client is None:
+            self.bedrock_client = create_aws_client(
+                region_name=self.region_name,
+                credentials_profile_name=self.credentials_profile_name,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                aws_session_token=self.aws_session_token,
+                endpoint_url=self.endpoint_url,
+                config=self.config,
+                service_name="bedrock",
+            )
+
         return self
 
     @property
@@ -815,6 +832,16 @@ class BedrockBase(BaseLanguageModel, ABC):
         )
 
     def _get_base_model(self) -> str:
+        # identify the base model id used in the application inference profile (AIP)
+        # Format: arn:aws:bedrock:us-east-1:<accountId>:application-inference-profile/<id>
+        if self.base_model_id is None and 'application-inference-profile' in self.model_id:
+            response = self.bedrock_client.get_inference_profile(
+                inferenceProfileIdentifier=self.model_id
+            )
+            if 'models' in response and len(response['models']) > 0:
+                model_arn = response['models'][0]['modelArn']
+                # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
+                self.base_model_id = model_arn.split('/')[-1]
         return self.base_model_id if self.base_model_id else self.model_id.split(".", maxsplit=1)[-1]
 
     @property
