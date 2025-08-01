@@ -440,58 +440,6 @@ class TestBedrockSessionSaver:
         )
         mock_boto_client.get_invocation_step.assert_not_called()
 
-    def test__get_task_sends_without_parent_checkpoint_id(
-        self, session_saver, sample_session_checkpoint
-    ):
-        # Arrange
-        thread_id = "test_thread_id"
-        checkpoint_ns = "test_namespace"
-
-        # Act
-        result = session_saver._get_task_sends(thread_id, checkpoint_ns, None)
-
-        # Assert
-        assert result == []
-
-    def test__get_task_sends(
-        self, session_saver, sample_session_pending_write_with_sends
-    ):
-        # Arrange
-        thread_id = "test_thread_id"
-        checkpoint_ns = "test_namespace"
-        parent_checkpoint_id = "test_parent_checkpoint_id"
-
-        session_saver._get_checkpoint_pending_writes = Mock(
-            return_value=sample_session_pending_write_with_sends
-        )
-
-        # Act
-        result = session_saver._get_task_sends(
-            thread_id, checkpoint_ns, parent_checkpoint_id
-        )
-
-        # Assert
-        assert result == [
-            ["2", "__pregel_tasks", ["json", b"eyJrMiI6ICJ2MiJ9"], "/test2/path2", 1],
-            ["3", "__pregel_tasks", ["json", b"eyJrMyI6ICJ2MyJ9"], "/test3/path3", 1],
-        ]
-
-    def test__get_task_sends_empty(self, session_saver):
-        # Arrange
-        thread_id = "test_thread_id"
-        checkpoint_ns = "test_namespace"
-        parent_checkpoint_id = "test_parent_checkpoint_id"
-
-        session_saver._get_checkpoint_pending_writes = Mock(return_value=[])
-
-        # Act
-        result = session_saver._get_task_sends(
-            thread_id, checkpoint_ns, parent_checkpoint_id
-        )
-
-        # Assert
-        assert result == []
-
     @patch("langgraph_checkpoint_aws.saver.construct_checkpoint_tuple")
     def test_get_tuple_success(
         self,
@@ -517,7 +465,6 @@ class TestBedrockSessionSaver:
         session_saver._get_checkpoint_pending_writes = Mock(
             return_value=sample_session_pending_write_with_sends
         )
-        session_saver._get_task_sends = Mock(return_value=[])
         mock_construct_checkpoint.return_value = Mock(spec=CheckpointTuple)
 
         # Act
@@ -730,7 +677,6 @@ class TestBedrockSessionSaver:
             )
         )
         session_saver._get_checkpoint_pending_writes = Mock(return_value=[])
-        session_saver._get_task_sends = Mock(return_value=[])
         mock_construct_checkpoint.return_value = Mock(spec=CheckpointTuple)
 
         # Act
@@ -801,7 +747,6 @@ class TestBedrockSessionSaver:
             )
         )
         session_saver._get_checkpoint_pending_writes = Mock(return_value=[])
-        session_saver._get_task_sends = Mock(return_value=[])
         mock_construct_checkpoint.return_value = Mock(spec=CheckpointTuple)
 
         # Act
@@ -836,7 +781,6 @@ class TestBedrockSessionSaver:
             )
         )
         session_saver._get_checkpoint_pending_writes = Mock(return_value=[])
-        session_saver._get_task_sends = Mock(return_value=[])
         session_saver._construct_checkpoint_tuple = Mock(
             return_value=Mock(spec=CheckpointTuple)
         )
