@@ -122,6 +122,12 @@ In addition, you can run the linter only on the files that have been modified in
 make lint_diff
 ```
 
+In addition, you can run the linter only tests.
+
+```bash
+make lint_tests
+```
+
 We recognize linting can be annoying - if you do not want to do it, please contact a project maintainer, and they can help you with it. We do not want this to be a blocker for good code getting contributed.
 
 #### Spellcheck
