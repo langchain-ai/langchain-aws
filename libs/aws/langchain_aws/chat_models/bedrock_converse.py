@@ -1084,9 +1084,9 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
     if "messageStart" in event:
         # TODO: needed?
         return (
-            AIMessageChunk(content=[])
+            AIMessageChunk(content="")
             if event["messageStart"]["role"] == "assistant"
-            else HumanMessageChunk(content=[])
+            else HumanMessageChunk(content="")
         )
     elif "contentBlockStart" in event:
         block = {
@@ -1103,7 +1103,14 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
                     index=event["contentBlockStart"]["contentBlockIndex"],
                 )
             )
-        return AIMessageChunk(content=[block], tool_call_chunks=tool_call_chunks)
+            # Keep tool calls as list to preserve type information
+            content = [block]
+        else:
+            # Convert text content to string for consistency with other LangChain models
+            content = _str_if_single_text_block([block])
+        
+        return AIMessageChunk(content=content, tool_call_chunks=tool_call_chunks)
+        
     elif "contentBlockDelta" in event:
         block = {
             **_bedrock_to_lc([event["contentBlockDelta"]["delta"]])[0],
@@ -1119,19 +1126,24 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
                     index=event["contentBlockDelta"]["contentBlockIndex"],
                 )
             )
-        return AIMessageChunk(content=[block], tool_call_chunks=tool_call_chunks)
+            # Keep tool calls as list to preserve type information
+            content = [block]
+        else:
+            # Convert text content to string for consistency with other LangChain models
+            content = _str_if_single_text_block([block])
+        
+        return AIMessageChunk(content=content, tool_call_chunks=tool_call_chunks)
+        
     elif "contentBlockStop" in event:
         # TODO: needed?
-        return AIMessageChunk(
-            content=[{"index": event["contentBlockStop"]["contentBlockIndex"]}]
-        )
+        return AIMessageChunk(content="")
     elif "messageStop" in event:
         # TODO: snake case response metadata?
-        return AIMessageChunk(content=[], response_metadata=event["messageStop"])
+        return AIMessageChunk(content="", response_metadata=event["messageStop"])
     elif "metadata" in event:
         usage = _extract_usage_metadata(event["metadata"])
         return AIMessageChunk(
-            content=[], response_metadata=event["metadata"], usage_metadata=usage
+            content="", response_metadata=event["metadata"], usage_metadata=usage
         )
     elif "Exception" in list(event.keys())[0]:
         name, info = list(event.items())[0]
@@ -1140,7 +1152,6 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         )
     else:
         raise ValueError(f"Received unsupported stream event:\n\n{event}")
-
 
 def _format_data_content_block(block: dict) -> dict:
     """Format standard data content block to format expected by Converse API."""
