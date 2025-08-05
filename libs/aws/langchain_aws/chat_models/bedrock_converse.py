@@ -505,7 +505,7 @@ class ChatBedrockConverse(BaseChatModel):
         return values
 
     @classmethod
-    def _get_streaming_support(cls, provider: str, model_id_lower: str) -> bool | str:
+    def _get_streaming_support(cls, provider: str, model_id_lower: str) -> Union[bool, str]:
         """Determine streaming support for a given provider and model.
         
         Returns:
