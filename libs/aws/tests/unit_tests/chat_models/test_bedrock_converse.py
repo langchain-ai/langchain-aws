@@ -1385,12 +1385,12 @@ def test_stream_guard_last_turn_only() -> None:
     }
 
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
-def test_bedrock_client_creation(mock_create_client) -> None:
+def test_bedrock_client_creation(mock_create_client: mock.Mock) -> None:
     """Test that bedrock_client is created during validation."""
     mock_bedrock_client = mock.Mock()
     mock_runtime_client = mock.Mock()
     
-    def side_effect(service_name, **kwargs):
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
             return mock_bedrock_client
         elif service_name == "bedrock-runtime":
@@ -1410,7 +1410,7 @@ def test_bedrock_client_creation(mock_create_client) -> None:
 
 
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
-def test_get_base_model_with_application_inference_profile(mock_create_client) -> None:
+def test_get_base_model_with_application_inference_profile(mock_create_client: mock.Mock) -> None:
     """Test _get_base_model method with application inference profile."""
     mock_bedrock_client = mock.Mock()
     mock_runtime_client = mock.Mock()
@@ -1424,7 +1424,7 @@ def test_get_base_model_with_application_inference_profile(mock_create_client) -
         ]
     }
     
-    def side_effect(service_name, **kwargs):
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
             return mock_bedrock_client
         elif service_name == "bedrock-runtime":
@@ -1447,12 +1447,12 @@ def test_get_base_model_with_application_inference_profile(mock_create_client) -
 
 
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
-def test_get_base_model_without_application_inference_profile(mock_create_client) -> None:
+def test_get_base_model_without_application_inference_profile(mock_create_client: mock.Mock) -> None:
     """Test _get_base_model method without application inference profile."""
     mock_bedrock_client = mock.Mock()
     mock_runtime_client = mock.Mock()
     
-    def side_effect(service_name, **kwargs):
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
             return mock_bedrock_client
         elif service_name == "bedrock-runtime":
@@ -1473,7 +1473,7 @@ def test_get_base_model_without_application_inference_profile(mock_create_client
 
 
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
-def test_configure_streaming_for_resolved_model(mock_create_client) -> None:
+def test_configure_streaming_for_resolved_model(mock_create_client: mock.Mock) -> None:
     """Test _configure_streaming_for_resolved_model method."""
     mock_bedrock_client = mock.Mock()
     mock_runtime_client = mock.Mock()
@@ -1487,7 +1487,7 @@ def test_configure_streaming_for_resolved_model(mock_create_client) -> None:
         ]
     }
     
-    def side_effect(service_name, **kwargs):
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
             return mock_bedrock_client
         elif service_name == "bedrock-runtime":
@@ -1507,7 +1507,7 @@ def test_configure_streaming_for_resolved_model(mock_create_client) -> None:
 
 
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
-def test_configure_streaming_for_resolved_model_no_tools(mock_create_client) -> None:
+def test_configure_streaming_for_resolved_model_no_tools(mock_create_client: mock.Mock) -> None:
     """Test _configure_streaming_for_resolved_model method with no-tools streaming."""
     mock_bedrock_client = mock.Mock()
     mock_runtime_client = mock.Mock()
@@ -1521,7 +1521,7 @@ def test_configure_streaming_for_resolved_model_no_tools(mock_create_client) -> 
         ]
     }
     
-    def side_effect(service_name, **kwargs):
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
             return mock_bedrock_client
         elif service_name == "bedrock-runtime":
@@ -1541,7 +1541,7 @@ def test_configure_streaming_for_resolved_model_no_tools(mock_create_client) -> 
 
 
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
-def test_configure_streaming_for_resolved_model_no_streaming(mock_create_client) -> None:
+def test_configure_streaming_for_resolved_model_no_streaming(mock_create_client: mock.Mock) -> None:
     """Test _configure_streaming_for_resolved_model method with no streaming support."""
     mock_bedrock_client = mock.Mock()
     mock_runtime_client = mock.Mock()
@@ -1555,7 +1555,7 @@ def test_configure_streaming_for_resolved_model_no_streaming(mock_create_client)
         ]
     }
     
-    def side_effect(service_name, **kwargs):
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
             return mock_bedrock_client
         elif service_name == "bedrock-runtime":
