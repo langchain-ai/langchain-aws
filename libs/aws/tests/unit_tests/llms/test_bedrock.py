@@ -781,3 +781,61 @@ def test__get_base_model():
         region_name="us-west-2"
     )
     assert llm._get_base_model() == "meta.llama3-8b-instruct-v1:0"
+
+
+@patch("langchain_aws.llms.bedrock.create_aws_client")
+def test_bedrock_client_creation(mock_create_client):
+    """Test that both bedrock-runtime and bedrock clients are created."""
+    mock_runtime_client = MagicMock()
+    mock_bedrock_client = MagicMock()
+    mock_create_client.side_effect = [mock_runtime_client, mock_bedrock_client]
+    
+    llm = BedrockLLM(
+        model_id="meta.llama3-8b-instruct-v1:0",
+        region_name="us-west-2"
+    )
+    
+    # Should create both clients
+    assert mock_create_client.call_count == 2
+    
+    # Check that bedrock-runtime client was created
+    calls = mock_create_client.call_args_list
+    runtime_call = calls[0]
+    assert runtime_call.kwargs["service_name"] == "bedrock-runtime"
+    assert runtime_call.kwargs["region_name"] == "us-west-2"
+    
+    # Check that bedrock client was created
+    bedrock_call = calls[1]
+    assert bedrock_call.kwargs["service_name"] == "bedrock"
+    assert bedrock_call.kwargs["region_name"] == "us-west-2"
+    
+    assert llm.client is mock_runtime_client
+    assert llm.bedrock_client is mock_bedrock_client
+
+
+@patch("langchain_aws.llms.bedrock.create_aws_client")
+def test_get_base_model_with_application_inference_profile(mock_create_client):
+    """Test _get_base_model with application inference profile."""
+    mock_runtime_client = MagicMock()
+    mock_bedrock_client = MagicMock()
+    mock_bedrock_client.get_inference_profile.return_value = {
+        "models": [
+            {"modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"}
+        ]
+    }
+    mock_create_client.side_effect = [mock_runtime_client, mock_bedrock_client]
+    
+    llm = BedrockLLM(
+        model_id="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/my-profile",
+        provider="anthropic",
+        region_name="us-west-2"
+    )
+    
+    result = llm._get_base_model()
+    
+    # Should call get_inference_profile and extract base model
+    mock_bedrock_client.get_inference_profile.assert_called_once_with(
+        inferenceProfileIdentifier="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/my-profile"
+    )
+    assert result == "anthropic.claude-3-sonnet-20240229-v1:0"
+    assert llm.base_model_id == "anthropic.claude-3-sonnet-20240229-v1:0"
