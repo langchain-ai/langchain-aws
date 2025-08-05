@@ -35,6 +35,10 @@ jobs:
       run:
         working-directory: ${{ inputs.working-directory }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Needed for aws-actions/configure-aws-credentials
+      actions: write  # Needed for actions/cache used by poetry_setup action
     name: "make integration_test"
     steps:
       - uses: actions/checkout@v4
