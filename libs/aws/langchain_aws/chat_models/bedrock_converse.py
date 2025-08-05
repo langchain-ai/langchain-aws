@@ -312,6 +312,10 @@ class ChatBedrockConverse(BaseChatModel):
     """  # noqa: E501
 
     client: Any = Field(default=None, exclude=True)  #: :meta private:
+    """The bedrock runtime client for making data plane API calls"""
+
+    bedrock_client: Any = Field(default=None, exclude=True)  #: :meta private:
+    """The bedrock client for making control plane API calls"""
 
     model_id: str = Field(alias="model")
     """Id of the model to call.
@@ -500,29 +504,15 @@ class ChatBedrockConverse(BaseChatModel):
             }
         return values
 
-    @model_validator(mode="before")
     @classmethod
-    def set_disable_streaming(cls, values: Dict) -> Any:
-        model_id = values.get("model_id", values.get("model"))
-
-        # Extract provider from the model_id
-        # (e.g., "amazon", "anthropic", "ai21", "meta", "mistral")
-        if "provider" not in values:
-            if model_id.startswith("arn"):
-                raise ValueError(
-                    "Model provider should be supplied when passing a model ARN as model_id."
-                )
-            model_parts = model_id.split(".")
-            values["provider"] = (
-                model_parts[-2] if len(model_parts) > 1 else model_parts[0]
-            )
-
-        provider = values["provider"]
-
-        model_id_lower = values.get(
-            "base_model_id", values.get("base_model", model_id)
-        ).lower()
-
+    def _get_streaming_support(cls, provider: str, model_id_lower: str) -> bool | str:
+        """Determine streaming support for a given provider and model.
+        
+        Returns:
+            True: Full streaming support
+            "no_tools": Streaming supported but not with tools
+            False: No streaming support
+        """
         # Determine if the model supports plain-text streaming (ConverseStream)
         # Here we check based on the updated AWS documentation.
         if (
@@ -550,7 +540,7 @@ class ChatBedrockConverse(BaseChatModel):
             # Cohere Command R models
             (provider == "cohere" and "command-r" in model_id_lower)
         ):
-            streaming_support = True
+            return True
         elif (
             # AI21 Jamba-Instruct model
             (provider == "ai21" and "jamba-instruct" in model_id_lower)
@@ -583,9 +573,34 @@ class ChatBedrockConverse(BaseChatModel):
             # Writer Palmyra models
             (provider == "writer" and "palmyra" in model_id_lower)
         ):
-            streaming_support = "no_tools"
+            return "no_tools"
         else:
-            streaming_support = False
+            return False
+
+    @model_validator(mode="before")
+    @classmethod
+    def set_disable_streaming(cls, values: Dict) -> Any:
+        model_id = values.get("model_id", values.get("model"))
+        
+        # Extract provider from the model_id
+        # (e.g., "amazon", "anthropic", "ai21", "meta", "mistral")
+        if "provider" not in values:
+            if model_id.startswith("arn"):
+                raise ValueError(
+                    "Model provider should be supplied when passing a model ARN as model_id."
+                )
+            model_parts = model_id.split(".")
+            values["provider"] = (
+                model_parts[-2] if len(model_parts) > 1 else model_parts[0]
+            )
+
+        provider = values["provider"]
+
+        model_id_lower = values.get(
+            "base_model_id", values.get("base_model", model_id)
+        ).lower()
+
+        streaming_support = cls._get_streaming_support(provider, model_id_lower)
 
         # Set the disable_streaming flag accordingly:
         # - If streaming is supported (plain streaming),
@@ -606,6 +621,23 @@ class ChatBedrockConverse(BaseChatModel):
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
+        
+         # Create bedrock client for control plane API call
+        if self.bedrock_client is None:
+            self.bedrock_client = create_aws_client(
+                region_name=self.region_name,
+                credentials_profile_name=self.credentials_profile_name,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                aws_session_token=self.aws_session_token,
+                endpoint_url=self.endpoint_url,
+                config=self.config,
+                service_name="bedrock",
+            )
+            
+        # Handle streaming configuration for application inference profiles
+        if "application-inference-profile" in self.model_id:
+            self._configure_streaming_for_resolved_model()
 
         # As of 12/03/24:
         # only claude-3/4, mistral-large, and nova models support tool choice:
@@ -649,10 +681,36 @@ class ChatBedrockConverse(BaseChatModel):
                 "Provide a guardrail via `guardrail_config` or "
                 "disable `guard_last_turn_only`."
             )
+            
         return self
 
     def _get_base_model(self) -> str:
+        # identify the base model id used in the application inference profile (AIP)
+        # Format: arn:aws:bedrock:us-east-1:<accountId>:application-inference-profile/<id>
+        if self.base_model_id is None and 'application-inference-profile' in self.model_id:
+            response = self.bedrock_client.get_inference_profile(
+                inferenceProfileIdentifier=self.model_id
+            )
+            if 'models' in response and len(response['models']) > 0:
+                model_arn = response['models'][0]['modelArn']
+                # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
+                self.base_model_id = model_arn.split('/')[-1]
         return self.base_model_id if self.base_model_id else self.model_id
+        
+    def _configure_streaming_for_resolved_model(self) -> None:
+        """Configure streaming support after resolving the base model for application inference profiles."""
+        base_model = self._get_base_model()
+        model_id_lower = base_model.lower()
+        
+        streaming_support = self._get_streaming_support(self.provider, model_id_lower)
+
+        # Set the disable_streaming flag accordingly
+        if not streaming_support:
+            self.disable_streaming = True
+        elif streaming_support == "no_tools":
+            self.disable_streaming = "tool_calling"
+        else:
+            self.disable_streaming = False
 
     def _apply_guard_last_turn_only(self, messages: List[Dict[str, Any]]) -> None:
         for msg in reversed(messages):
