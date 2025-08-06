@@ -21,6 +21,9 @@ jobs:
   build:
     if: github.ref == 'refs/heads/main' || inputs.dangerous-nonmaster-release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write  # Needed for actions/upload-artifact
 
     outputs:
       pkg-name: ${{ steps.check-version.outputs.pkg-name }}
@@ -77,6 +80,8 @@ jobs:
       # Trusted publishing has to also be configured on PyPI for each package:
       # https://docs.pypi.org/trusted-publishers/adding-a-publisher/
       id-token: write
+      contents: read
+      actions: read  # Needed for actions/download-artifact
 
     steps:
       - uses: actions/checkout@v4
