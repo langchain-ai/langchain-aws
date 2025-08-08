@@ -252,7 +252,6 @@ def sample_checkpoint(sample_timestamp):
             "node1": {"default": "v1", "tasks": "v2"},
             "node2": {"results": "v1"},
         },
-        pending_sends=[],
     )
 
 
@@ -261,7 +260,6 @@ def sample_checkpoint_metadata(sample_timestamp):
     return CheckpointMetadata(
         source="input",
         step=-1,
-        writes={"node1": ["write1", "write2"], "node2": {"key": "value"}},
         parents={
             "namespace1": "parent_checkpoint_1",
             "namespace2": "parent_checkpoint_2",
