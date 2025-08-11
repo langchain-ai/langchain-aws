@@ -127,21 +127,15 @@ def _convert_one_message_to_text_llama4(message: BaseMessage) -> str:
             f"<|header_start|>{message.role}<|header_end|>{message.content}<|eot|>"
         )
     elif isinstance(message, HumanMessage):
-        message_text = (
-            f"<|header_start|>user<|header_end|>{message.content}<|eot|>"
-        )
+        message_text = f"<|header_start|>user<|header_end|>{message.content}<|eot|>"
     elif isinstance(message, AIMessage):
         message_text = (
             f"<|header_start|>assistant<|header_end|>{message.content}<|eot|>"
         )
     elif isinstance(message, SystemMessage):
-        message_text = (
-            f"<|header_start|>system<|header_end|>{message.content}<|eot|>"
-        )
+        message_text = f"<|header_start|>system<|header_end|>{message.content}<|eot|>"
     elif isinstance(message, ToolMessage):
-        message_text = (
-            f"<|header_start|>ipython<|header_end|>{message.content}<|eom|>"
-        )
+        message_text = f"<|header_start|>ipython<|header_end|>{message.content}<|eom|>"
     else:
         raise ValueError(f"Got unknown type {message}")
 
@@ -193,7 +187,7 @@ def convert_messages_to_prompt_anthropic(
     """
     if messages is None:
         return ""
-    
+
     messages = messages.copy()  # don't mutate the original list
     if len(messages) > 0 and not isinstance(messages[-1], AIMessage):
         messages.append(AIMessage(content=""))
@@ -230,21 +224,13 @@ def convert_messages_to_prompt_mistral(messages: List[BaseMessage]) -> str:
 
 def _convert_one_message_to_text_deepseek(message: BaseMessage) -> str:
     if isinstance(message, ChatMessage):
-        message_text = (
-            f"<|{message.role}|>{message.content}"
-        )
+        message_text = f"<|{message.role}|>{message.content}"
     elif isinstance(message, HumanMessage):
-        message_text = (
-            f"<|User|>{message.content}"
-        )
+        message_text = f"<|User|>{message.content}"
     elif isinstance(message, AIMessage):
-        message_text = (
-            f"<|Assistant|>{message.content}"
-        )
+        message_text = f"<|Assistant|>{message.content}"
     elif isinstance(message, SystemMessage):
-        message_text = (
-            f"<|System|>{message.content}"
-        )
+        message_text = f"<|System|>{message.content}"
     else:
         raise ValueError(f"Got unknown type {message}")
 
@@ -325,7 +311,7 @@ def _format_data_content_block(block: dict) -> dict:
                     "type": "base64",
                     "media_type": block["mime_type"],
                     "data": block["data"],
-                }
+                },
             }
         else:
             error_message = "Image data only supported through in-line base64 format."
@@ -407,7 +393,11 @@ def _format_anthropic_messages(
                             )
                         content_item = {"type": "text", "text": item["text"]}
                         if item.get("cache_control"):
-                            content_item["cache_control"] = {"type": "ephemeral"}
+                            cache_control = item["cache_control"]
+                            if isinstance(cache_control, dict):
+                                content_item["cache_control"] = cache_control
+                            else:
+                                content_item["cache_control"] = {"type": "ephemeral"}
                         system_blocks.append(content_item)
                     else:
                         raise ValueError(
@@ -460,19 +450,28 @@ def _format_anthropic_messages(
                             # Handle list content inside tool_result
                             processed_list = []
                             for list_item in content_item:
-                                if isinstance(list_item, dict) and list_item.get("type") == "image_url":
+                                if (
+                                    isinstance(list_item, dict)
+                                    and list_item.get("type") == "image_url"
+                                ):
                                     # Process image in list
-                                    source = _format_image(list_item["image_url"]["url"])
-                                    processed_list.append({"type": "image", "source": source})
+                                    source = _format_image(
+                                        list_item["image_url"]["url"]
+                                    )
+                                    processed_list.append(
+                                        {"type": "image", "source": source}
+                                    )
                                 else:
                                     # Keep other items as is
                                     processed_list.append(list_item)
                             # Add processed list to tool_result
-                            tool_blocks.append({
-                                "type": "tool_result",
-                                "tool_use_id": item.get("tool_use_id"),
-                                "content": processed_list
-                            })
+                            tool_blocks.append(
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": item.get("tool_use_id"),
+                                    "content": processed_list,
+                                }
+                            )
                         else:
                             # For other content types, keep as is
                             tool_blocks.append(item)
@@ -505,7 +504,13 @@ def _format_anthropic_messages(
                         if text.strip():
                             content_item = {"type": "text", "text": text}
                             if item.get("cache_control"):
-                                content_item["cache_control"] = {"type": "ephemeral"}
+                                cache_control = item["cache_control"]
+                                if isinstance(cache_control, dict):
+                                    content_item["cache_control"] = cache_control
+                                else:
+                                    content_item["cache_control"] = {
+                                        "type": "ephemeral"
+                                    }
                             native_blocks.append(content_item)
                     else:
                         tool_blocks.append(item)
@@ -667,7 +672,47 @@ _message_type_lookups = {
 
 
 class ChatBedrock(BaseChatModel, BedrockBase):
-    """A chat model that uses the Bedrock API."""
+    """A chat model that uses the Bedrock API.
+
+    This model supports prompt caching with configurable TTL for improved performance
+    and cost efficiency when working with large prompts that are reused.
+
+    Prompt caching (1-hour TTL) example:
+        .. code-block:: python
+
+            from langchain_aws import ChatBedrock
+            from langchain_core.messages import HumanMessage
+
+            # Initialize with beta header for extended cache TTL
+            llm = ChatBedrock(
+                model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+                additional_model_request_fields={
+                    "anthropic_beta": ["prompt-caching-2024-07-31"]
+                }
+            )
+
+            # Create cache points
+            cache_1h = ChatBedrock.create_cache_point(ttl="1h")
+            cache_5m = ChatBedrock.create_cache_point()  # Default 5-minute
+
+            # Use caching with proper ordering (1-hour cache must come first)
+            messages = [
+                HumanMessage(content=[
+                    "You are an expert assistant with extensive knowledge.",
+                    cache_1h,  # Cache the system context for 1 hour
+                    "Current conversation context that changes more frequently.",
+                    cache_5m,  # Cache this for 5 minutes
+                    "What is the user's question?"
+                ])
+            ]
+
+            response = llm.invoke(messages)
+
+            # Check cache usage in response
+            print(response.usage_metadata)
+            # {'input_tokens': 100, 'output_tokens': 50,
+            #  'input_token_details': {'cache_read': 80, 'cache_creation': 20}}
+    """
 
     system_prompt_with_tools: str = ""
     beta_use_converse_api: bool = False
@@ -734,6 +779,53 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         extra="forbid",
         populate_by_name=True,
     )
+
+    @classmethod
+    def create_cache_point(
+        cls, cache_type: str = "ephemeral", ttl: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Create a prompt caching configuration for Bedrock.
+
+        Args:
+            cache_type: Type of cache point. Options: "default" or "ephemeral".
+                Default is "ephemeral" to support TTL configuration.
+            ttl: Time-to-live for cache. E.g., "1h" for 1 hour, "5m" for 5 minutes.
+                Only valid with "ephemeral" type. If not specified with ephemeral type,
+                defaults to 5 minutes.
+
+        Returns:
+            Dictionary containing prompt caching configuration.
+
+        Example:
+            >>> # Create a 1-hour cache point
+            >>> cache_point = ChatBedrock.create_cache_point(
+            ...     cache_type="ephemeral",
+            ...     ttl="1h"
+            ... )
+            >>> # Returns: {"cache_control": {"type": "ephemeral", "ttl": "1h"}}
+
+            >>> # Create a default 5-minute cache point
+            >>> cache_point = ChatBedrock.create_cache_point()
+            >>> # Returns: {"cache_control": {"type": "ephemeral"}}
+
+        Note:
+            To enable 1-hour caching, you must also pass the beta header through
+            additional_model_request_fields when initializing ChatBedrock:
+
+            llm = ChatBedrock(
+                model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+                additional_model_request_fields={
+                    "anthropic_beta": ["prompt-caching-2024-07-31"]
+                }
+            )
+
+            Important: 1-hour cache entries must appear before any 5-minute cache
+            entries in your message content.
+        """
+        cache_config = {"type": cache_type}
+        if ttl and cache_type == "ephemeral":
+            cache_config["ttl"] = ttl
+        return {"cache_control": cache_config}
 
     def _get_ls_params(
         self, stop: Optional[List[str]] = None, **kwargs: Any
