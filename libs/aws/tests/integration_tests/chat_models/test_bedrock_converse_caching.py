@@ -1,7 +1,8 @@
 """Integration tests for prompt caching with ChatBedrockConverse."""
 
 import pytest
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from typing import cast
 
 from langchain_aws import ChatBedrockConverse
 
@@ -33,7 +34,7 @@ def test_prompt_caching_with_1h_ttl() -> None:
     ]
 
     # First invocation - should create cache
-    response1 = llm.invoke(messages)
+    response1 = cast(AIMessage, llm.invoke(messages))
     assert response1.content
     assert hasattr(response1, "usage_metadata")
 
@@ -45,7 +46,7 @@ def test_prompt_caching_with_1h_ttl() -> None:
         assert cache_creation > 0, "Expected cache creation on first call"
 
     # Second invocation - should use cache
-    response2 = llm.invoke(messages)
+    response2 = cast(AIMessage, llm.invoke(messages))
     assert response2.content
 
     # Check if cache was used
@@ -127,6 +128,7 @@ def test_mixed_message_types_with_caching() -> None:
         HumanMessage("Write a function to calculate factorial."),
     ]
 
-    response = llm.invoke(messages)
+    response = cast(AIMessage, llm.invoke(messages))
     assert response.content
-    assert "def" in response.content or "factorial" in response.content.lower()
+    content_str = str(response.content) if response.content else ""
+    assert "def" in content_str or "factorial" in content_str.lower()
