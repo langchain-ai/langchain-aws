@@ -1309,32 +1309,32 @@ def test_model_kwargs() -> None:
     assert llm.temperature is None
 
 
-def test_create_cache_point_default():
+def test_create_cache_point_default() -> None:
     """Test creating a default cache point."""
     cache_point = ChatBedrockConverse.create_cache_point()
     assert cache_point == {"cachePoint": {"type": "ephemeral"}}
 
 
-def test_create_cache_point_with_ttl():
+def test_create_cache_point_with_ttl() -> None:
     """Test creating a cache point with TTL."""
     cache_point = ChatBedrockConverse.create_cache_point(ttl="1h")
     assert cache_point == {"cachePoint": {"type": "ephemeral", "ttl": "1h"}}
 
 
-def test_create_cache_point_default_type():
+def test_create_cache_point_default_type() -> None:
     """Test creating a cache point with default type (no TTL support)."""
     cache_point = ChatBedrockConverse.create_cache_point(cache_type="default")
     assert cache_point == {"cachePoint": {"type": "default"}}
 
 
-def test_create_cache_point_ttl_only_with_ephemeral():
+def test_create_cache_point_ttl_only_with_ephemeral() -> None:
     """Test that TTL is only added with ephemeral type."""
     cache_point = ChatBedrockConverse.create_cache_point(cache_type="default", ttl="1h")
     assert cache_point == {"cachePoint": {"type": "default"}}
     # TTL should not be included with default type
 
 
-def test_messages_with_cache_points():
+def test_messages_with_cache_points() -> None:
     """Test that messages with cache points are properly formatted."""
     cache_1h = ChatBedrockConverse.create_cache_point(ttl="1h")
     cache_5m = ChatBedrockConverse.create_cache_point()
@@ -1364,7 +1364,7 @@ def test_messages_with_cache_points():
     assert content[4] == {"text": "User question"}
 
 
-def test_beta_header_in_additional_fields():
+def test_beta_header_in_additional_fields() -> None:
     """Test that beta headers can be passed through additional_model_request_fields."""
     llm = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0",

@@ -7,7 +7,7 @@ from langchain_aws import ChatBedrockConverse
 
 
 @pytest.mark.integration
-def test_prompt_caching_with_1h_ttl():
+def test_prompt_caching_with_1h_ttl() -> None:
     """Test prompt caching with 1-hour TTL."""
     llm = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0",
@@ -57,7 +57,7 @@ def test_prompt_caching_with_1h_ttl():
 
 
 @pytest.mark.integration
-def test_cache_ordering_validation():
+def test_cache_ordering_validation() -> None:
     """Test that 1-hour cache entries must appear before 5-minute entries."""
     llm = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0",
@@ -111,7 +111,7 @@ def test_cache_ordering_validation():
 
 
 @pytest.mark.integration
-def test_mixed_message_types_with_caching():
+def test_mixed_message_types_with_caching() -> None:
     """Test caching with SystemMessage and HumanMessage."""
     llm = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0",
