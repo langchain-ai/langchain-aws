@@ -245,7 +245,7 @@ jobs:
           working-directory: ${{ inputs.working-directory }}
           cache-key: release
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: dist
           path: ${{ inputs.working-directory }}/dist/
@@ -286,7 +286,7 @@ jobs:
           working-directory: ${{ inputs.working-directory }}
           cache-key: release
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: dist
           path: ${{ inputs.working-directory }}/dist/
