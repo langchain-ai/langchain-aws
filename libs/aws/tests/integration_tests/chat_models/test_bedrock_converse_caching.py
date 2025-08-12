@@ -1,7 +1,7 @@
 """Integration tests for prompt caching with ChatBedrockConverse."""
 
 import pytest
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from langchain_aws import ChatBedrockConverse
 
@@ -38,7 +38,11 @@ def test_prompt_caching_with_1h_ttl() -> None:
     assert hasattr(response1, "usage_metadata")
 
     # Check if cache was created
-    if response1.usage_metadata and "input_token_details" in response1.usage_metadata:
+    if (
+        hasattr(response1, "usage_metadata")
+        and response1.usage_metadata
+        and "input_token_details" in response1.usage_metadata
+    ):
         cache_creation = response1.usage_metadata["input_token_details"].get(
             "cache_creation", 0
         )
@@ -49,7 +53,11 @@ def test_prompt_caching_with_1h_ttl() -> None:
     assert response2.content
 
     # Check if cache was used
-    if response2.usage_metadata and "input_token_details" in response2.usage_metadata:
+    if (
+        hasattr(response2, "usage_metadata")
+        and response2.usage_metadata
+        and "input_token_details" in response2.usage_metadata
+    ):
         cache_read = response2.usage_metadata["input_token_details"].get(
             "cache_read", 0
         )
@@ -129,4 +137,7 @@ def test_mixed_message_types_with_caching() -> None:
 
     response = llm.invoke(messages)
     assert response.content
-    assert "def" in response.content or "factorial" in response.content.lower()
+    content_str = (
+        response.content if isinstance(response.content, str) else str(response.content)
+    )
+    assert "def" in content_str or "factorial" in content_str.lower()

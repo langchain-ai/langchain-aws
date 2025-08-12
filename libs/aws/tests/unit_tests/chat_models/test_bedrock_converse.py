@@ -9,6 +9,7 @@ import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
+    BaseMessage,
     HumanMessage,
     SystemMessage,
     ToolCall,
@@ -487,8 +488,7 @@ def test__snake_to_camel_keys() -> None:
     assert _snake_to_camel_keys(_SNAKE_DICT) == _CAMEL_DICT
 
 
-def test__format_openai_image_url() -> None:
-    ...
+def test__format_openai_image_url() -> None: ...
 
 
 def test_standard_tracing_params() -> None:
@@ -1339,7 +1339,7 @@ def test_messages_with_cache_points() -> None:
     cache_1h = ChatBedrockConverse.create_cache_point(ttl="1h")
     cache_5m = ChatBedrockConverse.create_cache_point()
 
-    messages = [
+    messages: List[BaseMessage] = [
         HumanMessage(
             content=[
                 "System context to cache for 1 hour",
