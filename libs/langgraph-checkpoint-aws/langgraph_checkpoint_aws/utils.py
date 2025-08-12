@@ -262,7 +262,7 @@ def create_session_checkpoint(
     checkpoint_copy = checkpoint.copy()
 
     # Remove pending sends as they are handled separately
-    checkpoint_copy.pop("pending_sends")
+    checkpoint_copy.pop("pending_sends", None)
 
     # Extract required config values
     thread_id = config["configurable"]["thread_id"]
