@@ -1200,6 +1200,48 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         raise ValueError(f"Received unsupported stream event:\n\n{event}")
 
 
+def _mime_type_to_format(mime_type: str) -> str:
+    mime_to_format = {
+        # Image formats
+        "image/png": "png",
+        "image/jpeg": "jpeg", 
+        "image/gif": "gif",
+        "image/webp": "webp",
+        # File formats
+        "application/pdf": "pdf",
+        "text/csv": "csv",
+        "application/msword": "doc",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+        "application/vnd.ms-excel": "xls",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+        "text/html": "html",
+        "text/plain": "txt",
+        "text/markdown": "md",
+        # Video formats
+        "video/x-matroska": "mkv",
+        "video/quicktime": "mov",
+        "video/mp4": "mp4",
+        "video/webm": "webm",
+        "video/x-flv": "flv",
+        "video/mpeg": "mpeg",
+        "video/x-ms-wmv": "wmv",
+        "video/3gpp": "three_gp",
+    }
+    
+    if mime_type in mime_to_format:
+        return mime_to_format[mime_type]
+    
+    # Fallback to original method of splitting on "/" for simple cases
+    all_formats = set(mime_to_format.values())
+    format_part = mime_type.split("/")[1]
+    if format_part in all_formats:
+        return format_part
+    
+    raise ValueError(
+        f"Unsupported MIME type: {mime_type}. Please refer to the Bedrock Converse API documentation for supported formats."
+    )
+
+
 def _format_data_content_block(block: dict) -> dict:
     """Format standard data content block to format expected by Converse API."""
     if block["type"] == "image":
@@ -1209,7 +1251,7 @@ def _format_data_content_block(block: dict) -> dict:
                 raise ValueError(error_message)
             formatted_block = {
                 "image": {
-                    "format": block["mimeType"].split("/")[1],
+                    "format": _mime_type_to_format(block["mimeType"]),
                     "source": {"bytes": _b64str_to_bytes(block["data"])},
                 }
             }
@@ -1224,7 +1266,7 @@ def _format_data_content_block(block: dict) -> dict:
                 raise ValueError(error_message)
             formatted_block = {
                 "document": {
-                    "format": block["mimeType"].split("/")[1],
+                    "format": _mime_type_to_format(block["mimeType"]),
                     "source": {"bytes": _b64str_to_bytes(block["data"])},
                 }
             }
@@ -1274,7 +1316,7 @@ def _lc_content_to_bedrock(
                 bedrock_content.append(
                     {
                         "image": {
-                            "format": block["source"]["mediaType"].split("/")[1],
+                            "format": _mime_type_to_format(block["source"]["mediaType"]),
                             "source": {
                                 "bytes": _b64str_to_bytes(block["source"]["data"])
                             },
@@ -1295,7 +1337,7 @@ def _lc_content_to_bedrock(
                     bedrock_content.append(
                         {
                             "video": {
-                                "format": block["source"]["mediaType"].split("/")[1],
+                                "format": _mime_type_to_format(block["source"]["mediaType"]),
                                 "source": {
                                     "bytes": _b64str_to_bytes(block["source"]["data"])
                                 },
@@ -1306,7 +1348,7 @@ def _lc_content_to_bedrock(
                     bedrock_content.append(
                         {
                             "video": {
-                                "format": block["source"]["mediaType"].split("/")[1],
+                                "format": _mime_type_to_format(block["source"]["mediaType"]),
                                 "source": {"s3Location": block["source"]["data"]},
                             }
                         }
