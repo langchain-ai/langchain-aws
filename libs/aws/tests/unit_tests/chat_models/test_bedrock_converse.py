@@ -1575,5 +1575,5 @@ def test_configure_streaming_for_resolved_model_no_streaming(mock_create_client:
     
 def test_nova_provider_extraction() -> None:
     """Test that provider is correctly extracted from Nova model ID when not provided."""
-    model = ChatBedrockConverse(model="us.amazon.nova-pro-v1:0")
+    model = ChatBedrockConverse(model="us.amazon.nova-pro-v1:0", region_name="us-west-2")
     assert model.provider == "amazon"
