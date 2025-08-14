@@ -1113,7 +1113,7 @@ def test__lc_content_to_bedrock_mime_types() -> None:
     file_data = base64.b64encode(b"file_test_data").decode("utf-8")
     
     # Create content with one of each type
-    content: list[str | dict[str, Any]] = [
+    content: List[Union[str, Dict[str, Any]]] = [
         {
             "type": "video",
             "source": {
