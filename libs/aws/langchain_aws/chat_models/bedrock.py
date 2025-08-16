@@ -35,6 +35,7 @@ from langchain_core.messages import (
 )
 from langchain_core.messages.ai import UsageMetadata
 from langchain_core.messages.tool import ToolCall, ToolMessage
+from langchain_core.messages.utils import convert_to_openai_messages
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
@@ -283,6 +284,48 @@ def convert_messages_to_prompt_writer(messages: List[BaseMessage]) -> str:
     return "\n".join(
         [_convert_one_message_to_text_llama(message) for message in messages]
     )
+
+
+def _convert_one_message_to_text_openai(message: BaseMessage) -> str:
+    if isinstance(message, SystemMessage):
+        message_text = (
+            f"<|start|>system<|message|>{message.content}<|end|>"
+        )
+    elif isinstance(message, ChatMessage):
+        # developer role messages
+        message_text = (
+            f"<|start|>{message.role}<|message|>{message.content}<|end|>"
+        )
+    elif isinstance(message, HumanMessage):
+        message_text = (
+            f"<|start|>user<|message|>{message.content}<|end|>"
+        )
+    elif isinstance(message, AIMessage):
+        message_text = (
+            f"<|start|>assistant<|channel|>final<|message|>{message.content}<|end|>"
+        )
+    elif isinstance(message, ToolMessage):
+        # TODO: should start with "<|start|>{toolname} to=assistant."
+        #  How do we get toolname from the ToolMessage content?
+        message_text = (
+            f"<|start|>to=assistant<|channel|>commentary<|message|>{message.content}<|end|>"
+        )
+    else:
+        raise ValueError(f"Got unknown type {message}")
+
+    return message_text
+
+
+def convert_messages_to_prompt_openai(messages: List[BaseMessage]) -> str:
+    """Convert a list of messages to a Harmony format prompt for OpenAI Responses API."""
+
+    prompt = "\n"
+    for message in messages:
+        prompt += _convert_one_message_to_text_openai(message)
+
+    prompt += "<|start|>assistant\n\n"
+
+    return prompt
 
 
 def _format_image(image_url: str) -> Dict:
@@ -640,6 +683,8 @@ class ChatPromptAdapter:
             )
         elif provider == "writer":
             prompt = convert_messages_to_prompt_writer(messages=messages)
+        elif provider == "openai":
+            prompt = convert_messages_to_prompt_openai(messages=messages)
         else:
             raise NotImplementedError(
                 f"Provider {provider} model does not support chat."
@@ -649,10 +694,11 @@ class ChatPromptAdapter:
     @classmethod
     def format_messages(
         cls, provider: str, messages: List[BaseMessage]
-    ) -> Tuple[Optional[str], List[Dict]]:
+    ) -> Union[Tuple[Optional[str], List[Dict]], List[Dict]]:
         if provider == "anthropic":
             return _format_anthropic_messages(messages)
-
+        elif provider == "openai":
+            return convert_to_openai_messages(messages)
         raise NotImplementedError(
             f"Provider {provider} not supported for format_messages"
         )
@@ -777,6 +823,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     system = self.system_prompt_with_tools + f"\n{system}"
                 else:
                     system = self.system_prompt_with_tools
+        elif provider == "openai":
+            formatted_messages = ChatPromptAdapter.format_messages(provider, messages)
         else:
             prompt = ChatPromptAdapter.convert_messages_to_prompt(
                 provider=provider, messages=messages, model=self._get_base_model()
@@ -876,6 +924,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                         system = self.system_prompt_with_tools + f"\n{system}"
                     else:
                         system = self.system_prompt_with_tools
+            elif provider == "openai":
+                formatted_messages = ChatPromptAdapter.format_messages(provider, messages)
             else:
                 prompt = ChatPromptAdapter.convert_messages_to_prompt(
                     provider=provider, messages=messages, model=self._get_base_model()

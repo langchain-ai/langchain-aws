@@ -377,6 +377,8 @@ class LLMInputOutputAdapter:
                     input_body["max_tokens"] = max_tokens
                 elif provider == "writer":
                     input_body["max_tokens"] = max_tokens
+                elif provider == "openai":
+                    input_body["max_output_tokens"] = max_tokens
                 else:
                     # TODO: Add AI21 support, param depends on specific model.
                     pass
@@ -391,6 +393,13 @@ class LLMInputOutputAdapter:
                 input_body["textGenerationConfig"]["maxTokenCount"] = max_tokens
             if temperature is not None:
                 input_body["textGenerationConfig"]["temperature"] = temperature
+
+        elif provider == "openai":
+            input_body["messages"] = messages
+            if max_tokens:
+                input_body["max_tokens"] = max_tokens
+            if temperature is not None:
+                input_body["temperature"] = temperature
         else:
             input_body["inputText"] = prompt
 
@@ -442,6 +451,8 @@ class LLMInputOutputAdapter:
                 text = response_body.get("generation")
             elif provider == "mistral":
                 text = response_body.get("outputs")[0].get("text")
+            elif provider == "openai":
+                text = response_body.get("choices")[0].get("message").get("content")
             else:
                 text = response_body.get("results")[0].get("outputText")
 
