@@ -89,7 +89,33 @@ disallow_untyped_defs = "True"
 exclude = ["notebooks", "samples"]
 
 [tool.coverage.run]
-omit = ["tests/*"]
+source = ["langchain_aws"]
+omit = [
+    "tests/*",
+    "*/tests/*",
+    "test_*",
+    "*_test.py"
+]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod"
+]
+precision = 2
+show_missing = true
+
+[tool.coverage.html]
+directory = "htmlcov"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -105,7 +131,7 @@ build-backend = "poetry.core.masonry.api"
 #
 # https://github.com/tophat/syrupy
 # --snapshot-warn-unused    Prints a warning on unused snapshots rather than fail the test suite.
-addopts = "--snapshot-warn-unused --strict-markers --strict-config --durations=5 --cov=langchain_aws"
+addopts = "--snapshot-warn-unused --strict-markers --strict-config --durations=5"
 # Registering custom markers.
 # https://docs.pytest.org/en/7.1.x/example/markers.html#registering-markers
 markers = [

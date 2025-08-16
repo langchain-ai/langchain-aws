@@ -6,7 +6,7 @@ PYTHON_FILES=.
 MYPY_CACHE=.mypy_cache
 PACKAGE_NAME=langgraph_checkpoint_aws
 
-.PHONY: help lint format install_dev install_test install_lint install_typing install_codespell check_imports spell_check spell_fix
+.PHONY: help lint format install_dev install_test install_lint install_typing install_codespell check_imports spell_check spell_fix coverage_integration_tests coverage_integration_test coverage_tests coverage_report coverage_html
 
 ######################
 # LINTING AND FORMATTING
@@ -71,6 +71,21 @@ integration_test: ## Run individual integration test: make integration_test TEST
 
 test_watch: ## Run and interactively watch unit tests
 	poetry run ptw --snapshot-update --now . -- -vv $(TEST_FILE)
+
+coverage_integration_tests: ## Run integration tests with coverage
+	poetry run pytest --cov=langgraph_checkpoint_aws --cov-report=html --cov-report=term-missing --cov-branch tests/integration_tests/
+
+coverage_integration_test: ## Run specific integration test with coverage: make coverage_integration_test TEST_FILE=tests/integration_tests/integ_test.py
+	poetry run pytest --cov=langgraph_checkpoint_aws --cov-report=html --cov-report=term-missing --cov-branch $(TEST_FILE)
+
+coverage_tests: ## Run unit tests with coverage
+	poetry run pytest --cov=langgraph_checkpoint_aws --cov-report=html --cov-report=term-missing --cov-branch tests/unit_tests/
+
+coverage_report: ## Generate coverage report
+	poetry run coverage report
+
+coverage_html: ## Generate HTML coverage report
+	poetry run coverage html
 
 ######################
 # DEPENDENCIES

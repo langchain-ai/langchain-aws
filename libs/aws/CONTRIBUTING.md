@@ -76,6 +76,61 @@ To run the integration tests:
 make integration_test
 ```
 
+### Code Coverage
+
+This project uses [coverage.py](https://github.com/nedbat/coveragepy) to track code coverage during testing. Coverage reports help identify untested code paths and ensure comprehensive test coverage.
+
+#### Running Tests with Coverage
+
+To run unit tests with coverage:
+
+```bash
+make coverage_tests
+```
+
+To run all integration tests with coverage:
+
+```bash
+make coverage_integration_tests
+```
+
+To run a specific integration test with coverage:
+
+```bash
+make coverage_integration_test TEST_FILE=tests/integration_tests/specific_test.py
+```
+
+#### Viewing Coverage Reports
+
+After running tests with coverage, you can view the results in several ways:
+
+**Terminal Report:**
+```bash
+make coverage_report
+```
+
+**HTML Report:**
+```bash
+make coverage_html
+```
+
+The HTML report will be generated in the `htmlcov/` directory. Open `htmlcov/index.html` in your browser to view detailed line-by-line coverage analysis.
+
+#### Coverage Configuration
+
+Coverage settings are configured in `pyproject.toml`:
+- **Source tracking**: Only code in `langchain_aws/` is measured
+- **Branch coverage**: Tracks both line and branch coverage for comprehensive analysis
+- **Exclusions**: Test files and common patterns (like `pragma: no cover`) are excluded
+- **Reports**: Both terminal and HTML reports show missing lines and coverage percentages
+
+#### Coverage Best Practices
+
+- Aim for high coverage on new code you add
+- Use coverage reports to identify untested edge cases
+- Add tests for uncovered lines when practical
+- Use `# pragma: no cover` sparingly for truly untestable code (like debug statements)
+
 ### Formatting and Linting
 
 Formatting ensures that the code in this repo has consistent style so that the
