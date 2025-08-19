@@ -1,7 +1,7 @@
 ######################
 # NON FILE TARGETS
 ######################
-.PHONY: all format lint test tests integration_tests docker_tests help extended_tests
+.PHONY: all format lint test tests integration_tests docker_tests help extended_tests coverage_integration_tests coverage_integration_test coverage_tests coverage_report coverage_html
 
 ######################
 # ALL TARGETS
@@ -34,6 +34,21 @@ integration_test: ## Run individual integration test: make integration_test TEST
 
 test_watch: ## Run and interactively watch unit tests
 	poetry run ptw --snapshot-update --now . -- -vv $(TEST_FILE)
+
+coverage_integration_tests: ## Run integration tests with coverage
+	poetry run pytest --cov=langchain_aws --cov-report=html --cov-report=term-missing --cov-branch tests/integration_tests/
+
+coverage_integration_test: ## Run specific integration test with coverage: make coverage_integration_test TEST_FILE=tests/integration_tests/integ_test.py
+	poetry run pytest --cov=langchain_aws --cov-report=html --cov-report=term-missing --cov-branch $(TEST_FILE)
+
+coverage_tests: ## Run unit tests with coverage
+	poetry run pytest --cov=langchain_aws --cov-report=html --cov-report=term-missing --cov-branch tests/unit_tests/
+
+coverage_report: ## Generate coverage report
+	poetry run coverage report
+
+coverage_html: ## Generate HTML coverage report
+	poetry run coverage html
 
 ######################
 # LINTING AND FORMATTING
