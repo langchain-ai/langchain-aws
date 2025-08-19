@@ -41,7 +41,7 @@ jobs:
       actions: write  # Needed for actions/cache used by poetry_setup action
     name: "make integration_test"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: "${{ inputs.fork }}/langchain-aws"
           ref: "${{ inputs.branch }}"
