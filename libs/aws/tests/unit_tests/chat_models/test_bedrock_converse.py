@@ -1107,6 +1107,95 @@ def test__lc_content_to_bedrock_reasoning_content_signature() -> None:
     assert expected_system == actual_system
 
 
+def test__lc_content_to_bedrock_mime_types() -> None:
+    video_data = base64.b64encode(b"video_test_data").decode("utf-8")
+    image_data = base64.b64encode(b"image_test_data").decode("utf-8")
+    file_data = base64.b64encode(b"file_test_data").decode("utf-8")
+    
+    # Create content with one of each type
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "video",
+            "source": {
+                "type": "base64",
+                "mediaType": "video/mp4",
+                "data": video_data,
+            },
+        },
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "mediaType": "image/jpeg",
+                "data": image_data,
+            },
+        },
+        {
+            "type": "file",
+            "sourceType": "base64",
+            "mimeType": "application/pdf",
+            "data": file_data,
+            "name": "test_document.pdf",
+        },
+    ]
+    
+    expected_content = [
+        {
+            "video": {
+                "format": "mp4",
+                "source": {
+                    "bytes": base64.b64decode(video_data.encode("utf-8"))
+                },
+            }
+        },
+        {
+            "image": {
+                "format": "jpeg",
+                "source": {
+                    "bytes": base64.b64decode(image_data.encode("utf-8"))
+                },
+            }
+        },
+        {
+            "document": {
+                "format": "pdf",
+                "name": "test_document.pdf",
+                "source": {
+                    "bytes": base64.b64decode(file_data.encode("utf-8"))
+                },
+            }
+        },
+    ]
+
+    bedrock_content = _lc_content_to_bedrock(content)
+    assert bedrock_content == expected_content
+
+
+def test__lc_content_to_bedrock_mime_types_invalid() -> None:
+    with pytest.raises(ValueError, match="Invalid MIME type format"):
+        _lc_content_to_bedrock([
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "mediaType": "invalidmimetype",
+                    "data": base64.b64encode(b"test_data").decode("utf-8"),
+                },
+            }
+        ])
+    
+    with pytest.raises(ValueError, match="Unsupported MIME type"):
+        _lc_content_to_bedrock([
+            {
+                "type": "file",
+                "sourceType": "base64",
+                "mimeType": "application/unknown-format",
+                "data": base64.b64encode(b"test_data").decode("utf-8"),
+                "name": "test_document.xyz",
+            }
+        ])
+
+
 def test__get_provider() -> None:
     llm = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
@@ -1572,6 +1661,7 @@ def test_configure_streaming_for_resolved_model_no_streaming(mock_create_client:
     
     # The streaming should be disabled for models with no streaming support
     assert chat_model.disable_streaming is True
+
     
 def test_nova_provider_extraction() -> None:
     """Test that provider is correctly extracted from Nova model ID when not provided."""
