@@ -369,6 +369,16 @@ def test__format_anthropic_multiple_system_messages() -> None:
     assert expected_system == actual_system
     assert expected_messages == actual_messages
 
+def test__format_anthropic_nonconsecutive_system_messages() -> None:
+    """Test that we fail when non-consecutive system messages are passed."""
+    system1 = SystemMessage("foo")  # type: ignore[misc]
+    system2 = SystemMessage("bar")  # type: ignore[misc]
+    human = HumanMessage("Hello!")
+    messages = [system1, human, system2]
+
+    with pytest.raises(ValueError, match="Received multiple non-consecutive system messages."):
+        _format_anthropic_messages(messages)
+
 
 @pytest.fixture()
 def pydantic() -> Type[BaseModel]:
