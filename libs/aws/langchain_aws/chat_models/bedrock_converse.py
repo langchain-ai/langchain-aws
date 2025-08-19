@@ -612,7 +612,7 @@ class ChatBedrockConverse(BaseChatModel):
         
         # Extract provider from the model_id
         # (e.g., "amazon", "anthropic", "ai21", "meta", "mistral")
-        if "provider" not in values:
+        if "provider" not in values or values["provider"] == "":
             if model_id.startswith("arn"):
                 raise ValueError(
                     "Model provider should be supplied when passing a model ARN as model_id."
