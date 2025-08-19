@@ -1,4 +1,5 @@
 import base64
+import functools
 import json
 import logging
 import re
@@ -60,6 +61,33 @@ from langchain_aws.utils import create_aws_client
 
 logger = logging.getLogger(__name__)
 _BM = TypeVar("_BM", bound=BaseModel)
+
+MIME_TO_FORMAT = {
+    # Image formats
+    "image/png": "png",
+    "image/jpeg": "jpeg", 
+    "image/gif": "gif",
+    "image/webp": "webp",
+    # File formats
+    "application/pdf": "pdf",
+    "text/csv": "csv",
+    "application/msword": "doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.ms-excel": "xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "text/html": "html",
+    "text/plain": "txt",
+    "text/markdown": "md",
+    # Video formats
+    "video/x-matroska": "mkv",
+    "video/quicktime": "mov",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+    "video/x-flv": "flv",
+    "video/mpeg": "mpeg",
+    "video/x-ms-wmv": "wmv",
+    "video/3gpp": "three_gp",
+}
 
 _DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
 
@@ -1200,39 +1228,18 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         raise ValueError(f"Received unsupported stream event:\n\n{event}")
 
 
+@functools.cache
 def _mime_type_to_format(mime_type: str) -> str:
-    mime_to_format = {
-        # Image formats
-        "image/png": "png",
-        "image/jpeg": "jpeg", 
-        "image/gif": "gif",
-        "image/webp": "webp",
-        # File formats
-        "application/pdf": "pdf",
-        "text/csv": "csv",
-        "application/msword": "doc",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-        "application/vnd.ms-excel": "xls",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
-        "text/html": "html",
-        "text/plain": "txt",
-        "text/markdown": "md",
-        # Video formats
-        "video/x-matroska": "mkv",
-        "video/quicktime": "mov",
-        "video/mp4": "mp4",
-        "video/webm": "webm",
-        "video/x-flv": "flv",
-        "video/mpeg": "mpeg",
-        "video/x-ms-wmv": "wmv",
-        "video/3gpp": "three_gp",
-    }
-    
-    if mime_type in mime_to_format:
-        return mime_to_format[mime_type]
+    if "/" not in mime_type:
+        raise ValueError(
+            f"Invalid MIME type format: {mime_type}. Expected format: 'type/subtype'"
+        )
+
+    if mime_type in MIME_TO_FORMAT:
+        return MIME_TO_FORMAT[mime_type]
     
     # Fallback to original method of splitting on "/" for simple cases
-    all_formats = set(mime_to_format.values())
+    all_formats = set(MIME_TO_FORMAT.values())
     format_part = mime_type.split("/")[1]
     if format_part in all_formats:
         return format_part

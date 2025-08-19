@@ -1171,6 +1171,31 @@ def test__lc_content_to_bedrock_mime_types() -> None:
     assert bedrock_content == expected_content
 
 
+def test__lc_content_to_bedrock_mime_types_invalid() -> None:
+    with pytest.raises(ValueError, match="Invalid MIME type format"):
+        _lc_content_to_bedrock([
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "mediaType": "invalidmimetype",
+                    "data": base64.b64encode(b"test_data").decode("utf-8"),
+                },
+            }
+        ])
+    
+    with pytest.raises(ValueError, match="Unsupported MIME type"):
+        _lc_content_to_bedrock([
+            {
+                "type": "file",
+                "sourceType": "base64",
+                "mimeType": "application/unknown-format",
+                "data": base64.b64encode(b"test_data").decode("utf-8"),
+                "name": "test_document.xyz",
+            }
+        ])
+
+
 def test__get_provider() -> None:
     llm = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
