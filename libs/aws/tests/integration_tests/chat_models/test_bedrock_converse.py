@@ -455,7 +455,7 @@ def test_structured_output_thinking_force_tool_use() -> None:
         },
     }
     with pytest.raises(llm.client.exceptions.ValidationException):
-        response = llm.client.converse(messages=messages, **params)
+        llm.client.converse(messages=messages, **params)
 
 
 def test_bedrock_pdf_inputs() -> None:
