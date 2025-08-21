@@ -26,6 +26,7 @@ from langchain_aws.function_calling import convert_to_anthropic_tool
 def test__merge_messages() -> None:
     messages = [
         SystemMessage("foo"),  # type: ignore[misc]
+        SystemMessage("barfoo"),  # type: ignore[misc]
         HumanMessage("bar"),  # type: ignore[misc]
         AIMessage(  # type: ignore[misc]
             [
@@ -52,7 +53,12 @@ def test__merge_messages() -> None:
         HumanMessage("next thing"),  # type: ignore[misc]
     ]
     expected = [
-        SystemMessage("foo"),  # type: ignore[misc]
+        SystemMessage(
+            [
+                {'type': 'text', 'text': 'foo'},
+                {'type': 'text', 'text': 'barfoo'}
+            ]
+        ),  # type: ignore[misc]
         HumanMessage("bar"),  # type: ignore[misc]
         AIMessage(  # type: ignore[misc]
             [
@@ -344,6 +350,34 @@ def test__format_anthropic_messages_system_message_list_content() -> None:
 
     actual = _format_anthropic_messages(messages)
     assert expected == actual
+
+def test__format_anthropic_multiple_system_messages() -> None:
+    """Test that multiple system messages can be passed, and that none of them are required to be at position 0."""
+    system1 = SystemMessage("foo")  # type: ignore[misc]
+    system2 = SystemMessage("bar")  # type: ignore[misc]
+    human = HumanMessage("Hello!")
+    messages = [human, system1, system2]
+    expected_system = [
+        {'text': 'foo', 'type': 'text'},
+        {'text': 'bar', 'type': 'text'}
+    ]
+    expected_messages = [
+        {"role": "user", "content": "Hello!"}
+    ]
+
+    actual_system, actual_messages = _format_anthropic_messages(messages)
+    assert expected_system == actual_system
+    assert expected_messages == actual_messages
+
+def test__format_anthropic_nonconsecutive_system_messages() -> None:
+    """Test that we fail when non-consecutive system messages are passed."""
+    system1 = SystemMessage("foo")  # type: ignore[misc]
+    system2 = SystemMessage("bar")  # type: ignore[misc]
+    human = HumanMessage("Hello!")
+    messages = [system1, human, system2]
+
+    with pytest.raises(ValueError, match="Received multiple non-consecutive system messages."):
+        _format_anthropic_messages(messages)
 
 
 @pytest.fixture()
