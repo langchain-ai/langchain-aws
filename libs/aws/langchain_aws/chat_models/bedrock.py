@@ -833,6 +833,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
 
         added_model_name = False
+        # Track guardrails trace information for callback handling
+        guardrails_trace_info = None
+        
         for chunk in self._prepare_input_and_invoke_stream(
             prompt=prompt,
             system=system,
@@ -852,6 +855,12 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 delta = chunk.text
                 response_metadata = None
                 if generation_info := chunk.generation_info:
+                    # Check for guardrail intervention in the streaming chunk
+                    services_trace = self._get_bedrock_services_signal(generation_info)
+                    if services_trace.get("signal") and run_manager:
+                        # Store trace info for potential callback
+                        guardrails_trace_info = services_trace
+                    
                     usage_metadata = generation_info.pop("usage_metadata", None)
                     response_metadata = generation_info
                     if not added_model_name:
@@ -873,6 +882,15 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                         generation_chunk.text, chunk=generation_chunk
                     )
                 yield generation_chunk
+        
+        # If guardrails intervened during streaming, notify the callback handler
+        if guardrails_trace_info and run_manager:
+            run_manager.on_llm_error(
+                Exception(
+                    f"Error raised by bedrock service: {guardrails_trace_info.get('reason')}"
+                ),
+                **guardrails_trace_info,
+            )
 
     def _generate(
         self,
