@@ -565,6 +565,9 @@ class ChatBedrockConverse(BaseChatModel):
                 )
             )
             or
+            # OpenAI gpt-oss models
+            (provider == "openai" and "gpt-oss" in model_id_lower)
+            or
             # Cohere Command R models
             (provider == "cohere" and "command-r" in model_id_lower)
         ):
