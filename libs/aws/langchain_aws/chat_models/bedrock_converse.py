@@ -649,11 +649,32 @@ class ChatBedrockConverse(BaseChatModel):
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
-        
-         # Create bedrock client for control plane API call
-        if self.bedrock_client is None:
-            self.bedrock_client = create_aws_client(
+
+        # Skip creating new client if passed in constructor
+        if self.client is None:
+            self.client = create_aws_client(
                 region_name=self.region_name,
+                credentials_profile_name=self.credentials_profile_name,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                aws_session_token=self.aws_session_token,
+                endpoint_url=self.endpoint_url,
+                config=self.config,
+                service_name="bedrock-runtime",
+            )
+        
+        # Create bedrock client for control plane API call
+        if self.bedrock_client is None:
+            bedrock_client_cfg = {}
+            if self.client:
+                try:
+                    if hasattr(self.client, 'meta') and hasattr(self.client.meta, 'region_name'):
+                        bedrock_client_cfg['region_name'] = self.client.meta.region_name
+                except (AttributeError, TypeError):
+                    pass
+                
+            self.bedrock_client = create_aws_client(
+                region_name=self.region_name or bedrock_client_cfg.get('region_name'),
                 credentials_profile_name=self.credentials_profile_name,
                 aws_access_key_id=self.aws_access_key_id,
                 aws_secret_access_key=self.aws_secret_access_key,
@@ -662,7 +683,7 @@ class ChatBedrockConverse(BaseChatModel):
                 config=self.config,
                 service_name="bedrock",
             )
-            
+
         # Handle streaming configuration for application inference profiles
         if "application-inference-profile" in self.model_id:
             self._configure_streaming_for_resolved_model()
@@ -677,8 +698,8 @@ class ChatBedrockConverse(BaseChatModel):
                     "thinking", {}
                 )
                 if (
-                    "claude-3-7-sonnet" in self._get_base_model()
-                    and thinking_params.get("type") == "enabled"
+                        "claude-3-7-sonnet" in self._get_base_model()
+                        and thinking_params.get("type") == "enabled"
                 ):
                     self.supports_tool_choice_values = ()
                 else:
@@ -689,19 +710,6 @@ class ChatBedrockConverse(BaseChatModel):
                 self.supports_tool_choice_values = ("auto", "any", "tool")
             else:
                 self.supports_tool_choice_values = ()
-
-        # Skip creating new client if passed in constructor
-        if self.client is None:
-            self.client = create_aws_client(
-                region_name=self.region_name,
-                credentials_profile_name=self.credentials_profile_name,
-                aws_access_key_id=self.aws_access_key_id,
-                aws_secret_access_key=self.aws_secret_access_key,
-                aws_session_token=self.aws_session_token,
-                endpoint_url=self.endpoint_url,
-                config=self.config,
-                service_name="bedrock-runtime",
-            )
 
         if self.guard_last_turn_only and not self.guardrail_config:
             raise ValueError(

@@ -792,14 +792,26 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         # Create bedrock client for control plane API call
         if self.bedrock_client is None:
+            # If client was provided but bedrock_client wasn't, try to extract config from client
+            bedrock_client_cfg = {}
+            if self.client:
+                try:
+                    if hasattr(self.client, 'meta') and hasattr(self.client.meta, 'region_name'):
+                        bedrock_client_cfg['region_name'] = self.client.meta.region_name
+                    if hasattr(self.client, '_client_config'):
+                        bedrock_client_cfg['config'] = self.client._client_config
+                except (AttributeError, TypeError):
+                    pass
+                
+            # Prioritize directly passed parameters over those extracted from client
             self.bedrock_client = create_aws_client(
-                region_name=self.region_name,
+                region_name=self.region_name or bedrock_client_cfg.get('region_name'),
                 credentials_profile_name=self.credentials_profile_name,
                 aws_access_key_id=self.aws_access_key_id,
                 aws_secret_access_key=self.aws_secret_access_key,
                 aws_session_token=self.aws_session_token,
                 endpoint_url=self.endpoint_url,
-                config=self.config,
+                config=self.config or bedrock_client_cfg.get('config'),
                 service_name="bedrock",
             )
 
