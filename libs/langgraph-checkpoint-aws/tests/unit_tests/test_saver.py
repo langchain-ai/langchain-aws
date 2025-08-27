@@ -7,7 +7,6 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import CheckpointTuple
-from langgraph.constants import ERROR
 from pydantic import SecretStr
 
 from langgraph_checkpoint_aws.models import (
@@ -674,7 +673,7 @@ class TestBedrockSessionSaver:
         # Arrange
         task_id = "test_task_id"
         task_path = "test_task_path"
-        writes = [(ERROR, "__start__")]
+        writes = [("__error__", "__start__")]
         runnable_config["configurable"]["checkpoint_id"] = "test_checkpoint_id"
 
         session_saver._create_session_invocation = Mock()
