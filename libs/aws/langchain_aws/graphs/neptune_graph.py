@@ -171,9 +171,7 @@ class BaseNeptuneGraph(ABC):
         return edge_properties
 
     def _refresh_schema(self) -> None:
-        """
-        Refreshes the Neptune graph schema information.
-        """
+        """Refreshes the Neptune graph schema information."""
 
         types: Dict[str, str] = {
             "str": "STRING",
@@ -224,6 +222,7 @@ class NeptuneAnalyticsGraph(BaseNeptuneGraph):
         limit the permissions granted to the credentials used with this tool.
 
         See https://python.langchain.com/docs/security for more information.
+
     """
 
     def __init__(
@@ -310,9 +309,7 @@ class NeptuneAnalyticsGraph(BaseNeptuneGraph):
             return summary
 
     def _refresh_schema(self) -> None:
-        """
-        Refreshes the Neptune graph schema information.
-        """
+        """Refreshes the Neptune graph schema information."""
         pg_schema_query = """
         CALL neptune.graph.pg_schema() 
         YIELD schema
@@ -366,6 +363,7 @@ class NeptuneGraph(BaseNeptuneGraph):
         limit the permissions granted to the credentials used with this tool.
 
         See https://python.langchain.com/docs/security for more information.
+
     """
 
     def __init__(

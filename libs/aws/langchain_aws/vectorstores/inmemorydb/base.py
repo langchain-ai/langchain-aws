@@ -324,6 +324,7 @@ class InMemoryVectorStore(VectorStore):
 
         Raises:
             ValueError: If the number of metadatas does not match the number of texts.
+
         """
         try:
             import redis  # type: ignore[import-untyped] # noqa: F401
@@ -461,6 +462,7 @@ class InMemoryVectorStore(VectorStore):
         Raises:
             ValueError: If the number of metadatas does not match the number of texts.
             ImportError: If the redis python package is not installed.
+
         """
         instance, _ = cls.from_texts_return_keys(
             texts,
@@ -518,6 +520,7 @@ class InMemoryVectorStore(VectorStore):
         Raises:
             ValueError: If the index does not exist.
             ImportError: If the redis python package is not installed.
+
         """
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
 
@@ -584,6 +587,7 @@ class InMemoryVectorStore(VectorStore):
         Raises:
             ValueError: If the redis python package is not installed.
             ValueError: If the ids (keys in redis) are not provided
+
         """
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
 
@@ -635,6 +639,7 @@ class InMemoryVectorStore(VectorStore):
 
         Returns:
             bool: Whether or not the drop was successful.
+
         """
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
 
@@ -691,6 +696,7 @@ class InMemoryVectorStore(VectorStore):
 
         Returns:
             List[str]: List of ids added to the vectorstore
+
         """
         ids = []
 
@@ -796,6 +802,7 @@ class InMemoryVectorStore(VectorStore):
         Returns:
             List[Tuple[Document, float]]: A list of documents that are
                 most similar to the query with the distance for each document.
+
         """
         try:
             import redis
@@ -877,6 +884,7 @@ class InMemoryVectorStore(VectorStore):
         Returns:
             List[Document]: A list of documents that are most similar to the query
                 text.
+
         """
         query_embedding = self._embeddings.embed_query(query)
         return self.similarity_search_by_vector(
@@ -913,6 +921,7 @@ class InMemoryVectorStore(VectorStore):
         Returns:
             List[Document]: A list of documents that are most similar to the query
                 text.
+
         """
         try:
             import redis
@@ -1001,6 +1010,7 @@ class InMemoryVectorStore(VectorStore):
 
         Returns:
             List[Document]: A list of Documents selected by maximal marginal relevance.
+
         """
         # Embed the query
         query_embedding = self._embeddings.embed_query(query)
@@ -1048,6 +1058,7 @@ class InMemoryVectorStore(VectorStore):
 
         Returns:
             Dict[str, Any]: Collected metadata.
+
         """
         # new metadata dict as modified by this method
         meta = {}
@@ -1143,6 +1154,7 @@ class InMemoryVectorStore(VectorStore):
 
         Returns:
             query: Query object.
+
         """
         try:
             from redis.commands.search.query import Query
@@ -1253,6 +1265,7 @@ class InMemoryVectorStore(VectorStore):
 
         if it's FLOAT32, we need to round the distance to 4 decimal places
         otherwise, round to 7 decimal places.
+
         """
         if self._schema.content_vector.datatype == "FLOAT32":
             return round(float(distance), 4)
@@ -1312,6 +1325,7 @@ def _generate_field_schema(data: Dict[str, Any]) -> Dict[str, Any]:
     Raises:
         ValueError: If a metadata field cannot be categorized into any of
             the three known types.
+
     """
     result: Dict[str, Any] = {
         "text": [],
@@ -1376,6 +1390,7 @@ def _prepare_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
     Raises:
         ValueError: If any metadata value is not one of the known
             types (string, int, float, or list of strings).
+
     """
 
     def raise_error(key: str, value: Any) -> None:

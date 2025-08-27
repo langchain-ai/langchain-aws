@@ -23,14 +23,14 @@ class AmazonQ(
 
     Make sure the credentials / roles used have the required policies to
     access the Amazon Q service.
+
     """
 
     region_name: Optional[str] = None
     """AWS region name. If not provided, will be extracted from environment."""
 
     credentials: Optional[Any] = None
-    """Amazon Q credentials used to instantiate the client if the client is not 
-    provided."""
+    """Amazon Q credentials used to instantiate the client if the client is not provided."""  # noqa: E501
 
     client: Optional[Any] = None
     """Amazon Q client."""
@@ -89,6 +89,7 @@ class AmazonQ(
                 application_id=your_app_id
             )
             response = model.invoke("Tell me a joke")
+
         """
         try:
             # Prepare the request

@@ -45,9 +45,7 @@ logger = logging.getLogger(__name__)
 
 
 class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
-    """
-    Invoke a Bedrock Agent
-    """
+    """Invoke a Bedrock Agent"""
 
     agent_id: Optional[str]
     """Bedrock Agent Id"""
@@ -158,12 +156,13 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             enable_trace: Boolean flag to specify whether trace should be enabled when
                 invoking the agent
             enable_human_input: Boolean flag to specify whether a human as a tool should
-                 be enabled for the agent.
+                be enabled for the agent.
             enable_code_interpreter: Boolean flag to specify whether a code interpreter
             should be enabled for this session.
             **kwargs: Additional arguments
         Returns:
             BedrockAgentsRunnable configured to invoke the Bedrock agent
+
         """
         client_params, session = get_boto_session(
             credentials_profile_name=credentials_profile_name,
@@ -234,6 +233,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
 
         Returns:
             Union[List[BedrockAgentAction], BedrockAgentFinish]
+
         """
         config = ensure_config(config)
         callback_manager = CallbackManager.configure(

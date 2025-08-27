@@ -67,6 +67,7 @@ DocumentAttributeValueType = Union[str, int, List[str], None]
 """Possible types of a DocumentAttributeValue.
 
 Dates are also represented as str.
+
 """
 
 
@@ -135,8 +136,10 @@ class DocumentAttributeValue(BaseModel, extra="allow"):  # type: ignore[call-arg
     @property
     def value(self) -> DocumentAttributeValueType:
         """The only defined document attribute value or None.
-        According to Amazon Kendra, you can only provide one
-        value for a document attribute.
+
+        According to Amazon Kendra, you can only provide one value for a document
+        attribute.
+
         """
         if self.DateValue:
             return self.DateValue
@@ -192,6 +195,7 @@ class ResultItem(BaseModel, ABC, extra="allow"):  # type: ignore[call-arg]
             * title
             * excerpt
             * document_attributes
+
         """
         return {}
 
@@ -234,10 +238,10 @@ class QueryResultItem(ResultItem):
     FeedbackToken: Optional[str] = None
     """Identifies a particular result from a particular query."""
     Format: Optional[str] = None
-    """
-    If the Type is ANSWER, then format is either:
+    """If the Type is ANSWER, then format is either:
         * TABLE: a table excerpt is returned in TableExcerpt;
         * TEXT: a text excerpt is returned in DocumentExcerpt.
+
     """
     Type: Optional[str] = None
     """Type of result: DOCUMENT or QUESTION_ANSWER or ANSWER"""
@@ -298,6 +302,7 @@ class QueryResult(BaseModel, extra="allow"):  # type: ignore[call-arg]
         * Relevant suggested answers: either a text excerpt or table excerpt.
         * Matching FAQs or questions-answer from your FAQ file.
         * Documents including an excerpt of each document with its title.
+
     """
 
     ResultItems: List[QueryResultItem]
@@ -310,6 +315,7 @@ class RetrieveResult(BaseModel, extra="allow"):  # type: ignore[call-arg]
 
     It is composed of:
         * relevant passages or text excerpts given an input query.
+
     """
 
     QueryId: str
@@ -333,41 +339,50 @@ class AmazonKendraRetriever(BaseRetriever):
     Args:
         index_id: Kendra index id
 
-        region_name: The aws region e.g., `us-west-2`.
-            Falls back to AWS_REGION/AWS_DEFAULT_REGION env variable
-            or region specified in ~/.aws/config.
+        region_name: The aws region e.g., ``'us-west-2'``.
+            Falls back to ``AWS_REGION``/``AWS_DEFAULT_REGION`` env variable
+            or region specified in ``~/.aws/config``.
 
-        credentials_profile_name: The name of the profile in the ~/.aws/credentials
-            or ~/.aws/config files, which has either access keys or role information
+        credentials_profile_name: The name of the profile in the ``~/.aws/credentials``
+            or ``~/.aws/config`` files, which has either access keys or role information
             specified. If not specified, the default credential profile or, if on an
             EC2 instance, credentials from IMDS will be used.
 
-        aws_access_key_id: AWS access key id. If provided, aws_secret_access_key must
-            also be provided. If not specified, the default credential profile or, if
-            on an EC2 instance, credentials from IMDS will be used. See:
-            https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-            If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
-
-        aws_secret_access_key: AWS secret_access_key. If provided, aws_access_key_id
+        aws_access_key_id: AWS access key id. If provided, ``aws_secret_access_key``
             must also be provided. If not specified, the default credential profile or,
-            if on an EC2 instance, credentials from IMDS will be used. See:
-            https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-            If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment
+            if on an EC2 instance, credentials from IMDS will be used.
+
+            See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+            If not provided, will be read from ``AWS_ACCESS_KEY_ID`` environment
             variable.
 
-        aws_session_token: AWS session token. If provided, aws_access_key_id and
-            aws_secret_access_key must also be provided. Not required unless using
-            temporary credentials. See:
-            https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-            If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
+        aws_secret_access_key: AWS secret_access_key. If provided, ``aws_access_key_id``
+            must also be provided. If not specified, the default credential profile or,
+            if on an EC2 instance, credentials from IMDS will be used.
 
-        endpoint_url: Needed if you don't want to default to us-east-1 endpoint.
+            See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-        config: An optional botocore.config.Config instance to pass to the client.
+            If not provided, will be read from ``AWS_SECRET_ACCESS_KEY`` environment
+            variable.
+
+        aws_session_token: AWS session token. If provided, ``aws_access_key_id`` and
+            ``aws_secret_access_key`` must also be provided. Not required unless using
+            temporary credentials.
+
+            See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+            If not provided, will be read from ``AWS_SESSION_TOKEN`` environment
+            variable.
+
+        endpoint_url: Needed if you don't want to default to ``'us-east-1'`` endpoint.
+
+        config: An optional ``botocore.config.Config`` instance to pass to the client.
 
         top_k: No of results to return
 
         attribute_filter: Additional filtering of results based on metadata
+
             See: https://docs.aws.amazon.com/kendra/latest/APIReference
 
         page_content_formatter: generates the Document page_content
@@ -463,9 +478,9 @@ class AmazonKendraRetriever(BaseRetriever):
         return top_docs
 
     def _filter_by_score_confidence(self, docs: List[Document]) -> List[Document]:
-        """
-        Filter out the records that have a score confidence
-        less than the required threshold.
+        """Filter out the records that have a score confidence less than the required
+        threshold.
+
         """
         if not self.min_score_confidence:
             return docs

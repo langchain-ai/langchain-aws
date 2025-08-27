@@ -79,6 +79,7 @@ class AmazonS3Vectors(VectorStore):
             vector_store.similarity_search_with_score(
                 "adventures in space", filter={"genre": {"$eq": "family"}}
             )
+
     """
 
     def __init__(
@@ -159,6 +160,7 @@ class AmazonS3Vectors(VectorStore):
                 the client.
             client (Any): Boto3 client for s3vectors
             kwargs (Any): Additional keyword arguments.
+
         """
         self.vector_bucket_name = vector_bucket_name
         self.index_name = index_name
@@ -222,6 +224,7 @@ class AmazonS3Vectors(VectorStore):
 
         Returns:
             List[str]: List of ids added to the vectorstore
+
         """
         # Convert iterable to list to allow indexing and len operations
         texts_list = list(texts)
@@ -290,6 +293,7 @@ class AmazonS3Vectors(VectorStore):
 
         Returns:
             Optional[bool]: Always True.
+
         """
 
         if ids is None:
@@ -317,6 +321,7 @@ class AmazonS3Vectors(VectorStore):
 
         Returns:
             List of Documents.
+
         """
 
         docs = []
@@ -373,6 +378,7 @@ class AmazonS3Vectors(VectorStore):
 
         Returns:
             List of Documents most similar to the query.
+
         """
         if self.embeddings is None:
             raise ValueError("Embeddings object is required for similarity search")
@@ -398,6 +404,7 @@ class AmazonS3Vectors(VectorStore):
 
         Returns:
             List of Tuples of (doc, distance).
+
         """
         if self.embeddings is None:
             raise ValueError("Embeddings object is required for similarity search")
@@ -434,6 +441,7 @@ class AmazonS3Vectors(VectorStore):
 
         Returns:
             List of Documents most similar to the query vector.
+
         """
         response = self.client.query_vectors(
             vectorBucketName=self.vector_bucket_name,
@@ -542,6 +550,7 @@ class AmazonS3Vectors(VectorStore):
 
         Returns:
             AmazonS3Vectors initialized from texts and embeddings.
+
         """
 
         instance = cls(

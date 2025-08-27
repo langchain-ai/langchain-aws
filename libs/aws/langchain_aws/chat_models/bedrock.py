@@ -311,8 +311,7 @@ def convert_messages_to_prompt_openai(messages: List[BaseMessage]) -> str:
 
 
 def _format_image(image_url: str) -> Dict:
-    """
-    Formats an image of format data:image/jpeg;base64,{b64_string}
+    """Formats an image of format data:image/jpeg;base64,{b64_string}
     to a dict for anthropic api
 
     {
@@ -322,6 +321,7 @@ def _format_image(image_url: str) -> Dict:
     }
 
     And throws an error if it's not a b64 image
+
     """
     regex = r"^data:(?P<media_type>image/.+);base64,(?P<data>.+)$"
     match = re.match(regex, image_url)
@@ -657,8 +657,9 @@ def _format_anthropic_messages(
 
 
 class ChatPromptAdapter:
-    """Adapter class to prepare the inputs from Langchain to prompt format
-    that Chat model expects.
+    """Adapter class to prepare the inputs from Langchain to prompt format that Chat
+    model expects.
+
     """
 
     @classmethod
@@ -730,7 +731,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     """Stop sequence inference parameter from new Bedrock ``converse`` API providing
     a sequence of characters that causes a model to stop generating a response. See
     https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_InferenceConfiguration.html
-    for more."""
+    for more.
+    
+    """
 
     @property
     def _llm_type(self) -> str:
@@ -1110,6 +1113,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 {"type": "function", "function": {"name": <<tool_name>>}}.
             **kwargs: Any additional parameters to pass to the
                 :class:`~langchain.runnable.Runnable` constructor.
+
         """
         if self.beta_use_converse_api:
             if isinstance(tool_choice, bool):

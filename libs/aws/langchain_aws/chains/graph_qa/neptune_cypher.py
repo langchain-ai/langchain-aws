@@ -113,6 +113,7 @@ def create_neptune_opencypher_qa_chain(
             graph=graph
         )
         response = chain.invoke({"query": "your_query_here"})
+
     """
 
     if allow_dangerous_requests is not True:

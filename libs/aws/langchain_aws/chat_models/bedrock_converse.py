@@ -25,7 +25,7 @@ from typing import (
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
-from langchain_core.language_models.chat_models import LangSmithParams
+from langchain_core.language_models.base import LangSmithParams
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -337,6 +337,7 @@ class ChatBedrockConverse(BaseChatModel):
               'RetryAttempts': 0},
              'stopReason': 'end_turn',
              'metrics': {'latencyMs': 1290}}
+
     """  # noqa: E501
 
     client: Any = Field(default=None, exclude=True)  #: :meta private:
@@ -346,18 +347,20 @@ class ChatBedrockConverse(BaseChatModel):
     """The bedrock client for making control plane API calls"""
 
     model_id: str = Field(alias="model")
-    """Id of the model to call.
+    """ID of the model to call.
     
     e.g., ``"anthropic.claude-3-sonnet-20240229-v1:0"``. This is equivalent to the 
     modelID property in the list-foundation-models api. For custom and provisioned 
     models, an ARN value is expected. See 
     https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html#model-ids-arns 
     for a list of all supported built-in models.
+
     """
 
     base_model_id: Optional[str] = Field(default=None, alias="base_model")
     """An optional field to pass the base model id. If provided, this will be used over 
     the value of model_id to identify the base model.
+
     """
 
     max_tokens: Optional[int] = None
@@ -376,13 +379,16 @@ class ChatBedrockConverse(BaseChatModel):
     
     For example, if you choose a value of 0.8 for topP, the model selects from 
     the top 80% of the probability distribution of tokens that could be next in the 
-    sequence."""
+    sequence.
+    
+    """
 
     region_name: Optional[str] = None
     """The aws region, e.g., `us-west-2`. 
     
-    Falls back to AWS_REGION or AWS_DEFAULT_REGION env variable or region specified in 
-    ~/.aws/config in case it is not provided here.
+    Falls back to ``AWS_REGION`` or AWS_DE``FAULT_REGION env variable or region
+    specified in  ``~/.aws/config`` in case it is not provided here.
+
     """
 
     credentials_profile_name: Optional[str] = Field(default=None, exclude=True)
@@ -392,6 +398,7 @@ class ChatBedrockConverse(BaseChatModel):
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used. 
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
     """
 
     aws_access_key_id: Optional[SecretStr] = Field(
@@ -405,6 +412,7 @@ class ChatBedrockConverse(BaseChatModel):
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     
     If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+
     """
 
     aws_secret_access_key: Optional[SecretStr] = Field(
@@ -417,7 +425,8 @@ class ChatBedrockConverse(BaseChatModel):
     credentials from IMDS will be used.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     
-    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+    If not provided, will be read from ``AWS_SECRET_ACCESS_KEY`` environment variable.
+
     """
 
     aws_session_token: Optional[SecretStr] = Field(
@@ -429,7 +438,8 @@ class ChatBedrockConverse(BaseChatModel):
     also be provided. Not required unless using temporary credentials.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     
-    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
+    If not provided, will be read from ``AWS_SESSION_TOKEN`` environment variable.
+
     """
 
     provider: str = ""
@@ -439,6 +449,7 @@ class ChatBedrockConverse(BaseChatModel):
     'amazon' in 'amazon.titan-text-express-v1'. This value should be provided for model 
     ids that do not have the provider in them, like custom and provisioned models that 
     have an ARN associated with them.
+
     """
 
     endpoint_url: Optional[str] = Field(default=None, alias="base_url")
@@ -455,6 +466,7 @@ class ChatBedrockConverse(BaseChatModel):
     
     Parameters beyond the base set of inference parameters that Converse supports in the
     inferenceConfig field.
+
     """
 
     additional_model_response_field_paths: Optional[List[str]] = None
@@ -463,6 +475,7 @@ class ChatBedrockConverse(BaseChatModel):
     Converse returns the requested fields as a JSON Pointer object in the 
     additionalModelResponseFields field. The following is example JSON for 
     additionalModelResponseFieldPaths.
+
     """
 
     supports_tool_choice_values: Optional[Sequence[Literal["auto", "any", "tool"]]] = (
@@ -473,6 +486,7 @@ class ChatBedrockConverse(BaseChatModel):
     Inferred if not specified. Inferred as ('auto', 'any', 'tool') if a 'claude-3' 
     model is used, ('auto', 'any') if a 'mistral-large' model is used, 
     ('auto') if a 'nova' model is used, empty otherwise.
+
     """
 
     performance_config: Optional[Mapping[str, Any]] = Field(
@@ -496,6 +510,7 @@ class ChatBedrockConverse(BaseChatModel):
     
     LangChain will relay them unchanged, enabling any combination of content
     block types. This is useful for custom guardrail wrapping.
+
     """
 
     model_config = ConfigDict(
@@ -510,6 +525,7 @@ class ChatBedrockConverse(BaseChatModel):
             cache_type: Type of cache point. Default is "default".
         Returns:
             Dictionary containing prompt caching configuration.
+
         """
         return {"cachePoint": {"type": cache_type}}
 
@@ -543,6 +559,7 @@ class ChatBedrockConverse(BaseChatModel):
             True: Full streaming support
             "no_tools": Streaming supported but not with tools
             False: No streaming support
+
         """
         # Determine if the model supports plain-text streaming (ConverseStream)
         # Here we check based on the updated AWS documentation.
@@ -1738,11 +1755,11 @@ def _upsert_tool_calls_to_bedrock_content(
 
 
 def _format_openai_image_url(image_url: str) -> Dict:
-    """
-    Formats an image of format data:image/jpeg;base64,{b64_string}
-    to a dict for bedrock api.
+    """Formats an image of format data:image/jpeg;base64,{b64_string} to a dict for
+    bedrock api.
 
     And throws an error if url is not a b64 image.
+
     """
     regex = r"^data:image/(?P<media_type>.+);base64,(?P<data>.+)$"
     match = re.match(regex, image_url)
@@ -1758,11 +1775,11 @@ def _format_openai_image_url(image_url: str) -> Dict:
 
 
 def _format_openai_video_url(video_url: str) -> Dict:
-    """
-    Formats a video of format data:video/mp4;base64,{b64_string}
-    to a dict for bedrock api.
+    """Formats a video of format data:video/mp4;base64,{b64_string} to a dict for
+    bedrock api.
 
     And throws an error if url is not a b64 video.
+
     """
     regex = r"^data:video/(?P<media_type>.+);base64,(?P<data>.+)$"
     match = re.match(regex, video_url)

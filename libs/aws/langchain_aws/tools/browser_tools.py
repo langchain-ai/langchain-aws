@@ -1,5 +1,6 @@
 """Thread-aware browser tools that work with the browser session manager."""
 
+import json
 import logging
 from typing import Any, Dict, Optional, Type
 from urllib.parse import urlparse
@@ -71,7 +72,7 @@ class ThreadAwareBaseTool(BaseTool):
         thread_id = "default"
 
         if config and isinstance(config, dict):
-            thread_id = config["configurable"]["thread_id"]
+            thread_id = config.get("configurable", {})["thread_id"]
 
         return thread_id
 
@@ -373,7 +374,7 @@ class ThreadAwareExtractTextTool(ThreadAwareBaseTool):
         try:
             # Import BeautifulSoup
             try:
-                from bs4 import BeautifulSoup
+                from bs4 import BeautifulSoup  # type: ignore[import]
             except ImportError:
                 raise ImportError(
                     "The 'beautifulsoup4' package is required to use this tool."
@@ -411,7 +412,7 @@ class ThreadAwareExtractTextTool(ThreadAwareBaseTool):
         try:
             # Import BeautifulSoup
             try:
-                from bs4 import BeautifulSoup
+                from bs4 import BeautifulSoup  # type: ignore[import]
             except ImportError:
                 raise ImportError(
                     "The 'beautifulsoup4' package is required to use this tool."
@@ -456,9 +457,7 @@ class ThreadAwareExtractHyperlinksTool(ThreadAwareBaseTool):
         try:
             # Import BeautifulSoup
             try:
-                import json
-
-                from bs4 import BeautifulSoup
+                from bs4 import BeautifulSoup  # type: ignore[import]
             except ImportError:
                 raise ImportError(
                     "The 'beautifulsoup4' package is required to use this tool."
@@ -505,9 +504,7 @@ class ThreadAwareExtractHyperlinksTool(ThreadAwareBaseTool):
         try:
             # Import BeautifulSoup
             try:
-                import json
-
-                from bs4 import BeautifulSoup
+                from bs4 import BeautifulSoup  # type: ignore[import]
             except ImportError:
                 raise ImportError(
                     "The 'beautifulsoup4' package is required to use this tool."
@@ -705,7 +702,7 @@ def create_thread_aware_tools(
     """
     # Import all required tool inputs
     try:
-        import bs4  # noqa: F401
+        import bs4  # noqa: F401  # type: ignore[import]
     except ImportError:
         import warnings
 
