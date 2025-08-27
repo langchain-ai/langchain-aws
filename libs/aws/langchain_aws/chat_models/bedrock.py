@@ -95,16 +95,15 @@ def _convert_one_message_to_text_llama3(message: BaseMessage) -> str:
         )
     elif isinstance(message, HumanMessage):
         message_text = (
-            f"<|start_header_id|>user" f"<|end_header_id|>{message.content}<|eot_id|>"
+            f"<|start_header_id|>user<|end_header_id|>{message.content}<|eot_id|>"
         )
     elif isinstance(message, AIMessage):
         message_text = (
-            f"<|start_header_id|>assistant"
-            f"<|end_header_id|>{message.content}<|eot_id|>"
+            f"<|start_header_id|>assistant<|end_header_id|>{message.content}<|eot_id|>"
         )
     elif isinstance(message, SystemMessage):
         message_text = (
-            f"<|start_header_id|>system" f"<|end_header_id|>{message.content}<|eot_id|>"
+            f"<|start_header_id|>system<|end_header_id|>{message.content}<|eot_id|>"
         )
     else:
         raise ValueError(f"Got unknown type {message}")
@@ -128,21 +127,15 @@ def _convert_one_message_to_text_llama4(message: BaseMessage) -> str:
             f"<|header_start|>{message.role}<|header_end|>{message.content}<|eot|>"
         )
     elif isinstance(message, HumanMessage):
-        message_text = (
-            f"<|header_start|>user<|header_end|>{message.content}<|eot|>"
-        )
+        message_text = f"<|header_start|>user<|header_end|>{message.content}<|eot|>"
     elif isinstance(message, AIMessage):
         message_text = (
             f"<|header_start|>assistant<|header_end|>{message.content}<|eot|>"
         )
     elif isinstance(message, SystemMessage):
-        message_text = (
-            f"<|header_start|>system<|header_end|>{message.content}<|eot|>"
-        )
+        message_text = f"<|header_start|>system<|header_end|>{message.content}<|eot|>"
     elif isinstance(message, ToolMessage):
-        message_text = (
-            f"<|header_start|>ipython<|header_end|>{message.content}<|eom|>"
-        )
+        message_text = f"<|header_start|>ipython<|header_end|>{message.content}<|eom|>"
     else:
         raise ValueError(f"Got unknown type {message}")
 
@@ -194,7 +187,7 @@ def convert_messages_to_prompt_anthropic(
     """
     if messages is None:
         return ""
-    
+
     messages = messages.copy()  # don't mutate the original list
     if len(messages) > 0 and not isinstance(messages[-1], AIMessage):
         messages.append(AIMessage(content=""))
@@ -231,21 +224,13 @@ def convert_messages_to_prompt_mistral(messages: List[BaseMessage]) -> str:
 
 def _convert_one_message_to_text_deepseek(message: BaseMessage) -> str:
     if isinstance(message, ChatMessage):
-        message_text = (
-            f"<|{message.role}|>{message.content}"
-        )
+        message_text = f"<|{message.role}|>{message.content}"
     elif isinstance(message, HumanMessage):
-        message_text = (
-            f"<|User|>{message.content}"
-        )
+        message_text = f"<|User|>{message.content}"
     elif isinstance(message, AIMessage):
-        message_text = (
-            f"<|Assistant|>{message.content}"
-        )
+        message_text = f"<|Assistant|>{message.content}"
     elif isinstance(message, SystemMessage):
-        message_text = (
-            f"<|System|>{message.content}"
-        )
+        message_text = f"<|System|>{message.content}"
     else:
         raise ValueError(f"Got unknown type {message}")
 
@@ -288,30 +273,24 @@ def convert_messages_to_prompt_writer(messages: List[BaseMessage]) -> str:
 
 def _convert_one_message_to_text_openai(message: BaseMessage) -> str:
     if isinstance(message, SystemMessage):
-        message_text = (
-            f"<|start|>system<|message|>{message.content}<|end|>"
-        )
+        message_text = f"<|start|>system<|message|>{message.content}<|end|>"
     elif isinstance(message, ChatMessage):
         # developer role messages
-        message_text = (
-            f"<|start|>{message.role}<|message|>{message.content}<|end|>"
-        )
+        message_text = f"<|start|>{message.role}<|message|>{message.content}<|end|>"
     elif isinstance(message, HumanMessage):
-        message_text = (
-            f"<|start|>user<|message|>{message.content}<|end|>"
-        )
+        message_text = f"<|start|>user<|message|>{message.content}<|end|>"
     elif isinstance(message, AIMessage):
         message_text = (
             f"<|start|>assistant<|channel|>final<|message|>{message.content}<|end|>"
         )
     elif isinstance(message, ToolMessage):
-      # TODO: Tool messages in the OpenAI format should use "<|start|>{toolname} to=assistant<|message|>"
-      # Need to extract the tool name from the ToolMessage content or tool_call_id
-      # For now using generic "to=assistant" format as placeholder until we implement tool calling
-      # Will be resolved in follow-up PR with full tool support
-        message_text = (
-            f"<|start|>to=assistant<|channel|>commentary<|message|>{message.content}<|end|>"
-        )
+        # TODO: Tool messages in the OpenAI format should use
+        # "<|start|>{toolname} to=assistant<|message|>"
+        # Need to extract the tool name from the ToolMessage content or tool_call_id
+        # For now using generic "to=assistant" format as placeholder until we implement
+        # tool calling
+        # Will be resolved in follow-up PR with full tool support
+        message_text = f"<|start|>to=assistant<|channel|>commentary<|message|>{message.content}<|end|>"  # noqa: E501
     else:
         raise ValueError(f"Got unknown type {message}")
 
@@ -370,7 +349,7 @@ def _format_data_content_block(block: dict) -> dict:
                     "type": "base64",
                     "media_type": block["mime_type"],
                     "data": block["data"],
-                }
+                },
             }
         else:
             error_message = "Image data only supported through in-line base64 format."
@@ -473,9 +452,9 @@ def _format_anthropic_messages(
 
         if not isinstance(message.content, str):
             # parse as dict
-            assert isinstance(
-                message.content, list
-            ), "Anthropic message content must be str or list of dicts"
+            assert isinstance(message.content, list), (
+                "Anthropic message content must be str or list of dicts"
+            )
 
             # populate content
             content = []
@@ -505,19 +484,28 @@ def _format_anthropic_messages(
                             # Handle list content inside tool_result
                             processed_list = []
                             for list_item in content_item:
-                                if isinstance(list_item, dict) and list_item.get("type") == "image_url":
+                                if (
+                                    isinstance(list_item, dict)
+                                    and list_item.get("type") == "image_url"
+                                ):
                                     # Process image in list
-                                    source = _format_image(list_item["image_url"]["url"])
-                                    processed_list.append({"type": "image", "source": source})
+                                    source = _format_image(
+                                        list_item["image_url"]["url"]
+                                    )
+                                    processed_list.append(
+                                        {"type": "image", "source": source}
+                                    )
                                 else:
                                     # Keep other items as is
                                     processed_list.append(list_item)
                             # Add processed list to tool_result
-                            tool_blocks.append({
-                                "type": "tool_result",
-                                "tool_use_id": item.get("tool_use_id"),
-                                "content": processed_list
-                            })
+                            tool_blocks.append(
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": item.get("tool_use_id"),
+                                    "content": processed_list,
+                                }
+                            )
                         else:
                             # For other content types, keep as is
                             tool_blocks.append(item)
@@ -835,7 +823,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         added_model_name = False
         # Track guardrails trace information for callback handling
         guardrails_trace_info = None
-        
+
         for chunk in self._prepare_input_and_invoke_stream(
             prompt=prompt,
             system=system,
@@ -860,7 +848,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     if services_trace.get("signal") and run_manager:
                         # Store trace info for potential callback
                         guardrails_trace_info = services_trace
-                    
+
                     usage_metadata = generation_info.pop("usage_metadata", None)
                     response_metadata = generation_info
                     if not added_model_name:
@@ -882,7 +870,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                         generation_chunk.text, chunk=generation_chunk
                     )
                 yield generation_chunk
-        
+
         # If guardrails intervened during streaming, notify the callback handler
         if guardrails_trace_info and run_manager:
             run_manager.on_llm_error(
@@ -945,7 +933,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     else:
                         system = self.system_prompt_with_tools
             elif provider == "openai":
-                formatted_messages = ChatPromptAdapter.format_messages(provider, messages)
+                formatted_messages = ChatPromptAdapter.format_messages(
+                    provider, messages
+                )
             else:
                 prompt = ChatPromptAdapter.convert_messages_to_prompt(
                     provider=provider, messages=messages, model=self._get_base_model()

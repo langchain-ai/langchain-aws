@@ -1,4 +1,5 @@
 """Sagemaker Chat Model."""
+
 import io
 import logging
 from typing import Any, Dict, Iterator, List, Mapping, Optional

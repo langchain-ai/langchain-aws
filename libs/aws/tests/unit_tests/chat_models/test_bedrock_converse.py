@@ -487,8 +487,7 @@ def test__snake_to_camel_keys() -> None:
     assert _snake_to_camel_keys(_SNAKE_DICT) == _CAMEL_DICT
 
 
-def test__format_openai_image_url() -> None:
-    ...
+def test__format_openai_image_url() -> None: ...
 
 
 def test_standard_tracing_params() -> None:
@@ -1111,7 +1110,7 @@ def test__lc_content_to_bedrock_mime_types() -> None:
     video_data = base64.b64encode(b"video_test_data").decode("utf-8")
     image_data = base64.b64encode(b"image_test_data").decode("utf-8")
     file_data = base64.b64encode(b"file_test_data").decode("utf-8")
-    
+
     # Create content with one of each type
     content: List[Union[str, Dict[str, Any]]] = [
         {
@@ -1138,31 +1137,25 @@ def test__lc_content_to_bedrock_mime_types() -> None:
             "name": "test_document.pdf",
         },
     ]
-    
+
     expected_content = [
         {
             "video": {
                 "format": "mp4",
-                "source": {
-                    "bytes": base64.b64decode(video_data.encode("utf-8"))
-                },
+                "source": {"bytes": base64.b64decode(video_data.encode("utf-8"))},
             }
         },
         {
             "image": {
                 "format": "jpeg",
-                "source": {
-                    "bytes": base64.b64decode(image_data.encode("utf-8"))
-                },
+                "source": {"bytes": base64.b64decode(image_data.encode("utf-8"))},
             }
         },
         {
             "document": {
                 "format": "pdf",
                 "name": "test_document.pdf",
-                "source": {
-                    "bytes": base64.b64decode(file_data.encode("utf-8"))
-                },
+                "source": {"bytes": base64.b64decode(file_data.encode("utf-8"))},
             }
         },
     ]
@@ -1173,27 +1166,31 @@ def test__lc_content_to_bedrock_mime_types() -> None:
 
 def test__lc_content_to_bedrock_mime_types_invalid() -> None:
     with pytest.raises(ValueError, match="Invalid MIME type format"):
-        _lc_content_to_bedrock([
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "mediaType": "invalidmimetype",
-                    "data": base64.b64encode(b"test_data").decode("utf-8"),
-                },
-            }
-        ])
-    
+        _lc_content_to_bedrock(
+            [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "mediaType": "invalidmimetype",
+                        "data": base64.b64encode(b"test_data").decode("utf-8"),
+                    },
+                }
+            ]
+        )
+
     with pytest.raises(ValueError, match="Unsupported MIME type"):
-        _lc_content_to_bedrock([
-            {
-                "type": "file",
-                "sourceType": "base64",
-                "mimeType": "application/unknown-format",
-                "data": base64.b64encode(b"test_data").decode("utf-8"),
-                "name": "test_document.xyz",
-            }
-        ])
+        _lc_content_to_bedrock(
+            [
+                {
+                    "type": "file",
+                    "sourceType": "base64",
+                    "mimeType": "application/unknown-format",
+                    "data": base64.b64encode(b"test_data").decode("utf-8"),
+                    "name": "test_document.xyz",
+                }
+            ]
+        )
 
 
 def test__get_provider() -> None:
@@ -1398,9 +1395,9 @@ def test_model_kwargs() -> None:
     assert llm.temperature is None
 
 
-def _create_mock_llm_guard_last_turn_only() -> (
-    Tuple[ChatBedrockConverse, mock.MagicMock]
-):
+def _create_mock_llm_guard_last_turn_only() -> Tuple[
+    ChatBedrockConverse, mock.MagicMock
+]:
     """Utility to create an LLM with guard_last_turn_only=True and a mocked client."""
     mocked_client = mock.MagicMock()
     llm = ChatBedrockConverse(
@@ -1473,61 +1470,63 @@ def test_stream_guard_last_turn_only() -> None:
         "guardContent": {"text": {"text": "How are you?"}}
     }
 
+
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
 def test_bedrock_client_creation(mock_create_client: mock.Mock) -> None:
     """Test that bedrock_client is created during validation."""
     mock_bedrock_client = mock.Mock()
     mock_runtime_client = mock.Mock()
-    
+
     def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
             return mock_bedrock_client
         elif service_name == "bedrock-runtime":
             return mock_runtime_client
         return mock.Mock()
-    
+
     mock_create_client.side_effect = side_effect
-    
+
     chat_model = ChatBedrockConverse(
-        model="anthropic.claude-3-sonnet-20240229-v1:0",
-        region_name="us-west-2"
+        model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
     )
-    
+
     assert chat_model.bedrock_client == mock_bedrock_client
     assert chat_model.client == mock_runtime_client
     assert mock_create_client.call_count == 2
 
 
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
-def test_get_base_model_with_application_inference_profile(mock_create_client: mock.Mock) -> None:
+def test_get_base_model_with_application_inference_profile(
+    mock_create_client: mock.Mock,
+) -> None:
     """Test _get_base_model method with application inference profile."""
     mock_bedrock_client = mock.Mock()
     mock_runtime_client = mock.Mock()
-    
+
     # Mock the get_inference_profile response
     mock_bedrock_client.get_inference_profile.return_value = {
-        'models': [
+        "models": [
             {
-                'modelArn': 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0'
+                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
             }
         ]
     }
-    
+
     def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
             return mock_bedrock_client
         elif service_name == "bedrock-runtime":
             return mock_runtime_client
         return mock.Mock()
-    
+
     mock_create_client.side_effect = side_effect
-    
+
     chat_model = ChatBedrockConverse(
         model="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/test-profile",
         region_name="us-west-2",
-        provider="anthropic"
+        provider="anthropic",
     )
-    
+
     base_model = chat_model._get_base_model()
     assert base_model == "anthropic.claude-3-sonnet-20240229-v1:0"
     mock_bedrock_client.get_inference_profile.assert_called_once_with(
@@ -1536,26 +1535,28 @@ def test_get_base_model_with_application_inference_profile(mock_create_client: m
 
 
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
-def test_get_base_model_without_application_inference_profile(mock_create_client: mock.Mock) -> None:
+def test_get_base_model_without_application_inference_profile(
+    mock_create_client: mock.Mock,
+) -> None:
     """Test _get_base_model method without application inference profile."""
     mock_bedrock_client = mock.Mock()
     mock_runtime_client = mock.Mock()
-    
+
     def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
             return mock_bedrock_client
         elif service_name == "bedrock-runtime":
             return mock_runtime_client
         return mock.Mock()
-    
+
     mock_create_client.side_effect = side_effect
-    
+
     chat_model = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0",
         region_name="us-west-2",
-        provider="anthropic"
+        provider="anthropic",
     )
-    
+
     base_model = chat_model._get_base_model()
     assert base_model == "anthropic.claude-3-sonnet-20240229-v1:0"
     mock_bedrock_client.get_inference_profile.assert_not_called()
@@ -1566,104 +1567,112 @@ def test_configure_streaming_for_resolved_model(mock_create_client: mock.Mock) -
     """Test _configure_streaming_for_resolved_model method."""
     mock_bedrock_client = mock.Mock()
     mock_runtime_client = mock.Mock()
-    
+
     # Mock the get_inference_profile response for a model with full streaming support
     mock_bedrock_client.get_inference_profile.return_value = {
-        'models': [
+        "models": [
             {
-                'modelArn': 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0'
+                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
             }
         ]
     }
-    
+
     def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
             return mock_bedrock_client
         elif service_name == "bedrock-runtime":
             return mock_runtime_client
         return mock.Mock()
-    
+
     mock_create_client.side_effect = side_effect
-    
+
     chat_model = ChatBedrockConverse(
         model="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/test-profile",
         region_name="us-west-2",
-        provider="anthropic"
+        provider="anthropic",
     )
-    
+
     # The streaming should be configured based on the resolved model
     assert chat_model.disable_streaming is False
 
 
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
-def test_configure_streaming_for_resolved_model_no_tools(mock_create_client: mock.Mock) -> None:
+def test_configure_streaming_for_resolved_model_no_tools(
+    mock_create_client: mock.Mock,
+) -> None:
     """Test _configure_streaming_for_resolved_model method with no-tools streaming."""
     mock_bedrock_client = mock.Mock()
     mock_runtime_client = mock.Mock()
-    
+
     # Mock the get_inference_profile response for a model with no-tools streaming support
     mock_bedrock_client.get_inference_profile.return_value = {
-        'models': [
+        "models": [
             {
-                'modelArn': 'arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-text-express-v1'
+                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-text-express-v1"
             }
         ]
     }
-    
+
     def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
             return mock_bedrock_client
         elif service_name == "bedrock-runtime":
             return mock_runtime_client
         return mock.Mock()
-    
+
     mock_create_client.side_effect = side_effect
-    
+
     chat_model = ChatBedrockConverse(
         model="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/test-profile",
         region_name="us-west-2",
-        provider="amazon"
+        provider="amazon",
     )
-    
+
     # The streaming should be configured as "tool_calling" for no-tools models
     assert chat_model.disable_streaming == "tool_calling"
 
 
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
-def test_configure_streaming_for_resolved_model_no_streaming(mock_create_client: mock.Mock) -> None:
+def test_configure_streaming_for_resolved_model_no_streaming(
+    mock_create_client: mock.Mock,
+) -> None:
     """Test _configure_streaming_for_resolved_model method with no streaming support."""
     mock_bedrock_client = mock.Mock()
     mock_runtime_client = mock.Mock()
-    
+
     # Mock the get_inference_profile response for a model with no streaming support
     mock_bedrock_client.get_inference_profile.return_value = {
-        'models': [
+        "models": [
             {
-                'modelArn': 'arn:aws:bedrock:us-east-1::foundation-model/stability.stable-image-core-v1:0'
+                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/stability.stable-image-core-v1:0"
             }
         ]
     }
-    
+
     def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
             return mock_bedrock_client
         elif service_name == "bedrock-runtime":
             return mock_runtime_client
         return mock.Mock()
-    
+
     mock_create_client.side_effect = side_effect
-    
+
     chat_model = ChatBedrockConverse(
         model="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/test-profile",
         region_name="us-west-2",
-        provider="stability"
+        provider="stability",
     )
-    
+
     # The streaming should be disabled for models with no streaming support
     assert chat_model.disable_streaming is True
 
-    
+
 def test_nova_provider_extraction() -> None:
     """Test that provider is correctly extracted from Nova model ID when not provided."""
-    model = ChatBedrockConverse(client=mock.MagicMock(), model="us.amazon.nova-pro-v1:0", region_name="us-west-2")
+    model = ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )
     assert model.provider == "amazon"

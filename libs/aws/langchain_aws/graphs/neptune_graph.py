@@ -377,10 +377,10 @@ class NeptuneGraph(BaseNeptuneGraph):
                 import boto3
 
                 any_creds = bool(
-                    credentials_profile_name or
-                    aws_access_key_id or
-                    aws_secret_access_key or
-                    aws_session_token
+                    credentials_profile_name
+                    or aws_access_key_id
+                    or aws_secret_access_key
+                    or aws_session_token
                 )
 
                 if not any_creds:
@@ -393,7 +393,9 @@ class NeptuneGraph(BaseNeptuneGraph):
                         "aws_secret_access_key": aws_secret_access_key.get_secret_value(),
                     }
                     if aws_session_token:
-                        session_params["aws_session_token"] = aws_session_token.get_secret_value()
+                        session_params["aws_session_token"] = (
+                            aws_session_token.get_secret_value()
+                        )
                     session = boto3.Session(**session_params)
                 else:
                     raise ValueError(
@@ -459,9 +461,9 @@ class NeptuneGraph(BaseNeptuneGraph):
         """Query Neptune database."""
         try:
             if params:
-                return self.client.execute_open_cypher_query(openCypherQuery=query, parameters = json.dumps(params))[
-                    "results"
-                ]
+                return self.client.execute_open_cypher_query(
+                    openCypherQuery=query, parameters=json.dumps(params)
+                )["results"]
             else:
                 return self.client.execute_open_cypher_query(openCypherQuery=query)[
                     "results"

@@ -96,13 +96,11 @@ class CodeInterpreterToolkit:
         """
         return {tool.name: tool for tool in self.tools}
 
-    def _get_or_create_interpreter(
-        self, config: RunnableConfig
-    ) -> CodeInterpreter:
+    def _get_or_create_interpreter(self, config: RunnableConfig) -> CodeInterpreter:
         """
         Get or create a code interpreter for a specific config
 
-        The config is expected to have a 'configurable' with 
+        The config is expected to have a 'configurable' with
         'thread_id', otherwise it creates a sesion with 'default'
         thread ID.
 
@@ -252,9 +250,7 @@ class CodeInterpreterToolkit:
 
         return _extract_output_from_stream(response)
 
-    def _execute_command(
-        self, command: str, config: RunnableConfig
-    ) -> str:
+    def _execute_command(self, command: str, config: RunnableConfig) -> str:
         """
         Execute a command synchronously
 
@@ -274,9 +270,7 @@ class CodeInterpreterToolkit:
 
         return _extract_output_from_stream(response)
 
-    def _read_files(
-        self, paths: List[str], config: RunnableConfig
-    ) -> str:
+    def _read_files(self, paths: List[str], config: RunnableConfig) -> str:
         """
         Read content of files
 
@@ -294,9 +288,7 @@ class CodeInterpreterToolkit:
 
         return _extract_output_from_stream(response)
 
-    def _list_files(
-        self, config: RunnableConfig, directory_path: str = ""
-    ) -> str:
+    def _list_files(self, config: RunnableConfig, directory_path: str = "") -> str:
         """
         List files in a directory
 
@@ -316,9 +308,7 @@ class CodeInterpreterToolkit:
 
         return _extract_output_from_stream(response)
 
-    def _remove_files(
-        self, paths: List[str], config: RunnableConfig
-    ) -> str:
+    def _remove_files(self, paths: List[str], config: RunnableConfig) -> str:
         """
         Remove files from the system
 
@@ -338,9 +328,7 @@ class CodeInterpreterToolkit:
 
         return _extract_output_from_stream(response)
 
-    def _write_files(
-        self, files: List[Dict[str, str]], config: RunnableConfig
-    ) -> str:
+    def _write_files(self, files: List[Dict[str, str]], config: RunnableConfig) -> str:
         """
         Writes file content to the specified path in code env
 
@@ -366,9 +354,7 @@ class CodeInterpreterToolkit:
 
         return _extract_output_from_stream(response)
 
-    def _start_command_execution(
-        self, command: str, config: RunnableConfig
-    ) -> str:
+    def _start_command_execution(self, command: str, config: RunnableConfig) -> str:
         """
         Start a long-running command asynchronously
 
@@ -484,8 +470,9 @@ def _get_thread_id(config: Optional[RunnableConfig] = None):
 
     if config and isinstance(config, dict):
         thread_id = config["configurable"]["thread_id"]
-    
+
     return thread_id
+
 
 def _extract_output_from_stream(response):
     """

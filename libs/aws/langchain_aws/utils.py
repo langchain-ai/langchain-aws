@@ -126,7 +126,7 @@ def create_aws_client(
 
     Args:
         service_name: The name of the AWS service to create a client for.
-        region_name: AWS region name. If not provided, will try to get from environment variables.
+        region_name: AWS region name. If not provided, try to get from env variables.
         credentials_profile_name: The name of the AWS credentials profile to use.
         aws_access_key_id: AWS access key ID.
         aws_secret_access_key: AWS secret access key.
@@ -142,9 +142,7 @@ def create_aws_client(
         import boto3
 
         region_name = (
-            region_name
-            or os.getenv("AWS_REGION")
-            or os.getenv("AWS_DEFAULT_REGION")
+            region_name or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
         )
 
         client_params = {
@@ -153,15 +151,13 @@ def create_aws_client(
             "endpoint_url": endpoint_url,
             "config": config,
         }
-        client_params = {
-            k: v for k, v in client_params.items() if v
-        }
+        client_params = {k: v for k, v in client_params.items() if v}
 
         needs_session = bool(
-            credentials_profile_name or
-            aws_access_key_id or
-            aws_secret_access_key or
-            aws_session_token
+            credentials_profile_name
+            or aws_access_key_id
+            or aws_secret_access_key
+            or aws_session_token
         )
 
         if not needs_session:
@@ -175,7 +171,9 @@ def create_aws_client(
                 "aws_secret_access_key": aws_secret_access_key.get_secret_value(),
             }
             if aws_session_token:
-                session_params["aws_session_token"] = aws_session_token.get_secret_value()
+                session_params["aws_session_token"] = (
+                    aws_session_token.get_secret_value()
+                )
             session = boto3.Session(**session_params)
         else:
             raise ValueError(
@@ -196,8 +194,8 @@ def create_aws_client(
     except BotoCoreError as e:
         raise ValueError(
             "Could not load credentials to authenticate with AWS client. "
-            "Please check that the specified profile name and/or its credentials are valid. "
-            f"Service error: {e}"
+            "Please check that the specified profile name and/or its credentials are "
+            f"valid. Service error: {e}"
         ) from e
     except Exception as e:
         raise ValueError(f"Error raised by service:\n\n{e}") from e

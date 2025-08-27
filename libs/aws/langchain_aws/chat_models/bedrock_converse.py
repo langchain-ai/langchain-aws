@@ -65,7 +65,7 @@ _BM = TypeVar("_BM", bound=BaseModel)
 MIME_TO_FORMAT = {
     # Image formats
     "image/png": "png",
-    "image/jpeg": "jpeg", 
+    "image/jpeg": "jpeg",
     "image/gif": "gif",
     "image/webp": "webp",
     # File formats
@@ -465,9 +465,9 @@ class ChatBedrockConverse(BaseChatModel):
     additionalModelResponseFieldPaths.
     """
 
-    supports_tool_choice_values: Optional[
-        Sequence[Literal["auto", "any", "tool"]]
-    ] = None
+    supports_tool_choice_values: Optional[Sequence[Literal["auto", "any", "tool"]]] = (
+        None
+    )
     """Which types of tool_choice values the model supports.
     
     Inferred if not specified. Inferred as ('auto', 'any', 'tool') if a 'claude-3' 
@@ -533,9 +533,11 @@ class ChatBedrockConverse(BaseChatModel):
         return values
 
     @classmethod
-    def _get_streaming_support(cls, provider: str, model_id_lower: str) -> Union[bool, str]:
+    def _get_streaming_support(
+        cls, provider: str, model_id_lower: str
+    ) -> Union[bool, str]:
         """Determine streaming support for a given provider and model.
-        
+
         Returns:
             True: Full streaming support
             "no_tools": Streaming supported but not with tools
@@ -609,7 +611,7 @@ class ChatBedrockConverse(BaseChatModel):
     @classmethod
     def set_disable_streaming(cls, values: Dict) -> Any:
         model_id = values.get("model_id", values.get("model"))
-        
+
         # Extract provider from the model_id
         # (e.g., "amazon", "anthropic", "ai21", "meta", "mistral")
         if "provider" not in values or values["provider"] == "":
@@ -649,8 +651,8 @@ class ChatBedrockConverse(BaseChatModel):
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
-        
-         # Create bedrock client for control plane API call
+
+        # Create bedrock client for control plane API call
         if self.bedrock_client is None:
             self.bedrock_client = create_aws_client(
                 region_name=self.region_name,
@@ -662,7 +664,7 @@ class ChatBedrockConverse(BaseChatModel):
                 config=self.config,
                 service_name="bedrock",
             )
-            
+
         # Handle streaming configuration for application inference profiles
         if "application-inference-profile" in self.model_id:
             self._configure_streaming_for_resolved_model()
@@ -709,27 +711,30 @@ class ChatBedrockConverse(BaseChatModel):
                 "Provide a guardrail via `guardrail_config` or "
                 "disable `guard_last_turn_only`."
             )
-            
+
         return self
 
     def _get_base_model(self) -> str:
         # identify the base model id used in the application inference profile (AIP)
         # Format: arn:aws:bedrock:us-east-1:<accountId>:application-inference-profile/<id>
-        if self.base_model_id is None and 'application-inference-profile' in self.model_id:
+        if (
+            self.base_model_id is None
+            and "application-inference-profile" in self.model_id
+        ):
             response = self.bedrock_client.get_inference_profile(
                 inferenceProfileIdentifier=self.model_id
             )
-            if 'models' in response and len(response['models']) > 0:
-                model_arn = response['models'][0]['modelArn']
+            if "models" in response and len(response["models"]) > 0:
+                model_arn = response["models"][0]["modelArn"]
                 # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
-                self.base_model_id = model_arn.split('/')[-1]
+                self.base_model_id = model_arn.split("/")[-1]
         return self.base_model_id if self.base_model_id else self.model_id
-        
+
     def _configure_streaming_for_resolved_model(self) -> None:
-        """Configure streaming support after resolving the base model for application inference profiles."""
+        """Configure streaming support after resolving the base model for application inference profiles."""  # noqa: E501
         base_model = self._get_base_model()
         model_id_lower = base_model.lower()
-        
+
         streaming_support = self._get_streaming_support(self.provider, model_id_lower)
 
         # Set the disable_streaming flag accordingly
@@ -1191,7 +1196,7 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
             )
         # always keep block inside a list to preserve merging compatibility
         content = [block]
-        
+
         return AIMessageChunk(content=content, tool_call_chunks=tool_call_chunks)
     elif "contentBlockDelta" in event:
         block = {
@@ -1210,7 +1215,7 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
             )
         # always keep block inside a list to preserve merging compatibility
         content = [block]
-        
+
         return AIMessageChunk(content=content, tool_call_chunks=tool_call_chunks)
     elif "contentBlockStop" in event:
         # TODO: needed?
@@ -1241,15 +1246,16 @@ def _mime_type_to_format(mime_type: str) -> str:
 
     if mime_type in MIME_TO_FORMAT:
         return MIME_TO_FORMAT[mime_type]
-    
+
     # Fallback to original method of splitting on "/" for simple cases
     all_formats = set(MIME_TO_FORMAT.values())
     format_part = mime_type.split("/")[1]
     if format_part in all_formats:
         return format_part
-    
+
     raise ValueError(
-        f"Unsupported MIME type: {mime_type}. Please refer to the Bedrock Converse API documentation for supported formats."
+        f"Unsupported MIME type: {mime_type}. Please refer to the Bedrock Converse API"
+        " documentation for supported formats."
     )
 
 
@@ -1327,7 +1333,9 @@ def _lc_content_to_bedrock(
                 bedrock_content.append(
                     {
                         "image": {
-                            "format": _mime_type_to_format(block["source"]["mediaType"]),
+                            "format": _mime_type_to_format(
+                                block["source"]["mediaType"]
+                            ),
                             "source": {
                                 "bytes": _b64str_to_bytes(block["source"]["data"])
                             },
@@ -1348,7 +1356,9 @@ def _lc_content_to_bedrock(
                     bedrock_content.append(
                         {
                             "video": {
-                                "format": _mime_type_to_format(block["source"]["mediaType"]),
+                                "format": _mime_type_to_format(
+                                    block["source"]["mediaType"]
+                                ),
                                 "source": {
                                     "bytes": _b64str_to_bytes(block["source"]["data"])
                                 },
@@ -1359,7 +1369,9 @@ def _lc_content_to_bedrock(
                     bedrock_content.append(
                         {
                             "video": {
-                                "format": _mime_type_to_format(block["source"]["mediaType"]),
+                                "format": _mime_type_to_format(
+                                    block["source"]["mediaType"]
+                                ),
                                 "source": {"s3Location": block["source"]["data"]},
                             }
                         }

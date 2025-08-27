@@ -171,7 +171,8 @@ def _stream_response_to_generation_chunk(
     generation_info = {
         k: v
         for k, v in stream_response.items()
-        if k not in [output_key, "prompt_token_count", "generation_token_count", "created"]
+        if k
+        not in [output_key, "prompt_token_count", "generation_token_count", "created"]
     }
     return GenerationChunk(
         text=(
@@ -236,8 +237,7 @@ def _get_invocation_metrics_chunk(chunk: Dict[str, Any]) -> GenerationChunk:
             "input_token_details": {
                 "cache_creation": cache_write_input_tokens,
                 "cache_read": cache_read_input_tokens,
-            }
-
+            },
         }
     return GenerationChunk(text="", generation_info=generation_info)
 
@@ -273,7 +273,7 @@ class LLMInputOutputAdapter:
         "deepseek": "choices",
         "meta": "generation",
         "mistral": "outputs",
-        "writer": "choices"
+        "writer": "choices",
     }
 
     @classmethod
@@ -459,8 +459,12 @@ class LLMInputOutputAdapter:
         headers = response.get("ResponseMetadata", {}).get("HTTPHeaders", {})
         prompt_tokens = int(headers.get("x-amzn-bedrock-input-token-count", 0))
         completion_tokens = int(headers.get("x-amzn-bedrock-output-token-count", 0))
-        cache_read_input_tokens = int(headers.get("x-amzn-bedrock-cache-read-input-token-count", 0))
-        cache_write_input_tokens = int(headers.get("x-amzn-bedrock-cache-write-input-token-count", 0))
+        cache_read_input_tokens = int(
+            headers.get("x-amzn-bedrock-cache-read-input-token-count", 0)
+        )
+        cache_write_input_tokens = int(
+            headers.get("x-amzn-bedrock-cache-write-input-token-count", 0)
+        )
         return {
             "text": text,
             "thinking": thinking,
@@ -471,7 +475,9 @@ class LLMInputOutputAdapter:
                 "completion_tokens": completion_tokens,
                 "cache_read_input_tokens": cache_read_input_tokens,
                 "cache_write_input_tokens": cache_write_input_tokens,
-                "total_tokens": prompt_tokens + cache_read_input_tokens + completion_tokens,
+                "total_tokens": prompt_tokens
+                + cache_read_input_tokens
+                + completion_tokens,
             },
             "stop_reason": response_body.get("stop_reason"),
         }
@@ -527,7 +533,10 @@ class LLMInputOutputAdapter:
 
             if provider == "deepseek":
                 opt = chunk_obj.get(output_key, [{}])[0]
-                if opt.get("stop_reason") in ["stop", "length"] or opt.get("finish_reason") == "eos_token":
+                if (
+                    opt.get("stop_reason") in ["stop", "length"]
+                    or opt.get("finish_reason") == "eos_token"
+                ):
                     yield _get_invocation_metrics_chunk(chunk_obj)
                     return
 
@@ -603,7 +612,7 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     client: Any = Field(default=None, exclude=True)  #: :meta private:
     """The bedrock runtime client for making data plane API calls"""
-    
+
     bedrock_client: Any = Field(default=None, exclude=True)  #: :meta private:
     """The bedrock client for making control plane API calls"""
 
@@ -828,8 +837,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         # so this requires passing in the provider by user
         if self.model_id.startswith("arn"):
             raise ValueError(
-                "Model provider should be supplied when passing a model ARN as "
-                "model_id"
+                "Model provider should be supplied when passing a model ARN as model_id"
             )
 
         # If model_id has region prefixed to them,
@@ -838,22 +846,32 @@ class BedrockBase(BaseLanguageModel, ABC):
         parts = self.model_id.split(".", maxsplit=2)
         return (
             parts[1]
-            if (len(parts) > 1 and parts[0].lower() in {"eu", "us", "us-gov", "apac", "sa"})
+            if (
+                len(parts) > 1
+                and parts[0].lower() in {"eu", "us", "us-gov", "apac", "sa"}
+            )
             else parts[0]
         )
 
     def _get_base_model(self) -> str:
         # identify the base model id used in the application inference profile (AIP)
         # Format: arn:aws:bedrock:us-east-1:<accountId>:application-inference-profile/<id>
-        if self.base_model_id is None and 'application-inference-profile' in self.model_id:
+        if (
+            self.base_model_id is None
+            and "application-inference-profile" in self.model_id
+        ):
             response = self.bedrock_client.get_inference_profile(
                 inferenceProfileIdentifier=self.model_id
             )
-            if 'models' in response and len(response['models']) > 0:
-                model_arn = response['models'][0]['modelArn']
+            if "models" in response and len(response["models"]) > 0:
+                model_arn = response["models"][0]["modelArn"]
                 # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
-                self.base_model_id = model_arn.split('/')[-1]
-        return self.base_model_id if self.base_model_id else self.model_id.split(".", maxsplit=1)[-1]
+                self.base_model_id = model_arn.split("/")[-1]
+        return (
+            self.base_model_id
+            if self.base_model_id
+            else self.model_id.split(".", maxsplit=1)[-1]
+        )
 
     @property
     def _model_is_anthropic(self) -> bool:
@@ -903,7 +921,11 @@ class BedrockBase(BaseLanguageModel, ABC):
         params = {**_model_kwargs, **kwargs}
 
         # Pre-process for thinking with tool use
-        if messages and "claude-" in self._get_base_model() and thinking_in_params(params):
+        if (
+            messages
+            and "claude-" in self._get_base_model()
+            and thinking_in_params(params)
+        ):
             # We need to ensure thinking blocks are first in assistant messages
             # Process each message in the sequence
             for i, message in enumerate(messages):
