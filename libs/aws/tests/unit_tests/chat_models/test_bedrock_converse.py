@@ -1197,7 +1197,7 @@ def test__lc_content_to_bedrock_mime_types_invalid() -> None:
 
 
 def test__lc_content_to_bedrock_empty_content() -> None:
-    content = []
+    content: List[Union[str, Dict[str, Any]]] = []
     
     bedrock_content = _lc_content_to_bedrock(content)
     
@@ -1224,7 +1224,7 @@ def test__lc_content_to_bedrock_empty_string_content() -> None:
 
 
 def test__lc_content_to_bedrock_mixed_empty_content() -> None:
-    content = [
+    content: List[Union[str, Dict[str, Any]]] = [
         {"type": "text", "text": ""},
         {"type": "text", "text": "   "},
         {"type": "text", "text": ""}
@@ -1237,7 +1237,9 @@ def test__lc_content_to_bedrock_mixed_empty_content() -> None:
 
 
 def test__lc_content_to_bedrock_empty_text_block() -> None:
-    content = [{"type": "text", "text": ""}]
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": ""}
+    ]
     
     bedrock_content = _lc_content_to_bedrock(content)
     
@@ -1246,7 +1248,9 @@ def test__lc_content_to_bedrock_empty_text_block() -> None:
 
 
 def test__lc_content_to_bedrock_whitespace_text_block() -> None:
-    content = [{"type": "text", "text": "  \n  "}]
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": "  \n  "}
+    ]
     
     bedrock_content = _lc_content_to_bedrock(content)
     
@@ -1255,7 +1259,7 @@ def test__lc_content_to_bedrock_whitespace_text_block() -> None:
 
 
 def test__lc_content_to_bedrock_mixed_valid_and_empty_content() -> None:
-    content = [
+    content: List[Union[str, Dict[str, Any]]] = [
         {"type": "text", "text": "Valid text"},
         {"type": "text", "text": ""},
         {"type": "text", "text": "   "}
