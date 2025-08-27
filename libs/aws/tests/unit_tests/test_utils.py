@@ -252,12 +252,16 @@ def test_session_region_fallback(
 
 @pytest.fixture
 def mock_boto3_with_imports() -> Generator[
-    Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock, mock.MagicMock], None, None
+    Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock, type[UnknownServiceError]],
+    None,
+    None,
 ]:
     with (
         mock.patch("boto3.Session") as m_session,
         mock.patch("boto3.client") as m_client,
-        mock.patch("botocore.exceptions.UnknownServiceError", UnknownServiceError),
+        mock.patch(
+            "botocore.exceptions.UnknownServiceError", UnknownServiceError
+        ) as m_error,
     ):
         mock_session_instance = mock.MagicMock()
         m_session.return_value = mock_session_instance
@@ -267,12 +271,12 @@ def mock_boto3_with_imports() -> Generator[
         mock_session_instance.client.return_value = mock_client_instance
         m_client.return_value = mock_client_instance
 
-        yield m_session, m_client, mock_client_instance, UnknownServiceError
+        yield m_session, m_client, mock_client_instance, m_error
 
 
 def test_bad_service_error_with_session(
     mock_boto3_with_imports: Tuple[
-        mock.MagicMock, mock.MagicMock, mock.MagicMock, mock.MagicMock
+        mock.MagicMock, mock.MagicMock, mock.MagicMock, type[UnknownServiceError]
     ],
 ) -> None:
     session_mock, _, _, error_class = mock_boto3_with_imports
@@ -295,7 +299,7 @@ def test_bad_service_error_with_session(
 
 def test_bad_service_error_with_direct_client(
     mock_boto3_with_imports: Tuple[
-        mock.MagicMock, mock.MagicMock, mock.MagicMock, mock.MagicMock
+        mock.MagicMock, mock.MagicMock, mock.MagicMock, type[UnknownServiceError]
     ],
 ) -> None:
     _, client_mock, _, error_class = mock_boto3_with_imports

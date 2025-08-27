@@ -134,8 +134,7 @@ class TestSageMakerStandard(ChatModelUnitTests):
 
     @property
     def init_from_env_params(self) -> Tuple[dict, dict, dict]:
-        """Return env vars, init args, and expected instance attrs for initializing
-        from env vars."""
+        """Return env vars, init args, and expected instance attrs for initializing from env vars."""  # noqa: E501
         return (
             {
                 "AWS_ACCESS_KEY_ID": "test-key",
@@ -164,8 +163,8 @@ class TestSageMakerStandard(ChatModelUnitTests):
         super().test_bind_tool_pydantic(model, my_adder_tool)
 
     @pytest.mark.xfail(reason="Doesn't support structured output.")
-    def test_with_structured_output(self, model: BaseChatModel) -> None:
-        super().test_with_structured_output(model)
+    def test_with_structured_output(self, model: BaseChatModel, schema: Any) -> None:
+        super().test_with_structured_output(model, schema)
 
     @pytest.mark.xfail(reason="Doesn't support Langsmith parameters.")
     def test_standard_params(self, model: BaseChatModel) -> None:

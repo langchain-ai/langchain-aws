@@ -23,7 +23,7 @@ from tests.callbacks import FakeCallbackHandler, FakeCallbackHandlerWithTokenCou
 @pytest.fixture
 def chat() -> ChatBedrock:
     return ChatBedrock(
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
         model_kwargs={"temperature": 0},
     )  # type: ignore[call-arg]
 
@@ -70,7 +70,7 @@ def test_chat_bedrock_generate_with_token_usage(chat: ChatBedrock) -> None:
 def test_chat_bedrock_streaming() -> None:
     """Test that streaming correctly streams chunks."""
     chat = ChatBedrock(  # type: ignore[call-arg]
-        model_id="anthropic.claude-v2"
+        model="anthropic.claude-v2"
     )
     message = HumanMessage(content="Hello")
     stream = chat.stream([message])
@@ -87,7 +87,7 @@ def test_chat_bedrock_streaming() -> None:
 @pytest.mark.scheduled
 def test_chat_bedrock_token_counts() -> None:
     chat = ChatBedrock(  # type: ignore[call-arg]
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
         model_kwargs={"temperature": 0},
     )
     invoke_response = chat.invoke("hi", max_tokens=6)
@@ -109,7 +109,7 @@ def test_chat_bedrock_token_counts() -> None:
 @pytest.mark.scheduled
 def test_chat_bedrock_token_counts_deepseek_r1() -> None:
     chat = ChatBedrock(  # type: ignore[call-arg]
-        model_id="us.deepseek.r1-v1:0",
+        model="us.deepseek.r1-v1:0",
         temperature=0,
         max_tokens=6,
     )
@@ -132,7 +132,7 @@ def test_chat_bedrock_token_counts_deepseek_r1() -> None:
 def test_chat_bedrock_streaming_llama3() -> None:
     """Test that streaming correctly streams message chunks"""
     chat = ChatBedrock(  # type: ignore[call-arg]
-        model_id="meta.llama3-8b-instruct-v1:0"
+        model="meta.llama3-8b-instruct-v1:0"
     )
     message = HumanMessage(content="Hello")
 
@@ -148,7 +148,7 @@ def test_chat_bedrock_streaming_llama3() -> None:
 @pytest.mark.scheduled
 def test_chat_bedrock_streaming_deepseek_r1() -> None:
     chat = ChatBedrock(  # type: ignore[call-arg]
-        model="us.deepseek.r1-v1:0", region_name="us-west-2"
+        model="us.deepseek.r1-v1:0", region="us-west-2"
     )
     message = HumanMessage(content="Hello")
 
@@ -165,8 +165,8 @@ def test_chat_bedrock_streaming_deepseek_r1() -> None:
 def test_chat_bedrock_streaming_deepseek_r1_distill_llama() -> None:
     chat = ChatBedrock(  # type: ignore[call-arg]
         provider="deepseek",
-        model_id="arn:aws:sagemaker:us-east-2:xxxxxxxxxxxx:endpoint/endpoint-quick-start-xxxxx",
-        region_name="us-east-2",
+        model="arn:aws:sagemaker:us-east-2:xxxxxxxxxxxx:endpoint/endpoint-quick-start-xxxxx",
+        region="us-east-2",
     )
     message = HumanMessage(
         content="Hello. Please limit your response to 10 words or less."
@@ -185,8 +185,8 @@ def test_chat_bedrock_streaming_deepseek_r1_distill_llama() -> None:
 def test_chat_bedrock_streaming_deepseek_r1_distill_qwen() -> None:
     chat = ChatBedrock(  # type: ignore[call-arg]
         provider="deepseek",
-        model_id="arn:aws:sagemaker:us-east-2:xxxxxxxxxxxx:endpoint/endpoint-quick-start-xxxxx",
-        region_name="us-east-2",
+        model="arn:aws:sagemaker:us-east-2:xxxxxxxxxxxx:endpoint/endpoint-quick-start-xxxxx",
+        region="us-east-2",
     )
     message = HumanMessage(content="Hello")
 
@@ -216,7 +216,7 @@ def test_chat_bedrock_streaming_generation_info() -> None:
 
     callback = _FakeCallback()
     chat = ChatBedrock(  # type: ignore[call-arg]
-        model_id="anthropic.claude-v2",
+        model="anthropic.claude-v2",
         callbacks=[callback],
         model_kwargs={"temperature": 0},
     )
@@ -228,15 +228,15 @@ def test_chat_bedrock_streaming_generation_info() -> None:
 
 @pytest.mark.scheduled
 @pytest.mark.parametrize(
-    "model_id",
+    "model",
     [
         "anthropic.claude-3-sonnet-20240229-v1:0",
         "mistral.mistral-7b-instruct-v0:2",
     ],
 )
-def test_bedrock_streaming(model_id: str) -> None:
+def test_bedrock_streaming(model: str) -> None:
     chat = ChatBedrock(
-        model_id=model_id,
+        model=model,
         model_kwargs={"temperature": 0},
     )  # type: ignore[call-arg]
     full = None
@@ -253,16 +253,16 @@ def test_bedrock_streaming(model_id: str) -> None:
 
 @pytest.mark.scheduled
 @pytest.mark.parametrize(
-    "model_id",
+    "model",
     [
         "anthropic.claude-3-sonnet-20240229-v1:0",
         "mistral.mistral-7b-instruct-v0:2",
     ],
 )
-async def test_bedrock_astream(model_id: str) -> None:
+async def test_bedrock_astream(model: str) -> None:
     """Test streaming tokens from OpenAI."""
     chat = ChatBedrock(
-        model_id=model_id,
+        model=model,
         model_kwargs={"temperature": 0},
     )  # type: ignore[call-arg]
     full = None
@@ -335,7 +335,7 @@ class AnswerWithJustification(BaseModel):
 @pytest.mark.scheduled
 def test_structured_output() -> None:
     chat = ChatBedrock(
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
         model_kwargs={"temperature": 0.001},
     )  # type: ignore[call-arg]
     structured_llm = chat.with_structured_output(AnswerWithJustification)
@@ -349,7 +349,7 @@ def test_structured_output() -> None:
 
 @pytest.mark.scheduled
 def test_structured_output_anthropic_format() -> None:
-    chat = ChatBedrock(model_id="anthropic.claude-3-sonnet-20240229-v1:0")  # type: ignore[call-arg]
+    chat = ChatBedrock(model="anthropic.claude-3-sonnet-20240229-v1:0")  # type: ignore[call-arg]
     schema = {
         "name": "AnswerWithJustification",
         "description": (
@@ -376,7 +376,7 @@ def test_structured_output_anthropic_format() -> None:
 @pytest.mark.scheduled
 def test_tool_use_call_invoke() -> None:
     chat = ChatBedrock(
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
         model_kwargs={"temperature": 0.001},
     )  # type: ignore[call-arg]
 
@@ -413,7 +413,7 @@ def test_tool_use_call_invoke() -> None:
 @pytest.mark.parametrize("tool_choice", ["GetWeather", "auto", "any"])
 def test_anthropic_bind_tools_tool_choice(tool_choice: str) -> None:
     chat = ChatBedrock(
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
         model_kwargs={"temperature": 0.001},
     )  # type: ignore[call-arg]
     chat_model_with_tools = chat.bind_tools([GetWeather], tool_choice=tool_choice)
@@ -428,13 +428,10 @@ def test_anthropic_bind_tools_tool_choice(tool_choice: str) -> None:
 
 @pytest.mark.scheduled
 def test_chat_bedrock_token_callbacks() -> None:
-    """
-    Test that streaming correctly invokes on_llm_end
-    and stores token counts and stop reason.
-    """
+    """Test that streaming correctly invokes on_llm_end and stores token counts and stop reason."""  # noqa: E501
     callback_handler = FakeCallbackHandlerWithTokenCounts()
     chat = ChatBedrock(  # type: ignore[call-arg]
-        model_id="anthropic.claude-v2", streaming=False, verbose=True
+        model="anthropic.claude-v2", streaming=False, verbose=True
     )
     message = HumanMessage(content="Hello")
     response = chat.invoke([message], RunnableConfig(callbacks=[callback_handler]))
@@ -495,8 +492,8 @@ async def test_function_call_invoke_without_system_astream(chat: ChatBedrock) ->
 @pytest.mark.skip(reason="Needs guardrails setup to run.")
 def test_guardrails() -> None:
     params = {
-        "region_name": "us-west-2",
-        "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
+        "region": "us-west-2",
+        "model": "anthropic.claude-3-sonnet-20240229-v1:0",
         "guardrails": {
             "guardrailIdentifier": "e7esbceow153",
             "guardrailVersion": "1",
@@ -566,14 +563,14 @@ class GuardrailTraceCallbackHandler(FakeCallbackHandler):
 
 @pytest.mark.skip(reason="Needs guardrails setup to run.")
 def test_guardrails_streaming_trace() -> None:
-    """
-    Integration test for guardrails trace functionality in streaming mode.
+    """Integration test for guardrails trace functionality in streaming mode.
 
     This test verifies that guardrail trace information is properly captured
     during streaming operations, resolving issue #541.
 
     Note: Requires a valid guardrail to be configured in AWS Bedrock.
     Update the guardrailIdentifier to match your setup.
+
     """
     # Create callback handler to capture guardrail traces
     guardrail_callback = GuardrailTraceCallbackHandler()
@@ -587,11 +584,11 @@ def test_guardrails_streaming_trace() -> None:
 
     # Create ChatBedrock with guardrails (NOT using Converse API)
     chat_model = ChatBedrock(
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
         model_kwargs={"temperature": 0},
         guardrails=guardrail_config,
         callbacks=[guardrail_callback],
-        region_name="us-west-2",
+        region="us-west-2",
         beta_use_converse_api=False,  # Use legacy API for this test
     )  # type: ignore[call-arg]
 
@@ -601,11 +598,11 @@ def test_guardrails_streaming_trace() -> None:
     # Test 1: Verify invoke() captures guardrail traces
     invoke_callback = GuardrailTraceCallbackHandler()
     chat_model_invoke = ChatBedrock(
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
         model_kwargs={"temperature": 0},
         guardrails=guardrail_config,
         callbacks=[invoke_callback],
-        region_name="us-west-2",
+        region="us-west-2",
         beta_use_converse_api=False,
     )  # type: ignore[call-arg]
 

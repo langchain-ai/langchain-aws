@@ -9,7 +9,7 @@ Pull requests cannot land without passing the formatting, linting, and testing c
 
 It's essential that we maintain great documentation and testing. Add or update relevant unit or integration test when possible.
 These live in `tests/unit_tests` and `tests/integration_tests`. Example notebooks and documentation lives in `/docs` inside the
-LangChain repo [here](https://github.com/langchain-ai/langchain/tree/master/docs).
+[LangChain repo](https://github.com/langchain-ai/langchain/tree/master/docs).
 
 We are a small, progress-oriented team. If there's something you'd like to add or change, opening a pull request is the
 best way to get our attention.
@@ -181,29 +181,3 @@ make lint_tests
 ```
 
 We recognize linting can be annoying - if you do not want to do it, please contact a project maintainer, and they can help you with it. We do not want this to be a blocker for good code getting contributed.
-
-#### Spellcheck
-
-Spellchecking for this project is done via [codespell](https://github.com/codespell-project/codespell).
-Note that `codespell` finds common typos, so it could have false-positive (correctly spelled but rarely used) and false-negatives (not finding misspelled) words.
-
-To check spelling for this project:
-
-```bash
-make spell_check
-```
-
-To fix spelling in place:
-
-```bash
-make spell_fix
-```
-
-If codespell is incorrectly flagging a word, you can skip spellcheck for that word by adding it to the codespell config in the `pyproject.toml` file.
-
-```python
-[tool.codespell]
-...
-# Add here:
-ignore-words-list = 'momento,collison,ned,foor,reworked,path,whats,apply,misogyny,unsecure'
-```

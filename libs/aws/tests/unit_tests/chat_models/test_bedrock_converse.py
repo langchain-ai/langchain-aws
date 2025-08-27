@@ -1367,7 +1367,7 @@ def test_model_kwargs() -> None:
         llm = ChatBedrockConverse(  # type: ignore[call-arg]
             model="my-model",
             region_name="us-west-2",
-            foo="bar",
+            foo="bar",  # type: ignore[call-arg]
         )
     assert llm.model_id == "my-model"
     assert llm.region_name == "us-west-2"
@@ -1377,7 +1377,7 @@ def test_model_kwargs() -> None:
         llm = ChatBedrockConverse(  # type: ignore[call-arg]
             model="my-model",
             region_name="us-west-2",
-            foo="bar",
+            foo="bar",  # type: ignore[call-arg]
             additional_model_request_fields={"baz": "qux"},
         )
     assert llm.model_id == "my-model"

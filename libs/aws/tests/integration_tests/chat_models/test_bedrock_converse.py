@@ -285,6 +285,7 @@ def test_tool_use_with_cache_point() -> None:
     This test creates tools with a length exceeding 1024 tokens to ensure
     caching is triggered, and verifies the response metrics indicate cache
     activity.
+
     """
     # Define a large number of tools to exceed 1024 tokens
     tool_classes = []
