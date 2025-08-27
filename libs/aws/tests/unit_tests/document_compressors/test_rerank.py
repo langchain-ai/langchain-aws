@@ -11,7 +11,7 @@ from langchain_aws.document_compressors.rerank import BedrockRerank
 def reranker(mock_create_client: MagicMock) -> BedrockRerank:
     mock_client = MagicMock()
     mock_create_client.return_value = mock_client
-    
+
     reranker = BedrockRerank(
         model_arn="arn:aws:bedrock:us-west-2::foundation-model/amazon.rerank-v1:0",
         region_name="us-east-1",

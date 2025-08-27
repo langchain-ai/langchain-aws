@@ -11,12 +11,11 @@ from langchain_aws.chat_models.bedrock import ChatBedrock
 
 
 @pytest.fixture(autouse=True)
-def mock_aws_client(monkeypatch):
+def mock_aws_client(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """Mock AWS client creation to prevent network calls in unit tests."""
     mock_client = MagicMock()
     monkeypatch.setattr(
-        "langchain_aws.utils.create_aws_client", 
-        lambda **_: mock_client
+        "langchain_aws.utils.create_aws_client", lambda **_: mock_client
     )
     return mock_client
 
