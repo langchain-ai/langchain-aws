@@ -67,7 +67,9 @@ try:
         return ORIGINAL_SESSION_CLIENT(self, *args, **kwargs)
 
     boto3.client = _patched_boto3_client
-    boto3.session.Session.client = _patched_session_client
+    # Monkey-patch boto3 session client method to inject framework user-agent
+    # mypy complains about assigning to method, but this is intentional monkey-patching
+    boto3.session.Session.client = _patched_session_client  # type: ignore[method-assign]
 except Exception:
     pass
 
