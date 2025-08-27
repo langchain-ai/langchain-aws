@@ -124,8 +124,8 @@ class TestUtils:
 
         # Assert
         assert isinstance(result, CheckpointTuple)
-        assert result.config["configurable"]["thread_id"] == thread_id
-        assert result.config["configurable"]["checkpoint_ns"] == checkpoint_ns
+        assert result.config.get("configurable", {})["thread_id"] == thread_id
+        assert result.config.get("configurable", {})["checkpoint_ns"] == checkpoint_ns
 
 
 @patch("boto3.Session.client")

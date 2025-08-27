@@ -41,7 +41,10 @@ typing = [
     "mypy>=1.17.1",
     "types-requests>=2.28.11.5",
 ]
-dev = []
+dev = [
+    "boto3-stubs[essential]>=1.40.19",
+    "botocore-stubs>=1.38.46",
+]
 
 
 [tool.ruff.lint]

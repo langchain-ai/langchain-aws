@@ -25,8 +25,7 @@ from langgraph_checkpoint_aws.utils import process_aws_client_args, to_boto_para
 
 
 class BedrockAgentRuntimeSessionClient:
-    """
-    Client for AWS Bedrock Agent Runtime API
+    """Client for AWS Bedrock Agent Runtime API
 
     This class provides an interface to interact with AWS Bedrock Agent Runtime service.
     It handles session management, invocations and invocation steps through the
@@ -52,8 +51,7 @@ class BedrockAgentRuntimeSessionClient:
         endpoint_url: str | None = None,
         config: Config | None = None,
     ):
-        """
-        Initialize BedrockAgentRuntime with AWS configuration
+        """Initialize BedrockAgentRuntime with AWS configuration
 
         Args:
             region_name: AWS region (e.g., us-west-2)
@@ -80,8 +78,7 @@ class BedrockAgentRuntimeSessionClient:
     def create_session(
         self, request: CreateSessionRequest | None = None
     ) -> CreateSessionResponse:
-        """
-        Create a new session
+        """Create a new session
 
         Args:
             request (CreateSessionRequest): Optional object containing session creation
@@ -99,8 +96,7 @@ class BedrockAgentRuntimeSessionClient:
         return CreateSessionResponse(**response)
 
     def get_session(self, request: GetSessionRequest) -> GetSessionResponse:
-        """
-        Get details of an existing session
+        """Get details of an existing session
 
         Args:
             request (GetSessionRequest): Object containing session identifier
@@ -113,8 +109,7 @@ class BedrockAgentRuntimeSessionClient:
         return GetSessionResponse(**response)
 
     def end_session(self, request: EndSessionRequest) -> EndSessionResponse:
-        """
-        End an existing session
+        """End an existing session
 
         Args:
             request (EndSessionRequest): Object containing session identifier
@@ -127,8 +122,7 @@ class BedrockAgentRuntimeSessionClient:
         return EndSessionResponse(**response)
 
     def delete_session(self, request: DeleteSessionRequest) -> None:
-        """
-        Delete an existing session
+        """Delete an existing session
 
         Args:
             request (DeleteSessionRequest): Object containing session identifier
@@ -139,8 +133,7 @@ class BedrockAgentRuntimeSessionClient:
     def create_invocation(
         self, request: CreateInvocationRequest
     ) -> CreateInvocationResponse:
-        """
-        Create a new invocation
+        """Create a new invocation
 
         Args:
             request (CreateInvocationRequest): Object containing invocation details
@@ -156,8 +149,7 @@ class BedrockAgentRuntimeSessionClient:
     def list_invocations(
         self, request: ListInvocationsRequest
     ) -> ListInvocationsResponse:
-        """
-        List invocations for a session
+        """List invocations for a session
 
         Args:
             request (ListInvocationsRequest): Object containing session identifier
@@ -173,8 +165,7 @@ class BedrockAgentRuntimeSessionClient:
     def put_invocation_step(
         self, request: PutInvocationStepRequest
     ) -> PutInvocationStepResponse:
-        """
-        Put a step in an invocation
+        """Put a step in an invocation
 
         Args:
             request (PutInvocationStepRequest): Object containing invocation identifier
@@ -191,8 +182,7 @@ class BedrockAgentRuntimeSessionClient:
     def get_invocation_step(
         self, request: GetInvocationStepRequest
     ) -> GetInvocationStepResponse:
-        """
-        Get a step in an invocation
+        """Get a step in an invocation
 
         Args:
             request (GetInvocationStepRequest): Object containing invocation and step
@@ -209,8 +199,7 @@ class BedrockAgentRuntimeSessionClient:
     def list_invocation_steps(
         self, request: ListInvocationStepsRequest
     ) -> ListInvocationStepsResponse:
-        """
-        List steps in an invocation
+        """List steps in an invocation
 
         Args:
             request (ListInvocationStepsRequest): Object containing invocation step id

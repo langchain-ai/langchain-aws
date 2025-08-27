@@ -47,7 +47,7 @@ class TestBedrockSessionSaver:
         with patch("boto3.Session") as mock_boto3_session:
             mock_boto3_session.return_value.client.return_value = mock_boto_client
 
-            config = Config(retries=dict(max_attempts=5))
+            config = Config(retries={"max_attempts": 5, "mode": "standard"})
             endpoint_url = "https://custom-endpoint.amazonaws.com"
 
             BedrockSessionSaver(
@@ -125,7 +125,7 @@ class TestBedrockSessionSaver:
         with pytest.raises(ClientError) as exc_info:
             session_saver._create_session_invocation(thread_id, invocation_id)
 
-        assert exc_info.value.response["Error"]["Code"] == "SomeOtherError"
+        assert exc_info.value.response.get("Error", {}).get("Code") == "SomeOtherError"
         mock_boto_client.create_invocation.assert_called_once_with(
             sessionIdentifier=thread_id,
             invocationId=invocation_id,

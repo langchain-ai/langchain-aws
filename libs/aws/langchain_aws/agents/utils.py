@@ -4,6 +4,7 @@ import json
 import logging
 import time
 from collections import defaultdict
+from datetime import datetime
 from typing import Any, List, Optional, Tuple, Union
 
 import boto3
@@ -34,20 +35,27 @@ DEFAULT_CONFIG_VALUES = {
 }
 
 
+def _json_serial(obj: Any) -> str:
+    """JSON serializer for objects not serializable by default json code."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not serializable")
+
+
 def get_boto_session(
     credentials_profile_name: Optional[str] = None,
     region_name: Optional[str] = None,
     endpoint_url: Optional[str] = None,
     config: Optional[Config] = None,
 ) -> Any:
-    """
-    Construct the boto3 session
+    """Construct the boto3 session
 
     Args:
         credentials_profile_name: AWS profile name to use for credentials
         region_name: AWS region to use
         endpoint_url: Custom endpoint URL to use
         config: Optional boto3 Config object
+
     """
     if credentials_profile_name:
         session = boto3.Session(profile_name=credentials_profile_name)
@@ -79,14 +87,14 @@ def get_boto_session(
 
 
 def parse_agent_response(response: Any) -> OutputType:
-    """
-    Parses the raw response from Bedrock Agent
+    """Parses the raw response from Bedrock Agent
 
     Args:
         response: The raw response from Bedrock Agent
 
     Returns
         Either a BedrockAgentAction or a BedrockAgentFinish
+
     """
     response_text = ""
     event_stream = response["completion"]
@@ -107,7 +115,7 @@ def parse_agent_response(response: Any) -> OutputType:
         if "files" in event:
             files = event["files"]["files"]
 
-    trace_log = json.dumps(trace_log_elements)
+    trace_log = json.dumps(trace_log_elements, default=_json_serial)
 
     agent_finish = BedrockAgentFinish(
         return_values={"output": response_text, "files": files},
@@ -179,9 +187,7 @@ def _create_bedrock_agent(
     guardrail_configuration: Optional[GuardrailConfiguration] = None,
     idle_session_ttl_in_seconds: Optional[int] = None,
 ) -> Union[str, None]:
-    """
-    Creates the bedrock agent
-    """
+    """Creates the Bedrock agent"""
     create_agent_request: dict = {
         "agentName": agent_name,
         "agentResourceRoleArn": agent_resource_role_arn,
@@ -210,7 +216,7 @@ def _create_bedrock_agent(
     try:
         create_agent_response = bedrock_client.create_agent(**create_agent_request)
     except Exception as ex:
-        # See full exception list here: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_CreateAgent.html#API_agent_CreateAgent_Errors
+        # Full exception list: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_CreateAgent.html#API_agent_CreateAgent_Errors
         raise Exception(
             "Exception encountered with create_agent {}".format(repr(ex))
         ) from ex
@@ -237,9 +243,7 @@ def _create_bedrock_agent(
 
 
 def _get_action_group_and_function_names(tool: BaseTool) -> Tuple[str, str]:
-    """
-    Convert the LangChain 'Tool' into Bedrock Action Group name and Function name
-    """
+    """Convert the LangChain Tool into Bedrock Action Group name and Function name"""
     action_group_name = _DEFAULT_ACTION_GROUP_NAME
     function_name = tool.name
     tool_name_split = tool.name.split("::")
@@ -295,9 +299,7 @@ def _create_bedrock_action_groups(
 
 
 def _tool_to_function(tool: BaseTool) -> dict:
-    """
-    Convert LangChain tool to a Bedrock function schema
-    """
+    """Convert LangChain tool to a Bedrock function schema"""
     _, function_name = _get_action_group_and_function_names(tool)
     function_parameters = {}
     for arg_name, arg_details in tool.args.items():
@@ -316,9 +318,7 @@ def _tool_to_function(tool: BaseTool) -> dict:
 
 
 def _prepare_agent(bedrock_client: Any, agent_id: str) -> None:
-    """
-    Prepare the agent for invocations
-    """
+    """Prepare the agent for invocations"""
     bedrock_client.prepare_agent(agentId=agent_id)
     prepare_agent_start_time = time.time()
     while time.time() - prepare_agent_start_time < 10:
@@ -331,9 +331,7 @@ def _prepare_agent(bedrock_client: Any, agent_id: str) -> None:
 
 
 def _get_bedrock_agent(bedrock_client: Any, agent_name: str) -> Any:
-    """
-    Get the agent by name
-    """
+    """Get the agent by name"""
     next_token = None
     while True:
         if next_token:
