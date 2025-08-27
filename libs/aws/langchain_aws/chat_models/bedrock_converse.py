@@ -1305,7 +1305,13 @@ def _lc_content_to_bedrock(
     content: Union[str, List[Union[str, Dict[str, Any]]]],
 ) -> List[Dict[str, Any]]:
     if isinstance(content, str):
-        content = [{"text": content}]
+        if not content or content.isspace():
+            content = [{"text": "[empty]"}]
+        else:
+            content = [{"text": content}]
+    elif isinstance(content, list) and len(content) == 0:
+        content = [{"type": "text", "text": "[empty]"}]
+
     bedrock_content: List[Dict[str, Any]] = []
     for block in _snake_to_camel_keys(content):
         if isinstance(block, str):
@@ -1318,7 +1324,10 @@ def _lc_content_to_bedrock(
         ):
             bedrock_content.append(_format_data_content_block(block))
         elif block["type"] == "text":
-            bedrock_content.append({"text": block["text"]})
+            if not block["text"] or (isinstance(block["text"], str) and block["text"].isspace()):
+                bedrock_content.append({"text": "[empty]"})
+            else:
+                bedrock_content.append({"text": block["text"]})
         elif block["type"] == "image":
             # Assume block is already in bedrock format.
             if "image" in block:
