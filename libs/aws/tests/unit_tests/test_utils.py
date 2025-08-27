@@ -106,7 +106,8 @@ def test_creds_default(
 ) -> None:
     session_mock, client_mock, client_instance = mock_boto3
 
-    client = create_aws_client("bedrock-runtime")
+    with mock.patch.dict(os.environ, {}, clear=True):
+        client = create_aws_client("bedrock-runtime")
 
     session_mock.assert_not_called()
     client_mock.assert_called_once_with(service_name="bedrock-runtime")
@@ -144,10 +145,11 @@ def test_endpoint_url(
 ) -> None:
     session_mock, client_mock, client_instance = mock_boto3
 
-    client = create_aws_client(
-        "bedrock-runtime",
-        endpoint_url="https://bedrock-runtime.us-west-2.amazonaws.com",
-    )
+    with mock.patch.dict(os.environ, {}, clear=True):
+        client = create_aws_client(
+            "bedrock-runtime",
+            endpoint_url="https://bedrock-runtime.us-west-2.amazonaws.com",
+        )
 
     session_mock.assert_not_called()
     client_mock.assert_called_once_with(
@@ -164,7 +166,8 @@ def test_with_config(
 
     boto_config = Config(max_pool_connections=10)
 
-    client = create_aws_client("bedrock-runtime", config=boto_config)
+    with mock.patch.dict(os.environ, {}, clear=True):
+        client = create_aws_client("bedrock-runtime", config=boto_config)
 
     session_mock.assert_not_called()
     client_mock.assert_called_once_with(
@@ -179,12 +182,13 @@ def test_endpoint_url_with_creds(
     session_mock, client_mock, client_instance = mock_boto3
     session_instance = session_mock.return_value
 
-    client = create_aws_client(
-        "bedrock-runtime",
-        aws_access_key_id=SecretStr("test_key"),
-        aws_secret_access_key=SecretStr("test_secret"),
-        endpoint_url="https://bedrock-runtime.us-west-2.amazonaws.com",
-    )
+    with mock.patch.dict(os.environ, {}, clear=True):
+        client = create_aws_client(
+            "bedrock-runtime",
+            aws_access_key_id=SecretStr("test_key"),
+            aws_secret_access_key=SecretStr("test_secret"),
+            endpoint_url="https://bedrock-runtime.us-west-2.amazonaws.com",
+        )
 
     session_mock.assert_called_once_with(
         aws_access_key_id="test_key",
@@ -232,11 +236,12 @@ def test_session_region_fallback(
 
     session_instance.region_name = "us-west-2"
 
-    client = create_aws_client(
-        "bedrock-runtime",
-        aws_access_key_id=SecretStr("test_key"),
-        aws_secret_access_key=SecretStr("test_secret"),
-    )
+    with mock.patch.dict(os.environ, {}, clear=True):
+        client = create_aws_client(
+            "bedrock-runtime",
+            aws_access_key_id=SecretStr("test_key"),
+            aws_secret_access_key=SecretStr("test_secret"),
+        )
 
     session_mock.assert_called_once()
     session_instance.client.assert_called_once_with(
