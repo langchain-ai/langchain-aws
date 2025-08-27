@@ -7,12 +7,15 @@ from langchain_aws.document_compressors.rerank import BedrockRerank
 
 
 @pytest.fixture
-def reranker() -> BedrockRerank:
+@patch("langchain_aws.utils.create_aws_client")
+def reranker(mock_create_client: MagicMock) -> BedrockRerank:
+    mock_client = MagicMock()
+    mock_create_client.return_value = mock_client
+    
     reranker = BedrockRerank(
         model_arn="arn:aws:bedrock:us-west-2::foundation-model/amazon.rerank-v1:0",
         region_name="us-east-1",
     )
-    reranker.client = MagicMock()
     return reranker
 
 
