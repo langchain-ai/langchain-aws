@@ -1093,6 +1093,40 @@ def test__format_anthropic_messages_mixed_empty_content() -> None:
     assert ai_content[0]["text"] == "[empty]"
 
 
+def test__format_anthropic_messages_mixed_type_blocks_and_empty_content() -> None:
+    """Test that empty blocks mixed with non-text type blocks is handled correctly."""
+    messages = [
+        AIMessage([  # type: ignore[misc]
+            {"type": "text", "text": "\n\t"},
+            {
+                "type": "tool_use",
+                "id": "tool_call1",
+                "input": {"arg1": "val1"},
+                "name": "tool1",
+            },
+        ])
+    ]
+
+    expected_content = [
+        {
+            'role': 'assistant',
+            'content': [
+                {
+                    'type': 'tool_use',
+                    'id': 'tool_call1',
+                    'input': {'arg1': 'val1'},
+                    'name': 'tool1'
+                }
+            ]
+        }
+    ]
+
+    system, formatted_messages = _format_anthropic_messages(messages)
+
+    assert len(formatted_messages) == 1
+    assert formatted_messages == expected_content
+
+
 def test_model_kwargs() -> None:
     """Test we can transfer unknown params to model_kwargs."""
     llm = ChatBedrock(
