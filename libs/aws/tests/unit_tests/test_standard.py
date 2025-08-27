@@ -1,23 +1,11 @@
 """Standard LangChain interface tests"""
 
 from typing import Type
-from unittest.mock import MagicMock
 
-import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_tests.unit_tests import ChatModelUnitTests
 
 from langchain_aws.chat_models.bedrock import ChatBedrock
-
-
-@pytest.fixture(autouse=True)
-def mock_aws_client(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    """Mock AWS client creation to prevent network calls in unit tests."""
-    mock_client = MagicMock()
-    monkeypatch.setattr(
-        "langchain_aws.utils.create_aws_client", lambda **_: mock_client
-    )
-    return mock_client
 
 
 class TestBedrockStandard(ChatModelUnitTests):
