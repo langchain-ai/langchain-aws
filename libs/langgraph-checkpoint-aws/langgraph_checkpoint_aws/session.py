@@ -39,6 +39,7 @@ class BedrockAgentRuntimeSessionClient:
 
     Attributes:
         client: Boto3 client for bedrock-agent-runtime service
+
     """
 
     def __init__(
@@ -62,6 +63,7 @@ class BedrockAgentRuntimeSessionClient:
             aws_session_token: AWS session token
             endpoint_url: Custom endpoint URL
             config: Boto3 config object
+
         """
         _session_kwargs, _client_kwargs = process_aws_client_args(
             region_name,
@@ -88,6 +90,7 @@ class BedrockAgentRuntimeSessionClient:
         Returns:
             CreateSessionResponse: Response object containing session identifier and
                 metadata
+
         """
 
         response = self.client.create_session(
@@ -104,6 +107,7 @@ class BedrockAgentRuntimeSessionClient:
 
         Returns:
             GetSessionResponse: Response object containing session details and metadata
+
         """
         response = self.client.get_session(**to_boto_params(request))
         return GetSessionResponse(**response)
@@ -117,6 +121,7 @@ class BedrockAgentRuntimeSessionClient:
 
         Returns:
             EndSessionResponse: Response object containing the ended session details
+
         """
         response = self.client.end_session(**to_boto_params(request))
         return EndSessionResponse(**response)
@@ -127,6 +132,7 @@ class BedrockAgentRuntimeSessionClient:
 
         Args:
             request (DeleteSessionRequest): Object containing session identifier
+
         """
         self.client.delete_session(**to_boto_params(request))
 
@@ -142,6 +148,7 @@ class BedrockAgentRuntimeSessionClient:
         Returns:
             CreateInvocationResponse: Response object containing invocation identifier
                 and metadata
+
         """
         response = self.client.create_invocation(**to_boto_params(request))
         return CreateInvocationResponse(**response)
@@ -158,6 +165,7 @@ class BedrockAgentRuntimeSessionClient:
         Returns:
             ListInvocationsResponse: Response object containing list of invocations and
                 pagination token
+
         """
         response = self.client.list_invocations(**to_boto_params(request))
         return ListInvocationsResponse(**response)
@@ -175,6 +183,7 @@ class BedrockAgentRuntimeSessionClient:
         Returns:
             PutInvocationStepResponse: Response object containing invocation step
                 identifier
+
         """
         response = self.client.put_invocation_step(**to_boto_params(request))
         return PutInvocationStepResponse(**response)
@@ -192,6 +201,7 @@ class BedrockAgentRuntimeSessionClient:
         Returns:
             GetInvocationStepResponse: Response object containing invocation step
                 identifier and payload
+
         """
         response = self.client.get_invocation_step(**to_boto_params(request))
         return GetInvocationStepResponse(**response)
@@ -209,6 +219,7 @@ class BedrockAgentRuntimeSessionClient:
         Returns:
             ListInvocationStepsResponse: Response object containing list of invocation
                 steps and pagination token
+
         """
         response = self.client.list_invocation_steps(**to_boto_params(request))
         return ListInvocationStepsResponse(**response)

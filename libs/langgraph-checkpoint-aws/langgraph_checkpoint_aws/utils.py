@@ -36,6 +36,7 @@ def to_boto_params(model: BaseModel) -> dict:
 
     Returns:
         dict: Dictionary of parameters compatible with boto3 API calls
+
     """
     return model.model_dump(by_alias=True, exclude_none=True)
 
@@ -49,6 +50,7 @@ def generate_deterministic_uuid(input_string: str | bytes) -> uuid.UUID:
 
     Returns:
         UUID object generated deterministically from the input
+
     """
     if isinstance(input_string, str):
         input_bytes = input_string.encode("utf-8")
@@ -67,6 +69,7 @@ def generate_checkpoint_id(namespace: str) -> str:
 
     Returns:
         str: Deterministic UUID as string for the checkpoint
+
     """
     return str(generate_deterministic_uuid(f"{CHECKPOINT_PREFIX}#{namespace}"))
 
@@ -80,6 +83,7 @@ def generate_write_id(namespace: str, checkpoint_id: str) -> str:
 
     Returns:
         str: Deterministic UUID as string for the write operation
+
     """
     return str(
         generate_deterministic_uuid(f"{WRITES_PREFIX}#{namespace}#{checkpoint_id}")
@@ -95,6 +99,7 @@ def deserialize_data(serializer: SerializerProtocol, data: str) -> Any:
 
     Returns:
         Any: Deserialized Python object
+
     """
     return serializer.loads(data.encode())
 
@@ -108,6 +113,7 @@ def serialize_data(serializer: SerializerProtocol, data: Any) -> str:
 
     Returns:
         str: Serialized string data with null characters handled
+
     """
     serialized = serializer.dumps(data)
     return serialized.decode().replace("\\u0000", "")
@@ -122,6 +128,7 @@ def serialize_to_base64(serializer: SerializerProtocol, data: Any) -> tuple[str,
 
     Returns:
         Tuple[str, str]: Tuple of (type, base64 encoded string)
+
     """
     data_type, serialized = serializer.dumps_typed(data)
     encoded = base64.b64encode(serialized).decode("utf-8")
@@ -140,6 +147,7 @@ def deserialize_from_base64(
 
     Returns:
         Any: Deserialized data object
+
     """
     decoded = base64.b64decode(encoded_data.encode("utf-8"))
     return serializer.loads_typed((data_type, decoded))
@@ -165,6 +173,7 @@ def construct_checkpoint_tuple(
 
     Returns:
         Constructed CheckpointTuple
+
     """
     return CheckpointTuple(
         {
@@ -214,6 +223,7 @@ def transform_pending_task_writes(
         list[list[Any]]: Sorted list of write operations, where each write is
             represented as a list containing [task_id, channel, value, task_path,
             write_idx]. Sorted by task_path, task_id, and write_idx.
+
     """
     return sorted(
         (
@@ -259,6 +269,7 @@ def create_session_checkpoint(
     Returns:
         SessionCheckpoint: A SessionCheckpoint object containing the processed and
             serialized data.
+
     """
     # Create copy to avoid modifying original checkpoint
     checkpoint_copy = checkpoint.copy()
@@ -268,8 +279,8 @@ def create_session_checkpoint(
     checkpoint_copy.pop("pending_sends", None)  # type: ignore[typeddict-item]
 
     # Extract required config values
-    thread_id = config["configurable"]["thread_id"]
-    checkpoint_ns = config["configurable"]["checkpoint_ns"]
+    thread_id = config.get("configurable", {})["thread_id"]
+    checkpoint_ns = config.get("configurable", {})["checkpoint_ns"]
     checkpoint_id = checkpoint["id"]
 
     session_checkpoint = SessionCheckpoint(
@@ -300,6 +311,7 @@ def process_writes_invocation_content_blocks(
 
     Returns:
         List of SessionPendingWrite objects
+
     """
     # Parse JSON content from content blocks
     pending_writes = []
@@ -348,6 +360,7 @@ def process_write_operations(
 
     Returns:
         Tuple of (list of content blocks, boolean indicating if new writes were created)
+
     """
     content_blocks = []
     new_writes = False
@@ -393,7 +406,7 @@ def process_aws_client_args(
     aws_session_token: str | None = None,
     endpoint_url: str | None = None,
     config: Config | None = None,
-) -> tuple[dict, dict]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """
     Process AWS client arguments and return session and client kwargs.
 
@@ -408,9 +421,10 @@ def process_aws_client_args(
 
     Returns:
         Tuple[dict, dict]: Session kwargs and client kwargs
+
     """
-    session_kwargs = {}
-    client_kwargs = {}
+    session_kwargs: dict[str, Any] = {}
+    client_kwargs: dict[str, Any] = {}
 
     # Session parameters
     if region_name is not None:
@@ -443,6 +457,7 @@ def create_client_config(config: Config | None = None) -> Config:
 
     Returns:
         Config: New config object with combined user agent
+
     """
     config_kwargs: dict[str, Any] = {}
     existing_user_agent = getattr(config, "user_agent_extra", "") if config else ""

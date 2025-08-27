@@ -38,6 +38,7 @@ lint = [
     "ruff>=0.12.10",
 ]
 typing = [
+    "boto3-stubs>=1.40.19",
     "mypy>=1.17.1",
 ]
 

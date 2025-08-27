@@ -10,6 +10,7 @@ class BedrockSessionBaseModel(BaseModel):
 
     All models in this package inherit from this base class which provides common
     configuration including camelCase alias generation and frozen model instances.
+
     """
 
     model_config = ConfigDict(
@@ -25,6 +26,7 @@ class SessionIdentifierRequest(BedrockSessionBaseModel):
 
     Attributes:
         session_identifier: UUID or ARN representing the session identifier
+
     """
 
     session_identifier: str = Field(..., description="Required session identifier")
@@ -39,6 +41,7 @@ class SessionIdentifierResponse(BedrockSessionBaseModel):
         session_status: Current status of the session
         created_at: Timestamp of session creation
         last_updated_at: Timestamp of last session update
+
     """
 
     session_id: str
@@ -55,6 +58,7 @@ class CreateSessionRequest(BedrockSessionBaseModel):
         session_metadata: Optional metadata associated with the session
         encryption_key_arn: Optional ARN of encryption key
         tags: Optional key-value pairs for tagging the session
+
     """
 
     session_metadata: dict[str, str] | None = None
@@ -70,6 +74,7 @@ class CreateSessionResponse(BedrockSessionBaseModel):
         session_arn: ARN of the created session
         created_at: Timestamp when the session was created
         session_status: Current status of the session
+
     """
 
     session_id: str
@@ -83,6 +88,7 @@ class GetSessionRequest(SessionIdentifierRequest):
 
     Attributes:
         session_identifier: UUID or ARN representing the session identifier
+
     """
 
     pass
@@ -99,6 +105,7 @@ class GetSessionResponse(SessionIdentifierResponse):
         encryption_key_arn: Optional ARN of the encryption key used
         session_status: Current status of the session
         last_updated_at: Timestamp when the session was last updated
+
     """
 
     session_metadata: dict[str, str] | None = None
@@ -110,6 +117,7 @@ class EndSessionRequest(SessionIdentifierRequest):
 
     Attributes:
         session_identifier: Unique identifier of the session to end
+
     """
 
     pass
@@ -122,6 +130,7 @@ class EndSessionResponse(BedrockSessionBaseModel):
         session_id: Unique identifier of the session to end
         session_arn: ARN of the session
         session_status: Current status of the session
+
     """
 
     session_id: str
@@ -134,6 +143,7 @@ class DeleteSessionRequest(SessionIdentifierRequest):
 
     Attributes:
         session_identifier: Unique identifier of the session to delete
+
     """
 
     pass
@@ -146,6 +156,7 @@ class InvocationSummary(BedrockSessionBaseModel):
         session_id: UUID representing the session identifier
         invocation_id: UUID representing the invocation identifier
         created_at: Timestamp when the invocation was created
+
     """
 
     session_id: str
@@ -159,6 +170,7 @@ class InvocationIdentifierRequest(SessionIdentifierRequest):
     Attributes:
         session_identifier: Unique identifier of the session
         invocation_identifier: Required invocation identifier
+
     """
 
     invocation_identifier: str = Field(
@@ -173,6 +185,7 @@ class CreateInvocationRequest(SessionIdentifierRequest):
         session_identifier: UUID or ARN representing the session identifier
         invocation_id: Optional custom UUID for the invocation
         description: Optional description of the invocation
+
     """
 
     invocation_id: str | None = None
@@ -184,6 +197,7 @@ class CreateInvocationResponse(BedrockSessionBaseModel):
 
     Attributes:
         invocation_id: UUID representing the invocation identifier
+
     """
 
     invocation_id: str
@@ -196,6 +210,7 @@ class ListInvocationsRequest(SessionIdentifierRequest):
         session_identifier: UUID or ARN representing the session identifier
         next_token: Optional token for retrieving next page of results
         max_results: Optional maximum number of results to return (1-100)
+
     """
 
     next_token: str | None = None
@@ -208,6 +223,7 @@ class ListInvocationsResponse(BedrockSessionBaseModel):
     Attributes:
         invocation_summaries: List of invocation summaries
         next_token: Optional token for retrieving next page of results
+
     """
 
     invocation_summaries: list[InvocationSummary]
@@ -221,6 +237,7 @@ class InvocationStepIdentifierRequest(InvocationIdentifierRequest):
         session_identifier: UUID or ARN representing the session identifier
         invocation_identifier: UUID representing the invocation identifier
         invocation_step_id: UUID representing the step identifier
+
     """
 
     invocation_step_id: str = Field(
@@ -233,6 +250,7 @@ class BedrockSessionContentBlock(BedrockSessionBaseModel):
 
     Attributes:
         text: Optional text content of the block with minimum length of 1
+
     """
 
     text: Annotated[str, Field(min_length=1)] | None = None
@@ -243,6 +261,7 @@ class InvocationStepPayload(BedrockSessionBaseModel):
 
     Attributes:
         content_blocks: List of content blocks contained in the payload
+
     """
 
     content_blocks: list[BedrockSessionContentBlock] | None = Field(None, min_length=1)
@@ -255,6 +274,7 @@ class InvocationStepSummary(BedrockSessionBaseModel):
         invocation_id: UUID representing the invocation identifier
         invocation_step_id: UUID representing the step identifier
         invocation_step_time: Timestamp when the step was created
+
     """
 
     invocation_id: str
@@ -271,6 +291,7 @@ class PutInvocationStepRequest(InvocationIdentifierRequest):
         invocation_step_id: UUID representing the step identifier
         invocation_step_time: Timestamp when the step was created
         payload: Payload containing content blocks for the step
+
     """
 
     invocation_step_id: str | None = None
@@ -283,6 +304,7 @@ class PutInvocationStepResponse(BedrockSessionBaseModel):
 
     Attributes:
         invocation_step_id: UUID representing the step identifier
+
     """
 
     invocation_step_id: str
@@ -295,6 +317,7 @@ class GetInvocationStepRequest(InvocationStepIdentifierRequest):
         session_identifier: UUID or ARN representing the session identifier
         invocation_identifier: UUID representing the invocation identifier
         invocation_step_id: UUID representing the step identifier
+
     """
 
     pass
@@ -309,6 +332,7 @@ class InvocationStep(InvocationStepSummary):
         invocation_step_id: UUID representing the step identifier
         invocation_step_time: Timestamp when the step was created
         payload: Payload containing content blocks for the step
+
     """
 
     session_id: str
@@ -320,6 +344,7 @@ class GetInvocationStepResponse(BedrockSessionBaseModel):
 
     Attributes:
         invocation_step: Payload containing content blocks for the step
+
     """
 
     invocation_step: InvocationStep
@@ -333,6 +358,7 @@ class ListInvocationStepsRequest(SessionIdentifierRequest):
         invocation_identifier: Optional UUID representing the invocation identifier
         next_token: Optional token for retrieving next page of results
         max_results: Optional maximum number of results to return (1-100)
+
     """
 
     invocation_identifier: str | None = None
@@ -346,6 +372,7 @@ class ListInvocationStepsResponse(BedrockSessionBaseModel):
     Attributes:
         invocation_step_summaries: List of invocation step summaries
         next_token: Optional token for retrieving next page of results
+
     """
 
     invocation_step_summaries: list[InvocationStepSummary]

@@ -41,6 +41,18 @@ from langgraph_checkpoint_aws.utils import (
 )
 
 
+def _get_client_error_code(client_error: ClientError) -> str | None:
+    """Safely extract error code from ClientError response.
+
+    Done to address IDE warnings about possible missing attributes.
+
+    """
+    try:
+        return client_error.response.get("Error", {}).get("Code")
+    except (AttributeError, KeyError):
+        return None
+
+
 class BedrockSessionSaver(BaseCheckpointSaver):
     """Saves and retrieves checkpoints using Amazon Bedrock Agent Runtime sessions.
 
@@ -56,6 +68,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
         aws_session_token: AWS session token
         endpoint_url: Custom endpoint URL for the Bedrock service
         config: Botocore config object
+
     """
 
     def __init__(
@@ -89,6 +102,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
         Raises:
             ClientError: If creation fails for reasons other than the invocation
                 already existing
+
         """
         try:
             self.session_client.create_invocation(
@@ -98,7 +112,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
                 )
             )
         except ClientError as e:
-            if e.response["Error"]["Code"] != "ConflictException":
+            if _get_client_error_code(e) != "ConflictException":
                 raise e
 
     def _get_checkpoint_pending_writes(
@@ -120,6 +134,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
         Returns:
             List of PendingWrite objects containing task_id, channel, value, task_path
             and write_idx. Returns empty list if no pending writes are found.
+
         """
         # Generate unique ID for the write operation
         writes_id = generate_write_id(checkpoint_ns, checkpoint_id)
@@ -155,7 +170,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
         except ClientError as e:
             # Return empty list if resource not found, otherwise re-raise error
-            if e.response["Error"]["Code"] == "ResourceNotFoundException":
+            if _get_client_error_code(e) == "ResourceNotFoundException":
                 return []
             raise e
 
@@ -179,6 +194,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
         Returns:
             None
+
         """
         self.session_client.put_invocation_step(
             PutInvocationStepRequest(
@@ -205,6 +221,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
         Returns:
             InvocationStep object if a checkpoint is found, None otherwise
+
         """
         next_token = None
         while True:
@@ -257,6 +274,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
         Returns:
             InvocationStep if found, None otherwise
+
         """
         if checkpoint_id is None:
             step = self._find_most_recent_checkpoint_step(thread_id, invocation_id)
@@ -284,6 +302,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
         Returns:
             Sorted list of task sends
+
         """
         if not parent_checkpoint_id:
             return []
@@ -307,9 +326,10 @@ class BedrockSessionSaver(BaseCheckpointSaver):
         Returns:
             Optional[CheckpointTuple]: Structured checkpoint data if found, None
                 otherwise.
+
         """
-        session_thread_id = config["configurable"]["thread_id"]
-        checkpoint_namespace = config["configurable"].get("checkpoint_ns", "")
+        session_thread_id = config.get("configurable", {})["thread_id"]
+        checkpoint_namespace = config.get("configurable", {}).get("checkpoint_ns", "")
         checkpoint_identifier = get_checkpoint_id(config)
 
         invocation_id = generate_checkpoint_id(checkpoint_namespace)
@@ -349,7 +369,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
             )
 
         except ClientError as err:
-            if err.response["Error"]["Code"] != "ResourceNotFoundException":
+            if _get_client_error_code(err) != "ResourceNotFoundException":
                 raise err
             return None
 
@@ -379,6 +399,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
         Returns:
             RunnableConfig: Updated configuration with thread_id, checkpoint_ns and
                 checkpoint_id
+
         """
         session_checkpoint = create_session_checkpoint(
             checkpoint, config, metadata, self.serde, new_versions
@@ -439,10 +460,11 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
         Returns:
             None
+
         """
-        thread_id = config["configurable"]["thread_id"]
-        checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
-        checkpoint_id = config["configurable"]["checkpoint_id"]
+        thread_id = config.get("configurable", {})["thread_id"]
+        checkpoint_ns = config.get("configurable", {}).get("checkpoint_ns", "")
+        checkpoint_id = config.get("configurable", {})["checkpoint_id"]
 
         # Generate unique identifier for this write operation
         writes_invocation_identifier = generate_write_id(checkpoint_ns, checkpoint_id)
@@ -493,12 +515,13 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
         Returns:
             Iterator of matching CheckpointTuple objects
+
         """
         if config is None:
             return
 
-        thread_id = config["configurable"]["thread_id"]
-        checkpoint_ns = config["configurable"].get("checkpoint_ns")
+        thread_id = config.get("configurable", {})["thread_id"]
+        checkpoint_ns = config.get("configurable", {}).get("checkpoint_ns")
 
         invocation_identifier = None
 
@@ -520,7 +543,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
                     )
                 )
             except ClientError as e:
-                if e.response["Error"]["Code"] == "ResourceNotFoundException":
+                if _get_client_error_code(e) == "ResourceNotFoundException":
                     return
                 else:
                     raise e
