@@ -352,11 +352,12 @@ class AmazonKendraRetriever(BaseRetriever):
             must also be provided. If not specified, the default credential profile or,
             if on an EC2 instance, credentials from IMDS will be used. See:
             https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-            If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+            If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment
+            variable.
 
         aws_session_token: AWS session token. If provided, aws_access_key_id and
-            aws_secret_access_key must also be provided. Not required unless using temporary
-            credentials. See:
+            aws_secret_access_key must also be provided. Not required unless using
+            temporary credentials. See:
             https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
             If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
 

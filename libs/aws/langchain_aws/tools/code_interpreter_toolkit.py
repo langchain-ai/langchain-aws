@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 from langchain_core.runnables.config import RunnableConfig
@@ -137,7 +137,8 @@ class CodeInterpreterToolkit:
         if self.tools:
             return self.tools
 
-        # Create the basic tools for code execution - this doesn't initialize any code interpreter yet
+        # Create the basic tools for code execution - this doesn't initialize any
+        # code interpreter yet
         self.tools = self._create_tools()
 
         # Return the list of tools
@@ -150,7 +151,7 @@ class CodeInterpreterToolkit:
         Returns:
             List of code execution tools
         """
-        tools = []
+        tools: List[BaseTool] = []
 
         # Execute code tool
         execute_code_tool = StructuredTool.from_function(
@@ -412,7 +413,7 @@ class CodeInterpreterToolkit:
 
         return _extract_output_from_stream(response)
 
-    async def cleanup(self, thread_id: str = None) -> None:
+    async def cleanup(self, thread_id: Optional[str] = None) -> None:
         """Clean up resources
 
         Args:
@@ -465,7 +466,7 @@ async def create_code_interpreter_toolkit(
     return toolkit, tools
 
 
-def _get_thread_id(config: Optional[RunnableConfig] = None):
+def _get_thread_id(config: Optional[RunnableConfig] = None) -> str:
     thread_id = "default"
 
     if config and isinstance(config, dict):
@@ -474,7 +475,7 @@ def _get_thread_id(config: Optional[RunnableConfig] = None):
     return thread_id
 
 
-def _extract_output_from_stream(response):
+def _extract_output_from_stream(response: Any) -> str:
     """
     Extract output from code interpreter response stream
 

@@ -1411,7 +1411,8 @@ def _create_mock_llm_guard_last_turn_only() -> Tuple[
 
 
 def test_guard_last_turn_only_no_guardrail_config() -> None:
-    """Test that an error is raised if guard_last_turn_only is True but no guardrail_config is provided."""
+    """Test that an error is raised if guard_last_turn_only is True but no
+    guardrail_config is provided."""
     with pytest.raises(ValueError):
         ChatBedrockConverse(
             client=mock.MagicMock(),
@@ -1507,7 +1508,10 @@ def test_get_base_model_with_application_inference_profile(
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "anthropic.claude-3-sonnet-20240229-v1:0"
+                )
             }
         ]
     }
@@ -1572,7 +1576,10 @@ def test_configure_streaming_for_resolved_model(mock_create_client: mock.Mock) -
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "anthropic.claude-3-sonnet-20240229-v1:0"
+                )
             }
         ]
     }
@@ -1604,11 +1611,15 @@ def test_configure_streaming_for_resolved_model_no_tools(
     mock_bedrock_client = mock.Mock()
     mock_runtime_client = mock.Mock()
 
-    # Mock the get_inference_profile response for a model with no-tools streaming support
+    # Mock the get_inference_profile response for a model with no-tools streaming
+    # support
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-text-express-v1"
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "amazon.titan-text-express-v1"
+                )
             }
         ]
     }
@@ -1644,7 +1655,10 @@ def test_configure_streaming_for_resolved_model_no_streaming(
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/stability.stable-image-core-v1:0"
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "stability.stable-image-core-v1:0"
+                )
             }
         ]
     }
@@ -1669,7 +1683,8 @@ def test_configure_streaming_for_resolved_model_no_streaming(
 
 
 def test_nova_provider_extraction() -> None:
-    """Test that provider is correctly extracted from Nova model ID when not provided."""
+    """Test that provider is correctly extracted from Nova model ID when not
+    provided."""
     model = ChatBedrockConverse(
         client=mock.MagicMock(),
         model="us.amazon.nova-pro-v1:0",

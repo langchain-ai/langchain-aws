@@ -338,6 +338,12 @@ class InMemoryVectorStore(VectorStore):
 
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
 
+        if redis_url is None:
+            raise ValueError(
+                "redis_url must be provided either as a parameter or as the "
+                "REDIS_URL environment variable"
+            )
+
         if "redis_url" in kwargs:
             kwargs.pop("redis_url")
 
@@ -514,6 +520,13 @@ class InMemoryVectorStore(VectorStore):
             ImportError: If the redis python package is not installed.
         """
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
+
+        if redis_url is None:
+            raise ValueError(
+                "redis_url must be provided either as a parameter or as the "
+                "REDIS_URL environment variable"
+            )
+
         # We need to first remove redis_url from kwargs,
         # otherwise passing it to Redis will result in an error.
         if "redis_url" in kwargs:
@@ -574,6 +587,12 @@ class InMemoryVectorStore(VectorStore):
         """
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
 
+        if redis_url is None:
+            raise ValueError(
+                "redis_url must be provided either as a parameter or as the "
+                "REDIS_URL environment variable"
+            )
+
         if ids is None:
             raise ValueError("'ids' (keys)() were not provided.")
 
@@ -618,6 +637,13 @@ class InMemoryVectorStore(VectorStore):
             bool: Whether or not the drop was successful.
         """
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
+
+        if redis_url is None:
+            raise ValueError(
+                "redis_url must be provided either as a parameter or as the "
+                "REDIS_URL environment variable"
+            )
+
         try:
             import redis  # noqa: F401
         except ImportError:
@@ -1412,7 +1438,7 @@ class InMemoryVectorStoreRetriever(VectorStoreRetriever):
     )
 
     def _get_relevant_documents(
-        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun, **kwargs: Any
     ) -> List[Document]:
         if self.search_type == "similarity":
             docs = self.vectorstore.similarity_search(query, **self.search_kwargs)
@@ -1440,7 +1466,11 @@ class InMemoryVectorStoreRetriever(VectorStoreRetriever):
         return docs
 
     async def _aget_relevant_documents(
-        self, query: str, *, run_manager: AsyncCallbackManagerForRetrieverRun
+        self,
+        query: str,
+        *,
+        run_manager: AsyncCallbackManagerForRetrieverRun,
+        **kwargs: Any,
     ) -> List[Document]:
         if self.search_type == "similarity":
             docs = await self.vectorstore.asimilarity_search(

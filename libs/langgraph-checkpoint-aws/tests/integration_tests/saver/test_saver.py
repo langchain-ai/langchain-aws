@@ -113,9 +113,9 @@ class TestBedrockMemorySaver:
             # Test checkpoint listing
             checkpoint_tuples = list(session_saver.list(config))
             assert checkpoint_tuples, "Checkpoint tuples should not be empty"
-            assert isinstance(
-                checkpoint_tuples, list
-            ), "Checkpoint tuples should be a list"
+            assert isinstance(checkpoint_tuples, list), (
+                "Checkpoint tuples should be a list"
+            )
         finally:
             boto_session_client.end_session(sessionIdentifier=session_id)
             boto_session_client.delete_session(sessionIdentifier=session_id)

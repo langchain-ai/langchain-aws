@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Any, Optional
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, constr
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 
@@ -57,9 +57,9 @@ class CreateSessionRequest(BedrockSessionBaseModel):
         tags: Optional key-value pairs for tagging the session
     """
 
-    session_metadata: Optional[dict[str, str]] = None
-    encryption_key_arn: Optional[str] = None
-    tags: Optional[dict[str, str]] = None
+    session_metadata: dict[str, str] | None = None
+    encryption_key_arn: str | None = None
+    tags: dict[str, str] | None = None
 
 
 class CreateSessionResponse(BedrockSessionBaseModel):
@@ -101,8 +101,8 @@ class GetSessionResponse(SessionIdentifierResponse):
         last_updated_at: Timestamp when the session was last updated
     """
 
-    session_metadata: Optional[dict[str, str]] = None
-    encryption_key_arn: Optional[str] = None
+    session_metadata: dict[str, str] | None = None
+    encryption_key_arn: str | None = None
 
 
 class EndSessionRequest(SessionIdentifierRequest):
@@ -175,8 +175,8 @@ class CreateInvocationRequest(SessionIdentifierRequest):
         description: Optional description of the invocation
     """
 
-    invocation_id: Optional[str] = None
-    description: Optional[str] = None
+    invocation_id: str | None = None
+    description: str | None = None
 
 
 class CreateInvocationResponse(BedrockSessionBaseModel):
@@ -198,8 +198,8 @@ class ListInvocationsRequest(SessionIdentifierRequest):
         max_results: Optional maximum number of results to return (1-100)
     """
 
-    next_token: Optional[str] = None
-    max_results: Optional[int] = None
+    next_token: str | None = None
+    max_results: int | None = None
 
 
 class ListInvocationsResponse(BedrockSessionBaseModel):
@@ -211,7 +211,7 @@ class ListInvocationsResponse(BedrockSessionBaseModel):
     """
 
     invocation_summaries: list[InvocationSummary]
-    next_token: Optional[str] = None
+    next_token: str | None = None
 
 
 class InvocationStepIdentifierRequest(InvocationIdentifierRequest):
@@ -235,7 +235,7 @@ class BedrockSessionContentBlock(BedrockSessionBaseModel):
         text: Optional text content of the block with minimum length of 1
     """
 
-    text: Optional[constr(min_length=1)] = None
+    text: Annotated[str, Field(min_length=1)] | None = None
 
 
 class InvocationStepPayload(BedrockSessionBaseModel):
@@ -245,9 +245,7 @@ class InvocationStepPayload(BedrockSessionBaseModel):
         content_blocks: List of content blocks contained in the payload
     """
 
-    content_blocks: Optional[list[BedrockSessionContentBlock]] = Field(
-        None, min_length=1
-    )
+    content_blocks: list[BedrockSessionContentBlock] | None = Field(None, min_length=1)
 
 
 class InvocationStepSummary(BedrockSessionBaseModel):
@@ -275,7 +273,7 @@ class PutInvocationStepRequest(InvocationIdentifierRequest):
         payload: Payload containing content blocks for the step
     """
 
-    invocation_step_id: Optional[str] = None
+    invocation_step_id: str | None = None
     invocation_step_time: datetime
     payload: InvocationStepPayload
 
@@ -337,9 +335,9 @@ class ListInvocationStepsRequest(SessionIdentifierRequest):
         max_results: Optional maximum number of results to return (1-100)
     """
 
-    invocation_identifier: Optional[str] = None
-    next_token: Optional[str] = None
-    max_results: Optional[int] = None
+    invocation_identifier: str | None = None
+    next_token: str | None = None
+    max_results: int | None = None
 
 
 class ListInvocationStepsResponse(BedrockSessionBaseModel):
@@ -351,7 +349,7 @@ class ListInvocationStepsResponse(BedrockSessionBaseModel):
     """
 
     invocation_step_summaries: list[InvocationStepSummary]
-    next_token: Optional[str] = None
+    next_token: str | None = None
 
 
 class SessionPendingWrite(BaseModel):
@@ -377,6 +375,6 @@ class SessionCheckpoint(BaseModel):
     checkpoint_id: str
     checkpoint: Any
     metadata: Any
-    parent_checkpoint_id: Optional[str] = None
+    parent_checkpoint_id: str | None = None
     channel_values: Any
     version: Any

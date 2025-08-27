@@ -7,7 +7,7 @@ Note related issues and tag relevant maintainers in pull requests.
 Pull requests cannot land without passing the formatting, linting, and testing checks first. See [Testing](#testing) and
 [Formatting and Linting](#formatting-and-linting) for how to run these checks locally.
 
-It's essential that we maintain great documentation and testing. Add or update relevant unit or integration test when possible. 
+It's essential that we maintain great documentation and testing. Add or update relevant unit or integration test when possible.
 These live in `tests/unit_tests` and `tests/integration_tests`. Example notebooks and documentation lives in `/docs` inside the
 LangChain repo [here](https://github.com/langchain-ai/langchain/tree/master/docs).
 
@@ -18,18 +18,15 @@ best way to get our attention.
 
 This quick start guide explains how to setup the repository locally for development.
 
-### Dependency Management: Poetry and other env/dependency managers
+### Dependency Management: uv and other env/dependency managers
 
-This project utilizes [Poetry](https://python-poetry.org/) v1.7.1+ as a dependency manager.
+This project utilizes [uv](https://docs.astral.sh/uv/) as a dependency manager.
 
-❗Note: *Before installing Poetry*, if you use `Conda`, create and activate a new Conda env (e.g. `conda create -n langchain python=3.9`)
+❗Note: *Before installing uv*, if you use `Conda`, create and activate a new Conda env (e.g. `conda create -n langchain python=3.10`)
 
-Install Poetry: **[documentation on how to install it](https://python-poetry.org/docs/#installation)**.
+Install uv: **[documentation on how to install it](https://docs.astral.sh/uv/getting-started/installation/)**.
 
-❗Note: If you use `Conda` or `Pyenv` as your environment/package manager, after installing Poetry,
-tell Poetry to use the virtualenv python environment (`poetry config virtualenvs.prefer-active-python true`)
-
-The instructions here assume that you run all commands from the `libs/aws` directory. 
+The instructions here assume that you run all commands from the `libs/aws` directory.
 
 ```bash
 cd libs/aws
@@ -38,7 +35,7 @@ cd libs/aws
 ### Install for development
 
 ```bash
-poetry install --with lint,typing,test,test_integration,dev
+uv sync --group lint --group typing --group test --group test_integration --group dev
 ```
 
 Then verify the installation.
@@ -47,11 +44,8 @@ Then verify the installation.
 make test
 ```
 
-If during installation you receive a `WheelFileValidationError` for `debugpy`, please make sure you are running
-Poetry v1.6.1+. This bug was present in older versions of Poetry (e.g. 1.4.1) and has been resolved in newer releases.
-If you are still seeing this bug on v1.6.1+, you may also try disabling "modern installation"
-(`poetry config installer.modern-installation false`) and re-installing requirements.
-See [this `debugpy` issue](https://github.com/microsoft/debugpy/issues/1246) for more details.
+If during installation you encounter any issues with dependency installation, please make sure you are using the latest version of uv.
+If you continue to see installation issues, please file an issue with the details of your environment.
 
 ### Testing
 
@@ -65,8 +59,8 @@ make test
 ```
 
 Integration tests cover the end-to-end service calls as much as possible.
-However, in certain cases this might not be practical, so you can mock the 
-service response for these tests. There are examples of this in the repo, 
+However, in certain cases this might not be practical, so you can mock the
+service response for these tests. There are examples of this in the repo,
 that can help you write your own tests. If you have suggestions to improve
 this, please get in touch with us.
 
@@ -105,11 +99,13 @@ make coverage_integration_test TEST_FILE=tests/integration_tests/specific_test.p
 After running tests with coverage, you can view the results in several ways:
 
 **Terminal Report:**
+
 ```bash
 make coverage_report
 ```
 
 **HTML Report:**
+
 ```bash
 make coverage_html
 ```
@@ -119,6 +115,7 @@ The HTML report will be generated in the `htmlcov/` directory. Open `htmlcov/ind
 #### Coverage Configuration
 
 Coverage settings are configured in `pyproject.toml`:
+
 - **Source tracking**: Only code in `langchain_aws/` is measured
 - **Branch coverage**: Tracks both line and branch coverage for comprehensive analysis
 - **Exclusions**: Test files and common patterns (like `pragma: no cover`) are excluded
@@ -135,11 +132,11 @@ Coverage settings are configured in `pyproject.toml`:
 
 Formatting ensures that the code in this repo has consistent style so that the
 code looks more presentable and readable. It corrects these errors when you run
-the formatting command. Linting finds and highlights the code errors and helps 
-avoid coding practices that can lead to errors. 
+the formatting command. Linting finds and highlights the code errors and helps
+avoid coding practices that can lead to errors.
 
 Run both of these locally before submitting a PR. The CI scripts will run these
-when you submit a PR, and you won't be able to merge changes without fixing 
+when you submit a PR, and you won't be able to merge changes without fixing
 issues identified by the CI.
 
 #### Code Formatting
@@ -152,9 +149,9 @@ To run format:
 make format
 ```
 
-Additionally, you can run the formatter only on the files that have been modified in your current branch 
-as compared to the master branch using the `format_diff` command. This is especially useful when you have 
-made changes to a subset of the project and want to ensure your changes are properly formatted without 
+Additionally, you can run the formatter only on the files that have been modified in your current branch
+as compared to the master branch using the `format_diff` command. This is especially useful when you have
+made changes to a subset of the project and want to ensure your changes are properly formatted without
 affecting the rest of the codebase.
 
 ```bash

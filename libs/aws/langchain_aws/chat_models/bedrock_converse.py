@@ -493,8 +493,9 @@ class ChatBedrockConverse(BaseChatModel):
 
     raw_blocks: Optional[List[Dict[str, Any]]] = None
     """Raw Bedrock message blocks that can be passed in.
-    LangChain will relay them unchanged, enabling any combination of content block types.
-    This is useful for custom guardrail wrapping
+    
+    LangChain will relay them unchanged, enabling any combination of content
+    block types. This is useful for custom guardrail wrapping.
     """
 
     model_config = ConfigDict(
@@ -611,13 +612,16 @@ class ChatBedrockConverse(BaseChatModel):
     @classmethod
     def set_disable_streaming(cls, values: Dict) -> Any:
         model_id = values.get("model_id", values.get("model"))
+        if model_id is None:
+            raise ValueError("Either model_id or model must be specified")
 
         # Extract provider from the model_id
         # (e.g., "amazon", "anthropic", "ai21", "meta", "mistral")
         if "provider" not in values or values["provider"] == "":
             if model_id.startswith("arn"):
                 raise ValueError(
-                    "Model provider should be supplied when passing a model ARN as model_id."
+                    "Model provider should be supplied when passing a model ARN "
+                    "as model_id."
                 )
             model_parts = model_id.split(".")
             values["provider"] = (
@@ -626,9 +630,12 @@ class ChatBedrockConverse(BaseChatModel):
 
         provider = values["provider"]
 
-        model_id_lower = values.get(
+        base_model_value = values.get(
             "base_model_id", values.get("base_model", model_id)
-        ).lower()
+        )
+        if base_model_value is None:
+            raise ValueError("base_model_id, base_model, or model_id must be specified")
+        model_id_lower = base_model_value.lower()
 
         streaming_support = cls._get_streaming_support(provider, model_id_lower)
 
@@ -716,7 +723,8 @@ class ChatBedrockConverse(BaseChatModel):
 
     def _get_base_model(self) -> str:
         # identify the base model id used in the application inference profile (AIP)
-        # Format: arn:aws:bedrock:us-east-1:<accountId>:application-inference-profile/<id>
+        # Format: arn:aws:bedrock:us-east-1:<accountId>:application-inference-profile/
+        # <id>
         if (
             self.base_model_id is None
             and "application-inference-profile" in self.model_id
@@ -768,6 +776,7 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> ChatResult:
         """Top Level call"""
 
+        system: List[Dict[str, Any]]
         if self.raw_blocks is not None:
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
@@ -802,6 +811,7 @@ class ChatBedrockConverse(BaseChatModel):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
+        system: List[Dict[str, Any]]
         if self.raw_blocks is not None:
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
@@ -883,7 +893,7 @@ class ChatBedrockConverse(BaseChatModel):
         tool_choice: Optional[Union[dict, str, Literal["auto", "any"]]] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, BaseMessage]:
-        formatted_tools = []
+        formatted_tools: List[Any] = []
         for tool in tools:
             if _is_cache_point(tool):
                 formatted_tools.append(tool)
@@ -898,12 +908,16 @@ class ChatBedrockConverse(BaseChatModel):
             if tool_choice_type not in list(self.supports_tool_choice_values or []):
                 if self.supports_tool_choice_values:
                     supported = (
-                        f"Model {self._get_base_model()} does not currently support tool_choice "
-                        f"of type {tool_choice_type}. The following tool_choice types "
-                        f"are supported: {self.supports_tool_choice_values}."
+                        f"Model {self._get_base_model()} does not currently support "
+                        f"tool_choice of type {tool_choice_type}. The following "
+                        f"tool_choice types are supported: "
+                        f"{self.supports_tool_choice_values}."
                     )
                 else:
-                    supported = f"Model {self._get_base_model()} does not currently support tool_choice."
+                    supported = (
+                        f"Model {self._get_base_model()} does not currently support "
+                        f"tool_choice."
+                    )
 
                 raise ValueError(
                     f"{supported} Please see "
@@ -1155,9 +1169,10 @@ def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
 def _parse_response(response: Dict[str, Any]) -> AIMessage:
     if "output" not in response:
         raise ValueError(
-            "No 'output' key found in the response from the Bedrock Converse API.  This usually "
-            "happens due to misconfiguration of endpoint or region, ensure that you are using valid "
-            "values for endpoint_url (on AWS this starts with bedrock-runtime), see: "
+            "No 'output' key found in the response from the Bedrock Converse API. "
+            "This usually happens due to misconfiguration of endpoint or region, "
+            "ensure that you are using valid values for endpoint_url (on AWS this "
+            "starts with bedrock-runtime), see: "
             "https://docs.aws.amazon.com/general/latest/gr/bedrock.html"
         )
     lc_content = _bedrock_to_lc(response.pop("output")["message"]["content"])
@@ -1197,7 +1212,10 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         # always keep block inside a list to preserve merging compatibility
         content = [block]
 
-        return AIMessageChunk(content=content, tool_call_chunks=tool_call_chunks)
+        return AIMessageChunk(
+            content=cast(List[Union[str, Dict[Any, Any]]], content),
+            tool_call_chunks=tool_call_chunks,
+        )
     elif "contentBlockDelta" in event:
         block = {
             **_bedrock_to_lc([event["contentBlockDelta"]["delta"]])[0],
@@ -1216,7 +1234,10 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         # always keep block inside a list to preserve merging compatibility
         content = [block]
 
-        return AIMessageChunk(content=content, tool_call_chunks=tool_call_chunks)
+        return AIMessageChunk(
+            content=cast(List[Union[str, Dict[Any, Any]]], content),
+            tool_call_chunks=tool_call_chunks,
+        )
     elif "contentBlockStop" in event:
         # TODO: needed?
         return AIMessageChunk(content=[])
@@ -1757,8 +1778,9 @@ def _format_openai_video_url(video_url: str) -> Dict:
 
 
 def _is_cache_point(cache_point: Any) -> bool:
-    return (
-        isinstance(cache_point, dict)
-        and "cachePoint" in cache_point
-        and cache_point.get("cachePoint").get("type") is not None
-    )
+    if not isinstance(cache_point, dict) or "cachePoint" not in cache_point:
+        return False
+    cache_point_data = cache_point.get("cachePoint")
+    if cache_point_data is None:
+        return False
+    return cache_point_data.get("type") is not None

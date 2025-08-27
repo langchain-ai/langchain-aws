@@ -49,8 +49,10 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     client: Any = Field(default=None, exclude=True)  #: :meta private:
     """Bedrock client."""
     region_name: Optional[str] = None
-    """The aws region e.g., `us-west-2`. Falls back to AWS_REGION/AWS_DEFAULT_REGION env variable
-    or region specified in ~/.aws/config in case it is not provided here.
+    """The aws region e.g., `us-west-2`. 
+    
+    Falls back to AWS_REGION/AWS_DEFAULT_REGION env variable or region specified 
+    in ~/.aws/config in case it is not provided here.
     """
 
     credentials_profile_name: Optional[str] = None
@@ -163,19 +165,25 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                     "texts": [text],
                 }
             )
-            return response_body.get("embeddings")[0]
+            embeddings = response_body.get("embeddings")
+            if embeddings is None:
+                raise ValueError("No embeddings returned from model")
+            return embeddings[0]
         else:
             # includes common provider == "amazon"
             response_body = self._invoke_model(
                 input_body={"inputText": text},
             )
-            return response_body.get("embedding")
+            embedding = response_body.get("embedding")
+            if embedding is None:
+                raise ValueError("No embedding returned from model")
+            return embedding
 
-    def _cohere_multi_embedding(self, texts: List[str]) -> List[float]:
+    def _cohere_multi_embedding(self, texts: List[str]) -> List[List[float]]:
         """Call out to Cohere Bedrock embedding endpoint with multiple inputs."""
         # replace newlines, which can negatively affect performance.
         texts = [text.replace(os.linesep, " ") for text in texts]
-        results = []
+        results: List[List[float]] = []
 
         # Iterate through the list of strings in batches
         for text_batch in _batch_cohere_embedding_texts(texts):
@@ -186,7 +194,8 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                 }
             ).get("embeddings")
 
-            results += batch_embeddings
+            if batch_embeddings is not None:
+                results += batch_embeddings
 
         return results
 
@@ -299,8 +308,10 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
 
 def _batch_cohere_embedding_texts(texts: List[str]) -> Generator[List[str], None, None]:
-    """Batches a set of texts into chunks that are acceptable for the Cohere embedding API:
-    chunks of at most 96 items, or 2048 characters."""
+    """Batches a set of texts into chunks acceptable for the Cohere embedding API.
+
+    Chunks of at most 96 items, or 2048 characters.
+    """
 
     # Cohere embeddings want a maximum of 96 items and 2048 characters
     # See: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-embed.html
@@ -308,7 +319,7 @@ def _batch_cohere_embedding_texts(texts: List[str]) -> Generator[List[str], None
     max_chars = 2048
 
     # Initialize batches
-    current_batch = []
+    current_batch: List[str] = []
     current_chars = 0
 
     for text in texts:
@@ -316,7 +327,8 @@ def _batch_cohere_embedding_texts(texts: List[str]) -> Generator[List[str], None
 
         if text_len > max_chars:
             raise ValueError(
-                "The Cohere embedding API does not support texts longer than 2048 characters."
+                "The Cohere embedding API does not support texts longer than "
+                "2048 characters."
             )
 
         # Check if adding the current string would exceed the limits

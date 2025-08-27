@@ -61,8 +61,8 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         knowledge_base_id: Knowledge Base ID.
 
         region_name: The aws region e.g., `us-west-2`.
-            Fallback to AWS_REGION/AWS_DEFAULT_REGION env variable or region specified in
-            ~/.aws/config.
+            Fallback to AWS_REGION/AWS_DEFAULT_REGION env variable or region
+            specified in ~/.aws/config.
 
         credentials_profile_name: The name of the profile in the ~/.aws/credentials
             or ~/.aws/config files, which has either access keys or role information
@@ -79,11 +79,12 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
             must also be provided. If not specified, the default credential profile or,
             if on an EC2 instance, credentials from IMDS will be used. See:
             https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-            If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+            If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment
+            variable.
 
         aws_session_token: AWS session token. If provided, aws_access_key_id and
-            aws_secret_access_key must also be provided. Not required unless using temporary
-            credentials. See:
+            aws_secret_access_key must also be provided. Not required unless using
+            temporary credentials. See:
             https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
             If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
 
@@ -211,8 +212,8 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
                 and self.guardrail_config.get("guardrailVersion")
             ):
                 raise TypeError(
-                    "Guardrail configuration must be a dictionary with both 'guardrailId' "
-                    "and 'guardrailVersion' keys."
+                    "Guardrail configuration must be a dictionary with both "
+                    "'guardrailId' and 'guardrailVersion' keys."
                 )
             request["guardrailConfiguration"] = self.guardrail_config
         if self.retrieval_config:
@@ -245,7 +246,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
                 result["source_metadata"] = result.pop("metadata")
             documents.append(
                 Document(
-                    page_content=content,
+                    page_content=content or "",
                     metadata=result,
                 )
             )
@@ -261,7 +262,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         """
         if not result:
             raise ValueError("Invalid search result")
-        content: dict = result.get("content")
+        content: dict = result.get("content") or {}
         if not content:
             raise ValueError(
                 "Invalid search result, content is missing from the result"

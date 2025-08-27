@@ -44,7 +44,8 @@ class BrowserToolkit:
 
             # Invoke the agent with a specific task using thread ID
             result = await agent.ainvoke(
-                "Navigate to https://www.example.com and tell me the main heading on the page.",
+                "Navigate to https://www.example.com and tell me the main heading "
+                "on the page.",
                 config=config
             )
 

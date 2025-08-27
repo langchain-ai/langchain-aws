@@ -64,9 +64,9 @@ class TestBedrockSessionSaver:
             mock_boto3_session.assert_called_with(
                 region_name="us-west-2",
                 profile_name="test-profile",
-                aws_access_key_id=SecretStr("test-access-key"),
-                aws_secret_access_key=SecretStr("test-secret-key"),
-                aws_session_token=SecretStr("test-session-token"),
+                aws_access_key_id="test-access-key",
+                aws_secret_access_key="test-secret-key",
+                aws_session_token="test-session-token",
             )
 
             mock_boto3_session.return_value.client.assert_called_with(

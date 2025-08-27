@@ -610,22 +610,22 @@ def test_guardrails_streaming_trace() -> None:
     )  # type: ignore[call-arg]
 
     try:
-        invoke_response = chat_model_invoke.invoke(messages)
+        chat_model_invoke.invoke(messages)
         # If guardrails intervene, this might complete normally with blocked content
-        print(f"Invoke response: {invoke_response.content}")
-    except Exception as e:
+        pass
+    except Exception:
         # Guardrails might raise an exception
-        print(f"Invoke exception (may be expected): {e}")
+        pass
 
     # Test 2: Verify streaming captures guardrail traces
     stream_chunks = []
     try:
         for chunk in chat_model.stream(messages):
             stream_chunks.append(chunk)
-            print(f"Stream chunk: {chunk.content}")
-    except Exception as e:
+            pass
+    except Exception:
         # Guardrails might raise an exception during streaming
-        print(f"Streaming exception (may be expected): {e}")
+        pass
 
     # Verify guardrail trace was captured during streaming
     assert guardrail_callback.trace_captured, (
@@ -653,5 +653,6 @@ def test_guardrails_streaming_trace() -> None:
         )
     else:
         pytest.fail(
-            "Neither invoke nor streaming captured guardrail traces - check guardrail setup"
+            "Neither invoke nor streaming captured guardrail traces - "
+            "check guardrail setup"
         )

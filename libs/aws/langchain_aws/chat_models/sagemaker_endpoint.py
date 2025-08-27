@@ -2,7 +2,7 @@
 
 import io
 import logging
-from typing import Any, Dict, Iterator, List, Mapping, Optional
+from typing import Any, Dict, Iterator, List, Literal, Mapping, Optional, Union
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import (
@@ -10,7 +10,9 @@ from langchain_core.language_models import (
 )
 from langchain_core.messages import (
     AIMessage,
+    AIMessageChunk,
     BaseMessage,
+    BaseMessageChunk,
     HumanMessage,
     SystemMessage,
     merge_message_runs,
@@ -102,7 +104,12 @@ class ChatLineIterator:
             self.buffer.write(chunk["PayloadPart"]["Bytes"])
 
 
-class ChatModelContentHandler(ContentHandlerBase[List[Dict[str, Any]], BaseMessage]):
+MESSAGE_FORMAT = Dict[
+    Literal["role", "content"], Union[Literal["system", "user", "assistant"], str]
+]
+
+
+class ChatModelContentHandler(ContentHandlerBase[Any, Any]):
     """Content handler for ChatSagemakerEndpoint class."""
 
 
@@ -273,7 +280,9 @@ class ChatSagemakerEndpoint(BaseChatModel):
                 content_type = "application/json"
                 accepts = "application/json"
 
-                def transform_input(self, prompt: List[Dict[str, Any]], model_kwargs: Dict) -> bytes:
+                def transform_input(
+                    self, prompt: List[Dict[str, Any]], model_kwargs: Dict
+                ) -> bytes:
                     input_str = json.dumps({prompt: prompt, **model_kwargs})
                     return input_str.encode('utf-8')
                 
@@ -321,11 +330,6 @@ class ChatSagemakerEndpoint(BaseChatModel):
             **{"inference_component_name": self.inference_component_name},
             **{"model_kwargs": _model_kwargs},
         }
-
-    @property
-    def _llm_type(self) -> str:
-        """Return type of llm."""
-        return "sagemaker_endpoint"
 
     @property
     def _llm_type(self) -> str:
@@ -382,12 +386,24 @@ class ChatSagemakerEndpoint(BaseChatModel):
             iterator = ChatLineIterator(resp["Body"])
 
             for line in iterator:
-                text = self.content_handler.transform_output(line)
-                if stop is not None:
-                    text = enforce_stop_tokens(text, stop)
+                message = self.content_handler.transform_output(line)
+                if (
+                    stop is not None
+                    and isinstance(message, AIMessage)
+                    and isinstance(message.content, str)
+                ):
+                    text = enforce_stop_tokens(message.content, stop)
+                    message = AIMessage(content=text)
 
-                if text:
-                    generation_chunk = ChatGenerationChunk(message=text)
+                if message.content:
+                    if isinstance(message, AIMessage):
+                        chunk = AIMessageChunk(content=message.content)
+                        generation_chunk = ChatGenerationChunk(message=chunk)
+                    else:
+                        base_chunk = BaseMessageChunk(
+                            content=message.content, type=message.type
+                        )
+                        generation_chunk = ChatGenerationChunk(message=base_chunk)
                     if run_manager:
                         run_manager.on_llm_new_token(
                             generation_chunk.text, chunk=generation_chunk

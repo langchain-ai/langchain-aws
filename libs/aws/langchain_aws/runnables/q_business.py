@@ -7,7 +7,6 @@ from langchain_core.prompt_values import ChatPromptValue
 from langchain_core.runnables import Runnable
 from langchain_core.runnables.config import RunnableConfig
 from pydantic import ConfigDict
-from typing_extensions import Self
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +29,13 @@ class AmazonQ(
     """AWS region name. If not provided, will be extracted from environment."""
 
     credentials: Optional[Any] = None
-    """Amazon Q credentials used to instantiate the client if the client is not provided."""
+    """Amazon Q credentials used to instantiate the client if the client is not 
+    provided."""
 
     client: Optional[Any] = None
     """Amazon Q client."""
 
-    application_id: str = None
+    application_id: Optional[str] = None
 
     """Store the full response from Amazon Q."""
 
@@ -54,7 +54,7 @@ class AmazonQ(
         region_name: Optional[str] = None,
         credentials: Optional[Any] = None,
         client: Optional[Any] = None,
-        application_id: str = None,
+        application_id: Optional[str] = None,
         parent_message_id: Optional[str] = None,
         conversation_id: Optional[str] = None,
         chat_mode: str = "RETRIEVAL_MODE",
@@ -69,7 +69,7 @@ class AmazonQ(
 
     def invoke(
         self,
-        input: Union[str, ChatPromptValue],
+        input: Union[str, ChatPromptValue, List[ChatPromptValue]],
         config: Optional[RunnableConfig] = None,
         **kwargs: Any,
     ) -> ChatPromptValue:
@@ -109,24 +109,29 @@ class AmazonQ(
                 )
 
             # Call Amazon Q
+            if self.client is None:
+                raise ValueError("Amazon Q client is not initialized")
             response = self.client.chat_sync(**request)
 
             # Extract the response text
             if "systemMessage" in response:
-                return AIMessage(
+                ai_message = AIMessage(
                     content=response["systemMessage"], response_metadata=response
                 )
+                return ChatPromptValue(messages=[ai_message])
             else:
                 raise ValueError("Unexpected response format from Amazon Q")
 
         except Exception as e:
             if "Prompt Length" in str(e):
-                logger.info(f"Prompt Length: {len(input)}")
+                # Convert input to string to get its length
+                input_str = self.convert_langchain_messages_to_q_input(input)
+                logger.info(f"Prompt Length: {len(input_str)}")
                 logger.info(f"""Prompt:
-                {input}""")
+                {input_str}""")
             raise ValueError(f"Error raised by Amazon Q service: {e}")
 
-    def validate_environment(self) -> Self:
+    def validate_environment(self) -> Any:
         """Don't do anything if client provided externally"""
         # If the client is not provided, and the user_id is not provided in the class
         # constructor, throw an error saying one or the other needs to be provided
@@ -167,6 +172,13 @@ class AmazonQ(
     ) -> str:
         # If it is just a string and not a ChatPromptTemplate collection just
         # return string
-        if type(input) is str:
+        if isinstance(input, str):
             return input
-        return input.to_string()
+        elif isinstance(input, ChatPromptValue):
+            return input.to_string()
+        elif isinstance(input, list):
+            # For list of ChatPromptValue, concatenate their string representations
+            return "\n".join(item.to_string() for item in input)
+        else:
+            # This should never happen given the type annotation, but just in case
+            return str(input)

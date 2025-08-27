@@ -47,6 +47,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 from langchain_aws.function_calling import (
+    AnthropicTool,
     ToolsOutputParser,
     _lc_tool_calls_to_anthropic_tool_use_blocks,
     convert_to_anthropic_tool,
@@ -298,7 +299,7 @@ def _convert_one_message_to_text_openai(message: BaseMessage) -> str:
 
 
 def convert_messages_to_prompt_openai(messages: List[BaseMessage]) -> str:
-    """Convert a list of messages to a Harmony format prompt for OpenAI Responses API."""
+    """Convert a list of messages to a Harmony format prompt for OpenAI API."""
 
     prompt = "\n"
     for message in messages:
@@ -403,10 +404,10 @@ def _merge_messages(
 
 def _format_anthropic_messages(
     messages: List[BaseMessage],
-) -> Tuple[Optional[Union[str, List[Dict]]], List[Dict]]:
+) -> Tuple[Optional[Union[str, List[Dict[str, Any]]]], List[Dict[str, Any]]]:
     """Format messages for anthropic."""
-    system: Optional[Union[str, List[Dict]]] = None
-    formatted_messages: List[Dict] = []
+    system: Optional[Union[str, List[Dict[str, Any]]]] = None
+    formatted_messages: List[Dict[str, Any]] = []
 
     merged_messages = _merge_messages(messages)
     for i, message in enumerate(merged_messages):
@@ -448,7 +449,7 @@ def _format_anthropic_messages(
             continue
 
         role = _message_type_lookups[message.type]
-        content: Union[str, List]
+        final_content: Union[str, List[Dict[str, Any]]]
 
         if not isinstance(message.content, str):
             # parse as dict
@@ -457,10 +458,9 @@ def _format_anthropic_messages(
             )
 
             # populate content
-            content = []
-            thinking_blocks = []
-            native_blocks = []
-            tool_blocks = []
+            thinking_blocks: List[Dict[str, Any]] = []
+            native_blocks: List[Dict[str, Any]] = []
+            tool_blocks: List[Dict[str, Any]] = []
 
             # First collect all blocks by type
             for item in message.content:
@@ -474,7 +474,7 @@ def _format_anthropic_messages(
                     elif item["type"] == "image_url":
                         # convert format
                         source = _format_image(item["image_url"]["url"])
-                        native_blocks.append({"type": "image", "source": source})
+                        native_blocks.append({"type": "image", "source": source})  # type: ignore
                     elif item["type"] == "image":
                         native_blocks.append(item)
                     elif item["type"] == "tool_result":
@@ -521,7 +521,12 @@ def _format_anthropic_messages(
                                 if tc["id"] == item["id"]
                             ]
                             tool_blocks.extend(
-                                _lc_tool_calls_to_anthropic_tool_use_blocks(overlapping)
+                                cast(
+                                    List[Dict[str, Any]],
+                                    _lc_tool_calls_to_anthropic_tool_use_blocks(
+                                        overlapping
+                                    ),
+                                )
                             )
                         else:
                             item.pop("text", None)
@@ -563,24 +568,29 @@ def _format_anthropic_messages(
                 ]
                 if new_tool_calls:
                     tool_blocks.extend(
-                        _lc_tool_calls_to_anthropic_tool_use_blocks(new_tool_calls)
+                        cast(
+                            List[Dict[str, Any]],
+                            _lc_tool_calls_to_anthropic_tool_use_blocks(new_tool_calls),
+                        )
                     )
 
             # For assistant messages, when thinking blocks exist, ensure they come first
             if role == "assistant":
-                content = native_blocks + tool_blocks
+                final_content = native_blocks + tool_blocks
                 if thinking_blocks:
-                    content = thinking_blocks + content
+                    final_content = thinking_blocks + final_content
             elif role == "user" and tool_blocks and native_blocks:
-                content = tool_blocks + native_blocks  # tool result must precede text
+                final_content = (
+                    tool_blocks + native_blocks
+                )  # tool result must precede text
                 if thinking_blocks:
-                    content = thinking_blocks + content
+                    final_content = thinking_blocks + final_content
             else:
                 # combine all blocks in standard order
-                content = native_blocks + tool_blocks
+                final_content = native_blocks + tool_blocks
                 # Only include thinking blocks if they exist
                 if thinking_blocks:
-                    content = thinking_blocks + content
+                    final_content = thinking_blocks + final_content
 
         elif isinstance(message, AIMessage):
             # For string content, create appropriate structure
@@ -606,7 +616,10 @@ def _format_anthropic_messages(
             # Add tool calls if present
             if message.tool_calls:
                 content_list.extend(
-                    _lc_tool_calls_to_anthropic_tool_use_blocks(message.tool_calls)
+                    cast(
+                        List[Dict[str, Any]],
+                        _lc_tool_calls_to_anthropic_tool_use_blocks(message.tool_calls),
+                    )
                 )
 
             # For assistant messages with thinking blocks, ensure they come first
@@ -631,15 +644,15 @@ def _format_anthropic_messages(
                     )
                 ]
                 # Combine with thinking first
-                content = thinking_blocks + other_blocks
+                final_content = thinking_blocks + other_blocks
             else:
                 # No thinking blocks or not an assistant message
-                content = content_list
+                final_content = content_list
         else:
             # Simple string content
-            content = message.content
+            final_content = message.content
 
-        formatted_messages.append({"role": role, "content": content})
+        formatted_messages.append({"role": role, "content": final_content})
     return system, formatted_messages
 
 
@@ -684,11 +697,14 @@ class ChatPromptAdapter:
     @classmethod
     def format_messages(
         cls, provider: str, messages: List[BaseMessage]
-    ) -> Union[Tuple[Optional[str], List[Dict]], List[Dict]]:
+    ) -> Union[
+        Tuple[Optional[Union[str, List[Dict[str, Any]]]], List[Dict[str, Any]]],
+        List[Dict[str, Any]],
+    ]:
         if provider == "anthropic":
             return _format_anthropic_messages(messages)
         elif provider == "openai":
-            return convert_to_openai_messages(messages)
+            return cast(List[Dict[str, Any]], convert_to_openai_messages(messages))
         raise NotImplementedError(
             f"Provider {provider} not supported for format_messages"
         )
@@ -802,19 +818,40 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
             return
         provider = self._get_provider()
-        prompt, system, formatted_messages = None, None, None
+        prompt: Optional[str] = None
+        system: Optional[str] = None
+        formatted_messages: Optional[List[Dict[str, Any]]] = None
 
         if provider == "anthropic":
-            system, formatted_messages = ChatPromptAdapter.format_messages(
-                provider, messages
+            result = ChatPromptAdapter.format_messages(provider, messages)
+            system_raw, formatted_messages = (
+                result[0],
+                cast(List[Dict[str, Any]], result[1]),
             )
+            # Convert system to string if it's a list
+            system_str: Optional[str] = None
+            if system_raw:
+                if isinstance(system_raw, str):
+                    system_str = system_raw
+                elif isinstance(system_raw, list):
+                    # Convert list of dicts to string representation
+                    system_str = "\n".join(
+                        item.get("text", "") if isinstance(item, dict) else str(item)
+                        for item in system_raw
+                    )
+
             if self.system_prompt_with_tools:
-                if system:
-                    system = self.system_prompt_with_tools + f"\n{system}"
+                if system_str:
+                    system = self.system_prompt_with_tools + f"\n{system_str}"
                 else:
                     system = self.system_prompt_with_tools
+            else:
+                system = system_str
         elif provider == "openai":
-            formatted_messages = ChatPromptAdapter.format_messages(provider, messages)
+            formatted_messages = cast(
+                List[Dict[str, Any]],
+                ChatPromptAdapter.format_messages(provider, messages),
+            )
         else:
             prompt = ChatPromptAdapter.convert_messages_to_prompt(
                 provider=provider, messages=messages, model=self._get_base_model()
@@ -875,7 +912,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         if guardrails_trace_info and run_manager:
             run_manager.on_llm_error(
                 Exception(
-                    f"Error raised by bedrock service: {guardrails_trace_info.get('reason')}"
+                    f"Error raised by bedrock service: "
+                    f"{guardrails_trace_info.get('reason')}"
                 ),
                 **guardrails_trace_info,
             )
@@ -919,22 +957,42 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 response_metadata, provider_stop_reason_code
             )
         else:
-            prompt, system, formatted_messages = None, None, None
+            prompt: Optional[str] = None
+            system: Optional[str] = None
+            formatted_messages: Optional[List[Dict[str, Any]]] = None
             params: Dict[str, Any] = {**kwargs}
 
             if provider == "anthropic":
-                system, formatted_messages = ChatPromptAdapter.format_messages(
-                    provider, messages
+                result = ChatPromptAdapter.format_messages(provider, messages)
+                system_raw, formatted_messages = (
+                    result[0],
+                    cast(List[Dict[str, Any]], result[1]),
                 )
+                # Convert system to string if it's a list
+                system_str: Optional[str] = None
+                if system_raw:
+                    if isinstance(system_raw, str):
+                        system_str = system_raw
+                    elif isinstance(system_raw, list):
+                        # Convert list of dicts to string representation
+                        system_str = "\n".join(
+                            item.get("text", "")
+                            if isinstance(item, dict)
+                            else str(item)
+                            for item in system_raw
+                        )
                 # use tools the new way with claude 3
                 if self.system_prompt_with_tools:
-                    if system:
-                        system = self.system_prompt_with_tools + f"\n{system}"
+                    if system_str:
+                        system = self.system_prompt_with_tools + f"\n{system_str}"
                     else:
                         system = self.system_prompt_with_tools
+                else:
+                    system = system_str
             elif provider == "openai":
-                formatted_messages = ChatPromptAdapter.format_messages(
-                    provider, messages
+                formatted_messages = cast(
+                    List[Dict[str, Any]],
+                    ChatPromptAdapter.format_messages(provider, messages),
                 )
             else:
                 prompt = ChatPromptAdapter.convert_messages_to_prompt(
@@ -1080,7 +1138,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 return self.bind(tools=formatted_tools, **kwargs)
             else:
                 # add tools to the system prompt, the old way
-                system_formatted_tools = get_system_message(formatted_tools)
+                system_formatted_tools = get_system_message(
+                    cast(List[AnthropicTool], formatted_tools)
+                )
                 self.set_system_prompt_with_tools(system_formatted_tools)
         return self
 

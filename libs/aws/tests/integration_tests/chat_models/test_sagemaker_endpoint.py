@@ -66,12 +66,37 @@ class ContentHandlerStream(ChatModelContentHandler):
 class MockStreamingBody:
     def __init__(self) -> None:
         self.data = [
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":"An"},"logprobs":null,"finish_reason":null}],"usage":null}',
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":" L"},"logprobs":null,"finish_reason":null}],"usage":null}',
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":"LM"},"logprobs":null,"finish_reason":null}],"usage":null}',
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":" is"},"logprobs":null,"finish_reason":null}],"usage":null}',
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696408,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":" an"},"logprobs":null,"finish_reason":null}],"usage":null}',
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696408,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":" acronym"},"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,'
+            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
+            + b'"system_fingerprint":"3.0.1-native",'
+            + b'"choices":[{"index":0,"delta":{"role":"assistant","content":"An"},'
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,'
+            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
+            + b'"system_fingerprint":"3.0.1-native",'
+            + b'"choices":[{"index":0,"delta":{"role":"assistant","content":" L"},'
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,'
+            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
+            + b'"system_fingerprint":"3.0.1-native",'
+            + b'"choices":[{"index":0,"delta":{"role":"assistant","content":"LM"},'
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,'
+            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
+            + b'"system_fingerprint":"3.0.1-native",'
+            + b'"choices":[{"index":0,"delta":{"role":"assistant","content":" is"},'
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696408,'
+            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
+            + b'"system_fingerprint":"3.0.1-native",'
+            + b'"choices":[{"index":0,"delta":{"role":"assistant","content":" an"},'
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696408,'
+            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
+            + b'"system_fingerprint":"3.0.1-native",'
+            + b'"choices":[{"index":0,"delta":{"role":"assistant",'
+            + b'"content":" acronym"},'
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
         ]
         self.index = 0
 

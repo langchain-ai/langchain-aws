@@ -301,8 +301,8 @@ class LLMInputOutputAdapter:
 
                 # Special handling for tool results with thinking
                 if thinking_enabled:
-                    # Check if we have a tool_result in the last user message
-                    # and need to ensure the previous assistant message starts with thinking
+                    # Check if we have a tool_result in the last user message and need
+                    # to ensure the previous assistant message starts with thinking
                     if (
                         len(messages) >= 2
                         and messages[-1]["role"] == "user"
@@ -322,7 +322,8 @@ class LLMInputOutputAdapter:
                             # Make sure the assistant message has thinking first
                             asst_content = messages[-2].get("content", [])
                             if isinstance(asst_content, list) and asst_content:
-                                # Find thinking blocks and move them to the front if needed
+                                # Find thinking blocks and move them to the front if
+                                # needed
                                 thinking_blocks = [
                                     block
                                     for block in asst_content
@@ -855,7 +856,8 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     def _get_base_model(self) -> str:
         # identify the base model id used in the application inference profile (AIP)
-        # Format: arn:aws:bedrock:us-east-1:<accountId>:application-inference-profile/<id>
+        # Format: arn:aws:bedrock:us-east-1:<accountId>:application-inference-profile/
+        # <id>
         if (
             self.base_model_id is None
             and "application-inference-profile" in self.model_id

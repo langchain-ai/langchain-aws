@@ -103,7 +103,7 @@ def create_neptune_sparql_qa_chain(
 
     qa_chain = qa_prompt | llm
 
-    _sparql_prompt = sparql_prompt or get_prompt(examples)
+    _sparql_prompt = sparql_prompt or get_prompt(examples or "")
     sparql_generation_chain = _sparql_prompt | llm
 
     def normalize_input(raw_input: Union[str, dict]) -> dict:

@@ -678,9 +678,13 @@ def test__format_anthropic_messages_with_thinking_blocks() -> None:
 
 
 def test__format_anthropic_messages_with_image_conversion_in_tool() -> None:
-    """Test that ToolMessage with OpenAI-style image content is correctly converted to Anthropic format."""
+    """Test that ToolMessage with OpenAI-style image content is correctly
+    converted to Anthropic format."""
     # Create a dummy base64 image string
-    dummy_base64_image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    dummy_base64_image = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9aw"
+        "AAAABJRU5ErkJggg=="
+    )
 
     messages = [
         ToolMessage(  # type: ignore[misc]
@@ -733,7 +737,8 @@ def test__convert_messages_to_prompt_anthropic_message_is_empty() -> None:
 
 
 def test__format_anthropic_messages_with_thinking_in_content_blocks() -> None:
-    """Test that thinking blocks in content are correctly ordered (first) in messages."""
+    """Test that thinking blocks in content are correctly ordered (first) in
+    messages."""
     system = SystemMessage("System instruction")  # type: ignore[misc]
     human = HumanMessage("What is the weather in NYC?")  # type: ignore[misc]
 
@@ -800,7 +805,8 @@ def test__format_anthropic_messages_with_thinking_in_content_blocks() -> None:
 
 
 def test__format_anthropic_messages_after_tool_use_no_thinking() -> None:
-    """Test message formatting for assistant responses after tool use (which shouldn't have thinking)."""
+    """Test message formatting for assistant responses after tool use (which
+    shouldn't have thinking)."""
     system = SystemMessage("System instruction")  # type: ignore[misc]
     human = HumanMessage("What is the weather in NYC?")  # type: ignore[misc]
 
@@ -877,7 +883,8 @@ def test__format_anthropic_messages_tool_result_ordering() -> None:
 
 
 def test__format_anthropic_messages_tool_use_ordering() -> None:
-    """Test that tool type content blocks in AssistantMessage are always moved to the end."""
+    """Test that tool type content blocks in AssistantMessage are always moved to
+    the end."""
     ai_message = AIMessage(  # type: ignore[misc]
         [
             {"type": "text", "text": "Let me analyze this for you."},
@@ -909,7 +916,8 @@ def test__format_anthropic_messages_tool_use_ordering() -> None:
 
 
 def test__format_anthropic_messages_preserves_content_order() -> None:
-    """Test that _format_anthropic_messages preserves the original order of mixed text and image content."""
+    """Test that _format_anthropic_messages preserves the original order of mixed
+    text and image content."""
     content = [
         {"type": "text", "text": "Some text..."},
         {

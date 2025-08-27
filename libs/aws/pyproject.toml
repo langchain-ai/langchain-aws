@@ -1,79 +1,48 @@
-[tool.poetry]
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[project]
+authors = []
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "langchain-core>=0.3.75",
+    "boto3>=1.39.7",
+    "pydantic>=2.10.0,<3",
+    "numpy>=1.26.0,<3; python_version>='3.12'",
+    "numpy>=1.0.0,<3; python_version<'3.12'",
+]
 name = "langchain-aws"
 version = "0.2.31"
 description = "An integration package connecting AWS and LangChain"
-authors = []
 readme = "README.md"
-repository = "https://github.com/langchain-ai/langchain-aws"
-license = "MIT"
 
-[tool.poetry.urls]
+[project.urls]
 "Source Code" = "https://github.com/langchain-ai/langchain-aws/tree/main/libs/aws"
+repository = "https://github.com/langchain-ai/langchain-aws"
 
-[tool.poetry.dependencies]
-python = ">=3.9"
-langchain-core = "^0.3.74"
-boto3 = ">=1.39.7"
-pydantic = ">=2.10.0,<3"
-numpy = [
-  { version = "^1", python = "<3.12" },
-  { version = ">=1.26.0,<3", python = ">=3.12" },
+[project.optional-dependencies]
+tools = ["bedrock-agentcore>=0.1.0; python_version>='3.10'", "playwright>=1.53.0", "beautifulsoup4>=4.13.4"]
+
+[dependency-groups]
+test = [
+    "pytest>=7.4.3",
+    "pytest-cov>=4.1.0",
+    "syrupy>=4.0.2",
+    "pytest-asyncio>=0.23.2",
+    "pytest-watcher>=0.3.4",
+    "langchain-tests>=0.3.20",
+    "langchain>=0.3.7",
 ]
-bedrock-agentcore = { version = ">=0.1.0", python = ">=3.10", optional = true }
-playwright = { version = ">=1.53.0", optional = true }
-beautifulsoup4 = { version = ">=4.13.4", optional = true }
+test_integration = []
+lint = ["ruff>=0.12.10"]
+typing = [
+    "mypy>=1.17.1",
+    "types-requests>=2.28.11.5",
+]
+dev = []
 
-[tool.poetry.extras]
-tools = ["bedrock-agentcore", "playwright", "beautifulsoup4"]
-
-[tool.poetry.group.test]
-optional = true
-
-[tool.poetry.group.test.dependencies]
-pytest = "^7.4.3"
-pytest-cov = "^4.1.0"
-syrupy = { version = "^4.0.2", python = "<4.0" }
-pytest-asyncio = "^0.23.2"
-pytest-watcher = { version = "^0.3.4", python = "<4.0" }
-langchain-tests = { version = "^0.3.20", python = "<4.0" }
-langchain = { version = "^0.3.7", python = "<4.0" }
-
-[tool.poetry.group.codespell]
-optional = true
-
-[tool.codespell]
-ignore-words-list = "HAS, notIn"
-
-[tool.poetry.group.codespell.dependencies]
-codespell = "^2.2.6"
-
-
-
-[tool.poetry.group.test_integration]
-optional = true
-
-[tool.poetry.group.test_integration.dependencies]
-
-
-
-[tool.poetry.group.lint]
-optional = true
-
-[tool.poetry.group.lint.dependencies]
-ruff = "^0.1.8"
-
-
-
-[tool.poetry.group.typing.dependencies]
-mypy = "^1.7"
-types-requests = "^2.28.11.5"
-
-
-
-[tool.poetry.group.dev]
-optional = true
-
-[tool.poetry.group.dev.dependencies]
 
 [tool.ruff.lint]
 select = [
@@ -117,9 +86,6 @@ show_missing = true
 [tool.coverage.html]
 directory = "htmlcov"
 
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
 # --strict-markers will raise errors on unknown marks.

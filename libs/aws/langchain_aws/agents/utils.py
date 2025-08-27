@@ -20,8 +20,9 @@ from langchain_aws.agents.types import (
 
 logger = logging.getLogger(__name__)
 
-# Bedrock agents version is being used to specify the version of the agent impl on langchain.
-# This should be updated on any major change where we want to detect usage increase/decrease from the change.
+# Bedrock agents version is being used to specify the version of the agent impl on
+# langchain. This should be updated on any major change where we want to detect
+# usage increase/decrease from the change.
 __bedrock_agents_version__ = "0.1.0"
 SDK_USER_AGENT = f"LangChainAWS#Agents#{__bedrock_agents_version__}"
 

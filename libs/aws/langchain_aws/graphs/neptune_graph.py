@@ -1,8 +1,11 @@
 import json
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 from pydantic import SecretStr
+
+if TYPE_CHECKING:
+    from botocore.config import Config
 
 from langchain_aws.utils import create_aws_client
 
@@ -74,7 +77,7 @@ class BaseNeptuneGraph(ABC):
         return self.schema
 
     @abstractmethod
-    def query(self, query: str, params: dict = {}) -> dict:
+    def query(self, query: str, params: dict = {}) -> List[Dict[str, Any]]:
         raise NotImplementedError()
 
     @abstractmethod
@@ -109,7 +112,9 @@ class BaseNeptuneGraph(ABC):
 
         return triple_schema
 
-    def _get_node_properties(self, n_labels: List[str], types: Dict) -> List:
+    def _get_node_properties(
+        self, n_labels: List[str], type_mapping: Dict[str, str]
+    ) -> List:
         node_properties_query = """
         MATCH (a:`{n_label}`)
         RETURN properties(a) AS props
@@ -121,8 +126,12 @@ class BaseNeptuneGraph(ABC):
             data = {"label": label, "properties": self.query(q)}
             s = set({})
             for p in data["properties"]:
-                for k, v in p["props"].items():
-                    s.add((k, types[type(v).__name__]))
+                from typing import cast
+
+                p_dict = cast(Dict[str, Any], p)
+                props = cast(Dict[str, Any], p_dict["props"])
+                for k, v in props.items():
+                    s.add((k, type_mapping[type(v).__name__]))  # type: ignore
 
             np = {
                 "properties": [{"property": k, "type": v} for k, v in s],
@@ -132,7 +141,9 @@ class BaseNeptuneGraph(ABC):
 
         return node_properties
 
-    def _get_edge_properties(self, e_labels: List[str], types: Dict[str, Any]) -> List:
+    def _get_edge_properties(
+        self, e_labels: List[str], type_mapping: Dict[str, str]
+    ) -> List:
         edge_properties_query = """
         MATCH ()-[e:`{e_label}`]->()
         RETURN properties(e) AS props
@@ -144,8 +155,12 @@ class BaseNeptuneGraph(ABC):
             data = {"label": label, "properties": self.query(q)}
             s = set({})
             for p in data["properties"]:
-                for k, v in p["props"].items():
-                    s.add((k, types[type(v).__name__]))
+                from typing import cast
+
+                p_dict = cast(Dict[str, Any], p)
+                props = cast(Dict[str, Any], p_dict["props"])
+                for k, v in props.items():
+                    s.add((k, type_mapping[type(v).__name__]))  # type: ignore
 
             ep = {
                 "type": label,
@@ -160,7 +175,7 @@ class BaseNeptuneGraph(ABC):
         Refreshes the Neptune graph schema information.
         """
 
-        types = {
+        types: Dict[str, str] = {
             "str": "STRING",
             "float": "DOUBLE",
             "int": "INTEGER",
@@ -221,7 +236,7 @@ class NeptuneAnalyticsGraph(BaseNeptuneGraph):
         aws_secret_access_key: Optional[SecretStr] = None,
         aws_session_token: Optional[SecretStr] = None,
         endpoint_url: Optional[str] = None,
-        config: Any = None,
+        config: Optional["Config"] = None,
     ) -> None:
         """Create a new Neptune Analytics graph wrapper instance."""
 
@@ -251,7 +266,7 @@ class NeptuneAnalyticsGraph(BaseNeptuneGraph):
                 }
             )
 
-    def query(self, query: str, params: dict = {}) -> Dict[str, Any]:
+    def query(self, query: str, params: dict = {}) -> List[Dict[str, Any]]:
         """Query Neptune database."""
         try:
             resp = self.client.execute_query(
@@ -366,7 +381,7 @@ class NeptuneGraph(BaseNeptuneGraph):
         aws_secret_access_key: Optional[SecretStr] = None,
         aws_session_token: Optional[SecretStr] = None,
         endpoint_url: Optional[str] = None,
-        config: Any = None,
+        config: Optional["Config"] = None,
     ) -> None:
         """Create a new Neptune graph wrapper instance."""
 
@@ -390,7 +405,9 @@ class NeptuneGraph(BaseNeptuneGraph):
                 elif aws_access_key_id and aws_secret_access_key:
                     session_params = {
                         "aws_access_key_id": aws_access_key_id.get_secret_value(),
-                        "aws_secret_access_key": aws_secret_access_key.get_secret_value(),
+                        "aws_secret_access_key": (
+                            aws_secret_access_key.get_secret_value()
+                        ),
                     }
                     if aws_session_token:
                         session_params["aws_session_token"] = (
@@ -421,7 +438,10 @@ class NeptuneGraph(BaseNeptuneGraph):
                     from botocore.config import Config
 
                     if "config" in client_params:
-                        client_params["config"] = client_params["config"].merge(
+                        from typing import cast
+
+                        existing_config = cast("Config", client_params["config"])
+                        client_params["config"] = existing_config.merge(
                             Config(signature_version=UNSIGNED)
                         )
                     else:
@@ -457,7 +477,7 @@ class NeptuneGraph(BaseNeptuneGraph):
                 }
             )
 
-    def query(self, query: str, params: dict = {}) -> Dict[str, Any]:
+    def query(self, query: str, params: dict = {}) -> List[Dict[str, Any]]:
         """Query Neptune database."""
         try:
             if params:

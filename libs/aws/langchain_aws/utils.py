@@ -121,7 +121,7 @@ def create_aws_client(
     aws_session_token: Optional[SecretStr] = None,
     endpoint_url: Optional[str] = None,
     config: Any = None,
-):
+) -> Any:
     """Helper function to validate AWS credentials and create an AWS client.
 
     Args:

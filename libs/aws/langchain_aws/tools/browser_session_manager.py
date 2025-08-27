@@ -112,7 +112,8 @@ class BrowserSessionManager:
             ws_url, headers = browser_client.generate_ws_headers()
 
             logger.info(
-                f"Connecting to async WebSocket endpoint for thread {thread_id}: {ws_url}"
+                f"Connecting to async WebSocket endpoint for thread {thread_id}: "
+                f"{ws_url}"
             )
 
             from playwright.async_api import async_playwright
@@ -167,7 +168,8 @@ class BrowserSessionManager:
             ws_url, headers = browser_client.generate_ws_headers()
 
             logger.info(
-                f"Connecting to sync WebSocket endpoint for thread {thread_id}: {ws_url}"
+                f"Connecting to sync WebSocket endpoint for thread {thread_id}: "
+                f"{ws_url}"
             )
 
             from playwright.sync_api import sync_playwright
