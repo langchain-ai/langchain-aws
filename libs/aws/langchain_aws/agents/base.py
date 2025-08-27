@@ -501,7 +501,9 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
             tool_calls: list[ToolCall] = [
                 {
                     "name": action.tool,
-                    "args": action.tool_input if isinstance(action.tool_input, dict) else {"input": action.tool_input},
+                    "args": action.tool_input
+                    if isinstance(action.tool_input, dict)
+                    else {"input": action.tool_input},
                     "id": action.invocation_id
                     if action.invocation_id is not None
                     else str(uuid.uuid4()),
