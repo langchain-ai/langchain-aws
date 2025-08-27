@@ -109,16 +109,18 @@ class NeptuneRdfGraph:
                 client_params["endpoint_url"] = f"{protocol}://{host}:{port}"
 
                 if sign:
-                    self.client = self.session.client(service, **client_params)
+                    # boto3 type stubs don't recognize neptunedata service
+                    self.client = self.session.client(service, **client_params)  # type: ignore[call-overload]
                 else:
                     from botocore import UNSIGNED
                     from botocore.config import Config
 
+                    # boto3 type stubs don't recognize neptunedata service
                     self.client = self.session.client(
                         service,
                         **client_params,
                         config=Config(signature_version=UNSIGNED),
-                    )
+                    )  # type: ignore[call-overload]
 
         except ImportError:
             raise ModuleNotFoundError(
@@ -169,11 +171,15 @@ class NeptuneRdfGraph:
         """
         request_data = {"query": query}
         data = request_data
-        request_hdr = None
+        request_hdr: dict[str, str] | None = None
 
         if self.use_iam_auth:
             credentials = self.session.get_credentials()
-            credentials = credentials.get_frozen_credentials()
+            if credentials is None:
+                raise ValueError("Unable to get AWS credentials")
+            # get_frozen_credentials() returns ReadOnlyCredentials but type system
+            # expects Credentials
+            credentials = credentials.get_frozen_credentials()  # type: ignore[assignment]
             access_key = credentials.access_key
             secret_key = credentials.secret_key
             service = "neptune-db"
@@ -192,15 +198,21 @@ class NeptuneRdfGraph:
             )
             from botocore.auth import SigV4Auth
 
-            SigV4Auth(creds, service, self.region_name).add_auth(request)
+            # SigV4Auth expects formal Credentials object but SimpleNamespace works
+            # at runtime
+            SigV4Auth(creds, service, self.region_name).add_auth(request)  # type: ignore[arg-type]
             request.headers["Content-Type"] = "application/x-www-form-urlencoded"
-            request_hdr = request.headers
+            # request.headers is HTTPHeaders but we need dict[str, str] for consistency
+            request_hdr = request.headers  # type: ignore[assignment]
         else:
             request_hdr = {}
             request_hdr["Content-Type"] = "application/x-www-form-urlencoded"
 
         queryres = requests.request(
-            method="POST", url=self.query_endpoint, headers=request_hdr, data=data
+            method="POST",
+            url=self.query_endpoint,
+            headers=request_hdr,
+            data=data,  # type: ignore[arg-type]
         )
         json_resp = json.loads(queryres.text)
         return json_resp

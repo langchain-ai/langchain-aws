@@ -64,7 +64,8 @@ def get_boto_session(
         session = boto3.Session()
 
     # If a custom config is provided, ensure our defaults are maintained
-    config = config or Config(**DEFAULT_CONFIG_VALUES)
+    # DEFAULT_CONFIG_VALUES contains valid Config parameters but type stubs are strict
+    config = config or Config(**DEFAULT_CONFIG_VALUES)  # type: ignore[arg-type]
     # Set default values if not present in custom config
     for key, default_value in DEFAULT_CONFIG_VALUES.items():
         if getattr(config, key, None) is None:
@@ -72,16 +73,19 @@ def get_boto_session(
 
     # Update user agent
     existing_user_agent = getattr(config, "user_agent_extra", "") or ""
-    config.user_agent_extra = (
+    # user_agent_extra attribute exists at runtime but not declared in botocore-stubs
+    config.user_agent_extra = (  # type: ignore[attr-defined]
         f"{existing_user_agent} x-client-framework:langchain-aws "
         f"md/sdk_user_agent/{SDK_USER_AGENT}".strip()
     )
     client_params = {"config": config}
 
     if region_name:
-        client_params["region_name"] = region_name
+        # client_params dict typing is flexible enough to accept string values
+        client_params["region_name"] = region_name  # type: ignore[assignment]
     if endpoint_url:
-        client_params["endpoint_url"] = endpoint_url
+        # client_params dict typing is flexible enough to accept string values
+        client_params["endpoint_url"] = endpoint_url  # type: ignore[assignment]
 
     return client_params, session
 

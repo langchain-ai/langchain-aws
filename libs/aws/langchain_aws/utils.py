@@ -174,7 +174,9 @@ def create_aws_client(
                 session_params["aws_session_token"] = (
                     aws_session_token.get_secret_value()
                 )
-            session = boto3.Session(**session_params)
+            # session_params contains valid boto3.Session parameters but type stubs are
+            # overly restrictive
+            session = boto3.Session(**session_params)  # type: ignore[arg-type]
         else:
             raise ValueError(
                 "If providing credentials, both aws_access_key_id and "

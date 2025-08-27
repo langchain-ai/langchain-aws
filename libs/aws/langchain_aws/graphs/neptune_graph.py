@@ -413,7 +413,9 @@ class NeptuneGraph(BaseNeptuneGraph):
                         session_params["aws_session_token"] = (
                             aws_session_token.get_secret_value()
                         )
-                    session = boto3.Session(**session_params)
+                    # session_params contains valid boto3.Session parameters but type
+                    # stubs are overly restrictive
+                    session = boto3.Session(**session_params)  # type: ignore[arg-type]
                 else:
                     raise ValueError(
                         "If providing credentials, both aws_access_key_id and "
@@ -431,7 +433,9 @@ class NeptuneGraph(BaseNeptuneGraph):
                     client_params["endpoint_url"] = f"{protocol}://{host}:{port}"
 
                 if config is not None:
-                    client_params["config"] = config
+                    # client_params dict expects string keys but Config is correct
+                    # type here
+                    client_params["config"] = config  # type: ignore[assignment]
 
                 if not sign:
                     from botocore import UNSIGNED
@@ -441,13 +445,17 @@ class NeptuneGraph(BaseNeptuneGraph):
                         from typing import cast
 
                         existing_config = cast("Config", client_params["config"])
+                        # Config.merge() returns Config but type system expects string
                         client_params["config"] = existing_config.merge(
                             Config(signature_version=UNSIGNED)
-                        )
+                        )  # type: ignore[assignment]
                     else:
-                        client_params["config"] = Config(signature_version=UNSIGNED)
+                        # Config object is correct type here but type system expects
+                        # string
+                        client_params["config"] = Config(signature_version=UNSIGNED)  # type: ignore[assignment]
 
-                self.client = session.client("neptunedata", **client_params)
+                # boto3 type stubs don't recognize neptunedata service
+                self.client = session.client("neptunedata", **client_params)  # type: ignore[call-overload]
 
         except ImportError:
             raise ModuleNotFoundError(
