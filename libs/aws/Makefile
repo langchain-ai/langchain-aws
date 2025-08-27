@@ -24,10 +24,10 @@ integration_test integration_tests: TEST_FILE = tests/integration_tests/
 PYTHON_FILES=.
 
 tests: ## Run all unit tests
-	uv run --group test pytest --disable-socket --allow-unix-socket $(TEST_FILE)
+	env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN -u BEDROCK_AWS_ACCESS_KEY_ID -u BEDROCK_AWS_SECRET_ACCESS_KEY uv run --group test pytest --disable-socket --allow-unix-socket $(TEST_FILE)
 
 test:  ## Run individual unit test: make test TEST_FILE=tests/unit_test/test.py
-	uv run --group test pytest --disable-socket --allow-unix-socket $(TEST_FILE)
+	env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN -u BEDROCK_AWS_ACCESS_KEY_ID -u BEDROCK_AWS_SECRET_ACCESS_KEY uv run --group test pytest --disable-socket --allow-unix-socket $(TEST_FILE)
 
 integration_tests: ## Run all integration tests
 	uv run --group test --group test_integration pytest $(TEST_FILE)
@@ -45,7 +45,7 @@ coverage_integration_test: ## Run specific integration test with coverage: make 
 	uv run --group test --group test_integration pytest --cov=langchain_aws --cov-report=html --cov-report=term-missing --cov-branch $(TEST_FILE)
 
 coverage_tests: ## Run unit tests with coverage
-	uv run --group test pytest --cov=langchain_aws --cov-report=html --cov-report=term-missing --cov-branch tests/unit_tests/
+	env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN -u BEDROCK_AWS_ACCESS_KEY_ID -u BEDROCK_AWS_SECRET_ACCESS_KEY uv run --group test pytest --cov=langchain_aws --cov-report=html --cov-report=term-missing --cov-branch tests/unit_tests/
 
 coverage_report: ## Generate coverage report
 	uv run --group test coverage report
