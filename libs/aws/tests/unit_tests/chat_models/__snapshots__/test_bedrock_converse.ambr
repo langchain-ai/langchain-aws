@@ -7,20 +7,6 @@
       'ChatBedrockConverse',
     ]),
     'kwargs': dict({
-      'aws_access_key_id': dict({
-        'id': list([
-          'AWS_ACCESS_KEY_ID',
-        ]),
-        'lc': 1,
-        'type': 'secret',
-      }),
-      'aws_secret_access_key': dict({
-        'id': list([
-          'AWS_SECRET_ACCESS_KEY',
-        ]),
-        'lc': 1,
-        'type': 'secret',
-      }),
       'max_tokens': 100,
       'model_id': 'anthropic.claude-3-sonnet-20240229-v1:0',
       'provider': 'anthropic',
