@@ -1018,6 +1018,115 @@ def test_chat_prompt_adapter_with_model_detection(model_id, base_model_id, provi
     assert expected_format_marker in prompt
 
 
+def test__format_anthropic_messages_empty_content_fix() -> None:
+    """
+    Test that empty content arrays are handled correctly to prevent ValidationException.
+    """
+    messages = [
+        HumanMessage("What is the capital of India?"),  # type: ignore[misc]
+        AIMessage([{"type": "text", "text": ""}])  # type: ignore[misc]
+    ]
+    
+    system, formatted_messages = _format_anthropic_messages(messages)
+    
+    assert len(formatted_messages) == 2
+    ai_content = formatted_messages[1]["content"]
+    assert isinstance(ai_content, list)
+    assert len(ai_content) > 0  # Should not be empty
+    assert ai_content[0]["type"] == "text"
+    assert ai_content[0]["text"] == "."
+
+
+def test__format_anthropic_messages_whitespace_only_content() -> None:
+    """Test that whitespace-only content is handled correctly."""
+    messages = [
+        HumanMessage("What is the capital of India?"),  # type: ignore[misc]
+        AIMessage([{"type": "text", "text": "   \n  \t  "}])  # type: ignore[misc]
+    ]
+    
+    system, formatted_messages = _format_anthropic_messages(messages)
+    
+    assert len(formatted_messages) == 2
+    ai_content = formatted_messages[1]["content"]
+    assert isinstance(ai_content, list)
+    assert len(ai_content) > 0
+    assert ai_content[0]["type"] == "text"
+    assert ai_content[0]["text"] == "."
+
+
+def test__format_anthropic_messages_empty_string_content() -> None:
+    """Test that empty string content is handled correctly."""
+    messages = [
+        HumanMessage("What is the capital of India?"),  # type: ignore[misc]
+        AIMessage("")  # type: ignore[misc]
+    ]
+    
+    system, formatted_messages = _format_anthropic_messages(messages)
+    
+    assert len(formatted_messages) == 2
+    ai_content = formatted_messages[1]["content"]
+    assert isinstance(ai_content, list)
+    assert len(ai_content) > 0
+    assert ai_content[0]["type"] == "text"
+    assert ai_content[0]["text"] == "."
+
+
+def test__format_anthropic_messages_mixed_empty_content() -> None:
+    """Test that mixed content with some empty blocks is handled correctly."""
+    messages = [
+        HumanMessage("What is the capital of India?"),  # type: ignore[misc]
+        AIMessage([  # type: ignore[misc]
+            {"type": "text", "text": ""},
+            {"type": "text", "text": "   "},
+            {"type": "text", "text": ""}
+        ])
+    ]
+    
+    system, formatted_messages = _format_anthropic_messages(messages)
+    
+    # Verify that the content is not empty even when all text blocks are filtered out
+    assert len(formatted_messages) == 2
+    ai_content = formatted_messages[1]["content"]
+    assert isinstance(ai_content, list)
+    assert len(ai_content) > 0
+    assert ai_content[0]["type"] == "text"
+    assert ai_content[0]["text"] == "."
+
+
+def test__format_anthropic_messages_mixed_type_blocks_and_empty_content() -> None:
+    """Test that empty blocks mixed with non-text type blocks is handled correctly."""
+    messages = [
+        AIMessage([  # type: ignore[misc]
+            {"type": "text", "text": "\n\t"},
+            {
+                "type": "tool_use",
+                "id": "tool_call1",
+                "input": {"arg1": "val1"},
+                "name": "tool1",
+            },
+        ])
+    ]
+
+    expected_content = [
+        {
+            'role': 'assistant',
+            'content': [
+                {
+                    'type': 'tool_use',
+                    'id': 'tool_call1',
+                    'input': {'arg1': 'val1'},
+                    'name': 'tool1'
+                }
+            ]
+        }
+    ]
+
+    system, formatted_messages = _format_anthropic_messages(messages)
+
+    assert len(formatted_messages) == 1
+    assert formatted_messages == expected_content
+
+
 def test_model_kwargs() -> None:
     """Test we can transfer unknown params to model_kwargs."""
     llm = ChatBedrock(
