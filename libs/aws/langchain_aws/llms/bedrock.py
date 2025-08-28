@@ -171,7 +171,8 @@ def _stream_response_to_generation_chunk(
     generation_info = {
         k: v
         for k, v in stream_response.items()
-        if k not in [output_key, "prompt_token_count", "generation_token_count", "created"]
+        if k
+        not in [output_key, "prompt_token_count", "generation_token_count", "created"]
     }
     return GenerationChunk(
         text=(
@@ -236,8 +237,7 @@ def _get_invocation_metrics_chunk(chunk: Dict[str, Any]) -> GenerationChunk:
             "input_token_details": {
                 "cache_creation": cache_write_input_tokens,
                 "cache_read": cache_read_input_tokens,
-            }
-
+            },
         }
     return GenerationChunk(text="", generation_info=generation_info)
 
@@ -273,7 +273,7 @@ class LLMInputOutputAdapter:
         "deepseek": "choices",
         "meta": "generation",
         "mistral": "outputs",
-        "writer": "choices"
+        "writer": "choices",
     }
 
     @classmethod
@@ -301,8 +301,8 @@ class LLMInputOutputAdapter:
 
                 # Special handling for tool results with thinking
                 if thinking_enabled:
-                    # Check if we have a tool_result in the last user message
-                    # and need to ensure the previous assistant message starts with thinking
+                    # Check if we have a tool_result in the last user message and need
+                    # to ensure the previous assistant message starts with thinking
                     if (
                         len(messages) >= 2
                         and messages[-1]["role"] == "user"
@@ -322,7 +322,8 @@ class LLMInputOutputAdapter:
                             # Make sure the assistant message has thinking first
                             asst_content = messages[-2].get("content", [])
                             if isinstance(asst_content, list) and asst_content:
-                                # Find thinking blocks and move them to the front if needed
+                                # Find thinking blocks and move them to the front if
+                                # needed
                                 thinking_blocks = [
                                     block
                                     for block in asst_content
@@ -459,8 +460,12 @@ class LLMInputOutputAdapter:
         headers = response.get("ResponseMetadata", {}).get("HTTPHeaders", {})
         prompt_tokens = int(headers.get("x-amzn-bedrock-input-token-count", 0))
         completion_tokens = int(headers.get("x-amzn-bedrock-output-token-count", 0))
-        cache_read_input_tokens = int(headers.get("x-amzn-bedrock-cache-read-input-token-count", 0))
-        cache_write_input_tokens = int(headers.get("x-amzn-bedrock-cache-write-input-token-count", 0))
+        cache_read_input_tokens = int(
+            headers.get("x-amzn-bedrock-cache-read-input-token-count", 0)
+        )
+        cache_write_input_tokens = int(
+            headers.get("x-amzn-bedrock-cache-write-input-token-count", 0)
+        )
         return {
             "text": text,
             "thinking": thinking,
@@ -471,7 +476,9 @@ class LLMInputOutputAdapter:
                 "completion_tokens": completion_tokens,
                 "cache_read_input_tokens": cache_read_input_tokens,
                 "cache_write_input_tokens": cache_write_input_tokens,
-                "total_tokens": prompt_tokens + cache_read_input_tokens + completion_tokens,
+                "total_tokens": prompt_tokens
+                + cache_read_input_tokens
+                + completion_tokens,
             },
             "stop_reason": response_body.get("stop_reason"),
         }
@@ -527,7 +534,10 @@ class LLMInputOutputAdapter:
 
             if provider == "deepseek":
                 opt = chunk_obj.get(output_key, [{}])[0]
-                if opt.get("stop_reason") in ["stop", "length"] or opt.get("finish_reason") == "eos_token":
+                if (
+                    opt.get("stop_reason") in ["stop", "length"]
+                    or opt.get("finish_reason") == "eos_token"
+                ):
                     yield _get_invocation_metrics_chunk(chunk_obj)
                     return
 
@@ -603,21 +613,26 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     client: Any = Field(default=None, exclude=True)  #: :meta private:
     """The bedrock runtime client for making data plane API calls"""
-    
+
     bedrock_client: Any = Field(default=None, exclude=True)  #: :meta private:
     """The bedrock client for making control plane API calls"""
 
     region_name: Optional[str] = Field(default=None, alias="region")
-    """The aws region e.g., `us-west-2`. Falls back to AWS_REGION or AWS_DEFAULT_REGION 
-    env variable or region specified in ~/.aws/config in case it is not provided here.
+    """The aws region e.g., `us-west-2`. Falls back to ``AWS_REGION`` or
+    ``AWS_DEFAULT_REGION``  env variable or region specified in ``~/.aws/config`` in
+    case it is not provided here.
+
     """
 
     credentials_profile_name: Optional[str] = Field(default=None, exclude=True)
-    """The name of the profile in the ~/.aws/credentials or ~/.aws/config files, which
-    has either access keys or role information specified.
+    """The name of the profile in the ``~/.aws/credentials`` or ``~/.aws/config files``,
+    which has either access keys or role information specified.
+    
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
+    
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
     """
 
     aws_access_key_id: Optional[SecretStr] = Field(
@@ -625,25 +640,31 @@ class BedrockBase(BaseLanguageModel, ABC):
     )
     """AWS access key id.
 
-    If provided, aws_secret_access_key must also be provided.
+    If provided, ``aws_secret_access_key`` must also be provided.
+
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
+
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+    If not provided, will be read from ``AWS_ACCESS_KEY_ID`` environment variable.
+
     """
 
     aws_secret_access_key: Optional[SecretStr] = Field(
         default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
     )
-    """AWS secret_access_key.
+    """AWS ``secret_access_key``.
 
-    If provided, aws_access_key_id must also be provided.
+    If provided, ``aws_access_key_id`` must also be provided.
+
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
+    
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+    If not provided, will be read from ``AWS_SECRET_ACCESS_KEY`` environment variable.
+
     """
 
     aws_session_token: Optional[SecretStr] = Field(
@@ -651,38 +672,47 @@ class BedrockBase(BaseLanguageModel, ABC):
     )
     """AWS session token.
 
-    If provided, aws_access_key_id and aws_secret_access_key must also be provided.
+    If provided, ``aws_access_key_id`` and ``aws_secret_access_key`` must also be
+    provided.
+    
     Not required unless using temporary credentials.
+    
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
+    If not provided, will be read from ``AWS_SESSION_TOKEN`` environment variable.
+
     """
 
     config: Any = None
-    """An optional botocore.config.Config instance to pass to the client."""
+    """An optional ``botocore.config.Config`` instance to pass to the client."""
 
     provider: Optional[str] = None
-    """The model provider, e.g., amazon, cohere, ai21, etc. When not supplied, provider
-    is extracted from the first part of the model_id e.g. 'amazon' in
-    'amazon.titan-text-express-v1'. This value should be provided for model ids that do
-    not have the provider in them, e.g., custom and provisioned models that have an ARN
-    associated with them."""
+    """The model provider, e.g., ``'amazon'``, ``'cohere'``, ``'ai21'``, etc. When not
+    supplied, provider is extracted from the first part of the model_id e.g.
+    ``'amazon'`` in ``'amazon.titan-text-express-v1'``. This value should be provided
+    for model ids that do not have the provider in them, e.g., custom and provisioned
+    models that have an ARN associated with them.
+    
+    """
 
     model_id: str = Field(alias="model")
-    """Id of the model to call, e.g., amazon.titan-text-express-v1, this is
-    equivalent to the modelId property in the list-foundation-models api. For custom and
-    provisioned models, an ARN value is expected."""
+    """Id of the model to call, e.g., ``'amazon.titan-text-express-v1'``, this is
+    equivalent to the ``modelId`` property in the list-foundation-models api. For custom
+    and provisioned models, an ARN value is expected.
+    
+    """
 
     base_model_id: Optional[str] = Field(default=None, alias="base_model")
     """An optional field to pass the base model id. If provided, this will be used over 
-    the value of model_id to identify the base model.
+    the value of ``model_id`` to identify the base model.
+    
     """
 
     model_kwargs: Optional[Dict[str, Any]] = None
     """Keyword arguments to pass to the model."""
 
     endpoint_url: Optional[str] = None
-    """Needed if you don't want to default to us-east-1 endpoint"""
+    """Needed if you don't want to default to ``'us-east-1'`` endpoint"""
 
     streaming: bool = False
     """Whether to stream the results."""
@@ -711,8 +741,9 @@ class BedrockBase(BaseLanguageModel, ABC):
     """
     An optional dictionary to configure guardrails for Bedrock.
 
-    This field 'guardrails' consists of two keys: 'guardrailId' and
-    'guardrailVersion', which should be strings, but are initialized to None.
+    This field ``guardrails`` consists of two keys: ``'guardrailId'`` and
+    ``'guardrailVersion'``, which should be strings, but are initialized to None.
+    
     It's used to determine if specific guardrails are enabled and properly set.
 
     Type:
@@ -749,6 +780,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             reason = kwargs.get("reason")
             if reason == "GUARDRAIL_INTERVENED":
                 ...Logic to handle guardrail intervention...
+
     """  # noqa: E501
 
     temperature: Optional[float] = None
@@ -828,8 +860,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         # so this requires passing in the provider by user
         if self.model_id.startswith("arn"):
             raise ValueError(
-                "Model provider should be supplied when passing a model ARN as "
-                "model_id"
+                "Model provider should be supplied when passing a model ARN as model_id"
             )
 
         # If model_id has region prefixed to them,
@@ -838,22 +869,33 @@ class BedrockBase(BaseLanguageModel, ABC):
         parts = self.model_id.split(".", maxsplit=2)
         return (
             parts[1]
-            if (len(parts) > 1 and parts[0].lower() in {"eu", "us", "us-gov", "apac", "sa"})
+            if (
+                len(parts) > 1
+                and parts[0].lower() in {"eu", "us", "us-gov", "apac", "sa"}
+            )
             else parts[0]
         )
 
     def _get_base_model(self) -> str:
         # identify the base model id used in the application inference profile (AIP)
-        # Format: arn:aws:bedrock:us-east-1:<accountId>:application-inference-profile/<id>
-        if self.base_model_id is None and 'application-inference-profile' in self.model_id:
+        # Format: arn:aws:bedrock:us-east-1:<accountId>:application-inference-profile/
+        # <id>
+        if (
+            self.base_model_id is None
+            and "application-inference-profile" in self.model_id
+        ):
             response = self.bedrock_client.get_inference_profile(
                 inferenceProfileIdentifier=self.model_id
             )
-            if 'models' in response and len(response['models']) > 0:
-                model_arn = response['models'][0]['modelArn']
+            if "models" in response and len(response["models"]) > 0:
+                model_arn = response["models"][0]["modelArn"]
                 # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
-                self.base_model_id = model_arn.split('/')[-1]
-        return self.base_model_id if self.base_model_id else self.model_id.split(".", maxsplit=1)[-1]
+                self.base_model_id = model_arn.split("/")[-1]
+        return (
+            self.base_model_id
+            if self.base_model_id
+            else self.model_id.split(".", maxsplit=1)[-1]
+        )
 
     @property
     def _model_is_anthropic(self) -> bool:
@@ -863,13 +905,16 @@ class BedrockBase(BaseLanguageModel, ABC):
     def _guardrails_enabled(self) -> bool:
         """
         Determines if guardrails are enabled and correctly configured.
-        Checks if 'guardrails' is a dictionary with non-empty 'id' and 'version' keys.
-        Checks if 'guardrails.trace' is true.
+        Checks if ``guardrails`` is a dictionary with non-empty ``'id'`` and
+        ``'version'`` keys.
+
+        Checks if ``'guardrails.trace'`` is true.
 
         Returns:
             bool: True if guardrails are correctly configured, False otherwise.
         Raises:
             TypeError: If 'guardrails' lacks 'id' or 'version' keys.
+
         """
         try:
             return (
@@ -903,7 +948,11 @@ class BedrockBase(BaseLanguageModel, ABC):
         params = {**_model_kwargs, **kwargs}
 
         # Pre-process for thinking with tool use
-        if messages and "claude-" in self._get_base_model() and thinking_in_params(params):
+        if (
+            messages
+            and "claude-" in self._get_base_model()
+            and thinking_in_params(params)
+        ):
             # We need to ensure thinking blocks are first in assistant messages
             # Process each message in the sequence
             for i, message in enumerate(messages):
@@ -1017,11 +1066,11 @@ class BedrockBase(BaseLanguageModel, ABC):
         return text, tool_calls, llm_output
 
     def _get_bedrock_services_signal(self, body: dict) -> dict:
-        """
-        This function checks the response body for an interrupt flag or message that indicates
-        whether any of the Bedrock services have intervened in the processing flow. It is
-        primarily used to identify modifications or interruptions imposed by these services
-        during the request-response cycle with a Large Language Model (LLM).
+        """This function checks the response body for an interrupt flag or message that
+        indicates whether any of the Bedrock services have intervened in the processing
+        flow. It is primarily used to identify modifications or interruptions imposed by
+        these services during the request-response cycle with a Large Language Model.
+
         """  # noqa: E501
 
         if (
@@ -1212,7 +1261,7 @@ class BedrockLLM(LLM, BedrockBase):
     https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
     If a specific credential profile should be used, you must pass
-    the name of the profile from the ~/.aws/credentials file that is to be used.
+    the name of the profile from the ``~/.aws/credentials`` file that is to be used.
 
     Make sure the credentials / roles used have the required policies to
     access the Bedrock service.
@@ -1293,7 +1342,7 @@ class BedrockLLM(LLM, BedrockBase):
         Args:
             prompt (str): The prompt to pass into the model
             stop (Optional[List[str]], optional): Stop sequences. These will
-                override any stop sequences in the `model_kwargs` attribute.
+                override any stop sequences in the ``model_kwargs`` attribute.
                 Defaults to None.
             run_manager (Optional[CallbackManagerForLLMRun], optional): Callback
                 run managers used to process the output. Defaults to None.
@@ -1303,6 +1352,7 @@ class BedrockLLM(LLM, BedrockBase):
 
         Yields:
             Iterator[GenerationChunk]: Responses from the model.
+
         """
         return self._prepare_input_and_invoke_stream(  # type: ignore
             prompt=prompt, stop=stop, run_manager=run_manager, **kwargs
@@ -1328,6 +1378,7 @@ class BedrockLLM(LLM, BedrockBase):
             .. code-block:: python
 
                 response = llm("Tell me a joke.")
+
         """
 
         provider = self._get_provider()
@@ -1385,7 +1436,7 @@ class BedrockLLM(LLM, BedrockBase):
         Args:
             prompt (str): The prompt to pass into the model
             stop (Optional[List[str]], optional): Stop sequences. These will
-                override any stop sequences in the `model_kwargs` attribute.
+                override any stop sequences in the ``model_kwargs`` attribute.
                 Defaults to None.
             run_manager (Optional[CallbackManagerForLLMRun], optional): Callback
                 run managers used to process the output. Defaults to None.
@@ -1393,6 +1444,7 @@ class BedrockLLM(LLM, BedrockBase):
         Yields:
             AsyncGenerator[GenerationChunk, None]: Generator that asynchronously yields
             the streamed responses.
+
         """
         async for chunk in self._aprepare_input_and_invoke_stream(
             prompt=prompt, stop=stop, run_manager=run_manager, **kwargs
@@ -1419,6 +1471,7 @@ class BedrockLLM(LLM, BedrockBase):
             .. code-block:: python
 
                 response = await llm._acall("Tell me a joke.")
+
         """
 
         if not self.streaming:

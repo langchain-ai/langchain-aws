@@ -168,8 +168,11 @@ def test_bedrock_cohere_embedding_large_document_set(cohere_embeddings_v3) -> No
     assert len(output[1]) == 1024
     assert len(output[2]) == 1024
 
+
 @pytest.mark.scheduled
-def test_bedrock_embedding_provider_arg(bedrock_embeddings, cohere_embeddings_v3, cohere_embeddings_model_arn) -> None:
+def test_bedrock_embedding_provider_arg(
+    bedrock_embeddings, cohere_embeddings_v3, cohere_embeddings_model_arn
+) -> None:
     assert bedrock_embeddings._inferred_provider == "amazon"
     assert cohere_embeddings_v3._inferred_provider == "cohere"
     assert cohere_embeddings_model_arn._inferred_provider == "cohere"

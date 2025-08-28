@@ -7,13 +7,14 @@ from langchain_core.prompt_values import ChatPromptValue
 from langchain_core.runnables import Runnable
 from langchain_core.runnables.config import RunnableConfig
 from pydantic import ConfigDict
-from typing_extensions import Self
 
 logger = logging.getLogger(__name__)
 
 
 @beta(message="This API is in beta and can change in future.")
-class AmazonQ(Runnable[Union[str,ChatPromptValue, List[ChatPromptValue]], ChatPromptValue]):
+class AmazonQ(
+    Runnable[Union[str, ChatPromptValue, List[ChatPromptValue]], ChatPromptValue]
+):
     """Amazon Q Runnable wrapper.
 
     To authenticate, the AWS client uses the following methods to
@@ -22,18 +23,19 @@ class AmazonQ(Runnable[Union[str,ChatPromptValue, List[ChatPromptValue]], ChatPr
 
     Make sure the credentials / roles used have the required policies to
     access the Amazon Q service.
+
     """
 
     region_name: Optional[str] = None
     """AWS region name. If not provided, will be extracted from environment."""
 
     credentials: Optional[Any] = None
-    """Amazon Q credentials used to instantiate the client if the client is not provided."""
+    """Amazon Q credentials used to instantiate the client if the client is not provided."""  # noqa: E501
 
     client: Optional[Any] = None
     """Amazon Q client."""
 
-    application_id: str = None
+    application_id: Optional[str] = None
 
     """Store the full response from Amazon Q."""
 
@@ -52,7 +54,7 @@ class AmazonQ(Runnable[Union[str,ChatPromptValue, List[ChatPromptValue]], ChatPr
         region_name: Optional[str] = None,
         credentials: Optional[Any] = None,
         client: Optional[Any] = None,
-        application_id: str = None,
+        application_id: Optional[str] = None,
         parent_message_id: Optional[str] = None,
         conversation_id: Optional[str] = None,
         chat_mode: str = "RETRIEVAL_MODE",
@@ -67,9 +69,9 @@ class AmazonQ(Runnable[Union[str,ChatPromptValue, List[ChatPromptValue]], ChatPr
 
     def invoke(
         self,
-        input: Union[str,ChatPromptValue],
+        input: Union[str, ChatPromptValue, List[ChatPromptValue]],
         config: Optional[RunnableConfig] = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> ChatPromptValue:
         """Call out to Amazon Q service.
 
@@ -87,39 +89,53 @@ class AmazonQ(Runnable[Union[str,ChatPromptValue, List[ChatPromptValue]], ChatPr
                 application_id=your_app_id
             )
             response = model.invoke("Tell me a joke")
+
         """
         try:
-            # Prepare the request            
+            # Prepare the request
             request = {
-                'applicationId': self.application_id,
-                'userMessage': self.convert_langchain_messages_to_q_input(input), # Langchain's input comes in the form of an array of "messages". We must convert to a single string for Amazon Q's use
-                'chatMode': self.chat_mode,
+                "applicationId": self.application_id,
+                "userMessage": self.convert_langchain_messages_to_q_input(
+                    input
+                ),  # Langchain's input comes in the form of an array of "messages".
+                # We must convert to a single string for Amazon Q's use
+                "chatMode": self.chat_mode,
             }
             if self.conversation_id:
-                request.update({
-                    'conversationId': self.conversation_id,
-                    'parentMessageId': self.parent_message_id,
-                })
+                request.update(
+                    {
+                        "conversationId": self.conversation_id,
+                        "parentMessageId": self.parent_message_id,
+                    }
+                )
 
             # Call Amazon Q
+            if self.client is None:
+                raise ValueError("Amazon Q client is not initialized")
             response = self.client.chat_sync(**request)
 
             # Extract the response text
-            if 'systemMessage' in response:
-                return AIMessage(content=response["systemMessage"], response_metadata=response)
+            if "systemMessage" in response:
+                ai_message = AIMessage(
+                    content=response["systemMessage"], response_metadata=response
+                )
+                return ChatPromptValue(messages=[ai_message])
             else:
                 raise ValueError("Unexpected response format from Amazon Q")
 
         except Exception as e:
             if "Prompt Length" in str(e):
-                logger.info(f"Prompt Length: {len(input)}")
+                # Convert input to string to get its length
+                input_str = self.convert_langchain_messages_to_q_input(input)
+                logger.info(f"Prompt Length: {len(input_str)}")
                 logger.info(f"""Prompt:
-                {input}""")
+                {input_str}""")
             raise ValueError(f"Error raised by Amazon Q service: {e}")
 
-    def validate_environment(self) -> Self:
+    def validate_environment(self) -> Any:
         """Don't do anything if client provided externally"""
-        #If the client is not provided, and the user_id is not provided in the class constructor, throw an error saying one or the other needs to be provided
+        # If the client is not provided, and the user_id is not provided in the class
+        # constructor, throw an error saying one or the other needs to be provided
         if self.credentials is None:
             raise ValueError(
                 "Either the credentials or the client needs to be provided."
@@ -131,10 +147,12 @@ class AmazonQ(Runnable[Union[str,ChatPromptValue, List[ChatPromptValue]], ChatPr
 
             try:
                 if self.region_name is not None:
-                    client = boto3.client('qbusiness', self.region_name, **self.credentials)
+                    client = boto3.client(
+                        "qbusiness", self.region_name, **self.credentials
+                    )
                 else:
                     # use default region
-                    client = boto3.client('qbusiness', **self.credentials)
+                    client = boto3.client("qbusiness", **self.credentials)
 
             except Exception as e:
                 raise ValueError(
@@ -149,9 +167,19 @@ class AmazonQ(Runnable[Union[str,ChatPromptValue, List[ChatPromptValue]], ChatPr
                 "Please install it with `pip install boto3`."
             )
         return client
-    def convert_langchain_messages_to_q_input(self, input: Union[str,ChatPromptValue,List[ChatPromptValue]]) -> str:
-        #If it is just a string and not a ChatPromptTemplate collection just return string
-        if type(input) is str:
+
+    def convert_langchain_messages_to_q_input(
+        self, input: Union[str, ChatPromptValue, List[ChatPromptValue]]
+    ) -> str:
+        # If it is just a string and not a ChatPromptTemplate collection just
+        # return string
+        if isinstance(input, str):
             return input
-        return input.to_string()
-    
+        elif isinstance(input, ChatPromptValue):
+            return input.to_string()
+        elif isinstance(input, list):
+            # For list of ChatPromptValue, concatenate their string representations
+            return "\n".join(item.to_string() for item in input)
+        else:
+            # This should never happen given the type annotation, but just in case
+            return str(input)

@@ -7,7 +7,7 @@ def test_get_boto3_session() -> None:
     client_params, session = get_boto_session()
     assert "config" in client_params
     config = client_params["config"]
-    assert SDK_USER_AGENT in config.user_agent_extra
+    assert SDK_USER_AGENT in config.user_agent_extra  # type: ignore[attr-defined]
 
 
 def test_get_boto_session_with_config() -> None:
@@ -20,10 +20,11 @@ def test_get_boto_session_with_config() -> None:
     client_params, session = get_boto_session(config=fake_config)
     assert "config" in client_params
     config = client_params["config"]
-    assert SDK_USER_AGENT in config.user_agent_extra
-    assert config.connect_timeout == fake_config.connect_timeout
-    assert config.read_timeout == fake_config.read_timeout
-    assert config.retries["max_attempts"] == fake_config.retries["max_attempts"]
+    # (These attributes exist at runtime but are not declared in botocore-stubs)
+    assert SDK_USER_AGENT in config.user_agent_extra  # type: ignore[attr-defined]
+    assert config.connect_timeout == fake_config.connect_timeout  # type: ignore[attr-defined]
+    assert config.read_timeout == fake_config.read_timeout  # type: ignore[attr-defined]
+    assert config.retries["max_attempts"] == fake_config.retries["max_attempts"]  # type: ignore[attr-defined]
 
 
 def test_get_boto_session_with_user_agent() -> None:
@@ -37,8 +38,9 @@ def test_get_boto_session_with_user_agent() -> None:
     client_params, session = get_boto_session(config=fake_config)
     assert "config" in client_params
     config = client_params["config"]
-    assert SDK_USER_AGENT in config.user_agent_extra
-    assert fake_config.user_agent_extra in config.user_agent_extra
-    assert config.connect_timeout == fake_config.connect_timeout
-    assert config.read_timeout == fake_config.read_timeout
-    assert config.retries["max_attempts"] == fake_config.retries["max_attempts"]
+    assert SDK_USER_AGENT in config.user_agent_extra  # type: ignore[attr-defined]
+    # (These attributes exist at runtime but are not declared in botocore-stubs)
+    assert fake_config.user_agent_extra in config.user_agent_extra  # type: ignore[attr-defined]
+    assert config.connect_timeout == fake_config.connect_timeout  # type: ignore[attr-defined]
+    assert config.read_timeout == fake_config.read_timeout  # type: ignore[attr-defined]
+    assert config.retries["max_attempts"] == fake_config.retries["max_attempts"]  # type: ignore[attr-defined]
