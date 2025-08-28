@@ -7,12 +7,12 @@ authors = []
 license = {text = "MIT"}
 requires-python = ">=3.10"
 dependencies = [
-    "langgraph-checkpoint>=2.0.0",
-    "langgraph>=0.2.55,<0.7",
-    "boto3>=1.37.3",
+    "langgraph-checkpoint>=2.1.1",
+    "langgraph>=0.6.6,<0.7",
+    "boto3>=1.40.19",
 ]
 name = "langgraph-checkpoint-aws"
-version = "0.1.1"
+version = "1.0.0a1"
 description = "A LangChain checkpointer implementation that uses Bedrock Session Management Service to enable stateful and resumable LangGraph agents."
 readme = "README.md"
 keywords = ["aws", "bedrock", "langchain", "langgraph", "checkpointer"]
@@ -27,8 +27,8 @@ dev = [
     "mypy>=1.17.1",
 ]
 test = [
-    "pytest>=7.4.3",
-    "pytest-cov>=4.1.0",
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
     "pytest-socket>=0.7.0",
 ]
 test_integration = [
@@ -51,10 +51,6 @@ lint.select = [
     "I",      # isort
     "T201",   # print
 ]
-
-[tool.codespell]
-skip = '.git,*.pdf,*.svg'
-ignore-words-list = ''
 
 [tool.mypy]
 ignore_missing_imports = "True"
