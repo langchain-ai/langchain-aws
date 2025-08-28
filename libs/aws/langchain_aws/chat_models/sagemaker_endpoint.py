@@ -209,7 +209,7 @@ class ChatSagemakerEndpoint(BaseChatModel):
     region_name: Optional[str] = ""
     """The aws region, e.g., `us-west-2`. 
 
-    Falls back to ``AWS_REGION`` or AWS_DEF``AULT_REGION env variable or region
+    Falls back to ``AWS_REGION`` or ``AWS_DEFAULT_REGION`` env variable or region
     specified in  ``~/.aws/config`` in case it is not provided here.
     """
 
