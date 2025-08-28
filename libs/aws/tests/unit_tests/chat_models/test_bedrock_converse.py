@@ -1202,7 +1202,7 @@ def test__lc_content_to_bedrock_empty_content() -> None:
     bedrock_content = _lc_content_to_bedrock(content)
     
     assert len(bedrock_content) > 0
-    assert bedrock_content[0]["text"] == "[empty]"
+    assert bedrock_content[0]["text"] == "."
 
 
 def test__lc_content_to_bedrock_whitespace_only_content() -> None:
@@ -1211,7 +1211,7 @@ def test__lc_content_to_bedrock_whitespace_only_content() -> None:
     bedrock_content = _lc_content_to_bedrock(content)
     
     assert len(bedrock_content) > 0
-    assert bedrock_content[0]["text"] == "[empty]"
+    assert bedrock_content[0]["text"] == "."
 
 
 def test__lc_content_to_bedrock_empty_string_content() -> None:
@@ -1220,7 +1220,7 @@ def test__lc_content_to_bedrock_empty_string_content() -> None:
     bedrock_content = _lc_content_to_bedrock(content)
     
     assert len(bedrock_content) > 0
-    assert bedrock_content[0]["text"] == "[empty]"
+    assert bedrock_content[0]["text"] == "."
 
 
 def test__lc_content_to_bedrock_mixed_empty_content() -> None:
@@ -1233,7 +1233,7 @@ def test__lc_content_to_bedrock_mixed_empty_content() -> None:
     bedrock_content = _lc_content_to_bedrock(content)
 
     assert len(bedrock_content) > 0
-    assert bedrock_content[0]["text"] == "[empty]"
+    assert bedrock_content[0]["text"] == "."
 
 
 def test__lc_content_to_bedrock_empty_text_block() -> None:
@@ -1244,7 +1244,7 @@ def test__lc_content_to_bedrock_empty_text_block() -> None:
     bedrock_content = _lc_content_to_bedrock(content)
     
     assert len(bedrock_content) > 0
-    assert bedrock_content[0]["text"] == "[empty]"
+    assert bedrock_content[0]["text"] == "."
 
 
 def test__lc_content_to_bedrock_whitespace_text_block() -> None:
@@ -1255,7 +1255,7 @@ def test__lc_content_to_bedrock_whitespace_text_block() -> None:
     bedrock_content = _lc_content_to_bedrock(content)
     
     assert len(bedrock_content) > 0
-    assert bedrock_content[0]["text"] == "[empty]"
+    assert bedrock_content[0]["text"] == "."
 
 
 def test__lc_content_to_bedrock_mixed_valid_and_empty_content() -> None:
@@ -1269,8 +1269,8 @@ def test__lc_content_to_bedrock_mixed_valid_and_empty_content() -> None:
 
     assert len(bedrock_content) == 3
     assert bedrock_content[0]["text"] == "Valid text"
-    assert bedrock_content[1]["text"] == "[empty]"
-    assert bedrock_content[2]["text"] == "[empty]"
+    assert bedrock_content[1]["text"] == "."
+    assert bedrock_content[2]["text"] == "."
 
 
 def test__lc_content_to_bedrock_mixed_types_with_empty_content() -> None:
@@ -1294,7 +1294,7 @@ def test__lc_content_to_bedrock_mixed_types_with_empty_content() -> None:
                 'name': 'tool1'
             }
         },
-        {'text': '[empty]'}
+        {'text': '.'}
     ]
     
     bedrock_content = _lc_content_to_bedrock(content)
