@@ -517,6 +517,8 @@ def test_standard_tracing_params() -> None:
         ("us.amazon.nova-lite-v1:0", False),
         ("us.amazon.nonstreaming-model-v1:0", True),
         ("us.deepseek.r1-v1:0", "tool_calling"),
+        ("openai.gpt-oss-120b-1:0", False),
+        ("openai.gpt-oss-20b-1:0", False),
     ],
 )
 def test_set_disable_streaming(
