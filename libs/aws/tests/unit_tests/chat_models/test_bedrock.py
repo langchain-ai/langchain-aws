@@ -602,7 +602,9 @@ def test_beta_use_converse_api() -> None:
         ),
     ],
 )
-def test__get_provider(model_id, provider, expected_provider, expectation, region_name) -> None:
+def test__get_provider(
+    model_id, provider, expected_provider, expectation, region_name
+) -> None:
     llm = ChatBedrock(model_id=model_id, provider=provider, region_name=region_name)
     with expectation:
         assert llm._get_provider() == expected_provider
@@ -676,25 +678,27 @@ def test__format_anthropic_messages_with_thinking_blocks() -> None:
 
 
 def test__format_anthropic_messages_with_image_conversion_in_tool() -> None:
-    """Test that ToolMessage with OpenAI-style image content is correctly converted to Anthropic format."""
+    """Test that ToolMessage with OpenAI-style image content is correctly
+    converted to Anthropic format."""
     # Create a dummy base64 image string
-    dummy_base64_image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-    
+    dummy_base64_image = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9aw"
+        "AAAABJRU5ErkJggg=="
+    )
+
     messages = [
         ToolMessage(  # type: ignore[misc]
             content=[
                 {
                     "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/png;base64,{dummy_base64_image}"
-                    }
+                    "image_url": {"url": f"data:image/png;base64,{dummy_base64_image}"},
                 }
             ],
-            tool_call_id="test_tool_call_123"
+            tool_call_id="test_tool_call_123",
         ),
         HumanMessage("What do you see in the image?"),  # type: ignore[misc]
     ]
-    
+
     expected = [
         {
             "role": "user",
@@ -708,17 +712,17 @@ def test__format_anthropic_messages_with_image_conversion_in_tool() -> None:
                             "source": {
                                 "type": "base64",
                                 "media_type": "image/png",
-                                "data": dummy_base64_image
-                            }
+                                "data": dummy_base64_image,
+                            },
                         }
-                    ]
+                    ],
                 },
-                {"type": "text", "text": "What do you see in the image?"}
-            ]
+                {"type": "text", "text": "What do you see in the image?"},
+            ],
         }
     ]
-    
-    _ , actual = _format_anthropic_messages(messages)
+
+    _, actual = _format_anthropic_messages(messages)
     assert expected == actual
 
 
@@ -733,7 +737,8 @@ def test__convert_messages_to_prompt_anthropic_message_is_empty() -> None:
 
 
 def test__format_anthropic_messages_with_thinking_in_content_blocks() -> None:
-    """Test that thinking blocks in content are correctly ordered (first) in messages."""
+    """Test that thinking blocks in content are correctly ordered (first) in
+    messages."""
     system = SystemMessage("System instruction")  # type: ignore[misc]
     human = HumanMessage("What is the weather in NYC?")  # type: ignore[misc]
 
@@ -800,7 +805,8 @@ def test__format_anthropic_messages_with_thinking_in_content_blocks() -> None:
 
 
 def test__format_anthropic_messages_after_tool_use_no_thinking() -> None:
-    """Test message formatting for assistant responses after tool use (which shouldn't have thinking)."""
+    """Test message formatting for assistant responses after tool use (which
+    shouldn't have thinking)."""
     system = SystemMessage("System instruction")  # type: ignore[misc]
     human = HumanMessage("What is the weather in NYC?")  # type: ignore[misc]
 
@@ -853,7 +859,7 @@ def test__format_anthropic_messages_tool_result_ordering() -> None:
             {
                 "type": "tool_result",
                 "content": "Data analysis result",
-                "tool_use_id": "tool1"
+                "tool_use_id": "tool1",
             },
             {"type": "text", "text": "Can you explain this result?"},
         ]
@@ -877,7 +883,8 @@ def test__format_anthropic_messages_tool_result_ordering() -> None:
 
 
 def test__format_anthropic_messages_tool_use_ordering() -> None:
-    """Test that tool type content blocks in AssistantMessage are always moved to the end."""
+    """Test that tool type content blocks in AssistantMessage are always moved to
+    the end."""
     ai_message = AIMessage(  # type: ignore[misc]
         [
             {"type": "text", "text": "Let me analyze this for you."},
@@ -885,7 +892,7 @@ def test__format_anthropic_messages_tool_use_ordering() -> None:
                 "type": "tool_use",
                 "name": "data_analyzer",
                 "id": "tool1",
-                "input": {"data": "sample_data"}
+                "input": {"data": "sample_data"},
             },
             {"type": "text", "text": "This will help us understand the pattern."},
         ]
@@ -909,7 +916,8 @@ def test__format_anthropic_messages_tool_use_ordering() -> None:
 
 
 def test__format_anthropic_messages_preserves_content_order() -> None:
-    """Test that _format_anthropic_messages preserves the original order of mixed text and image content."""
+    """Test that _format_anthropic_messages preserves the original order of mixed
+    text and image content."""
     content = [
         {"type": "text", "text": "Some text..."},
         {
@@ -970,49 +978,49 @@ def test__format_anthropic_messages_preserves_content_order() -> None:
             "arn:aws:bedrock:us-west-2::custom-model/meta.llama3-8b-instruct-v1:0/MyModel",
             "meta.llama3-8b-instruct-v1:0",
             "meta",
-            "<|begin_of_text|>"
+            "<|begin_of_text|>",
         ),
         (
             "arn:aws:bedrock:us-west-2::custom-model/meta.llama2-70b-chat-v1/MyModel",
             "meta.llama2-70b-chat-v1",
             "meta",
-            "[INST]"
+            "[INST]",
         ),
         (
             "meta.llama2-70b-chat-v1",
             "meta.llama3-8b-instruct-v1:0",
             "meta",
-            "<|begin_of_text|>"
+            "<|begin_of_text|>",
         ),
         (
             "arn:aws:sagemaker:us-west-2::endpoint/endpoint-quick-start-xxxxx",
             "deepseek.r1-v1:0",
             "deepseek",
-            "<|begin_of_sentence|>"
+            "<|begin_of_sentence|>",
         ),
-    ]
+    ],
 )
-def test_chat_prompt_adapter_with_model_detection(model_id, base_model_id, provider, expected_format_marker):
-    """Test that ChatPromptAdapter correctly formats prompts when base_model is provided."""
+def test_chat_prompt_adapter_with_model_detection(
+    model_id, base_model_id, provider, expected_format_marker
+):
+    """Test that ChatPromptAdapter correctly formats prompts when base_model is provided."""  # noqa: E501
     messages = [
         SystemMessage(content="You are a helpful assistant"),
-        HumanMessage(content="Hello")
+        HumanMessage(content="Hello"),
     ]
 
     chat = ChatBedrock(
         model_id=model_id,
         base_model_id=base_model_id,
         provider=provider,
-        region_name="us-west-2"
+        region_name="us-west-2",
     )
 
     model_name = chat._get_base_model()
     provider_name = chat._get_provider()
 
     prompt = ChatPromptAdapter.convert_messages_to_prompt(
-        provider=provider_name,
-        messages=messages,
-        model=model_name
+        provider=provider_name, messages=messages, model=model_name
     )
 
     assert expected_format_marker in prompt

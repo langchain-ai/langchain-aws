@@ -55,61 +55,70 @@ class RetrievalConfig(BaseModel, extra="allow"):  # type: ignore[call-arg]
 class AmazonKnowledgeBasesRetriever(BaseRetriever):
     """`Amazon Bedrock Knowledge Bases` retrieval.
 
-        See https://aws.amazon.com/bedrock/knowledge-bases for more info.
+    See https://aws.amazon.com/bedrock/knowledge-bases for more info.
 
-        Args:
-            knowledge_base_id: Knowledge Base ID.
+    Args:
+        knowledge_base_id: Knowledge Base ID.
 
-            region_name: The aws region e.g., `us-west-2`.
-                Fallback to AWS_REGION/AWS_DEFAULT_REGION env variable or region specified in
-                ~/.aws/config.
+        region_name: The aws region e.g., ``'us-west-2'``.
+            Fallback to ``AWS_REGION``/``AWS_DEFAULT_REGION`` env variable or region
+            specified in ``~/.aws/config``.
 
-            credentials_profile_name: The name of the profile in the ~/.aws/credentials
-                or ~/.aws/config files, which has either access keys or role information
-                specified. If not specified, the default credential profile or, if on an
-                EC2 instance, credentials from IMDS will be used.
+        credentials_profile_name: The name of the profile in the ``~/.aws/credentials``
+            or ``~/.aws/config`` files, which has either access keys or role information
+            specified. If not specified, the default credential profile or, if on an
+            EC2 instance, credentials from IMDS will be used.
 
-            aws_access_key_id: AWS access key id. If provided, aws_secret_access_key must
-                also be provided. If not specified, the default credential profile or, if
-                on an EC2 instance, credentials from IMDS will be used. See:
-                https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-                If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+        aws_access_key_id: AWS access key id. If provided, ``aws_secret_access_key``
+            must also be provided. If not specified, the default credential profile or,
+            if on an EC2 instance, credentials from IMDS will be used. See:
+            https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+            If not provided, will be read from ``AWS_ACCESS_KEY_ID`` environment
+            variable.
 
-            aws_secret_access_key: AWS secret_access_key. If provided, aws_access_key_id
-                must also be provided. If not specified, the default credential profile or,
-                if on an EC2 instance, credentials from IMDS will be used. See:
-                https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-                If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+        aws_secret_access_key: AWS ``secret_access_key``. If provided,
+            ``aws_access_key_id`` must also be provided. If not specified, the default
+            credential profile or, if on an EC2 instance, credentials from IMDS will be
+            used.
 
-            aws_session_token: AWS session token. If provided, aws_access_key_id and
-                aws_secret_access_key must also be provided. Not required unless using temporary
-                credentials. See:
-                https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-                If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
+            See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-            endpoint_url: Needed if you don't want to default to us-east-1 endpoint.
+            If not provided, will be read from ``AWS_SECRET_ACCESS_KEY`` environment
+            variable.
 
-            config: An optional botocore.config.Config instance to pass to the client.
+        aws_session_token: AWS session token. If provided, ``aws_access_key_id`` and
+            ``aws_secret_access_key`` must also be provided. Not required unless using
+            temporary credentials.
 
-            client: boto3 client for bedrock agent runtime.
+            See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-            guardrail_config: Configuration information for a guardrail that you want
-                to use in the request.
+            If not provided, will be read from ``AWS_SESSION_TOKEN`` environment
+            variable.
 
-            retrieval_config: Optional configuration for retrieval specified as a
-                Python object (RetrievalConfig) or as a dictionary
+        endpoint_url: Needed if you don't want to default to ``'us-east-1'`` endpoint.
 
-        Example:
-            .. code-block:: python
-                from langchain_community.retrievers import AmazonKnowledgeBasesRetriever
-                retriever = AmazonKnowledgeBasesRetriever(
-                    knowledge_base_id="<knowledge-base-id>",
-                    retrieval_config={
-                        "vectorSearchConfiguration": {
-                            "numberOfResults": 4
-                        }
-                    },
-                )
+        config: An optional ``botocore.config.Config`` instance to pass to the client.
+
+        client: boto3 client for bedrock agent runtime.
+
+        guardrail_config: Configuration information for a guardrail that you want
+            to use in the request.
+
+        retrieval_config: Optional configuration for retrieval specified as a
+            Python object (RetrievalConfig) or as a dictionary
+
+    Example:
+        .. code-block:: python
+            from langchain_community.retrievers import AmazonKnowledgeBasesRetriever
+            retriever = AmazonKnowledgeBasesRetriever(
+                knowledge_base_id="<knowledge-base-id>",
+                retrieval_config={
+                    "vectorSearchConfiguration": {
+                        "numberOfResults": 4
+                    }
+                },
+            )
+
     """
 
     knowledge_base_id: str
@@ -127,9 +136,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
     endpoint_url: Optional[str] = None
     config: Any = None
     client: Any = None
-    guardrail_config: Optional[Dict[str, Any]] = Field(
-        default=None, alias="guardrails"
-    )
+    guardrail_config: Optional[Dict[str, Any]] = Field(default=None, alias="guardrails")
     retrieval_config: Optional[Union[RetrievalConfig, Dict[str, Any]]] = None
     min_score_confidence: Annotated[
         Optional[float], Field(ge=0.0, le=1.0, default=None)
@@ -148,7 +155,8 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
                 aws_secret_access_key=values.get("aws_secret_access_key"),
                 aws_session_token=values.get("aws_session_token"),
                 endpoint_url=values.get("endpoint_url"),
-                config=values.get("config") or Config(
+                config=values.get("config")
+                or Config(
                     connect_timeout=120, read_timeout=120, retries={"max_attempts": 0}
                 ),
                 service_name="bedrock-agent-runtime",
@@ -157,10 +165,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         return values
 
     def _filter_by_score_confidence(self, docs: List[Document]) -> List[Document]:
-        """
-        Filter out the records that have a score confidence
-        less than the required threshold.
-        """
+        """Filter out the records that have a score confidence less than the required threshold."""  # noqa: E501
         if not self.min_score_confidence:
             return docs
         filtered_docs = [
@@ -179,39 +184,41 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         *,
         run_manager: CallbackManagerForRetrieverRun,
     ) -> List[Document]:
-        """
-        Get relevant document from a KnowledgeBase
+        """Get relevant document from a KnowledgeBase
 
         :param query: the user's query
         :param run_manager: The callback handler to use
         :return: List of relevant documents
+
         """
         retrieve_request: Dict[str, Any] = self._get_retrieve_request(query)
         response = self.client.retrieve(**retrieve_request)
         results = response["retrievalResults"]
-        documents: List[
-            Document
-        ] = AmazonKnowledgeBasesRetriever._retrieval_results_to_documents(results)
+        documents: List[Document] = (
+            AmazonKnowledgeBasesRetriever._retrieval_results_to_documents(results)
+        )
 
         return self._filter_by_score_confidence(docs=documents)
 
     def _get_retrieve_request(self, query: str) -> Dict[str, Any]:
-        """
-        Build a Retrieve request
+        """Build a Retrieve request
 
         :param query:
         :return:
+
         """
         request: Dict[str, Any] = {
             "retrievalQuery": {"text": query.strip()},
             "knowledgeBaseId": self.knowledge_base_id,
         }
         if self.guardrail_config:
-            if not (self.guardrail_config.get("guardrailId")
-                    and self.guardrail_config.get("guardrailVersion")):
+            if not (
+                self.guardrail_config.get("guardrailId")
+                and self.guardrail_config.get("guardrailVersion")
+            ):
                 raise TypeError(
-                    "Guardrail configuration must be a dictionary with both 'guardrailId' "
-                    "and 'guardrailVersion' keys."
+                    "Guardrail configuration must be a dictionary with both "
+                    "'guardrailId' and 'guardrailVersion' keys."
                 )
             request["guardrailConfiguration"] = self.guardrail_config
         if self.retrieval_config:
@@ -227,11 +234,11 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
     def _retrieval_results_to_documents(
         results: List[Dict[str, Any]],
     ) -> List[Document]:
-        """
-        Convert the Retrieve API results to LangChain Documents
+        """Convert the Retrieve API results to LangChain Documents
 
         :param results:  Retrieve API results list
         :return: List of LangChain Documents
+
         """
         documents = []
         for result in results:
@@ -244,7 +251,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
                 result["source_metadata"] = result.pop("metadata")
             documents.append(
                 Document(
-                    page_content=content,
+                    page_content=content or "",
                     metadata=result,
                 )
             )
@@ -252,15 +259,15 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
 
     @staticmethod
     def _get_content_from_result(result: Dict[str, Any]) -> Optional[str]:
-        """
-        Convert the content from one Retrieve API result to string
+        """Convert the content from one Retrieve API result to string
 
         :param result: Retrieve API search result
         :return: string representation of the content attribute
+
         """
         if not result:
             raise ValueError("Invalid search result")
-        content: dict = result.get("content")
+        content: dict = result.get("content") or {}
         if not content:
             raise ValueError(
                 "Invalid search result, content is missing from the result"

@@ -1,7 +1,8 @@
 """Sagemaker Chat Model."""
+
 import io
 import logging
-from typing import Any, Dict, Iterator, List, Mapping, Optional
+from typing import Any, Dict, Iterator, List, Literal, Mapping, Optional, Union
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import (
@@ -9,7 +10,9 @@ from langchain_core.language_models import (
 )
 from langchain_core.messages import (
     AIMessage,
+    AIMessageChunk,
     BaseMessage,
+    BaseMessageChunk,
     HumanMessage,
     SystemMessage,
     merge_message_runs,
@@ -29,8 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 class ChatLineIterator:
-    """
-    A helper class for parsing the byte stream input.
+    """A helper class for parsing the byte stream input.
 
     The output of the model will be in the following format:
 
@@ -57,6 +59,7 @@ class ChatLineIterator:
 
     For more details see:
     https://aws.amazon.com/blogs/machine-learning/elevating-the-generative-ai-experience-introducing-streaming-support-in-amazon-sagemaker-hosting/
+
     """
 
     def __init__(self, stream: Any) -> None:
@@ -101,7 +104,12 @@ class ChatLineIterator:
             self.buffer.write(chunk["PayloadPart"]["Bytes"])
 
 
-class ChatModelContentHandler(ContentHandlerBase[List[Dict[str, Any]], BaseMessage]):
+MESSAGE_FORMAT = Dict[
+    Literal["role", "content"], Union[Literal["system", "user", "assistant"], str]
+]
+
+
+class ChatModelContentHandler(ContentHandlerBase[Any, Any]):
     """Content handler for ChatSagemakerEndpoint class."""
 
 
@@ -187,26 +195,33 @@ class ChatSagemakerEndpoint(BaseChatModel):
 
     endpoint_name: str = ""
     """The name of the endpoint from the deployed Sagemaker model.
-    Must be unique within an AWS Region."""
+    
+    Must be unique within an AWS Region.
+    
+    """
 
     inference_component_name: Optional[str] = None
     """Optional name of the inference component to invoke 
-    if specified with endpoint name."""
+    if specified with endpoint name.
+    
+    """
 
     region_name: Optional[str] = ""
     """The aws region, e.g., `us-west-2`. 
 
-    Falls back to AWS_REGION or AWS_DEFAULT_REGION env variable or region specified in 
-    ~/.aws/config in case it is not provided here.
+    Falls back to ``AWS_REGION`` or ``AWS_DEFAULT_REGION`` env variable or region
+    specified in  ``~/.aws/config`` in case it is not provided here.
     """
 
     credentials_profile_name: Optional[str] = Field(default=None, exclude=True)
-    """The name of the profile in the ~/.aws/credentials or ~/.aws/config files.
+    """The name of the profile in the ``~/.aws/credentials`` or ``~/.aws/config`` files.
 
     Profile should either have access keys or role information specified.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used. 
+    
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
     """
 
     aws_access_key_id: Optional[SecretStr] = Field(
@@ -217,9 +232,11 @@ class ChatSagemakerEndpoint(BaseChatModel):
     If provided, aws_secret_access_key must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
+    
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+    If not provided, will be read from ``AWS_ACCESS_KEY_ID`` environment variable.
+    
     """
 
     aws_secret_access_key: Optional[SecretStr] = Field(
@@ -227,12 +244,13 @@ class ChatSagemakerEndpoint(BaseChatModel):
     )
     """AWS secret_access_key. 
 
-    If provided, aws_access_key_id must also be provided.
+    If provided, ``aws_access_key_id`` must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+    If not provided, will be read from ``AWS_SECRET_ACCESS_KEY`` environment variable.
+
     """
 
     aws_session_token: Optional[SecretStr] = Field(
@@ -242,9 +260,10 @@ class ChatSagemakerEndpoint(BaseChatModel):
 
     If provided, aws_access_key_id and aws_secret_access_key must 
     also be provided. Not required unless using temporary credentials.
+
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
+    If not provided, will be read from ``AWS_SESSION_TOKEN`` environment variable.
     """
 
     endpoint_url: Optional[str] = Field(default=None, alias="base_url")
@@ -254,16 +273,16 @@ class ChatSagemakerEndpoint(BaseChatModel):
     """An optional botocore.config.Config instance to pass to the client."""
 
     content_handler: ChatModelContentHandler
-    """The content handler class that provides an input and
-    output transform functions to handle formats between LLM
-    and the endpoint.
+    """The content handler class that provides an input and output transform functions
+    to handle formats between LLM and the endpoint.
+
     """
 
     streaming: bool = False
     """Whether to stream the results."""
 
     """
-     Example:
+    Example:
         .. code-block:: python
 
         from langchain_community.llms.sagemaker_endpoint import ChatContentHandler
@@ -272,7 +291,9 @@ class ChatSagemakerEndpoint(BaseChatModel):
                 content_type = "application/json"
                 accepts = "application/json"
 
-                def transform_input(self, prompt: List[Dict[str, Any]], model_kwargs: Dict) -> bytes:
+                def transform_input(
+                    self, prompt: List[Dict[str, Any]], model_kwargs: Dict
+                ) -> bytes:
                     input_str = json.dumps({prompt: prompt, **model_kwargs})
                     return input_str.encode('utf-8')
                 
@@ -285,9 +306,11 @@ class ChatSagemakerEndpoint(BaseChatModel):
     """Keyword arguments to pass to the model."""
 
     endpoint_kwargs: Optional[Dict] = None
-    """Optional attributes passed to the invoke_endpoint
-    function. See `boto3`_. docs for more info.
+    """Optional attributes passed to the invoke_endpoint function. See `boto3`_. docs
+    for more info.
+
     .. _boto3: <https://boto3.amazonaws.com/v1/documentation/api/latest/index.html>
+
     """
 
     model_config = ConfigDict(
@@ -320,11 +343,6 @@ class ChatSagemakerEndpoint(BaseChatModel):
             **{"inference_component_name": self.inference_component_name},
             **{"model_kwargs": _model_kwargs},
         }
-
-    @property
-    def _llm_type(self) -> str:
-        """Return type of llm."""
-        return "sagemaker_endpoint"
 
     @property
     def _llm_type(self) -> str:
@@ -381,12 +399,24 @@ class ChatSagemakerEndpoint(BaseChatModel):
             iterator = ChatLineIterator(resp["Body"])
 
             for line in iterator:
-                text = self.content_handler.transform_output(line)
-                if stop is not None:
-                    text = enforce_stop_tokens(text, stop)
+                message = self.content_handler.transform_output(line)
+                if (
+                    stop is not None
+                    and isinstance(message, AIMessage)
+                    and isinstance(message.content, str)
+                ):
+                    text = enforce_stop_tokens(message.content, stop)
+                    message = AIMessage(content=text)
 
-                if text:
-                    generation_chunk = ChatGenerationChunk(message=text)
+                if message.content:
+                    if isinstance(message, AIMessage):
+                        chunk = AIMessageChunk(content=message.content)
+                        generation_chunk = ChatGenerationChunk(message=chunk)
+                    else:
+                        base_chunk = BaseMessageChunk(
+                            content=message.content, type=message.type
+                        )
+                        generation_chunk = ChatGenerationChunk(message=base_chunk)
                     if run_manager:
                         run_manager.on_llm_new_token(
                             generation_chunk.text, chunk=generation_chunk

@@ -324,6 +324,7 @@ class InMemoryVectorStore(VectorStore):
 
         Raises:
             ValueError: If the number of metadatas does not match the number of texts.
+
         """
         try:
             import redis  # type: ignore[import-untyped] # noqa: F401
@@ -337,6 +338,12 @@ class InMemoryVectorStore(VectorStore):
             ) from e
 
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
+
+        if redis_url is None:
+            raise ValueError(
+                "redis_url must be provided either as a parameter or as the "
+                "REDIS_URL environment variable"
+            )
 
         if "redis_url" in kwargs:
             kwargs.pop("redis_url")
@@ -455,6 +462,7 @@ class InMemoryVectorStore(VectorStore):
         Raises:
             ValueError: If the number of metadatas does not match the number of texts.
             ImportError: If the redis python package is not installed.
+
         """
         instance, _ = cls.from_texts_return_keys(
             texts,
@@ -512,8 +520,16 @@ class InMemoryVectorStore(VectorStore):
         Raises:
             ValueError: If the index does not exist.
             ImportError: If the redis python package is not installed.
+
         """
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
+
+        if redis_url is None:
+            raise ValueError(
+                "redis_url must be provided either as a parameter or as the "
+                "REDIS_URL environment variable"
+            )
+
         # We need to first remove redis_url from kwargs,
         # otherwise passing it to Redis will result in an error.
         if "redis_url" in kwargs:
@@ -571,8 +587,15 @@ class InMemoryVectorStore(VectorStore):
         Raises:
             ValueError: If the redis python package is not installed.
             ValueError: If the ids (keys in redis) are not provided
+
         """
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
+
+        if redis_url is None:
+            raise ValueError(
+                "redis_url must be provided either as a parameter or as the "
+                "REDIS_URL environment variable"
+            )
 
         if ids is None:
             raise ValueError("'ids' (keys)() were not provided.")
@@ -616,8 +639,16 @@ class InMemoryVectorStore(VectorStore):
 
         Returns:
             bool: Whether or not the drop was successful.
+
         """
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
+
+        if redis_url is None:
+            raise ValueError(
+                "redis_url must be provided either as a parameter or as the "
+                "REDIS_URL environment variable"
+            )
+
         try:
             import redis  # noqa: F401
         except ImportError:
@@ -665,6 +696,7 @@ class InMemoryVectorStore(VectorStore):
 
         Returns:
             List[str]: List of ids added to the vectorstore
+
         """
         ids = []
 
@@ -770,6 +802,7 @@ class InMemoryVectorStore(VectorStore):
         Returns:
             List[Tuple[Document, float]]: A list of documents that are
                 most similar to the query with the distance for each document.
+
         """
         try:
             import redis
@@ -851,6 +884,7 @@ class InMemoryVectorStore(VectorStore):
         Returns:
             List[Document]: A list of documents that are most similar to the query
                 text.
+
         """
         query_embedding = self._embeddings.embed_query(query)
         return self.similarity_search_by_vector(
@@ -887,6 +921,7 @@ class InMemoryVectorStore(VectorStore):
         Returns:
             List[Document]: A list of documents that are most similar to the query
                 text.
+
         """
         try:
             import redis
@@ -975,6 +1010,7 @@ class InMemoryVectorStore(VectorStore):
 
         Returns:
             List[Document]: A list of Documents selected by maximal marginal relevance.
+
         """
         # Embed the query
         query_embedding = self._embeddings.embed_query(query)
@@ -1022,6 +1058,7 @@ class InMemoryVectorStore(VectorStore):
 
         Returns:
             Dict[str, Any]: Collected metadata.
+
         """
         # new metadata dict as modified by this method
         meta = {}
@@ -1117,6 +1154,7 @@ class InMemoryVectorStore(VectorStore):
 
         Returns:
             query: Query object.
+
         """
         try:
             from redis.commands.search.query import Query
@@ -1227,6 +1265,7 @@ class InMemoryVectorStore(VectorStore):
 
         if it's FLOAT32, we need to round the distance to 4 decimal places
         otherwise, round to 7 decimal places.
+
         """
         if self._schema.content_vector.datatype == "FLOAT32":
             return round(float(distance), 4)
@@ -1286,6 +1325,7 @@ def _generate_field_schema(data: Dict[str, Any]) -> Dict[str, Any]:
     Raises:
         ValueError: If a metadata field cannot be categorized into any of
             the three known types.
+
     """
     result: Dict[str, Any] = {
         "text": [],
@@ -1350,6 +1390,7 @@ def _prepare_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
     Raises:
         ValueError: If any metadata value is not one of the known
             types (string, int, float, or list of strings).
+
     """
 
     def raise_error(key: str, value: Any) -> None:
@@ -1412,7 +1453,7 @@ class InMemoryVectorStoreRetriever(VectorStoreRetriever):
     )
 
     def _get_relevant_documents(
-        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun, **kwargs: Any
     ) -> List[Document]:
         if self.search_type == "similarity":
             docs = self.vectorstore.similarity_search(query, **self.search_kwargs)
@@ -1440,7 +1481,11 @@ class InMemoryVectorStoreRetriever(VectorStoreRetriever):
         return docs
 
     async def _aget_relevant_documents(
-        self, query: str, *, run_manager: AsyncCallbackManagerForRetrieverRun
+        self,
+        query: str,
+        *,
+        run_manager: AsyncCallbackManagerForRetrieverRun,
+        **kwargs: Any,
     ) -> List[Document]:
         if self.search_type == "similarity":
             docs = await self.vectorstore.asimilarity_search(

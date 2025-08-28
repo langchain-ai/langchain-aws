@@ -12,6 +12,7 @@ class AmazonS3VectorsRetriever(VectorStoreRetriever):
 
         vector_store = AmazonS3Vectors(...)
         retriever = vector_store.as_retriever()
+
     """
 
     allowed_search_types = [

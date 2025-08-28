@@ -25,7 +25,7 @@ from typing import (
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
-from langchain_core.language_models.chat_models import LangSmithParams
+from langchain_core.language_models.base import LangSmithParams
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -65,7 +65,7 @@ _BM = TypeVar("_BM", bound=BaseModel)
 MIME_TO_FORMAT = {
     # Image formats
     "image/png": "png",
-    "image/jpeg": "jpeg", 
+    "image/jpeg": "jpeg",
     "image/gif": "gif",
     "image/webp": "webp",
     # File formats
@@ -337,6 +337,7 @@ class ChatBedrockConverse(BaseChatModel):
               'RetryAttempts': 0},
              'stopReason': 'end_turn',
              'metrics': {'latencyMs': 1290}}
+
     """  # noqa: E501
 
     client: Any = Field(default=None, exclude=True)  #: :meta private:
@@ -346,18 +347,20 @@ class ChatBedrockConverse(BaseChatModel):
     """The bedrock client for making control plane API calls"""
 
     model_id: str = Field(alias="model")
-    """Id of the model to call.
+    """ID of the model to call.
     
     e.g., ``"anthropic.claude-3-sonnet-20240229-v1:0"``. This is equivalent to the 
     modelID property in the list-foundation-models api. For custom and provisioned 
     models, an ARN value is expected. See 
     https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html#model-ids-arns 
     for a list of all supported built-in models.
+
     """
 
     base_model_id: Optional[str] = Field(default=None, alias="base_model")
     """An optional field to pass the base model id. If provided, this will be used over 
     the value of model_id to identify the base model.
+
     """
 
     max_tokens: Optional[int] = None
@@ -376,13 +379,16 @@ class ChatBedrockConverse(BaseChatModel):
     
     For example, if you choose a value of 0.8 for topP, the model selects from 
     the top 80% of the probability distribution of tokens that could be next in the 
-    sequence."""
+    sequence.
+    
+    """
 
     region_name: Optional[str] = None
     """The aws region, e.g., `us-west-2`. 
     
-    Falls back to AWS_REGION or AWS_DEFAULT_REGION env variable or region specified in 
-    ~/.aws/config in case it is not provided here.
+    Falls back to ``AWS_REGION`` or AWS_DE``FAULT_REGION env variable or region
+    specified in  ``~/.aws/config`` in case it is not provided here.
+
     """
 
     credentials_profile_name: Optional[str] = Field(default=None, exclude=True)
@@ -392,6 +398,7 @@ class ChatBedrockConverse(BaseChatModel):
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used. 
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
     """
 
     aws_access_key_id: Optional[SecretStr] = Field(
@@ -405,6 +412,7 @@ class ChatBedrockConverse(BaseChatModel):
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     
     If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+
     """
 
     aws_secret_access_key: Optional[SecretStr] = Field(
@@ -417,7 +425,8 @@ class ChatBedrockConverse(BaseChatModel):
     credentials from IMDS will be used.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     
-    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+    If not provided, will be read from ``AWS_SECRET_ACCESS_KEY`` environment variable.
+
     """
 
     aws_session_token: Optional[SecretStr] = Field(
@@ -429,7 +438,8 @@ class ChatBedrockConverse(BaseChatModel):
     also be provided. Not required unless using temporary credentials.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     
-    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
+    If not provided, will be read from ``AWS_SESSION_TOKEN`` environment variable.
+
     """
 
     provider: str = ""
@@ -439,6 +449,7 @@ class ChatBedrockConverse(BaseChatModel):
     'amazon' in 'amazon.titan-text-express-v1'. This value should be provided for model 
     ids that do not have the provider in them, like custom and provisioned models that 
     have an ARN associated with them.
+
     """
 
     endpoint_url: Optional[str] = Field(default=None, alias="base_url")
@@ -455,6 +466,7 @@ class ChatBedrockConverse(BaseChatModel):
     
     Parameters beyond the base set of inference parameters that Converse supports in the
     inferenceConfig field.
+
     """
 
     additional_model_response_field_paths: Optional[List[str]] = None
@@ -463,16 +475,18 @@ class ChatBedrockConverse(BaseChatModel):
     Converse returns the requested fields as a JSON Pointer object in the 
     additionalModelResponseFields field. The following is example JSON for 
     additionalModelResponseFieldPaths.
+
     """
 
-    supports_tool_choice_values: Optional[
-        Sequence[Literal["auto", "any", "tool"]]
-    ] = None
+    supports_tool_choice_values: Optional[Sequence[Literal["auto", "any", "tool"]]] = (
+        None
+    )
     """Which types of tool_choice values the model supports.
     
     Inferred if not specified. Inferred as ('auto', 'any', 'tool') if a 'claude-3' 
     model is used, ('auto', 'any') if a 'mistral-large' model is used, 
     ('auto') if a 'nova' model is used, empty otherwise.
+
     """
 
     performance_config: Optional[Mapping[str, Any]] = Field(
@@ -493,8 +507,10 @@ class ChatBedrockConverse(BaseChatModel):
 
     raw_blocks: Optional[List[Dict[str, Any]]] = None
     """Raw Bedrock message blocks that can be passed in.
-    LangChain will relay them unchanged, enabling any combination of content block types.
-    This is useful for custom guardrail wrapping
+    
+    LangChain will relay them unchanged, enabling any combination of content
+    block types. This is useful for custom guardrail wrapping.
+
     """
 
     model_config = ConfigDict(
@@ -509,6 +525,7 @@ class ChatBedrockConverse(BaseChatModel):
             cache_type: Type of cache point. Default is "default".
         Returns:
             Dictionary containing prompt caching configuration.
+
         """
         return {"cachePoint": {"type": cache_type}}
 
@@ -533,13 +550,16 @@ class ChatBedrockConverse(BaseChatModel):
         return values
 
     @classmethod
-    def _get_streaming_support(cls, provider: str, model_id_lower: str) -> Union[bool, str]:
+    def _get_streaming_support(
+        cls, provider: str, model_id_lower: str
+    ) -> Union[bool, str]:
         """Determine streaming support for a given provider and model.
-        
+
         Returns:
             True: Full streaming support
             "no_tools": Streaming supported but not with tools
             False: No streaming support
+
         """
         # Determine if the model supports plain-text streaming (ConverseStream)
         # Here we check based on the updated AWS documentation.
@@ -609,13 +629,16 @@ class ChatBedrockConverse(BaseChatModel):
     @classmethod
     def set_disable_streaming(cls, values: Dict) -> Any:
         model_id = values.get("model_id", values.get("model"))
-        
+        if model_id is None:
+            raise ValueError("Either model_id or model must be specified")
+
         # Extract provider from the model_id
         # (e.g., "amazon", "anthropic", "ai21", "meta", "mistral")
         if "provider" not in values or values["provider"] == "":
             if model_id.startswith("arn"):
                 raise ValueError(
-                    "Model provider should be supplied when passing a model ARN as model_id."
+                    "Model provider should be supplied when passing a model ARN "
+                    "as model_id."
                 )
             model_parts = model_id.split(".")
             values["provider"] = (
@@ -624,9 +647,12 @@ class ChatBedrockConverse(BaseChatModel):
 
         provider = values["provider"]
 
-        model_id_lower = values.get(
+        base_model_value = values.get(
             "base_model_id", values.get("base_model", model_id)
-        ).lower()
+        )
+        if base_model_value is None:
+            raise ValueError("base_model_id, base_model, or model_id must be specified")
+        model_id_lower = base_model_value.lower()
 
         streaming_support = cls._get_streaming_support(provider, model_id_lower)
 
@@ -649,8 +675,8 @@ class ChatBedrockConverse(BaseChatModel):
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
-        
-         # Create bedrock client for control plane API call
+
+        # Create bedrock client for control plane API call
         if self.bedrock_client is None:
             self.bedrock_client = create_aws_client(
                 region_name=self.region_name,
@@ -662,7 +688,7 @@ class ChatBedrockConverse(BaseChatModel):
                 config=self.config,
                 service_name="bedrock",
             )
-            
+
         # Handle streaming configuration for application inference profiles
         if "application-inference-profile" in self.model_id:
             self._configure_streaming_for_resolved_model()
@@ -709,27 +735,31 @@ class ChatBedrockConverse(BaseChatModel):
                 "Provide a guardrail via `guardrail_config` or "
                 "disable `guard_last_turn_only`."
             )
-            
+
         return self
 
     def _get_base_model(self) -> str:
         # identify the base model id used in the application inference profile (AIP)
-        # Format: arn:aws:bedrock:us-east-1:<accountId>:application-inference-profile/<id>
-        if self.base_model_id is None and 'application-inference-profile' in self.model_id:
+        # Format: arn:aws:bedrock:us-east-1:<accountId>:application-inference-profile/
+        # <id>
+        if (
+            self.base_model_id is None
+            and "application-inference-profile" in self.model_id
+        ):
             response = self.bedrock_client.get_inference_profile(
                 inferenceProfileIdentifier=self.model_id
             )
-            if 'models' in response and len(response['models']) > 0:
-                model_arn = response['models'][0]['modelArn']
+            if "models" in response and len(response["models"]) > 0:
+                model_arn = response["models"][0]["modelArn"]
                 # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
-                self.base_model_id = model_arn.split('/')[-1]
+                self.base_model_id = model_arn.split("/")[-1]
         return self.base_model_id if self.base_model_id else self.model_id
-        
+
     def _configure_streaming_for_resolved_model(self) -> None:
-        """Configure streaming support after resolving the base model for application inference profiles."""
+        """Configure streaming support after resolving the base model for application inference profiles."""  # noqa: E501
         base_model = self._get_base_model()
         model_id_lower = base_model.lower()
-        
+
         streaming_support = self._get_streaming_support(self.provider, model_id_lower)
 
         # Set the disable_streaming flag accordingly
@@ -763,6 +793,7 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> ChatResult:
         """Top Level call"""
 
+        system: List[Dict[str, Any]]
         if self.raw_blocks is not None:
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
@@ -797,6 +828,7 @@ class ChatBedrockConverse(BaseChatModel):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
+        system: List[Dict[str, Any]]
         if self.raw_blocks is not None:
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
@@ -878,7 +910,7 @@ class ChatBedrockConverse(BaseChatModel):
         tool_choice: Optional[Union[dict, str, Literal["auto", "any"]]] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, BaseMessage]:
-        formatted_tools = []
+        formatted_tools: List[Any] = []
         for tool in tools:
             if _is_cache_point(tool):
                 formatted_tools.append(tool)
@@ -893,12 +925,16 @@ class ChatBedrockConverse(BaseChatModel):
             if tool_choice_type not in list(self.supports_tool_choice_values or []):
                 if self.supports_tool_choice_values:
                     supported = (
-                        f"Model {self._get_base_model()} does not currently support tool_choice "
-                        f"of type {tool_choice_type}. The following tool_choice types "
-                        f"are supported: {self.supports_tool_choice_values}."
+                        f"Model {self._get_base_model()} does not currently support "
+                        f"tool_choice of type {tool_choice_type}. The following "
+                        f"tool_choice types are supported: "
+                        f"{self.supports_tool_choice_values}."
                     )
                 else:
-                    supported = f"Model {self._get_base_model()} does not currently support tool_choice."
+                    supported = (
+                        f"Model {self._get_base_model()} does not currently support "
+                        f"tool_choice."
+                    )
 
                 raise ValueError(
                     f"{supported} Please see "
@@ -1150,9 +1186,10 @@ def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
 def _parse_response(response: Dict[str, Any]) -> AIMessage:
     if "output" not in response:
         raise ValueError(
-            "No 'output' key found in the response from the Bedrock Converse API.  This usually "
-            "happens due to misconfiguration of endpoint or region, ensure that you are using valid "
-            "values for endpoint_url (on AWS this starts with bedrock-runtime), see: "
+            "No 'output' key found in the response from the Bedrock Converse API. "
+            "This usually happens due to misconfiguration of endpoint or region, "
+            "ensure that you are using valid values for endpoint_url (on AWS this "
+            "starts with bedrock-runtime), see: "
             "https://docs.aws.amazon.com/general/latest/gr/bedrock.html"
         )
     lc_content = _bedrock_to_lc(response.pop("output")["message"]["content"])
@@ -1191,8 +1228,11 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
             )
         # always keep block inside a list to preserve merging compatibility
         content = [block]
-        
-        return AIMessageChunk(content=content, tool_call_chunks=tool_call_chunks)
+
+        return AIMessageChunk(
+            content=cast(List[Union[str, Dict[Any, Any]]], content),
+            tool_call_chunks=tool_call_chunks,
+        )
     elif "contentBlockDelta" in event:
         block = {
             **_bedrock_to_lc([event["contentBlockDelta"]["delta"]])[0],
@@ -1210,8 +1250,11 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
             )
         # always keep block inside a list to preserve merging compatibility
         content = [block]
-        
-        return AIMessageChunk(content=content, tool_call_chunks=tool_call_chunks)
+
+        return AIMessageChunk(
+            content=cast(List[Union[str, Dict[Any, Any]]], content),
+            tool_call_chunks=tool_call_chunks,
+        )
     elif "contentBlockStop" in event:
         # TODO: needed?
         return AIMessageChunk(content=[])
@@ -1241,15 +1284,16 @@ def _mime_type_to_format(mime_type: str) -> str:
 
     if mime_type in MIME_TO_FORMAT:
         return MIME_TO_FORMAT[mime_type]
-    
+
     # Fallback to original method of splitting on "/" for simple cases
     all_formats = set(MIME_TO_FORMAT.values())
     format_part = mime_type.split("/")[1]
     if format_part in all_formats:
         return format_part
-    
+
     raise ValueError(
-        f"Unsupported MIME type: {mime_type}. Please refer to the Bedrock Converse API documentation for supported formats."
+        f"Unsupported MIME type: {mime_type}. Please refer to the Bedrock Converse API"
+        " documentation for supported formats."
     )
 
 
@@ -1327,7 +1371,9 @@ def _lc_content_to_bedrock(
                 bedrock_content.append(
                     {
                         "image": {
-                            "format": _mime_type_to_format(block["source"]["mediaType"]),
+                            "format": _mime_type_to_format(
+                                block["source"]["mediaType"]
+                            ),
                             "source": {
                                 "bytes": _b64str_to_bytes(block["source"]["data"])
                             },
@@ -1348,7 +1394,9 @@ def _lc_content_to_bedrock(
                     bedrock_content.append(
                         {
                             "video": {
-                                "format": _mime_type_to_format(block["source"]["mediaType"]),
+                                "format": _mime_type_to_format(
+                                    block["source"]["mediaType"]
+                                ),
                                 "source": {
                                     "bytes": _b64str_to_bytes(block["source"]["data"])
                                 },
@@ -1359,7 +1407,9 @@ def _lc_content_to_bedrock(
                     bedrock_content.append(
                         {
                             "video": {
-                                "format": _mime_type_to_format(block["source"]["mediaType"]),
+                                "format": _mime_type_to_format(
+                                    block["source"]["mediaType"]
+                                ),
                                 "source": {"s3Location": block["source"]["data"]},
                             }
                         }
@@ -1705,11 +1755,11 @@ def _upsert_tool_calls_to_bedrock_content(
 
 
 def _format_openai_image_url(image_url: str) -> Dict:
-    """
-    Formats an image of format data:image/jpeg;base64,{b64_string}
-    to a dict for bedrock api.
+    """Formats an image of format data:image/jpeg;base64,{b64_string} to a dict for
+    bedrock api.
 
     And throws an error if url is not a b64 image.
+
     """
     regex = r"^data:image/(?P<media_type>.+);base64,(?P<data>.+)$"
     match = re.match(regex, image_url)
@@ -1725,11 +1775,11 @@ def _format_openai_image_url(image_url: str) -> Dict:
 
 
 def _format_openai_video_url(video_url: str) -> Dict:
-    """
-    Formats a video of format data:video/mp4;base64,{b64_string}
-    to a dict for bedrock api.
+    """Formats a video of format data:video/mp4;base64,{b64_string} to a dict for
+    bedrock api.
 
     And throws an error if url is not a b64 video.
+
     """
     regex = r"^data:video/(?P<media_type>.+);base64,(?P<data>.+)$"
     match = re.match(regex, video_url)
@@ -1745,8 +1795,9 @@ def _format_openai_video_url(video_url: str) -> Dict:
 
 
 def _is_cache_point(cache_point: Any) -> bool:
-    return (
-        isinstance(cache_point, dict)
-        and "cachePoint" in cache_point
-        and cache_point.get("cachePoint").get("type") is not None
-    )
+    if not isinstance(cache_point, dict) or "cachePoint" not in cache_point:
+        return False
+    cache_point_data = cache_point.get("cachePoint")
+    if cache_point_data is None:
+        return False
+    return cache_point_data.get("type") is not None
