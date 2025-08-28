@@ -1034,7 +1034,7 @@ def test__format_anthropic_messages_empty_content_fix() -> None:
     assert isinstance(ai_content, list)
     assert len(ai_content) > 0  # Should not be empty
     assert ai_content[0]["type"] == "text"
-    assert ai_content[0]["text"] == "[empty]"
+    assert ai_content[0]["text"] == "."
 
 
 def test__format_anthropic_messages_whitespace_only_content() -> None:
@@ -1051,7 +1051,7 @@ def test__format_anthropic_messages_whitespace_only_content() -> None:
     assert isinstance(ai_content, list)
     assert len(ai_content) > 0
     assert ai_content[0]["type"] == "text"
-    assert ai_content[0]["text"] == "[empty]"
+    assert ai_content[0]["text"] == "."
 
 
 def test__format_anthropic_messages_empty_string_content() -> None:
@@ -1068,7 +1068,7 @@ def test__format_anthropic_messages_empty_string_content() -> None:
     assert isinstance(ai_content, list)
     assert len(ai_content) > 0
     assert ai_content[0]["type"] == "text"
-    assert ai_content[0]["text"] == "[empty]"
+    assert ai_content[0]["text"] == "."
 
 
 def test__format_anthropic_messages_mixed_empty_content() -> None:
@@ -1090,7 +1090,7 @@ def test__format_anthropic_messages_mixed_empty_content() -> None:
     assert isinstance(ai_content, list)
     assert len(ai_content) > 0
     assert ai_content[0]["type"] == "text"
-    assert ai_content[0]["text"] == "[empty]"
+    assert ai_content[0]["text"] == "."
 
 
 def test__format_anthropic_messages_mixed_type_blocks_and_empty_content() -> None:
