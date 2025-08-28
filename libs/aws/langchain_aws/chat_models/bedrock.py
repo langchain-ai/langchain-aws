@@ -429,7 +429,17 @@ def _format_anthropic_messages(
     system: Optional[Union[str, List[Dict]]] = None
     formatted_messages: List[Dict] = []
 
-    merged_messages = _merge_messages(messages)
+    # Check if the last message is an AIMessage with trailing whitespace
+    messages_copy = messages.copy()
+    if messages_copy and isinstance(messages_copy[-1], AIMessage):
+        if isinstance(messages_copy[-1].content, str):
+            messages_copy[-1].content = messages_copy[-1].content.rstrip()
+        elif isinstance(messages_copy[-1].content, list):
+            for j, block in enumerate(messages_copy[-1].content):
+                if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+                    messages_copy[-1].content[j]["text"] = block["text"].rstrip()
+
+    merged_messages = _merge_messages(messages_copy)
     for i, message in enumerate(merged_messages):
         if message.type == "system":
             if i != 0:

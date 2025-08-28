@@ -1070,7 +1070,18 @@ def _messages_to_bedrock(
     bedrock_system: List[Dict[str, Any]] = []
     # Merge system, human, ai message runs because Anthropic expects (at most) 1
     # system message then alternating human/ai messages.
-    messages = merge_message_runs(messages)
+    
+    # Check if the last message is an AIMessage with trailing whitespace
+    messages_copy = messages.copy()
+    if messages_copy and isinstance(messages_copy[-1], AIMessage):
+        if isinstance(messages_copy[-1].content, str):
+            messages_copy[-1].content = messages_copy[-1].content.rstrip()
+        elif isinstance(messages_copy[-1].content, list):
+            for j, block in enumerate(messages_copy[-1].content):
+                if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+                    messages_copy[-1].content[j]["text"] = block["text"].rstrip()
+    
+    messages = merge_message_runs(messages_copy)
     for msg in messages:
         content = _lc_content_to_bedrock(msg.content)
         if isinstance(msg, HumanMessage):
