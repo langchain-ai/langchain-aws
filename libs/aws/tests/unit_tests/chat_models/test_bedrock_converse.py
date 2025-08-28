@@ -1198,6 +1198,113 @@ def test__lc_content_to_bedrock_mime_types_invalid() -> None:
         ])
 
 
+def test__lc_content_to_bedrock_empty_content() -> None:
+    content: List[Union[str, Dict[str, Any]]] = []
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_whitespace_only_content() -> None:
+    content = "   \n  \t  "
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_empty_string_content() -> None:
+    content = ""
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_mixed_empty_content() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": ""},
+        {"type": "text", "text": "   "},
+        {"type": "text", "text": ""}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_empty_text_block() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": ""}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_whitespace_text_block() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": "  \n  "}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_mixed_valid_and_empty_content() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": "Valid text"},
+        {"type": "text", "text": ""},
+        {"type": "text", "text": "   "}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+
+    assert len(bedrock_content) == 3
+    assert bedrock_content[0]["text"] == "Valid text"
+    assert bedrock_content[1]["text"] == "."
+    assert bedrock_content[2]["text"] == "."
+
+
+def test__lc_content_to_bedrock_mixed_types_with_empty_content() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": "Valid text"},
+        {
+            "type": "tool_use",
+            "id": "tool_call1",
+            "input": {"arg1": "val1"},
+            "name": "tool1",
+        },
+        {"type": "text", "text": "   "}
+    ]
+
+    expected = [
+        {'text': 'Valid text'},
+        {
+            'toolUse': {
+                'toolUseId': 'tool_call1',
+                'input': {'arg1': 'val1'},
+                'name': 'tool1'
+            }
+        },
+        {'text': '.'}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+
+    assert len(bedrock_content) == 3
+    assert bedrock_content == expected
+
+
 def test__get_provider() -> None:
     llm = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
