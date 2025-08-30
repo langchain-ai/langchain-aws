@@ -787,12 +787,10 @@ class ChatBedrockConverse(BaseChatModel):
         )
 
         # Check for tool blocks without toolConfig and handle conversion
-        has_tool_blocks = _has_tool_use_or_result_blocks(bedrock_messages)
-        has_tool_config = params.get("toolConfig") is not None
-
-        if has_tool_blocks and not has_tool_config:
+        if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(bedrock_messages):
             logger.warning(
-                "Tool messages (toolUse/toolResult) detected without toolConfig. Converting tool blocks to text format to avoid ValidationException."
+                "Tool messages (toolUse/toolResult) detected without toolConfig. "
+                "Converting tool blocks to text format to avoid ValidationException."
             )
             warnings.warn(
                 "Tool messages were passed without toolConfig, converting to text format",
@@ -835,14 +833,11 @@ class ChatBedrockConverse(BaseChatModel):
             ),
         )
 
-        # Check if toolConfig is missing but tool blocks are present
-        has_tool_blocks = _has_tool_use_or_result_blocks(bedrock_messages)
-        has_tool_config = params.get("toolConfig") is not None
-
-        # Handle conversion
-        if has_tool_blocks and not has_tool_config:
+        # Check for tool blocks without toolConfig and handle conversion
+        if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(bedrock_messages):
             logger.warning(
-                "Tool messages (toolUse/toolResult) detected without toolConfig. Converting tool blocks to text format to avoid ValidationException."
+                "Tool messages (toolUse/toolResult) detected without toolConfig. "
+                "Converting tool blocks to text format to avoid ValidationException."
             )
             warnings.warn(
                 "Tool messages were passed without toolConfig, converting to text format",
@@ -1835,13 +1830,14 @@ def _convert_tool_blocks_to_text(
                 # convert toolResult to indicate it's tool output without exposing internal details
                 tool_result = block["toolResult"]
 
-                result_content = ""
+                content_parts = []
                 for content_block in tool_result.get("content", []):
                     if "text" in content_block:
-                        result_content += content_block["text"]
+                        content_parts.append(content_block["text"])
                     elif "json" in content_block:
-                        result_content += json.dumps(content_block["json"])
+                        content_parts.append(json.dumps(content_block["json"]))
                     # skip other internal content types
+                result_content = "".join(content_parts)
 
                 # only include result if there's actual content, but mark it as tool output
                 if result_content.strip():
