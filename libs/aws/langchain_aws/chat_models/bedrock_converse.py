@@ -541,8 +541,7 @@ class ChatBedrockConverse(BaseChatModel):
         valid_source_types = ["bytes", "content", "s3Location", "text"]
         if (
             len(source.keys()) > 1
-            or source.keys()
-            or source.keys()[0] not in valid_source_types
+            or list(source.keys())[0] not in valid_source_types
         ):
             raise ValueError(
                 f"The key for source can only be one of the following: {valid_source_types}"
@@ -576,7 +575,7 @@ class ChatBedrockConverse(BaseChatModel):
             document["format"] = format
 
         if enable_citations:
-            document["citation"] = {"enabled": True}
+            document["citations"] = {"enabled": True}
 
         return {"document": document}
 
