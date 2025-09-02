@@ -651,6 +651,10 @@ def _format_anthropic_messages(
             # Simple string content
             content = message.content
 
+        # AWS Bedrock requires content arrays to have at least 1 item
+        if isinstance(content, list) and len(content) == 0:
+            content = [{"type": "text", "text": "."}]
+
         formatted_messages.append({"role": role, "content": content})
     return system, formatted_messages
 
