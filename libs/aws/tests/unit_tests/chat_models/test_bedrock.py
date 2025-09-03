@@ -18,6 +18,7 @@ from langchain_aws.chat_models.bedrock import (
     ChatPromptAdapter,
     _format_anthropic_messages,
     _merge_messages,
+    convert_messages_to_prompt_anthropic,
 )
 from langchain_aws.function_calling import convert_to_anthropic_tool
 
@@ -187,8 +188,8 @@ def test__format_anthropic_messages_with_str_content_and_tool_calls() -> None:
 def test__format_anthropic_messages_with_list_content_and_tool_calls() -> None:
     system = SystemMessage("fuzz")  # type: ignore[misc]
     human = HumanMessage("foo")  # type: ignore[misc]
-    # If content and tool_calls are specified and content is a list, then content is
-    # preferred.
+    # If content and tool_calls are specified and content is a list, both are
+    # included
     ai = AIMessage(  # type: ignore[misc]
         [{"type": "text", "text": "thought"}],
         tool_calls=[{"name": "bar", "id": "1", "args": {"baz": "buzz"}}],
@@ -204,7 +205,15 @@ def test__format_anthropic_messages_with_list_content_and_tool_calls() -> None:
             {"role": "user", "content": "foo"},
             {
                 "role": "assistant",
-                "content": [{"type": "text", "text": "thought"}],
+                "content": [
+                    {"type": "text", "text": "thought"},
+                    {
+                        "type": "tool_use",
+                        "name": "bar",
+                        "id": "1",
+                        "input": {"baz": "buzz"},
+                    },
+                ],
             },
             {
                 "role": "user",
@@ -287,7 +296,14 @@ def test__format_anthropic_messages_with_cache_control() -> None:
     )
     messages = [system, human]
     expected = (
-        "fuzzbar",
+        [
+            {
+                "type": "text",
+                "text": "fuzz",
+                "cache_control": {"type": "ephemeral"},
+            },
+            {"type": "text", "text": "bar"},
+        ],
         [
             {
                 "role": "user",
@@ -299,6 +315,30 @@ def test__format_anthropic_messages_with_cache_control() -> None:
                     }
                 ],
             },
+        ],
+    )
+
+    actual = _format_anthropic_messages(messages)
+    assert expected == actual
+
+
+def test__format_anthropic_messages_system_message_list_content() -> None:
+    """Test that system messages with list content return as list of content blocks"""
+    system = SystemMessage(
+        [
+            {"type": "text", "text": "You are a helpful assistant."},
+            {"type": "text", "text": "Additional instructions here."},
+        ],
+    )
+    human = HumanMessage("Hello!")
+    messages = [system, human]
+    expected = (
+        [
+            {"type": "text", "text": "You are a helpful assistant."},
+            {"type": "text", "text": "Additional instructions here."},
+        ],
+        [
+            {"role": "user", "content": "Hello!"},
         ],
     )
 
@@ -635,6 +675,63 @@ def test__format_anthropic_messages_with_thinking_blocks() -> None:
     assert expected_messages == actual_messages
 
 
+def test__format_anthropic_messages_with_image_conversion_in_tool() -> None:
+    """Test that ToolMessage with OpenAI-style image content is correctly converted to Anthropic format."""
+    # Create a dummy base64 image string
+    dummy_base64_image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    
+    messages = [
+        ToolMessage(  # type: ignore[misc]
+            content=[
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{dummy_base64_image}"
+                    }
+                }
+            ],
+            tool_call_id="test_tool_call_123"
+        ),
+        HumanMessage("What do you see in the image?"),  # type: ignore[misc]
+    ]
+    
+    expected = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "test_tool_call_123",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": dummy_base64_image
+                            }
+                        }
+                    ]
+                },
+                {"type": "text", "text": "What do you see in the image?"}
+            ]
+        }
+    ]
+    
+    _ , actual = _format_anthropic_messages(messages)
+    assert expected == actual
+
+
+def test__convert_messages_to_prompt_anthropic_message_is_none() -> None:
+    messages = None
+    assert convert_messages_to_prompt_anthropic(messages) == ""
+
+
+def test__convert_messages_to_prompt_anthropic_message_is_empty() -> None:
+    messages = []
+    assert convert_messages_to_prompt_anthropic(messages) == ""
+
+
 def test__format_anthropic_messages_with_thinking_in_content_blocks() -> None:
     """Test that thinking blocks in content are correctly ordered (first) in messages."""
     system = SystemMessage("System instruction")  # type: ignore[misc]
@@ -748,6 +845,124 @@ def test__format_anthropic_messages_after_tool_use_no_thinking() -> None:
     )
 
 
+def test__format_anthropic_messages_tool_result_ordering() -> None:
+    """Test that tool type content blocks in UserMessage are moved to the beginning."""
+    human_message = HumanMessage(  # type: ignore[misc]
+        [
+            {"type": "text", "text": "I have a question about the data."},
+            {
+                "type": "tool_result",
+                "content": "Data analysis result",
+                "tool_use_id": "tool1"
+            },
+            {"type": "text", "text": "Can you explain this result?"},
+        ]
+    )
+
+    system = SystemMessage("You are a helpful assistant")  # type: ignore[misc]
+    ai = AIMessage("Let me think about that")  # type: ignore[misc]
+
+    messages = [system, human_message, ai]
+
+    _, formatted_messages = _format_anthropic_messages(messages)
+
+    user_content = formatted_messages[0]["content"]
+
+    assert user_content[0]["type"] == "tool_result"
+    assert user_content[0]["content"] == "Data analysis result"
+    assert user_content[1]["type"] == "text"
+    assert user_content[1]["text"] == "I have a question about the data."
+    assert user_content[2]["type"] == "text"
+    assert user_content[2]["text"] == "Can you explain this result?"
+
+
+def test__format_anthropic_messages_tool_use_ordering() -> None:
+    """Test that tool type content blocks in AssistantMessage are always moved to the end."""
+    ai_message = AIMessage(  # type: ignore[misc]
+        [
+            {"type": "text", "text": "Let me analyze this for you."},
+            {
+                "type": "tool_use",
+                "name": "data_analyzer",
+                "id": "tool1",
+                "input": {"data": "sample_data"}
+            },
+            {"type": "text", "text": "This will help us understand the pattern."},
+        ]
+    )
+
+    system = SystemMessage("You are a helpful assistant")  # type: ignore[misc]
+    human = HumanMessage("Can you analyze this data?")  # type: ignore[misc]
+
+    messages = [system, human, ai_message]
+
+    _, formatted_messages = _format_anthropic_messages(messages)
+
+    assistant_content = formatted_messages[1]["content"]
+
+    assert assistant_content[0]["type"] == "text"
+    assert assistant_content[0]["text"] == "Let me analyze this for you."
+    assert assistant_content[1]["type"] == "text"
+    assert assistant_content[1]["text"] == "This will help us understand the pattern."
+    assert assistant_content[2]["type"] == "tool_use"
+    assert assistant_content[2]["name"] == "data_analyzer"
+
+
+def test__format_anthropic_messages_preserves_content_order() -> None:
+    """Test that _format_anthropic_messages preserves the original order of mixed text and image content."""
+    content = [
+        {"type": "text", "text": "Some text..."},
+        {
+            "type": "image_url",
+            "image_url": {"url": "data:image/jpeg;base64,1337C0DE"},
+        },
+        {"type": "text", "text": "Caption for 1st image..."},
+        {
+            "type": "image_url",
+            "image_url": {"url": "data:image/jpeg;base64,FACADE42"},
+        },
+        {"type": "text", "text": "Another caption for 2nd image..."},
+        {"type": "text", "text": "Now, analyze the following image..."},
+        {
+            "type": "image_url",
+            "image_url": {"url": "data:image/jpeg;base64,C0FFEE42"},
+        },
+    ]
+
+    messages = [HumanMessage(content=content)]
+
+    _, formatted_messages = _format_anthropic_messages(messages)
+
+    assert len(formatted_messages) == 1
+    assert formatted_messages[0]["role"] == "user"
+
+    user_content = formatted_messages[0]["content"]
+
+    # The expected order should preserve the original interleaved sequence:
+    # text -> image -> text -> image -> text -> text -> image
+    expected_sequence = [
+        ("text", "Some text..."),
+        ("image", "1337C0DE"),
+        ("text", "Caption for 1st image..."),
+        ("image", "FACADE42"),
+        ("text", "Another caption for 2nd image..."),
+        ("text", "Now, analyze the following image..."),
+        ("image", "C0FFEE42"),
+    ]
+
+    actual_sequence = []
+    for item in user_content:
+        if item["type"] == "text":
+            actual_sequence.append(("text", item["text"]))
+        elif item["type"] == "image":
+            actual_sequence.append(("image", item["source"]["data"]))
+
+    assert actual_sequence == expected_sequence, (
+        f"Content order was not preserved. Expected: {expected_sequence}, "
+        f"but got: {actual_sequence}"
+    )
+
+
 @pytest.mark.parametrize(
     "model_id, base_model_id, provider, expected_format_marker",
     [
@@ -801,6 +1016,115 @@ def test_chat_prompt_adapter_with_model_detection(model_id, base_model_id, provi
     )
 
     assert expected_format_marker in prompt
+
+
+def test__format_anthropic_messages_empty_content_fix() -> None:
+    """
+    Test that empty content arrays are handled correctly to prevent ValidationException.
+    """
+    messages = [
+        HumanMessage("What is the capital of India?"),  # type: ignore[misc]
+        AIMessage([{"type": "text", "text": ""}])  # type: ignore[misc]
+    ]
+    
+    system, formatted_messages = _format_anthropic_messages(messages)
+    
+    assert len(formatted_messages) == 2
+    ai_content = formatted_messages[1]["content"]
+    assert isinstance(ai_content, list)
+    assert len(ai_content) > 0  # Should not be empty
+    assert ai_content[0]["type"] == "text"
+    assert ai_content[0]["text"] == "."
+
+
+def test__format_anthropic_messages_whitespace_only_content() -> None:
+    """Test that whitespace-only content is handled correctly."""
+    messages = [
+        HumanMessage("What is the capital of India?"),  # type: ignore[misc]
+        AIMessage([{"type": "text", "text": "   \n  \t  "}])  # type: ignore[misc]
+    ]
+    
+    system, formatted_messages = _format_anthropic_messages(messages)
+    
+    assert len(formatted_messages) == 2
+    ai_content = formatted_messages[1]["content"]
+    assert isinstance(ai_content, list)
+    assert len(ai_content) > 0
+    assert ai_content[0]["type"] == "text"
+    assert ai_content[0]["text"] == "."
+
+
+def test__format_anthropic_messages_empty_string_content() -> None:
+    """Test that empty string content is handled correctly."""
+    messages = [
+        HumanMessage("What is the capital of India?"),  # type: ignore[misc]
+        AIMessage("")  # type: ignore[misc]
+    ]
+    
+    system, formatted_messages = _format_anthropic_messages(messages)
+    
+    assert len(formatted_messages) == 2
+    ai_content = formatted_messages[1]["content"]
+    assert isinstance(ai_content, list)
+    assert len(ai_content) > 0
+    assert ai_content[0]["type"] == "text"
+    assert ai_content[0]["text"] == "."
+
+
+def test__format_anthropic_messages_mixed_empty_content() -> None:
+    """Test that mixed content with some empty blocks is handled correctly."""
+    messages = [
+        HumanMessage("What is the capital of India?"),  # type: ignore[misc]
+        AIMessage([  # type: ignore[misc]
+            {"type": "text", "text": ""},
+            {"type": "text", "text": "   "},
+            {"type": "text", "text": ""}
+        ])
+    ]
+    
+    system, formatted_messages = _format_anthropic_messages(messages)
+    
+    # Verify that the content is not empty even when all text blocks are filtered out
+    assert len(formatted_messages) == 2
+    ai_content = formatted_messages[1]["content"]
+    assert isinstance(ai_content, list)
+    assert len(ai_content) > 0
+    assert ai_content[0]["type"] == "text"
+    assert ai_content[0]["text"] == "."
+
+
+def test__format_anthropic_messages_mixed_type_blocks_and_empty_content() -> None:
+    """Test that empty blocks mixed with non-text type blocks is handled correctly."""
+    messages = [
+        AIMessage([  # type: ignore[misc]
+            {"type": "text", "text": "\n\t"},
+            {
+                "type": "tool_use",
+                "id": "tool_call1",
+                "input": {"arg1": "val1"},
+                "name": "tool1",
+            },
+        ])
+    ]
+
+    expected_content = [
+        {
+            'role': 'assistant',
+            'content': [
+                {
+                    'type': 'tool_use',
+                    'id': 'tool_call1',
+                    'input': {'arg1': 'val1'},
+                    'name': 'tool1'
+                }
+            ]
+        }
+    ]
+
+    system, formatted_messages = _format_anthropic_messages(messages)
+
+    assert len(formatted_messages) == 1
+    assert formatted_messages == expected_content
 
 
 def test_model_kwargs() -> None:

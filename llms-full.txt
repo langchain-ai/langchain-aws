@@ -1,0 +1,911 @@
+---
+how-tos/langchain-aws-comprehensive-guide.md
+---
+
+# How to Use LangChain AWS Integration Package - Complete Guide
+
+!!! tip "Prerequisites"
+    This guide assumes familiarity with the following:
+    
+    - [LangChain Documentation](https://python.langchain.com/)
+    - [AWS Services](https://aws.amazon.com/)
+    - [Amazon Bedrock](https://aws.amazon.com/bedrock/)
+    - [Python Programming](https://python.org)
+    - [AWS SDK for Python (Boto3)](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html)
+
+The `langchain-aws` package provides comprehensive integration between LangChain and AWS services. This guide demonstrates how to leverage AWS's powerful AI and ML services for building production-ready applications with features like chat models, embeddings, retrievers, and graph databases.
+
+## TLDR
+
+```python
+# Quick setup for AWS Bedrock Chat
+from langchain_aws import ChatBedrock
+
+# Initialize with Claude 3.5 Sonnet
+llm = ChatBedrock(
+    model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
+    region_name="us-east-1",
+    model_kwargs={
+        "max_tokens": 1000,
+        "temperature": 0.7
+    }
+)
+
+# Use it
+response = llm.invoke("Explain quantum computing in simple terms")
+print(response.content)
+```
+
+## Setup
+
+First, let's install the required packages and set up AWS credentials:
+
+```python
+%%capture --no-stderr
+%pip install --quiet -U langchain-aws boto3
+```
+
+```python
+import getpass
+import os
+
+def _set_env(var: str):
+    if not os.environ.get(var):
+        os.environ[var] = getpass.getpass(f"{var}: ")
+
+# Set up AWS credentials
+_set_env("AWS_ACCESS_KEY_ID")
+_set_env("AWS_SECRET_ACCESS_KEY") 
+_set_env("AWS_DEFAULT_REGION")
+```
+
+!!! tip
+    Configure your AWS credentials using any of these methods:
+    - AWS CLI: `aws configure`
+    - Environment variables (shown above)
+    - IAM roles (for EC2 instances)
+    - AWS credentials file (`~/.aws/credentials`)
+
+## Core Components Guide
+
+### 1. Chat Models with Amazon Bedrock
+
+Amazon Bedrock provides access to foundation models from leading AI companies through a unified API.
+
+#### ChatBedrock - Primary Interface
+
+```python
+from langchain_aws import ChatBedrock
+from langchain_core.messages import HumanMessage
+
+# Initialize with different models
+claude_35_sonnet = ChatBedrock(
+    model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
+    region_name="us-east-1",
+    model_kwargs={
+        "max_tokens": 2000,
+        "temperature": 0.3,
+        "top_p": 0.9
+    }
+)
+
+# For faster responses
+claude_haiku = ChatBedrock(
+    model_id="anthropic.claude-3-haiku-20240307-v1:0",
+    region_name="us-east-1",
+    model_kwargs={"max_tokens": 1000, "temperature": 0.1}
+)
+
+# Usage examples
+response = claude_35_sonnet.invoke("Write a Python function to calculate Fibonacci numbers")
+print(response.content)
+```
+
+**Streaming Support:**
+
+```python
+# Enable streaming for real-time responses
+streaming_llm = ChatBedrock(
+    model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+    streaming=True,
+    region_name="us-east-1"
+)
+
+# Stream response
+for chunk in streaming_llm.stream("Tell me a story about AI"):
+    print(chunk.content, end="", flush=True)
+```
+
+#### ChatBedrockConverse - Unified API
+
+```python
+from langchain_aws import ChatBedrockConverse
+
+# Unified interface across all Bedrock models
+llm = ChatBedrockConverse(
+    model="anthropic.claude-3-sonnet-20240229-v1:0",
+    temperature=0,
+    max_tokens=None,
+    region_name="us-east-1"
+)
+
+# Better tool calling support
+from langchain_core.tools import tool
+
+@tool
+def calculate_area(length: float, width: float) -> float:
+    """Calculate the area of a rectangle."""
+    return length * width
+
+llm_with_tools = llm.bind_tools([calculate_area])
+response = llm_with_tools.invoke("What's the area of a 5x3 rectangle?")
+```
+
+### 2. Embeddings with Amazon Bedrock
+
+Transform text into vector representations for semantic search and RAG applications.
+
+```python
+from langchain_aws import BedrockEmbeddings
+
+# Initialize Titan embeddings
+embeddings = BedrockEmbeddings(
+    model_id="amazon.titan-embed-text-v2:0",
+    region_name="us-east-1"
+)
+
+# Embed a single query
+query_embedding = embeddings.embed_query("What is machine learning?")
+print(f"Query embedding dimensions: {len(query_embedding)}")
+
+# Embed multiple documents
+documents = [
+    "Machine learning is a subset of artificial intelligence",
+    "Deep learning uses neural networks with multiple layers",
+    "Natural language processing helps computers understand text"
+]
+
+doc_embeddings = embeddings.embed_documents(documents)
+print(f"Processed {len(doc_embeddings)} documents")
+```
+
+**Batch Processing for Large Datasets:**
+
+```python
+def process_large_dataset(texts, batch_size=25):
+    """Process large text datasets efficiently."""
+    embeddings = BedrockEmbeddings(model_id="amazon.titan-embed-text-v1")
+    all_embeddings = []
+    
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
+        print(f"Processing batch {i//batch_size + 1}/{(len(texts)-1)//batch_size + 1}")
+        batch_embeddings = embeddings.embed_documents(batch)
+        all_embeddings.extend(batch_embeddings)
+    
+    return all_embeddings
+
+# Usage
+large_text_list = ["text"] * 100  # Your large dataset
+embeddings = process_large_dataset(large_text_list)
+```
+
+### 3. Retrievers for Knowledge Management
+
+#### Amazon Kendra Retriever
+
+Enterprise search powered by machine learning for document retrieval.
+
+```python
+from langchain_aws import AmazonKendraRetriever
+
+# Basic setup
+kendra_retriever = AmazonKendraRetriever(
+    index_id="your-kendra-index-id",
+    region_name="us-east-1",
+    top_k=10
+)
+
+# Advanced filtering
+advanced_retriever = AmazonKendraRetriever(
+    index_id="your-kendra-index-id",
+    region_name="us-east-1",
+    top_k=5,
+    attribute_filter={
+        "AndAllFilters": [
+            {
+                "EqualsTo": {
+                    "Key": "category",
+                    "Value": {"StringValue": "technical"}
+                }
+            },
+            {
+                "EqualsTo": {
+                    "Key": "_language_code", 
+                    "Value": {"StringValue": "en"}
+                }
+            }
+        ]
+    }
+)
+
+# Retrieve documents
+docs = kendra_retriever.get_relevant_documents("How do I configure SSL certificates?")
+for doc in docs:
+    print(f"Source: {doc.metadata.get('source', 'Unknown')}")
+    print(f"Content: {doc.page_content[:200]}...")
+```
+
+#### Amazon Knowledge Bases Retriever
+
+```python
+from langchain_aws import AmazonKnowledgeBasesRetriever
+
+# Setup Knowledge Bases retriever
+kb_retriever = AmazonKnowledgeBasesRetriever(
+    knowledge_base_id="YOUR_KNOWLEDGE_BASE_ID",
+    retrieval_config={
+        "vectorSearchConfiguration": {
+            "numberOfResults": 5,
+            "overrideSearchType": "HYBRID",
+            "filter": {
+                "equals": {
+                    "key": "department",
+                    "value": "engineering"
+                }
+            }
+        }
+    },
+    region_name="us-east-1"
+)
+
+# Retrieve relevant documents
+docs = kb_retriever.get_relevant_documents("Explain microservices architecture")
+```
+
+### 4. SageMaker Integration
+
+Deploy and use custom models hosted on Amazon SageMaker endpoints.
+
+```python
+from langchain_aws.llms.sagemaker_endpoint import LLMContentHandler
+from langchain_aws import SagemakerEndpoint
+import json
+
+class HuggingFaceContentHandler(LLMContentHandler):
+    content_type = "application/json"
+    accepts = "application/json"
+    
+    def transform_input(self, prompt: str, model_kwargs: dict) -> bytes:
+        payload = {
+            "inputs": prompt,
+            "parameters": {
+                "max_new_tokens": model_kwargs.get("max_new_tokens", 256),
+                "temperature": model_kwargs.get("temperature", 0.7),
+                "do_sample": model_kwargs.get("do_sample", True),
+                "top_p": model_kwargs.get("top_p", 0.9)
+            }
+        }
+        return json.dumps(payload).encode('utf-8')
+    
+    def transform_output(self, output: bytes) -> str:
+        response_json = json.loads(output.read().decode("utf-8"))
+        return response_json[0]["generated_text"]
+
+# Setup SageMaker endpoint
+content_handler = HuggingFaceContentHandler()
+sagemaker_llm = SagemakerEndpoint(
+    endpoint_name="your-model-endpoint-name",
+    region_name="us-east-1", 
+    content_handler=content_handler,
+    model_kwargs={
+        "max_new_tokens": 512,
+        "temperature": 0.8
+    }
+)
+
+# Use the model
+response = sagemaker_llm.invoke("Explain the benefits of containerization")
+```
+
+## Advanced Use Cases
+
+### RAG (Retrieval-Augmented Generation) Pipeline
+
+Build a complete RAG system using AWS services:
+
+```python
+from langchain_aws import ChatBedrock, AmazonKendraRetriever, BedrockEmbeddings
+from langchain.chains import RetrievalQA
+from langchain_core.prompts import PromptTemplate
+
+# 1. Setup components
+llm = ChatBedrock(
+    model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+    model_kwargs={"max_tokens": 2000, "temperature": 0.3}
+)
+
+retriever = AmazonKendraRetriever(
+    index_id="your-kendra-index-id",
+    top_k=5,
+    region_name="us-east-1"
+)
+
+# 2. Custom prompt template
+prompt_template = PromptTemplate(
+    template="""Use the following context to answer the question. If you cannot answer based on the context, say so.
+
+Context:
+{context}
+
+Question: {question}
+
+Answer: """,
+    input_variables=["context", "question"]
+)
+
+# 3. Create RAG chain
+qa_chain = RetrievalQA.from_chain_type(
+    llm=llm,
+    chain_type="stuff",
+    retriever=retriever,
+    return_source_documents=True,
+    chain_type_kwargs={"prompt": prompt_template}
+)
+
+# 4. Query the system
+result = qa_chain({
+    "query": "What are our company's security policies for remote work?"
+})
+
+print("Answer:", result["result"])
+print("\nSources:")
+for doc in result["source_documents"]:
+    print(f"- {doc.metadata.get('title', 'Document')}")
+```
+
+### Multi-Modal AI with Vision
+
+Use Claude 3 models for image analysis:
+
+```python
+from langchain_aws import ChatBedrock
+from langchain_core.messages import HumanMessage
+import base64
+
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+# Setup vision-capable model
+vision_llm = ChatBedrock(
+    model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+    region_name="us-east-1"
+)
+
+# Analyze an image
+image_data = encode_image("path/to/your/image.jpg")
+
+message = HumanMessage(
+    content=[
+        {"type": "text", "text": "What do you see in this image? Describe it in detail."},
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}
+        }
+    ]
+)
+
+response = vision_llm.invoke([message])
+print(response.content)
+```
+
+### Function Calling and Tool Use
+
+Create agents that can use external tools:
+
+```python
+from langchain_aws import ChatBedrockConverse
+from langchain_core.tools import tool
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.prompts import ChatPromptTemplate
+import requests
+import json
+
+@tool
+def get_weather(city: str) -> str:
+    """Get current weather for a city."""
+    # Mock API call - replace with real weather service
+    return f"The weather in {city} is sunny with 72°F"
+
+@tool
+def calculate_math(expression: str) -> str:
+    """Evaluate mathematical expressions safely."""
+    try:
+        # Simple calculator - use with caution in production
+        result = eval(expression.replace('^', '**'))
+        return f"Result: {result}"
+    except:
+        return "Invalid mathematical expression"
+
+# Setup agent with tools
+llm = ChatBedrockConverse(
+    model="anthropic.claude-3-sonnet-20240229-v1:0",
+    temperature=0
+)
+
+tools = [get_weather, calculate_math]
+llm_with_tools = llm.bind_tools(tools)
+
+# Create prompt template
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant that can get weather information and perform calculations."),
+    ("human", "{input}"),
+    ("placeholder", "{agent_scratchpad}")
+])
+
+# Create and run agent
+agent = create_tool_calling_agent(llm_with_tools, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# Use the agent
+result = agent_executor.invoke({
+    "input": "What's the weather in New York and what's 15 * 24?"
+})
+```
+
+### Semantic Search with Vector Storage
+
+Build a semantic search system using embeddings:
+
+```python
+from langchain_aws import BedrockEmbeddings
+from langchain.vectorstores import FAISS
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.schema import Document
+
+# 1. Prepare documents
+documents = [
+    "Amazon Web Services provides cloud computing services",
+    "Machine learning enables computers to learn from data",
+    "Natural language processing helps understand human language",
+    "Computer vision allows machines to interpret visual information",
+    "Deep learning uses neural networks for complex pattern recognition"
+]
+
+# Convert to Document objects
+docs = [Document(page_content=doc) for doc in documents]
+
+# 2. Split documents (if needed)
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=1000,
+    chunk_overlap=200
+)
+splits = text_splitter.split_documents(docs)
+
+# 3. Create embeddings and vector store
+embeddings = BedrockEmbeddings(
+    model_id="amazon.titan-embed-text-v2:0",
+    region_name="us-east-1"
+)
+
+vectorstore = FAISS.from_documents(splits, embeddings)
+
+# 4. Perform semantic search
+query = "AI that processes images"
+relevant_docs = vectorstore.similarity_search(query, k=3)
+
+print(f"Query: {query}")
+print("Relevant documents:")
+for i, doc in enumerate(relevant_docs):
+    print(f"{i+1}. {doc.page_content}")
+```
+
+## Production Best Practices
+
+### Error Handling and Resilience
+
+```python
+from botocore.exceptions import ClientError
+import time
+import random
+import logging
+
+class RobustBedrockClient:
+    def __init__(self, model_id, region_name="us-east-1", max_retries=3):
+        self.llm = ChatBedrock(
+            model_id=model_id,
+            region_name=region_name
+        )
+        self.max_retries = max_retries
+        self.logger = logging.getLogger(__name__)
+    
+    def invoke_with_retry(self, prompt):
+        """Invoke with exponential backoff retry logic."""
+        for attempt in range(self.max_retries):
+            try:
+                return self.llm.invoke(prompt)
+            except ClientError as e:
+                error_code = e.response['Error']['Code']
+                
+                if error_code == 'ThrottlingException':
+                    if attempt < self.max_retries - 1:
+                        wait_time = (2 ** attempt) + random.uniform(0, 1)
+                        self.logger.warning(f"Rate limited, waiting {wait_time:.2f}s")
+                        time.sleep(wait_time)
+                        continue
+                elif error_code == 'ValidationException':
+                    raise ValueError(f"Invalid request: {e}")
+                elif error_code == 'AccessDeniedException':
+                    raise PermissionError("Check AWS permissions")
+                
+                raise e
+        
+        raise Exception(f"Failed after {self.max_retries} attempts")
+
+# Usage
+robust_client = RobustBedrockClient("anthropic.claude-3-haiku-20240307-v1:0")
+response = robust_client.invoke_with_retry("Explain cloud computing")
+```
+
+### Cost Optimization
+
+```python
+from langchain_aws import ChatBedrock
+
+class CostOptimizedLLM:
+    def __init__(self):
+        # Use faster/cheaper models for simple tasks
+        self.fast_model = ChatBedrock(
+            model_id="anthropic.claude-3-haiku-20240307-v1:0",  # Cheapest
+            model_kwargs={"max_tokens": 500}
+        )
+        
+        # Use advanced models for complex tasks
+        self.advanced_model = ChatBedrock(
+            model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+            model_kwargs={"max_tokens": 2000}
+        )
+        
+        self.token_count = 0
+    
+    def route_request(self, prompt: str, complexity: str = "simple"):
+        """Route requests to appropriate model based on complexity."""
+        if complexity == "simple" or len(prompt.split()) < 50:
+            model = self.fast_model
+            cost_factor = 1
+        else:
+            model = self.advanced_model 
+            cost_factor = 3
+            
+        response = model.invoke(prompt)
+        
+        # Estimate cost (rough approximation)
+        estimated_tokens = len(prompt.split()) + len(response.content.split())
+        self.token_count += estimated_tokens * cost_factor
+        
+        return response
+    
+    def get_estimated_cost(self):
+        # Rough cost estimation (update with actual pricing)
+        cost_per_1k_tokens = 0.003  # Example rate
+        return (self.token_count / 1000) * cost_per_1k_tokens
+
+# Usage
+optimizer = CostOptimizedLLM()
+simple_response = optimizer.route_request("What is 2+2?", "simple")
+complex_response = optimizer.route_request("Explain quantum computing theory", "complex")
+print(f"Estimated cost: ${optimizer.get_estimated_cost():.4f}")
+```
+
+### Security and Privacy
+
+```python
+import re
+from langchain_aws import ChatBedrock
+
+class SecureLLMWrapper:
+    def __init__(self, model_id, region_name="us-east-1"):
+        self.llm = ChatBedrock(model_id=model_id, region_name=region_name)
+        
+    def sanitize_input(self, prompt: str) -> str:
+        """Remove potentially dangerous content from prompts."""
+        # Remove common prompt injection attempts
+        dangerous_patterns = [
+            r'ignore\s+previous\s+instructions',
+            r'system\s*:',
+            r'assistant\s*:',
+            r'human\s*:',
+            r'<\s*system\s*>',
+            r'jailbreak',
+            r'act\s+as\s+if'
+        ]
+        
+        cleaned_prompt = prompt
+        for pattern in dangerous_patterns:
+            cleaned_prompt = re.sub(pattern, '', cleaned_prompt, flags=re.IGNORECASE)
+        
+        # Limit length
+        return cleaned_prompt[:4000]
+    
+    def redact_sensitive_info(self, text: str) -> str:
+        """Redact potentially sensitive information."""
+        # Email pattern
+        text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[EMAIL]', text)
+        # Phone number pattern
+        text = re.sub(r'\b\d{3}-\d{3}-\d{4}\b', '[PHONE]', text)
+        # SSN pattern
+        text = re.sub(r'\b\d{3}-\d{2}-\d{4}\b', '[SSN]', text)
+        
+        return text
+    
+    def secure_invoke(self, prompt: str):
+        """Safely invoke the LLM with security measures."""
+        # Sanitize input
+        clean_prompt = self.sanitize_input(prompt)
+        
+        # Get response
+        response = self.llm.invoke(clean_prompt)
+        
+        # Redact sensitive info from response
+        safe_response = self.redact_sensitive_info(response.content)
+        
+        return safe_response
+
+# Usage
+secure_llm = SecureLLMWrapper("anthropic.claude-3-haiku-20240307-v1:0")
+response = secure_llm.secure_invoke("Tell me about data privacy laws")
+```
+
+## Testing and Monitoring
+
+### Integration Testing
+
+```python
+import pytest
+from unittest.mock import patch, MagicMock
+from langchain_aws import ChatBedrock, BedrockEmbeddings
+
+class TestLangChainAWS:
+    
+    @patch('langchain_aws.chat_models.bedrock.boto3')
+    def test_bedrock_chat(self, mock_boto3):
+        """Test ChatBedrock integration."""
+        # Setup mock
+        mock_client = MagicMock()
+        mock_boto3.client.return_value = mock_client
+        
+        mock_response = {
+            'body': MagicMock()
+        }
+        mock_response['body'].read.return_value = b'{"completion": "Hello World!"}'
+        mock_client.invoke_model.return_value = mock_response
+        
+        # Test
+        llm = ChatBedrock(model_id="anthropic.claude-v2:1")
+        response = llm.invoke("Hi")
+        
+        assert "Hello World!" in response.content
+        
+    def test_embeddings_dimensions(self):
+        """Test embedding dimensions."""
+        embeddings = BedrockEmbeddings(model_id="amazon.titan-embed-text-v1")
+        
+        # Mock the embedding response
+        with patch.object(embeddings, 'embed_query', return_value=[0.1] * 1536):
+            result = embeddings.embed_query("test")
+            assert len(result) == 1536
+
+# Run tests
+if __name__ == "__main__":
+    pytest.main([__file__])
+```
+
+### Performance Monitoring
+
+```python
+import time
+from functools import wraps
+from langchain_aws import ChatBedrock
+
+def monitor_performance(func):
+    """Decorator to monitor LLM performance."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        try:
+            result = func(*args, **kwargs)
+            success = True
+            error = None
+        except Exception as e:
+            result = None
+            success = False
+            error = str(e)
+        
+        end_time = time.time()
+        duration = end_time - start_time
+        
+        # Log metrics (replace with your monitoring system)
+        print(f"Function: {func.__name__}")
+        print(f"Duration: {duration:.2f}s")
+        print(f"Success: {success}")
+        if error:
+            print(f"Error: {error}")
+        
+        if not success:
+            raise Exception(error)
+        return result
+    return wrapper
+
+class MonitoredLLM:
+    def __init__(self, model_id):
+        self.llm = ChatBedrock(model_id=model_id)
+    
+    @monitor_performance
+    def invoke(self, prompt):
+        return self.llm.invoke(prompt)
+    
+    @monitor_performance
+    def batch_invoke(self, prompts):
+        return self.llm.batch(prompts)
+
+# Usage
+monitored_llm = MonitoredLLM("anthropic.claude-3-haiku-20240307-v1:0")
+response = monitored_llm.invoke("What is AI?")
+```
+
+## Migration and Deployment
+
+### Docker Configuration
+
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+# Copy application
+COPY . .
+
+# Set environment variables
+ENV AWS_DEFAULT_REGION=us-east-1
+ENV PYTHONPATH=/app
+
+# Run application
+CMD ["python", "main.py"]
+```
+
+### Requirements File
+
+```txt
+langchain-aws>=0.1.9
+langchain>=0.2.6
+boto3>=1.34.131
+python-dotenv>=1.0.0
+fastapi>=0.104.0
+uvicorn>=0.24.0
+```
+
+### Environment Configuration
+
+```python
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class Config:
+    AWS_REGION = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
+    BEDROCK_MODEL_ID = os.getenv('BEDROCK_MODEL_ID', 'anthropic.claude-3-haiku-20240307-v1:0')
+    KENDRA_INDEX_ID = os.getenv('KENDRA_INDEX_ID')
+    
+    # Model configurations
+    MAX_TOKENS = int(os.getenv('MAX_TOKENS', '1000'))
+    TEMPERATURE = float(os.getenv('TEMPERATURE', '0.7'))
+    
+    @classmethod
+    def validate(cls):
+        required_vars = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY']
+        missing = [var for var in required_vars if not os.getenv(var)]
+        if missing:
+            raise ValueError(f"Missing required environment variables: {missing}")
+
+# Usage
+config = Config()
+config.validate()
+```
+
+## Troubleshooting Guide
+
+### Common Issues and Solutions
+
+1. **Model Access Denied**
+   ```python
+   # Check model access in Bedrock console
+   # Ensure proper IAM permissions:
+   {
+       "Version": "2012-10-17",
+       "Statement": [
+           {
+               "Effect": "Allow",
+               "Action": [
+                   "bedrock:InvokeModel",
+                   "bedrock:InvokeModelWithResponseStream",
+                   "bedrock:GetFoundationModel"
+               ],
+               "Resource": "*"
+           }
+       ]
+   }
+   ```
+
+2. **Rate Limiting Issues**
+   ```python
+   # Implement proper retry logic with exponential backoff
+   import time
+   import random
+   
+   def handle_rate_limit(func, max_retries=5):
+       for i in range(max_retries):
+           try:
+               return func()
+           except Exception as e:
+               if "ThrottlingException" in str(e):
+                   wait_time = (2 ** i) + random.uniform(0, 1)
+                   time.sleep(wait_time)
+               else:
+                   raise e
+   ```
+
+3. **Large Context Handling**
+   ```python
+   from langchain.text_splitter import RecursiveCharacterTextSplitter
+   
+   def handle_large_context(text, max_tokens=4000):
+       splitter = RecursiveCharacterTextSplitter(
+           chunk_size=max_tokens,
+           chunk_overlap=200
+       )
+       chunks = splitter.split_text(text)
+       
+       # Process chunks individually
+       results = []
+       for chunk in chunks:
+           result = llm.invoke(f"Analyze this text: {chunk}")
+           results.append(result.content)
+       
+       return results
+   ```
+
+## Resources and Next Steps
+
+### Additional Learning Resources
+
+- **AWS Documentation**: [Amazon Bedrock User Guide](https://docs.aws.amazon.com/bedrock/)
+- **LangChain Docs**: [AWS Integration Guide](https://python.langchain.com/docs/integrations/platforms/aws/)
+- **GitHub Repository**: [langchain-aws](https://github.com/langchain-ai/langchain-aws)
+- **AWS Samples**: [Bedrock Samples Repository](https://github.com/aws-samples/amazon-bedrock-samples)
+
+### Community and Support
+
+- **GitHub Issues**: [Report Bugs and Feature Requests](https://github.com/langchain-ai/langchain-aws/issues)
+- **LangChain Community**: [Join Discussions](https://github.com/langchain-ai/langchain/discussions)
+- **AWS Community**: [AWS Re:Post](https://repost.aws/)
+
+### Production Checklist
+
+- [ ] Configure proper AWS IAM roles and policies
+- [ ] Set up monitoring and logging
+- [ ] Implement error handling and retry logic
+- [ ] Test with realistic data volumes
+- [ ] Configure cost monitoring and alerts
+- [ ] Set up CI/CD pipelines
+- [ ] Plan for scaling and load balancing
+- [ ] Implement security best practices
+- [ ] Document your implementation
+- [ ] Train your team on the system
+
+This comprehensive guide provides everything you need to successfully implement LangChain AWS integrations in production environments. Start with the TLDR section for quick implementation, then dive deeper into specific components as needed for your use case.

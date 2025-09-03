@@ -35,7 +35,6 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         .. code-block:: python
 
             from langchain_community.bedrock_embeddings import BedrockEmbeddings
-            
             region_name ="us-east-1"
             credentials_profile_name = "default"
             model_id = "amazon.titan-embed-text-v1"
@@ -107,6 +106,10 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     model_kwargs: Optional[Dict] = None
     """Keyword arguments to pass to the model."""
 
+    provider: Optional[str] = None
+    """Name of the provider, e.g., amazon, cohere, etc..
+    If not specified, the provider will be inferred from the model_id."""
+
     endpoint_url: Optional[str] = None
     """Needed if you don't want to default to us-east-1 endpoint"""
 
@@ -122,9 +125,9 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     )
 
     @property
-    def provider(self) -> str:
-        """Provider of the model."""
-        return self.model_id.split(".")[0]
+    def _inferred_provider(self) -> str:
+        """Inferred provider of the model."""
+        return self.provider or self.model_id.split(".")[0]
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
@@ -148,7 +151,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         # replace newlines, which can negatively affect performance.
         text = text.replace(os.linesep, " ")
 
-        if self.provider == "cohere":
+        if self._inferred_provider == "cohere":
             # Cohere input_type depends on usage
             # for embedding documents use "search_document"
             # for embedding queries for retrieval use "search_query"
@@ -222,7 +225,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         """
 
         # If we are able to make use of Cohere's multiple embeddings, use that
-        if self.provider == "cohere":
+        if self._inferred_provider == "cohere":
             return self._embed_cohere_documents(texts)
         else:
             return self._iteratively_embed_documents(texts)
@@ -256,7 +259,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         Returns:
             Embeddings for the text.
         """
-        if self.provider == "cohere":
+        if self._inferred_provider == "cohere":
             embedding = self._embedding_func(text, input_type="search_query")
         else:
             embedding = self._embedding_func(text)

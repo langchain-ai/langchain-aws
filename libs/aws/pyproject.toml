@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langchain-aws"
-version = "0.2.22"
+version = "0.2.31"
 description = "An integration package connecting AWS and LangChain"
 authors = []
 readme = "README.md"
@@ -11,14 +11,20 @@ license = "MIT"
 "Source Code" = "https://github.com/langchain-ai/langchain-aws/tree/main/libs/aws"
 
 [tool.poetry.dependencies]
-python = ">=3.9,<4.0"
-langchain-core = "^0.3.56"
-boto3 = ">=1.37.24"
+python = ">=3.9"
+langchain-core = "^0.3.74"
+boto3 = ">=1.39.7"
 pydantic = ">=2.10.0,<3"
 numpy = [
   { version = "^1", python = "<3.12" },
   { version = ">=1.26.0,<3", python = ">=3.12" },
 ]
+bedrock-agentcore = { version = ">=0.1.0", python = ">=3.10", optional = true }
+playwright = { version = ">=1.53.0", optional = true }
+beautifulsoup4 = { version = ">=4.13.4", optional = true }
+
+[tool.poetry.extras]
+tools = ["bedrock-agentcore", "playwright", "beautifulsoup4"]
 
 [tool.poetry.group.test]
 optional = true
@@ -26,11 +32,11 @@ optional = true
 [tool.poetry.group.test.dependencies]
 pytest = "^7.4.3"
 pytest-cov = "^4.1.0"
-syrupy = "^4.0.2"
+syrupy = { version = "^4.0.2", python = "<4.0" }
 pytest-asyncio = "^0.23.2"
-pytest-watcher = "^0.3.4"
-langchain-tests = "0.3.18"
-langchain = "^0.3.7"
+pytest-watcher = { version = "^0.3.4", python = "<4.0" }
+langchain-tests = { version = "^0.3.20", python = "<4.0" }
+langchain = { version = "^0.3.7", python = "<4.0" }
 
 [tool.poetry.group.codespell]
 optional = true
@@ -83,7 +89,33 @@ disallow_untyped_defs = "True"
 exclude = ["notebooks", "samples"]
 
 [tool.coverage.run]
-omit = ["tests/*"]
+source = ["langchain_aws"]
+omit = [
+    "tests/*",
+    "*/tests/*",
+    "test_*",
+    "*_test.py"
+]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod"
+]
+precision = 2
+show_missing = true
+
+[tool.coverage.html]
+directory = "htmlcov"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -99,7 +131,7 @@ build-backend = "poetry.core.masonry.api"
 #
 # https://github.com/tophat/syrupy
 # --snapshot-warn-unused    Prints a warning on unused snapshots rather than fail the test suite.
-addopts = "--snapshot-warn-unused --strict-markers --strict-config --durations=5 --cov=langchain_aws"
+addopts = "--snapshot-warn-unused --strict-markers --strict-config --durations=5"
 # Registering custom markers.
 # https://docs.pytest.org/en/7.1.x/example/markers.html#registering-markers
 markers = [

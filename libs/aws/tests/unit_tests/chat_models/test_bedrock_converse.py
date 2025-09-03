@@ -23,7 +23,9 @@ from langchain_aws.chat_models.bedrock_converse import (
     _bedrock_to_lc,
     _camel_to_snake,
     _camel_to_snake_keys,
+    _convert_tool_blocks_to_text,
     _extract_response_metadata,
+    _has_tool_use_or_result_blocks,
     _lc_content_to_bedrock,
     _messages_to_bedrock,
     _snake_to_camel,
@@ -346,6 +348,41 @@ def test__messages_to_bedrock() -> None:
     assert expected_system == actual_system
 
 
+def test_messages_to_bedrock_with_cache_point() -> None:
+    messages = [
+        HumanMessage(content=["Hello!", {"cachePoint": {"type": "default"}}]),
+        ToolMessage(
+            content=[
+                {"type": "text", "text": "Tool response"},
+                {"cachePoint": {"type": "default"}},
+            ],
+            tool_call_id="tool-123",
+            status="success",
+        ),
+    ]
+
+    actual_messages, actual_system = _messages_to_bedrock(messages)
+    expected_messages = [
+        {
+            "role": "user",
+            "content": [
+                {"text": "Hello!"},
+                {"cachePoint": {"type": "default"}},
+                {
+                    "toolResult": {
+                        "content": [{"text": "Tool response"}],
+                        "status": "success",
+                        "toolUseId": "tool-123",
+                    }
+                },
+                {"cachePoint": {"type": "default"}},
+            ],
+        }
+    ]
+    assert expected_messages == actual_messages
+    assert [] == actual_system
+
+
 def test__bedrock_to_lc() -> None:
     bedrock: List[Dict] = [
         {"text": "text1"},
@@ -473,8 +510,9 @@ def test_standard_tracing_params() -> None:
 @pytest.mark.parametrize(
     "model_id, disable_streaming",
     [
+        ("us.anthropic.claude-sonnet-4-20250514-v1:0", False),
+        ("us.anthropic.claude-opus-4-20250514-v1:0", False),
         ("us.anthropic.claude-3-7-sonnet-20250219-v1:0", False),
-        ("anthropic.claude-3-5-sonnet-20240620-v1:0", False),
         ("us.anthropic.claude-3-haiku-20240307-v1:0", False),
         ("cohere.command-r-v1:0", False),
         ("meta.llama3-1-405b-instruct-v1:0", "tool_calling"),
@@ -482,6 +520,8 @@ def test_standard_tracing_params() -> None:
         ("us.amazon.nova-lite-v1:0", False),
         ("us.amazon.nonstreaming-model-v1:0", True),
         ("us.deepseek.r1-v1:0", "tool_calling"),
+        ("openai.gpt-oss-120b-1:0", False),
+        ("openai.gpt-oss-20b-1:0", False),
     ],
 )
 def test_set_disable_streaming(
@@ -1071,6 +1111,200 @@ def test__lc_content_to_bedrock_reasoning_content_signature() -> None:
     assert expected_system == actual_system
 
 
+def test__lc_content_to_bedrock_mime_types() -> None:
+    video_data = base64.b64encode(b"video_test_data").decode("utf-8")
+    image_data = base64.b64encode(b"image_test_data").decode("utf-8")
+    file_data = base64.b64encode(b"file_test_data").decode("utf-8")
+
+    # Create content with one of each type
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "video",
+            "source": {
+                "type": "base64",
+                "mediaType": "video/mp4",
+                "data": video_data,
+            },
+        },
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "mediaType": "image/jpeg",
+                "data": image_data,
+            },
+        },
+        {
+            "type": "file",
+            "sourceType": "base64",
+            "mimeType": "application/pdf",
+            "data": file_data,
+            "name": "test_document.pdf",
+        },
+    ]
+
+    expected_content = [
+        {
+            "video": {
+                "format": "mp4",
+                "source": {"bytes": base64.b64decode(video_data.encode("utf-8"))},
+            }
+        },
+        {
+            "image": {
+                "format": "jpeg",
+                "source": {"bytes": base64.b64decode(image_data.encode("utf-8"))},
+            }
+        },
+        {
+            "document": {
+                "format": "pdf",
+                "name": "test_document.pdf",
+                "source": {"bytes": base64.b64decode(file_data.encode("utf-8"))},
+            }
+        },
+    ]
+
+    bedrock_content = _lc_content_to_bedrock(content)
+    assert bedrock_content == expected_content
+
+
+def test__lc_content_to_bedrock_mime_types_invalid() -> None:
+    with pytest.raises(ValueError, match="Invalid MIME type format"):
+        _lc_content_to_bedrock(
+            [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "mediaType": "invalidmimetype",
+                        "data": base64.b64encode(b"test_data").decode("utf-8"),
+                    },
+                }
+            ]
+        )
+
+    with pytest.raises(ValueError, match="Unsupported MIME type"):
+        _lc_content_to_bedrock(
+            [
+                {
+                    "type": "file",
+                    "sourceType": "base64",
+                    "mimeType": "application/unknown-format",
+                    "data": base64.b64encode(b"test_data").decode("utf-8"),
+                    "name": "test_document.xyz",
+                }
+            ]
+        )
+
+
+def test__lc_content_to_bedrock_empty_content() -> None:
+    content: List[Union[str, Dict[str, Any]]] = []
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_whitespace_only_content() -> None:
+    content = "   \n  \t  "
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_empty_string_content() -> None:
+    content = ""
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_mixed_empty_content() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": ""},
+        {"type": "text", "text": "   "},
+        {"type": "text", "text": ""}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_empty_text_block() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": ""}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_whitespace_text_block() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": "  \n  "}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_mixed_valid_and_empty_content() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": "Valid text"},
+        {"type": "text", "text": ""},
+        {"type": "text", "text": "   "}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+
+    assert len(bedrock_content) == 3
+    assert bedrock_content[0]["text"] == "Valid text"
+    assert bedrock_content[1]["text"] == "."
+    assert bedrock_content[2]["text"] == "."
+
+
+def test__lc_content_to_bedrock_mixed_types_with_empty_content() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": "Valid text"},
+        {
+            "type": "tool_use",
+            "id": "tool_call1",
+            "input": {"arg1": "val1"},
+            "name": "tool1",
+        },
+        {"type": "text", "text": "   "}
+    ]
+
+    expected = [
+        {'text': 'Valid text'},
+        {
+            'toolUse': {
+                'toolUseId': 'tool_call1',
+                'input': {'arg1': 'val1'},
+                'name': 'tool1'
+            }
+        },
+        {'text': '.'}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+
+    assert len(bedrock_content) == 3
+    assert bedrock_content == expected
+
+
 def test__get_provider() -> None:
     llm = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
@@ -1271,3 +1505,357 @@ def test_model_kwargs() -> None:
     )
     assert llm.additional_model_request_fields == {"temperature": 0.2}
     assert llm.temperature is None
+
+
+def _create_mock_llm_guard_last_turn_only() -> (
+    Tuple[ChatBedrockConverse, mock.MagicMock]
+):
+    """Utility to create an LLM with guard_last_turn_only=True and a mocked client."""
+    mocked_client = mock.MagicMock()
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        guard_last_turn_only=True,
+        guardrails={"guardrailId": "dummy-guardrail", "guardrailVersion": "1"},
+    )
+    return llm, mocked_client
+
+
+def test_guard_last_turn_only_no_guardrail_config() -> None:
+    """Test that an error is raised if guard_last_turn_only is True but no guardrail_config is provided."""
+    with pytest.raises(ValueError):
+        ChatBedrockConverse(
+            client=mock.MagicMock(),
+            model="anthropic.claude-3-sonnet-20240229-v1:0",
+            region_name="us-west-2",
+            guard_last_turn_only=True,
+        )
+
+
+def test_generate_guard_last_turn_only() -> None:
+    """Test that _generate() wraps ONLY the final user turn with guardContent."""
+    llm, mocked_client = _create_mock_llm_guard_last_turn_only()
+
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "ok"}]}},
+        "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+    }
+
+    messages = [
+        HumanMessage(content="First user message"),
+        AIMessage(content="Assistant reply"),
+        HumanMessage(content="Second user message"),
+    ]
+
+    llm.invoke(messages)
+    _, kwargs = mocked_client.converse.call_args
+    bedrock_msgs = kwargs["messages"]
+
+    assert bedrock_msgs[0]["content"][0] == {"text": "First user message"}
+    # Last user turn is wrapped in guardContent
+    assert bedrock_msgs[-1]["content"][0] == {
+        "guardContent": {"text": {"text": "Second user message"}}
+    }
+
+
+def test_stream_guard_last_turn_only() -> None:
+    """Test that stream() applies guardContent to final user turn."""
+    llm, mocked_client = _create_mock_llm_guard_last_turn_only()
+
+    mocked_client.converse_stream.return_value = {
+        "stream": [{"messageStart": {"role": "assistant"}}]
+    }
+
+    messages = [
+        HumanMessage(content="Hello"),
+        AIMessage(content="Hi!"),
+        HumanMessage(content="How are you?"),
+    ]
+    list(llm.stream(messages))
+
+    _, kwargs = mocked_client.converse_stream.call_args
+    bedrock_msgs = kwargs["messages"]
+
+    assert bedrock_msgs[0]["content"][0] == {"text": "Hello"}
+    assert bedrock_msgs[-1]["content"][0] == {
+        "guardContent": {"text": {"text": "How are you?"}}
+    }
+
+
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_bedrock_client_creation(mock_create_client: mock.Mock) -> None:
+    """Test that bedrock_client is created during validation."""
+    mock_bedrock_client = mock.Mock()
+    mock_runtime_client = mock.Mock()
+
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        elif service_name == "bedrock-runtime":
+            return mock_runtime_client
+        return mock.Mock()
+
+    mock_create_client.side_effect = side_effect
+
+    chat_model = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
+    )
+
+    assert chat_model.bedrock_client == mock_bedrock_client
+    assert chat_model.client == mock_runtime_client
+    assert mock_create_client.call_count == 2
+
+
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_get_base_model_with_application_inference_profile(
+    mock_create_client: mock.Mock,
+) -> None:
+    """Test _get_base_model method with application inference profile."""
+    mock_bedrock_client = mock.Mock()
+    mock_runtime_client = mock.Mock()
+
+    # Mock the get_inference_profile response
+    mock_bedrock_client.get_inference_profile.return_value = {
+        "models": [
+            {
+                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+            }
+        ]
+    }
+
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        elif service_name == "bedrock-runtime":
+            return mock_runtime_client
+        return mock.Mock()
+
+    mock_create_client.side_effect = side_effect
+
+    chat_model = ChatBedrockConverse(
+        model="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/test-profile",
+        region_name="us-west-2",
+        provider="anthropic",
+    )
+
+    base_model = chat_model._get_base_model()
+    assert base_model == "anthropic.claude-3-sonnet-20240229-v1:0"
+    mock_bedrock_client.get_inference_profile.assert_called_once_with(
+        inferenceProfileIdentifier="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/test-profile"
+    )
+
+
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_get_base_model_without_application_inference_profile(
+    mock_create_client: mock.Mock,
+) -> None:
+    """Test _get_base_model method without application inference profile."""
+    mock_bedrock_client = mock.Mock()
+    mock_runtime_client = mock.Mock()
+
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        elif service_name == "bedrock-runtime":
+            return mock_runtime_client
+        return mock.Mock()
+
+    mock_create_client.side_effect = side_effect
+
+    chat_model = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        provider="anthropic",
+    )
+
+    base_model = chat_model._get_base_model()
+    assert base_model == "anthropic.claude-3-sonnet-20240229-v1:0"
+    mock_bedrock_client.get_inference_profile.assert_not_called()
+
+
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_configure_streaming_for_resolved_model(mock_create_client: mock.Mock) -> None:
+    """Test _configure_streaming_for_resolved_model method."""
+    mock_bedrock_client = mock.Mock()
+    mock_runtime_client = mock.Mock()
+
+    # Mock the get_inference_profile response for a model with full streaming support
+    mock_bedrock_client.get_inference_profile.return_value = {
+        "models": [
+            {
+                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+            }
+        ]
+    }
+
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        elif service_name == "bedrock-runtime":
+            return mock_runtime_client
+        return mock.Mock()
+
+    mock_create_client.side_effect = side_effect
+
+    chat_model = ChatBedrockConverse(
+        model="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/test-profile",
+        region_name="us-west-2",
+        provider="anthropic",
+    )
+
+    # The streaming should be configured based on the resolved model
+    assert chat_model.disable_streaming is False
+
+
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_configure_streaming_for_resolved_model_no_tools(
+    mock_create_client: mock.Mock,
+) -> None:
+    """Test _configure_streaming_for_resolved_model method with no-tools streaming."""
+    mock_bedrock_client = mock.Mock()
+    mock_runtime_client = mock.Mock()
+
+    # Mock the get_inference_profile response for a model with no-tools streaming support
+    mock_bedrock_client.get_inference_profile.return_value = {
+        "models": [
+            {
+                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-text-express-v1"
+            }
+        ]
+    }
+
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        elif service_name == "bedrock-runtime":
+            return mock_runtime_client
+        return mock.Mock()
+
+    mock_create_client.side_effect = side_effect
+
+    chat_model = ChatBedrockConverse(
+        model="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/test-profile",
+        region_name="us-west-2",
+        provider="amazon",
+    )
+
+    # The streaming should be configured as "tool_calling" for no-tools models
+    assert chat_model.disable_streaming == "tool_calling"
+
+
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_configure_streaming_for_resolved_model_no_streaming(
+    mock_create_client: mock.Mock,
+) -> None:
+    """Test _configure_streaming_for_resolved_model method with no streaming support."""
+    mock_bedrock_client = mock.Mock()
+    mock_runtime_client = mock.Mock()
+
+    # Mock the get_inference_profile response for a model with no streaming support
+    mock_bedrock_client.get_inference_profile.return_value = {
+        "models": [
+            {
+                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/stability.stable-image-core-v1:0"
+            }
+        ]
+    }
+
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        elif service_name == "bedrock-runtime":
+            return mock_runtime_client
+        return mock.Mock()
+
+    mock_create_client.side_effect = side_effect
+
+    chat_model = ChatBedrockConverse(
+        model="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/test-profile",
+        region_name="us-west-2",
+        provider="stability",
+    )
+
+    # The streaming should be disabled for models with no streaming support
+    assert chat_model.disable_streaming is True
+
+
+def test_nova_provider_extraction() -> None:
+    """Test that provider is correctly extracted from Nova model ID when not provided."""
+    model = ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )
+    assert model.provider == "amazon"
+
+
+def test__has_tool_use_or_result_blocks() -> None:
+    """Test detection of toolUse and toolResult blocks in messages."""
+    # No tool blocks
+    messages_no_tools = [{"role": "user", "content": [{"text": "Hello"}]}]
+    assert not _has_tool_use_or_result_blocks(messages_no_tools)
+
+    # With toolUse blocks
+    messages_with_tools = [
+        {"role": "assistant", "content": [{"toolUse": {"name": "calc"}}]}
+    ]
+    assert _has_tool_use_or_result_blocks(messages_with_tools)
+
+
+def test__convert_tool_blocks_to_text() -> None:
+    """Test conversion of toolUse and toolResult blocks to text format."""
+    input_messages: List[Dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": [
+                {"text": "Calculating..."},
+                {"toolUse": {"toolUseId": "1", "name": "calc", "input": {"a": 5}}},
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {"toolResult": {"toolUseId": "1", "content": [{"text": "10"}]}}
+            ],
+        },
+    ]
+
+    result = _convert_tool_blocks_to_text(input_messages)
+
+    # Check toolUse converted to text
+    assert '[Called calc with parameters: {"a": 5}]' in result[0]["content"][1]["text"]
+
+    # Check toolResult converted to text
+    assert "[Tool output: 10]" in result[1]["content"][0]["text"]
+
+
+def test_tool_conversion_warning_integration() -> None:
+    """Test that tool blocks without toolConfig trigger conversion and warning."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Done"}]}},
+        "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+
+    messages = [
+        AIMessage(
+            content="",
+            tool_calls=[ToolCall(name="calc", args={"x": 1}, id="1", type="tool_call")],
+        )
+    ]
+
+    with pytest.warns(
+        RuntimeWarning, match="Tool messages were passed without toolConfig"
+    ):
+        llm.invoke(messages)
+
+    # Verify conversion happened
+    call_args = mocked_client.converse.call_args[1]["messages"]
+    assert any("Called calc" in str(block) for block in call_args[0]["content"])

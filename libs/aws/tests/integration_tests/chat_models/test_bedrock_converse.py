@@ -206,6 +206,39 @@ def test_tool_calling_snake_case() -> None:
     assert tool_call["name"] == "classify_query"
     assert tool_call["args"] == {"query_type": "cat"}
 
+    # Also test for response metadata, though this is not relevant to tool-calling
+    invoke_metadata = response.response_metadata
+    stream_metadata = full.response_metadata
+    for result in [invoke_metadata, stream_metadata]:
+        for expected_key in ["RequestId", "HTTPStatusCode", "HTTPHeaders"]:
+            assert result["ResponseMetadata"][expected_key]
+        assert isinstance(result["ResponseMetadata"]["RetryAttempts"], int)
+
+
+def test_tool_calling_camel_case() -> None:
+    model = ChatBedrockConverse(model="us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+
+    def classifyQuery(queryType: Literal["cat", "dog"]) -> None:
+        pass
+
+    chat = model.bind_tools([classifyQuery], tool_choice="any")
+    response = chat.invoke("How big are cats?")
+    assert isinstance(response, AIMessage)
+    assert len(response.tool_calls) == 1
+    tool_call = response.tool_calls[0]
+    assert tool_call["name"] == "classifyQuery"
+    assert tool_call["args"] == {"queryType": "cat"}
+
+    full = None
+    for chunk in chat.stream("How big are cats?"):
+        full = chunk if full is None else full + chunk  # type: ignore[assignment]
+    assert isinstance(full, AIMessageChunk)
+    assert len(full.tool_calls) == 1
+    tool_call = full.tool_calls[0]
+    assert tool_call["name"] == "classifyQuery"
+    assert tool_call["args"] == {"queryType": "cat"}
+    assert full.tool_calls[0]["args"] == response.tool_calls[0]["args"]
+
 
 def test_structured_output_streaming() -> None:
     model = ChatBedrockConverse(
@@ -422,7 +455,7 @@ def test_structured_output_thinking_force_tool_use() -> None:
         },
     }
     with pytest.raises(llm.client.exceptions.ValidationException):
-        response = llm.client.converse(messages=messages, **params)
+        llm.client.converse(messages=messages, **params)
 
 
 def test_bedrock_pdf_inputs() -> None:

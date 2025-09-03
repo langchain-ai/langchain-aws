@@ -22,8 +22,11 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read  # Needed for Ana06/get-changed-files
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
@@ -39,6 +42,9 @@ jobs:
     name: cd ${{ matrix.working-directory }}
     needs: [ build ]
     if: ${{ needs.build.outputs.dirs-to-lint != '[]' }}
+    permissions:
+      contents: read
+      actions: write  # Needed for actions/cache used by poetry_setup action in _lint.yml
     strategy:
       matrix:
         working-directory: ${{ fromJson(needs.build.outputs.dirs-to-lint) }}
@@ -51,6 +57,9 @@ jobs:
     name: cd ${{ matrix.working-directory }}
     needs: [ build ]
     if: ${{ needs.build.outputs.dirs-to-test != '[]' }}
+    permissions:
+      contents: read
+      actions: write  # Needed for actions/cache used by poetry_setup action inside _test.yml
     strategy:
       matrix:
         working-directory: ${{ fromJson(needs.build.outputs.dirs-to-test) }}
@@ -63,6 +72,9 @@ jobs:
     name: cd ${{ matrix.working-directory }}
     needs: [ build ]
     if: ${{ needs.build.outputs.dirs-to-test != '[]' }}
+    permissions:
+      contents: read
+      actions: write  # Needed for actions/cache used by poetry_setup action inside _compile_integration_test.yml
     strategy:
       matrix:
         working-directory: ${{ fromJson(needs.build.outputs.dirs-to-test) }}
@@ -76,6 +88,8 @@ jobs:
     if: |
       always()
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       JOBS_JSON: ${{ toJSON(needs) }}
       RESULTS_JSON: ${{ toJSON(needs.*.result) }}

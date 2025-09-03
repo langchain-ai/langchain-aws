@@ -3,16 +3,18 @@
 This monorepo provides LangChain and LangGraph components for various AWS services. It aims to replace and expand upon the existing LangChain AWS components found in the `langchain-community` package in the LangChain repository.
 
 The following packages are hosted in this repository:
-- `langchain-aws` ([PyPi](https://pypi.org/project/langchain-aws/))
-- `langgraph-checkpoint-aws` ([PyPi](https://pypi.org/project/langgraph-checkpoint-aws/))
+- `langchain-aws` ([PyPI](https://pypi.org/project/langchain-aws/))
+- `langgraph-checkpoint-aws` ([PyPI](https://pypi.org/project/langgraph-checkpoint-aws/))
 
 ## Features
 
 ### LangChain
 - **LLMs**: Includes LLM classes for AWS services like [Bedrock](https://aws.amazon.com/bedrock) and [SageMaker Endpoints](https://aws.amazon.com/sagemaker/deploy/), allowing you to leverage their language models within LangChain.
+- **VectorStores**: Supports vectorstores for services like [Amazon MemoryDB](https://aws.amazon.com/memorydb/) and [Amazon S3 Vectors](https://aws.amazon.com/s3/features/vectors/), providing efficient and scalable vector database for your applications.
 - **Retrievers**: Supports retrievers for services like [Amazon Kendra](https://aws.amazon.com/kendra/) and [KnowledgeBases for Amazon Bedrock](https://aws.amazon.com/bedrock/knowledge-bases/), enabling efficient retrieval of relevant information in your RAG applications.
 - **Graphs**: Provides components for working with [AWS Neptune](https://aws.amazon.com/neptune/) graphs within LangChain.
 - **Agents**: Includes Runnables to support [Amazon Bedrock Agents](https://aws.amazon.com/bedrock/agents/), allowing you to leverage Bedrock Agents within LangChain and LangGraph.
+- **Tools**: Includes tools and toolkits to enable use of [Amazon Bedrock AgentCore](https://aws.amazon.com/bedrock/agentcore/)'s built-in tools with LangChain and LangGraph agents.
 
 ### LangGraph
 - **Checkpointers**: Provides a custom checkpointing solution for LangGraph agents using the [AWS Bedrock Session Management Service](https://docs.aws.amazon.com/bedrock/latest/userguide/sessions.html).
@@ -59,7 +61,7 @@ For more detailed usage examples and documentation, please refer to the [LangCha
 
 ### LangGraph
 
-You can find usage examples for `langgraph-checkpoint-aws` [here](https://github.com/michaelnchin/langchain-aws/blob/main/libs/langgraph-checkpoint-aws/README.md#usage).
+You can find usage examples for `langgraph-checkpoint-aws` [here](https://github.com/langchain-ai/langchain-aws/blob/main/libs/langgraph-checkpoint-aws/README.md).
 
 ## Contributing
 

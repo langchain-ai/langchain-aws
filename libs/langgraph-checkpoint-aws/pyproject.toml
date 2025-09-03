@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "langgraph-checkpoint-aws"
-version = "0.1.0"
+version = "0.1.1"
 description = "A LangChain checkpointer implementation that uses Bedrock Session Management Service to enable stateful and resumable LangGraph agents."
 authors = []
 license = "MIT"
@@ -18,7 +18,7 @@ keywords = ["aws", "bedrock", "langchain", "langgraph", "checkpointer"]
 [tool.poetry.dependencies]
 python = ">=3.9,<4.0"
 langgraph-checkpoint = ">=2.0.0"
-langgraph = ">=0.2.55"
+langgraph = ">=0.2.55,<0.7"
 boto3 = ">=1.37.3"
 
 [tool.poetry.group.dev]
@@ -40,11 +40,8 @@ pytest-asyncio = ">=0.26.0"
 [tool.poetry.group.test_integration]
 optional = true
 
-[tool.pytest.ini_options]
-asyncio_default_fixture_loop_scope = "function"
-
 [tool.poetry.group.test_integration.dependencies]
-langchain-aws = ">=0.2.14"
+langchain-aws = ">=0.2.30"
 
 [tool.poetry.group.lint]
 optional = true
@@ -82,4 +79,40 @@ ignore-words-list = ''
 ignore_missing_imports = "True"
 
 [tool.coverage.run]
-omit = ["tests/*"]
+source = ["langgraph_checkpoint_aws"]
+omit = [
+    "tests/*",
+    "*/tests/*",
+    "test_*",
+    "*_test.py"
+]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod"
+]
+precision = 2
+show_missing = true
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--strict-markers --strict-config --durations=5"
+markers = [
+    "requires: mark tests as requiring a specific library",
+    "asyncio: mark tests as requiring asyncio",
+    "compile: mark placeholder test used to compile integration tests without running them",
+    "scheduled: mark tests to run in scheduled testing",
+]

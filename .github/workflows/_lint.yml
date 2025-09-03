@@ -19,6 +19,9 @@ jobs:
   build:
     name: "make lint #${{ matrix.python-version }}"
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write  # Needed for actions/cache used by poetry_setup action (and directly in this job)
     strategy:
       matrix:
         # Only lint on the min and max supported Python versions.
@@ -32,7 +35,7 @@ jobs:
           - "3.9"
           - "3.12"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python ${{ matrix.python-version }} + Poetry ${{ env.POETRY_VERSION }}
         uses: "./.github/actions/poetry_setup"

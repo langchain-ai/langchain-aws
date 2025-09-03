@@ -35,9 +35,13 @@ jobs:
       run:
         working-directory: ${{ inputs.working-directory }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Needed for aws-actions/configure-aws-credentials
+      actions: write  # Needed for actions/cache used by poetry_setup action
     name: "make integration_test"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: "${{ inputs.fork }}/langchain-aws"
           ref: "${{ inputs.branch }}"
@@ -52,7 +56,7 @@ jobs:
 
       - name: Install dependencies
         shell: bash
-        run: poetry install --with test
+        run: poetry install --with test,test_integration
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4

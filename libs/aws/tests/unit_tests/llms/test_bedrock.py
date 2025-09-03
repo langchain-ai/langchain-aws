@@ -280,6 +280,21 @@ MOCK_STREAMING_RESPONSE_DEEPSEEK = [
     {"chunk": {"bytes": b'{"choices": [{"text": "you.","stop_reason": "stop"}]}'}},
 ]
 
+MOCK_STREAMING_RESPONSE_WRITER = [
+    {"chunk": {'bytes': b'{"id":"cmpl-ec61121fa19443caa7f614bde08e926c",'
+              b'"object":"text_completion",'
+              b'"created":1747106231,'
+              b'"model":"writer.palmyra-x5-v1:0",'
+              b'"choices":[{"index":0,"text":"Hel","logprobs":null,"finish_reason":null,"stop_reason":null}],'
+              b'"usage":null}'}},
+    {"chunk": {'bytes': b'{"id":"cmpl-ec61121fa19443caa7f614bde08e926c",'
+              b'"object":"text_completion",'
+              b'"created":1747106231,'
+              b'"model":"writer.palmyra-x5-v1:0",'
+              b'"choices":[{"index":0,"text":"lo.","logprobs":null,"finish_reason":"length","stop_reason":null}],'
+              b'"usage":null}'}},
+    {"chunk": {'bytes': b'"[DONE]"'}},
+]
 
 async def async_gen_mock_streaming_response() -> AsyncGenerator[Dict, None]:
     for item in MOCK_STREAMING_RESPONSE:
@@ -369,6 +384,31 @@ def deepseek_response():
 @pytest.fixture
 def deepseek_streaming_response():
     response = dict(body=MOCK_STREAMING_RESPONSE_DEEPSEEK)
+    return response
+
+
+@pytest.fixture
+def writer_response():
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {'choices': [{'text': ' This is the Writer output text.'}]}
+    ).encode()
+    response = dict(
+        body=body,
+        ResponseMetadata={
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "17",
+                "x-amzn-bedrock-output-token-count": "8",
+            }
+        },
+    )
+
+    return response
+
+
+@pytest.fixture
+def writer_streaming_response():
+    response = dict(body=MOCK_STREAMING_RESPONSE_WRITER)
     return response
 
 
@@ -484,6 +524,27 @@ def test_prepare_output_stream_for_deepseek(deepseek_streaming_response) -> None
 
     assert results[0] == "Thank"
     assert results[1] == "you."
+
+
+def test_prepare_output_for_writer(writer_response):
+    result = LLMInputOutputAdapter.prepare_output("writer", writer_response)
+    assert result["text"] == " This is the Writer output text."
+    assert result["usage"]["prompt_tokens"] == 17
+    assert result["usage"]["completion_tokens"] == 8
+    assert result["usage"]["total_tokens"] == 25
+    assert result["stop_reason"] is None
+
+
+def test_prepare_output_stream_for_writer(writer_streaming_response) -> None:
+    results = [
+        chunk.text
+        for chunk in LLMInputOutputAdapter.prepare_output_stream(
+            "writer", writer_streaming_response
+        )
+    ]
+
+    assert results[0] == "Hel"
+    assert results[1] == "lo."
 
 
 def test_prepare_output_for_cohere(cohere_response):
@@ -720,3 +781,61 @@ def test__get_base_model():
         region_name="us-west-2"
     )
     assert llm._get_base_model() == "meta.llama3-8b-instruct-v1:0"
+
+
+@patch("langchain_aws.llms.bedrock.create_aws_client")
+def test_bedrock_client_creation(mock_create_client):
+    """Test that both bedrock-runtime and bedrock clients are created."""
+    mock_runtime_client = MagicMock()
+    mock_bedrock_client = MagicMock()
+    mock_create_client.side_effect = [mock_runtime_client, mock_bedrock_client]
+    
+    llm = BedrockLLM(
+        model_id="meta.llama3-8b-instruct-v1:0",
+        region_name="us-west-2"
+    )
+    
+    # Should create both clients
+    assert mock_create_client.call_count == 2
+    
+    # Check that bedrock-runtime client was created
+    calls = mock_create_client.call_args_list
+    runtime_call = calls[0]
+    assert runtime_call.kwargs["service_name"] == "bedrock-runtime"
+    assert runtime_call.kwargs["region_name"] == "us-west-2"
+    
+    # Check that bedrock client was created
+    bedrock_call = calls[1]
+    assert bedrock_call.kwargs["service_name"] == "bedrock"
+    assert bedrock_call.kwargs["region_name"] == "us-west-2"
+    
+    assert llm.client is mock_runtime_client
+    assert llm.bedrock_client is mock_bedrock_client
+
+
+@patch("langchain_aws.llms.bedrock.create_aws_client")
+def test_get_base_model_with_application_inference_profile(mock_create_client):
+    """Test _get_base_model with application inference profile."""
+    mock_runtime_client = MagicMock()
+    mock_bedrock_client = MagicMock()
+    mock_bedrock_client.get_inference_profile.return_value = {
+        "models": [
+            {"modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"}
+        ]
+    }
+    mock_create_client.side_effect = [mock_runtime_client, mock_bedrock_client]
+    
+    llm = BedrockLLM(
+        model_id="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/my-profile",
+        provider="anthropic",
+        region_name="us-west-2"
+    )
+    
+    result = llm._get_base_model()
+    
+    # Should call get_inference_profile and extract base model
+    mock_bedrock_client.get_inference_profile.assert_called_once_with(
+        inferenceProfileIdentifier="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/my-profile"
+    )
+    assert result == "anthropic.claude-3-sonnet-20240229-v1:0"
+    assert llm.base_model_id == "anthropic.claude-3-sonnet-20240229-v1:0"

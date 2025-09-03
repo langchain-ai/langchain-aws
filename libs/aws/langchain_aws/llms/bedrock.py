@@ -176,7 +176,7 @@ def _stream_response_to_generation_chunk(
     return GenerationChunk(
         text=(
             stream_response[output_key]
-            if provider not in ["mistral", "deepseek"]
+            if provider not in ["mistral", "deepseek", "writer"]
             else stream_response[output_key][0]["text"]
         ),
         generation_info=generation_info,
@@ -273,6 +273,7 @@ class LLMInputOutputAdapter:
         "deepseek": "choices",
         "meta": "generation",
         "mistral": "outputs",
+        "writer": "choices"
     }
 
     @classmethod
@@ -363,7 +364,7 @@ class LLMInputOutputAdapter:
             if temperature is not None:
                 input_body["temperature"] = temperature
 
-        elif provider in ("ai21", "cohere", "meta", "mistral", "deepseek"):
+        elif provider in ("ai21", "cohere", "meta", "mistral", "deepseek", "writer"):
             input_body["prompt"] = prompt
             if max_tokens:
                 if provider == "cohere":
@@ -374,6 +375,10 @@ class LLMInputOutputAdapter:
                     input_body["max_tokens"] = max_tokens
                 elif provider == "deepseek":
                     input_body["max_tokens"] = max_tokens
+                elif provider == "writer":
+                    input_body["max_tokens"] = max_tokens
+                elif provider == "openai":
+                    input_body["max_output_tokens"] = max_tokens
                 else:
                     # TODO: Add AI21 support, param depends on specific model.
                     pass
@@ -388,6 +393,13 @@ class LLMInputOutputAdapter:
                 input_body["textGenerationConfig"]["maxTokenCount"] = max_tokens
             if temperature is not None:
                 input_body["textGenerationConfig"]["temperature"] = temperature
+
+        elif provider == "openai":
+            input_body["messages"] = messages
+            if max_tokens:
+                input_body["max_tokens"] = max_tokens
+            if temperature is not None:
+                input_body["temperature"] = temperature
         else:
             input_body["inputText"] = prompt
 
@@ -429,7 +441,9 @@ class LLMInputOutputAdapter:
                     tool_calls = extract_tool_calls(content)
 
         else:
-            if provider == "ai21":
+            if provider in ["deepseek", "writer"]:
+                text = response_body.get("choices")[0].get("text")
+            elif provider == "ai21":
                 text = response_body.get("completions")[0].get("data").get("text")
             elif provider == "cohere":
                 text = response_body.get("generations")[0].get("text")
@@ -437,8 +451,8 @@ class LLMInputOutputAdapter:
                 text = response_body.get("generation")
             elif provider == "mistral":
                 text = response_body.get("outputs")[0].get("text")
-            elif provider == "deepseek":
-                text = response_body.get("choices")[0].get("text")
+            elif provider == "openai":
+                text = response_body.get("choices")[0].get("message").get("content")
             else:
                 text = response_body.get("results")[0].get("outputText")
 
@@ -493,7 +507,10 @@ class LLMInputOutputAdapter:
 
             chunk_obj = json.loads(chunk.get("bytes").decode())
 
-            if provider == "cohere" and (
+            if provider == "writer" and chunk_obj == "[DONE]":
+                return
+
+            elif provider == "cohere" and (
                 chunk_obj["is_finished"] or chunk_obj[output_key] == "<EOS_TOKEN>"
             ):
                 return
@@ -585,6 +602,10 @@ class BedrockBase(BaseLanguageModel, ABC):
     """Base class for Bedrock models."""
 
     client: Any = Field(default=None, exclude=True)  #: :meta private:
+    """The bedrock runtime client for making data plane API calls"""
+    
+    bedrock_client: Any = Field(default=None, exclude=True)  #: :meta private:
+    """The bedrock client for making control plane API calls"""
 
     region_name: Optional[str] = Field(default=None, alias="region")
     """The aws region e.g., `us-west-2`. Falls back to AWS_REGION or AWS_DEFAULT_REGION 
@@ -769,6 +790,19 @@ class BedrockBase(BaseLanguageModel, ABC):
                 service_name="bedrock-runtime",
             )
 
+        # Create bedrock client for control plane API call
+        if self.bedrock_client is None:
+            self.bedrock_client = create_aws_client(
+                region_name=self.region_name,
+                credentials_profile_name=self.credentials_profile_name,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                aws_session_token=self.aws_session_token,
+                endpoint_url=self.endpoint_url,
+                config=self.config,
+                service_name="bedrock",
+            )
+
         return self
 
     @property
@@ -809,6 +843,16 @@ class BedrockBase(BaseLanguageModel, ABC):
         )
 
     def _get_base_model(self) -> str:
+        # identify the base model id used in the application inference profile (AIP)
+        # Format: arn:aws:bedrock:us-east-1:<accountId>:application-inference-profile/<id>
+        if self.base_model_id is None and 'application-inference-profile' in self.model_id:
+            response = self.bedrock_client.get_inference_profile(
+                inferenceProfileIdentifier=self.model_id
+            )
+            if 'models' in response and len(response['models']) > 0:
+                model_arn = response['models'][0]['modelArn']
+                # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
+                self.base_model_id = model_arn.split('/')[-1]
         return self.base_model_id if self.base_model_id else self.model_id.split(".", maxsplit=1)[-1]
 
     @property
@@ -859,7 +903,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         params = {**_model_kwargs, **kwargs}
 
         # Pre-process for thinking with tool use
-        if messages and "claude-3" in self._get_base_model() and thinking_in_params(params):
+        if messages and "claude-" in self._get_base_model() and thinking_in_params(params):
             # We need to ensure thinking blocks are first in assistant messages
             # Process each message in the sequence
             for i, message in enumerate(messages):
@@ -887,7 +931,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                             # Reorder with thinking first
                             message["content"] = thinking_content + other_content
 
-        if "claude-3" in self._get_base_model() and _tools_in_params(params):
+        if "claude-" in self._get_base_model() and _tools_in_params(params):
             input_body = LLMInputOutputAdapter.prepare_input(
                 provider=provider,
                 model_kwargs=params,
@@ -1038,7 +1082,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             temperature=self.temperature,
         )
         coerce_content_to_string = True
-        if "claude-3" in self._get_base_model():
+        if "claude-" in self._get_base_model():
             if _tools_in_params(params):
                 coerce_content_to_string = False
                 input_body = LLMInputOutputAdapter.prepare_input(
@@ -1118,7 +1162,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             _model_kwargs["stream"] = True
 
         params = {**_model_kwargs, **kwargs}
-        if "claude-3" in self._get_base_model() and _tools_in_params(params):
+        if "claude-" in self._get_base_model() and _tools_in_params(params):
             input_body = LLMInputOutputAdapter.prepare_input(
                 provider=provider,
                 model_kwargs=params,
