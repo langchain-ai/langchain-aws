@@ -816,13 +816,16 @@ class ChatBedrockConverse(BaseChatModel):
         )
 
         # Check for tool blocks without toolConfig and handle conversion
-        if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(bedrock_messages):
+        if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(
+            bedrock_messages
+        ):
             logger.warning(
                 "Tool messages (toolUse/toolResult) detected without toolConfig. "
                 "Converting tool blocks to text format to avoid ValidationException."
             )
             warnings.warn(
-                "Tool messages were passed without toolConfig, converting to text format",
+                "Tool messages were passed without toolConfig, "
+                "converting to text format",
                 RuntimeWarning,
             )
 
@@ -864,13 +867,16 @@ class ChatBedrockConverse(BaseChatModel):
         )
 
         # Check for tool blocks without toolConfig and handle conversion
-        if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(bedrock_messages):
+        if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(
+            bedrock_messages
+        ):
             logger.warning(
                 "Tool messages (toolUse/toolResult) detected without toolConfig. "
                 "Converting tool blocks to text format to avoid ValidationException."
             )
             warnings.warn(
-                "Tool messages were passed without toolConfig, converting to text format",
+                "Tool messages were passed without toolConfig, "
+                "converting to text format",
                 RuntimeWarning,
             )
 
@@ -1401,7 +1407,9 @@ def _lc_content_to_bedrock(
         ):
             bedrock_content.append(_format_data_content_block(block))
         elif block["type"] == "text":
-            if not block["text"] or (isinstance(block["text"], str) and block["text"].isspace()):
+            if not block["text"] or (
+                isinstance(block["text"], str) and block["text"].isspace()
+            ):
                 bedrock_content.append({"text": "."})
             else:
                 bedrock_content.append({"text": block["text"]})
@@ -1857,7 +1865,8 @@ def _has_tool_use_or_result_blocks(messages: List[Dict[str, Any]]) -> bool:
 def _convert_tool_blocks_to_text(
     messages: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Convert toolUse and toolResult blocks to text blocks preserving only necessary content."""
+    """Convert toolUse and toolResult blocks to text blocks preserving
+    only necessary content."""
     converted_messages = []
 
     for message in messages:
@@ -1872,14 +1881,16 @@ def _convert_tool_blocks_to_text(
 
                 # format function call description
                 if tool_inputs:
-                    tool_text = f"[Called {tool_name} with parameters: {json.dumps(tool_inputs)}]"
+                    tool_text = (
+                        f"[Called {tool_name} with parameters: "
+                        f"{json.dumps(tool_inputs)}]"
+                    )
                 else:
                     tool_text = f"[Called {tool_name}]"
 
                 converted_message["content"].append({"text": tool_text})
 
             elif "toolResult" in block:
-                # convert toolResult to indicate it's tool output without exposing internal details
                 tool_result = block["toolResult"]
 
                 content_parts = []
@@ -1891,7 +1902,6 @@ def _convert_tool_blocks_to_text(
                     # skip other internal content types
                 result_content = "".join(content_parts)
 
-                # only include result if there's actual content, but mark it as tool output
                 if result_content.strip():
                     tool_output_text = f"[Tool output: {result_content}]"
                     converted_message["content"].append({"text": tool_output_text})
