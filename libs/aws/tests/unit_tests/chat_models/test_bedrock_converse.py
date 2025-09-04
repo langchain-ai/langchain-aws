@@ -23,7 +23,9 @@ from langchain_aws.chat_models.bedrock_converse import (
     _bedrock_to_lc,
     _camel_to_snake,
     _camel_to_snake_keys,
+    _convert_tool_blocks_to_text,
     _extract_response_metadata,
+    _has_tool_use_or_result_blocks,
     _lc_content_to_bedrock,
     _messages_to_bedrock,
     _snake_to_camel,
@@ -1195,6 +1197,113 @@ def test__lc_content_to_bedrock_mime_types_invalid() -> None:
         )
 
 
+def test__lc_content_to_bedrock_empty_content() -> None:
+    content: List[Union[str, Dict[str, Any]]] = []
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_whitespace_only_content() -> None:
+    content = "   \n  \t  "
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_empty_string_content() -> None:
+    content = ""
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_mixed_empty_content() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": ""},
+        {"type": "text", "text": "   "},
+        {"type": "text", "text": ""}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_empty_text_block() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": ""}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_whitespace_text_block() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": "  \n  "}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+    
+    assert len(bedrock_content) > 0
+    assert bedrock_content[0]["text"] == "."
+
+
+def test__lc_content_to_bedrock_mixed_valid_and_empty_content() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": "Valid text"},
+        {"type": "text", "text": ""},
+        {"type": "text", "text": "   "}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+
+    assert len(bedrock_content) == 3
+    assert bedrock_content[0]["text"] == "Valid text"
+    assert bedrock_content[1]["text"] == "."
+    assert bedrock_content[2]["text"] == "."
+
+
+def test__lc_content_to_bedrock_mixed_types_with_empty_content() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": "Valid text"},
+        {
+            "type": "tool_use",
+            "id": "tool_call1",
+            "input": {"arg1": "val1"},
+            "name": "tool1",
+        },
+        {"type": "text", "text": "   "}
+    ]
+
+    expected = [
+        {'text': 'Valid text'},
+        {
+            'toolUse': {
+                'toolUseId': 'tool_call1',
+                'input': {'arg1': 'val1'},
+                'name': 'tool1'
+            }
+        },
+        {'text': '.'}
+    ]
+    
+    bedrock_content = _lc_content_to_bedrock(content)
+
+    assert len(bedrock_content) == 3
+    assert bedrock_content == expected
+
+
 def test__get_provider() -> None:
     llm = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
@@ -1693,3 +1802,74 @@ def test_nova_provider_extraction() -> None:
         region_name="us-west-2",
     )
     assert model.provider == "amazon"
+
+
+def test__has_tool_use_or_result_blocks() -> None:
+    """Test detection of toolUse and toolResult blocks in messages."""
+    # No tool blocks
+    messages_no_tools = [{"role": "user", "content": [{"text": "Hello"}]}]
+    assert not _has_tool_use_or_result_blocks(messages_no_tools)
+
+    # With toolUse blocks
+    messages_with_tools = [
+        {"role": "assistant", "content": [{"toolUse": {"name": "calc"}}]}
+    ]
+    assert _has_tool_use_or_result_blocks(messages_with_tools)
+
+
+def test__convert_tool_blocks_to_text() -> None:
+    """Test conversion of toolUse and toolResult blocks to text format."""
+    input_messages: List[Dict[str, Any]] = [
+        {
+            "role": "assistant",
+            "content": [
+                {"text": "Calculating..."},
+                {"toolUse": {"toolUseId": "1", "name": "calc", "input": {"a": 5}}},
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {"toolResult": {"toolUseId": "1", "content": [{"text": "10"}]}}
+            ],
+        },
+    ]
+
+    result = _convert_tool_blocks_to_text(input_messages)
+
+    # Check toolUse converted to text
+    assert '[Called calc with parameters: {"a": 5}]' in result[0]["content"][1]["text"]
+
+    # Check toolResult converted to text
+    assert "[Tool output: 10]" in result[1]["content"][0]["text"]
+
+
+def test_tool_conversion_warning_integration() -> None:
+    """Test that tool blocks without toolConfig trigger conversion and warning."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Done"}]}},
+        "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+
+    messages = [
+        AIMessage(
+            content="",
+            tool_calls=[ToolCall(name="calc", args={"x": 1}, id="1", type="tool_call")],
+        )
+    ]
+
+    with pytest.warns(
+        RuntimeWarning, match="Tool messages were passed without toolConfig"
+    ):
+        llm.invoke(messages)
+
+    # Verify conversion happened
+    call_args = mocked_client.converse.call_args[1]["messages"]
+    assert any("Called calc" in str(block) for block in call_args[0]["content"])
