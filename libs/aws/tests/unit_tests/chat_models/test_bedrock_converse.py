@@ -1199,27 +1199,27 @@ def test__lc_content_to_bedrock_mime_types_invalid() -> None:
 
 def test__lc_content_to_bedrock_empty_content() -> None:
     content: List[Union[str, Dict[str, Any]]] = []
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
-    
+
     assert len(bedrock_content) > 0
     assert bedrock_content[0]["text"] == "."
 
 
 def test__lc_content_to_bedrock_whitespace_only_content() -> None:
     content = "   \n  \t  "
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
-    
+
     assert len(bedrock_content) > 0
     assert bedrock_content[0]["text"] == "."
 
 
 def test__lc_content_to_bedrock_empty_string_content() -> None:
     content = ""
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
-    
+
     assert len(bedrock_content) > 0
     assert bedrock_content[0]["text"] == "."
 
@@ -1228,9 +1228,9 @@ def test__lc_content_to_bedrock_mixed_empty_content() -> None:
     content: List[Union[str, Dict[str, Any]]] = [
         {"type": "text", "text": ""},
         {"type": "text", "text": "   "},
-        {"type": "text", "text": ""}
+        {"type": "text", "text": ""},
     ]
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
 
     assert len(bedrock_content) > 0
@@ -1238,23 +1238,19 @@ def test__lc_content_to_bedrock_mixed_empty_content() -> None:
 
 
 def test__lc_content_to_bedrock_empty_text_block() -> None:
-    content: List[Union[str, Dict[str, Any]]] = [
-        {"type": "text", "text": ""}
-    ]
-    
+    content: List[Union[str, Dict[str, Any]]] = [{"type": "text", "text": ""}]
+
     bedrock_content = _lc_content_to_bedrock(content)
-    
+
     assert len(bedrock_content) > 0
     assert bedrock_content[0]["text"] == "."
 
 
 def test__lc_content_to_bedrock_whitespace_text_block() -> None:
-    content: List[Union[str, Dict[str, Any]]] = [
-        {"type": "text", "text": "  \n  "}
-    ]
-    
+    content: List[Union[str, Dict[str, Any]]] = [{"type": "text", "text": "  \n  "}]
+
     bedrock_content = _lc_content_to_bedrock(content)
-    
+
     assert len(bedrock_content) > 0
     assert bedrock_content[0]["text"] == "."
 
@@ -1263,9 +1259,9 @@ def test__lc_content_to_bedrock_mixed_valid_and_empty_content() -> None:
     content: List[Union[str, Dict[str, Any]]] = [
         {"type": "text", "text": "Valid text"},
         {"type": "text", "text": ""},
-        {"type": "text", "text": "   "}
+        {"type": "text", "text": "   "},
     ]
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
 
     assert len(bedrock_content) == 3
@@ -1283,21 +1279,21 @@ def test__lc_content_to_bedrock_mixed_types_with_empty_content() -> None:
             "input": {"arg1": "val1"},
             "name": "tool1",
         },
-        {"type": "text", "text": "   "}
+        {"type": "text", "text": "   "},
     ]
 
     expected = [
-        {'text': 'Valid text'},
+        {"text": "Valid text"},
         {
-            'toolUse': {
-                'toolUseId': 'tool_call1',
-                'input': {'arg1': 'val1'},
-                'name': 'tool1'
+            "toolUse": {
+                "toolUseId": "tool_call1",
+                "input": {"arg1": "val1"},
+                "name": "tool1",
             }
         },
-        {'text': '.'}
+        {"text": "."},
     ]
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
 
     assert len(bedrock_content) == 3
