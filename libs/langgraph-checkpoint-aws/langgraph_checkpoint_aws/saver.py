@@ -1,7 +1,7 @@
 import datetime
 import json
 from collections.abc import Iterator, Sequence
-from typing import Any, Optional
+from typing import Any
 
 from botocore.config import Config
 from botocore.exceptions import ClientError
@@ -41,11 +41,24 @@ from langgraph_checkpoint_aws.utils import (
 )
 
 
+def _get_client_error_code(client_error: ClientError) -> str | None:
+    """Safely extract error code from ClientError response.
+
+    Done to address IDE warnings about possible missing attributes.
+
+    """
+    try:
+        return client_error.response.get("Error", {}).get("Code")
+    except (AttributeError, KeyError):
+        return None
+
+
 class BedrockSessionSaver(BaseCheckpointSaver):
     """Saves and retrieves checkpoints using Amazon Bedrock Agent Runtime sessions.
 
-    This class provides functionality to persist checkpoint data and writes to Bedrock Agent Runtime sessions.
-    It handles creating invocations, managing checkpoint data, and tracking pending writes.
+    This class provides functionality to persist checkpoint data and writes to Bedrock
+    Agent Runtime sessions. It handles creating invocations, managing checkpoint data,
+    and tracking pending writes.
 
     Args:
         region_name: AWS region name
@@ -55,17 +68,18 @@ class BedrockSessionSaver(BaseCheckpointSaver):
         aws_session_token: AWS session token
         endpoint_url: Custom endpoint URL for the Bedrock service
         config: Botocore config object
+
     """
 
     def __init__(
         self,
-        region_name: Optional[str] = None,
-        credentials_profile_name: Optional[str] = None,
-        aws_access_key_id: Optional[SecretStr] = None,
-        aws_secret_access_key: Optional[SecretStr] = None,
-        aws_session_token: Optional[SecretStr] = None,
-        endpoint_url: Optional[str] = None,
-        config: Optional[Config] = None,
+        region_name: str | None = None,
+        credentials_profile_name: str | None = None,
+        aws_access_key_id: SecretStr | None = None,
+        aws_secret_access_key: SecretStr | None = None,
+        aws_session_token: SecretStr | None = None,
+        endpoint_url: str | None = None,
+        config: Config | None = None,
     ) -> None:
         super().__init__()
         self.session_client = BedrockAgentRuntimeSessionClient(
@@ -86,7 +100,9 @@ class BedrockSessionSaver(BaseCheckpointSaver):
             invocation_id: The unique invocation identifier
 
         Raises:
-            ClientError: If creation fails for reasons other than the invocation already existing
+            ClientError: If creation fails for reasons other than the invocation
+                already existing
+
         """
         try:
             self.session_client.create_invocation(
@@ -96,17 +112,19 @@ class BedrockSessionSaver(BaseCheckpointSaver):
                 )
             )
         except ClientError as e:
-            if e.response["Error"]["Code"] != "ConflictException":
+            if _get_client_error_code(e) != "ConflictException":
                 raise e
 
     def _get_checkpoint_pending_writes(
         self, thread_id: str, checkpoint_ns: str, checkpoint_id: str
     ) -> list[SessionPendingWrite]:
-        """Retrieve pending write operations for a given checkpoint from the Bedrock session.
+        """Retrieve pending write operations for a given checkpoint from the Bedrock
+        session.
 
-        This method retrieves any pending write operations that were stored for a specific checkpoint.
-        It first gets the most recent invocation step, then retrieves the full details of that step,
-        and finally parses the content blocks to reconstruct the PendingWrite objects.
+        This method retrieves any pending write operations that were stored for a
+        specific checkpoint. It first gets the most recent invocation step, then
+        retrieves the full details of that step, and finally parses the content blocks
+        to reconstruct the PendingWrite objects.
 
         Args:
             thread_id: Session thread identifier used to locate the checkpoint data
@@ -114,8 +132,9 @@ class BedrockSessionSaver(BaseCheckpointSaver):
             checkpoint_id: Unique identifier for the specific checkpoint to retrieve
 
         Returns:
-            List of PendingWrite objects containing task_id, channel, value, task_path and write_idx.
-            Returns empty list if no pending writes are found.
+            List of PendingWrite objects containing task_id, channel, value, task_path
+            and write_idx. Returns empty list if no pending writes are found.
+
         """
         # Generate unique ID for the write operation
         writes_id = generate_write_id(checkpoint_ns, checkpoint_id)
@@ -143,13 +162,15 @@ class BedrockSessionSaver(BaseCheckpointSaver):
                 )
             ).invocation_step
 
-            return process_writes_invocation_content_blocks(
-                invocation_step.payload.content_blocks, self.serde
-            )
+            if invocation_step.payload.content_blocks:
+                return process_writes_invocation_content_blocks(
+                    invocation_step.payload.content_blocks, self.serde
+                )
+            return []
 
         except ClientError as e:
             # Return empty list if resource not found, otherwise re-raise error
-            if e.response["Error"]["Code"] == "ResourceNotFoundException":
+            if _get_client_error_code(e) == "ResourceNotFoundException":
                 return []
             raise e
 
@@ -157,13 +178,13 @@ class BedrockSessionSaver(BaseCheckpointSaver):
         self,
         thread_id: str,
         invocation_identifier: str,
-        invocation_step_id: Optional[str],
+        invocation_step_id: str | None,
         payload: InvocationStepPayload,
     ) -> None:
         """Persist an invocation step and its payload to the Bedrock session store.
 
-        This method stores a single invocation step along with its associated payload data
-        in the Bedrock session. The step is timestamped with the current UTC time.
+        This method stores a single invocation step along with its associated payload
+        data in the Bedrock session. The step is timestamped with the current UTC time.
 
         Args:
             thread_id: Unique identifier for the session thread
@@ -173,6 +194,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
         Returns:
             None
+
         """
         self.session_client.put_invocation_step(
             PutInvocationStepRequest(
@@ -186,11 +208,12 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
     def _find_most_recent_checkpoint_step(
         self, thread_id: str, invocation_id: str
-    ) -> Optional[InvocationStep]:
+    ) -> InvocationStep | None:
         """Retrieve the most recent checkpoint step from a session's invocation history.
 
-        Iterates through all invocation steps in reverse chronological order until it finds
-        a step with a checkpoint payload type. Uses pagination to handle large result sets.
+        Iterates through all invocation steps in reverse chronological order until it
+        finds a step with a checkpoint payload type. Uses pagination to handle large
+        result sets.
 
         Args:
             thread_id: The unique identifier for the session thread
@@ -198,6 +221,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
         Returns:
             InvocationStep object if a checkpoint is found, None otherwise
+
         """
         next_token = None
         while True:
@@ -225,8 +249,10 @@ class BedrockSessionSaver(BaseCheckpointSaver):
                 ).invocation_step
 
                 # Parse the step payload and check if it's a checkpoint
+                if not invocation_step.payload.content_blocks:
+                    continue
                 step_payload = json.loads(
-                    invocation_step.payload.content_blocks[0].text
+                    invocation_step.payload.content_blocks[0].text or "{}"
                 )
                 if step_payload["step_type"] == CHECKPOINT_PREFIX:
                     return invocation_step
@@ -237,8 +263,8 @@ class BedrockSessionSaver(BaseCheckpointSaver):
                 return None
 
     def _get_checkpoint_step(
-        self, thread_id: str, invocation_id: str, checkpoint_id: Optional[str] = None
-    ) -> Optional[InvocationStep]:
+        self, thread_id: str, invocation_id: str, checkpoint_id: str | None = None
+    ) -> InvocationStep | None:
         """Retrieve checkpoint step data.
 
         Args:
@@ -248,6 +274,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
         Returns:
             InvocationStep if found, None otherwise
+
         """
         if checkpoint_id is None:
             step = self._find_most_recent_checkpoint_step(thread_id, invocation_id)
@@ -264,7 +291,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
         ).invocation_step
 
     def _get_task_sends(
-        self, thread_id: str, checkpoint_ns: str, parent_checkpoint_id: Optional[str]
+        self, thread_id: str, checkpoint_ns: str, parent_checkpoint_id: str | None
     ) -> list:
         """Get sorted task sends for parent checkpoint.
 
@@ -275,6 +302,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
         Returns:
             Sorted list of task sends
+
         """
         if not parent_checkpoint_id:
             return []
@@ -284,20 +312,24 @@ class BedrockSessionSaver(BaseCheckpointSaver):
         )
         return transform_pending_task_writes(pending_writes)
 
-    def get_tuple(self, config: RunnableConfig) -> Optional[CheckpointTuple]:
+    def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         """Retrieve a checkpoint tuple from the Bedrock session.
 
-        This function retrieves checkpoint data from the session, processes it and returns
-        a structured CheckpointTuple containing the checkpoint state and metadata.
+        This function retrieves checkpoint data from the session, processes it and
+        returns a structured CheckpointTuple containing the checkpoint state and
+        metadata.
 
         Args:
-            config (RunnableConfig): Configuration containing thread_id and optional checkpoint_ns.
+            config (RunnableConfig): Configuration containing thread_id and optional
+                checkpoint_ns.
 
         Returns:
-            Optional[CheckpointTuple]: Structured checkpoint data if found, None otherwise.
+            Optional[CheckpointTuple]: Structured checkpoint data if found, None
+                otherwise.
+
         """
-        session_thread_id = config["configurable"]["thread_id"]
-        checkpoint_namespace = config["configurable"].get("checkpoint_ns", "")
+        session_thread_id = config.get("configurable", {})["thread_id"]
+        checkpoint_namespace = config.get("configurable", {}).get("checkpoint_ns", "")
         checkpoint_identifier = get_checkpoint_id(config)
 
         invocation_id = generate_checkpoint_id(checkpoint_namespace)
@@ -309,8 +341,10 @@ class BedrockSessionSaver(BaseCheckpointSaver):
             if invocation_step is None:
                 return None
 
+            if not invocation_step.payload.content_blocks:
+                return None
             session_checkpoint = SessionCheckpoint(
-                **json.loads(invocation_step.payload.content_blocks[0].text)
+                **json.loads(invocation_step.payload.content_blocks[0].text or "{}")
             )
 
             pending_write_ops = self._get_checkpoint_pending_writes(
@@ -335,7 +369,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
             )
 
         except ClientError as err:
-            if err.response["Error"]["Code"] != "ResourceNotFoundException":
+            if _get_client_error_code(err) != "ResourceNotFoundException":
                 raise err
             return None
 
@@ -348,18 +382,24 @@ class BedrockSessionSaver(BaseCheckpointSaver):
     ) -> RunnableConfig:
         """Store a new checkpoint in the Bedrock session.
 
-        This method persists checkpoint data and metadata to a Bedrock Agent Runtime session.
-        It serializes the checkpoint data, creates a session invocation, and saves an invocation
-        step containing the checkpoint information.
+        This method persists checkpoint data and metadata to a Bedrock Agent Runtime
+        session. It serializes the checkpoint data, creates a session invocation, and
+        saves an invocation step containing the checkpoint information.
 
         Args:
-            config (RunnableConfig): Configuration containing thread_id and checkpoint namespace
-            checkpoint (Checkpoint): The checkpoint data to store, containing state and channel values
-            metadata (CheckpointMetadata): Metadata associated with the checkpoint like timestamps
-            new_versions (ChannelVersions): Version information for communication channels
+            config (RunnableConfig): Configuration containing thread_id and checkpoint
+                namespace
+            checkpoint (Checkpoint): The checkpoint data to store, containing state and
+                channel values
+            metadata (CheckpointMetadata): Metadata associated with the checkpoint like
+                timestamps
+            new_versions (ChannelVersions): Version information for communication
+                channels
 
         Returns:
-            RunnableConfig: Updated configuration with thread_id, checkpoint_ns and checkpoint_id
+            RunnableConfig: Updated configuration with thread_id, checkpoint_ns and
+                checkpoint_id
+
         """
         session_checkpoint = create_session_checkpoint(
             checkpoint, config, metadata, self.serde, new_versions
@@ -410,17 +450,21 @@ class BedrockSessionSaver(BaseCheckpointSaver):
         5. Saving all content blocks in a new invocation step
 
         Args:
-            config (RunnableConfig): Configuration containing thread_id, checkpoint_ns and checkpoint_id
-            writes (Sequence[tuple[str, Any]]): Sequence of (channel, value) tuples to write
+            config (RunnableConfig): Configuration containing thread_id, checkpoint_ns
+                and checkpoint_id
+            writes (Sequence[tuple[str, Any]]): Sequence of (channel, value) tuples to
+                write
             task_id (str): Identifier for the task performing the writes
-            task_path (str, optional): Path information for the task. Defaults to empty string.
+            task_path (str, optional): Path information for the task. Defaults to empty
+                string.
 
         Returns:
             None
+
         """
-        thread_id = config["configurable"]["thread_id"]
-        checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
-        checkpoint_id = config["configurable"]["checkpoint_id"]
+        thread_id = config.get("configurable", {})["thread_id"]
+        checkpoint_ns = config.get("configurable", {}).get("checkpoint_ns", "")
+        checkpoint_id = config.get("configurable", {})["checkpoint_id"]
 
         # Generate unique identifier for this write operation
         writes_invocation_identifier = generate_write_id(checkpoint_ns, checkpoint_id)
@@ -455,11 +499,11 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
     def list(
         self,
-        config: Optional[RunnableConfig],
+        config: RunnableConfig | None,
         *,
-        filter: Optional[dict[str, Any]] = None,
-        before: Optional[RunnableConfig] = None,
-        limit: Optional[int] = None,
+        filter: dict[str, Any] | None = None,
+        before: RunnableConfig | None = None,
+        limit: int | None = None,
     ) -> Iterator[CheckpointTuple]:
         """List checkpoints matching the given criteria.
 
@@ -471,9 +515,13 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
         Returns:
             Iterator of matching CheckpointTuple objects
+
         """
-        thread_id = config["configurable"]["thread_id"]
-        checkpoint_ns = config["configurable"].get("checkpoint_ns")
+        if config is None:
+            return
+
+        thread_id = config.get("configurable", {})["thread_id"]
+        checkpoint_ns = config.get("configurable", {}).get("checkpoint_ns")
 
         invocation_identifier = None
 
@@ -495,7 +543,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
                     )
                 )
             except ClientError as e:
-                if e.response["Error"]["Code"] == "ResourceNotFoundException":
+                if _get_client_error_code(e) == "ResourceNotFoundException":
                     return
                 else:
                     raise e
@@ -505,7 +553,11 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
             # Process current page
             for step in response.invocation_step_summaries:
-                if before and step.invocation_step_id >= get_checkpoint_id(before):
+                before_checkpoint_id = get_checkpoint_id(before) if before else None
+                if (
+                    before_checkpoint_id
+                    and step.invocation_step_id >= before_checkpoint_id
+                ):
                     continue
 
                 # Get full step details to access metadata
@@ -517,7 +569,9 @@ class BedrockSessionSaver(BaseCheckpointSaver):
                     )
                 ).invocation_step
 
-                payload = json.loads(step_detail.payload.content_blocks[0].text)
+                if not step_detail.payload.content_blocks:
+                    continue
+                payload = json.loads(step_detail.payload.content_blocks[0].text or "{}")
 
                 # Append checkpoints and ignore writes
                 if payload["step_type"] != CHECKPOINT_PREFIX:

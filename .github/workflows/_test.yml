@@ -8,8 +8,6 @@ on:
         type: string
         description: "From which folder this pipeline executes"
 
-env:
-  POETRY_VERSION: "1.7.1"
 
 jobs:
   build:
@@ -23,7 +21,6 @@ jobs:
     strategy:
       matrix:
         python-version:
-          - "3.9"
           - "3.10"
           - "3.11"
           - "3.12"
@@ -31,17 +28,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set up Python ${{ matrix.python-version }} + Poetry ${{ env.POETRY_VERSION }}
-        uses: "./.github/actions/poetry_setup"
+      - name: Set up Python ${{ matrix.python-version }} + uv
+        uses: "./.github/actions/uv_setup"
         with:
           python-version: ${{ matrix.python-version }}
-          poetry-version: ${{ env.POETRY_VERSION }}
-          working-directory: ${{ inputs.working-directory }}
-          cache-key: core
 
       - name: Install dependencies
         shell: bash
-        run: poetry install --with test --with test_integration
+        run: uv sync --group test --group test_integration
 
       - name: Run core tests
         shell: bash

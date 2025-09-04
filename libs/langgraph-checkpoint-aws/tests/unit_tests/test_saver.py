@@ -7,7 +7,6 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import CheckpointTuple
-from langgraph.constants import ERROR
 from pydantic import SecretStr
 
 from langgraph_checkpoint_aws.models import (
@@ -48,7 +47,7 @@ class TestBedrockSessionSaver:
         with patch("boto3.Session") as mock_boto3_session:
             mock_boto3_session.return_value.client.return_value = mock_boto_client
 
-            config = Config(retries=dict(max_attempts=5))
+            config = Config(retries={"max_attempts": 5, "mode": "standard"})
             endpoint_url = "https://custom-endpoint.amazonaws.com"
 
             BedrockSessionSaver(
@@ -64,9 +63,9 @@ class TestBedrockSessionSaver:
             mock_boto3_session.assert_called_with(
                 region_name="us-west-2",
                 profile_name="test-profile",
-                aws_access_key_id=SecretStr("test-access-key"),
-                aws_secret_access_key=SecretStr("test-secret-key"),
-                aws_session_token=SecretStr("test-session-token"),
+                aws_access_key_id="test-access-key",
+                aws_secret_access_key="test-secret-key",
+                aws_session_token="test-session-token",
             )
 
             mock_boto3_session.return_value.client.assert_called_with(
@@ -126,7 +125,7 @@ class TestBedrockSessionSaver:
         with pytest.raises(ClientError) as exc_info:
             session_saver._create_session_invocation(thread_id, invocation_id)
 
-        assert exc_info.value.response["Error"]["Code"] == "SomeOtherError"
+        assert exc_info.value.response.get("Error", {}).get("Code") == "SomeOtherError"
         mock_boto_client.create_invocation.assert_called_once_with(
             sessionIdentifier=thread_id,
             invocationId=invocation_id,
@@ -674,7 +673,7 @@ class TestBedrockSessionSaver:
         # Arrange
         task_id = "test_task_id"
         task_path = "test_task_path"
-        writes = [(ERROR, "__start__")]
+        writes = [("__error__", "__start__")]
         runnable_config["configurable"]["checkpoint_id"] = "test_checkpoint_id"
 
         session_saver._create_session_invocation = Mock()

@@ -27,7 +27,6 @@ on:
 
 env:
   PYTHON_VERSION: "3.11"
-  POETRY_VERSION: "1.7.1"
 
 jobs:
   build:
@@ -46,17 +45,14 @@ jobs:
           repository: "${{ inputs.fork }}/langchain-aws"
           ref: "${{ inputs.branch }}"
 
-      - name: Set up Python ${{ env.PYTHON_VERSION }} + Poetry ${{ env.POETRY_VERSION }}
-        uses: "./.github/actions/poetry_setup"
+      - name: Set up Python ${{ env.PYTHON_VERSION }} + uv
+        uses: "./.github/actions/uv_setup"
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          poetry-version: ${{ env.POETRY_VERSION }}
-          working-directory: ${{ inputs.working-directory }}
-          cache-key: core
 
       - name: Install dependencies
         shell: bash
-        run: poetry install --with test,test_integration
+        run: uv sync --group test --group test_integration
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -68,7 +64,7 @@ jobs:
       - name: Run integration tests
         shell: bash
         run: |
-          poetry run pytest -vv -s ${{ inputs.test-file }}
+          uv run pytest -vv -s ${{ inputs.test-file }}
 
       - name: Ensure the tests did not create any additional files
         shell: bash

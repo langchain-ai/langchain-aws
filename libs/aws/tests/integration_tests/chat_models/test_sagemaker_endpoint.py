@@ -66,12 +66,37 @@ class ContentHandlerStream(ChatModelContentHandler):
 class MockStreamingBody:
     def __init__(self) -> None:
         self.data = [
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":"An"},"logprobs":null,"finish_reason":null}],"usage":null}',
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":" L"},"logprobs":null,"finish_reason":null}],"usage":null}',
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":"LM"},"logprobs":null,"finish_reason":null}],"usage":null}',
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":" is"},"logprobs":null,"finish_reason":null}],"usage":null}',
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696408,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":" an"},"logprobs":null,"finish_reason":null}],"usage":null}',
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696408,"model":"Qwen/Qwen2.5-1.5B-Instruct","system_fingerprint":"3.0.1-native","choices":[{"index":0,"delta":{"role":"assistant","content":" acronym"},"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,'
+            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
+            + b'"system_fingerprint":"3.0.1-native",'
+            + b'"choices":[{"index":0,"delta":{"role":"assistant","content":"An"},'
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,'
+            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
+            + b'"system_fingerprint":"3.0.1-native",'
+            + b'"choices":[{"index":0,"delta":{"role":"assistant","content":" L"},'
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,'
+            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
+            + b'"system_fingerprint":"3.0.1-native",'
+            + b'"choices":[{"index":0,"delta":{"role":"assistant","content":"LM"},'
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,'
+            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
+            + b'"system_fingerprint":"3.0.1-native",'
+            + b'"choices":[{"index":0,"delta":{"role":"assistant","content":" is"},'
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696408,'
+            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
+            + b'"system_fingerprint":"3.0.1-native",'
+            + b'"choices":[{"index":0,"delta":{"role":"assistant","content":" an"},'
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696408,'
+            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
+            + b'"system_fingerprint":"3.0.1-native",'
+            + b'"choices":[{"index":0,"delta":{"role":"assistant",'
+            + b'"content":" acronym"},'
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
         ]
         self.index = 0
 
@@ -109,8 +134,7 @@ class TestSageMakerStandard(ChatModelUnitTests):
 
     @property
     def init_from_env_params(self) -> Tuple[dict, dict, dict]:
-        """Return env vars, init args, and expected instance attrs for initializing
-        from env vars."""
+        """Return env vars, init args, and expected instance attrs for initializing from env vars."""  # noqa: E501
         return (
             {
                 "AWS_ACCESS_KEY_ID": "test-key",
@@ -133,12 +157,14 @@ class TestSageMakerStandard(ChatModelUnitTests):
         super().test_init_streaming()
 
     @pytest.mark.xfail(reason="Doesn't support binding tool.")
-    def test_bind_tool_pydantic(self, model: BaseChatModel, my_adder_tool: BaseTool) -> None:
+    def test_bind_tool_pydantic(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
         super().test_bind_tool_pydantic(model, my_adder_tool)
 
     @pytest.mark.xfail(reason="Doesn't support structured output.")
-    def test_with_structured_output(self, model: BaseChatModel) -> None:
-        super().test_with_structured_output(model)
+    def test_with_structured_output(self, model: BaseChatModel, schema: Any) -> None:
+        super().test_with_structured_output(model, schema)
 
     @pytest.mark.xfail(reason="Doesn't support Langsmith parameters.")
     def test_standard_params(self, model: BaseChatModel) -> None:

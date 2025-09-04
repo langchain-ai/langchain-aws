@@ -281,20 +281,29 @@ MOCK_STREAMING_RESPONSE_DEEPSEEK = [
 ]
 
 MOCK_STREAMING_RESPONSE_WRITER = [
-    {"chunk": {'bytes': b'{"id":"cmpl-ec61121fa19443caa7f614bde08e926c",'
-              b'"object":"text_completion",'
-              b'"created":1747106231,'
-              b'"model":"writer.palmyra-x5-v1:0",'
-              b'"choices":[{"index":0,"text":"Hel","logprobs":null,"finish_reason":null,"stop_reason":null}],'
-              b'"usage":null}'}},
-    {"chunk": {'bytes': b'{"id":"cmpl-ec61121fa19443caa7f614bde08e926c",'
-              b'"object":"text_completion",'
-              b'"created":1747106231,'
-              b'"model":"writer.palmyra-x5-v1:0",'
-              b'"choices":[{"index":0,"text":"lo.","logprobs":null,"finish_reason":"length","stop_reason":null}],'
-              b'"usage":null}'}},
-    {"chunk": {'bytes': b'"[DONE]"'}},
+    {
+        "chunk": {
+            "bytes": b'{"id":"cmpl-ec61121fa19443caa7f614bde08e926c",'
+            b'"object":"text_completion",'
+            b'"created":1747106231,'
+            b'"model":"writer.palmyra-x5-v1:0",'
+            b'"choices":[{"index":0,"text":"Hel","logprobs":null,"finish_reason":null,"stop_reason":null}],'
+            b'"usage":null}'
+        }
+    },
+    {
+        "chunk": {
+            "bytes": b'{"id":"cmpl-ec61121fa19443caa7f614bde08e926c",'
+            b'"object":"text_completion",'
+            b'"created":1747106231,'
+            b'"model":"writer.palmyra-x5-v1:0",'
+            b'"choices":[{"index":0,"text":"lo.","logprobs":null,"finish_reason":"length","stop_reason":null}],'
+            b'"usage":null}'
+        }
+    },
+    {"chunk": {"bytes": b'"[DONE]"'}},
 ]
+
 
 async def async_gen_mock_streaming_response() -> AsyncGenerator[Dict, None]:
     for item in MOCK_STREAMING_RESPONSE:
@@ -391,7 +400,7 @@ def deepseek_streaming_response():
 def writer_response():
     body = MagicMock()
     body.read.return_value = json.dumps(
-        {'choices': [{'text': ' This is the Writer output text.'}]}
+        {"choices": [{"text": " This is the Writer output text."}]}
     ).encode()
     response = dict(
         body=body,
@@ -703,7 +712,7 @@ def test_prepare_output_with_thinking(anthropic_response_with_thinking):
 def test_prepare_output_with_thinking_and_tool_use(
     anthropic_response_with_thinking_and_tool_use,
 ):
-    """Test that thinking blocks and tool use are 
+    """Test that thinking blocks and tool use are
     extracted properly from the response."""
     result = LLMInputOutputAdapter.prepare_output(
         "anthropic", anthropic_response_with_thinking_and_tool_use
@@ -738,7 +747,7 @@ def test_prepare_output_with_thinking_and_tool_use(
 
 def test_prepare_output_after_tool_use(anthropic_response_after_tool_use):
     """Test that responses after tool use (which don't have thinking blocks)
-     are handled correctly."""
+    are handled correctly."""
     result = LLMInputOutputAdapter.prepare_output(
         "anthropic", anthropic_response_after_tool_use
     )
@@ -761,24 +770,21 @@ def test_prepare_output_after_tool_use(anthropic_response_after_tool_use):
 
 def test__get_base_model():
     """Test that _get_base_model returns the expected result."""
-    llm = BedrockLLM(
-        model_id="meta.llama3-8b-instruct-v1:0",
-        region_name="us-west-2"
-    )
+    llm = BedrockLLM(model_id="meta.llama3-8b-instruct-v1:0", region_name="us-west-2")
     assert llm._get_base_model() == "llama3-8b-instruct-v1:0"
 
     llm = BedrockLLM(
         model_id="arn:aws:bedrock:us-east-1::custom-model/meta.llama3-8b-instruct-v1:0/MyModel",
         base_model_id="meta.llama3-8b-instruct-v1:0",
         provider="meta",
-        region_name="us-west-2"
+        region_name="us-west-2",
     )
     assert llm._get_base_model() == "meta.llama3-8b-instruct-v1:0"
 
     llm = BedrockLLM(
         model_id="meta.llama2-70b-v1",
         base_model_id="meta.llama3-8b-instruct-v1:0",
-        region_name="us-west-2"
+        region_name="us-west-2",
     )
     assert llm._get_base_model() == "meta.llama3-8b-instruct-v1:0"
 
@@ -789,26 +795,23 @@ def test_bedrock_client_creation(mock_create_client):
     mock_runtime_client = MagicMock()
     mock_bedrock_client = MagicMock()
     mock_create_client.side_effect = [mock_runtime_client, mock_bedrock_client]
-    
-    llm = BedrockLLM(
-        model_id="meta.llama3-8b-instruct-v1:0",
-        region_name="us-west-2"
-    )
-    
+
+    llm = BedrockLLM(model_id="meta.llama3-8b-instruct-v1:0", region_name="us-west-2")
+
     # Should create both clients
     assert mock_create_client.call_count == 2
-    
+
     # Check that bedrock-runtime client was created
     calls = mock_create_client.call_args_list
     runtime_call = calls[0]
     assert runtime_call.kwargs["service_name"] == "bedrock-runtime"
     assert runtime_call.kwargs["region_name"] == "us-west-2"
-    
+
     # Check that bedrock client was created
     bedrock_call = calls[1]
     assert bedrock_call.kwargs["service_name"] == "bedrock"
     assert bedrock_call.kwargs["region_name"] == "us-west-2"
-    
+
     assert llm.client is mock_runtime_client
     assert llm.bedrock_client is mock_bedrock_client
 
@@ -820,19 +823,21 @@ def test_get_base_model_with_application_inference_profile(mock_create_client):
     mock_bedrock_client = MagicMock()
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
-            {"modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"}
+            {
+                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"  # noqa: E501
+            }
         ]
     }
     mock_create_client.side_effect = [mock_runtime_client, mock_bedrock_client]
-    
+
     llm = BedrockLLM(
         model_id="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/my-profile",
         provider="anthropic",
-        region_name="us-west-2"
+        region_name="us-west-2",
     )
-    
+
     result = llm._get_base_model()
-    
+
     # Should call get_inference_profile and extract base model
     mock_bedrock_client.get_inference_profile.assert_called_once_with(
         inferenceProfileIdentifier="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/my-profile"

@@ -1,5 +1,6 @@
 # type:ignore
 """Test chat model integration."""
+
 import json
 from typing import Dict
 from unittest.mock import Mock
@@ -48,7 +49,10 @@ def test_format_messages_request() -> None:
 
     expected_invocation_params = {
         "EndpointName": "my-endpoint",
-        "Body": b"""[{"role": "system", "content": "Output everything you have."}, {"role": "user", "content": "What is an llm?"}]""",
+        "Body": (
+            b'[{"role": "system", "content": "Output everything you have."}, '
+            b'{"role": "user", "content": "What is an llm?"}]'
+        ),
         "ContentType": "application/json",
         "Accept": "application/json",
     }

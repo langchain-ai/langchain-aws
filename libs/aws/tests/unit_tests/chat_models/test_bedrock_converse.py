@@ -489,8 +489,7 @@ def test__snake_to_camel_keys() -> None:
     assert _snake_to_camel_keys(_SNAKE_DICT) == _CAMEL_DICT
 
 
-def test__format_openai_image_url() -> None:
-    ...
+def test__format_openai_image_url() -> None: ...
 
 
 def test_standard_tracing_params() -> None:
@@ -1200,27 +1199,27 @@ def test__lc_content_to_bedrock_mime_types_invalid() -> None:
 
 def test__lc_content_to_bedrock_empty_content() -> None:
     content: List[Union[str, Dict[str, Any]]] = []
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
-    
+
     assert len(bedrock_content) > 0
     assert bedrock_content[0]["text"] == "."
 
 
 def test__lc_content_to_bedrock_whitespace_only_content() -> None:
     content = "   \n  \t  "
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
-    
+
     assert len(bedrock_content) > 0
     assert bedrock_content[0]["text"] == "."
 
 
 def test__lc_content_to_bedrock_empty_string_content() -> None:
     content = ""
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
-    
+
     assert len(bedrock_content) > 0
     assert bedrock_content[0]["text"] == "."
 
@@ -1229,9 +1228,9 @@ def test__lc_content_to_bedrock_mixed_empty_content() -> None:
     content: List[Union[str, Dict[str, Any]]] = [
         {"type": "text", "text": ""},
         {"type": "text", "text": "   "},
-        {"type": "text", "text": ""}
+        {"type": "text", "text": ""},
     ]
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
 
     assert len(bedrock_content) > 0
@@ -1239,23 +1238,19 @@ def test__lc_content_to_bedrock_mixed_empty_content() -> None:
 
 
 def test__lc_content_to_bedrock_empty_text_block() -> None:
-    content: List[Union[str, Dict[str, Any]]] = [
-        {"type": "text", "text": ""}
-    ]
-    
+    content: List[Union[str, Dict[str, Any]]] = [{"type": "text", "text": ""}]
+
     bedrock_content = _lc_content_to_bedrock(content)
-    
+
     assert len(bedrock_content) > 0
     assert bedrock_content[0]["text"] == "."
 
 
 def test__lc_content_to_bedrock_whitespace_text_block() -> None:
-    content: List[Union[str, Dict[str, Any]]] = [
-        {"type": "text", "text": "  \n  "}
-    ]
-    
+    content: List[Union[str, Dict[str, Any]]] = [{"type": "text", "text": "  \n  "}]
+
     bedrock_content = _lc_content_to_bedrock(content)
-    
+
     assert len(bedrock_content) > 0
     assert bedrock_content[0]["text"] == "."
 
@@ -1264,9 +1259,9 @@ def test__lc_content_to_bedrock_mixed_valid_and_empty_content() -> None:
     content: List[Union[str, Dict[str, Any]]] = [
         {"type": "text", "text": "Valid text"},
         {"type": "text", "text": ""},
-        {"type": "text", "text": "   "}
+        {"type": "text", "text": "   "},
     ]
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
 
     assert len(bedrock_content) == 3
@@ -1284,21 +1279,21 @@ def test__lc_content_to_bedrock_mixed_types_with_empty_content() -> None:
             "input": {"arg1": "val1"},
             "name": "tool1",
         },
-        {"type": "text", "text": "   "}
+        {"type": "text", "text": "   "},
     ]
 
     expected = [
-        {'text': 'Valid text'},
+        {"text": "Valid text"},
         {
-            'toolUse': {
-                'toolUseId': 'tool_call1',
-                'input': {'arg1': 'val1'},
-                'name': 'tool1'
+            "toolUse": {
+                "toolUseId": "tool_call1",
+                "input": {"arg1": "val1"},
+                "name": "tool1",
             }
         },
-        {'text': '.'}
+        {"text": "."},
     ]
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
 
     assert len(bedrock_content) == 3
@@ -1479,7 +1474,7 @@ def test_model_kwargs() -> None:
         llm = ChatBedrockConverse(  # type: ignore[call-arg]
             model="my-model",
             region_name="us-west-2",
-            foo="bar",
+            foo="bar",  # type: ignore[call-arg]
         )
     assert llm.model_id == "my-model"
     assert llm.region_name == "us-west-2"
@@ -1489,7 +1484,7 @@ def test_model_kwargs() -> None:
         llm = ChatBedrockConverse(  # type: ignore[call-arg]
             model="my-model",
             region_name="us-west-2",
-            foo="bar",
+            foo="bar",  # type: ignore[call-arg]
             additional_model_request_fields={"baz": "qux"},
         )
     assert llm.model_id == "my-model"
@@ -1507,9 +1502,9 @@ def test_model_kwargs() -> None:
     assert llm.temperature is None
 
 
-def _create_mock_llm_guard_last_turn_only() -> (
-    Tuple[ChatBedrockConverse, mock.MagicMock]
-):
+def _create_mock_llm_guard_last_turn_only() -> Tuple[
+    ChatBedrockConverse, mock.MagicMock
+]:
     """Utility to create an LLM with guard_last_turn_only=True and a mocked client."""
     mocked_client = mock.MagicMock()
     llm = ChatBedrockConverse(
@@ -1523,7 +1518,8 @@ def _create_mock_llm_guard_last_turn_only() -> (
 
 
 def test_guard_last_turn_only_no_guardrail_config() -> None:
-    """Test that an error is raised if guard_last_turn_only is True but no guardrail_config is provided."""
+    """Test that an error is raised if guard_last_turn_only is True but no
+    guardrail_config is provided."""
     with pytest.raises(ValueError):
         ChatBedrockConverse(
             client=mock.MagicMock(),
@@ -1619,7 +1615,10 @@ def test_get_base_model_with_application_inference_profile(
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "anthropic.claude-3-sonnet-20240229-v1:0"
+                )
             }
         ]
     }
@@ -1684,7 +1683,10 @@ def test_configure_streaming_for_resolved_model(mock_create_client: mock.Mock) -
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "anthropic.claude-3-sonnet-20240229-v1:0"
+                )
             }
         ]
     }
@@ -1716,11 +1718,15 @@ def test_configure_streaming_for_resolved_model_no_tools(
     mock_bedrock_client = mock.Mock()
     mock_runtime_client = mock.Mock()
 
-    # Mock the get_inference_profile response for a model with no-tools streaming support
+    # Mock the get_inference_profile response for a model with no-tools streaming
+    # support
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-text-express-v1"
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "amazon.titan-text-express-v1"
+                )
             }
         ]
     }
@@ -1756,7 +1762,10 @@ def test_configure_streaming_for_resolved_model_no_streaming(
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/stability.stable-image-core-v1:0"
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "stability.stable-image-core-v1:0"
+                )
             }
         ]
     }
@@ -1781,7 +1790,8 @@ def test_configure_streaming_for_resolved_model_no_streaming(
 
 
 def test_nova_provider_extraction() -> None:
-    """Test that provider is correctly extracted from Nova model ID when not provided."""
+    """Test that provider is correctly extracted from Nova model ID when not
+    provided."""
     model = ChatBedrockConverse(
         client=mock.MagicMock(),
         model="us.amazon.nova-pro-v1:0",
