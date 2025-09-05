@@ -531,7 +531,7 @@ class ChatBedrockConverse(BaseChatModel):
             format: The format of the document, or its extension.
         Returns:
             Dictionary containing a properly formatted to add to message content."""
-        if re.match(r"[^\w\[\]\(\)-]|[\s]{2,}", name):
+        if not re.search(r"[^A-Za-z0-9 \[\]()\-]|\s{2,}", name):
             raise ValueError(
                 "Name must be only alphanumeric characters,"
                 " whitespace characters (no more than one in a row),"
