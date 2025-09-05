@@ -36,7 +36,7 @@ from langgraph_agentcore_checkpoint import AgentCoreMemorySaver
 # Initialize the saver
 memory_saver = AgentCoreMemorySaver(
     memory_id="your-memory-id",
-    actor_id="agent",
+    actor_id="agent1",
     region_name="us-west-2"
 )
 
@@ -82,24 +82,24 @@ Ensure you have AWS credentials configured using one of these methods:
 
 ```json
 {
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "bedrock-agentcore:CreateMemory",
-                "bedrock-agentcore:GetMemory",
-                "bedrock-agentcore:UpdateMemory",
-                "bedrock-agentcore:DeleteMemory",
-                "bedrock-agentcore:ListMemories",
-                "bedrock-agentcore:CreateEvent",
-                "bedrock-agentcore:GetEvent",
-                "bedrock-agentcore:ListEvents",
-                "bedrock-agentcore:DeleteEvent"
-            ],
-            "Resource": "*"
-        }
-    ]
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "bedrock-agentcore:CreateMemory",
+        "bedrock-agentcore:GetMemory",
+        "bedrock-agentcore:UpdateMemory",
+        "bedrock-agentcore:DeleteMemory",
+        "bedrock-agentcore:ListMemories",
+        "bedrock-agentcore:CreateEvent",
+        "bedrock-agentcore:GetEvent",
+        "bedrock-agentcore:ListEvents",
+        "bedrock-agentcore:DeleteEvent"
+      ],
+      "Resource": "*"
+    }
+  ]
 }
 ```
 

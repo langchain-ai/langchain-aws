@@ -94,7 +94,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             self._branch_exists_cache[cache_key] = exists
             return exists
 
-        except Exception:
+        except Exception as e:
+            print(f"Exception checking branch {branch_name}: {e}")
+            self._branch_exists_cache[cache_key] = False
             return False
 
     def get_tuple(self, config: RunnableConfig) -> Optional[CheckpointTuple]:
@@ -336,6 +338,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             "parent_config": config["configurable"].get("checkpoint_id"),
         }
 
+        cache_key = f"{session_id}#{CHECKPOINT_BRANCH}"
         if not self._branch_exists(session_id, CHECKPOINT_BRANCH):
             root_event_id = self._get_root_event_id(session_id)
             branch_spec = {"name": CHECKPOINT_BRANCH, "rootEventId": root_event_id}
@@ -351,10 +354,10 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
                 payload=[{"blob": payload_data}],
                 branch=branch_spec,
             )
-            self._branch_exists_cache[f"{session_id}#{CHECKPOINT_BRANCH}"] = True
+            self._branch_exists_cache[cache_key] = True
         except Exception as e:
             if "already exists" in str(e):
-                self._branch_exists_cache[f"{session_id}#{CHECKPOINT_BRANCH}"] = True
+                self._branch_exists_cache[cache_key] = True
             else:
                 raise
 
@@ -390,6 +393,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             for channel, value in writes
         ]
 
+        cache_key = f"{session_id}#{CHECKPOINT_BRANCH}"
         if not self._branch_exists(session_id, CHECKPOINT_BRANCH):
             root_event_id = self._get_root_event_id(session_id)
             branch_spec = {"name": CHECKPOINT_BRANCH, "rootEventId": root_event_id}
@@ -405,10 +409,10 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
                 payload=[{"blob": {"writes": write_data}}],
                 branch=branch_spec,
             )
-            self._branch_exists_cache[f"{session_id}#{CHECKPOINT_BRANCH}"] = True
+            self._branch_exists_cache[cache_key] = True
         except Exception as e:
             if "already exists" in str(e):
-                self._branch_exists_cache[f"{session_id}#{CHECKPOINT_BRANCH}"] = True
+                self._branch_exists_cache[cache_key] = True
             else:
                 raise
 
