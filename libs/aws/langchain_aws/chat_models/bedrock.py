@@ -758,7 +758,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             values["beta_use_converse_api"] = False
             if "nova" in model_id or "nova" in base_model_id:
                 values["beta_use_converse_api"] = True
-            elif "application-inference-profile" in model_id:
+            elif not base_model_id and "application-inference-profile" in model_id:
                 bedrock_client = values.get("bedrock_client")
                 if not bedrock_client:
                     bedrock_client = create_aws_client(

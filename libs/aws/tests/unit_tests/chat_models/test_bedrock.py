@@ -549,6 +549,12 @@ def test_beta_use_converse_api() -> None:
     assert llm.beta_use_converse_api
 
     llm = ChatBedrock(
+        model="arn:aws:bedrock:::application-inference-profile/my-profile",
+        base_model="claude.foo",
+        region_name="us-west-2")  # type: ignore[call-arg]
+    assert not llm.beta_use_converse_api
+
+    llm = ChatBedrock(
         model="nova.foo", region_name="us-west-2", beta_use_converse_api=False
     )
     assert not llm.beta_use_converse_api
