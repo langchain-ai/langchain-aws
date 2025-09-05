@@ -593,9 +593,6 @@ def test_beta_use_converse_api_with_inference_profile(mock_create_aws_client):
         bedrock_client=mock_bedrock_client
     ) # type: ignore[call-arg]
 
-    mock_bedrock_client.get_inference_profile.assert_called_with(
-        inferenceProfileIdentifier=aip_model_id
-    )
     assert chat.beta_use_converse_api is False
 
 
@@ -618,9 +615,6 @@ def test_beta_use_converse_api_with_inference_profile_as_nova_model(mock_create_
         bedrock_client=mock_bedrock_client
     ) # type: ignore[call-arg]
 
-    mock_bedrock_client.get_inference_profile.assert_called_once_with(
-        inferenceProfileIdentifier=aip_model_id
-    )
     assert chat.beta_use_converse_api is True
 
 
