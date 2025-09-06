@@ -1,9 +1,12 @@
+import asyncio
 import base64
 import hashlib
 import json
 import uuid
 from collections.abc import Sequence
-from typing import Any, Optional, Tuple, Union, cast
+from contextvars import copy_context
+from functools import partial
+from typing import Any, Callable, Optional, Tuple, TypeVar, Union, cast
 
 from botocore.config import Config
 from langchain_core.runnables import RunnableConfig
@@ -25,6 +28,8 @@ from langgraph_checkpoint_aws.models import (
     SessionCheckpoint,
     SessionPendingWrite,
 )
+
+T = TypeVar("T")
 
 
 def to_boto_params(model: BaseModel) -> dict:
@@ -447,3 +452,15 @@ def create_client_config(config: Optional[Config] = None) -> Config:
 )
 
     return Config(user_agent_extra=new_user_agent, **config_kwargs)
+
+
+async def run_boto3_in_executor(func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+    """Run a boto3 function in an executor to prevent blocking the event loop."""
+
+    return await asyncio.get_running_loop().run_in_executor(
+        None,
+        cast(
+            "Callable[..., T]",
+            partial(copy_context().run, lambda: func(*args, **kwargs)),
+        ),
+    )
