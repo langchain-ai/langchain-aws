@@ -54,7 +54,7 @@ graph.invoke(1, config)
 ```
 
 
-when invoking the graph asynchronously
+You can also invoke the graph asynchronously:
 
 ```python
 from langgraph.graph import StateGraph
@@ -68,7 +68,7 @@ session_saver = AsyncBedrockSessionSaver(
 
 # Create a session
 session_create_response = await session_saver.session_client.create_session()
-session_id = session_response.session_id
+session_id = session_create_response.session_id
 
 # Use with LangGraph
 builder = StateGraph(int)
@@ -78,7 +78,7 @@ builder.set_finish_point("add_one")
 
 graph = builder.compile(checkpointer=session_saver)
 config = {"configurable": {"thread_id": session_id}}
-graph.ainvoke(1, config)
+await graph.ainvoke(1, config)
 ```
 
 ## Configuration Options
