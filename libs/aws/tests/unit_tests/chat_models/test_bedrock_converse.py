@@ -489,8 +489,7 @@ def test__snake_to_camel_keys() -> None:
     assert _snake_to_camel_keys(_SNAKE_DICT) == _CAMEL_DICT
 
 
-def test__format_openai_image_url() -> None:
-    ...
+def test__format_openai_image_url() -> None: ...
 
 
 def test_standard_tracing_params() -> None:
@@ -1200,27 +1199,27 @@ def test__lc_content_to_bedrock_mime_types_invalid() -> None:
 
 def test__lc_content_to_bedrock_empty_content() -> None:
     content: List[Union[str, Dict[str, Any]]] = []
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
-    
+
     assert len(bedrock_content) > 0
     assert bedrock_content[0]["text"] == "."
 
 
 def test__lc_content_to_bedrock_whitespace_only_content() -> None:
     content = "   \n  \t  "
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
-    
+
     assert len(bedrock_content) > 0
     assert bedrock_content[0]["text"] == "."
 
 
 def test__lc_content_to_bedrock_empty_string_content() -> None:
     content = ""
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
-    
+
     assert len(bedrock_content) > 0
     assert bedrock_content[0]["text"] == "."
 
@@ -1229,9 +1228,9 @@ def test__lc_content_to_bedrock_mixed_empty_content() -> None:
     content: List[Union[str, Dict[str, Any]]] = [
         {"type": "text", "text": ""},
         {"type": "text", "text": "   "},
-        {"type": "text", "text": ""}
+        {"type": "text", "text": ""},
     ]
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
 
     assert len(bedrock_content) > 0
@@ -1239,23 +1238,19 @@ def test__lc_content_to_bedrock_mixed_empty_content() -> None:
 
 
 def test__lc_content_to_bedrock_empty_text_block() -> None:
-    content: List[Union[str, Dict[str, Any]]] = [
-        {"type": "text", "text": ""}
-    ]
-    
+    content: List[Union[str, Dict[str, Any]]] = [{"type": "text", "text": ""}]
+
     bedrock_content = _lc_content_to_bedrock(content)
-    
+
     assert len(bedrock_content) > 0
     assert bedrock_content[0]["text"] == "."
 
 
 def test__lc_content_to_bedrock_whitespace_text_block() -> None:
-    content: List[Union[str, Dict[str, Any]]] = [
-        {"type": "text", "text": "  \n  "}
-    ]
-    
+    content: List[Union[str, Dict[str, Any]]] = [{"type": "text", "text": "  \n  "}]
+
     bedrock_content = _lc_content_to_bedrock(content)
-    
+
     assert len(bedrock_content) > 0
     assert bedrock_content[0]["text"] == "."
 
@@ -1264,9 +1259,9 @@ def test__lc_content_to_bedrock_mixed_valid_and_empty_content() -> None:
     content: List[Union[str, Dict[str, Any]]] = [
         {"type": "text", "text": "Valid text"},
         {"type": "text", "text": ""},
-        {"type": "text", "text": "   "}
+        {"type": "text", "text": "   "},
     ]
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
 
     assert len(bedrock_content) == 3
@@ -1284,21 +1279,21 @@ def test__lc_content_to_bedrock_mixed_types_with_empty_content() -> None:
             "input": {"arg1": "val1"},
             "name": "tool1",
         },
-        {"type": "text", "text": "   "}
+        {"type": "text", "text": "   "},
     ]
 
     expected = [
-        {'text': 'Valid text'},
+        {"text": "Valid text"},
         {
-            'toolUse': {
-                'toolUseId': 'tool_call1',
-                'input': {'arg1': 'val1'},
-                'name': 'tool1'
+            "toolUse": {
+                "toolUseId": "tool_call1",
+                "input": {"arg1": "val1"},
+                "name": "tool1",
             }
         },
-        {'text': '.'}
+        {"text": "."},
     ]
-    
+
     bedrock_content = _lc_content_to_bedrock(content)
 
     assert len(bedrock_content) == 3
@@ -1431,6 +1426,21 @@ def test_create_cache_point() -> None:
     assert cache_point["cachePoint"]["type"] == "default"
 
 
+def test_create_document() -> None:
+    """Test creating a document."""
+    document = ChatBedrockConverse.create_document(
+        name="MyDoc", source={"text": "Cite me"}, enable_citations=True
+    )
+    expected_doc = {
+        "document": {
+            "name": "MyDoc",
+            "source": {"text": "Cite me"},
+            "citations": {"enabled": True},
+        }
+    }
+    assert document == expected_doc
+
+
 def test_anthropic_tool_with_cache_point() -> None:
     """Test convert_to_anthropic_tool with cache point"""
     # Test with cache point
@@ -1507,9 +1517,9 @@ def test_model_kwargs() -> None:
     assert llm.temperature is None
 
 
-def _create_mock_llm_guard_last_turn_only() -> (
-    Tuple[ChatBedrockConverse, mock.MagicMock]
-):
+def _create_mock_llm_guard_last_turn_only() -> Tuple[
+    ChatBedrockConverse, mock.MagicMock
+]:
     """Utility to create an LLM with guard_last_turn_only=True and a mocked client."""
     mocked_client = mock.MagicMock()
     llm = ChatBedrockConverse(
