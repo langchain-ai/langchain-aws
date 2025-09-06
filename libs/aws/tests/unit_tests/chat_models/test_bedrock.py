@@ -558,6 +558,20 @@ def test_beta_use_converse_api() -> None:
     "model_id, provider, expected_provider, expectation, region_name",
     [
         (
+            "amer.amazon.nova-pro-v1:0",
+            None,
+            "amazon",
+            nullcontext(),
+            "us-west-2",
+        ),
+        (
+            "global.anthropic.claude-sonnet-4-20250514-v1:0",
+            None,
+            "anthropic",
+            nullcontext(),
+            "us-west-2",
+        ),
+        (
             "eu.anthropic.claude-3-haiku-20240307-v1:0",
             None,
             "anthropic",
