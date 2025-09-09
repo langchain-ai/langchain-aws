@@ -539,11 +539,31 @@ def test_standard_tracing_params() -> None:
 
 
 def test_beta_use_converse_api() -> None:
-    llm = ChatBedrock(model_id="nova.foo", region_name="us-west-2")  # type: ignore[call-arg]
+    llm = ChatBedrock(model_id="amazon.nova.foo", region_name="us-west-2")  # type: ignore[call-arg]
     assert llm.beta_use_converse_api
 
     llm = ChatBedrock(
+        model="foobar",
+        base_model="amazon.nova.foo",
+        region_name="us-west-2")  # type: ignore[call-arg]
+    assert llm.beta_use_converse_api
+
+    llm = ChatBedrock(
+        model="arn:aws:bedrock:::application-inference-profile/my-profile",
+        base_model="claude.foo",
+        region_name="us-west-2")  # type: ignore[call-arg]
+    assert not llm.beta_use_converse_api
+
+    llm = ChatBedrock(
         model="nova.foo", region_name="us-west-2", beta_use_converse_api=False
+    )
+    assert not llm.beta_use_converse_api
+
+    llm = ChatBedrock(
+        model="foobar",
+        base_model="nova.foo",
+        region_name="us-west-2",
+        beta_use_converse_api=False
     )
     assert not llm.beta_use_converse_api
 
@@ -552,6 +572,58 @@ def test_beta_use_converse_api() -> None:
 
     llm = ChatBedrock(model="foo", region_name="us-west-2", beta_use_converse_api=False)
     assert not llm.beta_use_converse_api
+
+
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_beta_use_converse_api_with_inference_profile(mock_create_aws_client):
+    mock_bedrock_client = mock.MagicMock()
+    mock_bedrock_client.get_inference_profile.return_value = {
+        "models": [
+            {
+                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+            }
+        ]
+    }
+    mock_create_aws_client.return_value = mock_bedrock_client
+
+    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"
+    chat = ChatBedrock(
+        model_id=aip_model_id, 
+        region_name="us-west-2",
+        bedrock_client=mock_bedrock_client
+    ) # type: ignore[call-arg]
+
+    mock_bedrock_client.get_inference_profile.assert_called_with(
+        inferenceProfileIdentifier=aip_model_id
+    )
+
+    assert chat.beta_use_converse_api is False
+
+
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_beta_use_converse_api_with_inference_profile_as_nova_model(mock_create_aws_client):
+    mock_bedrock_client = mock.MagicMock()
+    mock_bedrock_client.get_inference_profile.return_value = {
+        "models": [
+            {
+                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-micro-v1:0"
+            }
+        ]
+    }
+    mock_create_aws_client.return_value = mock_bedrock_client
+
+    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"
+    chat = ChatBedrock(
+        model_id=aip_model_id, 
+        region_name="us-west-2",
+        bedrock_client=mock_bedrock_client
+    ) # type: ignore[call-arg]
+
+    mock_bedrock_client.get_inference_profile.assert_called_with(
+        inferenceProfileIdentifier=aip_model_id
+    )
+
+    assert chat.beta_use_converse_api is True
 
 
 @pytest.mark.parametrize(

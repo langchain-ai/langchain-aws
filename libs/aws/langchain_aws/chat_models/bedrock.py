@@ -58,6 +58,7 @@ from langchain_aws.llms.bedrock import (
 )
 from langchain_aws.utils import (
     anthropic_tokens_supported,
+    create_aws_client,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
 )
@@ -751,9 +752,36 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     @classmethod
     def set_beta_use_converse_api(cls, values: Dict) -> Any:
         model_id = values.get("model_id", values.get("model"))
+        base_model_id = values.get("base_model_id", values.get("base_model", ""))
 
-        if model_id and "beta_use_converse_api" not in values:
-            values["beta_use_converse_api"] = "nova" in model_id
+        if not model_id or "beta_use_converse_api" in values:
+            return values
+
+        nova_id = "amazon.nova"
+        values["beta_use_converse_api"] = False
+
+        if nova_id in model_id or nova_id in base_model_id:
+            values["beta_use_converse_api"] = True
+        elif not base_model_id and "application-inference-profile" in model_id:
+            bedrock_client = values.get("bedrock_client")
+            if not bedrock_client:
+                bedrock_client = create_aws_client(
+                    region_name=values.get("region_name"),
+                    credentials_profile_name=values.get("credentials_profile_name"),
+                    aws_access_key_id=values.get("aws_access_key_id"),
+                    aws_secret_access_key=values.get("aws_secret_access_key"),
+                    aws_session_token=values.get("aws_session_token"),
+                    endpoint_url=values.get("endpoint_url"),
+                    config=values.get("config"),
+                    service_name="bedrock",
+                )
+            response = bedrock_client.get_inference_profile(
+                inferenceProfileIdentifier=model_id
+            )
+            if 'models' in response and len(response['models']) > 0:
+                model_arn = response['models'][0]['modelArn']
+                resolved_base_model = model_arn.split('/')[-1]
+                values["beta_use_converse_api"] = "nova" in resolved_base_model
         return values
 
     @model_validator(mode="before")
