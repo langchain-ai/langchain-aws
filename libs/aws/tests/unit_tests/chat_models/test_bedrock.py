@@ -539,12 +539,12 @@ def test_standard_tracing_params() -> None:
 
 
 def test_beta_use_converse_api() -> None:
-    llm = ChatBedrock(model_id="nova.foo", region_name="us-west-2")  # type: ignore[call-arg]
+    llm = ChatBedrock(model_id="amazon.nova.foo", region_name="us-west-2")  # type: ignore[call-arg]
     assert llm.beta_use_converse_api
 
     llm = ChatBedrock(
         model="foobar",
-        base_model="nova.foo",
+        base_model="amazon.nova.foo",
         region_name="us-west-2")  # type: ignore[call-arg]
     assert llm.beta_use_converse_api
 
