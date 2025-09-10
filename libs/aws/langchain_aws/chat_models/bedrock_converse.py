@@ -62,6 +62,8 @@ from langchain_aws.utils import create_aws_client
 logger = logging.getLogger(__name__)
 _BM = TypeVar("_BM", bound=BaseModel)
 
+EMPTY_CONTENT = "."
+
 MIME_TO_FORMAT = {
     # Image formats
     "image/png": "png",
@@ -1344,11 +1346,11 @@ def _lc_content_to_bedrock(
 ) -> List[Dict[str, Any]]:
     if isinstance(content, str):
         if not content or content.isspace():
-            content = [{"text": "."}]
+            content = [{"text": EMPTY_CONTENT}]
         else:
             content = [{"text": content}]
     elif isinstance(content, list) and len(content) == 0:
-        content = [{"type": "text", "text": "."}]
+        content = [{"type": "text", "text": EMPTY_CONTENT}]
 
     bedrock_content: List[Dict[str, Any]] = []
     for block in _snake_to_camel_keys(content):
@@ -1363,7 +1365,7 @@ def _lc_content_to_bedrock(
             bedrock_content.append(_format_data_content_block(block))
         elif block["type"] == "text":
             if not block["text"] or (isinstance(block["text"], str) and block["text"].isspace()):
-                bedrock_content.append({"text": "."})
+                bedrock_content.append({"text": EMPTY_CONTENT})
             else:
                 bedrock_content.append({"text": block["text"]})
         elif block["type"] == "image":
@@ -1732,6 +1734,8 @@ def _str_if_single_text_block(
 def _upsert_tool_calls_to_bedrock_content(
     content: List[Dict[str, Any]], tool_calls: List[ToolCall]
 ) -> List[Dict[str, Any]]:
+    if tool_calls and content == [{"text": EMPTY_CONTENT}]:
+        content = []
     existing_tc_blocks = [block for block in content if "toolUse" in block]
     for tool_call in tool_calls:
         if tool_call["id"] in [
