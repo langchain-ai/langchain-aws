@@ -115,7 +115,7 @@ class TestBedrockCohereStandard(ChatModelIntegrationTests):
 
     @pytest.mark.xfail(reason="Cohere models don't support tool_choice.")
     def test_unicode_tool_call_integration(
-            self, model: BaseChatModel, my_adder_tool: BaseTool
+        self, model: BaseChatModel, force_tool_call: bool
     ) -> None:
         pass
 
@@ -149,7 +149,7 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
 
     @pytest.mark.xfail(reason="Meta models don't support tool_choice.")
     def test_unicode_tool_call_integration(
-            self, model: BaseChatModel, my_adder_tool: BaseTool
+        self, model: BaseChatModel, force_tool_call: bool
     ) -> None:
         pass
 
