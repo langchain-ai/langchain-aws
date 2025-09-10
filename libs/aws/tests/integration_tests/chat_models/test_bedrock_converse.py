@@ -57,6 +57,12 @@ class TestBedrockMistralStandard(ChatModelIntegrationTests):
     ) -> None:
         super().test_tool_message_histories_list_content(model, my_adder_tool)
 
+    @pytest.mark.xfail(reason="Human messages following AI messages not supported.")
+    def test_tool_message_histories_string_content(
+            self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        super().test_tool_message_histories_string_content(model, my_adder_tool)
+
 
 class TestBedrockNovaStandard(ChatModelIntegrationTests):
     @property
@@ -163,6 +169,14 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
         self, model: BaseChatModel, my_adder_tool: BaseTool
     ) -> None:
         super().test_tool_message_histories_list_content(model, my_adder_tool)
+
+    @pytest.mark.xfail(
+        reason="Human messages following AI messages not supported by Bedrock."
+    )
+    def test_tool_message_histories_string_content(
+            self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        super().test_tool_message_histories_string_content(model, my_adder_tool)
 
 
 class ClassifyQuery(BaseModel):
