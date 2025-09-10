@@ -1,7 +1,7 @@
 """Standard LangChain interface tests"""
 
 import base64
-from typing import Literal, Type
+from typing import Literal, Type, Optional
 
 import httpx
 import pytest
@@ -59,7 +59,7 @@ class TestBedrockMistralStandard(ChatModelIntegrationTests):
 
     @pytest.mark.xfail(reason="Human messages following AI messages not supported.")
     def test_tool_message_histories_string_content(
-            self, model: BaseChatModel, my_adder_tool: BaseTool
+        self, model: BaseChatModel, my_adder_tool: BaseTool
     ) -> None:
         super().test_tool_message_histories_string_content(model, my_adder_tool)
 
@@ -115,7 +115,11 @@ class TestBedrockCohereStandard(ChatModelIntegrationTests):
 
     @pytest.mark.xfail(reason="Cohere models don't support tool_choice.")
     def test_unicode_tool_call_integration(
-        self, model: BaseChatModel, force_tool_call: bool
+        self,
+        model: BaseChatModel,
+        *,
+        tool_choice: Optional[str] = None,
+        force_tool_call: bool = False,
     ) -> None:
         pass
 
@@ -149,7 +153,11 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
 
     @pytest.mark.xfail(reason="Meta models don't support tool_choice.")
     def test_unicode_tool_call_integration(
-        self, model: BaseChatModel, force_tool_call: bool
+        self,
+        model: BaseChatModel,
+        *,
+        tool_choice: Optional[str] = None,
+        force_tool_call: bool = False,
     ) -> None:
         pass
 
@@ -186,7 +194,7 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
         reason="Human messages following AI messages not supported by Bedrock."
     )
     def test_tool_message_histories_string_content(
-            self, model: BaseChatModel, my_adder_tool: BaseTool
+        self, model: BaseChatModel, my_adder_tool: BaseTool
     ) -> None:
         super().test_tool_message_histories_string_content(model, my_adder_tool)
 
