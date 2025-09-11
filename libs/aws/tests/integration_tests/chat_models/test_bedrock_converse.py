@@ -23,7 +23,7 @@ class TestBedrockStandard(ChatModelIntegrationTests):
 
     @property
     def chat_model_params(self) -> dict:
-        return {"model": "anthropic.claude-3-sonnet-20240229-v1:0"}
+        return {"model": "us.anthropic.claude-3-7-sonnet-20250219-v1:0"}
 
     @property
     def standard_chat_model_params(self) -> dict:
@@ -195,7 +195,7 @@ class ClassifyQuery(BaseModel):
 
 def test_structured_output_snake_case() -> None:
     model = ChatBedrockConverse(
-        model="anthropic.claude-3-sonnet-20240229-v1:0", temperature=0
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", temperature=0
     )
 
     chat = model.with_structured_output(ClassifyQuery)
@@ -204,7 +204,7 @@ def test_structured_output_snake_case() -> None:
 
 
 def test_tool_calling_snake_case() -> None:
-    model = ChatBedrockConverse(model="anthropic.claude-3-sonnet-20240229-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
 
     def classify_query(query_type: Literal["cat", "dog"]) -> None:
         pass
@@ -236,7 +236,7 @@ def test_tool_calling_snake_case() -> None:
 
 
 def test_tool_calling_camel_case() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
 
     def classifyQuery(queryType: Literal["cat", "dog"]) -> None:
         pass
@@ -262,7 +262,7 @@ def test_tool_calling_camel_case() -> None:
 
 def test_structured_output_streaming() -> None:
     model = ChatBedrockConverse(
-        model="anthropic.claude-3-sonnet-20240229-v1:0", temperature=0
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", temperature=0
     )
     query = (
         "What weighs more, a pound of bricks or a pound of feathers? "
@@ -357,7 +357,7 @@ def test_tool_use_with_cache_point() -> None:
 def test_guardrails() -> None:
     params = {
         "region_name": "us-west-2",
-        "model": "anthropic.claude-3-sonnet-20240229-v1:0",
+        "model": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         "temperature": 0,
         "max_tokens": 100,
         "stop": [],
@@ -479,7 +479,7 @@ def test_structured_output_thinking_force_tool_use() -> None:
 
 
 def test_bedrock_pdf_inputs() -> None:
-    model = ChatBedrockConverse(model="anthropic.claude-3-sonnet-20240229-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
     url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
     pdf_data = base64.b64encode(httpx.get(url).content).decode("utf-8")
 
