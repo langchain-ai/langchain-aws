@@ -486,7 +486,7 @@ def test_structured_output_thinking_force_tool_use() -> None:
 @pytest.mark.vcr
 def test_thinking() -> None:
     llm = ChatBedrockConverse(
-        model_id="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
         max_tokens=4096,
         additional_model_request_fields={
             "thinking": {"type": "enabled", "budget_tokens": 1024},
@@ -498,23 +498,24 @@ def test_thinking() -> None:
     for chunk in llm.stream([input_message]):
         assert isinstance(chunk, AIMessageChunk)
         full = chunk if full is None else full + chunk
+    assert isinstance(full, AIMessageChunk)
 
-    assert [block["type"] for block in full.content] == ["reasoning_content", "text"]
-    assert "text" in full.content[0]["reasoning_content"]
-    assert "signature" in full.content[0]["reasoning_content"]
+    assert [block["type"] for block in full.content] == ["reasoning_content", "text"]  # type: ignore[index,union-attr]
+    assert "text" in full.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+    assert "signature" in full.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
 
     next_message = {"role": "user", "content": "Thanks!"}
     response = llm.invoke([input_message, full, next_message])
 
-    assert [block["type"] for block in response.content] == ["reasoning_content", "text"]
-    assert "text" in response.content[0]["reasoning_content"]
-    assert "signature" in response.content[0]["reasoning_content"]
+    assert [block["type"] for block in response.content] == ["reasoning_content", "text"]  # type: ignore[index,union-attr]
+    assert "text" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+    assert "signature" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
 
 
 @pytest.mark.vcr
 def test_citations() -> None:
 
-    llm = ChatBedrockConverse(model_id="us.anthropic.claude-sonnet-4-20250514-v1:0")
+    llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-20250514-v1:0")
 
     input_message = {
         "role": "user",
@@ -544,11 +545,12 @@ def test_citations() -> None:
     for chunk in llm.stream([input_message]):
         assert isinstance(chunk, AIMessageChunk)
         full = chunk if full is None else full + chunk
-    assert any(block.get("citations") for block in full.content)
+    assert isinstance(full, AIMessageChunk)
+    assert any(block.get("citations") for block in full.content)  # type: ignore[union-attr]
 
     next_message = {"role": "user", "content": "Who should they consult with?"}
     response = llm.invoke([input_message, full, next_message])
-    assert any(block.get("citations") for block in response.content)
+    assert any(block.get("citations") for block in response.content)  # type: ignore[union-attr]
 
 
 def test_bedrock_pdf_inputs() -> None:
