@@ -507,6 +507,46 @@ def test_thinking() -> None:
     _ = llm.invoke([input_message, full, next_message])
 
 
+@pytest.mark.vcr
+def test_citations() -> None:
+
+    llm = ChatBedrockConverse(model_id="us.anthropic.claude-sonnet-4-20250514-v1:0")
+
+    input_message = {
+        "role": "user",
+        "content": [
+            {
+                "type": "document",
+                "document": {
+                    "format": "txt",
+                    "name": "company_policy",
+                    "source": {
+                        "text": (
+                            "Company leave policy: Employees get 20 days annual leave. "
+                            "Consult with your manager for details."
+                        )
+                    },
+                    "context": "HR Policy Manual Section 3.2",
+                    "citations": {
+                        "enabled": True
+                    }
+                }
+            },
+            {"type": "text", "text": "How many days of annual leave do employees get?"},
+        ]
+    }
+
+    full: Optional[BaseMessageChunk] = None
+    for chunk in llm.stream([input_message]):
+        assert isinstance(chunk, AIMessageChunk)
+        full = chunk if full is None else full + chunk
+    assert any(block.get("citations") for block in full.content)
+
+    next_message = {"role": "user", "content": "Who should they consult with?"}
+    response = llm.invoke([input_message, full, next_message])
+    assert any(block.get("citations") for block in response.content)
+
+
 def test_bedrock_pdf_inputs() -> None:
     model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
     url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
