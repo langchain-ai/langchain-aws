@@ -1603,6 +1603,15 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                         text_block["citations"] = citations
                     lc_content.append(text_block)
 
+        elif "citation" in block:  # streaming citations
+            lc_content.append(
+                {
+                    "type": "text",
+                    "text": "",
+                    "citations": [block["citation"]]
+                }
+            )
+
         else:
             raise ValueError(
                 "Unexpected content block type in content. Expected to have one of "
