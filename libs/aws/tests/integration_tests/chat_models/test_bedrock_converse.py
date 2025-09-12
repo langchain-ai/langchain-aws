@@ -7,7 +7,12 @@ import httpx
 import pytest
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessageChunk,
+    HumanMessage,
+)
 from langchain_core.tools import BaseTool
 from langchain_tests.integration_tests import ChatModelIntegrationTests
 from pydantic import BaseModel, Field
@@ -476,6 +481,30 @@ def test_structured_output_thinking_force_tool_use() -> None:
     }
     with pytest.raises(llm.client.exceptions.ValidationException):
         llm.client.converse(messages=messages, **params)
+
+
+@pytest.mark.vcr
+def test_thinking() -> None:
+    llm = ChatBedrockConverse(
+        model_id="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        max_tokens=4096,
+        additional_model_request_fields={
+            "thinking": {"type": "enabled", "budget_tokens": 1024},
+        },
+    )
+
+    input_message = {"role": "user", "content": "What is 3^3?"}
+    full: Optional[BaseMessageChunk] = None
+    for chunk in llm.stream([input_message]):
+        assert isinstance(chunk, AIMessageChunk)
+        full = chunk if full is None else full + chunk
+
+    assert [block["type"] for block in full.content] == ["reasoning_content", "text"]
+    assert "text" in full.content[0]["reasoning_content"]
+    assert "signature" in full.content[0]["reasoning_content"]
+
+    next_message = {"role": "user", "content": "Thanks!"}
+    _ = llm.invoke([input_message, full, next_message])
 
 
 def test_bedrock_pdf_inputs() -> None:
