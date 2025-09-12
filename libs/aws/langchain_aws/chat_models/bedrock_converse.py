@@ -1154,6 +1154,10 @@ def _messages_to_bedrock(
             bedrock_messages.append(curr)
         else:
             raise ValueError(f"Unsupported message type {type(msg)}")
+        
+    if not bedrock_messages:
+        bedrock_messages.append({"role": "user", "content": [{"text": EMPTY_CONTENT}]})
+
     return bedrock_messages, bedrock_system
 
 

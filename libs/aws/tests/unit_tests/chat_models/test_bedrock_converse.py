@@ -13,6 +13,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolCall,
     ToolMessage,
+    BaseMessage
 )
 from langchain_core.runnables import RunnableBinding
 from langchain_tests.unit_tests import ChatModelUnitTests
@@ -381,6 +382,36 @@ def test_messages_to_bedrock_with_cache_point() -> None:
     ]
     assert expected_messages == actual_messages
     assert [] == actual_system
+
+
+def test__messages_to_bedrock_empty_list() -> None:
+    messages: List[BaseMessage] = []
+    actual_messages, actual_system = _messages_to_bedrock(messages)
+
+    expected_messages: List[Dict] = [
+        {"role": "user", "content": [{"text": "."}]}
+    ]
+    expected_system: List[Dict] = []
+
+    assert expected_messages == actual_messages
+    assert expected_system == actual_system
+
+
+def test__messages_to_bedrock_system_only() -> None:
+    messages: List[BaseMessage] = [
+        SystemMessage(content="You are a helpful assistant.")
+    ]
+    actual_messages, actual_system = _messages_to_bedrock(messages)
+
+    expected_messages: List[Dict] = [
+        {"role": "user", "content": [{"text": "."}]}
+    ]
+    expected_system: List[Dict] = [
+        {"text": "You are a helpful assistant."}
+    ]
+
+    assert expected_messages == actual_messages
+    assert expected_system == actual_system
 
 
 def test__bedrock_to_lc() -> None:
