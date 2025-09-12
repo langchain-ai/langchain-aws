@@ -1367,7 +1367,24 @@ def _lc_content_to_bedrock(
             if not block["text"] or (isinstance(block["text"], str) and block["text"].isspace()):
                 bedrock_content.append({"text": EMPTY_CONTENT})
             else:
-                bedrock_content.append({"text": block["text"]})
+                text_block = {"text": block["text"]}
+                if (
+                    (citations := block.get("citations"))
+                    and isinstance(citations, list)
+                    and len(citations) > 0
+                    and isinstance(citations[0], dict)
+                    and "sourceContent" in citations[0]  # validate format
+                ):
+                    bedrock_content.append(
+                        {
+                            "citationsContent": {
+                                "content": [text_block],
+                                "citations": citations,
+                            }
+                        }
+                    )
+                else:
+                    bedrock_content.append(text_block)
         elif block["type"] == "image":
             # Assume block is already in bedrock format.
             if "image" in block:
