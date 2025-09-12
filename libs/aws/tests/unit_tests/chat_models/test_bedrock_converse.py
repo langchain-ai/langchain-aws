@@ -383,6 +383,28 @@ def test_messages_to_bedrock_with_cache_point() -> None:
     assert [] == actual_system
 
 
+def test__messages_to_bedrock_empty_list() -> None:
+    messages = []
+    
+    actual_messages, actual_system = _messages_to_bedrock(messages)
+    expected_messages = [{"role": "user", "content": [{"text": "."}]}]
+    expected_system = []
+    
+    assert expected_messages == actual_messages
+    assert expected_system == actual_system
+
+
+def test__messages_to_bedrock_system_only() -> None:
+    messages = [SystemMessage(content="You are a helpful assistant.")]
+    
+    actual_messages, actual_system = _messages_to_bedrock(messages)
+    expected_messages = [{"role": "user", "content": [{"text": "."}]}]
+    expected_system = [{"text": "You are a helpful assistant."}]
+    
+    assert expected_messages == actual_messages
+    assert expected_system == actual_system
+
+
 def test__bedrock_to_lc() -> None:
     bedrock: List[Dict] = [
         {"text": "text1"},
