@@ -504,7 +504,11 @@ def test_thinking() -> None:
     assert "signature" in full.content[0]["reasoning_content"]
 
     next_message = {"role": "user", "content": "Thanks!"}
-    _ = llm.invoke([input_message, full, next_message])
+    response = llm.invoke([input_message, full, next_message])
+
+    assert [block["type"] for block in response.content] == ["reasoning_content", "text"]
+    assert "text" in response.content[0]["reasoning_content"]
+    assert "signature" in response.content[0]["reasoning_content"]
 
 
 @pytest.mark.vcr
