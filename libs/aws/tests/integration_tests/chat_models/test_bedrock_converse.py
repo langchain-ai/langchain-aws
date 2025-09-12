@@ -7,7 +7,12 @@ import httpx
 import pytest
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessageChunk,
+    HumanMessage,
+)
 from langchain_core.tools import BaseTool
 from langchain_tests.integration_tests import ChatModelIntegrationTests
 from pydantic import BaseModel, Field
@@ -476,6 +481,76 @@ def test_structured_output_thinking_force_tool_use() -> None:
     }
     with pytest.raises(llm.client.exceptions.ValidationException):
         llm.client.converse(messages=messages, **params)
+
+
+@pytest.mark.vcr
+def test_thinking() -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        max_tokens=4096,
+        additional_model_request_fields={
+            "thinking": {"type": "enabled", "budget_tokens": 1024},
+        },
+    )
+
+    input_message = {"role": "user", "content": "What is 3^3?"}
+    full: Optional[BaseMessageChunk] = None
+    for chunk in llm.stream([input_message]):
+        assert isinstance(chunk, AIMessageChunk)
+        full = chunk if full is None else full + chunk
+    assert isinstance(full, AIMessageChunk)
+
+    assert [block["type"] for block in full.content] == ["reasoning_content", "text"]  # type: ignore[index,union-attr]
+    assert "text" in full.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+    assert "signature" in full.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+
+    next_message = {"role": "user", "content": "Thanks!"}
+    response = llm.invoke([input_message, full, next_message])
+
+    assert [block["type"] for block in response.content] == ["reasoning_content", "text"]  # type: ignore[index,union-attr]
+    assert "text" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+    assert "signature" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+
+
+@pytest.mark.vcr
+def test_citations() -> None:
+
+    llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-20250514-v1:0")
+
+    input_message = {
+        "role": "user",
+        "content": [
+            {
+                "type": "document",
+                "document": {
+                    "format": "txt",
+                    "name": "company_policy",
+                    "source": {
+                        "text": (
+                            "Company leave policy: Employees get 20 days annual leave. "
+                            "Consult with your manager for details."
+                        )
+                    },
+                    "context": "HR Policy Manual Section 3.2",
+                    "citations": {
+                        "enabled": True
+                    }
+                }
+            },
+            {"type": "text", "text": "How many days of annual leave do employees get?"},
+        ]
+    }
+
+    full: Optional[BaseMessageChunk] = None
+    for chunk in llm.stream([input_message]):
+        assert isinstance(chunk, AIMessageChunk)
+        full = chunk if full is None else full + chunk
+    assert isinstance(full, AIMessageChunk)
+    assert any(block.get("citations") for block in full.content)  # type: ignore[union-attr]
+
+    next_message = {"role": "user", "content": "Who should they consult with?"}
+    response = llm.invoke([input_message, full, next_message])
+    assert any(block.get("citations") for block in response.content)  # type: ignore[union-attr]
 
 
 def test_bedrock_pdf_inputs() -> None:

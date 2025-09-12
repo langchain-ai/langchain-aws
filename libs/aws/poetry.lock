@@ -2319,7 +2319,7 @@ description = "Typing stubs for requests"
 optional = false
 python-versions = ">=3.9"
 groups = ["typing"]
-markers = "platform_python_implementation != \"PyPy\" and python_version >= \"3.10\""
+markers = "python_version >= \"3.10\" and platform_python_implementation != \"PyPy\""
 files = [
     {file = "types_requests-2.32.4.20250809-py3-none-any.whl", hash = "sha256:f73d1832fb519ece02c85b1f09d5f0dd3108938e7d47e7f94bbfa18a6782b163"},
     {file = "types_requests-2.32.4.20250809.tar.gz", hash = "sha256:d8060de1c8ee599311f56ff58010fb4902f462a1470802cf9f6ed27bc46c4df3"},
@@ -2393,7 +2393,7 @@ description = "HTTP library with thread-safe connection pooling, file post, and 
 optional = false
 python-versions = ">=3.9"
 groups = ["main", "test", "typing"]
-markers = "platform_python_implementation != \"PyPy\" and python_version >= \"3.10\""
+markers = "python_version >= \"3.10\" and platform_python_implementation != \"PyPy\""
 files = [
     {file = "urllib3-2.5.0-py3-none-any.whl", hash = "sha256:e6b01673c0fa6a13e374b50871808eb3bf7046c4b125b216f6bf1cc604cff0dc"},
     {file = "urllib3-2.5.0.tar.gz", hash = "sha256:3fc47733c7e419d4bc3f6b3dc2b4f890bb743906a30d56ba4a5bfa4bbff92760"},
@@ -2846,4 +2846,4 @@ tools = ["beautifulsoup4", "bedrock-agentcore", "playwright"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9"
-content-hash = "6eb51786f5b6e52af9f28dc38826465b0b4d5d4d7f4b8458eca63a1072c29a2c"
+content-hash = "d8aa6dd4364031b54ffdc573e7e9d4c3cce307c76e89de1bffc454d689ceebed"
