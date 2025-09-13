@@ -678,21 +678,34 @@ class ChatBedrockConverse(BaseChatModel):
         # only claude-3/4, mistral-large, and nova models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
         if self.supports_tool_choice_values is None:
-            if "claude" in self._get_base_model():
+            base_model = self._get_base_model()
+            if "claude" in base_model:
                 # Tool choice not supported when thinking is enabled
                 thinking_params = (self.additional_model_request_fields or {}).get(
                     "thinking", {}
                 )
                 if (
-                    "claude-3-7-sonnet" in self._get_base_model()
+                    "claude-3-7-sonnet" in base_model
                     and thinking_params.get("type") == "enabled"
                 ):
                     self.supports_tool_choice_values = ()
                 else:
                     self.supports_tool_choice_values = ("auto", "any", "tool")
-            elif "mistral-large" in self._get_base_model():
+            elif "llama4" in base_model:
+                self.supports_tool_choice_values = ("auto",)
+            elif "llama3" in base_model:
+                if any(x in base_model for x in ("llama3-1", "llama3-3")):
+                    self.supports_tool_choice_values = ("auto",)
+                elif "llama3-2" in base_model:
+                    if any(x in base_model for x in ("11b", "90b")):
+                        self.supports_tool_choice_values = ("auto",)
+                    else:
+                        self.supports_tool_choice_values = ()
+                else:
+                    self.supports_tool_choice_values = ()
+            elif "mistral-large" in base_model:
                 self.supports_tool_choice_values = ("auto", "any")
-            elif "nova" in self._get_base_model():
+            elif "nova" in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
             else:
                 self.supports_tool_choice_values = ()
