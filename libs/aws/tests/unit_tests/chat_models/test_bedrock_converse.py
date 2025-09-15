@@ -134,6 +134,41 @@ def test_amazon_bind_tools_tool_choice() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "model, should_support_auto",
+    [
+        ("us.meta.llama4-maverick-17b-instruct-v1:0", True),
+        ("us.meta.llama3-3-70b-instruct-v1:0", True),
+        ("us.meta.llama3-2-90b-instruct-v1:0", True),
+        ("us.meta.llama3-2-1b-instruct-v1:0", False),
+        ("us.meta.llama3-1-405b-instruct-v1:0", True),
+        ("meta.llama3-70b-instruct-v1:0", False)
+    ],
+)
+def test_llama_bind_tools_tool_choice_variants(model: str, should_support_auto: bool) -> None:
+    chat_model = ChatBedrockConverse(
+        model=model,
+        region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    if should_support_auto:
+        chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="auto")
+        assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+            "auto": {}
+        }
+        with pytest.raises(ValueError):
+            chat_model.bind_tools([GetWeather], tool_choice="any")
+        with pytest.raises(ValueError):
+            chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+    else:
+        with pytest.raises(ValueError):
+            chat_model.bind_tools([GetWeather], tool_choice="auto")
+        with pytest.raises(ValueError):
+            chat_model.bind_tools([GetWeather], tool_choice="any")
+        with pytest.raises(ValueError):
+            chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+
+
 def test__messages_to_bedrock() -> None:
     messages = [
         SystemMessage(content="sys1"),
