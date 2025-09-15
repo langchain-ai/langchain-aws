@@ -1338,6 +1338,8 @@ def _format_data_content_block(block: dict) -> dict:
                     "source": {"bytes": _b64str_to_bytes(block["data"])},
                 }
             }
+            if citations := block.get("citations"):
+                formatted_block["document"]["citations"] = citations
             if name := block.get("name"):
                 formatted_block["document"]["name"] = name
             elif name := block.get("filename"):  # OpenAI uses `filename`
