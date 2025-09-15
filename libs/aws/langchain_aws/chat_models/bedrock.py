@@ -408,7 +408,10 @@ def _merge_messages(
                     ]
                 )
         last = merged[-1] if merged else None
-        if isinstance(last, HumanMessage) and isinstance(curr, HumanMessage):
+        if any(
+            all(isinstance(m, c) for m in (curr, last))
+            for c in (SystemMessage, HumanMessage)
+        ):
             if isinstance(last.content, str):
                 new_content: List = [{"type": "text", "text": last.content}]
             else:
@@ -433,9 +436,11 @@ def _format_anthropic_messages(
     merged_messages = _merge_messages(messages)
     for i, message in enumerate(merged_messages):
         if message.type == "system":
-            if i != 0:
-                raise ValueError("System message must be at beginning of message list.")
-            if isinstance(message.content, str):
+            if system is not None:
+                raise ValueError(
+                    "Received multiple non-consecutive system messages."
+                )
+            elif isinstance(message.content, str):
                 system = message.content
             elif isinstance(message.content, list):
                 system_blocks = []
