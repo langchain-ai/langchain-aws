@@ -483,14 +483,17 @@ def test_structured_output_thinking_force_tool_use() -> None:
         llm.client.converse(messages=messages, **params)
 
 
+@pytest.mark.default_cassette("test_thinking.yaml.gz")
 @pytest.mark.vcr
-def test_thinking() -> None:
+@pytest.mark.parametrize("output_version", ["v0", "v1"])
+def test_thinking(output_version: Literal["v0", "v1"]) -> None:
     llm = ChatBedrockConverse(
         model="us.anthropic.claude-sonnet-4-20250514-v1:0",
         max_tokens=4096,
         additional_model_request_fields={
             "thinking": {"type": "enabled", "budget_tokens": 1024},
         },
+        output_version=output_version,
     )
 
     input_message = {"role": "user", "content": "What is 3^3?"}
@@ -500,16 +503,34 @@ def test_thinking() -> None:
         full = chunk if full is None else full + chunk
     assert isinstance(full, AIMessageChunk)
 
-    assert [block["type"] for block in full.content] == ["reasoning_content", "text"]  # type: ignore[index,union-attr]
-    assert "text" in full.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
-    assert "signature" in full.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+    # Raw content
+    if output_version == "v0":
+        assert [block["type"] for block in full.content] == ["reasoning_content", "text"]  # type: ignore[index,union-attr]
+        assert "text" in full.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+        assert "signature" in full.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+    else:
+        # v1
+        assert [block["type"] for block in full.content] == ["reasoning", "text"]  # type: ignore[index,union-attr]
+        assert "signature" in full.content[0]["extras"]  # type: ignore[index,union-attr]
+
+    # Parsed
+    content_blocks = full.content_blocks
+    assert [block["type"] for block in content_blocks] == ["reasoning", "text"]
+    assert content_blocks[0]["type"] == "reasoning"
+    assert content_blocks[0].get("reasoning")
+    assert "signature" in content_blocks[0]["extras"]
 
     next_message = {"role": "user", "content": "Thanks!"}
     response = llm.invoke([input_message, full, next_message])
 
-    assert [block["type"] for block in response.content] == ["reasoning_content", "text"]  # type: ignore[index,union-attr]
-    assert "text" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
-    assert "signature" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+    if output_version == "v0":
+        assert [block["type"] for block in response.content] == ["reasoning_content", "text"]  # type: ignore[index,union-attr]
+        assert "text" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+        assert "signature" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+    else:
+        # v1
+        assert [block["type"] for block in response.content] == ["reasoning", "text"]  # type: ignore[index,union-attr]
+        assert "signature" in response.content[0]["extras"]  # type: ignore[index,union-attr]
 
 
 PLAINTEXT_DOCUMENT = {
@@ -573,11 +594,62 @@ def test_citations(document: dict[str, Any]) -> None:
         assert isinstance(chunk, AIMessageChunk)
         full = chunk if full is None else full + chunk
     assert isinstance(full, AIMessageChunk)
+
+    # Raw content
     assert any(block.get("citations") for block in full.content)  # type: ignore[union-attr]
+
+    # Parsed
+    content_blocks = full.content_blocks
+    assert any(block.get("annotations") for block in content_blocks)
+    for block in content_blocks:
+        if "annotations" in block:
+            assert isinstance(block["annotations"], list)
+            for annotation in block["annotations"]:
+                assert "title" in annotation
+                assert "cited_text" in annotation
 
     next_message = {"role": "user", "content": "Who should they consult with?"}
     response = llm.invoke([input_message, full, next_message])
     assert any(block.get("citations") for block in response.content)  # type: ignore[union-attr]
+
+
+@pytest.mark.default_cassette("test_citations[document0].yaml.gz")
+@pytest.mark.vcr
+@pytest.mark.parametrize("output_version", ["v0", "v1"])
+def test_citations_v1(output_version: Literal["v0", "v1"]) -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        output_version=output_version,
+    )
+
+    input_message = {
+        "role": "user",
+        "content": [
+            PLAINTEXT_DOCUMENT,
+            {"type": "text", "text": "How many days of annual leave do employees get?"},
+        ]
+    }
+
+    full: Optional[BaseMessageChunk] = None
+    for chunk in llm.stream([input_message]):
+        assert isinstance(chunk, AIMessageChunk)
+        full = chunk if full is None else full + chunk
+    assert isinstance(full, AIMessageChunk)
+
+    # Raw content
+    if output_version == "v0":
+        assert any(block.get("citations") for block in full.content)  # type: ignore[union-attr]
+    else:
+        # v1
+        assert any(block.get("annotations") for block in full.content)  # type: ignore[union-attr]
+
+    next_message = {"role": "user", "content": "Who should they consult with?"}
+    response = llm.invoke([input_message, full, next_message])
+    if output_version == "v0":
+        assert any(block.get("citations") for block in response.content)  # type: ignore[union-attr]
+    else:
+        # v1
+        assert any(block.get("annotations") for block in response.content)  # type: ignore[union-attr]
 
 
 @pytest.mark.vcr
