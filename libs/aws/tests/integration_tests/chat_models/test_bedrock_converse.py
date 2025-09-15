@@ -575,7 +575,7 @@ def test_bedrock_pdf_inputs() -> None:
 
     message = HumanMessage(
         [
-            {"type": "text", "text": "Summarize this document:"},
+            {"type": "text", "text": "What is the title of this document?"},
             {
                 "type": "file",
                 "source_type": "base64",
