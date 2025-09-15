@@ -1,7 +1,7 @@
 """Standard LangChain interface tests"""
 
 import base64
-from typing import Literal, Type, Optional
+from typing import Any, Literal, Type, Optional
 
 import httpx
 import pytest
@@ -544,7 +544,7 @@ BLOCKS_DOCUMENT = {
 
 @pytest.mark.vcr
 @pytest.mark.parametrize("document", [PLAINTEXT_DOCUMENT, BLOCKS_DOCUMENT])
-def test_citations(document) -> None:
+def test_citations(document: dict[str, Any]) -> None:
 
     llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-20250514-v1:0")
 
