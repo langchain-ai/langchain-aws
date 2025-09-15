@@ -542,6 +542,18 @@ BLOCKS_DOCUMENT = {
     },
 }
 
+
+PDF_URL = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
+PDF_DATA = base64.b64encode(httpx.get(PDF_URL).content).decode("utf-8")
+
+STANDARD_PDF_DOCUMENT = {
+    "type": "file",
+    "source_type": "base64",
+    "mime_type": "application/pdf",
+    "data": PDF_DATA,
+    "name": "my-pdf",  # Converse requires a filename
+}
+
 @pytest.mark.vcr
 @pytest.mark.parametrize("document", [PLAINTEXT_DOCUMENT, BLOCKS_DOCUMENT])
 def test_citations(document: dict[str, Any]) -> None:
@@ -568,26 +580,30 @@ def test_citations(document: dict[str, Any]) -> None:
     assert any(block.get("citations") for block in response.content)  # type: ignore[union-attr]
 
 
-def test_bedrock_pdf_inputs() -> None:
+@pytest.mark.vcr
+def test_pdf_citations() -> None:
     model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
-    url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
-    pdf_data = base64.b64encode(httpx.get(url).content).decode("utf-8")
 
     message = HumanMessage(
         [
             {"type": "text", "text": "What is the title of this document?"},
-            {
-                "type": "file",
-                "source_type": "base64",
-                "mime_type": "application/pdf",
-                "data": pdf_data,
-                "name": "my-pdf",  # Converse requires a filename
-                "citations": {"enabled": True},
-            },
+            {**STANDARD_PDF_DOCUMENT, "citations": {"enabled": True}},
         ]
     )
     response = model.invoke([message])
     assert any(block.get("citations") for block in response.content)  # type: ignore[union-attr]
+
+
+def test_bedrock_pdf_inputs() -> None:
+    model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+
+    message = HumanMessage(
+        [
+            {"type": "text", "text": "What is the title of this document?"},
+            STANDARD_PDF_DOCUMENT,
+        ]
+    )
+    _ = model.invoke([message])
 
     # Test OpenAI Chat Completions format
     message = HumanMessage(
@@ -600,7 +616,7 @@ def test_bedrock_pdf_inputs() -> None:
                 "type": "file",
                 "file": {
                     "filename": "my-pdf",
-                    "file_data": f"data:application/pdf;base64,{pdf_data}",
+                    "file_data": f"data:application/pdf;base64,{PDF_DATA}",
                 },
             },
         ]
