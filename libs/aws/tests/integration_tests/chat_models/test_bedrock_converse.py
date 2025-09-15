@@ -512,31 +512,46 @@ def test_thinking() -> None:
     assert "signature" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
 
 
+PLAINTEXT_DOCUMENT = {
+    "document": {
+        "format": "txt",
+        "name": "company_policy",
+        "source": {
+            "text": (
+                "Company leave policy: Employees get 20 days annual leave. "
+                "Consult with your manager for details."
+            )
+        },
+        "context": "HR Policy Manual Section 3.2",
+        "citations": {"enabled": True},
+    },
+}
+
+BLOCKS_DOCUMENT = {
+    "document": {
+        "format": "txt",
+        "name": "company_policy",
+        "source": {
+            "content": [
+                {"text": "Company leave policy: Employees get 20 days annual leave."},
+                {"text": "Consult with your manager for details."},
+            ]
+        },
+        "context": "HR Policy Manual Section 3.2",
+        "citations": {"enabled": True},
+    },
+}
+
 @pytest.mark.vcr
-def test_citations() -> None:
+@pytest.mark.parametrize("document", [PLAINTEXT_DOCUMENT, BLOCKS_DOCUMENT])
+def test_citations(document) -> None:
 
     llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-20250514-v1:0")
 
     input_message = {
         "role": "user",
         "content": [
-            {
-                "type": "document",
-                "document": {
-                    "format": "txt",
-                    "name": "company_policy",
-                    "source": {
-                        "text": (
-                            "Company leave policy: Employees get 20 days annual leave. "
-                            "Consult with your manager for details."
-                        )
-                    },
-                    "context": "HR Policy Manual Section 3.2",
-                    "citations": {
-                        "enabled": True
-                    }
-                }
-            },
+            document,
             {"type": "text", "text": "How many days of annual leave do employees get?"},
         ]
     }
@@ -567,17 +582,19 @@ def test_bedrock_pdf_inputs() -> None:
                 "mime_type": "application/pdf",
                 "data": pdf_data,
                 "name": "my-pdf",  # Converse requires a filename
+                "citations": {"enabled": True},
             },
         ]
     )
-    _ = model.invoke([message])
+    response = model.invoke([message])
+    assert any(block.get("citations") for block in response.content)  # type: ignore[union-attr]
 
     # Test OpenAI Chat Completions format
     message = HumanMessage(
         [
             {
                 "type": "text",
-                "text": "Summarize this document:",
+                "text": "What is the title of this document?",
             },
             {
                 "type": "file",
