@@ -526,8 +526,9 @@ class ChatBedrockConverse(BaseChatModel):
         Args:
             name: The name of the document.
             source: The source of the document.
-            context: Info for the model to understand the document for citations.
             format: The format of the document, or its extension.
+            context: Info for the model to understand the document for citations.
+            enable_citations: Whether to enable the Citations API for the document.
         Returns:
             Dictionary containing a properly formatted to add to message content."""
         if not re.search(r"[^A-Za-z0-9 \[\]()\-]|\s{2,}", name):
