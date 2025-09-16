@@ -910,7 +910,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 generation_chunk = ChatGenerationChunk(
                     message=AIMessageChunk(
                         content=delta,
-                        response_metadata=response_metadata,
+                        response_metadata={
+                            **response_metadata, "model_provider": "bedrock"
+                        },
                         usage_metadata=usage_metadata,
                     )
                     if response_metadata is not None
@@ -1019,6 +1021,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         else:
             usage_metadata = None
         logger.debug(f"The message received from Bedrock: {completion}")
+        llm_output["model_provider"] = "bedrock"
         llm_output["model_id"] = self.model_id  # backward-compatibility
         llm_output["model_name"] = self.model_id
         msg = AIMessage(
