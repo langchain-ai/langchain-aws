@@ -761,20 +761,20 @@ subdirectory = "libs/core"
 
 [[package]]
 name = "langchain-tests"
-version = "0.3.21"
+version = "1.0.0a1"
 description = "Standard tests for LangChain implementations"
 optional = false
-python-versions = ">=3.9"
+python-versions = ">=3.10"
 groups = ["test"]
 markers = "python_version < \"4.0\""
 files = [
-    {file = "langchain_tests-0.3.21-py3-none-any.whl", hash = "sha256:e2325f00ada73ac79e4da4b04002ffef0a87c7e7dbadf8cd54830950343925e0"},
-    {file = "langchain_tests-0.3.21.tar.gz", hash = "sha256:be7959a7961050fb3333d0946c55f08d707f7f8f9be1a5d8f55e8c43ea416295"},
+    {file = "langchain_tests-1.0.0a1-py3-none-any.whl", hash = "sha256:860270f641ea2a88061963ae4cbb50579d7d5f0cf3c4170faac43ea920d14cd8"},
+    {file = "langchain_tests-1.0.0a1.tar.gz", hash = "sha256:0f6bff9f9e2d02120b67f8e308726dcd43ae98c2ea7a9594ceada1c769000c04"},
 ]
 
 [package.dependencies]
 httpx = ">=0.28.1,<1"
-langchain-core = ">=0.3.75,<2.0.0"
+langchain-core = ">=1.0.0a2,<2.0.0"
 numpy = [
     {version = ">=1.26.2", markers = "python_version < \"3.13\""},
     {version = ">=2.1.0", markers = "python_version >= \"3.13\""},
@@ -2766,4 +2766,4 @@ tools = ["beautifulsoup4", "bedrock-agentcore", "playwright"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10"
-content-hash = "3f59bbcdefa59a8622c0ffcceebcd7e22d3f811571dc2d052cf6dc402e01e2e2"
+content-hash = "9445692b65cb5c5bf93c0befd7ba60a2c4750291d53d1d339847de844ee30724"
