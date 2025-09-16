@@ -515,7 +515,6 @@ def test_agent_loop(output_version: Literal["v0", "v1"]) -> None:
         ]
     )
     assert isinstance(response, AIMessage)
-    import pdb; pdb.set_trace()
 
 
 @pytest.mark.default_cassette("test_agent_loop_streaming.yaml.gz")
