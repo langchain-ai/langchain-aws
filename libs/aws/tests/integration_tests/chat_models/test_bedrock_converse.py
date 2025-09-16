@@ -12,8 +12,9 @@ from langchain_core.messages import (
     AIMessageChunk,
     BaseMessageChunk,
     HumanMessage,
+    ToolMessage,
 )
-from langchain_core.tools import BaseTool
+from langchain_core.tools import BaseTool, tool
 from langchain_tests.integration_tests import ChatModelIntegrationTests
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated, TypedDict
@@ -481,6 +482,80 @@ def test_structured_output_thinking_force_tool_use() -> None:
     }
     with pytest.raises(llm.client.exceptions.ValidationException):
         llm.client.converse(messages=messages, **params)
+
+
+@pytest.mark.default_cassette("test_agent_loop.yaml.gz")
+@pytest.mark.vcr
+@pytest.mark.parametrize("output_version", ["v0", "v1"])
+def test_agent_loop(output_version: Literal["v0", "v1"]) -> None:
+
+    @tool
+    def get_weather(location: str) -> str:
+        """Get the weather for a location."""
+        return "It's sunny."
+
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        output_version=output_version,
+    )
+    llm_with_tools = llm.bind_tools([get_weather])
+    input_message = HumanMessage("What is the weather in San Francisco, CA?")
+    tool_call_message = llm_with_tools.invoke([input_message])
+    assert isinstance(tool_call_message, AIMessage)
+    tool_calls = tool_call_message.tool_calls
+    assert len(tool_calls) == 1
+    tool_call = tool_calls[0]
+    tool_message = get_weather.invoke(tool_call)
+    assert isinstance(tool_message, ToolMessage)
+    response = llm_with_tools.invoke(
+        [
+            input_message,
+            tool_call_message,
+            tool_message,
+        ]
+    )
+    assert isinstance(response, AIMessage)
+    import pdb; pdb.set_trace()
+
+
+@pytest.mark.default_cassette("test_agent_loop_streaming.yaml.gz")
+@pytest.mark.vcr
+@pytest.mark.parametrize("output_version", ["v0", "v1"])
+def test_agent_loop_streaming(output_version: Literal["v0", "v1"]) -> None:
+
+    @tool
+    def get_weather(location: str) -> str:
+        """Get the weather for a location."""
+        return "It's sunny."
+
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        output_version=output_version,
+    )
+    llm_with_tools = llm.bind_tools([get_weather])
+    input_message = HumanMessage("What is the weather in San Francisco, CA?")
+
+    tool_call_message: Optional[BaseMessageChunk] = None
+    for chunk in llm_with_tools.stream([input_message]):
+        assert isinstance(chunk, AIMessageChunk)
+        tool_call_message = (
+            chunk if tool_call_message is None else tool_call_message + chunk
+        )
+    assert isinstance(tool_call_message, AIMessageChunk)
+
+    tool_calls = tool_call_message.tool_calls
+    assert len(tool_calls) == 1
+    tool_call = tool_calls[0]
+    tool_message = get_weather.invoke(tool_call)
+    assert isinstance(tool_message, ToolMessage)
+    response = llm_with_tools.invoke(
+        [
+            input_message,
+            tool_call_message,
+            tool_message,
+        ]
+    )
+    assert isinstance(response, AIMessage)
 
 
 @pytest.mark.default_cassette("test_thinking.yaml.gz")
