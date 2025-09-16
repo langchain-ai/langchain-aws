@@ -11,8 +11,8 @@ license = "MIT"
 "Source Code" = "https://github.com/langchain-ai/langchain-aws/tree/main/libs/aws"
 
 [tool.poetry.dependencies]
-python = ">=3.9"
-langchain-core = "^0.3.76"
+python = ">=3.10"
+langchain-core = { git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/core", branch = "cc/bedrock" }
 boto3 = ">=1.39.7"
 pydantic = ">=2.10.0,<3"
 numpy = [
@@ -35,8 +35,8 @@ pytest-cov = "^4.1.0"
 syrupy = { version = "^4.0.2", python = "<4.0" }
 pytest-asyncio = "^0.23.2"
 pytest-watcher = { version = "^0.3.4", python = "<4.0" }
-langchain-tests = { version = "^0.3.21", python = "<4.0" }
-langchain = { version = "^0.3.7", python = "<4.0" }
+langchain-tests = { version = "^1.0.0a1", python = "<4.0" }
+langchain = { git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/langchain", branch = "cc/bedrock" }
 
 [tool.poetry.group.codespell]
 optional = true
