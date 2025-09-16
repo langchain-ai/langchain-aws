@@ -363,7 +363,7 @@ def _format_image(image_url: str) -> Dict:
 def _format_data_content_block(block: dict) -> dict:
     """Format standard data content block to format expected by Converse API."""
     if block["type"] == "image":
-        if block["source_type"] == "base64":
+        if "base64" in block or block.get("source_type") == "base64":
             if "mime_type" not in block:
                 error_message = "mime_type key is required for base64 data."
                 raise ValueError(error_message)
@@ -372,7 +372,7 @@ def _format_data_content_block(block: dict) -> dict:
                 "source": {
                     "type": "base64",
                     "media_type": block["mime_type"],
-                    "data": block["data"],
+                    "data": block.get("base64") or block.get("data", ""),
                 }
             }
         else:
