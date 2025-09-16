@@ -677,7 +677,7 @@ def test_citations(document: dict[str, Any]) -> None:
     content_blocks = full.content_blocks
     assert any(block.get("annotations") for block in content_blocks)
     for block in content_blocks:
-        if "annotations" in block:
+        if (block["type"] == "text") and "annotations" in block:
             assert isinstance(block["annotations"], list)
             for annotation in block["annotations"]:
                 assert "title" in annotation
