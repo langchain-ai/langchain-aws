@@ -501,7 +501,7 @@ def test_bedrock_document_usage() -> None:
         model="us.anthropic.claude-3-5-sonnet-20241022-v2:0", region_name="us-west-2"
     )
 
-    # Test bytes source typec
+    # Test bytes source type
     url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
     pdf_bytes = httpx.get(url).content
     message = HumanMessage(
