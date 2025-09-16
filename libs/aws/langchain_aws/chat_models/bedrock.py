@@ -546,7 +546,9 @@ def _format_anthropic_messages(
                             tool_blocks.append(item)
                     elif item["type"] in ["thinking", "redacted_thinking"]:
                         # Store thinking blocks separately
-                        thinking_blocks.append(item)
+                        thinking_blocks.append(
+                            {k: v for k, v in item.items() if k != "index"}
+                        )
                     elif item["type"] == "text":
                         text = item.get("text", "")
                         # Only add non-empty strings for now as empty ones are not
