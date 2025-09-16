@@ -38,6 +38,17 @@ def test_chat_bedrock(chat: ChatBedrock) -> None:
 
 
 @pytest.mark.scheduled
+def test_chat_bedrock_multiple_system_messages(chat: ChatBedrock) -> None:
+    """Test ChatBedrock with multiple consecutive system messages."""
+    system1 = SystemMessage(content="You are a helpful assistant.")
+    system2 = SystemMessage(content="Always respond in a concise manner.")
+    human = HumanMessage(content="Hello")
+    response = chat.invoke([system1, system2, human])
+    assert isinstance(response, AIMessage)
+    assert isinstance(response.content, str)
+
+
+@pytest.mark.scheduled
 def test_chat_bedrock_generate(chat: ChatBedrock) -> None:
     """Test ChatBedrock wrapper with generate."""
     message = HumanMessage(content="Hello")
