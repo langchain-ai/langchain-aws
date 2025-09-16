@@ -644,9 +644,8 @@ PDF_DATA = base64.b64encode(httpx.get(PDF_URL).content).decode("utf-8")
 
 STANDARD_PDF_DOCUMENT = {
     "type": "file",
-    "source_type": "base64",
     "mime_type": "application/pdf",
-    "data": PDF_DATA,
+    "base64": PDF_DATA,
     "name": "my-pdf",  # Converse requires a filename
 }
 

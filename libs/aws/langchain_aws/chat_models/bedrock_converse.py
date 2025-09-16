@@ -1332,14 +1332,14 @@ def _mime_type_to_format(mime_type: str) -> str:
 def _format_data_content_block(block: dict) -> dict:
     """Format standard data content block to format expected by Converse API."""
     if block["type"] == "image":
-        if block["sourceType"] == "base64":
+        if "base64" in block or block.get("sourceType") == "base64":
             if "mimeType" not in block:
                 error_message = "mime_type key is required for base64 data."
                 raise ValueError(error_message)
             formatted_block = {
                 "image": {
                     "format": _mime_type_to_format(block["mimeType"]),
-                    "source": {"bytes": _b64str_to_bytes(block["data"])},
+                    "source": {"bytes": _b64str_to_bytes(block.get("base64") or block.get("data", ""))},
                 }
             }
         else:
@@ -1347,14 +1347,14 @@ def _format_data_content_block(block: dict) -> dict:
             raise ValueError(error_message)
 
     elif block["type"] == "file":
-        if block["sourceType"] == "base64":
+        if "base64" in block or block.get("sourceType") == "base64":
             if "mimeType" not in block:
                 error_message = "mime_type key is required for base64 data."
                 raise ValueError(error_message)
             formatted_block = {
                 "document": {
                     "format": _mime_type_to_format(block["mimeType"]),
-                    "source": {"bytes": _b64str_to_bytes(block["data"])},
+                    "source": {"bytes": _b64str_to_bytes(block.get("base64") or block.get("data", ""))},
                 }
             }
             if citations := block.get("citations"):
@@ -1365,11 +1365,15 @@ def _format_data_content_block(block: dict) -> dict:
                 formatted_block["document"]["name"] = name
             elif (metadata := block.get("metadata")) and "name" in metadata:
                 formatted_block["document"]["name"] = metadata["name"]
+            elif (extras := block.get("extras")) and "name" in extras:
+                formatted_block["document"]["name"] = extras["name"]
+            elif (extras := block.get("extras")) and "filename" in extras:
+                formatted_block["document"]["name"] = extras["filename"]
             else:
                 warnings.warn(
                     "Bedrock Converse may require a filename for file inputs. Specify "
-                    "a filename in the content block: {'type': 'file', 'source_type': "
-                    "'base64', 'mime_type': 'application/pdf', 'data': '...', "
+                    "a filename in the content block: {'type': 'file', "
+                    "'mime_type': 'application/pdf', 'base64': '...', "
                     "'name': 'my-pdf'}"
                 )
         else:
