@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Generator, List, Tuple, Union
+from typing import Dict, Generator, List, Tuple
 from unittest import mock
 
 import pytest
