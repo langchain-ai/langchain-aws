@@ -566,13 +566,10 @@ class ChatBedrockConverse(BaseChatModel):
                 "Document source with type content must have a list of document content blocks."
             )
 
-        document = {"name": name, "source": source}
+        document = {"name": name, "source": source, "format": format}
 
         if context:
             document["context"] = context
-
-        if format:
-            document["format"] = format
 
         if enable_citations:
             document["citations"] = {"enabled": True}
