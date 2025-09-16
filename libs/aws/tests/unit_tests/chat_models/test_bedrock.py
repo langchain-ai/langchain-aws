@@ -6,6 +6,7 @@ import os
 from contextlib import nullcontext
 from typing import Any, Callable, Dict, Literal, Type, cast
 from unittest import mock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -1288,3 +1289,79 @@ def test_model_kwargs() -> None:
     )
     assert llm.model_kwargs == {"stop_sequences": ["test"]}
     assert llm.stop_sequences is None
+
+
+@patch("langchain_aws.llms.bedrock.create_aws_client")
+def test_bedrock_client_inherits_from_runtime_client(mock_create_client: MagicMock) -> None:
+    """Test that bedrock_client inherits region and config from runtime client."""
+    mock_runtime_client = MagicMock()
+    mock_bedrock_client = MagicMock()
+
+    mock_runtime_client.meta.region_name = "us-west-2"
+    mock_client_config = MagicMock()
+    mock_runtime_client._client_config = mock_client_config
+
+    def side_effect(service_name: str, **kwargs: Any) -> MagicMock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        elif service_name == "bedrock-runtime":
+            return mock_runtime_client
+        return MagicMock()
+
+    mock_create_client.side_effect = side_effect
+
+    llm = ChatBedrock(
+        model="us.meta.llama3-3-70b-instruct-v1:0",
+        client=mock_runtime_client
+    )
+
+    mock_create_client.assert_called_with(
+        region_name="us-west-2",
+        credentials_profile_name=None,
+        aws_access_key_id=None,
+        aws_secret_access_key=None,
+        aws_session_token=None,
+        endpoint_url=None,
+        config=mock_client_config,
+        service_name="bedrock"
+    )
+
+
+@patch("langchain_aws.llms.bedrock.create_aws_client")
+def test_bedrock_client_uses_explicit_values_over_runtime_client(mock_create_client: MagicMock) -> None:
+    """Test that explicitly provided values override those from runtime client."""
+    mock_runtime_client = MagicMock()
+    mock_bedrock_client = MagicMock()
+
+    mock_runtime_client.meta.region_name = "us-west-2"
+    mock_runtime_config = MagicMock()
+    mock_runtime_client._client_config = mock_runtime_config
+
+    explicit_config = MagicMock()
+
+    def side_effect(service_name: str, **kwargs: Any) -> MagicMock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        elif service_name == "bedrock-runtime":
+            return mock_runtime_client
+        return MagicMock()
+
+    mock_create_client.side_effect = side_effect
+
+    llm = ChatBedrock(
+        model="us.meta.llama3-3-70b-instruct-v1:0",
+        client=mock_runtime_client,
+        region="us-east-1",
+        config=explicit_config
+    )
+
+    mock_create_client.assert_called_with(
+        region_name="us-east-1",
+        credentials_profile_name=None,
+        aws_access_key_id=None,
+        aws_secret_access_key=None,
+        aws_session_token=None,
+        endpoint_url=None,
+        config=explicit_config,
+        service_name="bedrock"
+    )
