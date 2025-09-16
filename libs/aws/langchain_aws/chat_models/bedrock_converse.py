@@ -659,10 +659,31 @@ class ChatBedrockConverse(BaseChatModel):
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
 
+        # Skip creating new client if passed in constructor
+        if self.client is None:
+            self.client = create_aws_client(
+                region_name=self.region_name,
+                credentials_profile_name=self.credentials_profile_name,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                aws_session_token=self.aws_session_token,
+                endpoint_url=self.endpoint_url,
+                config=self.config,
+                service_name="bedrock-runtime",
+            )
+
         # Create bedrock client for control plane API call
         if self.bedrock_client is None:
+            bedrock_client_cfg = {}
+            if self.client:
+                try:
+                    if hasattr(self.client, 'meta') and hasattr(self.client.meta, 'region_name'):
+                        bedrock_client_cfg['region_name'] = self.client.meta.region_name
+                except (AttributeError, TypeError):
+                    pass
+                
             self.bedrock_client = create_aws_client(
-                region_name=self.region_name,
+                region_name=self.region_name or bedrock_client_cfg.get('region_name'),
                 credentials_profile_name=self.credentials_profile_name,
                 aws_access_key_id=self.aws_access_key_id,
                 aws_secret_access_key=self.aws_secret_access_key,
@@ -711,19 +732,6 @@ class ChatBedrockConverse(BaseChatModel):
                 self.supports_tool_choice_values = ("auto", "any", "tool")
             else:
                 self.supports_tool_choice_values = ()
-
-        # Skip creating new client if passed in constructor
-        if self.client is None:
-            self.client = create_aws_client(
-                region_name=self.region_name,
-                credentials_profile_name=self.credentials_profile_name,
-                aws_access_key_id=self.aws_access_key_id,
-                aws_secret_access_key=self.aws_secret_access_key,
-                aws_session_token=self.aws_session_token,
-                endpoint_url=self.endpoint_url,
-                config=self.config,
-                service_name="bedrock-runtime",
-            )
 
         if self.guard_last_turn_only and not self.guardrail_config:
             raise ValueError(
@@ -1137,8 +1145,8 @@ def _messages_to_bedrock(
 
     bedrock_messages: List[Dict[str, Any]] = []
     bedrock_system: List[Dict[str, Any]] = []
-    # Merge system, human, ai message runs because Anthropic expects (at most) 1
-    # system message then alternating human/ai messages.
+    # Merge system, human, ai message runs because Anthropic expects
+    # (optional) system messages first, then alternating human/ai messages.
     messages = merge_message_runs(messages)
     for msg in messages:
         content = _lc_content_to_bedrock(msg.content)
