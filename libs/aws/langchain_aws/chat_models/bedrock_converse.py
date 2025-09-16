@@ -531,7 +531,7 @@ class ChatBedrockConverse(BaseChatModel):
             enable_citations: Whether to enable the Citations API for the document.
         Returns:
             Dictionary containing a properly formatted to add to message content."""
-        if not re.search(r"[^A-Za-z0-9 \[\]()\-]|\s{2,}", name):
+        if re.search(r"[^A-Za-z0-9 \[\]()\-]|\s{2,}", name):
             raise ValueError(
                 "Name must be only alphanumeric characters,"
                 " whitespace characters (no more than one in a row),"
