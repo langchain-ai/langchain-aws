@@ -1,13 +1,14 @@
 """Test Bedrock chat model."""
 
 import json
-from typing import Any, Union
+from typing import Any, Optional, Union
 from uuid import UUID
 import pytest
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
     BaseMessage,
+    BaseMessageChunk,
     HumanMessage,
     SystemMessage,
 )
@@ -22,7 +23,7 @@ from tests.callbacks import FakeCallbackHandler, FakeCallbackHandlerWithTokenCou
 @pytest.fixture
 def chat() -> ChatBedrock:
     return ChatBedrock(
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         model_kwargs={"temperature": 0},
     )  # type: ignore[call-arg]
 
@@ -69,7 +70,7 @@ def test_chat_bedrock_generate_with_token_usage(chat: ChatBedrock) -> None:
 def test_chat_bedrock_streaming() -> None:
     """Test that streaming correctly streams chunks."""
     chat = ChatBedrock(  # type: ignore[call-arg]
-        model_id="anthropic.claude-v2"
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0"
     )
     message = HumanMessage(content="Hello")
     stream = chat.stream([message])
@@ -86,7 +87,7 @@ def test_chat_bedrock_streaming() -> None:
 @pytest.mark.scheduled
 def test_chat_bedrock_token_counts() -> None:
     chat = ChatBedrock(  # type: ignore[call-arg]
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         model_kwargs={"temperature": 0},
     )
     invoke_response = chat.invoke("hi", max_tokens=6)
@@ -102,7 +103,7 @@ def test_chat_bedrock_token_counts() -> None:
     assert stream_response.usage_metadata is not None
     assert stream_response.usage_metadata["output_tokens"] <= 6
     model_name = stream_response.response_metadata["model_name"]
-    assert model_name == "anthropic.claude-3-sonnet-20240229-v1:0"
+    assert model_name == "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
 
 
 @pytest.mark.scheduled
@@ -214,21 +215,21 @@ def test_chat_bedrock_streaming_generation_info() -> None:
 
     callback = _FakeCallback()
     chat = ChatBedrock(  # type: ignore[call-arg]
-        model_id="anthropic.claude-v2",
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         callbacks=[callback],
         model_kwargs={"temperature": 0},
     )
     list(chat.stream("hi"))
     generation = callback.saved_things["generation"]
     # `Hello!` is two tokens, assert that that is what is returned
-    assert generation.generations[0][0].text == "Hello!"
+    assert generation.generations[0][0].text == "Hello! How can I assist you today?"
 
 
 @pytest.mark.scheduled
 @pytest.mark.parametrize(
     "model_id",
     [
-        "anthropic.claude-3-sonnet-20240229-v1:0",
+        "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         "mistral.mistral-7b-instruct-v0:2",
     ],
 )
@@ -253,7 +254,7 @@ def test_bedrock_streaming(model_id: str) -> None:
 @pytest.mark.parametrize(
     "model_id",
     [
-        "anthropic.claude-3-sonnet-20240229-v1:0",
+        "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         "mistral.mistral-7b-instruct-v0:2",
     ],
 )
@@ -333,7 +334,7 @@ class AnswerWithJustification(BaseModel):
 @pytest.mark.scheduled
 def test_structured_output() -> None:
     chat = ChatBedrock(
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         model_kwargs={"temperature": 0.001},
     )  # type: ignore[call-arg]
     structured_llm = chat.with_structured_output(AnswerWithJustification)
@@ -347,7 +348,7 @@ def test_structured_output() -> None:
 @pytest.mark.scheduled
 def test_structured_output_anthropic_format() -> None:
     chat = ChatBedrock(
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0"
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0"
     )  # type: ignore[call-arg]
     schema = {
         "name": "AnswerWithJustification",
@@ -374,7 +375,7 @@ def test_structured_output_anthropic_format() -> None:
 @pytest.mark.scheduled
 def test_tool_use_call_invoke() -> None:
     chat = ChatBedrock(
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         model_kwargs={"temperature": 0.001},
     )  # type: ignore[call-arg]
 
@@ -411,7 +412,7 @@ def test_tool_use_call_invoke() -> None:
 @pytest.mark.parametrize("tool_choice", ["GetWeather", "auto", "any"])
 def test_anthropic_bind_tools_tool_choice(tool_choice: str) -> None:
     chat = ChatBedrock(
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         model_kwargs={"temperature": 0.001},
     )  # type: ignore[call-arg]
     chat_model_with_tools = chat.bind_tools([GetWeather], tool_choice=tool_choice)
@@ -432,7 +433,9 @@ def test_chat_bedrock_token_callbacks() -> None:
     """
     callback_handler = FakeCallbackHandlerWithTokenCounts()
     chat = ChatBedrock(  # type: ignore[call-arg]
-        model_id="anthropic.claude-v2", streaming=False, verbose=True
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        streaming=False,
+        verbose=True
     )
     message = HumanMessage(content="Hello")
     response = chat.invoke([message], RunnableConfig(callbacks=[callback_handler]))
@@ -490,11 +493,89 @@ async def test_function_call_invoke_without_system_astream(chat: ChatBedrock) ->
     assert full.tool_calls  # type: ignore[attr-defined]
 
 
+def test_thinking_bedrock() -> None:
+    llm = ChatBedrock(
+        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        max_tokens=4096,
+        model_kwargs={"thinking": {"type": "enabled", "budget_tokens": 1024}},
+    )
+
+    input_message = {"role": "user", "content": "What is 3^3?"}
+    full: Optional[BaseMessageChunk] = None
+    for chunk in llm.stream([input_message]):
+        assert isinstance(chunk, AIMessageChunk)
+        full = chunk if full is None else full + chunk
+    assert isinstance(full, AIMessageChunk)
+
+    assert [block["type"] for block in full.content] == ["thinking", "text"]  # type: ignore[index,union-attr]
+    assert full.content[0]["thinking"]  # type: ignore[index,union-attr]
+    assert full.content[0]["signature"]  # type: ignore[index,union-attr]
+
+    next_message = {"role": "user", "content": "Thanks!"}
+    response = llm.invoke([input_message, full, next_message])
+
+    # TODO: .invoke behavior is inconsistent with .stream. Streaming puts thinking
+    # blocks into content, whereas .invoke separates them into .additional_kwargs.
+    # Putting into content is preferred so we don't lose sequencing of output items.
+    # Change this in 1.0.
+    thinking = response.additional_kwargs["thinking"]
+    assert isinstance(thinking, dict)
+    assert thinking["text"]
+    assert thinking["signature"]
+
+
+@pytest.mark.xfail(
+    reason=(
+        "Need to update content to list type when citations are enabled in input "
+        "documents."
+    )
+)
+def test_citations_bedrock() -> None:
+    llm = ChatBedrock(
+        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        max_tokens=4096,
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "document",
+                    "source": {
+                        "type": "content",
+                        "content": [
+                            {"type": "text", "text": "The grass is green"},
+                            {"type": "text", "text": "The sky is blue"},
+                        ],
+                    },
+                    "citations": {"enabled": True},
+                },
+                {"type": "text", "text": "What color is the grass and sky?"},
+            ],
+        },
+    ]
+    response = llm.invoke(messages)
+    assert isinstance(response, AIMessage)
+    assert isinstance(response.content, list)
+    assert any("citations" in block for block in response.content)
+
+    # Test streaming
+    full: Optional[BaseMessageChunk] = None
+    for chunk in llm.stream(messages):
+        assert isinstance(chunk, AIMessageChunk)
+        full = chunk if full is None else full + chunk
+
+    assert isinstance(full, AIMessageChunk)
+    assert isinstance(full.content, list)
+    assert not any("citation" in block for block in full.content)
+    assert any("citations" in block for block in full.content)
+
+
 @pytest.mark.skip(reason="Needs guardrails setup to run.")
 def test_guardrails() -> None:
     params = {
         "region_name": "us-west-2",
-        "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
+        "model_id": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         "guardrails": {
             "guardrailIdentifier": "e7esbceow153",
             "guardrailVersion": "1",
@@ -585,7 +666,7 @@ def test_guardrails_streaming_trace() -> None:
     
     # Create ChatBedrock with guardrails (NOT using Converse API)
     chat_model = ChatBedrock(
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         model_kwargs={"temperature": 0},
         guardrails=guardrail_config,
         callbacks=[guardrail_callback],
@@ -601,7 +682,7 @@ def test_guardrails_streaming_trace() -> None:
     # Test 1: Verify invoke() captures guardrail traces
     invoke_callback = GuardrailTraceCallbackHandler()
     chat_model_invoke = ChatBedrock(
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0", 
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         model_kwargs={"temperature": 0},
         guardrails=guardrail_config,
         callbacks=[invoke_callback],

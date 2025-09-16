@@ -62,6 +62,8 @@ from langchain_aws.utils import create_aws_client
 logger = logging.getLogger(__name__)
 _BM = TypeVar("_BM", bound=BaseModel)
 
+EMPTY_CONTENT = "."
+
 MIME_TO_FORMAT = {
     # Image formats
     "image/png": "png",
@@ -721,8 +723,16 @@ class ChatBedrockConverse(BaseChatModel):
 
         # Create bedrock client for control plane API call
         if self.bedrock_client is None:
+            bedrock_client_cfg = {}
+            if self.client:
+                try:
+                    if hasattr(self.client, 'meta') and hasattr(self.client.meta, 'region_name'):
+                        bedrock_client_cfg['region_name'] = self.client.meta.region_name
+                except (AttributeError, TypeError):
+                    pass
+                
             self.bedrock_client = create_aws_client(
-                region_name=self.region_name,
+                region_name=self.region_name or bedrock_client_cfg.get('region_name'),
                 credentials_profile_name=self.credentials_profile_name,
                 aws_access_key_id=self.aws_access_key_id,
                 aws_secret_access_key=self.aws_secret_access_key,
@@ -740,37 +750,37 @@ class ChatBedrockConverse(BaseChatModel):
         # only claude-3/4, mistral-large, and nova models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
         if self.supports_tool_choice_values is None:
-            if "claude" in self._get_base_model():
+            base_model = self._get_base_model()
+            if "claude" in base_model:
                 # Tool choice not supported when thinking is enabled
                 thinking_params = (self.additional_model_request_fields or {}).get(
                     "thinking", {}
                 )
                 if (
-                    "claude-3-7-sonnet" in self._get_base_model()
+                    "claude-3-7-sonnet" in base_model
                     and thinking_params.get("type") == "enabled"
                 ):
                     self.supports_tool_choice_values = ()
                 else:
                     self.supports_tool_choice_values = ("auto", "any", "tool")
-            elif "mistral-large" in self._get_base_model():
+            elif "llama4" in base_model:
+                self.supports_tool_choice_values = ("auto",)
+            elif "llama3" in base_model:
+                if any(x in base_model for x in ("llama3-1", "llama3-3")):
+                    self.supports_tool_choice_values = ("auto",)
+                elif "llama3-2" in base_model:
+                    if any(x in base_model for x in ("11b", "90b")):
+                        self.supports_tool_choice_values = ("auto",)
+                    else:
+                        self.supports_tool_choice_values = ()
+                else:
+                    self.supports_tool_choice_values = ()
+            elif "mistral-large" in base_model:
                 self.supports_tool_choice_values = ("auto", "any")
-            elif "nova" in self._get_base_model():
+            elif "nova" in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
             else:
                 self.supports_tool_choice_values = ()
-
-        # Skip creating new client if passed in constructor
-        if self.client is None:
-            self.client = create_aws_client(
-                region_name=self.region_name,
-                credentials_profile_name=self.credentials_profile_name,
-                aws_access_key_id=self.aws_access_key_id,
-                aws_secret_access_key=self.aws_secret_access_key,
-                aws_session_token=self.aws_session_token,
-                endpoint_url=self.endpoint_url,
-                config=self.config,
-                service_name="bedrock-runtime",
-            )
 
         if self.guard_last_turn_only and not self.guardrail_config:
             raise ValueError(
@@ -852,6 +862,21 @@ class ChatBedrockConverse(BaseChatModel):
                 kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
         )
+
+        # Check for tool blocks without toolConfig and handle conversion
+        if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(bedrock_messages):
+            logger.warning(
+                "Tool messages (toolUse/toolResult) detected without toolConfig. "
+                "Converting tool blocks to text format to avoid ValidationException."
+            )
+            warnings.warn(
+                "Tool messages were passed without toolConfig, converting to text format",
+                RuntimeWarning,
+            )
+
+            bedrock_messages = _convert_tool_blocks_to_text(bedrock_messages)
+            logger.debug(f"converted input messages: {bedrock_messages}")
+
         logger.debug(f"Input params: {params}")
         logger.info("Using Bedrock Converse API to generate response")
         response = self.client.converse(
@@ -884,6 +909,21 @@ class ChatBedrockConverse(BaseChatModel):
                 kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
         )
+
+        # Check for tool blocks without toolConfig and handle conversion
+        if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(bedrock_messages):
+            logger.warning(
+                "Tool messages (toolUse/toolResult) detected without toolConfig. "
+                "Converting tool blocks to text format to avoid ValidationException."
+            )
+            warnings.warn(
+                "Tool messages were passed without toolConfig, converting to text format",
+                RuntimeWarning,
+            )
+
+            bedrock_messages = _convert_tool_blocks_to_text(bedrock_messages)
+            logger.debug(f"converted input messages: {bedrock_messages}")
+
         response = self.client.converse_stream(
             messages=bedrock_messages, system=system, **params
         )
@@ -1137,8 +1177,8 @@ def _messages_to_bedrock(
     """Handle Bedrock converse and Anthropic style content blocks"""
     bedrock_messages: List[Dict[str, Any]] = []
     bedrock_system: List[Dict[str, Any]] = []
-    # Merge system, human, ai message runs because Anthropic expects (at most) 1
-    # system message then alternating human/ai messages.
+    # Merge system, human, ai message runs because Anthropic expects
+    # (optional) system messages first, then alternating human/ai messages.
     messages = merge_message_runs(messages)
     for msg in messages:
         content = _lc_content_to_bedrock(msg.content)
@@ -1186,6 +1226,10 @@ def _messages_to_bedrock(
             bedrock_messages.append(curr)
         else:
             raise ValueError(f"Unsupported message type {type(msg)}")
+        
+    if not bedrock_messages:
+        bedrock_messages.append({"role": "user", "content": [{"text": EMPTY_CONTENT}]})
+
     return bedrock_messages, bedrock_system
 
 
@@ -1353,6 +1397,8 @@ def _format_data_content_block(block: dict) -> dict:
                     "source": {"bytes": _b64str_to_bytes(block["data"])},
                 }
             }
+            if citations := block.get("citations"):
+                formatted_block["document"]["citations"] = citations
             if name := block.get("name"):
                 formatted_block["document"]["name"] = name
             elif name := block.get("filename"):  # OpenAI uses `filename`
@@ -1378,11 +1424,11 @@ def _lc_content_to_bedrock(
 ) -> List[Dict[str, Any]]:
     if isinstance(content, str):
         if not content or content.isspace():
-            content = [{"text": "."}]
+            content = [{"text": EMPTY_CONTENT}]
         else:
             content = [{"text": content}]
     elif isinstance(content, list) and len(content) == 0:
-        content = [{"type": "text", "text": "."}]
+        content = [{"type": "text", "text": EMPTY_CONTENT}]
 
     bedrock_content: List[Dict[str, Any]] = []
     for block in _snake_to_camel_keys(content):
@@ -1396,12 +1442,27 @@ def _lc_content_to_bedrock(
         ):
             bedrock_content.append(_format_data_content_block(block))
         elif block["type"] == "text":
-            if not block["text"] or (
-                isinstance(block["text"], str) and block["text"].isspace()
-            ):
-                bedrock_content.append({"text": "."})
+            if not block["text"] or (isinstance(block["text"], str) and block["text"].isspace()):
+                bedrock_content.append({"text": EMPTY_CONTENT})
             else:
-                bedrock_content.append({"text": block["text"]})
+                text_block = {"text": block["text"]}
+                if (
+                    (citations := block.get("citations"))
+                    and isinstance(citations, list)
+                    and len(citations) > 0
+                    and isinstance(citations[0], dict)
+                    and "sourceContent" in citations[0]  # validate format
+                ):
+                    bedrock_content.append(
+                        {
+                            "citationsContent": {
+                                "content": [text_block],
+                                "citations": citations,
+                            }
+                        }
+                    )
+                else:
+                    bedrock_content.append(text_block)
         elif block["type"] == "image":
             # Assume block is already in bedrock format.
             if "image" in block:
@@ -1637,6 +1698,15 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                         text_block["citations"] = citations
                     lc_content.append(text_block)
 
+        elif "citation" in block:  # streaming citations
+            lc_content.append(
+                {
+                    "type": "text",
+                    "text": "",
+                    "citations": [block["citation"]]
+                }
+            )
+
         else:
             raise ValueError(
                 "Unexpected content block type in content. Expected to have one of "
@@ -1768,6 +1838,8 @@ def _str_if_single_text_block(
 def _upsert_tool_calls_to_bedrock_content(
     content: List[Dict[str, Any]], tool_calls: List[ToolCall]
 ) -> List[Dict[str, Any]]:
+    if tool_calls and content == [{"text": EMPTY_CONTENT}]:
+        content = []
     existing_tc_blocks = [block for block in content if "toolUse" in block]
     for tool_call in tool_calls:
         if tool_call["id"] in [
@@ -1839,3 +1911,62 @@ def _is_cache_point(cache_point: Any) -> bool:
         and "cachePoint" in cache_point
         and cache_point.get("cachePoint").get("type") is not None
     )
+
+
+def _has_tool_use_or_result_blocks(messages: List[Dict[str, Any]]) -> bool:
+    """Check if messages contain toolUse or toolResult blocks."""
+    for message in messages:
+        for block in message.get("content", []):
+            if "toolUse" in block or "toolResult" in block:
+                return True
+    return False
+
+
+def _convert_tool_blocks_to_text(
+    messages: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Convert toolUse and toolResult blocks to text blocks preserving only necessary content."""
+    converted_messages = []
+
+    for message in messages:
+        converted_message = {"role": message["role"], "content": []}
+
+        for block in message.get("content", []):
+            if "toolUse" in block:
+                # convert toolUse to simple text
+                tool_use = block["toolUse"]
+                tool_name = tool_use.get("name", "function")
+                tool_inputs = tool_use.get("input", {})
+
+                # format function call description
+                if tool_inputs:
+                    tool_text = f"[Called {tool_name} with parameters: {json.dumps(tool_inputs)}]"
+                else:
+                    tool_text = f"[Called {tool_name}]"
+
+                converted_message["content"].append({"text": tool_text})
+
+            elif "toolResult" in block:
+                # convert toolResult to indicate it's tool output without exposing internal details
+                tool_result = block["toolResult"]
+
+                content_parts = []
+                for content_block in tool_result.get("content", []):
+                    if "text" in content_block:
+                        content_parts.append(content_block["text"])
+                    elif "json" in content_block:
+                        content_parts.append(json.dumps(content_block["json"]))
+                    # skip other internal content types
+                result_content = "".join(content_parts)
+
+                # only include result if there's actual content, but mark it as tool output
+                if result_content.strip():
+                    tool_output_text = f"[Tool output: {result_content}]"
+                    converted_message["content"].append({"text": tool_output_text})
+            else:
+                # keep other blocks as they are
+                converted_message["content"].append(block)
+
+        converted_messages.append(converted_message)
+
+    return converted_messages
