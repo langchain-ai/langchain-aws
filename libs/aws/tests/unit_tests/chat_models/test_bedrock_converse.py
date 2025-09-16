@@ -1427,12 +1427,13 @@ def test_create_cache_point() -> None:
 def test_create_document() -> None:
     """Test creating a document."""
     document = ChatBedrockConverse.create_document(
-        name="MyDoc", source={"text": "Cite me"}, enable_citations=True
+        name="MyDoc", source={"text": "Cite me"}, format="txt", enable_citations=True
     )
     expected_doc = {
         "document": {
             "name": "MyDoc",
             "source": {"text": "Cite me"},
+            "format": "txt",
             "citations": {"enabled": True},
         }
     }
