@@ -57,7 +57,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
-from langchain_aws.utils import create_aws_client
+from langchain_aws.utils import create_aws_client, trim_message_whitespace
 
 logger = logging.getLogger(__name__)
 _BM = TypeVar("_BM", bound=BaseModel)
@@ -1123,21 +1123,8 @@ def _messages_to_bedrock(
     """Handle Bedrock converse and Anthropic style content blocks"""
     bedrock_messages: List[Dict[str, Any]] = []
     bedrock_system: List[Dict[str, Any]] = []
-    
-    # Check if the last message is an AIMessage with trailing whitespace
-    messages_copy = messages.copy()
-    if messages_copy and isinstance(messages_copy[-1], AIMessage):
-        if isinstance(messages_copy[-1].content, str):
-            messages_copy[-1].content = messages_copy[-1].content.rstrip()
-        elif isinstance(messages_copy[-1].content, list):
-            for j, block in enumerate(messages_copy[-1].content):
-                if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
-                    messages_copy[-1].content[j]["text"] = block["text"].rstrip()
-
-                    
-    # Merge system, human, ai message runs because Anthropic expects
-    # (optional) system messages first, then alternating human/ai messages.
-    messages = merge_message_runs(messages_copy)
+    trimmed_messages = trim_message_whitespace(messages)
+    messages = merge_message_runs(trimmed_messages)
     
     for msg in messages:
         content = _lc_content_to_bedrock(msg.content)

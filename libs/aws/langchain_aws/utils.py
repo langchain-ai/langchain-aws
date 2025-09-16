@@ -4,6 +4,7 @@ from abc import abstractmethod
 from typing import Any, Dict, Generic, Iterator, List, Literal, Optional, TypeVar, Union
 
 from botocore.exceptions import BotoCoreError, UnknownServiceError
+from langchain_core.messages import AIMessage
 from packaging import version
 from pydantic import SecretStr
 
@@ -206,3 +207,17 @@ def create_aws_client(
 def thinking_in_params(params: dict) -> bool:
     """Check if the thinking parameter is enabled in the request."""
     return params.get("thinking", {}).get("type") == "enabled"
+
+
+def trim_message_whitespace(messages: List[Any]) -> List[Any]:
+    """Trim trailing whitespace from final AIMessage content."""
+    messages_copy = messages.copy()
+    if messages_copy and isinstance(messages_copy[-1], AIMessage):
+        if isinstance(messages_copy[-1].content, str):
+            messages_copy[-1].content = messages_copy[-1].content.rstrip()
+        elif isinstance(messages_copy[-1].content, list):
+            for j, block in enumerate(messages_copy[-1].content):
+                if isinstance(block, dict) and block.get("type") == "text" \
+                    and isinstance(block.get("text"), str):
+                    messages_copy[-1].content[j]["text"] = block["text"].rstrip()
+    return messages_copy
