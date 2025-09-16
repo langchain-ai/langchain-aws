@@ -517,11 +517,10 @@ class ChatBedrockConverse(BaseChatModel):
         cls,
         name: str,
         source: dict[str, Any],
+        format: Literal["pdf", "csv", "doc", "docx", "xls", "xlsx", "html", "txt", "md"],        
         context: Optional[str] = None,
         enable_citations: Optional[bool] = False,
-        format: Optional[
-            Literal["pdf", "csv", "doc", "docx", "xls", "xlsx", "html", "txt", "md"]
-        ] = None,
+
     ) -> Dict[str, Any]:
         """Create a document configuration for Bedrock.
         Args:
