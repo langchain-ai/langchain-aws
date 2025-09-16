@@ -535,7 +535,7 @@ class ChatBedrockConverse(BaseChatModel):
             raise ValueError(
                 "Name must be only alphanumeric characters,"
                 " whitespace characters (no more than one in a row),"
-                " hyphens, parantheses, or square brackets."
+                " hyphens, parentheses, or square brackets."
             )
 
         valid_source_types = ["bytes", "content", "s3Location", "text"]
