@@ -33,6 +33,7 @@ from langchain_core.messages import (
     SystemMessage,
     is_data_content_block,
 )
+from langchain_core.messages import content as types
 from langchain_core.messages.ai import UsageMetadata
 from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.messages.utils import convert_to_openai_messages
@@ -45,6 +46,7 @@ from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 from langchain_core.utils.utils import _build_model_kwargs
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from langchain_aws.chat_models._compat import _convert_from_v1_to_anthropic
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 from langchain_aws.function_calling import (
     ToolsOutputParser,
@@ -430,6 +432,20 @@ def _format_anthropic_messages(
     messages: List[BaseMessage],
 ) -> Tuple[Optional[Union[str, List[Dict]]], List[Dict]]:
     """Format messages for anthropic."""
+    for idx, message in enumerate(messages):
+        # Translate v1 content
+        if (
+            isinstance(message, AIMessage)
+            and message.response_metadata.get("output_version") == "v1"
+        ):
+            messages[idx] = message.model_copy(
+                update={
+                    "content": _convert_from_v1_to_anthropic(
+                        cast(list[types.ContentBlock], message.content),
+                        message.response_metadata.get("model_provider"),
+                    )
+                }
+            )
     system: Optional[Union[str, List[Dict]]] = None
     formatted_messages: List[Dict] = []
 
@@ -884,6 +900,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             **kwargs,
         ):
             if isinstance(chunk, AIMessageChunk):
+                chunk.response_metadata["model_provider"] = "bedrock"
                 generation_chunk = ChatGenerationChunk(message=chunk)
                 if run_manager:
                     run_manager.on_llm_new_token(
@@ -910,14 +927,13 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 generation_chunk = ChatGenerationChunk(
                     message=AIMessageChunk(
                         content=delta,
-                        response_metadata={
-                            **response_metadata, "model_provider": "bedrock"
-                        },
+                        response_metadata=response_metadata,
                         usage_metadata=usage_metadata,
                     )
                     if response_metadata is not None
                     else AIMessageChunk(content=delta)
                 )
+                generation_chunk.message.response_metadata["model_provider"] = "bedrock"
                 if run_manager:
                     run_manager.on_llm_new_token(
                         generation_chunk.text, chunk=generation_chunk
@@ -1021,14 +1037,23 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         else:
             usage_metadata = None
         logger.debug(f"The message received from Bedrock: {completion}")
-        llm_output["model_provider"] = "bedrock"
         llm_output["model_id"] = self.model_id  # backward-compatibility
-        llm_output["model_name"] = self.model_id
+
+        # Move thinking output to content array
+        content = completion
+        if thinking_content := llm_output.pop("thinking", None):
+            if "text" in thinking_content:
+                thinking_content["thinking"] = thinking_content.pop("text")
+            if isinstance(completion, str):
+                content = [{"type": "text", "text": completion}]
+            content = [{"type": "thinking", **thinking_content}, *content]
+
         msg = AIMessage(
-            content=completion,
+            content=content,
             additional_kwargs=llm_output,
             tool_calls=cast(List[ToolCall], tool_calls),
             usage_metadata=usage_metadata,
+            response_metadata={"model_provider": "bedrock", "model_name": self.model_id},
         )
         return ChatResult(
             generations=[
