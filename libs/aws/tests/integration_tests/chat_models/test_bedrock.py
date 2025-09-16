@@ -1,13 +1,14 @@
 """Test Bedrock chat model."""
 
 import json
-from typing import Any, Union
+from typing import Any, Optional, Union
 from uuid import UUID
 import pytest
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
     BaseMessage,
+    BaseMessageChunk,
     HumanMessage,
     SystemMessage,
 )
@@ -34,6 +35,17 @@ def test_chat_bedrock(chat: ChatBedrock) -> None:
     human = HumanMessage(content="Hello")
     response = chat.invoke([system, human])
     assert isinstance(response, BaseMessage)
+    assert isinstance(response.content, str)
+
+
+@pytest.mark.scheduled
+def test_chat_bedrock_multiple_system_messages(chat: ChatBedrock) -> None:
+    """Test ChatBedrock with multiple consecutive system messages."""
+    system1 = SystemMessage(content="You are a helpful assistant.")
+    system2 = SystemMessage(content="Always respond in a concise manner.")
+    human = HumanMessage(content="Hello")
+    response = chat.invoke([system1, system2, human])
+    assert isinstance(response, AIMessage)
     assert isinstance(response.content, str)
 
 
@@ -490,6 +502,84 @@ async def test_function_call_invoke_without_system_astream(chat: ChatBedrock) ->
         full += chunk  # type: ignore[assignment]
 
     assert full.tool_calls  # type: ignore[attr-defined]
+
+
+def test_thinking_bedrock() -> None:
+    llm = ChatBedrock(
+        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        max_tokens=4096,
+        model_kwargs={"thinking": {"type": "enabled", "budget_tokens": 1024}},
+    )
+
+    input_message = {"role": "user", "content": "What is 3^3?"}
+    full: Optional[BaseMessageChunk] = None
+    for chunk in llm.stream([input_message]):
+        assert isinstance(chunk, AIMessageChunk)
+        full = chunk if full is None else full + chunk
+    assert isinstance(full, AIMessageChunk)
+
+    assert [block["type"] for block in full.content] == ["thinking", "text"]  # type: ignore[index,union-attr]
+    assert full.content[0]["thinking"]  # type: ignore[index,union-attr]
+    assert full.content[0]["signature"]  # type: ignore[index,union-attr]
+
+    next_message = {"role": "user", "content": "Thanks!"}
+    response = llm.invoke([input_message, full, next_message])
+
+    # TODO: .invoke behavior is inconsistent with .stream. Streaming puts thinking
+    # blocks into content, whereas .invoke separates them into .additional_kwargs.
+    # Putting into content is preferred so we don't lose sequencing of output items.
+    # Change this in 1.0.
+    thinking = response.additional_kwargs["thinking"]
+    assert isinstance(thinking, dict)
+    assert thinking["text"]
+    assert thinking["signature"]
+
+
+@pytest.mark.xfail(
+    reason=(
+        "Need to update content to list type when citations are enabled in input "
+        "documents."
+    )
+)
+def test_citations_bedrock() -> None:
+    llm = ChatBedrock(
+        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        max_tokens=4096,
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "document",
+                    "source": {
+                        "type": "content",
+                        "content": [
+                            {"type": "text", "text": "The grass is green"},
+                            {"type": "text", "text": "The sky is blue"},
+                        ],
+                    },
+                    "citations": {"enabled": True},
+                },
+                {"type": "text", "text": "What color is the grass and sky?"},
+            ],
+        },
+    ]
+    response = llm.invoke(messages)
+    assert isinstance(response, AIMessage)
+    assert isinstance(response.content, list)
+    assert any("citations" in block for block in response.content)
+
+    # Test streaming
+    full: Optional[BaseMessageChunk] = None
+    for chunk in llm.stream(messages):
+        assert isinstance(chunk, AIMessageChunk)
+        full = chunk if full is None else full + chunk
+
+    assert isinstance(full, AIMessageChunk)
+    assert isinstance(full.content, list)
+    assert not any("citation" in block for block in full.content)
+    assert any("citations" in block for block in full.content)
 
 
 @pytest.mark.skip(reason="Needs guardrails setup to run.")

@@ -657,10 +657,31 @@ class ChatBedrockConverse(BaseChatModel):
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
 
+        # Skip creating new client if passed in constructor
+        if self.client is None:
+            self.client = create_aws_client(
+                region_name=self.region_name,
+                credentials_profile_name=self.credentials_profile_name,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                aws_session_token=self.aws_session_token,
+                endpoint_url=self.endpoint_url,
+                config=self.config,
+                service_name="bedrock-runtime",
+            )
+
         # Create bedrock client for control plane API call
         if self.bedrock_client is None:
+            bedrock_client_cfg = {}
+            if self.client:
+                try:
+                    if hasattr(self.client, 'meta') and hasattr(self.client.meta, 'region_name'):
+                        bedrock_client_cfg['region_name'] = self.client.meta.region_name
+                except (AttributeError, TypeError):
+                    pass
+                
             self.bedrock_client = create_aws_client(
-                region_name=self.region_name,
+                region_name=self.region_name or bedrock_client_cfg.get('region_name'),
                 credentials_profile_name=self.credentials_profile_name,
                 aws_access_key_id=self.aws_access_key_id,
                 aws_secret_access_key=self.aws_secret_access_key,
@@ -669,6 +690,16 @@ class ChatBedrockConverse(BaseChatModel):
                 config=self.config,
                 service_name="bedrock",
             )
+
+        # For AIPs, pull base model ID via GetInferenceProfile API call
+        if self.base_model_id is None and 'application-inference-profile' in self.model_id:
+            response = self.bedrock_client.get_inference_profile(
+                inferenceProfileIdentifier = self.model_id
+            )
+            if "models" in response and len(response["models"]) > 0:
+                model_arn = response["models"][0]["modelArn"]
+                # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
+                self.base_model_id = model_arn.split("/")[-1]
 
         # Handle streaming configuration for application inference profiles
         if "application-inference-profile" in self.model_id:
@@ -710,19 +741,6 @@ class ChatBedrockConverse(BaseChatModel):
             else:
                 self.supports_tool_choice_values = ()
 
-        # Skip creating new client if passed in constructor
-        if self.client is None:
-            self.client = create_aws_client(
-                region_name=self.region_name,
-                credentials_profile_name=self.credentials_profile_name,
-                aws_access_key_id=self.aws_access_key_id,
-                aws_secret_access_key=self.aws_secret_access_key,
-                aws_session_token=self.aws_session_token,
-                endpoint_url=self.endpoint_url,
-                config=self.config,
-                service_name="bedrock-runtime",
-            )
-
         if self.guard_last_turn_only and not self.guardrail_config:
             raise ValueError(
                 "`guard_last_turn_only=True` but no `guardrail_config` supplied. "
@@ -733,19 +751,6 @@ class ChatBedrockConverse(BaseChatModel):
         return self
 
     def _get_base_model(self) -> str:
-        # identify the base model id used in the application inference profile (AIP)
-        # Format: arn:aws:bedrock:us-east-1:<accountId>:application-inference-profile/<id>
-        if (
-            self.base_model_id is None
-            and "application-inference-profile" in self.model_id
-        ):
-            response = self.bedrock_client.get_inference_profile(
-                inferenceProfileIdentifier=self.model_id
-            )
-            if "models" in response and len(response["models"]) > 0:
-                model_arn = response["models"][0]["modelArn"]
-                # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
-                self.base_model_id = model_arn.split("/")[-1]
         return self.base_model_id if self.base_model_id else self.model_id
 
     def _configure_streaming_for_resolved_model(self) -> None:
