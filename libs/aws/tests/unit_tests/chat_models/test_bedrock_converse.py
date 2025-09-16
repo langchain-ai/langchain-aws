@@ -1856,6 +1856,79 @@ def test_nova_provider_extraction() -> None:
     assert model.provider == "amazon"
 
 
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_bedrock_client_inherits_from_runtime_client(mock_create_client: mock.Mock) -> None:
+    """Test that bedrock_client inherits region and config from runtime client."""
+    mock_runtime_client = mock.Mock()
+    mock_bedrock_client = mock.Mock()
+
+    mock_runtime_client.meta.region_name = "us-west-2"
+    mock_client_config = mock.Mock()
+
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        elif service_name == "bedrock-runtime":
+            return mock_runtime_client
+        return mock.Mock()
+
+    mock_create_client.side_effect = side_effect
+
+    chat_model = ChatBedrockConverse(
+        model="us.meta.llama3-3-70b-instruct-v1:0",
+        client=mock_runtime_client
+    )
+
+    mock_create_client.assert_called_with(
+        region_name="us-west-2",
+        credentials_profile_name=None,
+        aws_access_key_id=None,
+        aws_secret_access_key=None,
+        aws_session_token=None,
+        endpoint_url=None,
+        config=None,
+        service_name="bedrock"
+    )
+
+
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_bedrock_client_uses_explicit_values_over_runtime_client(mock_create_client: mock.Mock) -> None:
+    """Test that explicitly provided values override those from runtime client."""
+    mock_runtime_client = mock.Mock()
+    mock_bedrock_client = mock.Mock()
+
+    mock_runtime_client.meta.region_name = "us-west-2"
+    mock_runtime_config = mock.Mock()
+
+    explicit_config = mock.Mock()
+
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        elif service_name == "bedrock-runtime":
+            return mock_runtime_client
+        return mock.Mock()
+
+    mock_create_client.side_effect = side_effect
+
+    chat_model = ChatBedrockConverse(
+        model="us.meta.llama3-3-70b-instruct-v1:0",
+        client=mock_runtime_client,
+        region_name="us-east-1",
+    )
+
+    mock_create_client.assert_called_with(
+        region_name="us-east-1",
+        credentials_profile_name=None,
+        aws_access_key_id=None,
+        aws_secret_access_key=None,
+        aws_session_token=None,
+        endpoint_url=None,
+        config=None,
+        service_name="bedrock"
+    )
+
+
 def test__has_tool_use_or_result_blocks() -> None:
     """Test detection of toolUse and toolResult blocks in messages."""
     # No tool blocks
