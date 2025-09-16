@@ -1,13 +1,19 @@
 """Standard LangChain interface tests"""
 
 import base64
-from typing import Literal, Type
+from typing import Any, Literal, Type, Optional
 
 import httpx
 import pytest
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessageChunk,
+    HumanMessage,
+    SystemMessage
+)
 from langchain_core.tools import BaseTool
 from langchain_tests.integration_tests import ChatModelIntegrationTests
 from pydantic import BaseModel, Field
@@ -23,7 +29,7 @@ class TestBedrockStandard(ChatModelIntegrationTests):
 
     @property
     def chat_model_params(self) -> dict:
-        return {"model": "anthropic.claude-3-sonnet-20240229-v1:0"}
+        return {"model": "us.anthropic.claude-3-7-sonnet-20250219-v1:0"}
 
     @property
     def standard_chat_model_params(self) -> dict:
@@ -107,6 +113,16 @@ class TestBedrockCohereStandard(ChatModelIntegrationTests):
     ) -> None:
         pass
 
+    @pytest.mark.xfail(reason="Cohere models don't support tool_choice.")
+    def test_unicode_tool_call_integration(
+        self,
+        model: BaseChatModel,
+        *,
+        tool_choice: Optional[str] = None,
+        force_tool_call: bool = False,
+    ) -> None:
+        pass
+
     @pytest.mark.xfail(reason="Generates invalid tool call.")
     def test_tool_calling_with_no_arguments(self, model: BaseChatModel) -> None:
         pass
@@ -132,6 +148,16 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
     @pytest.mark.xfail(reason="Meta models don't support tool_choice.")
     def test_structured_few_shot_examples(
         self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        pass
+
+    @pytest.mark.xfail(reason="Meta models don't support tool_choice.")
+    def test_unicode_tool_call_integration(
+        self,
+        model: BaseChatModel,
+        *,
+        tool_choice: Optional[str] = None,
+        force_tool_call: bool = False,
     ) -> None:
         pass
 
@@ -165,6 +191,21 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
         super().test_tool_message_histories_list_content(model, my_adder_tool)
 
 
+def test_multiple_system_messages_anthropic() -> None:
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        temperature=0
+    )
+
+    system1 = SystemMessage(content="You are a helpful assistant.")
+    system2 = SystemMessage(content="Always respond in a concise manner.")
+    human = HumanMessage(content="Hello")
+    response = model.invoke([system1, system2, human])
+
+    assert isinstance(response, AIMessage)
+    assert isinstance(response.content, str)
+
+
 class ClassifyQuery(BaseModel):
     """Classify a query."""
 
@@ -175,7 +216,7 @@ class ClassifyQuery(BaseModel):
 
 def test_structured_output_snake_case() -> None:
     model = ChatBedrockConverse(
-        model="anthropic.claude-3-sonnet-20240229-v1:0", temperature=0
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", temperature=0
     )
 
     chat = model.with_structured_output(ClassifyQuery)
@@ -184,7 +225,7 @@ def test_structured_output_snake_case() -> None:
 
 
 def test_tool_calling_snake_case() -> None:
-    model = ChatBedrockConverse(model="anthropic.claude-3-sonnet-20240229-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
 
     def classify_query(query_type: Literal["cat", "dog"]) -> None:
         pass
@@ -216,7 +257,7 @@ def test_tool_calling_snake_case() -> None:
 
 
 def test_tool_calling_camel_case() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-3-5-sonnet-20241022-v2:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
 
     def classifyQuery(queryType: Literal["cat", "dog"]) -> None:
         pass
@@ -242,7 +283,7 @@ def test_tool_calling_camel_case() -> None:
 
 def test_structured_output_streaming() -> None:
     model = ChatBedrockConverse(
-        model="anthropic.claude-3-sonnet-20240229-v1:0", temperature=0
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", temperature=0
     )
     query = (
         "What weighs more, a pound of bricks or a pound of feathers? "
@@ -337,7 +378,7 @@ def test_tool_use_with_cache_point() -> None:
 def test_guardrails() -> None:
     params = {
         "region_name": "us-west-2",
-        "model": "anthropic.claude-3-sonnet-20240229-v1:0",
+        "model": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         "temperature": 0,
         "max_tokens": 100,
         "stop": [],
@@ -458,21 +499,124 @@ def test_structured_output_thinking_force_tool_use() -> None:
         llm.client.converse(messages=messages, **params)
 
 
-def test_bedrock_pdf_inputs() -> None:
-    model = ChatBedrockConverse(model="anthropic.claude-3-sonnet-20240229-v1:0")
-    url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
-    pdf_data = base64.b64encode(httpx.get(url).content).decode("utf-8")
+@pytest.mark.vcr
+def test_thinking() -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        max_tokens=4096,
+        additional_model_request_fields={
+            "thinking": {"type": "enabled", "budget_tokens": 1024},
+        },
+    )
+
+    input_message = {"role": "user", "content": "What is 3^3?"}
+    full: Optional[BaseMessageChunk] = None
+    for chunk in llm.stream([input_message]):
+        assert isinstance(chunk, AIMessageChunk)
+        full = chunk if full is None else full + chunk
+    assert isinstance(full, AIMessageChunk)
+
+    assert [block["type"] for block in full.content] == ["reasoning_content", "text"]  # type: ignore[index,union-attr]
+    assert "text" in full.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+    assert "signature" in full.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+
+    next_message = {"role": "user", "content": "Thanks!"}
+    response = llm.invoke([input_message, full, next_message])
+
+    assert [block["type"] for block in response.content] == ["reasoning_content", "text"]  # type: ignore[index,union-attr]
+    assert "text" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+    assert "signature" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+
+
+PLAINTEXT_DOCUMENT = {
+    "document": {
+        "format": "txt",
+        "name": "company_policy",
+        "source": {
+            "text": (
+                "Company leave policy: Employees get 20 days annual leave. "
+                "Consult with your manager for details."
+            )
+        },
+        "context": "HR Policy Manual Section 3.2",
+        "citations": {"enabled": True},
+    },
+}
+
+BLOCKS_DOCUMENT = {
+    "document": {
+        "format": "txt",
+        "name": "company_policy",
+        "source": {
+            "content": [
+                {"text": "Company leave policy: Employees get 20 days annual leave."},
+                {"text": "Consult with your manager for details."},
+            ]
+        },
+        "context": "HR Policy Manual Section 3.2",
+        "citations": {"enabled": True},
+    },
+}
+
+
+PDF_URL = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
+PDF_DATA = base64.b64encode(httpx.get(PDF_URL).content).decode("utf-8")
+
+STANDARD_PDF_DOCUMENT = {
+    "type": "file",
+    "source_type": "base64",
+    "mime_type": "application/pdf",
+    "data": PDF_DATA,
+    "name": "my-pdf",  # Converse requires a filename
+}
+
+@pytest.mark.vcr
+@pytest.mark.parametrize("document", [PLAINTEXT_DOCUMENT, BLOCKS_DOCUMENT])
+def test_citations(document: dict[str, Any]) -> None:
+
+    llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-20250514-v1:0")
+
+    input_message = {
+        "role": "user",
+        "content": [
+            document,
+            {"type": "text", "text": "How many days of annual leave do employees get?"},
+        ]
+    }
+
+    full: Optional[BaseMessageChunk] = None
+    for chunk in llm.stream([input_message]):
+        assert isinstance(chunk, AIMessageChunk)
+        full = chunk if full is None else full + chunk
+    assert isinstance(full, AIMessageChunk)
+    assert any(block.get("citations") for block in full.content)  # type: ignore[union-attr]
+
+    next_message = {"role": "user", "content": "Who should they consult with?"}
+    response = llm.invoke([input_message, full, next_message])
+    assert any(block.get("citations") for block in response.content)  # type: ignore[union-attr]
+
+
+@pytest.mark.vcr
+def test_pdf_citations() -> None:
+    model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
 
     message = HumanMessage(
         [
-            {"type": "text", "text": "Summarize this document:"},
-            {
-                "type": "file",
-                "source_type": "base64",
-                "mime_type": "application/pdf",
-                "data": pdf_data,
-                "name": "my-pdf",  # Converse requires a filename
-            },
+            {"type": "text", "text": "What is the title of this document?"},
+            {**STANDARD_PDF_DOCUMENT, "citations": {"enabled": True}},
+        ]
+    )
+    response = model.invoke([message])
+    assert any(block.get("citations") for block in response.content)  # type: ignore[union-attr]
+
+
+def test_bedrock_pdf_inputs() -> None:
+    model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+
+    message = HumanMessage(
+        [
+            {"type": "text", "text": "What is the title of this document?"},
+            STANDARD_PDF_DOCUMENT,
         ]
     )
     _ = model.invoke([message])
@@ -482,13 +626,13 @@ def test_bedrock_pdf_inputs() -> None:
         [
             {
                 "type": "text",
-                "text": "Summarize this document:",
+                "text": "What is the title of this document?",
             },
             {
                 "type": "file",
                 "file": {
                     "filename": "my-pdf",
-                    "file_data": f"data:application/pdf;base64,{pdf_data}",
+                    "file_data": f"data:application/pdf;base64,{PDF_DATA}",
                 },
             },
         ]

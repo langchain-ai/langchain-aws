@@ -13,6 +13,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolCall,
     ToolMessage,
+    BaseMessage
 )
 from langchain_core.runnables import RunnableBinding
 from langchain_tests.unit_tests import ChatModelUnitTests
@@ -131,6 +132,41 @@ def test_amazon_bind_tools_tool_choice() -> None:
     assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
         "any": {}
     }
+
+
+@pytest.mark.parametrize(
+    "model, should_support_auto",
+    [
+        ("us.meta.llama4-maverick-17b-instruct-v1:0", True),
+        ("us.meta.llama3-3-70b-instruct-v1:0", True),
+        ("us.meta.llama3-2-90b-instruct-v1:0", True),
+        ("us.meta.llama3-2-1b-instruct-v1:0", False),
+        ("us.meta.llama3-1-405b-instruct-v1:0", True),
+        ("meta.llama3-70b-instruct-v1:0", False)
+    ],
+)
+def test_llama_bind_tools_tool_choice_variants(model: str, should_support_auto: bool) -> None:
+    chat_model = ChatBedrockConverse(
+        model=model,
+        region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    if should_support_auto:
+        chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="auto")
+        assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+            "auto": {}
+        }
+        with pytest.raises(ValueError):
+            chat_model.bind_tools([GetWeather], tool_choice="any")
+        with pytest.raises(ValueError):
+            chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+    else:
+        with pytest.raises(ValueError):
+            chat_model.bind_tools([GetWeather], tool_choice="auto")
+        with pytest.raises(ValueError):
+            chat_model.bind_tools([GetWeather], tool_choice="any")
+        with pytest.raises(ValueError):
+            chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
 
 
 def test__messages_to_bedrock() -> None:
@@ -381,6 +417,36 @@ def test_messages_to_bedrock_with_cache_point() -> None:
     ]
     assert expected_messages == actual_messages
     assert [] == actual_system
+
+
+def test__messages_to_bedrock_empty_list() -> None:
+    messages: List[BaseMessage] = []
+    actual_messages, actual_system = _messages_to_bedrock(messages)
+
+    expected_messages: List[Dict] = [
+        {"role": "user", "content": [{"text": "."}]}
+    ]
+    expected_system: List[Dict] = []
+
+    assert expected_messages == actual_messages
+    assert expected_system == actual_system
+
+
+def test__messages_to_bedrock_system_only() -> None:
+    messages: List[BaseMessage] = [
+        SystemMessage(content="You are a helpful assistant.")
+    ]
+    actual_messages, actual_system = _messages_to_bedrock(messages)
+
+    expected_messages: List[Dict] = [
+        {"role": "user", "content": [{"text": "."}]}
+    ]
+    expected_system: List[Dict] = [
+        {"text": "You are a helpful assistant."}
+    ]
+
+    assert expected_messages == actual_messages
+    assert expected_system == actual_system
 
 
 def test__bedrock_to_lc() -> None:
@@ -1788,6 +1854,79 @@ def test_nova_provider_extraction() -> None:
         region_name="us-west-2",
     )
     assert model.provider == "amazon"
+
+
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_bedrock_client_inherits_from_runtime_client(mock_create_client: mock.Mock) -> None:
+    """Test that bedrock_client inherits region and config from runtime client."""
+    mock_runtime_client = mock.Mock()
+    mock_bedrock_client = mock.Mock()
+
+    mock_runtime_client.meta.region_name = "us-west-2"
+    mock_client_config = mock.Mock()
+
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        elif service_name == "bedrock-runtime":
+            return mock_runtime_client
+        return mock.Mock()
+
+    mock_create_client.side_effect = side_effect
+
+    chat_model = ChatBedrockConverse(
+        model="us.meta.llama3-3-70b-instruct-v1:0",
+        client=mock_runtime_client
+    )
+
+    mock_create_client.assert_called_with(
+        region_name="us-west-2",
+        credentials_profile_name=None,
+        aws_access_key_id=None,
+        aws_secret_access_key=None,
+        aws_session_token=None,
+        endpoint_url=None,
+        config=None,
+        service_name="bedrock"
+    )
+
+
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_bedrock_client_uses_explicit_values_over_runtime_client(mock_create_client: mock.Mock) -> None:
+    """Test that explicitly provided values override those from runtime client."""
+    mock_runtime_client = mock.Mock()
+    mock_bedrock_client = mock.Mock()
+
+    mock_runtime_client.meta.region_name = "us-west-2"
+    mock_runtime_config = mock.Mock()
+
+    explicit_config = mock.Mock()
+
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        elif service_name == "bedrock-runtime":
+            return mock_runtime_client
+        return mock.Mock()
+
+    mock_create_client.side_effect = side_effect
+
+    chat_model = ChatBedrockConverse(
+        model="us.meta.llama3-3-70b-instruct-v1:0",
+        client=mock_runtime_client,
+        region_name="us-east-1",
+    )
+
+    mock_create_client.assert_called_with(
+        region_name="us-east-1",
+        credentials_profile_name=None,
+        aws_access_key_id=None,
+        aws_secret_access_key=None,
+        aws_session_token=None,
+        endpoint_url=None,
+        config=None,
+        service_name="bedrock"
+    )
 
 
 def test__has_tool_use_or_result_blocks() -> None:
