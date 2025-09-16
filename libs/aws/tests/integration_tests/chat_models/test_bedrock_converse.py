@@ -494,3 +494,51 @@ def test_bedrock_pdf_inputs() -> None:
         ]
     )
     _ = model.invoke([message])
+
+
+def test_bedrock_document_usage() -> None:
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-3-5-sonnet-20241022-v2:0", region_name="us-west-2"
+    )
+
+    # Test bytes source typec
+    url = "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
+    pdf_bytes = httpx.get(url).content
+    message = HumanMessage(
+        [
+            {"type": "text", "text": "Summarize this document:"},
+            ChatBedrockConverse.create_document(
+                "PDFDoc", source={"bytes": pdf_bytes}, format="pdf"
+            ),
+        ]
+    )
+
+    _ = model.invoke([message])
+
+    # Test text source type
+    text = "I am a text document."
+    message = HumanMessage(
+        [
+            {"type": "text", "text": "Summarize this document:"},
+            ChatBedrockConverse.create_document(
+                "TextDoc", source={"text": text}, format="txt"
+            ),
+        ]
+    )
+    _ = model.invoke([message])
+
+    # Test content source type
+    split_text = [
+        {"text": "I am the first part of a document."},
+        {"text": "I am the second part."},
+        {"text": "I am not sure how I got here."},
+    ]
+    message = HumanMessage(
+        [
+            {"type": "text", "text": "Summarize this document:"},
+            ChatBedrockConverse.create_document(
+                "TextDoc", source={"content": split_text}, format="txt"
+            ),
+        ]
+    )
+    _ = model.invoke([message])
