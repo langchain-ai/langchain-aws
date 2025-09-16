@@ -671,7 +671,7 @@ class ChatBedrockConverse(BaseChatModel):
         # For AIPs, pull base model ID via GetInferenceProfile API call
         if self.base_model_id is None and 'application-inference-profile' in self.model_id:
             response = self.bedrock_client.get_inference_profile(
-                inferenceProfileIdentifier=self.model_id
+                inferenceProfileIdentifier = self.model_id
             )
             if "models" in response and len(response["models"]) > 0:
                 model_arn = response["models"][0]["modelArn"]
