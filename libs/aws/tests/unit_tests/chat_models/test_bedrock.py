@@ -26,6 +26,7 @@ from langchain_aws.function_calling import convert_to_anthropic_tool
 def test__merge_messages() -> None:
     messages = [
         SystemMessage("foo"),  # type: ignore[misc]
+        SystemMessage("barfoo"),  # type: ignore[misc]
         HumanMessage("bar"),  # type: ignore[misc]
         AIMessage(  # type: ignore[misc]
             [
@@ -52,7 +53,12 @@ def test__merge_messages() -> None:
         HumanMessage("next thing"),  # type: ignore[misc]
     ]
     expected = [
-        SystemMessage("foo"),  # type: ignore[misc]
+        SystemMessage(
+            [
+                {'type': 'text', 'text': 'foo'},
+                {'type': 'text', 'text': 'barfoo'}
+            ]
+        ),  # type: ignore[misc]
         HumanMessage("bar"),  # type: ignore[misc]
         AIMessage(  # type: ignore[misc]
             [
@@ -345,6 +351,34 @@ def test__format_anthropic_messages_system_message_list_content() -> None:
     actual = _format_anthropic_messages(messages)
     assert expected == actual
 
+def test__format_anthropic_multiple_system_messages() -> None:
+    """Test that multiple system messages can be passed, and that none of them are required to be at position 0."""
+    system1 = SystemMessage("foo")  # type: ignore[misc]
+    system2 = SystemMessage("bar")  # type: ignore[misc]
+    human = HumanMessage("Hello!")
+    messages = [human, system1, system2]
+    expected_system = [
+        {'text': 'foo', 'type': 'text'},
+        {'text': 'bar', 'type': 'text'}
+    ]
+    expected_messages = [
+        {"role": "user", "content": "Hello!"}
+    ]
+
+    actual_system, actual_messages = _format_anthropic_messages(messages)
+    assert expected_system == actual_system
+    assert expected_messages == actual_messages
+
+def test__format_anthropic_nonconsecutive_system_messages() -> None:
+    """Test that we fail when non-consecutive system messages are passed."""
+    system1 = SystemMessage("foo")  # type: ignore[misc]
+    system2 = SystemMessage("bar")  # type: ignore[misc]
+    human = HumanMessage("Hello!")
+    messages = [system1, human, system2]
+
+    with pytest.raises(ValueError, match="Received multiple non-consecutive system messages."):
+        _format_anthropic_messages(messages)
+
 
 @pytest.fixture()
 def pydantic() -> Type[BaseModel]:
@@ -539,11 +573,31 @@ def test_standard_tracing_params() -> None:
 
 
 def test_beta_use_converse_api() -> None:
-    llm = ChatBedrock(model_id="nova.foo", region_name="us-west-2")  # type: ignore[call-arg]
+    llm = ChatBedrock(model_id="amazon.nova.foo", region_name="us-west-2")  # type: ignore[call-arg]
     assert llm.beta_use_converse_api
 
     llm = ChatBedrock(
+        model="foobar",
+        base_model="amazon.nova.foo",
+        region_name="us-west-2")  # type: ignore[call-arg]
+    assert llm.beta_use_converse_api
+
+    llm = ChatBedrock(
+        model="arn:aws:bedrock:::application-inference-profile/my-profile",
+        base_model="claude.foo",
+        region_name="us-west-2")  # type: ignore[call-arg]
+    assert not llm.beta_use_converse_api
+
+    llm = ChatBedrock(
         model="nova.foo", region_name="us-west-2", beta_use_converse_api=False
+    )
+    assert not llm.beta_use_converse_api
+
+    llm = ChatBedrock(
+        model="foobar",
+        base_model="nova.foo",
+        region_name="us-west-2",
+        beta_use_converse_api=False
     )
     assert not llm.beta_use_converse_api
 
@@ -554,9 +608,75 @@ def test_beta_use_converse_api() -> None:
     assert not llm.beta_use_converse_api
 
 
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_beta_use_converse_api_with_inference_profile(mock_create_aws_client):
+    mock_bedrock_client = mock.MagicMock()
+    mock_bedrock_client.get_inference_profile.return_value = {
+        "models": [
+            {
+                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+            }
+        ]
+    }
+    mock_create_aws_client.return_value = mock_bedrock_client
+
+    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"
+    chat = ChatBedrock(
+        model_id=aip_model_id, 
+        region_name="us-west-2",
+        bedrock_client=mock_bedrock_client
+    ) # type: ignore[call-arg]
+
+    mock_bedrock_client.get_inference_profile.assert_called_with(
+        inferenceProfileIdentifier=aip_model_id
+    )
+
+    assert chat.beta_use_converse_api is False
+
+
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_beta_use_converse_api_with_inference_profile_as_nova_model(mock_create_aws_client):
+    mock_bedrock_client = mock.MagicMock()
+    mock_bedrock_client.get_inference_profile.return_value = {
+        "models": [
+            {
+                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-micro-v1:0"
+            }
+        ]
+    }
+    mock_create_aws_client.return_value = mock_bedrock_client
+
+    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"
+    chat = ChatBedrock(
+        model_id=aip_model_id, 
+        region_name="us-west-2",
+        bedrock_client=mock_bedrock_client
+    ) # type: ignore[call-arg]
+
+    mock_bedrock_client.get_inference_profile.assert_called_with(
+        inferenceProfileIdentifier=aip_model_id
+    )
+
+    assert chat.beta_use_converse_api is True
+
+
 @pytest.mark.parametrize(
     "model_id, provider, expected_provider, expectation, region_name",
     [
+        (
+            "amer.amazon.nova-pro-v1:0",
+            None,
+            "amazon",
+            nullcontext(),
+            "us-west-2",
+        ),
+        (
+            "global.anthropic.claude-sonnet-4-20250514-v1:0",
+            None,
+            "anthropic",
+            nullcontext(),
+            "us-west-2",
+        ),
         (
             "eu.anthropic.claude-3-haiku-20240307-v1:0",
             None,

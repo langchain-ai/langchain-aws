@@ -53,9 +53,37 @@ config = {"configurable": {"thread_id": session_id}}
 graph.invoke(1, config)
 ```
 
+
+You can also invoke the graph asynchronously:
+
+```python
+from langgraph.graph import StateGraph
+from langgraph_checkpoint_aws.async_saver import AsyncBedrockSessionSaver
+
+# Initialize the saver
+session_saver = AsyncBedrockSessionSaver(
+    region_name="us-west-2",  # Your AWS region
+    credentials_profile_name="default",  # Optional: AWS credentials profile
+)
+
+# Create a session
+session_create_response = await session_saver.session_client.create_session()
+session_id = session_create_response.session_id
+
+# Use with LangGraph
+builder = StateGraph(int)
+builder.add_node("add_one", lambda x: x + 1)
+builder.set_entry_point("add_one")
+builder.set_finish_point("add_one")
+
+graph = builder.compile(checkpointer=session_saver)
+config = {"configurable": {"thread_id": session_id}}
+await graph.ainvoke(1, config)
+```
+
 ## Configuration Options
 
-`BedrockSessionSaver` accepts the following parameters:
+`BedrockSessionSaver` and `AsyncBedrockSessionSaver`  accepts the following parameters:
 
 ```python
 def __init__(
