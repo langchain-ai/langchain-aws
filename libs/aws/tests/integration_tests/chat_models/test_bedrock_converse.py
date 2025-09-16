@@ -12,6 +12,7 @@ from langchain_core.messages import (
     AIMessageChunk,
     BaseMessageChunk,
     HumanMessage,
+    SystemMessage
 )
 from langchain_core.tools import BaseTool
 from langchain_tests.integration_tests import ChatModelIntegrationTests
@@ -188,6 +189,21 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
         self, model: BaseChatModel, my_adder_tool: BaseTool
     ) -> None:
         super().test_tool_message_histories_list_content(model, my_adder_tool)
+
+
+def test_multiple_system_messages_anthropic() -> None:
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        temperature=0
+    )
+
+    system1 = SystemMessage(content="You are a helpful assistant.")
+    system2 = SystemMessage(content="Always respond in a concise manner.")
+    human = HumanMessage(content="Hello")
+    response = model.invoke([system1, system2, human])
+
+    assert isinstance(response, AIMessage)
+    assert isinstance(response.content, str)
 
 
 class ClassifyQuery(BaseModel):
