@@ -132,6 +132,17 @@ def _stream_response_to_generation_chunk(
                     content_block["index"] = stream_response["index"]
                     content_block["type"] = "text"
                     return AIMessageChunk(content=[content_block])
+            elif stream_response["delta"]["type"] == "citations_delta":
+                return AIMessageChunk(
+                    content=[
+                        {
+                            "type": "text",
+                            "text": "",
+                            "citations": [stream_response["delta"]["citation"]],
+                            "index": stream_response["index"],
+                        }
+                    ]
+                )
             elif stream_response["delta"]["type"] == "input_json_delta":
                 content_block = stream_response["delta"]
                 content_block["index"] = stream_response["index"]
@@ -251,6 +262,18 @@ def extract_tool_calls(content: List[dict]) -> List[ToolCall]:
             tool_call(name=block["name"], args=block["input"], id=block["id"])
         )
     return tool_calls
+
+def _citations_enabled(messages: list[dict[str, Any]]) -> bool:
+    for message in messages:
+        if isinstance(message.get("content"), list):
+            for block in message["content"]:
+                if (
+                    isinstance(block, dict)
+                    and block.get("type") == "document"
+                    and block.get("citations", {}).get("enabled")
+                ):
+                    return True
+    return False
 
 
 class AnthropicTool(TypedDict):
@@ -1108,6 +1131,8 @@ class BedrockBase(BaseLanguageModel, ABC):
                     temperature=self.temperature,
                 )
             elif thinking_in_params(params):
+                coerce_content_to_string = False
+            elif _citations_enabled(messages):
                 coerce_content_to_string = False
 
         body = json.dumps(input_body)

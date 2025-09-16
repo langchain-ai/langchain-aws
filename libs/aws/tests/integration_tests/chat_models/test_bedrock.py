@@ -612,51 +612,52 @@ def test_thinking_bedrock(output_version: Literal["v0", "v1"]) -> None:
     assert content_blocks[0]["extras"]["signature"]
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Need to update content to list type when citations are enabled in input "
-        "documents."
-    )
-)
-def test_citations_bedrock() -> None:
+@pytest.mark.parametrize("output_version", ["v0", "v1"])
+def test_citations_bedrock(output_version: Literal["v0", "v1"]) -> None:
     llm = ChatBedrock(
         model="us.anthropic.claude-sonnet-4-20250514-v1:0",
-        max_tokens=4096,
+        output_version=output_version,
     )
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "document",
-                    "source": {
-                        "type": "content",
-                        "content": [
-                            {"type": "text", "text": "The grass is green"},
-                            {"type": "text", "text": "The sky is blue"},
-                        ],
-                    },
-                    "citations": {"enabled": True},
-                },
-                {"type": "text", "text": "What color is the grass and sky?"},
-            ],
-        },
-    ]
-    response = llm.invoke(messages)
-    assert isinstance(response, AIMessage)
-    assert isinstance(response.content, list)
-    assert any("citations" in block for block in response.content)
 
-    # Test streaming
+    input_message = {
+        "role": "user",
+        "content": [
+            {
+                "type": "document",
+                "source": {
+                    "type": "text",
+                    "media_type": "text/plain",
+                    "data": (
+                        "Company leave policy: Employees get 20 days annual leave. "
+                        "Consult with your manager for details."
+                    ),
+                },
+                "citations": {"enabled": True},
+            },
+            {"type": "text", "text": "How many days of annual leave do employees get?"},
+        ]
+    }
+
     full: Optional[BaseMessageChunk] = None
-    for chunk in llm.stream(messages):
+    for chunk in llm.stream([input_message]):
         assert isinstance(chunk, AIMessageChunk)
         full = chunk if full is None else full + chunk
-
     assert isinstance(full, AIMessageChunk)
-    assert isinstance(full.content, list)
-    assert not any("citation" in block for block in full.content)
-    assert any("citations" in block for block in full.content)
+
+    # Raw content
+    if output_version == "v0":
+        assert any(block.get("citations") for block in full.content)  # type: ignore[union-attr]
+    else:
+        # v1
+        assert any(block.get("annotations") for block in full.content)  # type: ignore[union-attr]
+
+    next_message = {"role": "user", "content": "Who should they consult with?"}
+    response = llm.invoke([input_message, full, next_message])
+    if output_version == "v0":
+        assert any(block.get("citations") for block in response.content)  # type: ignore[union-attr]
+    else:
+        # v1
+        assert any(block.get("annotations") for block in response.content)  # type: ignore[union-attr]
 
 
 @pytest.mark.skip(reason="Needs guardrails setup to run.")
