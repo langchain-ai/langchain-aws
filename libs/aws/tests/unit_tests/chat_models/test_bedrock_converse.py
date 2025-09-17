@@ -1856,6 +1856,66 @@ def test_nova_provider_extraction() -> None:
     assert model.provider == "amazon"
 
 
+def test__messages_to_bedrock_strips_trailing_whitespace_string() -> None:
+    """Test that _messages_to_bedrock strips trailing whitespace from string AIMessage content."""
+    messages = [
+        SystemMessage(content="System message"),
+        HumanMessage(content="Human message"),
+        AIMessage(content="AI message with trailing whitespace    \n  \t  "),
+    ]
+    
+    bedrock_messages, _ = _messages_to_bedrock(messages)
+
+    assert bedrock_messages[1]["content"][0]["text"] == "AI message with trailing whitespace"
+
+
+def test__messages_to_bedrock_strips_trailing_whitespace_blocks() -> None:
+    """Test that _messages_to_bedrock strips trailing whitespace from block AIMessage content."""
+    messages = [
+        SystemMessage(content="System message"),
+        HumanMessage(content="Human message"),
+        AIMessage(content=[
+            {"type": "text", "text": "AI message with trailing whitespace    \n  \t  "},
+            {"type": "text", "text": "Another text block with whitespace  \n "}
+        ]),
+    ]
+    
+    bedrock_messages, _ = _messages_to_bedrock(messages)
+
+    assert bedrock_messages[1]["content"][0]["text"] == "AI message with trailing whitespace"
+    assert bedrock_messages[1]["content"][1]["text"] == "Another text block with whitespace"
+
+
+def test__messages_to_bedrock_preserves_whitespace_non_last_aimessage_string() -> None:
+    """Test that _messages_to_bedrock preserves trailing whitespace in non-last AIMessages."""
+    messages = [
+        SystemMessage(content="System message"),
+        HumanMessage(content="First human message"),
+        AIMessage(content="AI message with trailing whitespace    \n  \t  "),
+        HumanMessage(content="Second human message"),
+    ]
+    
+    bedrock_messages, _ = _messages_to_bedrock(messages)
+
+    assert bedrock_messages[1]["content"][0]["text"] == "AI message with trailing whitespace    \n  \t  "
+
+
+def test__messages_to_bedrock_preserves_whitespace_non_last_aimessage_blocks() -> None:
+    """Test that _messages_to_bedrock preserves trailing whitespace in non-last AIMessages."""
+    messages = [
+        SystemMessage(content="System message"),
+        HumanMessage(content="First human message"),
+        AIMessage(content=[
+            {"type": "text", "text": "AI message with trailing whitespace    \n  \t  "},
+        ]),
+        HumanMessage(content="Second human message"),
+    ]
+    
+    bedrock_messages, _ = _messages_to_bedrock(messages)
+
+    assert bedrock_messages[1]["content"][0]["text"] == "AI message with trailing whitespace    \n  \t  "
+
+
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
 def test_bedrock_client_inherits_from_runtime_client(mock_create_client: mock.Mock) -> None:
     """Test that bedrock_client inherits region and config from runtime client."""
