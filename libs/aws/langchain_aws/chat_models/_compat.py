@@ -109,8 +109,7 @@ def _convert_annotation_from_v1_to_anthropic(
                 out["cited_text"] = cited_text
             if "encrypted_index" in annotation.get("extras", {}):
                 out["encrypted_index"] = annotation.get("extras", {})["encrypted_index"]
-            if "title" in annotation:
-                out["title"] = annotation["title"]
+            out["title"] = annotation.get("title")
             out["type"] = "web_search_result_location"
             if "url" in annotation:
                 out["url"] = annotation["url"]
@@ -127,8 +126,7 @@ def _convert_annotation_from_v1_to_anthropic(
             for field in ["cited_text"]:
                 if value := annotation.get(field):
                     out[field] = value
-            if title := annotation.get("title"):
-                out["document_title"] = title
+            out["document_title"] = annotation.get("title")
 
             for key, value in annotation.get("extras", {}).items():
                 out[key] = value
@@ -138,9 +136,9 @@ def _convert_annotation_from_v1_to_anthropic(
         if "search_result_index" in annotation.get("extras", {}):
             # search_result_location
             out = {"type": "search_result_location"}
-            for field in ["cited_text", "title"]:
-                if value := annotation.get(field):
-                    out[field] = value
+            if cited_text := annotation.get("cited_text"):
+                out["cited_text"] = cited_text
+            out["title"] = annotation.get("title")
 
             for key, value in annotation.get("extras", {}).items():
                 out[key] = value
@@ -154,8 +152,7 @@ def _convert_annotation_from_v1_to_anthropic(
                 out["cited_text"] = cited_text
             if "document_index" in annotation.get("extras", {}):
                 out["document_index"] = annotation.get("extras", {})["document_index"]
-            if "title" in annotation:
-                out["document_title"] = annotation["title"]
+            out["document_title"] = annotation.get("title")
 
             for key, value in annotation.get("extras", {}).items():
                 if key not in out:
@@ -170,8 +167,7 @@ def _convert_annotation_from_v1_to_anthropic(
             for field in ["cited_text"]:
                 if value := annotation.get(field):
                     out[field] = value
-            if title := annotation.get("title"):
-                out["document_title"] = title
+            out["document_title"] = annotation.get("title")
 
             for key, value in annotation.get("extras", {}).items():
                 out[key] = value

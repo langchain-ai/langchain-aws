@@ -56,6 +56,7 @@ from langchain_aws.function_calling import (
 )
 from langchain_aws.llms.bedrock import (
     BedrockBase,
+    _citations_enabled,
     _combine_generation_info_for_llm_result,
 )
 from langchain_aws.utils import (
@@ -575,6 +576,8 @@ def _format_anthropic_messages(
                             content_item = {"type": "text", "text": text}
                             if item.get("cache_control"):
                                 content_item["cache_control"] = {"type": "ephemeral"}
+                            if item.get("citations"):
+                                content_item["citations"] = item["citations"]
                             native_blocks.append(content_item)
                     else:
                         tool_blocks.append(item)
@@ -969,6 +972,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         completion = ""
         llm_output: Dict[str, Any] = {}
         tool_calls: List[ToolCall] = []
+        citations_enabled: Optional[bool] = None
         provider_stop_reason_code = self.provider_stop_reason_key_map.get(
             self._get_provider(), "stop_reason"
         )
@@ -1001,6 +1005,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                         system = self.system_prompt_with_tools + f"\n{system}"
                     else:
                         system = self.system_prompt_with_tools
+                citations_enabled = _citations_enabled(formatted_messages)
             elif provider == "openai":
                 formatted_messages = ChatPromptAdapter.format_messages(provider, messages)
             else:
@@ -1011,7 +1016,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             if stop:
                 params["stop_sequences"] = stop
 
-            completion, tool_calls, llm_output = self._prepare_input_and_invoke(
+            completion, tool_calls, llm_output, body = self._prepare_input_and_invoke(
                 prompt=prompt,
                 stop=stop,
                 run_manager=run_manager,
@@ -1039,14 +1044,17 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         logger.debug(f"The message received from Bedrock: {completion}")
         llm_output["model_id"] = self.model_id  # backward-compatibility
 
-        # Move thinking output to content array
+        # Use raw response content in some cases, so that thinking and citations
+        # are properly stored in content array
         content = completion
-        if thinking_content := llm_output.pop("thinking", None):
-            if "text" in thinking_content:
-                thinking_content["thinking"] = thinking_content.pop("text")
-            if isinstance(completion, str):
-                content = [{"type": "text", "text": completion}]
-            content = [{"type": "thinking", **thinking_content}, *content]
+        if (
+            (response_content := body.get("content"))
+            and (
+                (_ := llm_output.pop("thinking", None))
+                or citations_enabled
+            )
+        ):
+            content = response_content
 
         msg = AIMessage(
             content=content,

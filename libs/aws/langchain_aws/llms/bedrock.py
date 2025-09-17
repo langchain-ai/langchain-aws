@@ -931,6 +931,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         str,
         List[ToolCall],
         Dict[str, Any],
+        Dict[str, Any],
     ]:
         _model_kwargs = self.model_kwargs or {}
 
@@ -1049,7 +1050,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 **services_trace,
             )
 
-        return text, tool_calls, llm_output
+        return text, tool_calls, llm_output, body
 
     def _get_bedrock_services_signal(self, body: dict) -> dict:
         """
@@ -1400,7 +1401,7 @@ class BedrockLLM(LLM, BedrockBase):
 
             return completion
 
-        text, tool_calls, llm_output = self._prepare_input_and_invoke(
+        text, tool_calls, llm_output, body = self._prepare_input_and_invoke(
             prompt=prompt, stop=stop, run_manager=run_manager, **kwargs
         )
         if run_manager is not None:
