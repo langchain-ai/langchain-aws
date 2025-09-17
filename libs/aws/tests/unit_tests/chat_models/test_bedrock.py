@@ -548,6 +548,101 @@ def test_anthropic_bind_tools_tool_choice() -> None:
     }
 
 
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_claude37_thinking_forced_tool_bool_true_raises(mock_create_aws_client) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    chat = ChatBedrock(
+        model_id="anthropic.claude-3-7-sonnet-20250219-v1:0",
+        region_name="us-west-2",
+        model_kwargs={
+            "thinking": {"type": "enabled", "budget_tokens": 2048},
+        },
+    )
+    with pytest.raises(ValueError, match="does not support forced tool use"):
+        chat.bind_tools([GetWeather], tool_choice=True)
+
+
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_claude37_thinking_tool_choice_any_raises(mock_create_aws_client) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    chat = ChatBedrock(
+        model_id="anthropic.claude-3-7-sonnet-20250219-v1:0",
+        region_name="us-west-2",
+        model_kwargs={
+            "thinking": {"type": "enabled", "budget_tokens": 2048},
+        },
+    )
+    with pytest.raises(ValueError, match="does not support forced tool use"):
+        chat.bind_tools([GetWeather], tool_choice="any")
+
+
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_claude37_thinking_specific_tool_name_raises(mock_create_aws_client) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    chat = ChatBedrock(
+        model_id="anthropic.claude-3-7-sonnet-20250219-v1:0",
+        region_name="us-west-2",
+        model_kwargs={
+            "thinking": {"type": "enabled", "budget_tokens": 2048},
+        },
+    )
+    with pytest.raises(ValueError, match="does not support forced tool use"):
+        chat.bind_tools([GetWeather], tool_choice="GetWeather")
+
+
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_claude37_thinking_tool_choice_dict_tool_raises(mock_create_aws_client) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    chat = ChatBedrock(
+        model_id="anthropic.claude-3-7-sonnet-20250219-v1:0",
+        region_name="us-west-2",
+        model_kwargs={
+            "thinking": {"type": "enabled", "budget_tokens": 2048},
+        },
+    )
+    with pytest.raises(ValueError, match="does not support forced tool use"):
+        chat.bind_tools([GetWeather], tool_choice={"type": "tool", "name": "GetWeather"})
+
+
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_claude37_thinking_tool_choice_auto_ok(mock_create_aws_client) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    chat = ChatBedrock(
+        model_id="anthropic.claude-3-7-sonnet-20250219-v1:0",
+        region_name="us-west-2",
+        model_kwargs={
+            "thinking": {"type": "enabled", "budget_tokens": 2048},
+        },
+    )
+    chat_with_tools = chat.bind_tools([GetWeather], tool_choice="auto")
+    assert cast(RunnableBinding, chat_with_tools).kwargs["tool_choice"] == {"type": "auto"}
+
+
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_claude37_no_thinking_forced_tool_ok(mock_create_aws_client) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    chat = ChatBedrock(
+        model_id="anthropic.claude-3-7-sonnet-20250219-v1:0",
+        region_name="us-west-2",
+    )
+    chat_with_tools = chat.bind_tools([GetWeather], tool_choice="any")
+    assert cast(RunnableBinding, chat_with_tools).kwargs["tool_choice"] == {"type": "any"}
+
+
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_other_anthropic_model_thinking_forced_tool_ok(mock_create_aws_client) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    chat = ChatBedrock(
+        model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
+        region_name="us-west-2",
+        model_kwargs={
+            "thinking": {"type": "enabled", "budget_tokens": 2048},
+        },
+    )
+    chat_with_tools = chat.bind_tools([GetWeather], tool_choice="any")
+    assert cast(RunnableBinding, chat_with_tools).kwargs["tool_choice"] == {"type": "any"}
+
+
 def test_standard_tracing_params() -> None:
     llm = ChatBedrock(model_id="foo", region_name="us-west-2")  # type: ignore[call-arg]
     expected = {

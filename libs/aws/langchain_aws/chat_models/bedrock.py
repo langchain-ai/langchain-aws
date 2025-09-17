@@ -61,6 +61,7 @@ from langchain_aws.utils import (
     create_aws_client,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
+    thinking_in_params,
     trim_message_whitespace,
 )
 
@@ -1110,6 +1111,37 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             return self._as_converse.bind_tools(
                 tools, tool_choice=tool_choice, **kwargs
             )
+        # Strict mode: Claude 3.7 with thinking enabled does not support forced tool use
+        try:
+            base_model = self._get_base_model()
+        except Exception:
+            base_model = self.model_id
+        if (
+            self._get_provider() == "anthropic"
+            and "claude-3-7-sonnet" in base_model
+            and thinking_in_params(self.model_kwargs or {})
+        ):
+            forced = False
+            if isinstance(tool_choice, bool):
+                forced = bool(tool_choice)
+            elif isinstance(tool_choice, str):
+                # "any" or specific tool name forces tool use; "auto"/"none" do not
+                if tool_choice == "any":
+                    forced = True
+                elif tool_choice not in ("auto", "none"):
+                    # Treat as specific tool name
+                    forced = True
+            elif isinstance(tool_choice, dict) and tool_choice is not None:
+                tc_type = tool_choice.get("type")
+                # Bedrock types: "auto", "any", "tool" (function)
+                if tc_type in ("any", "tool", "function"):
+                    forced = True
+            if forced:
+                raise ValueError(
+                    "Claude 3.7 with thinking enabled does not support forced tool use. "
+                    "Remove forced tool_choice (e.g. 'any' or a specific tool), or set "
+                    "tool_choice='auto', or disable thinking."
+                )
         if self._get_provider() == "anthropic":
             formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
 
