@@ -211,13 +211,21 @@ def thinking_in_params(params: dict) -> bool:
 
 def trim_message_whitespace(messages: List[Any]) -> List[Any]:
     """Trim trailing whitespace from final AIMessage content."""
-    messages_copy = messages.copy()
-    if messages_copy and isinstance(messages_copy[-1], AIMessage):
-        if isinstance(messages_copy[-1].content, str):
-            messages_copy[-1].content = messages_copy[-1].content.rstrip()
-        elif isinstance(messages_copy[-1].content, list):
-            for j, block in enumerate(messages_copy[-1].content):
-                if isinstance(block, dict) and block.get("type") == "text" \
-                    and isinstance(block.get("text"), str):
-                    messages_copy[-1].content[j]["text"] = block["text"].rstrip()
-    return messages_copy
+    if not messages or not isinstance(messages[-1], AIMessage):
+        return messages
+
+    last_message = messages[-1]
+
+    if isinstance(last_message.content, str):
+        trimmed = last_message.content.rstrip()
+        if trimmed != last_message.content:
+            last_message.content = trimmed
+    elif isinstance(last_message.content, list):
+        for j, block in enumerate(last_message.content):
+            if isinstance(block, dict) and block.get("type") == "text" \
+                and isinstance(block.get("text"), str):
+                trimmed = block["text"].rstrip()
+                if trimmed != block["text"]:
+                    last_message.content[j]["text"] = trimmed
+    
+    return messages
