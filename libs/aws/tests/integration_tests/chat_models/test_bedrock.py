@@ -393,7 +393,7 @@ class Joke(TypedDict):
 
 
 @pytest.mark.scheduled
-def test_structured_output_streaming_dict():
+def test_structured_output_streaming_dict() -> None:
     chat = ChatBedrock(
         model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         temperature=0.0,
@@ -422,7 +422,7 @@ class JokePyd(BaseModel):
 
 
 @pytest.mark.scheduled
-def test_structured_output_streaming_pydantic():
+def test_structured_output_streaming_pydantic() -> None:
     """Test that structured output works with streaming for a more complex schema."""
     model = ChatBedrock(
         model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
