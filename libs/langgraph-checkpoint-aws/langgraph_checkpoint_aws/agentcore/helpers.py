@@ -14,11 +14,11 @@ from typing import Any, Dict, List, Union
 import boto3
 from langgraph.checkpoint.base import CheckpointTuple, SerializerProtocol
 
-from langgraph_checkpoint_aws.checkpoint.agentcore_memory.constants import (
+from langgraph_checkpoint_aws.agentcore.constants import (
     EMPTY_CHANNEL_VALUE,
     EventDecodingError,
 )
-from langgraph_checkpoint_aws.checkpoint.agentcore_memory.models import (
+from langgraph_checkpoint_aws.agentcore.models import (
     ChannelDataEvent,
     CheckpointerConfig,
     CheckpointEvent,
@@ -160,18 +160,18 @@ class CheckpointEventClient:
         )
 
     def get_events(
-        self, session_id: str, actor_id: str, max_results: int = 100
+        self, session_id: str, actor_id: str, max_results: int = None
     ) -> List[EventType]:
         """Retrieve events from AgentCore Memory."""
         all_events = []
         next_token = None
 
-        while len(all_events) < max_results:
+        while True:
             params = {
                 "memoryId": self.memory_id,
                 "actorId": actor_id,
                 "sessionId": session_id,
-                "maxResults": min(100, max_results - len(all_events)),
+                "maxResults": 100,
                 "includePayloads": True,
             }
 
@@ -191,10 +191,10 @@ class CheckpointEventClient:
                             logger.warning(f"Failed to decode event: {e}")
 
             next_token = response.get("nextToken")
-            if not next_token or len(all_events) >= max_results:
+            if not next_token or (max_results and len(all_events) >= max_results):
                 break
 
-        return all_events[:max_results]
+        return all_events
 
     def delete_events(self, session_id: str, actor_id: str) -> None:
         """Delete all events for a session."""

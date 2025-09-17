@@ -2,7 +2,7 @@
 LangGraph Checkpoint AWS - A LangChain checkpointer implementation using Bedrock Session Management Service.
 """
 
-from langgraph_checkpoint_aws.checkpoint.agentcore_memory.saver import (
+from langgraph_checkpoint_aws.agentcore.saver import (
     AgentCoreMemorySaver,
 )
 

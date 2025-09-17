@@ -20,16 +20,16 @@ from langgraph.checkpoint.base import (
     get_checkpoint_metadata,
 )
 
-from langgraph_checkpoint_aws.checkpoint.agentcore_memory.constants import (
+from langgraph_checkpoint_aws.agentcore.constants import (
     EMPTY_CHANNEL_VALUE,
     InvalidConfigError,
 )
-from langgraph_checkpoint_aws.checkpoint.agentcore_memory.helpers import (
+from langgraph_checkpoint_aws.agentcore.helpers import (
     CheckpointEventClient,
     EventProcessor,
     EventSerializer,
 )
-from langgraph_checkpoint_aws.checkpoint.agentcore_memory.models import (
+from langgraph_checkpoint_aws.agentcore.models import (
     ChannelDataEvent,
     CheckpointerConfig,
     CheckpointEvent,
@@ -110,7 +110,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         config_checkpoint_id = get_checkpoint_id(config) if config else None
 
         events = self.checkpoint_event_client.get_events(
-            checkpoint_config.session_id, checkpoint_config.actor_id
+            checkpoint_config.session_id, checkpoint_config.actor_id, limit
         )
 
         checkpoints, writes_by_checkpoint, channel_data = self.processor.process_events(
