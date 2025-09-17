@@ -59,7 +59,7 @@ from typing_extensions import Self
 
 from langchain_aws.chat_models._compat import _convert_from_v1_to_converse
 from langchain_aws.function_calling import ToolsOutputParser
-from langchain_aws.utils import create_aws_client
+from langchain_aws.utils import create_aws_client, trim_message_whitespace
 
 logger = logging.getLogger(__name__)
 _BM = TypeVar("_BM", bound=BaseModel)
@@ -693,6 +693,16 @@ class ChatBedrockConverse(BaseChatModel):
                 service_name="bedrock",
             )
 
+        # For AIPs, pull base model ID via GetInferenceProfile API call
+        if self.base_model_id is None and 'application-inference-profile' in self.model_id:
+            response = self.bedrock_client.get_inference_profile(
+                inferenceProfileIdentifier = self.model_id
+            )
+            if "models" in response and len(response["models"]) > 0:
+                model_arn = response["models"][0]["modelArn"]
+                # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
+                self.base_model_id = model_arn.split("/")[-1]
+
         # Handle streaming configuration for application inference profiles
         if "application-inference-profile" in self.model_id:
             self._configure_streaming_for_resolved_model()
@@ -743,19 +753,6 @@ class ChatBedrockConverse(BaseChatModel):
         return self
 
     def _get_base_model(self) -> str:
-        # identify the base model id used in the application inference profile (AIP)
-        # Format: arn:aws:bedrock:us-east-1:<accountId>:application-inference-profile/<id>
-        if (
-            self.base_model_id is None
-            and "application-inference-profile" in self.model_id
-        ):
-            response = self.bedrock_client.get_inference_profile(
-                inferenceProfileIdentifier=self.model_id
-            )
-            if "models" in response and len(response["models"]) > 0:
-                model_arn = response["models"][0]["modelArn"]
-                # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
-                self.base_model_id = model_arn.split("/")[-1]
         return self.base_model_id if self.base_model_id else self.model_id
 
     def _configure_streaming_for_resolved_model(self) -> None:
@@ -1145,9 +1142,9 @@ def _messages_to_bedrock(
 
     bedrock_messages: List[Dict[str, Any]] = []
     bedrock_system: List[Dict[str, Any]] = []
-    # Merge system, human, ai message runs because Anthropic expects
-    # (optional) system messages first, then alternating human/ai messages.
-    messages = merge_message_runs(messages)
+    trimmed_messages = trim_message_whitespace(messages)
+    messages = merge_message_runs(trimmed_messages)
+    
     for msg in messages:
         content = _lc_content_to_bedrock(msg.content)
         if isinstance(msg, HumanMessage):

@@ -838,6 +838,15 @@ class BedrockBase(BaseLanguageModel, ABC):
                 service_name="bedrock",
             )
 
+        if self.base_model_id is None and 'application-inference-profile' in self.model_id:
+            response = self.bedrock_client.get_inference_profile(
+                inferenceProfileIdentifier = self.model_id
+            )
+            if 'models' in response and len(response['models']) > 0:
+                model_arn = response['models'][0]['modelArn']
+                # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
+                self.base_model_id = model_arn.split('/')[-1]
+
         return self
 
     @property
@@ -878,16 +887,6 @@ class BedrockBase(BaseLanguageModel, ABC):
         )
 
     def _get_base_model(self) -> str:
-        # identify the base model id used in the application inference profile (AIP)
-        # Format: arn:aws:bedrock:us-east-1:<accountId>:application-inference-profile/<id>
-        if self.base_model_id is None and 'application-inference-profile' in self.model_id:
-            response = self.bedrock_client.get_inference_profile(
-                inferenceProfileIdentifier=self.model_id
-            )
-            if 'models' in response and len(response['models']) > 0:
-                model_arn = response['models'][0]['modelArn']
-                # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
-                self.base_model_id = model_arn.split('/')[-1]
         return self.base_model_id if self.base_model_id else self.model_id.split(".", maxsplit=1)[-1]
 
     @property
