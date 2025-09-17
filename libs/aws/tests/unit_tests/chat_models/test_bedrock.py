@@ -1291,6 +1291,67 @@ def test_model_kwargs() -> None:
     assert llm.stop_sequences is None
 
 
+def test__format_anthropic_messages_strips_trailing_whitespace_string() -> None:
+    """Test that _format_anthropic_messages strips trailing whitespace from AIMessage string content."""
+    messages = [
+        SystemMessage(content="System message"),
+        HumanMessage(content="Human message"),
+        AIMessage(content="AI message with trailing whitespace    \n  \t  "),
+    ]
+    
+    _, formatted_messages = _format_anthropic_messages(messages)
+
+    assert formatted_messages[1]["content"][0]["text"] == "AI message with trailing whitespace"
+
+
+def test__format_anthropic_messages_strips_trailing_whitespace_blocks() -> None:
+    """Test that _format_anthropic_messages strips trailing whitespace from AIMessage dict content."""
+    messages = [
+        SystemMessage(content="System message"),
+        HumanMessage(content="Human message"),
+        AIMessage(content=[
+            {"type": "text", "text": "AI message with trailing whitespace    \n  \t  "},
+            {"type": "text", "text": "Another text block with whitespace  \n "}
+        ]),
+    ]
+    
+    _, formatted_messages = _format_anthropic_messages(messages)
+
+    assert formatted_messages[1]["content"][0]["text"] == "AI message with trailing whitespace"
+    assert formatted_messages[1]["content"][1]["text"] == "Another text block with whitespace"
+
+
+def test__format_anthropic_messages_preserves_whitespace_non_last_aimessage_string() -> None:
+    """Test that _format_anthropic_messages preserves trailing whitespace in non-last AIMessages."""
+    messages = [
+        SystemMessage(content="System message"),
+        HumanMessage(content="First human message"),
+        AIMessage(content="AI message with trailing whitespace    \n  \t  "),
+        HumanMessage(content="Second human message"),
+        AIMessage(content="Final AI message"),
+    ]
+    
+    _, formatted_messages = _format_anthropic_messages(messages)
+
+    assert formatted_messages[1]["content"][0]["text"] == "AI message with trailing whitespace    \n  \t  "
+
+
+def test__format_anthropic_messages_preserves_whitespace_non_last_aimessage_blocks() -> None:
+    """Test that _format_anthropic_messages preserves trailing whitespace in non-last AIMessages."""
+    messages = [
+        SystemMessage(content="System message"),
+        HumanMessage(content="First human message"),
+        AIMessage(content=[
+            {"type": "text", "text": "AI message with trailing whitespace    \n  \t  "},
+        ]),
+        HumanMessage(content="Second human message"),
+    ]
+    
+    _, formatted_messages = _format_anthropic_messages(messages)
+
+    assert formatted_messages[1]["content"][0]["text"] == "AI message with trailing whitespace    \n  \t  "
+
+
 @patch("langchain_aws.llms.bedrock.create_aws_client")
 def test_bedrock_client_inherits_from_runtime_client(mock_create_client: MagicMock) -> None:
     """Test that bedrock_client inherits region and config from runtime client."""

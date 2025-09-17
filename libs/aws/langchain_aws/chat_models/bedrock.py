@@ -61,6 +61,7 @@ from langchain_aws.utils import (
     create_aws_client,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
+    trim_message_whitespace,
 )
 
 logger = logging.getLogger(__name__)
@@ -433,7 +434,8 @@ def _format_anthropic_messages(
     system: Optional[Union[str, List[Dict]]] = None
     formatted_messages: List[Dict] = []
 
-    merged_messages = _merge_messages(messages)
+    trimmed_messages = trim_message_whitespace(messages)
+    merged_messages = _merge_messages(trimmed_messages)
     for i, message in enumerate(merged_messages):
         if message.type == "system":
             if system is not None:
