@@ -591,8 +591,8 @@ def test_thinking_bedrock(output_version: Literal["v0", "v1"]) -> None:
 
     content_blocks = full.content_blocks
     assert [block["type"] for block in content_blocks] == ["reasoning", "text"]
-    assert content_blocks[0]["reasoning"]
-    assert content_blocks[0]["extras"]["signature"]
+    assert content_blocks[0].get("reasoning")
+    assert content_blocks[0]["extras"]["signature"]  # type: ignore[typeddict-item]
 
     next_message = {"role": "user", "content": "Thanks!"}
     response = llm.invoke([input_message, full, next_message])
@@ -608,8 +608,8 @@ def test_thinking_bedrock(output_version: Literal["v0", "v1"]) -> None:
 
     content_blocks = response.content_blocks
     assert [block["type"] for block in content_blocks] == ["reasoning", "text"]
-    assert content_blocks[0]["reasoning"]
-    assert content_blocks[0]["extras"]["signature"]
+    assert content_blocks[0].get("reasoning")
+    assert content_blocks[0]["extras"]["signature"]  # type: ignore[typeddict-item]
 
 
 @pytest.mark.parametrize("output_version", ["v0", "v1"])
