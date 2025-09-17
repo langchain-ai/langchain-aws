@@ -1,7 +1,7 @@
 """Test Bedrock chat model."""
 
 import json
-from typing import Any, Optional, Union
+from typing import Annotated, Any, Optional, TypedDict, Union
 from uuid import UUID
 import pytest
 from langchain_core.messages import (
@@ -382,6 +382,64 @@ def test_structured_output_anthropic_format() -> None:
     assert isinstance(response, dict)
     assert isinstance(response["answer"], str)
     assert isinstance(response["justification"], str)
+
+
+class Joke(TypedDict):
+    """Joke to tell user."""
+
+    setup: Annotated[str, ..., "The setup of the joke"]
+    punchline: Annotated[str, ..., "The punchline of the joke"]
+    rating: Annotated[Optional[int], None, "How funny the joke is, from 1 to 10"]
+
+
+@pytest.mark.scheduled
+def test_structured_output_streaming_dict():
+    chat = ChatBedrock(
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        temperature=0.0,
+        streaming=True
+    )
+
+    structured_chat = chat.with_structured_output(Joke)
+
+    query = "Why did the chicken cross the road? Answer in 10 words or less."
+
+    chunk_count = 0
+    for chunk in structured_chat.stream(query):
+        chunk_count += 1
+        assert isinstance(chunk, dict)
+    assert chunk_count > 1
+
+
+class JokePyd(BaseModel):
+    """Joke to tell user."""
+
+    setup: str = Field(description="The setup of the joke")
+    punchline: str = Field(description="The punchline to the joke")
+    rating: Optional[int] = Field(
+        default=None, description="How funny the joke is, from 1 to 10"
+    )
+
+
+@pytest.mark.scheduled
+def test_structured_output_streaming_pydantic():
+    """Test that structured output works with streaming for a more complex schema."""
+    model = ChatBedrock(
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        temperature=0.0,
+        streaming=True
+    )
+
+    structured_chat = model.with_structured_output(JokePyd)
+    
+    query = "Why did the chicken cross the road? Answer in 10 words or less."
+
+    chunk_count = 0
+    for chunk in structured_chat.stream(query):
+        chunk_count += 1
+        assert isinstance(chunk, JokePyd)
+    assert chunk_count > 1
+
 
 @pytest.mark.scheduled
 def test_tool_use_call_invoke() -> None:
