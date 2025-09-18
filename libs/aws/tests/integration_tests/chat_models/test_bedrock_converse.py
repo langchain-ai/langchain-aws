@@ -1,7 +1,7 @@
 """Standard LangChain interface tests"""
 
 import base64
-from typing import Any, Literal, Type, Optional
+from typing import Any, Literal, Optional, Type
 
 import httpx
 import pytest
@@ -12,7 +12,7 @@ from langchain_core.messages import (
     AIMessageChunk,
     BaseMessageChunk,
     HumanMessage,
-    SystemMessage
+    SystemMessage,
 )
 from langchain_core.tools import BaseTool
 from langchain_tests.integration_tests import ChatModelIntegrationTests
@@ -193,8 +193,7 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
 
 def test_multiple_system_messages_anthropic() -> None:
     model = ChatBedrockConverse(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-        temperature=0
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", temperature=0
     )
 
     system1 = SystemMessage(content="You are a helpful assistant.")
@@ -422,8 +421,16 @@ def test_guardrails() -> None:
     assert response.response_metadata["trace"] is not None
 
 
-def test_structured_output_tool_choice_not_supported() -> None:
-    llm = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+@pytest.mark.parametrize(
+    "thinking_model",
+    [
+        "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "us.anthropic.claude-sonnet-4-20250514-v1:0",
+        "us.anthropic.claude-opus-4-20250514-v1:0",
+    ],
+)
+def test_structured_output_tool_choice_not_supported(thinking_model: str) -> None:
+    llm = ChatBedrockConverse(model=thinking_model)
     with pytest.warns(None) as record:  # type: ignore[call-overload]
         structured_llm = llm.with_structured_output(ClassifyQuery)
         response = structured_llm.invoke("How big are cats?")
@@ -432,7 +439,7 @@ def test_structured_output_tool_choice_not_supported() -> None:
 
     # Unsupported params
     llm = ChatBedrockConverse(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        model=thinking_model,
         max_tokens=5000,
         additional_model_request_fields={
             "thinking": {"type": "enabled", "budget_tokens": 2000}
@@ -523,7 +530,10 @@ def test_thinking() -> None:
     next_message = {"role": "user", "content": "Thanks!"}
     response = llm.invoke([input_message, full, next_message])
 
-    assert [block["type"] for block in response.content] == ["reasoning_content", "text"]  # type: ignore[index,union-attr]
+    assert [block["type"] for block in response.content] == [  # type: ignore[index,union-attr]
+        "reasoning_content",
+        "text",
+    ]
     assert "text" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
     assert "signature" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
 
@@ -570,10 +580,10 @@ STANDARD_PDF_DOCUMENT = {
     "name": "my-pdf",  # Converse requires a filename
 }
 
+
 @pytest.mark.vcr
 @pytest.mark.parametrize("document", [PLAINTEXT_DOCUMENT, BLOCKS_DOCUMENT])
 def test_citations(document: dict[str, Any]) -> None:
-
     llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-20250514-v1:0")
 
     input_message = {
@@ -581,7 +591,7 @@ def test_citations(document: dict[str, Any]) -> None:
         "content": [
             document,
             {"type": "text", "text": "How many days of annual leave do employees get?"},
-        ]
+        ],
     }
 
     full: Optional[BaseMessageChunk] = None
