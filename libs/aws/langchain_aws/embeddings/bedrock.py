@@ -146,7 +146,9 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
         return self
 
-    def _embedding_func(self, text: str, input_type: str = "search_document") -> List[float]:
+    def _embedding_func(
+        self, text: str, input_type: str = "search_document"
+    ) -> List[float]:
         """Call out to Bedrock embedding endpoint with a single text."""
         # replace newlines, which can negatively affect performance.
         text = text.replace(os.linesep, " ")
