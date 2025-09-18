@@ -36,7 +36,7 @@ syrupy = { version = "^4.0.2", python = "<4.0" }
 pytest-asyncio = "^0.23.2"
 pytest-watcher = { version = "^0.3.4", python = "<4.0" }
 langchain-tests = { version = "^1.0.0a1", python = "<4.0" }
-langchain = { git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/langchain", branch = "cc/bump_lc_core_cap" }
+langchain = { git = "https://github.com/langchain-ai/langchain.git", subdirectory = "libs/langchain", branch = "wip-v1.0" }
 
 [tool.poetry.group.codespell]
 optional = true

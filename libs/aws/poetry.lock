@@ -729,8 +729,8 @@ together = ["langchain-together"]
 [package.source]
 type = "git"
 url = "https://github.com/langchain-ai/langchain.git"
-reference = "cc/bump_lc_core_cap"
-resolved_reference = "973df705b5653ecf56739c5b63772027f49c23b5"
+reference = "wip-v1.0"
+resolved_reference = "b215ed5642ba485a8b93bc26670becf9f0854c13"
 subdirectory = "libs/langchain"
 
 [[package]]
@@ -2761,4 +2761,4 @@ tools = ["beautifulsoup4", "bedrock-agentcore", "playwright"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10"
-content-hash = "9ed50ff7e4d871d91f3976c012dabfc3d573d7cee1348e2cf50f49fe76baabb1"
+content-hash = "209df4faa828a8b9f910e33baf06e9e9ecbff95bdca9ebd4fa42bac7eb83c854"
