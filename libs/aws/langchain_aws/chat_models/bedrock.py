@@ -61,6 +61,7 @@ from langchain_aws.utils import (
     create_aws_client,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
+    thinking_in_params,
     trim_message_whitespace,
 )
 
@@ -1112,6 +1113,37 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
         if self._get_provider() == "anthropic":
             formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
+
+            # Disallow forced tool use when thinking is enabled on specific Claude models
+            base_model = self._get_base_model()
+            if (
+                any(
+                    x in base_model
+                    for x in ("claude-3-7-", "claude-opus-4-", "claude-sonnet-4-")
+                )
+                and thinking_in_params(self.model_kwargs or {})
+            ):
+                forced = False
+                if isinstance(tool_choice, bool):
+                    forced = bool(tool_choice)
+                elif isinstance(tool_choice, str):
+                    # "any" or specific tool name forces tool use; "auto"/"none" do not
+                    if tool_choice == "any":
+                        forced = True
+                    elif tool_choice not in ("auto", "none"):
+                        # Treat as specific tool name
+                        forced = True
+                elif isinstance(tool_choice, dict) and tool_choice is not None:
+                    tc_type = tool_choice.get("type")
+                    # Bedrock types: "auto", "any", "tool" (function)
+                    if tc_type in ("any", "tool", "function"):
+                        forced = True
+                if forced:
+                    raise ValueError(
+                        "Anthropic Claude (3.7/4/4.1) with thinking enabled does not support forced tool use. "
+                        "Remove forced tool_choice (e.g. 'any' or a specific tool), or set "
+                        "tool_choice='auto', or disable thinking."
+                    )
 
             # true if the model is a claude 3 model
             if "claude-" in self._get_base_model():
