@@ -2761,4 +2761,4 @@ tools = ["beautifulsoup4", "bedrock-agentcore", "playwright"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10"
-content-hash = "209df4faa828a8b9f910e33baf06e9e9ecbff95bdca9ebd4fa42bac7eb83c854"
+content-hash = "b37907e23f92fd08fa6b73ad26ea599da1870770ac32b3895b49d6e4519a0ce5"
