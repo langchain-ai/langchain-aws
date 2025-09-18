@@ -703,14 +703,14 @@ name = "langchain"
 version = "0.3.27"
 description = "Building applications with LLMs through composability"
 optional = false
-python-versions = ">=3.9"
+python-versions = ">=3.10"
 groups = ["test"]
 files = []
 develop = false
 
 [package.dependencies]
 async-timeout = {version = ">=4.0.0,<5.0.0", markers = "python_version < \"3.11\""}
-langchain-core = ">=0.3.72,<1.0.0"
+langchain-core = ">=0.3.72,<2.0.0"
 langchain-text-splitters = ">=0.3.9,<1.0.0"
 langsmith = ">=0.1.17"
 pydantic = ">=2.7.4,<3.0.0"
@@ -729,19 +729,21 @@ together = ["langchain-together"]
 [package.source]
 type = "git"
 url = "https://github.com/langchain-ai/langchain.git"
-reference = "cc/bedrock"
-resolved_reference = "c2c19f06fedf793d8ef90375e07224986c5313aa"
+reference = "cc/bump_lc_core_cap"
+resolved_reference = "973df705b5653ecf56739c5b63772027f49c23b5"
 subdirectory = "libs/langchain"
 
 [[package]]
 name = "langchain-core"
-version = "1.0.0a2"
+version = "1.0.0a4"
 description = "Building applications with LLMs through composability"
 optional = false
 python-versions = ">=3.10"
 groups = ["main", "test"]
-files = []
-develop = false
+files = [
+    {file = "langchain_core-1.0.0a4-py3-none-any.whl", hash = "sha256:c8ae93a30f735c5c49276a2f619b80f5924677662570c7b3fc91ab9f07122fbf"},
+    {file = "langchain_core-1.0.0a4.tar.gz", hash = "sha256:eaa507393f14a081a2468bd31b5ac6e8439929d226bf9406943623c8fca22ded"},
+]
 
 [package.dependencies]
 jsonpatch = ">=1.33,<2.0"
@@ -751,13 +753,6 @@ pydantic = ">=2.7.4"
 PyYAML = ">=5.3"
 tenacity = ">=8.1.0,<8.4.0 || >8.4.0,<10.0.0"
 typing-extensions = ">=4.7"
-
-[package.source]
-type = "git"
-url = "https://github.com/langchain-ai/langchain.git"
-reference = "cc/bedrock"
-resolved_reference = "c2c19f06fedf793d8ef90375e07224986c5313aa"
-subdirectory = "libs/core"
 
 [[package]]
 name = "langchain-tests"
@@ -2766,4 +2761,4 @@ tools = ["beautifulsoup4", "bedrock-agentcore", "playwright"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10"
-content-hash = "9445692b65cb5c5bf93c0befd7ba60a2c4750291d53d1d339847de844ee30724"
+content-hash = "9ed50ff7e4d871d91f3976c012dabfc3d573d7cee1348e2cf50f49fe76baabb1"
