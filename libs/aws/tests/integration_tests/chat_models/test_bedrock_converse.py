@@ -429,7 +429,7 @@ def test_guardrails() -> None:
         "us.anthropic.claude-opus-4-20250514-v1:0",
     ],
 )
-def test_structured_output_tool_choice_not_supported(thinking_model) -> None:
+def test_structured_output_tool_choice_not_supported(thinking_model: str) -> None:
     llm = ChatBedrockConverse(model=thinking_model)
     with pytest.warns(None) as record:  # type: ignore[call-overload]
         structured_llm = llm.with_structured_output(ClassifyQuery)
@@ -530,10 +530,10 @@ def test_thinking() -> None:
     next_message = {"role": "user", "content": "Thanks!"}
     response = llm.invoke([input_message, full, next_message])
 
-    assert [block["type"] for block in response.content] == [
+    assert [block["type"] for block in response.content] == [  # type: ignore[index,union-attr]
         "reasoning_content",
         "text",
-    ]  # type: ignore[index,union-attr]
+    ]
     assert "text" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
     assert "signature" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
 
