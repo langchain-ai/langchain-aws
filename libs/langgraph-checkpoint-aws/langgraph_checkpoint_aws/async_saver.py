@@ -144,9 +144,10 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
                 )
             )
 
-            return process_writes_invocation_content_blocks(
-                invocation_step.invocation_step.payload.content_blocks, self.serde
-            )
+            content_blocks = invocation_step.invocation_step.payload.content_blocks
+            if not content_blocks:
+                return []
+            return process_writes_invocation_content_blocks(content_blocks, self.serde)
 
         except ClientError as e:
             # Return empty list if resource not found, otherwise re-raise error
@@ -226,10 +227,14 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
                 )
 
                 # Parse the step payload and check if it's a checkpoint
-                step_payload = json.loads(
-                    invocation_step.invocation_step.payload.content_blocks[0].text
-                )
-                if step_payload["step_type"] == CHECKPOINT_PREFIX:
+                content_blocks = invocation_step.invocation_step.payload.content_blocks
+                if not content_blocks:
+                    continue
+                text = content_blocks[0].text
+                if text is None:
+                    continue
+                step_payload = json.loads(str(text))
+                if step_payload.get("step_type") == CHECKPOINT_PREFIX:
                     return invocation_step.invocation_step
 
             # Get token for next batch of results
@@ -313,9 +318,14 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
             if invocation_step is None:
                 return None
 
-            session_checkpoint = SessionCheckpoint(
-                **json.loads(invocation_step.payload.content_blocks[0].text)
-            )
+            content_blocks = invocation_step.payload.content_blocks
+            if not content_blocks:
+                return None
+            text = content_blocks[0].text
+            if text is None:
+                return None
+
+            session_checkpoint = SessionCheckpoint(**json.loads(str(text)))
 
             pending_write_ops = await self._get_checkpoint_pending_writes(
                 session_thread_id,
@@ -476,10 +486,17 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
         Returns:
             AsyncIterator of matching CheckpointTuple objects
         """
+        if config is None:
+            return
+        configurable = config.get("configurable")
+        if configurable is None:
+            return
         thread_id = config["configurable"]["thread_id"]
         checkpoint_ns = config["configurable"].get("checkpoint_ns")
 
-        invocation_identifier = None
+        invocation_identifier = (
+            generate_checkpoint_id(checkpoint_ns) if checkpoint_ns is not None else None
+        )
 
         # Get invocation ID only if checkpoint_ns is provided
         if checkpoint_ns is not None:
@@ -509,8 +526,10 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
 
             # Process current page
             for step in response.invocation_step_summaries:
-                if before and step.invocation_step_id >= get_checkpoint_id(before):
-                    continue
+                if before:
+                    before_id = get_checkpoint_id(before)
+                    if before_id and step.invocation_step_id >= before_id:
+                        continue
 
                 # Get full step details to access metadata
                 step_detail = await self.session_client.get_invocation_step(
@@ -521,12 +540,16 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
                     )
                 )
 
-                payload = json.loads(
-                    step_detail.invocation_step.payload.content_blocks[0].text
-                )
+                content_blocks = step_detail.invocation_step.payload.content_blocks
+                if not content_blocks:
+                    continue
+                text = content_blocks[0].text
+                if text is None:
+                    continue
+                payload = json.loads(str(text))
 
                 # Append checkpoints and ignore writes
-                if payload["step_type"] != CHECKPOINT_PREFIX:
+                if payload.get("step_type") != CHECKPOINT_PREFIX:
                     continue
 
                 session_checkpoint = SessionCheckpoint(**payload)

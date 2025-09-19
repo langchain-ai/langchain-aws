@@ -49,9 +49,9 @@ class AsyncBedrockAgentRuntimeSessionClient:
         _session_kwargs, self._client_kwargs = process_aws_client_args(
             region_name,
             credentials_profile_name,
-            aws_access_key_id,
-            aws_secret_access_key,
-            aws_session_token,
+            aws_access_key_id.get_secret_value() if aws_access_key_id else None,
+            aws_secret_access_key.get_secret_value() if aws_secret_access_key else None,
+            aws_session_token.get_secret_value() if aws_session_token else None,
             endpoint_url,
             config,
         )
