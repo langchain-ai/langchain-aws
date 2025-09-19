@@ -267,7 +267,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         """
         if not result:
             raise ValueError("Invalid search result")
-        content: dict = result.get("content") or {}
+        content: dict | None = result.get("content", None)
         if not content:
             raise ValueError(
                 "Invalid search result, content is missing from the result"

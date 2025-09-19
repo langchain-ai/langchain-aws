@@ -23,7 +23,7 @@ repository = "https://github.com/langchain-ai/langchain-aws"
 
 [dependency-groups]
 dev = [
-    "ruff>=0.12.10",
+    "ruff>=0.13.0",
     "mypy>=1.17.1",
 ]
 test = [

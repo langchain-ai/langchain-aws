@@ -2030,7 +2030,6 @@ def test_bedrock_client_uses_explicit_values_over_runtime_client(
 
     mock_runtime_client.meta.region_name = "us-west-2"
     mock.Mock()
-
     mock.Mock()
 
     def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
