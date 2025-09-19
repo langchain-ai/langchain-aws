@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "langgraph-checkpoint-aws"
-version = "0.1.1"
+version = "0.1.2"
 description = "A LangChain checkpointer implementation that uses Bedrock Session Management Service to enable stateful and resumable LangGraph agents."
 authors = []
 license = "MIT"
@@ -35,12 +35,13 @@ optional = true
 [tool.poetry.group.test.dependencies]
 pytest = ">=7.4.3"
 pytest-cov = ">=4.1.0"
+pytest-asyncio = ">=0.26.0"
 
 [tool.poetry.group.test_integration]
 optional = true
 
 [tool.poetry.group.test_integration.dependencies]
-langchain-aws = ">=0.2.30"
+langchain-aws = ">=0.2.31"
 
 [tool.poetry.group.lint]
 optional = true
@@ -107,6 +108,7 @@ show_missing = true
 directory = "htmlcov"
 
 [tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
 addopts = "--strict-markers --strict-config --durations=5"
 markers = [
     "requires: mark tests as requiring a specific library",
