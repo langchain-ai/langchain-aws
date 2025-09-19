@@ -420,9 +420,7 @@ def _format_anthropic_messages(
     for i, message in enumerate(merged_messages):
         if message.type == "system":
             if system is not None:
-                raise ValueError(
-                    "Received multiple non-consecutive system messages."
-                )
+                raise ValueError("Received multiple non-consecutive system messages.")
             elif isinstance(message.content, str):
                 system = message.content
             elif isinstance(message.content, list):
@@ -795,9 +793,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             response = bedrock_client.get_inference_profile(
                 inferenceProfileIdentifier=model_id
             )
-            if 'models' in response and len(response['models']) > 0:
-                model_arn = response['models'][0]['modelArn']
-                resolved_base_model = model_arn.split('/')[-1]
+            if "models" in response and len(response["models"]) > 0:
+                model_arn = response["models"][0]["modelArn"]
+                resolved_base_model = model_arn.split("/")[-1]
                 values["beta_use_converse_api"] = "nova" in resolved_base_model
         return values
 
@@ -1166,15 +1164,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         if self._get_provider() == "anthropic":
             formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
 
-            # Disallow forced tool use when thinking is enabled on specific Claude models
             base_model = self._get_base_model()
-            if (
-                any(
-                    x in base_model
-                    for x in ("claude-3-7-", "claude-opus-4-", "claude-sonnet-4-")
-                )
-                and thinking_in_params(self.model_kwargs or {})
-            ):
+            if any(
+                x in base_model
+                for x in ("claude-3-7-", "claude-opus-4-", "claude-sonnet-4-")
+            ) and thinking_in_params(self.model_kwargs or {}):
                 forced = False
                 if isinstance(tool_choice, bool):
                     forced = bool(tool_choice)
@@ -1192,9 +1186,10 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                         forced = True
                 if forced:
                     raise ValueError(
-                        "Anthropic Claude (3.7/4/4.1) with thinking enabled does not support forced tool use. "
-                        "Remove forced tool_choice (e.g. 'any' or a specific tool), or set "
-                        "tool_choice='auto', or disable thinking."
+                        "Anthropic Claude (3.7/4/4.1) with thinking enabled does not "
+                        "support forced tool use. Remove forced tool_choice (e.g. "
+                        "'any' or a specific tool), or set tool_choice='auto', or "
+                        "disable thinking."
                     )
 
             # true if the model is a claude 3 model

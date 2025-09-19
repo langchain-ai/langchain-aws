@@ -371,10 +371,7 @@ def test_generic_error_with_direct_client(
 
 
 def test_trim_message_whitespace_final_ai_message() -> None:
-    messages = [
-        HumanMessage(content="Hello"),
-        AIMessage(content="Hi there!   \n  ")
-    ]
+    messages = [HumanMessage(content="Hello"), AIMessage(content="Hi there!   \n  ")]
 
     result = trim_message_whitespace(messages)
 
@@ -383,10 +380,12 @@ def test_trim_message_whitespace_final_ai_message() -> None:
 
     messages = [
         HumanMessage(content="Hello"),
-        AIMessage(content=[
-            {"type": "text", "text": "First response.   \n  "},
-            {"type": "text", "text": "Second response.\t  "}
-        ])
+        AIMessage(
+            content=[
+                {"type": "text", "text": "First response.   \n  "},
+                {"type": "text", "text": "Second response.\t  "},
+            ]
+        ),
     ]
 
     result = trim_message_whitespace(messages)
@@ -412,7 +411,7 @@ def test_trim_message_whitespace_final_nonai_message() -> None:
 def test_trim_message_whitespace_no_ai_messages() -> None:
     messages = [
         HumanMessage(content="Hello   \n  "),
-        HumanMessage(content="How are you?\t  ")
+        HumanMessage(content="How are you?\t  "),
     ]
 
     result = trim_message_whitespace(messages)

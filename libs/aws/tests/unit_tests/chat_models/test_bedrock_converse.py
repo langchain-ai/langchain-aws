@@ -1993,7 +1993,7 @@ def test_bedrock_client_inherits_from_runtime_client(
     mock_bedrock_client = mock.Mock()
 
     mock_runtime_client.meta.region_name = "us-west-2"
-    mock_client_config = mock.Mock()
+    mock.Mock()
 
     def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
@@ -2004,7 +2004,7 @@ def test_bedrock_client_inherits_from_runtime_client(
 
     mock_create_client.side_effect = side_effect
 
-    chat_model = ChatBedrockConverse(
+    ChatBedrockConverse(
         model="us.meta.llama3-3-70b-instruct-v1:0", client=mock_runtime_client
     )
 
@@ -2029,9 +2029,9 @@ def test_bedrock_client_uses_explicit_values_over_runtime_client(
     mock_bedrock_client = mock.Mock()
 
     mock_runtime_client.meta.region_name = "us-west-2"
-    mock_runtime_config = mock.Mock()
+    mock.Mock()
 
-    explicit_config = mock.Mock()
+    mock.Mock()
 
     def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
@@ -2042,7 +2042,7 @@ def test_bedrock_client_uses_explicit_values_over_runtime_client(
 
     mock_create_client.side_effect = side_effect
 
-    chat_model = ChatBedrockConverse(
+    ChatBedrockConverse(
         model="us.meta.llama3-3-70b-instruct-v1:0",
         client=mock_runtime_client,
         region_name="us-east-1",

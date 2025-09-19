@@ -3,10 +3,10 @@ import base64
 import hashlib
 import json
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextvars import copy_context
 from functools import partial
-from typing import Any, Callable, Tuple, TypeVar, cast
+from typing import Any, TypeVar, cast
 
 from botocore.config import Config
 from langchain_core.runnables import RunnableConfig

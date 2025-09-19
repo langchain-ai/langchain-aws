@@ -361,9 +361,7 @@ def test_structured_output() -> None:
 
 @pytest.mark.scheduled
 def test_structured_output_anthropic_format() -> None:
-    chat = ChatBedrock(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0"
-    )  # type: ignore[call-arg]
+    chat = ChatBedrock(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")  # type: ignore[call-arg]
     schema = {
         "name": "AnswerWithJustification",
         "description": (
@@ -447,7 +445,7 @@ def test_chat_bedrock_token_callbacks() -> None:
     chat = ChatBedrock(  # type: ignore[call-arg]
         model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         streaming=False,
-        verbose=True
+        verbose=True,
     )
     message = HumanMessage(content="Hello")
     response = chat.invoke([message], RunnableConfig(callbacks=[callback_handler]))

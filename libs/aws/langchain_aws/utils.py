@@ -222,10 +222,13 @@ def trim_message_whitespace(messages: List[Any]) -> List[Any]:
             last_message.content = trimmed
     elif isinstance(last_message.content, list):
         for j, block in enumerate(last_message.content):
-            if isinstance(block, dict) and block.get("type") == "text" \
-                and isinstance(block.get("text"), str):
+            if (
+                isinstance(block, dict)
+                and block.get("type") == "text"
+                and isinstance(block.get("text"), str)
+            ):
                 trimmed = block["text"].rstrip()
                 if trimmed != block["text"]:
                     last_message.content[j]["text"] = trimmed
-    
+
     return messages

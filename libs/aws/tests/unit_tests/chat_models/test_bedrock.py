@@ -55,10 +55,7 @@ def test__merge_messages() -> None:
     ]
     expected = [
         SystemMessage(
-            [
-                {'type': 'text', 'text': 'foo'},
-                {'type': 'text', 'text': 'barfoo'}
-            ]
+            [{"type": "text", "text": "foo"}, {"type": "text", "text": "barfoo"}]
         ),  # type: ignore[misc]
         HumanMessage("bar"),  # type: ignore[misc]
         AIMessage(  # type: ignore[misc]
@@ -352,23 +349,20 @@ def test__format_anthropic_messages_system_message_list_content() -> None:
     actual = _format_anthropic_messages(messages)
     assert expected == actual
 
+
 def test__format_anthropic_multiple_system_messages() -> None:
-    """Test that multiple system messages can be passed, and that none of them are required to be at position 0."""
+    """Test that multiple system messages can be passed, and that none of them are required to be at position 0."""  # noqa: E501
     system1 = SystemMessage("foo")  # type: ignore[misc]
     system2 = SystemMessage("bar")  # type: ignore[misc]
     human = HumanMessage("Hello!")
     messages = [human, system1, system2]
-    expected_system = [
-        {'text': 'foo', 'type': 'text'},
-        {'text': 'bar', 'type': 'text'}
-    ]
-    expected_messages = [
-        {"role": "user", "content": "Hello!"}
-    ]
+    expected_system = [{"text": "foo", "type": "text"}, {"text": "bar", "type": "text"}]
+    expected_messages = [{"role": "user", "content": "Hello!"}]
 
     actual_system, actual_messages = _format_anthropic_messages(messages)
     assert expected_system == actual_system
     assert expected_messages == actual_messages
+
 
 def test__format_anthropic_nonconsecutive_system_messages() -> None:
     """Test that we fail when non-consecutive system messages are passed."""
@@ -377,7 +371,9 @@ def test__format_anthropic_nonconsecutive_system_messages() -> None:
     human = HumanMessage("Hello!")
     messages = [system1, human, system2]
 
-    with pytest.raises(ValueError, match="Received multiple non-consecutive system messages."):
+    with pytest.raises(
+        ValueError, match="Received multiple non-consecutive system messages."
+    ):
         _format_anthropic_messages(messages)
 
 
@@ -584,7 +580,9 @@ def test_claude37_thinking_tool_choice_auto_ok(mock_create_aws_client) -> None:
         },
     )
     chat_with_tools = chat.bind_tools([GetWeather], tool_choice="auto")
-    assert cast(RunnableBinding, chat_with_tools).kwargs["tool_choice"] == {"type": "auto"}
+    assert cast(RunnableBinding, chat_with_tools).kwargs["tool_choice"] == {
+        "type": "auto"
+    }
 
 
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
@@ -595,7 +593,9 @@ def test_claude37_no_thinking_forced_tool_ok(mock_create_aws_client) -> None:
         region_name="us-west-2",
     )
     chat_with_tools = chat.bind_tools([GetWeather], tool_choice="any")
-    assert cast(RunnableBinding, chat_with_tools).kwargs["tool_choice"] == {"type": "any"}
+    assert cast(RunnableBinding, chat_with_tools).kwargs["tool_choice"] == {
+        "type": "any"
+    }
 
 
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
@@ -609,7 +609,9 @@ def test_other_anthropic_model_thinking_forced_tool_ok(mock_create_aws_client) -
         },
     )
     chat_with_tools = chat.bind_tools([GetWeather], tool_choice="any")
-    assert cast(RunnableBinding, chat_with_tools).kwargs["tool_choice"] == {"type": "any"}
+    assert cast(RunnableBinding, chat_with_tools).kwargs["tool_choice"] == {
+        "type": "any"
+    }
 
 
 def test_standard_tracing_params() -> None:
@@ -642,15 +644,15 @@ def test_beta_use_converse_api() -> None:
     assert llm.beta_use_converse_api
 
     llm = ChatBedrock(
-        model="foobar",
-        base_model="amazon.nova.foo",
-        region_name="us-west-2")  # type: ignore[call-arg]
+        model="foobar", base_model="amazon.nova.foo", region_name="us-west-2"
+    )  # type: ignore[call-arg]
     assert llm.beta_use_converse_api
 
     llm = ChatBedrock(
         model="arn:aws:bedrock:::application-inference-profile/my-profile",
         base_model="claude.foo",
-        region_name="us-west-2")  # type: ignore[call-arg]
+        region_name="us-west-2",
+    )  # type: ignore[call-arg]
     assert not llm.beta_use_converse_api
 
     llm = ChatBedrock(
@@ -662,7 +664,7 @@ def test_beta_use_converse_api() -> None:
         model="foobar",
         base_model="nova.foo",
         region_name="us-west-2",
-        beta_use_converse_api=False
+        beta_use_converse_api=False,
     )
     assert not llm.beta_use_converse_api
 
@@ -679,18 +681,18 @@ def test_beta_use_converse_api_with_inference_profile(mock_create_aws_client):
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"  # noqa: E501
             }
         ]
     }
     mock_create_aws_client.return_value = mock_bedrock_client
 
-    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"
+    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"  # noqa: E501
     chat = ChatBedrock(
-        model_id=aip_model_id, 
+        model_id=aip_model_id,
         region_name="us-west-2",
-        bedrock_client=mock_bedrock_client
-    ) # type: ignore[call-arg]
+        bedrock_client=mock_bedrock_client,
+    )  # type: ignore[call-arg]
 
     mock_bedrock_client.get_inference_profile.assert_called_with(
         inferenceProfileIdentifier=aip_model_id
@@ -700,23 +702,25 @@ def test_beta_use_converse_api_with_inference_profile(mock_create_aws_client):
 
 
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
-def test_beta_use_converse_api_with_inference_profile_as_nova_model(mock_create_aws_client):
+def test_beta_use_converse_api_with_inference_profile_as_nova_model(
+    mock_create_aws_client,
+):
     mock_bedrock_client = mock.MagicMock()
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-micro-v1:0"
+                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-micro-v1:0"  # noqa: E501
             }
         ]
     }
     mock_create_aws_client.return_value = mock_bedrock_client
 
-    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"
+    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"  # noqa: E501
     chat = ChatBedrock(
-        model_id=aip_model_id, 
+        model_id=aip_model_id,
         region_name="us-west-2",
-        bedrock_client=mock_bedrock_client
-    ) # type: ignore[call-arg]
+        bedrock_client=mock_bedrock_client,
+    )  # type: ignore[call-arg]
 
     mock_bedrock_client.get_inference_profile.assert_called_with(
         inferenceProfileIdentifier=aip_model_id
@@ -1368,37 +1372,53 @@ def test_model_kwargs() -> None:
 
 
 def test__format_anthropic_messages_strips_trailing_whitespace_string() -> None:
-    """Test that _format_anthropic_messages strips trailing whitespace from AIMessage string content."""
+    """Test that _format_anthropic_messages strips trailing whitespace from AIMessage string content."""  # noqa: E501
     messages = [
         SystemMessage(content="System message"),
         HumanMessage(content="Human message"),
         AIMessage(content="AI message with trailing whitespace    \n  \t  "),
     ]
-    
+
     _, formatted_messages = _format_anthropic_messages(messages)
 
-    assert formatted_messages[1]["content"][0]["text"] == "AI message with trailing whitespace"
+    assert (
+        formatted_messages[1]["content"][0]["text"]
+        == "AI message with trailing whitespace"
+    )
 
 
 def test__format_anthropic_messages_strips_trailing_whitespace_blocks() -> None:
-    """Test that _format_anthropic_messages strips trailing whitespace from AIMessage dict content."""
+    """Test that _format_anthropic_messages strips trailing whitespace from AIMessage dict content."""  # noqa: E501
     messages = [
         SystemMessage(content="System message"),
         HumanMessage(content="Human message"),
-        AIMessage(content=[
-            {"type": "text", "text": "AI message with trailing whitespace    \n  \t  "},
-            {"type": "text", "text": "Another text block with whitespace  \n "}
-        ]),
+        AIMessage(
+            content=[
+                {
+                    "type": "text",
+                    "text": "AI message with trailing whitespace    \n  \t  ",
+                },
+                {"type": "text", "text": "Another text block with whitespace  \n "},
+            ]
+        ),
     ]
-    
+
     _, formatted_messages = _format_anthropic_messages(messages)
 
-    assert formatted_messages[1]["content"][0]["text"] == "AI message with trailing whitespace"
-    assert formatted_messages[1]["content"][1]["text"] == "Another text block with whitespace"
+    assert (
+        formatted_messages[1]["content"][0]["text"]
+        == "AI message with trailing whitespace"
+    )
+    assert (
+        formatted_messages[1]["content"][1]["text"]
+        == "Another text block with whitespace"
+    )
 
 
-def test__format_anthropic_messages_preserves_whitespace_non_last_aimessage_string() -> None:
-    """Test that _format_anthropic_messages preserves trailing whitespace in non-last AIMessages."""
+def test__format_anthropic_messages_preserves_whitespace_non_last_aimessage_string() -> (  # noqa: E501
+    None
+):
+    """Test that _format_anthropic_messages preserves trailing whitespace in non-last AIMessages."""  # noqa: E501
     messages = [
         SystemMessage(content="System message"),
         HumanMessage(content="First human message"),
@@ -1406,30 +1426,45 @@ def test__format_anthropic_messages_preserves_whitespace_non_last_aimessage_stri
         HumanMessage(content="Second human message"),
         AIMessage(content="Final AI message"),
     ]
-    
+
     _, formatted_messages = _format_anthropic_messages(messages)
 
-    assert formatted_messages[1]["content"][0]["text"] == "AI message with trailing whitespace    \n  \t  "
+    assert (
+        formatted_messages[1]["content"][0]["text"]
+        == "AI message with trailing whitespace    \n  \t  "
+    )
 
 
-def test__format_anthropic_messages_preserves_whitespace_non_last_aimessage_blocks() -> None:
-    """Test that _format_anthropic_messages preserves trailing whitespace in non-last AIMessages."""
+def test__format_anthropic_messages_preserves_whitespace_non_last_aimessage_blocks() -> (  # noqa: E501
+    None
+):
+    """Test that _format_anthropic_messages preserves trailing whitespace in non-last AIMessages."""  # noqa: E501
     messages = [
         SystemMessage(content="System message"),
         HumanMessage(content="First human message"),
-        AIMessage(content=[
-            {"type": "text", "text": "AI message with trailing whitespace    \n  \t  "},
-        ]),
+        AIMessage(
+            content=[
+                {
+                    "type": "text",
+                    "text": "AI message with trailing whitespace    \n  \t  ",
+                },
+            ]
+        ),
         HumanMessage(content="Second human message"),
     ]
-    
+
     _, formatted_messages = _format_anthropic_messages(messages)
 
-    assert formatted_messages[1]["content"][0]["text"] == "AI message with trailing whitespace    \n  \t  "
+    assert (
+        formatted_messages[1]["content"][0]["text"]
+        == "AI message with trailing whitespace    \n  \t  "
+    )
 
 
 @patch("langchain_aws.llms.bedrock.create_aws_client")
-def test_bedrock_client_inherits_from_runtime_client(mock_create_client: MagicMock) -> None:
+def test_bedrock_client_inherits_from_runtime_client(
+    mock_create_client: MagicMock,
+) -> None:
     """Test that bedrock_client inherits region and config from runtime client."""
     mock_runtime_client = MagicMock()
     mock_bedrock_client = MagicMock()
@@ -1447,10 +1482,7 @@ def test_bedrock_client_inherits_from_runtime_client(mock_create_client: MagicMo
 
     mock_create_client.side_effect = side_effect
 
-    llm = ChatBedrock(
-        model="us.meta.llama3-3-70b-instruct-v1:0",
-        client=mock_runtime_client
-    )
+    ChatBedrock(model="us.meta.llama3-3-70b-instruct-v1:0", client=mock_runtime_client)
 
     mock_create_client.assert_called_with(
         region_name="us-west-2",
@@ -1460,12 +1492,14 @@ def test_bedrock_client_inherits_from_runtime_client(mock_create_client: MagicMo
         aws_session_token=None,
         endpoint_url=None,
         config=mock_client_config,
-        service_name="bedrock"
+        service_name="bedrock",
     )
 
 
 @patch("langchain_aws.llms.bedrock.create_aws_client")
-def test_bedrock_client_uses_explicit_values_over_runtime_client(mock_create_client: MagicMock) -> None:
+def test_bedrock_client_uses_explicit_values_over_runtime_client(
+    mock_create_client: MagicMock,
+) -> None:
     """Test that explicitly provided values override those from runtime client."""
     mock_runtime_client = MagicMock()
     mock_bedrock_client = MagicMock()
@@ -1485,11 +1519,11 @@ def test_bedrock_client_uses_explicit_values_over_runtime_client(mock_create_cli
 
     mock_create_client.side_effect = side_effect
 
-    llm = ChatBedrock(
+    ChatBedrock(
         model="us.meta.llama3-3-70b-instruct-v1:0",
         client=mock_runtime_client,
         region="us-east-1",
-        config=explicit_config
+        config=explicit_config,
     )
 
     mock_create_client.assert_called_with(
@@ -1500,5 +1534,5 @@ def test_bedrock_client_uses_explicit_values_over_runtime_client(mock_create_cli
         aws_session_token=None,
         endpoint_url=None,
         config=explicit_config,
-        service_name="bedrock"
+        service_name="bedrock",
     )
