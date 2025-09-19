@@ -105,7 +105,7 @@ class CodeInterpreterToolkit:
         Get or create a code interpreter for a specific config
 
         The config is expected to have a 'configurable' with
-        'thread_id', otherwise it creates a sesion with 'default'
+        'thread_id', otherwise it creates a session with 'default'
         thread ID.
 
         Args:
