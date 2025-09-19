@@ -578,8 +578,7 @@ def test__snake_to_camel_keys() -> None:
     assert _snake_to_camel_keys(_SNAKE_DICT) == _CAMEL_DICT
 
 
-def test__format_openai_image_url() -> None:
-    ...
+def test__format_openai_image_url() -> None: ...
 
 
 def test_standard_tracing_params() -> None:
@@ -1592,9 +1591,9 @@ def test_model_kwargs() -> None:
     assert llm.temperature is None
 
 
-def _create_mock_llm_guard_last_turn_only() -> (
-    Tuple[ChatBedrockConverse, mock.MagicMock]
-):
+def _create_mock_llm_guard_last_turn_only() -> Tuple[
+    ChatBedrockConverse, mock.MagicMock
+]:
     """Utility to create an LLM with guard_last_turn_only=True and a mocked client."""
     mocked_client = mock.MagicMock()
     llm = ChatBedrockConverse(
