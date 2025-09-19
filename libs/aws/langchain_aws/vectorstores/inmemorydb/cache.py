@@ -38,6 +38,7 @@ def _dump_generations_to_json(generations: RETURN_VAL_TYPE) -> str:
         str: Json representing a list of generations.
 
     Warning: would not work well with arbitrary subclasses of `Generation`
+
     """
     return json.dumps([generation.dict() for generation in generations])
 
@@ -55,6 +56,7 @@ def _load_generations_from_json(generations_json: str) -> RETURN_VAL_TYPE:
         RETURN_VAL_TYPE: A list of generations.
 
     Warning: would not work well with arbitrary subclasses of `Generation`
+
     """
     try:
         results = json.loads(generations_json)
@@ -66,8 +68,7 @@ def _load_generations_from_json(generations_json: str) -> RETURN_VAL_TYPE:
 
 
 def _dumps_generations(generations: RETURN_VAL_TYPE) -> str:
-    """
-    Serialization for generic RETURN_VAL_TYPE, i.e. sequence of `Generation`
+    """Serialization for generic RETURN_VAL_TYPE, i.e. sequence of `Generation`
 
     Args:
         generations (RETURN_VAL_TYPE): A list of language model generations.
@@ -81,14 +82,14 @@ def _dumps_generations(generations: RETURN_VAL_TYPE) -> str:
 
     Each item in the list can be `dumps`ed to a string,
     then we make the whole list of strings into a json-dumped.
+
     """
     return json.dumps([dumps(_item) for _item in generations])
 
 
 def _loads_generations(generations_str: str) -> Union[RETURN_VAL_TYPE, None]:
-    """
-    Deserialization of a string into a generic RETURN_VAL_TYPE
-    (i.e. a sequence of `Generation`).
+    """Deserialization of a string into a generic RETURN_VAL_TYPE (i.e. a sequence of
+    `Generation`).
 
     See `_dumps_generations`, the inverse of this function.
 
@@ -101,6 +102,7 @@ def _loads_generations(generations_str: str) -> Union[RETURN_VAL_TYPE, None]:
 
     Returns:
         RETURN_VAL_TYPE: A list of generations.
+
     """
     try:
         generations = [loads(_item_str) for _item_str in json.loads(generations_str)]

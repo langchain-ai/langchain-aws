@@ -1,27 +1,34 @@
 # LangGraph Checkpoint AWS
+
 A custom LangChain checkpointer implementation that uses Bedrock Session Management Service to enable stateful and resumable LangGraph agents through efficient state persistence and retrieval.
 
 ## Overview
+
 This package provides a custom checkpointing solution for LangGraph agents using AWS Bedrock Session Management Service. It enables:
+
 1. Stateful conversations and interactions
-2. Resumable agent sessions 
-3. Efficient state persistence and retrieval 
+2. Resumable agent sessions
+3. Efficient state persistence and retrieval
 4. Seamless integration with AWS Bedrock
 
 ## Installation
+
 You can install the package using pip:
 
 ```bash
 pip install langgraph-checkpoint-aws
 ```
+
 Or with Poetry:
+
 ```bash
 poetry add langgraph-checkpoint-aws
 ```
 
 ## Requirements
+
 ```text
-Python >=3.9
+Python >=3.10
 langgraph-checkpoint >=2.0.0
 langgraph >=0.2.55
 boto3 >=1.37.3
@@ -104,19 +111,26 @@ def __init__(
 - `aws_session_token`: AWS session token for temporary credentials
 - `endpoint_url`: Custom endpoint URL for the Bedrock service
 - `config`: Botocore configuration object
+
 ## Development
+
 Setting Up Development Environment
 
-* Clone the repository:
+- Clone the repository:
+
 ```bash
 git clone <repository-url>
 cd libs/aws/langgraph-checkpoint-aws
 ```
-* Install development dependencies:
+
+- Install development dependencies:
+
 ```bash
 make install_all
 ```
-* Or install specific components:
+
+- Or install specific components:
+
 ```bash
 make install_dev        # Basic development tools
 make install_test       # Testing tools
@@ -126,6 +140,7 @@ make install_codespell  # Spell checking tools
 ```
 
 ## Running Tests
+
 ```bash
 make tests         # Run all tests
 make test_watch   # Run tests in watch mode
@@ -133,6 +148,7 @@ make test_watch   # Run tests in watch mode
 ```
 
 ## Code Quality
+
 ```bash
 make lint           # Run linter
 make format         # Format code
@@ -140,6 +156,7 @@ make spell_check    # Check spelling
 ```
 
 ## Clean Up
+
 ```bash
 make clean          # Remove all generated files
 ```
@@ -147,12 +164,13 @@ make clean          # Remove all generated files
 ## AWS Configuration
 
 Ensure you have AWS credentials configured using one of these methods:
+
 1. Environment variables
 2. AWS credentials file (~/.aws/credentials)
 3. IAM roles
 4. Direct credential injection via constructor parameters
 
-## Required AWS permissions:
+## Required AWS permissions
 
 ```json
 {
@@ -202,22 +220,29 @@ Ensure you have AWS credentials configured using one of these methods:
 ```
 
 ## Security Considerations
-* Never commit AWS credentials
-* Use environment variables or AWS IAM roles for authentication
-* Follow AWS security best practices
-* Use IAM roles and temporary credentials when possible
-* Implement proper access controls for session management
+
+- Never commit AWS credentials
+
+- Use environment variables or AWS IAM roles for authentication
+- Follow AWS security best practices
+- Use IAM roles and temporary credentials when possible
+- Implement proper access controls for session management
 
 ## Contributing
-* Fork the repository
-* Create a feature branch
-* Make your changes
-* Run tests and linting
-* Submit a pull request
+
+- Fork the repository
+
+- Create a feature branch
+- Make your changes
+- Run tests and linting
+- Submit a pull request
 
 ## License
+
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
-* LangChain team for the base LangGraph framework
-* AWS Bedrock team for the session management service
+
+- LangChain team for the base LangGraph framework
+
+- AWS Bedrock team for the session management service
