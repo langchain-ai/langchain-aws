@@ -390,7 +390,7 @@ def _merge_messages(
                     ]
                 )
         last = merged[-1] if merged else None
-        if any(
+        if last is not None and any(
             all(isinstance(m, c) for m in (curr, last))
             for c in (SystemMessage, HumanMessage)
         ):

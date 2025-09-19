@@ -378,7 +378,6 @@ class ChatBedrockConverse(BaseChatModel):
     """The percentage of most-likely candidates that are considered for the next token.
 
     Must be 0 to 1.
-<<<<<<< HEAD
     
     For example, if you choose a value of 0.8 for topP, the model selects from 
     the top 80% of the probability distribution of tokens that could be next in the 
@@ -387,23 +386,10 @@ class ChatBedrockConverse(BaseChatModel):
     """
 
     region_name: Optional[str] = None
-    """The aws region, e.g., `us-west-2`. 
-    
-    Falls back to ``AWS_REGION`` or AWS_DE``FAULT_REGION env variable or region
-    specified in  ``~/.aws/config`` in case it is not provided here.
-
-=======
-
-    For example, if you choose a value of 0.8 for topP, the model selects from
-    the top 80% of the probability distribution of tokens that could be next in the
-    sequence."""
-
-    region_name: Optional[str] = None
     """The aws region, e.g., `us-west-2`.
 
     Falls back to AWS_REGION or AWS_DEFAULT_REGION env variable or region specified in
     ~/.aws/config in case it is not provided here.
->>>>>>> ddca4f5e88134bc2fab8afad37020d77c7fe36a5
     """
 
     credentials_profile_name: Optional[str] = Field(default=None, exclude=True)

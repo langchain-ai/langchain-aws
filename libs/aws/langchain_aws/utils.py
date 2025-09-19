@@ -229,6 +229,8 @@ def trim_message_whitespace(messages: List[Any]) -> List[Any]:
             ):
                 trimmed = block["text"].rstrip()
                 if trimmed != block["text"]:
-                    last_message.content[j]["text"] = trimmed
+                    block_dict: dict[Any, Any] = block
+                    block_dict["text"] = trimmed
+                    last_message.content[j] = block_dict
 
     return messages
