@@ -425,17 +425,8 @@ class ChatBedrockConverse(BaseChatModel):
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-<<<<<<< HEAD
-<<<<<<< HEAD
-    
-    If not provided, will be read from ``AWS_SECRET_ACCESS_KEY`` environment variable.
-
-=======
-=======
->>>>>>> 33af829d5e8b4a52b815d056ddb8bf1ecc3c2f33
 
     If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
->>>>>>> ddca4f5e88134bc2fab8afad37020d77c7fe36a5
     """
 
     aws_session_token: Optional[SecretStr] = Field(
@@ -446,17 +437,8 @@ class ChatBedrockConverse(BaseChatModel):
     If provided, aws_access_key_id and aws_secret_access_key must
     also be provided. Not required unless using temporary credentials.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-<<<<<<< HEAD
-<<<<<<< HEAD
-    
-    If not provided, will be read from ``AWS_SESSION_TOKEN`` environment variable.
-
-=======
-=======
->>>>>>> 33af829d5e8b4a52b815d056ddb8bf1ecc3c2f33
 
     If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
->>>>>>> ddca4f5e88134bc2fab8afad37020d77c7fe36a5
     """
 
     provider: str = ""
