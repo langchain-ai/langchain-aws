@@ -9,6 +9,7 @@ import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
+    BaseMessage,
     HumanMessage,
     SystemMessage,
     ToolCall,
@@ -113,6 +114,36 @@ def test_anthropic_bind_tools_tool_choice() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "thinking_model",
+    [
+        "anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "anthropic.claude-sonnet-4-20250514-v1:0",
+        "anthropic.claude-opus-4-20250514-v1:0",
+    ],
+)
+def test_anthropic_thinking_bind_tools_tool_choice(thinking_model: str) -> None:
+    chat_model = ChatBedrockConverse(
+        model=thinking_model,
+        region_name="us-west-2",
+        additional_model_request_fields={
+            "thinking": {"type": "enabled", "budget_tokens": 1024},
+        },
+    )
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="auto")
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "auto": {}
+    }
+    with pytest.raises(ValueError):
+        chat_model.bind_tools([GetWeather], tool_choice="any")
+    with pytest.raises(ValueError):
+        chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+    with pytest.raises(ValueError):
+        chat_model.bind_tools(
+            [GetWeather], tool_choice={"tool": {"name": "GetWeather"}}
+        )
+
+
 def test_amazon_bind_tools_tool_choice() -> None:
     chat_model = ChatBedrockConverse(
         model="us.amazon.nova-lite-v1:0", region_name="us-east-1"
@@ -131,6 +162,40 @@ def test_amazon_bind_tools_tool_choice() -> None:
     assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
         "any": {}
     }
+
+
+@pytest.mark.parametrize(
+    "model, should_support_auto",
+    [
+        ("us.meta.llama4-maverick-17b-instruct-v1:0", True),
+        ("us.meta.llama3-3-70b-instruct-v1:0", True),
+        ("us.meta.llama3-2-90b-instruct-v1:0", True),
+        ("us.meta.llama3-2-1b-instruct-v1:0", False),
+        ("us.meta.llama3-1-405b-instruct-v1:0", True),
+        ("meta.llama3-70b-instruct-v1:0", False),
+    ],
+)
+def test_llama_bind_tools_tool_choice_variants(
+    model: str, should_support_auto: bool
+) -> None:
+    chat_model = ChatBedrockConverse(model=model, region_name="us-east-1")  # type: ignore[call-arg]
+
+    if should_support_auto:
+        chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="auto")
+        assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+            "auto": {}
+        }
+        with pytest.raises(ValueError):
+            chat_model.bind_tools([GetWeather], tool_choice="any")
+        with pytest.raises(ValueError):
+            chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+    else:
+        with pytest.raises(ValueError):
+            chat_model.bind_tools([GetWeather], tool_choice="auto")
+        with pytest.raises(ValueError):
+            chat_model.bind_tools([GetWeather], tool_choice="any")
+        with pytest.raises(ValueError):
+            chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
 
 
 def test__messages_to_bedrock() -> None:
@@ -381,6 +446,30 @@ def test_messages_to_bedrock_with_cache_point() -> None:
     ]
     assert expected_messages == actual_messages
     assert [] == actual_system
+
+
+def test__messages_to_bedrock_empty_list() -> None:
+    messages: List[BaseMessage] = []
+    actual_messages, actual_system = _messages_to_bedrock(messages)
+
+    expected_messages: List[Dict] = [{"role": "user", "content": [{"text": "."}]}]
+    expected_system: List[Dict] = []
+
+    assert expected_messages == actual_messages
+    assert expected_system == actual_system
+
+
+def test__messages_to_bedrock_system_only() -> None:
+    messages: List[BaseMessage] = [
+        SystemMessage(content="You are a helpful assistant.")
+    ]
+    actual_messages, actual_system = _messages_to_bedrock(messages)
+
+    expected_messages: List[Dict] = [{"role": "user", "content": [{"text": "."}]}]
+    expected_system: List[Dict] = [{"text": "You are a helpful assistant."}]
+
+    assert expected_messages == actual_messages
+    assert expected_system == actual_system
 
 
 def test__bedrock_to_lc() -> None:
@@ -1798,6 +1887,177 @@ def test_nova_provider_extraction() -> None:
         region_name="us-west-2",
     )
     assert model.provider == "amazon"
+
+
+def test__messages_to_bedrock_strips_trailing_whitespace_string() -> None:
+    """
+    Test that _messages_to_bedrock strips trailing whitespace from string
+    AIMessage content.
+    """
+    messages = [
+        SystemMessage(content="System message"),
+        HumanMessage(content="Human message"),
+        AIMessage(content="AI message with trailing whitespace    \n  \t  "),
+    ]
+
+    bedrock_messages, _ = _messages_to_bedrock(messages)
+
+    assert (
+        bedrock_messages[1]["content"][0]["text"]
+        == "AI message with trailing whitespace"
+    )
+
+
+def test__messages_to_bedrock_strips_trailing_whitespace_blocks() -> None:
+    """
+    Test that _messages_to_bedrock strips trailing whitespace from block
+    AIMessage content.
+    """
+    messages = [
+        SystemMessage(content="System message"),
+        HumanMessage(content="Human message"),
+        AIMessage(
+            content=[
+                {
+                    "type": "text",
+                    "text": "AI message with trailing whitespace    \n  \t  ",
+                },
+                {"type": "text", "text": "Another text block with whitespace  \n "},
+            ]
+        ),
+    ]
+
+    bedrock_messages, _ = _messages_to_bedrock(messages)
+
+    assert (
+        bedrock_messages[1]["content"][0]["text"]
+        == "AI message with trailing whitespace"
+    )
+    assert (
+        bedrock_messages[1]["content"][1]["text"]
+        == "Another text block with whitespace"
+    )
+
+
+def test__messages_to_bedrock_preserves_whitespace_non_last_aimessage_string() -> None:
+    """
+    Test that _messages_to_bedrock preserves trailing whitespace in non-last AIMessages.
+    """
+    messages = [
+        SystemMessage(content="System message"),
+        HumanMessage(content="First human message"),
+        AIMessage(content="AI message with trailing whitespace    \n  \t  "),
+        HumanMessage(content="Second human message"),
+    ]
+
+    bedrock_messages, _ = _messages_to_bedrock(messages)
+
+    assert (
+        bedrock_messages[1]["content"][0]["text"]
+        == "AI message with trailing whitespace    \n  \t  "
+    )
+
+
+def test__messages_to_bedrock_preserves_whitespace_non_last_aimessage_blocks() -> None:
+    """
+    Test that _messages_to_bedrock preserves trailing whitespace in non-last AIMessages.
+    """
+    messages = [
+        SystemMessage(content="System message"),
+        HumanMessage(content="First human message"),
+        AIMessage(
+            content=[
+                {
+                    "type": "text",
+                    "text": "AI message with trailing whitespace    \n  \t  ",
+                },
+            ]
+        ),
+        HumanMessage(content="Second human message"),
+    ]
+
+    bedrock_messages, _ = _messages_to_bedrock(messages)
+
+    assert (
+        bedrock_messages[1]["content"][0]["text"]
+        == "AI message with trailing whitespace    \n  \t  "
+    )
+
+
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_bedrock_client_inherits_from_runtime_client(
+    mock_create_client: mock.Mock,
+) -> None:
+    """Test that bedrock_client inherits region and config from runtime client."""
+    mock_runtime_client = mock.Mock()
+    mock_bedrock_client = mock.Mock()
+
+    mock_runtime_client.meta.region_name = "us-west-2"
+    mock_client_config = mock.Mock()
+
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        elif service_name == "bedrock-runtime":
+            return mock_runtime_client
+        return mock.Mock()
+
+    mock_create_client.side_effect = side_effect
+
+    chat_model = ChatBedrockConverse(
+        model="us.meta.llama3-3-70b-instruct-v1:0", client=mock_runtime_client
+    )
+
+    mock_create_client.assert_called_with(
+        region_name="us-west-2",
+        credentials_profile_name=None,
+        aws_access_key_id=None,
+        aws_secret_access_key=None,
+        aws_session_token=None,
+        endpoint_url=None,
+        config=None,
+        service_name="bedrock",
+    )
+
+
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_bedrock_client_uses_explicit_values_over_runtime_client(
+    mock_create_client: mock.Mock,
+) -> None:
+    """Test that explicitly provided values override those from runtime client."""
+    mock_runtime_client = mock.Mock()
+    mock_bedrock_client = mock.Mock()
+
+    mock_runtime_client.meta.region_name = "us-west-2"
+    mock_runtime_config = mock.Mock()
+
+    explicit_config = mock.Mock()
+
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        elif service_name == "bedrock-runtime":
+            return mock_runtime_client
+        return mock.Mock()
+
+    mock_create_client.side_effect = side_effect
+
+    chat_model = ChatBedrockConverse(
+        model="us.meta.llama3-3-70b-instruct-v1:0",
+        client=mock_runtime_client,
+        region_name="us-east-1",
+    )
+
+    mock_create_client.assert_called_with(
+        region_name="us-east-1",
+        credentials_profile_name=None,
+        aws_access_key_id=None,
+        aws_secret_access_key=None,
+        aws_session_token=None,
+        endpoint_url=None,
+        config=None,
+        service_name="bedrock",
+    )
 
 
 def test__has_tool_use_or_result_blocks() -> None:

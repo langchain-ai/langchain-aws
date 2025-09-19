@@ -824,7 +824,7 @@ def test_get_base_model_with_application_inference_profile(mock_create_client):
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"  # noqa: E501
+                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0"  # noqa: E501
             }
         ]
     }
@@ -842,5 +842,5 @@ def test_get_base_model_with_application_inference_profile(mock_create_client):
     mock_bedrock_client.get_inference_profile.assert_called_once_with(
         inferenceProfileIdentifier="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/my-profile"
     )
-    assert result == "anthropic.claude-3-sonnet-20240229-v1:0"
-    assert llm.base_model_id == "anthropic.claude-3-sonnet-20240229-v1:0"
+    assert result == "anthropic.claude-sonnet-4-20250514-v1:0"
+    assert llm.base_model_id == "anthropic.claude-sonnet-4-20250514-v1:0"

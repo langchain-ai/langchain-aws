@@ -1,13 +1,14 @@
 import os
-from typing import Dict, Generator, Tuple
+from typing import Dict, Generator, List, Tuple
 from unittest import mock
 
 import pytest
 from botocore.config import Config
 from botocore.exceptions import UnknownServiceError
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from pydantic import SecretStr
 
-from langchain_aws.utils import create_aws_client
+from langchain_aws.utils import create_aws_client, trim_message_whitespace
 
 
 @pytest.fixture
@@ -367,3 +368,62 @@ def test_generic_error_with_direct_client(
 
     with pytest.raises(ValueError, match="Error raised by service:\n\nGeneric error"):
         create_aws_client("bedrock-runtime")
+
+
+def test_trim_message_whitespace_final_ai_message() -> None:
+    messages = [
+        HumanMessage(content="Hello"),
+        AIMessage(content="Hi there!   \n  ")
+    ]
+
+    result = trim_message_whitespace(messages)
+
+    assert result[0].content == "Hello"
+    assert result[1].content == "Hi there!"
+
+    messages = [
+        HumanMessage(content="Hello"),
+        AIMessage(content=[
+            {"type": "text", "text": "First response.   \n  "},
+            {"type": "text", "text": "Second response.\t  "}
+        ])
+    ]
+
+    result = trim_message_whitespace(messages)
+
+    assert result[1].content[0]["text"] == "First response."
+    assert result[1].content[1]["text"] == "Second response."
+
+
+def test_trim_message_whitespace_final_nonai_message() -> None:
+    messages = [
+        HumanMessage(content="Hello"),
+        AIMessage(content="Hi there!   \n  "),
+        HumanMessage(content="How are you?   \n  "),
+    ]
+
+    result = trim_message_whitespace(messages)
+
+    assert result[0].content == "Hello"
+    assert result[1].content == "Hi there!   \n  "
+    assert result[2].content == "How are you?   \n  "
+
+
+def test_trim_message_whitespace_no_ai_messages() -> None:
+    messages = [
+        HumanMessage(content="Hello   \n  "),
+        HumanMessage(content="How are you?\t  ")
+    ]
+
+    result = trim_message_whitespace(messages)
+
+    assert result[0].content == "Hello   \n  "
+    assert result[1].content == "How are you?\t  "
+
+
+def test_trim_message_whitespace_with_empty_messages() -> None:
+    messages: List[BaseMessage] = []
+
+    result = trim_message_whitespace(messages)
+
+    assert result == messages
