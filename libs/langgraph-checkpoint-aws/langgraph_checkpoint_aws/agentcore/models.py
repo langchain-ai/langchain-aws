@@ -18,11 +18,10 @@ class CheckpointerConfig(BaseModel):
     @property
     def session_id(self) -> str:
         """Generate session ID from thread_id and checkpoint_ns."""
-        return (
-            f"{self.thread_id}#{self.checkpoint_ns}"
-            if self.checkpoint_ns
-            else self.thread_id
-        )
+        if self.checkpoint_ns:
+            # Use underscore separator to ensure valid session ID pattern
+            return f"{self.thread_id}_{self.checkpoint_ns}"
+        return self.thread_id
 
     @classmethod
     def from_runnable_config(cls, config: Dict[str, Any]) -> "CheckpointerConfig":

@@ -42,7 +42,11 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
     """
     AgentCore Memory checkpoint saver.
 
-    This checkpoint saver stores checkpoints in Bedrock AgentCore memory
+    This saver persists Checkpoints as serialized blob events in AgentCore Memory.
+
+    Args:
+        memory_id: the ID of the memory resource created in AgentCore Memory
+        serde: serialization protocol to be used. Defaults to JSONPlusSerializer
     """
 
     def __init__(
@@ -187,6 +191,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         return {
             "configurable": {
                 "thread_id": checkpoint_config.thread_id,
+                "actor_id": checkpoint_config.actor_id,
                 "checkpoint_ns": checkpoint_config.checkpoint_ns,
                 "checkpoint_id": checkpoint["id"],
             }

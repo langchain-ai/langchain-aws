@@ -160,7 +160,7 @@ class CheckpointEventClient:
         )
 
     def get_events(
-        self, session_id: str, actor_id: str, max_results: int = None
+        self, session_id: str, actor_id: str, limit: int = 100
     ) -> List[EventType]:
         """Retrieve events from AgentCore Memory."""
         all_events = []
@@ -191,7 +191,7 @@ class CheckpointEventClient:
                             logger.warning(f"Failed to decode event: {e}")
 
             next_token = response.get("nextToken")
-            if not next_token or (max_results and len(all_events) >= max_results):
+            if not next_token or (limit and len(all_events) >= limit):
                 break
 
         return all_events
@@ -277,6 +277,7 @@ class EventProcessor:
             parent_config = {
                 "configurable": {
                     "thread_id": config.thread_id,
+                    "actor_id": config.actor_id,
                     "checkpoint_ns": config.checkpoint_ns,
                     "checkpoint_id": checkpoint_event.parent_checkpoint_id,
                 }
@@ -296,6 +297,7 @@ class EventProcessor:
             config={
                 "configurable": {
                     "thread_id": config.thread_id,
+                    "actor_id": config.actor_id,
                     "checkpoint_ns": config.checkpoint_ns,
                     "checkpoint_id": checkpoint_event.checkpoint_id,
                 }
