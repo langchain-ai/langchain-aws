@@ -5,10 +5,10 @@ Helper classes for AgentCore Memory Checkpoint Saver.
 from __future__ import annotations
 
 import base64
+import datetime
 import json
 import logging
 from collections import defaultdict
-from datetime import UTC, datetime
 from typing import Any, Dict, List, Union
 
 import boto3
@@ -134,7 +134,7 @@ class CheckpointEventClient:
             memoryId=self.memory_id,
             actorId=actor_id,
             sessionId=session_id,
-            eventTimestamp=datetime.now(UTC),
+            eventTimestamp=datetime.datetime.now(datetime.timezone.utc),
             payload=[{"blob": serialized}],
         )
 
@@ -144,7 +144,7 @@ class CheckpointEventClient:
         """Store multiple events in a single API call to AgentCore Memory."""
         # Serialize all events into payload blobs
         payload = []
-        timestamp = datetime.now(UTC)
+        timestamp = datetime.datetime.now(datetime.timezone.utc)
 
         for event in events:
             serialized = self.serializer.serialize_event(event)
