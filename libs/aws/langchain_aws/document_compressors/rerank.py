@@ -1,4 +1,3 @@
-from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 from langchain_core.callbacks.manager import Callbacks
@@ -22,9 +21,9 @@ class BedrockRerank(BaseDocumentCompressor):
     """Number of documents to return."""
 
     region_name: Optional[str] = None
-    """The aws region, e.g., `us-west-2`. 
+    """The aws region, e.g., `us-west-2`.
 
-    Falls back to AWS_REGION or AWS_DEFAULT_REGION env variable or region specified in 
+    Falls back to AWS_REGION or AWS_DEFAULT_REGION env variable or region specified in
     ~/.aws/config in case it is not provided here.
     """
 
@@ -36,7 +35,7 @@ class BedrockRerank(BaseDocumentCompressor):
     aws_access_key_id: Optional[SecretStr] = Field(
         default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
     )
-    """AWS access key id. 
+    """AWS access key id.
 
     If provided, aws_secret_access_key must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
@@ -49,7 +48,7 @@ class BedrockRerank(BaseDocumentCompressor):
     aws_secret_access_key: Optional[SecretStr] = Field(
         default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
     )
-    """AWS secret_access_key. 
+    """AWS secret_access_key.
 
     If provided, aws_access_key_id must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
@@ -62,9 +61,9 @@ class BedrockRerank(BaseDocumentCompressor):
     aws_session_token: Optional[SecretStr] = Field(
         default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
     )
-    """AWS session token. 
+    """AWS session token.
 
-    If provided, aws_access_key_id and aws_secret_access_key must 
+    If provided, aws_access_key_id and aws_secret_access_key must
     also be provided. Not required unless using temporary credentials.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
