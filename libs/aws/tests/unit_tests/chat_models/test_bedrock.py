@@ -12,7 +12,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableBinding
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from langchain_aws import ChatBedrock
 from langchain_aws.chat_models.bedrock import (
@@ -639,106 +639,78 @@ def test_standard_tracing_params() -> None:
     }
 
 
-def test_beta_use_converse_api() -> None:
-    llm = ChatBedrock(model_id="amazon.nova.foo", region_name="us-west-2")  # type: ignore[call-arg]
-    assert llm.beta_use_converse_api
+def test_check_unsupported_model() -> None:
 
-    llm = ChatBedrock(
-        model="foobar", base_model="amazon.nova.foo", region_name="us-west-2"
-    )  # type: ignore[call-arg]
-    assert llm.beta_use_converse_api
+    with pytest.raises(ValidationError):
+        ChatBedrock(model="amazon.nova.foo",
+                    region_name="us-west-2")  # type: ignore[call-arg]
 
-    llm = ChatBedrock(
-        model="arn:aws:bedrock:::application-inference-profile/my-profile",
-        base_model="claude.foo",
-        region_name="us-west-2",
-    )  # type: ignore[call-arg]
-    assert not llm.beta_use_converse_api
+    with pytest.raises(ValidationError):
+        ChatBedrock(model="foobar",
+                    base_model="amazon.nova.foo",
+                    region_name="us-west-2")  # type: ignore[call-arg]
 
-    llm = ChatBedrock(
-        model="nova.foo", region_name="us-west-2", beta_use_converse_api=False
-    )
-    assert not llm.beta_use_converse_api
+    try:
+        ChatBedrock(model="foobar",
+                    base_model="anthropic.claude-3-7",
+                    region_name="us-west-2")  # type: ignore[call-arg]
 
-    llm = ChatBedrock(
-        model="foobar",
-        base_model="nova.foo",
-        region_name="us-west-2",
-        beta_use_converse_api=False,
-    )
-    assert not llm.beta_use_converse_api
-
-    llm = ChatBedrock(model="foo", region_name="us-west-2", beta_use_converse_api=True)
-    assert llm.beta_use_converse_api
-
-    llm = ChatBedrock(model="foo", region_name="us-west-2", beta_use_converse_api=False)
-    assert not llm.beta_use_converse_api
+        ChatBedrock(model="anthropic.claude-3-7",
+                    region_name="us-west-2")  # type: ignore[call-arg]
+    except Exception as e:
+        pytest.fail(e)
 
 
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
-def test_beta_use_converse_api_with_inference_profile(mock_create_aws_client):
+def test_check_unsupported_model_with_inference_profile_valid_model(mock_create_aws_client):
     mock_bedrock_client = mock.MagicMock()
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-7-sonnet-20250219-v1:0" # noqa: E501
             }
         ]
     }
     mock_create_aws_client.return_value = mock_bedrock_client
 
-    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"
-    chat = ChatBedrock(
-        model_id=aip_model_id,
-        region_name="us-west-2",
+    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile" # noqa: E501
+
+    ChatBedrock(
+        model=aip_model_id,
+        region="us-west-2",
         bedrock_client=mock_bedrock_client,
     )  # type: ignore[call-arg]
 
-    mock_bedrock_client.get_inference_profile.assert_called_with(
+    mock_bedrock_client.get_inference_profile.assert_called_once_with(
         inferenceProfileIdentifier=aip_model_id
     )
 
-    assert chat.beta_use_converse_api is False
-
 
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
-def test_beta_use_converse_api_with_inference_profile_as_nova_model(
-    mock_create_aws_client,
-):
+def test_check_unsupported_model_with_inference_profile_invalid_model(mock_create_aws_client):
     mock_bedrock_client = mock.MagicMock()
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-micro-v1:0"
+                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-micro-v1:0" # noqa: E501
             }
         ]
     }
     mock_create_aws_client.return_value = mock_bedrock_client
 
-    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"
-    chat = ChatBedrock(
-        model_id=aip_model_id,
-        region_name="us-west-2",
-        bedrock_client=mock_bedrock_client,
-    )  # type: ignore[call-arg]
+    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile" # noqa: E501
 
-    mock_bedrock_client.get_inference_profile.assert_called_with(
-        inferenceProfileIdentifier=aip_model_id
-    )
-
-    assert chat.beta_use_converse_api is True
+    with pytest.raises(ValidationError):
+        ChatBedrock(
+            model=aip_model_id,
+            region="us-west-2",
+            bedrock_client=mock_bedrock_client,
+        )  # type: ignore[call-arg]
 
 
 @pytest.mark.parametrize(
     "model_id, provider, expected_provider, expectation, region_name",
     [
-        (
-            "amer.amazon.nova-pro-v1:0",
-            None,
-            "amazon",
-            nullcontext(),
-            "us-west-2",
-        ),
         (
             "global.anthropic.claude-sonnet-4-20250514-v1:0",
             None,
