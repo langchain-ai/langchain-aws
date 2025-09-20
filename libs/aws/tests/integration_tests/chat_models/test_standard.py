@@ -29,31 +29,3 @@ class TestBedrockStandard(ChatModelIntegrationTests):
     @pytest.mark.xfail(reason="Not implemented.")
     def test_double_messages_conversation(self, model: BaseChatModel) -> None:
         super().test_double_messages_conversation(model)
-
-
-class TestBedrockUseConverseStandard(ChatModelIntegrationTests):
-    @property
-    def chat_model_class(self) -> Type[BaseChatModel]:
-        return ChatBedrock
-
-    @property
-    def chat_model_params(self) -> dict:
-        return {
-            "model_id": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-            "beta_use_converse_api": True,
-        }
-
-    @property
-    def standard_chat_model_params(self) -> dict:
-        return {
-            "temperature": 0,
-            "max_tokens": 100,
-            "stop_sequences": [],
-            "model_kwargs": {
-                "stop": [],
-            },
-        }
-
-    @property
-    def supports_image_inputs(self) -> bool:
-        return True

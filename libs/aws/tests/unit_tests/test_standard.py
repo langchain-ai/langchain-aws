@@ -28,31 +28,3 @@ class TestBedrockStandard(ChatModelUnitTests):
     @pytest.mark.xfail(reason="Not implemented.")
     def test_standard_params(self, model: BaseChatModel) -> None:
         super().test_standard_params(model)
-
-
-class TestBedrockAsConverseStandard(ChatModelUnitTests):
-    @property
-    def chat_model_class(self) -> Type[BaseChatModel]:
-        return ChatBedrock
-
-    @property
-    def chat_model_params(self) -> dict:
-        return {
-            "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
-            "region_name": "us-east-1",
-            "beta_use_converse_api": True,
-        }
-
-    @property
-    def standard_chat_model_params(self) -> dict:
-        return {
-            "model_kwargs": {
-                "temperature": 0,
-                "max_tokens": 100,
-                "stop": [],
-            }
-        }
-
-    @pytest.mark.xfail(reason="Not implemented.")
-    def test_standard_params(self, model: BaseChatModel) -> None:
-        super().test_standard_params(model)

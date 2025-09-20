@@ -594,7 +594,6 @@ def test_guardrails() -> None:
             "guardrailVersion": "1",
             "trace": "enabled",
         },
-        "beta_use_converse_api": True,
     }
     chat_model = ChatBedrock(**params)  # type: ignore[arg-type]
     messages = [
@@ -684,7 +683,6 @@ def test_guardrails_streaming_trace() -> None:
         guardrails=guardrail_config,
         callbacks=[guardrail_callback],
         region_name="us-west-2",
-        beta_use_converse_api=False,  # Use legacy API for this test
     )  # type: ignore[call-arg]
 
     # Test message that should trigger guardrail intervention
@@ -698,7 +696,6 @@ def test_guardrails_streaming_trace() -> None:
         guardrails=guardrail_config,
         callbacks=[invoke_callback],
         region_name="us-west-2",
-        beta_use_converse_api=False,
     )  # type: ignore[call-arg]
 
     try:

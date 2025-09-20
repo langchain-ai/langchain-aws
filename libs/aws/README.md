@@ -16,12 +16,14 @@ Alternatively, set the `AWS_BEARER_TOKEN_BEDROCK` environment variable locally f
 
 ## Chat Models
 
-`ChatBedrock` class exposes chat models from Bedrock.
+`ChatBedrockConverse` class exposes chat models from Bedrock.
 
 ```python
-from langchain_aws import ChatBedrock
+from langchain_aws import ChatBedrockConverse
 
-llm = ChatBedrock()
+llm = ChatBedrockConverse(
+    model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+)
 llm.invoke("Sing a ballad of LangChain.")
 ```
 
