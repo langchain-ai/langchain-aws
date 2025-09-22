@@ -579,13 +579,13 @@ def test_guardrail_config(mock_client):
             "guardrailVersion": "test-guardrail-version",
         },
     )
-    
+
     mock_client.retrieve.return_value = {
         "retrievalResults": [
             {"content": {"text": "result1"}, "metadata": {"key": "value1"}},
         ]
     }
-    
+
     retriever.invoke("test query")
 
     mock_client.retrieve.assert_called_once_with(
@@ -606,11 +606,14 @@ def test_guardrail_config_validation(mock_client):
             "guardrailVersion": "test-guardrail-version",
         },
     )
-    
+
     with pytest.raises(TypeError) as excinfo:
         retriever.invoke("test query")
-    
-    assert "Guardrail configuration must be a dictionary with both 'guardrailId'" in str(excinfo.value)
+
+    assert (
+        "Guardrail configuration must be a dictionary with both 'guardrailId'"
+        in str(excinfo.value)
+    )
 
 
 def test_guardrail_config_with_retrieval_config(mock_client, mock_retriever_config):
@@ -623,13 +626,13 @@ def test_guardrail_config_with_retrieval_config(mock_client, mock_retriever_conf
         },
         retrieval_config=mock_retriever_config,
     )
-    
+
     mock_client.retrieve.return_value = {
         "retrievalResults": [
             {"content": {"text": "result1"}, "metadata": {"key": "value1"}},
         ]
     }
-    
+
     retriever.invoke("test query")
 
     mock_client.retrieve.assert_called_once_with(

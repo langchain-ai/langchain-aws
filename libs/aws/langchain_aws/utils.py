@@ -143,9 +143,7 @@ def create_aws_client(
         import boto3
 
         region_name = (
-            region_name
-            or os.getenv("AWS_REGION")
-            or os.getenv("AWS_DEFAULT_REGION")
+            region_name or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
         )
 
         client_params = {
@@ -154,15 +152,13 @@ def create_aws_client(
             "endpoint_url": endpoint_url,
             "config": config,
         }
-        client_params = {
-            k: v for k, v in client_params.items() if v
-        }
+        client_params = {k: v for k, v in client_params.items() if v}
 
         needs_session = bool(
-            credentials_profile_name or
-            aws_access_key_id or
-            aws_secret_access_key or
-            aws_session_token
+            credentials_profile_name
+            or aws_access_key_id
+            or aws_secret_access_key
+            or aws_session_token
         )
 
         if not needs_session:
@@ -176,7 +172,9 @@ def create_aws_client(
                 "aws_secret_access_key": aws_secret_access_key.get_secret_value(),
             }
             if aws_session_token:
-                session_params["aws_session_token"] = aws_session_token.get_secret_value()
+                session_params["aws_session_token"] = (
+                    aws_session_token.get_secret_value()
+                )
             session = boto3.Session(**session_params)
         else:
             raise ValueError(
@@ -222,10 +220,13 @@ def trim_message_whitespace(messages: List[Any]) -> List[Any]:
             last_message.content = trimmed
     elif isinstance(last_message.content, list):
         for j, block in enumerate(last_message.content):
-            if isinstance(block, dict) and block.get("type") == "text" \
-                and isinstance(block.get("text"), str):
+            if (
+                isinstance(block, dict)
+                and block.get("type") == "text"
+                and isinstance(block.get("text"), str)
+            ):
                 trimmed = block["text"].rstrip()
                 if trimmed != block["text"]:
                     last_message.content[j]["text"] = trimmed
-    
+
     return messages
