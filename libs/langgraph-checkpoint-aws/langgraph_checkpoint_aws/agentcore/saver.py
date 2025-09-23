@@ -184,7 +184,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         )
         events_to_store.append(checkpoint_event)
 
-        self.checkpoint_event_client.store_events_batch(
+        self.checkpoint_event_client.store_blob_events_batch(
             events_to_store, checkpoint_config.session_id, checkpoint_config.actor_id
         )
 
@@ -226,7 +226,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             writes=write_items,
         )
 
-        self.checkpoint_event_client.store_event(
+        self.checkpoint_event_client.store_blob_event(
             writes_event, checkpoint_config.session_id, checkpoint_config.actor_id
         )
 

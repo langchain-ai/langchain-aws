@@ -3,7 +3,7 @@ Unit tests for AgentCore Memory Checkpoint Saver.
 """
 
 import json
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import ANY, MagicMock, Mock, patch
 
 import pytest
 from langchain_core.runnables import RunnableConfig
@@ -156,7 +156,7 @@ class TestAgentCoreMemorySaver:
             assert isinstance(saver.serializer, EventSerializer)
             assert isinstance(saver.checkpoint_event_client, AgentCoreEventClient)
             assert isinstance(saver.processor, EventProcessor)
-            mock_boto3_client.assert_called_once_with("bedrock-agentcore")
+            mock_boto3_client.assert_called_once_with("bedrock-agentcore", config=ANY)
 
     def test_init_with_custom_parameters(self, memory_id):
         with patch("boto3.client") as mock_boto3_client:
@@ -170,8 +170,7 @@ class TestAgentCoreMemorySaver:
 
             assert saver.memory_id == memory_id
             mock_boto3_client.assert_called_once_with(
-                "bedrock-agentcore",
-                region_name="us-west-2",
+                "bedrock-agentcore", region_name="us-west-2", config=ANY
             )
 
     def test_get_tuple_success(
@@ -742,8 +741,8 @@ class TestAgentCoreEventClient:
             mock_boto3_client.return_value = mock_boto_client
             yield AgentCoreEventClient("test-memory-id", serializer)
 
-    def test_store_event(self, client, mock_boto_client, sample_checkpoint_event):
-        client.store_event(sample_checkpoint_event, "session_id", "actor_id")
+    def test_store_blob_event(self, client, mock_boto_client, sample_checkpoint_event):
+        client.store_blob_event(sample_checkpoint_event, "session_id", "actor_id")
 
         mock_boto_client.create_event.assert_called_once()
         call_args = mock_boto_client.create_event.call_args[1]
@@ -752,7 +751,7 @@ class TestAgentCoreEventClient:
         assert call_args["sessionId"] == "session_id"
         assert len(call_args["payload"]) == 1
 
-    def test_store_events_batch(
+    def test_store_blob_events_batch(
         self,
         client,
         mock_boto_client,
@@ -760,7 +759,7 @@ class TestAgentCoreEventClient:
         sample_channel_data_event,
     ):
         events = [sample_checkpoint_event, sample_channel_data_event]
-        client.store_events_batch(events, "session_id", "actor_id")
+        client.store_blob_events_batch(events, "session_id", "actor_id")
 
         mock_boto_client.create_event.assert_called_once()
         call_args = mock_boto_client.create_event.call_args[1]

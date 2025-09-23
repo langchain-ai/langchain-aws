@@ -12,6 +12,7 @@ from collections import defaultdict
 from typing import Any, Dict, List, Union
 
 import boto3
+from botocore.config import Config
 from langgraph.checkpoint.base import CheckpointTuple, SerializerProtocol
 
 from langgraph_checkpoint_aws.agentcore.constants import (
@@ -121,12 +122,20 @@ class EventSerializer:
 class AgentCoreEventClient:
     """Handles low-level event storage and retrieval from AgentCore Memory for checkpoints."""
 
-    def __init__(self, memory_id: str, serializer: EventSerializer, **boto3_kwargs):
+    def __init__(
+        self, memory_id: str, serializer: EventSerializer = None, **boto3_kwargs
+    ):
         self.memory_id = memory_id
         self.serializer = serializer
-        self.client = boto3.client("bedrock-agentcore", **boto3_kwargs)
 
-    def store_event(self, event: EventType, session_id: str, actor_id: str) -> None:
+        config = Config(
+            user_agent_extra="x-client-framework:langgraph_agentcore_memory"
+        )
+        self.client = boto3.client("bedrock-agentcore", config=config, **boto3_kwargs)
+
+    def store_blob_event(
+        self, event: EventType, session_id: str, actor_id: str
+    ) -> None:
         """Store an event in AgentCore Memory."""
         serialized = self.serializer.serialize_event(event)
 
@@ -138,7 +147,7 @@ class AgentCoreEventClient:
             payload=[{"blob": serialized}],
         )
 
-    def store_events_batch(
+    def store_blob_events_batch(
         self, events: List[EventType], session_id: str, actor_id: str
     ) -> None:
         """Store multiple events in a single API call to AgentCore Memory."""
