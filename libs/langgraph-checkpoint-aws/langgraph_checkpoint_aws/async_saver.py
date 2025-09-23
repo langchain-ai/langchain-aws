@@ -3,6 +3,7 @@ import json
 from collections.abc import AsyncIterator, Sequence
 from typing import Any, Optional
 
+import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from langchain_core.runnables import RunnableConfig
@@ -48,6 +49,7 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
     It handles creating invocations, managing checkpoint data, and tracking pending writes.
 
     Args:
+        session: Pre-configured boto3 session instance for custom credential
         region_name: AWS region name
         credentials_profile_name: AWS credentials profile name
         aws_access_key_id: AWS access key ID
@@ -59,6 +61,7 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
 
     def __init__(
         self,
+        session: Optional["boto3.Session"] = None,
         region_name: Optional[str] = None,
         credentials_profile_name: Optional[str] = None,
         aws_access_key_id: Optional[SecretStr] = None,
@@ -69,6 +72,7 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
     ) -> None:
         super().__init__()
         self.session_client = AsyncBedrockAgentRuntimeSessionClient(
+            session=session,
             region_name=region_name,
             credentials_profile_name=credentials_profile_name,
             aws_access_key_id=aws_access_key_id,

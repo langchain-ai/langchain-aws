@@ -23,7 +23,7 @@ from langgraph_checkpoint_aws.models import (
     PutInvocationStepRequest,
     PutInvocationStepResponse,
 )
-from langgraph_checkpoint_aws.utils import process_aws_client_args, to_boto_params
+from langgraph_checkpoint_aws.utils import process_aws_client_args, to_boto_params, create_client_config
 
 
 class BedrockAgentRuntimeSessionClient:
@@ -44,6 +44,7 @@ class BedrockAgentRuntimeSessionClient:
 
     def __init__(
         self,
+        session: Optional[boto3.Session] = None,
         region_name: Optional[str] = None,
         credentials_profile_name: Optional[str] = None,
         aws_access_key_id: Optional[SecretStr] = None,
@@ -56,6 +57,7 @@ class BedrockAgentRuntimeSessionClient:
         Initialize BedrockAgentRuntime with AWS configuration
 
         Args:
+            session: Pre-configured boto3 session instance
             region_name: AWS region (e.g., us-west-2)
             credentials_profile_name: AWS credentials profile name
             aws_access_key_id: AWS access key ID
@@ -64,17 +66,27 @@ class BedrockAgentRuntimeSessionClient:
             endpoint_url: Custom endpoint URL
             config: Boto3 config object
         """
-        _session_kwargs, _client_kwargs = process_aws_client_args(
-            region_name,
-            credentials_profile_name,
-            aws_access_key_id,
-            aws_secret_access_key,
-            aws_session_token,
-            endpoint_url,
-            config,
-        )
-        session = boto3.Session(**_session_kwargs)
-        self.client = session.client("bedrock-agent-runtime", **_client_kwargs)
+        if session is not None:
+            # Use provided session directly
+            client_kwargs = {}
+            if endpoint_url is not None:
+                client_kwargs["endpoint_url"] = endpoint_url
+
+            client_kwargs["config"] = create_client_config(config)
+            self.client = session.client("bedrock-agent-runtime", **client_kwargs)
+        else:
+            # Create session using provided credentials
+            _session_kwargs, _client_kwargs = process_aws_client_args(
+                region_name,
+                credentials_profile_name,
+                aws_access_key_id,
+                aws_secret_access_key,
+                aws_session_token,
+                endpoint_url,
+                config,
+            )
+            session = boto3.Session(**_session_kwargs)
+            self.client = session.client("bedrock-agent-runtime", **_client_kwargs)
 
     def create_session(
         self, request: Optional[CreateSessionRequest] = None
