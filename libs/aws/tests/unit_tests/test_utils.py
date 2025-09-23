@@ -107,7 +107,8 @@ def test_creds_default(
 ) -> None:
     session_mock, client_mock, client_instance = mock_boto3
 
-    client = create_aws_client("bedrock-runtime")
+    with mock.patch.dict(os.environ, {}, clear=True):
+        client = create_aws_client("bedrock-runtime")
 
     session_mock.assert_not_called()
     client_mock.assert_called_once_with(service_name="bedrock-runtime")
@@ -145,10 +146,11 @@ def test_endpoint_url(
 ) -> None:
     session_mock, client_mock, client_instance = mock_boto3
 
-    client = create_aws_client(
-        "bedrock-runtime",
-        endpoint_url="https://bedrock-runtime.us-west-2.amazonaws.com",
-    )
+    with mock.patch.dict(os.environ, {}, clear=True):
+        client = create_aws_client(
+            "bedrock-runtime",
+            endpoint_url="https://bedrock-runtime.us-west-2.amazonaws.com",
+        )
 
     session_mock.assert_not_called()
     client_mock.assert_called_once_with(
@@ -165,7 +167,8 @@ def test_with_config(
 
     boto_config = Config(max_pool_connections=10)
 
-    client = create_aws_client("bedrock-runtime", config=boto_config)
+    with mock.patch.dict(os.environ, {}, clear=True):
+        client = create_aws_client("bedrock-runtime", config=boto_config)
 
     session_mock.assert_not_called()
     client_mock.assert_called_once_with(
@@ -180,12 +183,13 @@ def test_endpoint_url_with_creds(
     session_mock, client_mock, client_instance = mock_boto3
     session_instance = session_mock.return_value
 
-    client = create_aws_client(
-        "bedrock-runtime",
-        aws_access_key_id=SecretStr("test_key"),
-        aws_secret_access_key=SecretStr("test_secret"),
-        endpoint_url="https://bedrock-runtime.us-west-2.amazonaws.com",
-    )
+    with mock.patch.dict(os.environ, {}, clear=True):
+        client = create_aws_client(
+            "bedrock-runtime",
+            aws_access_key_id=SecretStr("test_key"),
+            aws_secret_access_key=SecretStr("test_secret"),
+            endpoint_url="https://bedrock-runtime.us-west-2.amazonaws.com",
+        )
 
     session_mock.assert_called_once_with(
         aws_access_key_id="test_key",
@@ -233,11 +237,12 @@ def test_session_region_fallback(
 
     session_instance.region_name = "us-west-2"
 
-    client = create_aws_client(
-        "bedrock-runtime",
-        aws_access_key_id=SecretStr("test_key"),
-        aws_secret_access_key=SecretStr("test_secret"),
-    )
+    with mock.patch.dict(os.environ, {}, clear=True):
+        client = create_aws_client(
+            "bedrock-runtime",
+            aws_access_key_id=SecretStr("test_key"),
+            aws_secret_access_key=SecretStr("test_secret"),
+        )
 
     session_mock.assert_called_once()
     session_instance.client.assert_called_once_with(
@@ -248,12 +253,16 @@ def test_session_region_fallback(
 
 @pytest.fixture
 def mock_boto3_with_imports() -> Generator[
-    Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock, mock.MagicMock], None, None
+    Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock, type[UnknownServiceError]],
+    None,
+    None,
 ]:
     with (
         mock.patch("boto3.Session") as m_session,
         mock.patch("boto3.client") as m_client,
-        mock.patch("botocore.exceptions.UnknownServiceError", UnknownServiceError),
+        mock.patch(
+            "botocore.exceptions.UnknownServiceError", UnknownServiceError
+        ) as m_error,
     ):
         mock_session_instance = mock.MagicMock()
         m_session.return_value = mock_session_instance
@@ -263,12 +272,12 @@ def mock_boto3_with_imports() -> Generator[
         mock_session_instance.client.return_value = mock_client_instance
         m_client.return_value = mock_client_instance
 
-        yield m_session, m_client, mock_client_instance, UnknownServiceError
+        yield m_session, m_client, mock_client_instance, m_error
 
 
 def test_bad_service_error_with_session(
     mock_boto3_with_imports: Tuple[
-        mock.MagicMock, mock.MagicMock, mock.MagicMock, mock.MagicMock
+        mock.MagicMock, mock.MagicMock, mock.MagicMock, type[UnknownServiceError]
     ],
 ) -> None:
     session_mock, _, _, error_class = mock_boto3_with_imports
@@ -291,7 +300,7 @@ def test_bad_service_error_with_session(
 
 def test_bad_service_error_with_direct_client(
     mock_boto3_with_imports: Tuple[
-        mock.MagicMock, mock.MagicMock, mock.MagicMock, mock.MagicMock
+        mock.MagicMock, mock.MagicMock, mock.MagicMock, type[UnknownServiceError]
     ],
 ) -> None:
     _, client_mock, _, error_class = mock_boto3_with_imports

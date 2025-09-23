@@ -122,12 +122,12 @@ def create_aws_client(
     aws_session_token: Optional[SecretStr] = None,
     endpoint_url: Optional[str] = None,
     config: Any = None,
-):
+) -> Any:
     """Helper function to validate AWS credentials and create an AWS client.
 
     Args:
         service_name: The name of the AWS service to create a client for.
-        region_name: AWS region name. If not provided, will try to get from environment variables.
+        region_name: AWS region name. If not provided, try to get from env variables.
         credentials_profile_name: The name of the AWS credentials profile to use.
         aws_access_key_id: AWS access key ID.
         aws_secret_access_key: AWS secret access key.
@@ -175,7 +175,9 @@ def create_aws_client(
                 session_params["aws_session_token"] = (
                     aws_session_token.get_secret_value()
                 )
-            session = boto3.Session(**session_params)
+            # session_params contains valid boto3.Session parameters but type stubs are
+            # overly restrictive
+            session = boto3.Session(**session_params)  # type: ignore[arg-type]
         else:
             raise ValueError(
                 "If providing credentials, both aws_access_key_id and "
@@ -195,8 +197,8 @@ def create_aws_client(
     except BotoCoreError as e:
         raise ValueError(
             "Could not load credentials to authenticate with AWS client. "
-            "Please check that the specified profile name and/or its credentials are valid. "
-            f"Service error: {e}"
+            "Please check that the specified profile name and/or its credentials are "
+            f"valid. Service error: {e}"
         ) from e
     except Exception as e:
         raise ValueError(f"Error raised by service:\n\n{e}") from e
@@ -227,6 +229,8 @@ def trim_message_whitespace(messages: List[Any]) -> List[Any]:
             ):
                 trimmed = block["text"].rstrip()
                 if trimmed != block["text"]:
-                    last_message.content[j]["text"] = trimmed
+                    block_dict: dict[Any, Any] = block
+                    block_dict["text"] = trimmed
+                    last_message.content[j] = block_dict
 
     return messages

@@ -1,5 +1,3 @@
-from typing import Any, Optional
-
 import boto3
 from botocore.config import Config
 from pydantic import SecretStr
@@ -33,17 +31,17 @@ from langgraph_checkpoint_aws.utils import (
 class AsyncBedrockAgentRuntimeSessionClient:
     """
     Asynchronous client for AWS Bedrock Agent Runtime API using standard boto3 with async executor.
-    """
+    """  # noqa: E501
 
     def __init__(
         self,
-        region_name: Optional[str] = None,
-        credentials_profile_name: Optional[str] = None,
-        aws_access_key_id: Optional[SecretStr] = None,
-        aws_secret_access_key: Optional[SecretStr] = None,
-        aws_session_token: Optional[SecretStr] = None,
-        endpoint_url: Optional[str] = None,
-        config: Optional[Config] = None,
+        region_name: str | None = None,
+        credentials_profile_name: str | None = None,
+        aws_access_key_id: SecretStr | None = None,
+        aws_secret_access_key: SecretStr | None = None,
+        aws_session_token: SecretStr | None = None,
+        endpoint_url: str | None = None,
+        config: Config | None = None,
     ):
         """
         Initialize AsyncBedrockAgentRuntime with AWS configuration
@@ -51,9 +49,9 @@ class AsyncBedrockAgentRuntimeSessionClient:
         _session_kwargs, self._client_kwargs = process_aws_client_args(
             region_name,
             credentials_profile_name,
-            aws_access_key_id,
-            aws_secret_access_key,
-            aws_session_token,
+            aws_access_key_id.get_secret_value() if aws_access_key_id else None,
+            aws_secret_access_key.get_secret_value() if aws_secret_access_key else None,
+            aws_session_token.get_secret_value() if aws_session_token else None,
             endpoint_url,
             config,
         )
@@ -66,7 +64,7 @@ class AsyncBedrockAgentRuntimeSessionClient:
         )
 
     async def create_session(
-        self, request: Optional[CreateSessionRequest] = None
+        self, request: CreateSessionRequest | None = None
     ) -> CreateSessionResponse:
         """Create a new session asynchronously"""
         params = to_boto_params(request) if request else {}

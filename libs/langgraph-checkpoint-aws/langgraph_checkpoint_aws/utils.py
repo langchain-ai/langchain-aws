@@ -3,10 +3,10 @@ import base64
 import hashlib
 import json
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextvars import copy_context
 from functools import partial
-from typing import Any, Callable, Optional, Tuple, TypeVar, Union, cast
+from typing import Any, TypeVar, cast
 
 from botocore.config import Config
 from langchain_core.runnables import RunnableConfig
@@ -41,11 +41,12 @@ def to_boto_params(model: BaseModel) -> dict:
 
     Returns:
         dict: Dictionary of parameters compatible with boto3 API calls
+
     """
     return model.model_dump(by_alias=True, exclude_none=True)
 
 
-def generate_deterministic_uuid(input_string: Union[str, bytes]) -> uuid.UUID:
+def generate_deterministic_uuid(input_string: str | bytes) -> uuid.UUID:
     """
     Generate a deterministic UUID from a string input using MD5 hashing.
 
@@ -54,6 +55,7 @@ def generate_deterministic_uuid(input_string: Union[str, bytes]) -> uuid.UUID:
 
     Returns:
         UUID object generated deterministically from the input
+
     """
     if isinstance(input_string, str):
         input_bytes = input_string.encode("utf-8")
@@ -72,6 +74,7 @@ def generate_checkpoint_id(namespace: str) -> str:
 
     Returns:
         str: Deterministic UUID as string for the checkpoint
+
     """
     return str(generate_deterministic_uuid(f"{CHECKPOINT_PREFIX}#{namespace}"))
 
@@ -85,6 +88,7 @@ def generate_write_id(namespace: str, checkpoint_id: str) -> str:
 
     Returns:
         str: Deterministic UUID as string for the write operation
+
     """
     return str(
         generate_deterministic_uuid(f"{WRITES_PREFIX}#{namespace}#{checkpoint_id}")
@@ -100,6 +104,7 @@ def deserialize_data(serializer: SerializerProtocol, data: str) -> Any:
 
     Returns:
         Any: Deserialized Python object
+
     """
     return serializer.loads(data.encode())
 
@@ -113,12 +118,13 @@ def serialize_data(serializer: SerializerProtocol, data: Any) -> str:
 
     Returns:
         str: Serialized string data with null characters handled
+
     """
     serialized = serializer.dumps(data)
     return serialized.decode().replace("\\u0000", "")
 
 
-def serialize_to_base64(serializer: SerializerProtocol, data: Any) -> Tuple[str, str]:
+def serialize_to_base64(serializer: SerializerProtocol, data: Any) -> tuple[str, str]:
     """Serialize data to base64 encoded format.
 
     Args:
@@ -127,6 +133,7 @@ def serialize_to_base64(serializer: SerializerProtocol, data: Any) -> Tuple[str,
 
     Returns:
         Tuple[str, str]: Tuple of (type, base64 encoded string)
+
     """
     data_type, serialized = serializer.dumps_typed(data)
     encoded = base64.b64encode(serialized).decode("utf-8")
@@ -145,6 +152,7 @@ def deserialize_from_base64(
 
     Returns:
         Any: Deserialized data object
+
     """
     decoded = base64.b64decode(encoded_data.encode("utf-8"))
     return serializer.loads_typed((data_type, decoded))
@@ -170,6 +178,7 @@ def construct_checkpoint_tuple(
 
     Returns:
         Constructed CheckpointTuple
+
     """
     return CheckpointTuple(
         {
@@ -216,9 +225,10 @@ def transform_pending_task_writes(
         pending_writes: List of SessionPendingWrite objects to transform
 
     Returns:
-        list[list[Any]]: Sorted list of write operations, where each write is represented as
-            a list containing [task_id, channel, value, task_path, write_idx]. Sorted by
-            task_path, task_id, and write_idx.
+        list[list[Any]]: Sorted list of write operations, where each write is
+            represented as a list containing [task_id, channel, value, task_path,
+            write_idx]. Sorted by task_path, task_id, and write_idx.
+
     """
     return sorted(
         (
@@ -250,28 +260,32 @@ def create_session_checkpoint(
     """
     Create a SessionCheckpoint object from the given checkpoint and related data.
 
-    This function processes the checkpoint, extracts necessary information from the config,
-    and serializes various components to create a SessionCheckpoint object.
+    This function processes the checkpoint, extracts necessary information from the
+    config, and serializes various components to create a SessionCheckpoint object.
 
     Args:
         checkpoint (Checkpoint): The checkpoint to process.
-        config (RunnableConfig): Configuration containing thread and checkpoint information.
+        config (RunnableConfig): Configuration containing thread and checkpoint
+            information.
         metadata (CheckpointMetadata): Metadata associated with the checkpoint.
         serializer (SerializerProtocol): Serializer for data conversion.
         new_versions (ChannelVersions): New versions of channel data.
 
     Returns:
-        SessionCheckpoint: A SessionCheckpoint object containing the processed and serialized data.
+        SessionCheckpoint: A SessionCheckpoint object containing the processed and
+            serialized data.
+
     """
     # Create copy to avoid modifying original checkpoint
     checkpoint_copy = checkpoint.copy()
 
     # Remove pending sends as they are handled separately
-    checkpoint_copy.pop("pending_sends", None)
+    # Note: pending_sends is not part of the Checkpoint TypedDict but is used at runtime
+    checkpoint_copy.pop("pending_sends", None)  # type: ignore[typeddict-item]
 
     # Extract required config values
-    thread_id = config["configurable"]["thread_id"]
-    checkpoint_ns = config["configurable"]["checkpoint_ns"]
+    thread_id = config.get("configurable", {})["thread_id"]
+    checkpoint_ns = config.get("configurable", {})["checkpoint_ns"]
     checkpoint_id = checkpoint["id"]
 
     session_checkpoint = SessionCheckpoint(
@@ -281,9 +295,9 @@ def create_session_checkpoint(
         checkpoint_id=checkpoint_id,
         checkpoint=serialize_to_base64(serializer, checkpoint_copy),
         metadata=serialize_data(serializer, metadata),
-        # Pop and serialize channel values separately
+        # Extract and serialize channel values separately
         channel_values=serialize_to_base64(
-            serializer, checkpoint_copy.pop("channel_values")
+            serializer, checkpoint_copy.get("channel_values", {})
         ),
         version=serialize_to_base64(serializer, new_versions),
     )
@@ -302,11 +316,13 @@ def process_writes_invocation_content_blocks(
 
     Returns:
         List of SessionPendingWrite objects
+
     """
     # Parse JSON content from content blocks
     pending_writes = []
     for content_block in content_blocks:
-        pending_writes.append(json.loads(content_block.text))
+        if content_block.text is not None:
+            pending_writes.append(json.loads(content_block.text))
 
     # Convert raw dictionaries into SessionPendingWrite objects
     return [
@@ -349,6 +365,7 @@ def process_write_operations(
 
     Returns:
         Tuple of (list of content blocks, boolean indicating if new writes were created)
+
     """
     content_blocks = []
     new_writes = False
@@ -387,14 +404,14 @@ def process_write_operations(
 
 
 def process_aws_client_args(
-    region_name: Optional[str] = None,
-    credentials_profile_name: Optional[str] = None,
-    aws_access_key_id: Optional[str] = None,
-    aws_secret_access_key: Optional[str] = None,
-    aws_session_token: Optional[str] = None,
-    endpoint_url: Optional[str] = None,
-    config: Optional[Config] = None,
-) -> Tuple[dict, dict]:
+    region_name: str | None = None,
+    credentials_profile_name: str | None = None,
+    aws_access_key_id: str | None = None,
+    aws_secret_access_key: str | None = None,
+    aws_session_token: str | None = None,
+    endpoint_url: str | None = None,
+    config: Config | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """
     Process AWS client arguments and return session and client kwargs.
 
@@ -409,9 +426,10 @@ def process_aws_client_args(
 
     Returns:
         Tuple[dict, dict]: Session kwargs and client kwargs
+
     """
-    session_kwargs = {}
-    client_kwargs = {}
+    session_kwargs: dict[str, Any] = {}
+    client_kwargs: dict[str, Any] = {}
 
     # Session parameters
     if region_name is not None:
@@ -434,22 +452,24 @@ def process_aws_client_args(
     return session_kwargs, client_kwargs
 
 
-def create_client_config(config: Optional[Config] = None) -> Config:
+def create_client_config(config: Config | None = None) -> Config:
     """
-    Creates a client config with SDK user agent while preserving existing config settings.
+    Creates a client config with SDK user agent while preserving existing config
+    settings.
 
     Args:
         config: Existing Boto3 config object
 
     Returns:
         Config: New config object with combined user agent
+
     """
-    config_kwargs = {}
+    config_kwargs: dict[str, Any] = {}
     existing_user_agent = getattr(config, "user_agent_extra", "") if config else ""
     new_user_agent = (
-    f"{existing_user_agent} x-client-framework:langgraph-checkpoint-aws "
-    f"md/sdk_user_agent/{SDK_USER_AGENT}".strip()
-)
+        f"{existing_user_agent} x-client-framework:langgraph-checkpoint-aws "
+        f"md/sdk_user_agent/{SDK_USER_AGENT}".strip()
+    )
 
     return Config(user_agent_extra=new_user_agent, **config_kwargs)
 

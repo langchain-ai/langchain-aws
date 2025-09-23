@@ -1,91 +1,64 @@
-[tool.poetry]
-name = "langchain-aws"
-version = "0.2.33"
-description = "An integration package connecting AWS and LangChain"
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[project]
 authors = []
-readme = "README.md"
-repository = "https://github.com/langchain-ai/langchain-aws"
-license = "MIT"
-
-[tool.poetry.urls]
-"Source Code" = "https://github.com/langchain-ai/langchain-aws/tree/main/libs/aws"
-
-[tool.poetry.dependencies]
-python = ">=3.9"
-langchain-core = "^0.3.76"
-boto3 = ">=1.39.7"
-pydantic = ">=2.10.0,<3"
-numpy = [
-  { version = "^1", python = "<3.12" },
-  { version = ">=1.26.0,<3", python = ">=3.12" },
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "langchain-core>=0.3.76",
+    "boto3>=1.40.19",
+    "pydantic>=2.11.7,<3",
+    "numpy>=2.3.2,<3; python_version>='3.12'",
+    "numpy>=1.0.0,<3; python_version<'3.12'",
 ]
-bedrock-agentcore = { version = ">=0.1.0", python = ">=3.10", optional = true }
-playwright = { version = ">=1.53.0", optional = true }
-beautifulsoup4 = { version = ">=4.13.4", optional = true }
+name = "langchain-aws"
+version = "1.0.0a1"
+description = "An integration package connecting AWS and LangChain"
+readme = "README.md"
 
-[tool.poetry.extras]
-tools = ["bedrock-agentcore", "playwright", "beautifulsoup4"]
+[project.urls]
+"Source Code" = "https://github.com/langchain-ai/langchain-aws/tree/main/libs/aws"
+repository = "https://github.com/langchain-ai/langchain-aws"
 
-[tool.poetry.group.test]
-optional = true
+[project.optional-dependencies]
+tools = ["bedrock-agentcore>=0.1.0; python_version>='3.10'", "playwright>=1.53.0", "beautifulsoup4>=4.13.4"]
 
-[tool.poetry.group.test.dependencies]
-pytest = "^7.4.3"
-pytest-cov = "^4.1.0"
-syrupy = { version = "^4.0.2", python = "<4.0" }
-pytest-asyncio = "^0.23.2"
-pytest-watcher = { version = "^0.3.4", python = "<4.0" }
-langchain-tests = { version = "^0.3.21", python = "<4.0" }
-langchain = { version = "^0.3.7", python = "<4.0" }
+[dependency-groups]
+test = [
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
+    "syrupy>=4.9.1",
+    "pytest-asyncio>=0.20,<1",
+    "pytest-watcher>=0.4.3",
+    "langchain-tests>=0.3.20",
+    "langchain>=0.3.7",
+]
+test_integration = []
+lint = ["ruff>=0.13.0"]
+typing = [
+    "mypy>=1.17.1",
+    "types-requests>=2.32.0; platform_python_implementation != 'PyPy'",
+    "types-requests>=2.31.0,<2.32.0; platform_python_implementation == 'PyPy'",
+]
+dev = [
+    "boto3-stubs[essential]>=1.40.19",
+    "botocore-stubs>=1.38.46",
+]
 
-[tool.poetry.group.codespell]
-optional = true
-
-[tool.codespell]
-ignore-words-list = "HAS, notIn"
-
-[tool.poetry.group.codespell.dependencies]
-codespell = "^2.2.6"
-
-
-
-[tool.poetry.group.test_integration]
-optional = true
-
-[tool.poetry.group.test_integration.dependencies]
-
-
-
-[tool.poetry.group.lint]
-optional = true
-
-[tool.poetry.group.lint.dependencies]
-ruff = "^0.13.0"
-
-
-
-[tool.poetry.group.typing.dependencies]
-mypy = "^1.7"
-types-requests = "^2.28.11.5"
-
-
-
-[tool.poetry.group.dev]
-optional = true
-
-[tool.poetry.group.dev.dependencies]
 
 [tool.ruff.lint]
 select = [
-  "E",    # pycodestyle
-  "F",    # pyflakes
-  "I",    # isort
-  "T201", # print
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "T201", # print
 ]
 
 [tool.mypy]
-ignore_missing_imports = true
-disallow_untyped_defs = true
+ignore_missing_imports = "True"
+disallow_untyped_defs = "True"
 exclude = ["notebooks", "samples"]
 
 [tool.coverage.run]
@@ -117,9 +90,6 @@ show_missing = true
 [tool.coverage.html]
 directory = "htmlcov"
 
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
 # --strict-markers will raise errors on unknown marks.
@@ -135,9 +105,9 @@ addopts = "--snapshot-warn-unused --strict-markers --strict-config --durations=5
 # Registering custom markers.
 # https://docs.pytest.org/en/7.1.x/example/markers.html#registering-markers
 markers = [
-  "requires: mark tests as requiring a specific library",
-  "asyncio: mark tests as requiring asyncio",
-  "compile: mark placeholder test used to compile integration tests without running them",
-  "scheduled: mark tests to run in scheduled testing",
+    "requires: mark tests as requiring a specific library",
+    "asyncio: mark tests as requiring asyncio",
+    "compile: mark placeholder test used to compile integration tests without running them",
+    "scheduled: mark tests to run in scheduled testing",
 ]
 asyncio_mode = "auto"
