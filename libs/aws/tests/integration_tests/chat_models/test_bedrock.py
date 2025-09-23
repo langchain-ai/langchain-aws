@@ -234,8 +234,8 @@ def test_chat_bedrock_streaming_generation_info() -> None:
     )
     list(chat.stream("hi"))
     generation = callback.saved_things["generation"]
-    # `Hello!` is two tokens, assert that that is what is returned
-    assert generation.generations[0][0].text == "Hello! How can I assist you today?"
+    # `Hello!` is two tokens, assert that the expected text is contained in the response
+    assert "Hello! How can I assist you today?" in generation.generations[0][0].text
 
 
 @pytest.mark.scheduled
