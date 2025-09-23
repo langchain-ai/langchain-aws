@@ -17,7 +17,7 @@ from langgraph_checkpoint_aws.agentcore.constants import (
     InvalidConfigError,
 )
 from langgraph_checkpoint_aws.agentcore.helpers import (
-    CheckpointEventClient,
+    AgentCoreEventClient,
     EventProcessor,
     EventSerializer,
 )
@@ -154,7 +154,7 @@ class TestAgentCoreMemorySaver:
 
             assert saver.memory_id == memory_id
             assert isinstance(saver.serializer, EventSerializer)
-            assert isinstance(saver.checkpoint_event_client, CheckpointEventClient)
+            assert isinstance(saver.checkpoint_event_client, AgentCoreEventClient)
             assert isinstance(saver.processor, EventProcessor)
             mock_boto3_client.assert_called_once_with("bedrock-agentcore")
 
@@ -721,8 +721,8 @@ class TestEventSerializer:
         assert "Unknown event type" in str(exc_info.value)
 
 
-class TestCheckpointEventClient:
-    """Test suite for CheckpointEventClient."""
+class TestAgentCoreEventClient:
+    """Test suite for AgentCoreEventClient."""
 
     @pytest.fixture
     def mock_boto_client(self):
@@ -740,7 +740,7 @@ class TestCheckpointEventClient:
     def client(self, mock_boto_client, serializer):
         with patch("boto3.client") as mock_boto3_client:
             mock_boto3_client.return_value = mock_boto_client
-            yield CheckpointEventClient("test-memory-id", serializer)
+            yield AgentCoreEventClient("test-memory-id", serializer)
 
     def test_store_event(self, client, mock_boto_client, sample_checkpoint_event):
         client.store_event(sample_checkpoint_event, "session_id", "actor_id")

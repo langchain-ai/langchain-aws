@@ -25,7 +25,7 @@ from langgraph_checkpoint_aws.agentcore.constants import (
     InvalidConfigError,
 )
 from langgraph_checkpoint_aws.agentcore.helpers import (
-    CheckpointEventClient,
+    AgentCoreEventClient,
     EventProcessor,
     EventSerializer,
 )
@@ -60,7 +60,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
 
         self.memory_id = memory_id
         self.serializer = EventSerializer(self.serde)
-        self.checkpoint_event_client = CheckpointEventClient(
+        self.checkpoint_event_client = AgentCoreEventClient(
             memory_id, self.serializer, **boto3_kwargs
         )
         self.processor = EventProcessor()

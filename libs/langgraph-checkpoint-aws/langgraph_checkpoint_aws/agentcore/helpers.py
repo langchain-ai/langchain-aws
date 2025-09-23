@@ -118,7 +118,7 @@ class EventSerializer:
             raise EventDecodingError(f"Failed to deserialize event: {e}")
 
 
-class CheckpointEventClient:
+class AgentCoreEventClient:
     """Handles low-level event storage and retrieval from AgentCore Memory for checkpoints."""
 
     def __init__(self, memory_id: str, serializer: EventSerializer, **boto3_kwargs):
@@ -163,6 +163,10 @@ class CheckpointEventClient:
         self, session_id: str, actor_id: str, limit: int = 100
     ) -> List[EventType]:
         """Retrieve events from AgentCore Memory."""
+
+        if limit is not None and limit <= 0:
+            return []
+
         all_events = []
         next_token = None
 
@@ -191,7 +195,7 @@ class CheckpointEventClient:
                             logger.warning(f"Failed to decode event: {e}")
 
             next_token = response.get("nextToken")
-            if not next_token or (limit and len(all_events) >= limit):
+            if not next_token or (limit is not None and len(all_events) >= limit):
                 break
 
         return all_events
