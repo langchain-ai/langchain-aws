@@ -61,7 +61,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
     def __init__(
         self,
-        session: Optional["boto3.Session"] = None,
+        session: Optional[boto3.Session] = None,
         region_name: Optional[str] = None,
         credentials_profile_name: Optional[str] = None,
         aws_access_key_id: Optional[SecretStr] = None,
