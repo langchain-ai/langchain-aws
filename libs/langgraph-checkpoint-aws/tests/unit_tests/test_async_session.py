@@ -41,7 +41,9 @@ class TestAsyncBedrockAgentRuntimeSessionClient:
         client = AsyncBedrockAgentRuntimeSessionClient(session=mock_custom_session)
 
         # Assert
-        mock_custom_session.client.assert_called_once_with("bedrock-agent-runtime", config=ANY)
+        mock_custom_session.client.assert_called_once_with(
+            "bedrock-agent-runtime", config=ANY
+        )
         assert client.client == mock_boto_client
 
     def test_init_without_session(self, mock_boto_client):

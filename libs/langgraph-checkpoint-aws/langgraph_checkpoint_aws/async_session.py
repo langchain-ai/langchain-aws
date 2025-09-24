@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Optional
 
 import boto3
 from botocore.config import Config
@@ -24,10 +24,10 @@ from langgraph_checkpoint_aws.models import (
     PutInvocationStepResponse,
 )
 from langgraph_checkpoint_aws.utils import (
+    create_client_config,
     process_aws_client_args,
     run_boto3_in_executor,
     to_boto_params,
-    create_client_config,
 )
 
 
