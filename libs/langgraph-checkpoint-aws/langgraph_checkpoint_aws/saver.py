@@ -49,6 +49,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
     It handles creating invocations, managing checkpoint data, and tracking pending writes.
 
     Args:
+        client: Pre-configured bedrock-agent-runtime client instance
         session: Pre-configured session instance for custom credential
         region_name: AWS region name
         credentials_profile_name: AWS credentials profile name
@@ -61,6 +62,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
     def __init__(
         self,
+        client: Optional[Any] = None,
         session: Optional[boto3.Session] = None,
         region_name: Optional[str] = None,
         credentials_profile_name: Optional[str] = None,
@@ -72,6 +74,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
     ) -> None:
         super().__init__()
         self.session_client = BedrockAgentRuntimeSessionClient(
+            client=client,
             session=session,
             region_name=region_name,
             credentials_profile_name=credentials_profile_name,
