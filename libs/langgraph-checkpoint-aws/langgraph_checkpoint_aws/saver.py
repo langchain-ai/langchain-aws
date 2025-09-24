@@ -3,6 +3,7 @@ import json
 from collections.abc import Iterator, Sequence
 from typing import Any
 
+import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from langchain_core.runnables import RunnableConfig
@@ -61,6 +62,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
     and tracking pending writes.
 
     Args:
+        session: Pre-configured session instance for custom credential
         region_name: AWS region name
         credentials_profile_name: AWS credentials profile name
         aws_access_key_id: AWS access key ID
@@ -73,6 +75,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
 
     def __init__(
         self,
+        session: boto3.Session | None = None,
         region_name: str | None = None,
         credentials_profile_name: str | None = None,
         aws_access_key_id: SecretStr | None = None,
@@ -83,6 +86,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
     ) -> None:
         super().__init__()
         self.session_client = BedrockAgentRuntimeSessionClient(
+            session=session,
             region_name=region_name,
             credentials_profile_name=credentials_profile_name,
             aws_access_key_id=aws_access_key_id,
