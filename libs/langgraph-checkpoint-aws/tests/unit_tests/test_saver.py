@@ -72,6 +72,21 @@ class TestBedrockSessionSaver:
                 "bedrock-agent-runtime", endpoint_url=endpoint_url, config=ANY
             )
 
+    def test_init_with_custom_session(self, mock_boto_client):
+        """Test BedrockSessionSaver initialization with custom session"""
+        # Arrange
+        mock_custom_session = Mock()
+        mock_custom_session.client.return_value = mock_boto_client
+
+        # Act
+        saver = BedrockSessionSaver(session=mock_custom_session)
+
+        # Assert
+        mock_custom_session.client.assert_called_once_with(
+            "bedrock-agent-runtime", config=ANY
+        )
+        assert saver.session_client.client == mock_boto_client
+
     def test__create_session_invocation_success(
         self, mock_boto_client, session_saver, sample_create_invocation_response
     ):

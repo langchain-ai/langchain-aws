@@ -35,6 +35,7 @@ class AsyncBedrockAgentRuntimeSessionClient:
 
     def __init__(
         self,
+        session: boto3.Session | None = None,
         region_name: str | None = None,
         credentials_profile_name: str | None = None,
         aws_access_key_id: SecretStr | None = None,
@@ -45,6 +46,16 @@ class AsyncBedrockAgentRuntimeSessionClient:
     ):
         """
         Initialize AsyncBedrockAgentRuntime with AWS configuration
+
+        Args:
+            session: Pre-configured boto3.Session instance
+            region_name: AWS region (e.g., us-west-2)
+            credentials_profile_name: AWS credentials profile name
+            aws_access_key_id: AWS access key ID
+            aws_secret_access_key: AWS secret access key
+            aws_session_token: AWS session token
+            endpoint_url: Custom endpoint URL
+            config: Boto3 config object
         """
         _session_kwargs, self._client_kwargs = process_aws_client_args(
             region_name,
@@ -56,8 +67,13 @@ class AsyncBedrockAgentRuntimeSessionClient:
             config,
         )
 
-        # Create a standard boto3 session
-        self.session = boto3.Session(**_session_kwargs)
+        if session is not None:
+            # Use provided session directly
+            self.session = session
+        else:
+            # Create a standard boto3 session
+            self.session = boto3.Session(**_session_kwargs)
+
         # Pre-create the client to avoid creating it for each operation
         self.client = self.session.client(
             "bedrock-agent-runtime", **self._client_kwargs
