@@ -37,6 +37,19 @@ class TestAsyncBedrockSessionSaver:
             }
         )
 
+    def test_init_with_custom_session(self, mock_boto_client):
+        """Test AsyncBedrockSessionSaver initialization with custom session"""
+        # Arrange
+        mock_custom_session = Mock()
+        mock_custom_session.client.return_value = mock_boto_client
+
+        # Act
+        saver = AsyncBedrockSessionSaver(session=mock_custom_session)
+
+        # Assert
+        assert saver.session_client.session == mock_custom_session
+        assert saver.session_client.client == mock_boto_client
+
     @pytest.mark.asyncio
     async def test__create_session_invocation_success(
         self, mock_boto_client, session_saver, sample_create_invocation_response
