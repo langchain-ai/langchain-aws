@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import random
 from collections.abc import AsyncIterator, Iterator, Sequence
-from typing import Any, Dict
+from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
@@ -83,7 +83,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         if not checkpoints:
             return None
 
-        # Find the specific checkpoint if `checkpoint_id` is provided or return the latest one
+        # Find the specific checkpoint if `checkpoint_id` is provided or return the latest one # noqa: E501
         if checkpoint_config.checkpoint_id:
             checkpoint_event = checkpoints.get(checkpoint_config.checkpoint_id)
             if not checkpoint_event:
@@ -158,7 +158,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
 
         # Extract channel values
         checkpoint_copy = checkpoint.copy()
-        channel_values: Dict[str, Any] = checkpoint_copy.pop("channel_values", {})
+        channel_values: dict[str, Any] = checkpoint_copy.pop("channel_values", {})
 
         # Create all events to be stored in a single batch
         events_to_store = []
