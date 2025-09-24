@@ -12,7 +12,9 @@ from collections import defaultdict
 from typing import Any, Dict, List, Union
 
 import boto3
+from bedrock_agentcore.memory.constants import MessageRole
 from botocore.config import Config
+from langchain_core.messages import BaseMessage
 from langgraph.checkpoint.base import CheckpointTuple, SerializerProtocol
 
 from langgraph_checkpoint_aws.agentcore.constants import (
@@ -320,3 +322,42 @@ class EventProcessor:
             parent_config=parent_config,
             pending_writes=pending_writes,
         )
+
+
+def convert_langchain_messages_to_event_messages(
+    messages: List[BaseMessage],
+) -> List[Dict[str, Any]]:
+    """Convert LangChain messages to Bedrock Agent Core events
+
+    Args:
+        messages: List of Langchain messages (BaseMessage)
+
+    Returns:
+        List of AgentCore event tuples (text, role)
+    """
+    converted_messages = []
+    for msg in messages:
+        # Skip if event already saved
+        if msg.additional_kwargs.get("event_id") is not None:
+            continue
+
+        text = msg.text()
+        if not text.strip():
+            continue
+
+        # Map LangChain roles to Bedrock Agent Core roles
+        if msg.type == "human":
+            role = MessageRole.USER.value
+        elif msg.type == "ai":
+            role = MessageRole.ASSISTANT.value
+        elif msg.type == "tool":
+            role = MessageRole.TOOL.value
+        elif msg.type == "system":
+            role = MessageRole.OTHER.value
+        else:
+            logger.warning(f"Skipping unsupported message type: {msg.type}")
+            continue
+
+        converted_messages.append((text, role))
+
+    return converted_messages
