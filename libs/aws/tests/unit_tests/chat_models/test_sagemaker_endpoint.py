@@ -1,5 +1,6 @@
 # type:ignore
 """Test chat model integration."""
+
 import json
 from typing import Dict
 from unittest.mock import Mock

@@ -27,7 +27,7 @@ jobs:
       actions: read  # Needed for Ana06/get-changed-files
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.10'
       - id: files

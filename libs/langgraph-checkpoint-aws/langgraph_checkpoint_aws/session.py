@@ -23,7 +23,10 @@ from langgraph_checkpoint_aws.models import (
     PutInvocationStepRequest,
     PutInvocationStepResponse,
 )
-from langgraph_checkpoint_aws.utils import process_aws_client_args, to_boto_params
+from langgraph_checkpoint_aws.utils import (
+    process_aws_client_args,
+    to_boto_params,
+)
 
 
 class BedrockAgentRuntimeSessionClient:
@@ -44,6 +47,7 @@ class BedrockAgentRuntimeSessionClient:
 
     def __init__(
         self,
+        session: Optional[boto3.Session] = None,
         region_name: Optional[str] = None,
         credentials_profile_name: Optional[str] = None,
         aws_access_key_id: Optional[SecretStr] = None,
@@ -56,6 +60,7 @@ class BedrockAgentRuntimeSessionClient:
         Initialize BedrockAgentRuntime with AWS configuration
 
         Args:
+            session: Pre-configured boto3 session instance
             region_name: AWS region (e.g., us-west-2)
             credentials_profile_name: AWS credentials profile name
             aws_access_key_id: AWS access key ID
@@ -73,8 +78,14 @@ class BedrockAgentRuntimeSessionClient:
             endpoint_url,
             config,
         )
-        session = boto3.Session(**_session_kwargs)
-        self.client = session.client("bedrock-agent-runtime", **_client_kwargs)
+        if session is not None:
+            # Use provided session directly
+            self.session = session
+        else:
+            # Create a standard boto3 session
+            self.session = boto3.Session(**_session_kwargs)
+
+        self.client = self.session.client("bedrock-agent-runtime", **_client_kwargs)
 
     def create_session(
         self, request: Optional[CreateSessionRequest] = None

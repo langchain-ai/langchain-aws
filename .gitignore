@@ -149,7 +149,10 @@ wandb/
 
 # asdf tool versions
 .tool-versions
+
+# ruff
 /.ruff_cache/
+.ruff_cache/
 
 *.pkl
 *.bin

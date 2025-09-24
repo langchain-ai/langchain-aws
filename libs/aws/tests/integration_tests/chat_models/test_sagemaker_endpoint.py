@@ -133,7 +133,9 @@ class TestSageMakerStandard(ChatModelUnitTests):
         super().test_init_streaming()
 
     @pytest.mark.xfail(reason="Doesn't support binding tool.")
-    def test_bind_tool_pydantic(self, model: BaseChatModel, my_adder_tool: BaseTool) -> None:
+    def test_bind_tool_pydantic(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
         super().test_bind_tool_pydantic(model, my_adder_tool)
 
     @pytest.mark.xfail(reason="Doesn't support structured output.")

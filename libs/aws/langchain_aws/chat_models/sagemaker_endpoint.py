@@ -1,4 +1,5 @@
 """Sagemaker Chat Model."""
+
 import io
 import logging
 from typing import Any, Dict, Iterator, List, Mapping, Optional
@@ -136,16 +137,16 @@ class ChatSagemakerEndpoint(BaseChatModel):
             EC2 instance, credentials from IMDS will be used.
 
         client: boto3 client for Sagemaker Endpoint
-        
+
         endpoint_name: The name of the endpoint from the deployed Sagemaker model.
 
-        content_handler: Implementation for model specific ChatContentHandler 
+        content_handler: Implementation for model specific ChatContentHandler
 
 
     Example:
         .. code-block:: python
 
-            from langchain_aws.chat_models.sagemaker_endpoint import 
+            from langchain_aws.chat_models.sagemaker_endpoint import
             ChatSagemakerEndpoint
             endpoint_name = (
                 "my-endpoint-name"
@@ -161,7 +162,7 @@ class ChatSagemakerEndpoint(BaseChatModel):
                 region_name=region_name,
                 credentials_profile_name=credentials_profile_name
             )
-        
+
             # Usage with Inference Component
             se = ChatSagemakerEndpoint(
                 endpoint_name=endpoint_name,
@@ -190,13 +191,13 @@ class ChatSagemakerEndpoint(BaseChatModel):
     Must be unique within an AWS Region."""
 
     inference_component_name: Optional[str] = None
-    """Optional name of the inference component to invoke 
+    """Optional name of the inference component to invoke
     if specified with endpoint name."""
 
     region_name: Optional[str] = ""
-    """The aws region, e.g., `us-west-2`. 
+    """The aws region, e.g., `us-west-2`.
 
-    Falls back to AWS_REGION or AWS_DEFAULT_REGION env variable or region specified in 
+    Falls back to AWS_REGION or AWS_DEFAULT_REGION env variable or region specified in
     ~/.aws/config in case it is not provided here.
     """
 
@@ -205,14 +206,14 @@ class ChatSagemakerEndpoint(BaseChatModel):
 
     Profile should either have access keys or role information specified.
     If not specified, the default credential profile or, if on an EC2 instance,
-    credentials from IMDS will be used. 
+    credentials from IMDS will be used.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
     """
 
     aws_access_key_id: Optional[SecretStr] = Field(
         default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
     )
-    """AWS access key id. 
+    """AWS access key id.
 
     If provided, aws_secret_access_key must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
@@ -225,7 +226,7 @@ class ChatSagemakerEndpoint(BaseChatModel):
     aws_secret_access_key: Optional[SecretStr] = Field(
         default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
     )
-    """AWS secret_access_key. 
+    """AWS secret_access_key.
 
     If provided, aws_access_key_id must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
@@ -238,9 +239,9 @@ class ChatSagemakerEndpoint(BaseChatModel):
     aws_session_token: Optional[SecretStr] = Field(
         default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
     )
-    """AWS session token. 
+    """AWS session token.
 
-    If provided, aws_access_key_id and aws_secret_access_key must 
+    If provided, aws_access_key_id and aws_secret_access_key must
     also be provided. Not required unless using temporary credentials.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
@@ -275,7 +276,7 @@ class ChatSagemakerEndpoint(BaseChatModel):
                 def transform_input(self, prompt: List[Dict[str, Any]], model_kwargs: Dict) -> bytes:
                     input_str = json.dumps({prompt: prompt, **model_kwargs})
                     return input_str.encode('utf-8')
-                
+
                 def transform_output(self, output: bytes) -> BaseMessage:
                     response_json = json.loads(output.read().decode("utf-8"))
                     return response_json[0]["generated_text"]
