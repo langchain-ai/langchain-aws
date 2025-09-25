@@ -9,11 +9,17 @@ import datetime
 import json
 import logging
 from collections import defaultdict
-from typing import Any
+from typing import Any, cast
 
 import boto3
 from botocore.config import Config
-from langgraph.checkpoint.base import CheckpointTuple, SerializerProtocol
+from langgraph.checkpoint.base import (
+    Checkpoint,
+    CheckpointMetadata,
+    CheckpointTuple,
+    RunnableConfig,
+    SerializerProtocol,
+)
 
 from langgraph_checkpoint_aws.agentcore.constants import (
     EMPTY_CHANNEL_VALUE,
@@ -123,10 +129,16 @@ class AgentCoreEventClient:
     """Handles low-level event storage and retrieval from AgentCore Memory for checkpoints."""  # noqa: E501
 
     def __init__(
-        self, memory_id: str, serializer: EventSerializer = None, **boto3_kwargs
+        self, memory_id: str, serializer: EventSerializer | None = None, **boto3_kwargs
     ):
         self.memory_id = memory_id
-        self.serializer = serializer
+        # mypy: need to set actual serializer if None
+        if serializer is None:
+            from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+            self.serializer = EventSerializer(JsonPlusSerializer())
+        else:
+            self.serializer = serializer
 
         config = Config(
             user_agent_extra="x-client-framework:langgraph_agentcore_memory"
@@ -315,8 +327,10 @@ class EventProcessor:
                     "checkpoint_id": checkpoint_event.checkpoint_id,
                 }
             },
-            checkpoint=checkpoint,
-            metadata=checkpoint_event.metadata,
-            parent_config=parent_config,
+            checkpoint=cast(Checkpoint, checkpoint),
+            metadata=cast(CheckpointMetadata, checkpoint_event.metadata),
+            parent_config=cast(RunnableConfig, parent_config)
+            if parent_config
+            else None,
             pending_writes=pending_writes,
         )

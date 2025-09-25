@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import random
 from collections.abc import AsyncIterator, Iterator, Sequence
-from typing import Any
+from typing import Any, TypeAlias, cast
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
@@ -36,6 +36,8 @@ from langgraph_checkpoint_aws.agentcore.models import (
     WriteItem,
     WritesEvent,
 )
+
+RunnableConfigDict: TypeAlias = dict[str, Any]
 
 
 class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
@@ -70,7 +72,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
 
         # TODO: There is room for caching here on the client side
 
-        checkpoint_config = CheckpointerConfig.from_runnable_config(config)
+        checkpoint_config = CheckpointerConfig.from_runnable_config(
+            RunnableConfigDict(config)
+        )
 
         events = self.checkpoint_event_client.get_events(
             checkpoint_config.session_id, checkpoint_config.actor_id
@@ -110,11 +114,15 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
 
         # TODO: There is room for caching here on the client side
 
-        checkpoint_config = CheckpointerConfig.from_runnable_config(config)
+        checkpoint_config = CheckpointerConfig.from_runnable_config(
+            RunnableConfigDict(config) if config else {}
+        )
         config_checkpoint_id = get_checkpoint_id(config) if config else None
 
         events = self.checkpoint_event_client.get_events(
-            checkpoint_config.session_id, checkpoint_config.actor_id, limit
+            checkpoint_config.session_id,
+            checkpoint_config.actor_id,
+            100 if limit is None else limit,
         )
 
         checkpoints, writes_by_checkpoint, channel_data = self.processor.process_events(
@@ -154,20 +162,26 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         new_versions: ChannelVersions,
     ) -> RunnableConfig:
         """Save a checkpoint to AgentCore Memory."""
-        checkpoint_config = CheckpointerConfig.from_runnable_config(config)
+        checkpoint_config = CheckpointerConfig.from_runnable_config(
+            RunnableConfigDict(config)
+        )
 
         # Extract channel values
-        checkpoint_copy = checkpoint.copy()
-        channel_values: dict[str, Any] = checkpoint_copy.pop("channel_values", {})
+        checkpoint_copy = dict(checkpoint)
+        channel_values: dict[str, Any] = {}
+        if "channel_values" in checkpoint_copy:
+            channel_values_obj = checkpoint_copy.pop("channel_values")
+            if isinstance(channel_values_obj, dict):
+                channel_values = channel_values_obj.copy()
 
         # Create all events to be stored in a single batch
-        events_to_store = []
+        events_to_store: list[CheckpointEvent | ChannelDataEvent | WritesEvent] = []
 
         # Create channel data events
         for channel, version in new_versions.items():
             channel_event = ChannelDataEvent(
                 channel=channel,
-                version=version,
+                version=str(version),
                 value=channel_values.get(channel, EMPTY_CHANNEL_VALUE),
                 thread_id=checkpoint_config.thread_id,
                 checkpoint_ns=checkpoint_config.checkpoint_ns,
@@ -177,15 +191,17 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         checkpoint_event = CheckpointEvent(
             checkpoint_id=checkpoint["id"],
             checkpoint_data=checkpoint_copy,
-            metadata=get_checkpoint_metadata(config, metadata),
+            metadata=dict(get_checkpoint_metadata(config, metadata)),
             parent_checkpoint_id=checkpoint_config.checkpoint_id,
             thread_id=checkpoint_config.thread_id,
             checkpoint_ns=checkpoint_config.checkpoint_ns,
         )
         events_to_store.append(checkpoint_event)
-
+        typed_events = cast(
+            list[CheckpointEvent | ChannelDataEvent | WritesEvent], events_to_store
+        )
         self.checkpoint_event_client.store_blob_events_batch(
-            events_to_store, checkpoint_config.session_id, checkpoint_config.actor_id
+            typed_events, checkpoint_config.session_id, checkpoint_config.actor_id
         )
 
         return {
@@ -205,7 +221,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         task_path: str = "",
     ) -> None:
         """Save pending writes to AgentCore Memory."""
-        checkpoint_config = CheckpointerConfig.from_runnable_config(config)
+        checkpoint_config = CheckpointerConfig.from_runnable_config(
+            RunnableConfigDict(config)
+        )
 
         if not checkpoint_config.checkpoint_id:
             raise InvalidConfigError("checkpoint_id is required for put_writes")
@@ -230,7 +248,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             writes_event, checkpoint_config.session_id, checkpoint_config.actor_id
         )
 
-    def delete_thread(self, thread_id: str, actor_id: str) -> None:
+    def delete_thread(self, thread_id: str, actor_id: str = "") -> None:
         """Delete all checkpoints and writes associated with a thread."""
         self.checkpoint_event_client.delete_events(thread_id, actor_id)
 
@@ -267,10 +285,13 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
     ) -> None:
         return self.put_writes(config, writes, task_id, task_path)
 
-    async def adelete_thread(self, thread_id: str, actor_id: str) -> None:
-        return self.delete_thread(thread_id, actor_id)
+    async def adelete_thread(self, thread_id: str, actor_id: str = "") -> None:
+        self.delete_thread(thread_id, actor_id)
+        return None
 
-    def get_next_version(self, current: str | None, channel: None) -> str:
+    def get_next_version(
+        self, current: str | int | None, channel: str | None = None
+    ) -> str:
         """Generate next version string."""
         if current is None:
             current_v = 0
