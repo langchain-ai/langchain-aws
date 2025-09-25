@@ -706,6 +706,14 @@ class ChatBedrockConverse(BaseChatModel):
                 # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
                 self.base_model_id = model_arn.split("/")[-1]
 
+        # For regional model IDs (e.g., us.anthropic.claude-3-5-haiku-20241022-v1:0),
+        # extract the base model ID by removing the regional prefix
+        if self.base_model_id is None and self.model_id.startswith(
+            ("us.", "eu.", "ap.", "ca.", "sa.")
+        ):
+            # Extract base model by removing regional prefix
+            self.base_model_id = self.model_id.split(".", 1)[1]
+
         # Handle streaming configuration for application inference profiles
         if "application-inference-profile" in self.model_id:
             self._configure_streaming_for_resolved_model()
@@ -1136,6 +1144,87 @@ class ChatBedrockConverse(BaseChatModel):
             "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
             "aws_session_token": "AWS_SESSION_TOKEN",
         }
+
+    def _supports_count_tokens(self) -> bool:
+        """Check if the current model supports AWS Bedrock's count_tokens API.
+
+        Based on official AWS documentation, count_tokens is supported for specific
+        Anthropic Claude models only. Note that the API doesn't support AIP/region-prefixed
+        model IDs, so we check the base model.
+
+        Supported models (as per AWS docs):
+        - Anthropic Claude 3.5 Haiku
+        - Anthropic Claude 3.5 Sonnet v2
+        - Anthropic Claude 3.5 Sonnet
+        - Anthropic Claude 3.7 Sonnet
+        - Anthropic Claude Opus 4
+        - Anthropic Claude Sonnet 4
+
+        See: https://docs.aws.amazon.com/bedrock/latest/userguide/count-tokens.html#count-tokens-supported
+        """
+        base_model = self._get_base_model()
+
+        # Check for supported models
+        return any(
+            pattern in base_model
+            for pattern in [
+                "claude-3-5-haiku",
+                "claude-3-5-sonnet",
+                "claude-3-7-sonnet",
+                "claude-opus-4",
+                "claude-sonnet-4",
+            ]
+        )
+
+    def get_num_tokens_from_messages(
+        self,
+        messages: list[BaseMessage],
+        tools: Optional[Sequence] = None,
+    ) -> int:
+        """
+        Get the number of tokens in the messages using AWS Bedrock count_tokens API.
+
+        This method uses AWS Bedrock's count_tokens API which provides accurate
+        token counting for supported models before inference. Falls back to the base
+        implementation for unsupported models.
+
+        Args:
+            messages: The message inputs to tokenize.
+            tools: Tool schemas (currently ignored as count_tokens API doesn't support them).
+
+        Returns:
+            The number of input tokens in the messages.
+        """
+        # Check if the model supports count_tokens API
+        if not self._supports_count_tokens():
+            return super().get_num_tokens_from_messages(messages, tools=tools)
+
+        if tools is not None:
+            warnings.warn(
+                "Tool schemas are not yet supported by AWS Bedrock count_tokens API. "
+                "Ignoring tools parameter.",
+                stacklevel=2,
+            )
+
+        try:
+            bedrock_messages, system = (
+                (self.raw_blocks, [])
+                if self.raw_blocks
+                else _messages_to_bedrock(messages)
+            )
+
+            input_data = {"converse": {"messages": bedrock_messages}}
+            if system:
+                input_data["converse"]["system"] = system
+
+            response = self.client.count_tokens(
+                modelId=self._get_base_model(), input=input_data
+            )
+            return response["inputTokens"]
+
+        except Exception as e:
+            logger.warning(f"count_tokens API failed: {e}. Using fallback.")
+            return super().get_num_tokens_from_messages(messages, tools=tools)
 
 
 def _messages_to_bedrock(
