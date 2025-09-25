@@ -2117,3 +2117,94 @@ def test_tool_conversion_warning_integration() -> None:
     # Verify conversion happened
     call_args = mocked_client.converse.call_args[1]["messages"]
     assert any("Called calc" in str(block) for block in call_args[0]["content"])
+
+
+@pytest.mark.parametrize(
+    "model_id, expected_support",
+    [
+        # Supported models according to AWS doc
+        ("anthropic.claude-3-5-haiku-20241022-v1:0", True),
+        ("anthropic.claude-3-5-sonnet-20241022-v2:0", True),
+        ("anthropic.claude-3-5-sonnet-20240620-v1:0", True),
+        ("us.anthropic.claude-3-5-haiku-20241022-v1:0", True),
+        # Unsupported models
+        ("anthropic.claude-3-opus-20240229-v1:0", False),
+        ("anthropic.claude-3-sonnet-20240229-v1:0", False),
+        ("amazon.titan-text-express-v1", False),
+    ],
+)
+def test_supports_count_tokens_official_models(
+    model_id: str, expected_support: bool
+) -> None:
+    """Test _supports_count_tokens for officially supported and unsupported models."""
+    llm = ChatBedrockConverse(
+        model=model_id,
+        region_name="us-west-2",
+    )
+    assert llm._supports_count_tokens() == expected_support
+
+
+def test_get_num_tokens_from_messages_supported_model() -> None:
+    """Test get_num_tokens_from_messages for models that support count_tokens API."""
+    mocked_client = mock.MagicMock()
+    mocked_client.count_tokens.return_value = {"inputTokens": 42}
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-5-haiku-20241022-v1:0",
+        region_name="us-east-1",
+    )
+
+    messages: List[BaseMessage] = [HumanMessage(content="What is the capital of France?")]
+    token_count = llm.get_num_tokens_from_messages(messages)
+
+    assert token_count == 42
+    mocked_client.count_tokens.assert_called_once()
+
+    # Verify API call format
+    call_args = mocked_client.count_tokens.call_args
+    assert call_args[1]["modelId"] == "anthropic.claude-3-5-haiku-20241022-v1:0"
+    assert "converse" in call_args[1]["input"]
+
+
+def test_get_num_tokens_from_messages_unsupported_model_fallback() -> None:
+    """Test fallback behavior for unsupported models."""
+    mocked_client = mock.MagicMock()
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="amazon.titan-text-express-v1",
+        region_name="us-west-2",
+    )
+
+    messages: List[BaseMessage] = [HumanMessage(content="Hello")]
+
+    with mock.patch.object(
+        BaseChatModel, "get_num_tokens_from_messages", return_value=10
+    ) as mock_base:
+        token_count = llm.get_num_tokens_from_messages(messages)
+        assert token_count == 10
+        mock_base.assert_called_once()
+
+    mocked_client.count_tokens.assert_not_called()
+
+
+def test_get_num_tokens_from_messages_api_error_fallback() -> None:
+    """Test fallback when count_tokens API fails."""
+    mocked_client = mock.MagicMock()
+    mocked_client.count_tokens.side_effect = Exception("API Error")
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-5-haiku-20241022-v1:0",
+        region_name="us-west-2",
+    )
+
+    messages: List[BaseMessage] = [HumanMessage(content="Hello")]
+
+    with mock.patch.object(
+        BaseChatModel, "get_num_tokens_from_messages", return_value=5
+    ) as mock_base:
+        token_count = llm.get_num_tokens_from_messages(messages)
+        assert token_count == 5
+        mock_base.assert_called_once()
