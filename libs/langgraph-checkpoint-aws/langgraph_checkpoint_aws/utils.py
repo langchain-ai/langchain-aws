@@ -19,7 +19,7 @@ from langgraph.checkpoint.base import (
 )
 from langgraph.checkpoint.serde.base import SerializerProtocol
 from langgraph.constants import TASKS
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from langgraph_checkpoint_aws import SDK_USER_AGENT
 from langgraph_checkpoint_aws.constants import CHECKPOINT_PREFIX, WRITES_PREFIX
@@ -406,9 +406,9 @@ def process_write_operations(
 def process_aws_client_args(
     region_name: str | None = None,
     credentials_profile_name: str | None = None,
-    aws_access_key_id: str | None = None,
-    aws_secret_access_key: str | None = None,
-    aws_session_token: str | None = None,
+    aws_access_key_id: SecretStr | None = None,
+    aws_secret_access_key: SecretStr | None = None,
+    aws_session_token: SecretStr | None = None,
     endpoint_url: str | None = None,
     config: Config | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -437,11 +437,13 @@ def process_aws_client_args(
     if credentials_profile_name is not None:
         session_kwargs["profile_name"] = credentials_profile_name
     if aws_access_key_id is not None:
-        session_kwargs["aws_access_key_id"] = aws_access_key_id
+        session_kwargs["aws_access_key_id"] = aws_access_key_id.get_secret_value()
     if aws_secret_access_key is not None:
-        session_kwargs["aws_secret_access_key"] = aws_secret_access_key
+        session_kwargs["aws_secret_access_key"] = (
+            aws_secret_access_key.get_secret_value()
+        )
     if aws_session_token is not None:
-        session_kwargs["aws_session_token"] = aws_session_token
+        session_kwargs["aws_session_token"] = aws_session_token.get_secret_value()
 
     # Client parameters
     if endpoint_url is not None:
@@ -490,11 +492,12 @@ def _validate_bedrock_client(client: Any) -> None:
     """Validate that the provided client is a bedrock-agent-runtime client."""
     try:
         service_name = client.meta.service_model.service_name
-    except AttributeError:
-        raise ValueError("Invalid client: must be a boto3 client instance")
+    except AttributeError as err:
+        raise ValueError("Invalid client: must be a boto3 client instance") from err
 
     if service_name != "bedrock-agent-runtime":
         raise ValueError(
-            f"Invalid client: expected 'bedrock-agent-runtime' client, got '{service_name}' client. "
-            "Please provide a bedrock-agent-runtime client."
+            f"Invalid client: expected 'bedrock-agent-runtime' client, "
+            f"got '{service_name}' client. Please provide a "
+            f"bedrock-agent-runtime client."
         )

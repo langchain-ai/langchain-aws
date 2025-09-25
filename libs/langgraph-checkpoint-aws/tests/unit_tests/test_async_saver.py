@@ -68,7 +68,9 @@ class TestAsyncBedrockSessionSaver:
         # Act & Assert
         with pytest.raises(
             ValueError,
-            match="Invalid client: expected 'bedrock-agent-runtime' client, got 'some-other-service' client. Please provide a bedrock-agent-runtime client.",
+            match="Invalid client: expected 'bedrock-agent-runtime' client, got "
+            "'some-other-service' client. Please provide a bedrock-agent-runtime "
+            "client.",
         ):
             AsyncBedrockSessionSaver(client=mock_wrong_client)
 

@@ -108,7 +108,8 @@ class TestBedrockSessionSaver:
         # Act & Assert
         with pytest.raises(
             ValueError,
-            match="Invalid client: expected 'bedrock-agent-runtime' client, got 's3' client. Please provide a bedrock-agent-runtime client.",
+            match="Invalid client: expected 'bedrock-agent-runtime' client, "
+            "got 's3' client. Please provide a bedrock-agent-runtime client.",
         ):
             BedrockSessionSaver(client=s3_client)
 
