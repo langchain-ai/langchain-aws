@@ -57,7 +57,11 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
-from langchain_aws.utils import create_aws_client, trim_message_whitespace
+from langchain_aws.utils import (
+    count_tokens_api_supported_for_model,
+    create_aws_client,
+    trim_message_whitespace
+)
 
 logger = logging.getLogger(__name__)
 _BM = TypeVar("_BM", bound=BaseModel)
@@ -1147,37 +1151,6 @@ class ChatBedrockConverse(BaseChatModel):
             "aws_session_token": "AWS_SESSION_TOKEN",
         }
 
-    def _supports_count_tokens(self) -> bool:
-        """Check if the current model supports AWS Bedrock's count_tokens API.
-
-        Based on official AWS documentation, count_tokens is supported for specific
-        Anthropic Claude models only. Note that the API doesn't support AIP/region-prefixed
-        model IDs, so we check the base model.
-
-        Supported models (as per AWS docs):
-        - Anthropic Claude 3.5 Haiku
-        - Anthropic Claude 3.5 Sonnet v2
-        - Anthropic Claude 3.5 Sonnet
-        - Anthropic Claude 3.7 Sonnet
-        - Anthropic Claude Opus 4
-        - Anthropic Claude Sonnet 4
-
-        See: https://docs.aws.amazon.com/bedrock/latest/userguide/count-tokens.html#count-tokens-supported
-        """
-        base_model = self._get_base_model()
-
-        # Check for supported models
-        return any(
-            pattern in base_model
-            for pattern in [
-                "claude-3-5-haiku",
-                "claude-3-5-sonnet",
-                "claude-3-7-sonnet",
-                "claude-opus-4",
-                "claude-sonnet-4",
-            ]
-        )
-
     def get_num_tokens_from_messages(
         self,
         messages: list[BaseMessage],
@@ -1197,8 +1170,9 @@ class ChatBedrockConverse(BaseChatModel):
         Returns:
             The number of input tokens in the messages.
         """
+        model_id = self._get_base_model()
         # Check if the model supports count_tokens API
-        if not self._supports_count_tokens():
+        if not count_tokens_api_supported_for_model(model_id):
             return super().get_num_tokens_from_messages(messages, tools=tools)
 
         if tools is not None:
@@ -1220,7 +1194,7 @@ class ChatBedrockConverse(BaseChatModel):
                 input_data["converse"]["system"] = system
 
             response = self.client.count_tokens(
-                modelId=self._get_base_model(), input=input_data
+                modelId=model_id, input=input_data
             )
             return response["inputTokens"]
 
