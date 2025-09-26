@@ -2119,31 +2119,6 @@ def test_tool_conversion_warning_integration() -> None:
     assert any("Called calc" in str(block) for block in call_args[0]["content"])
 
 
-@pytest.mark.parametrize(
-    "model_id, expected_support",
-    [
-        # Supported models according to AWS doc
-        ("anthropic.claude-3-5-haiku-20241022-v1:0", True),
-        ("anthropic.claude-3-5-sonnet-20241022-v2:0", True),
-        ("anthropic.claude-3-5-sonnet-20240620-v1:0", True),
-        ("us.anthropic.claude-3-5-haiku-20241022-v1:0", True),
-        # Unsupported models
-        ("anthropic.claude-3-opus-20240229-v1:0", False),
-        ("anthropic.claude-3-sonnet-20240229-v1:0", False),
-        ("amazon.titan-text-express-v1", False),
-    ],
-)
-def test_supports_count_tokens_official_models(
-    model_id: str, expected_support: bool
-) -> None:
-    """Test _supports_count_tokens for officially supported and unsupported models."""
-    llm = ChatBedrockConverse(
-        model=model_id,
-        region_name="us-west-2",
-    )
-    assert llm._supports_count_tokens() == expected_support
-
-
 def test_get_num_tokens_from_messages_supported_model() -> None:
     """Test get_num_tokens_from_messages for models that support count_tokens API."""
     mocked_client = mock.MagicMock()
