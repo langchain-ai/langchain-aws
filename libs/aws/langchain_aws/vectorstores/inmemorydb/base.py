@@ -22,7 +22,6 @@ from typing import (
 
 import numpy as np
 import yaml  # type: ignore[import-untyped]
-from langchain_core._api import deprecated
 from langchain_core.callbacks import (
     AsyncCallbackManagerForRetrieverRun,
     CallbackManagerForRetrieverRun,
@@ -748,35 +747,6 @@ class InMemoryVectorStore(VectorStore):
         tags.extend(self._get_retriever_tags())
         return InMemoryVectorStoreRetriever(vectorstore=self, **kwargs, tags=tags)
 
-    @deprecated("0.0.1", alternative="similarity_search(distance_threshold=0.1)")
-    def similarity_search_limit_score(
-        self, query: str, k: int = 4, score_threshold: float = 0.2, **kwargs: Any
-    ) -> List[Document]:
-        """
-        Returns the most similar indexed documents to the query text within the
-        score_threshold range.
-
-        Deprecated: Use similarity_search with distance_threshold instead.
-
-        Args:
-            query (str): The query text for which to find similar documents.
-            k (int): The number of documents to return. Default is 4.
-            score_threshold (float): The minimum matching *distance* required
-                for a document to be considered a match. Defaults to 0.2.
-
-        Returns:
-            List[Document]: A list of documents that are most similar to the query text
-                including the match score for each document.
-
-        Note:
-            If there are no documents that satisfy the score_threshold value,
-            an empty list is returned.
-
-        """
-        return self.similarity_search(
-            query, k=k, distance_threshold=score_threshold, **kwargs
-        )
-
     def similarity_search_with_score(
         self,
         query: str,
@@ -812,14 +782,6 @@ class InMemoryVectorStore(VectorStore):
                 "Could not import redis python package. "
                 "Please install it with `pip install redis`."
             ) from e
-
-        if "score_threshold" in kwargs:
-            logger.warning(
-                "score_threshold is deprecated. Use distance_threshold instead."
-                + "score_threshold should only be used in "
-                + "similarity_search_with_relevance_scores."
-                + "score_threshold will be removed in a future release.",
-            )
 
         query_embedding = self._embeddings.embed_query(query)
 
@@ -931,14 +893,6 @@ class InMemoryVectorStore(VectorStore):
                 "Could not import redis python package. "
                 "Please install it with `pip install redis`."
             ) from e
-
-        if "score_threshold" in kwargs:
-            logger.warning(
-                "score_threshold is deprecated. Use distance_threshold instead."
-                + "score_threshold should only be used in "
-                + "similarity_search_with_relevance_scores."
-                + "score_threshold will be removed in a future release.",
-            )
 
         redis_query, params_dict = self._prepare_query(
             embedding,
@@ -1434,9 +1388,8 @@ class InMemoryVectorStoreRetriever(VectorStoreRetriever):
 
     search_kwargs: Dict[str, Any] = {
         "k": 4,
-        "score_threshold": 0.9,
         # set to None to avoid distance used in score_threshold search
-        "distance_threshold": None,
+        "distance_threshold": 0.9,
     }
     """Default search kwargs."""
 
