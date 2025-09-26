@@ -1042,7 +1042,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     def get_num_tokens_from_messages(
         self, 
         messages: list[BaseMessage],
-        tools: Sequence | None = None
+        tools: Optional[Sequence] = None
     ):
         model_id = self._get_base_model()
         if (
