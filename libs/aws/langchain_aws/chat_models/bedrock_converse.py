@@ -721,6 +721,19 @@ class ChatBedrockConverse(BaseChatModel):
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
 
+        # Skip creating new client if passed in constructor
+        if self.client is None:
+            self.client = create_aws_client(
+                region_name=self.region_name,
+                credentials_profile_name=self.credentials_profile_name,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key,
+                aws_session_token=self.aws_session_token,
+                endpoint_url=self.endpoint_url,
+                config=self.config,
+                service_name="bedrock-runtime",
+            )
+
         # Create bedrock client for control plane API call
         if self.bedrock_client is None:
             bedrock_client_cfg = {}
