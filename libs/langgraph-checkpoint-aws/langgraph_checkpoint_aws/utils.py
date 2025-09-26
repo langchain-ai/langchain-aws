@@ -447,9 +447,9 @@ def create_client_config(config: Optional[Config] = None) -> Config:
     config_kwargs = {}
     existing_user_agent = getattr(config, "user_agent_extra", "") if config else ""
     new_user_agent = (
-    f"{existing_user_agent} x-client-framework:langgraph-checkpoint-aws "
-    f"md/sdk_user_agent/{SDK_USER_AGENT}".strip()
-)
+        f"{existing_user_agent} x-client-framework:langgraph-checkpoint-aws "
+        f"md/sdk_user_agent/{SDK_USER_AGENT}".strip()
+    )
 
     return Config(user_agent_extra=new_user_agent, **config_kwargs)
 
@@ -464,3 +464,17 @@ async def run_boto3_in_executor(func: Callable[..., T], *args: Any, **kwargs: An
             partial(copy_context().run, lambda: func(*args, **kwargs)),
         ),
     )
+
+
+def _validate_bedrock_client(client: Any) -> None:
+    """Validate that the provided client is a bedrock-agent-runtime client."""
+    try:
+        service_name = client.meta.service_model.service_name
+    except AttributeError:
+        raise ValueError("Invalid client: must be a boto3 client instance")
+
+    if service_name != "bedrock-agent-runtime":
+        raise ValueError(
+            f"Invalid client: expected 'bedrock-agent-runtime' client, got '{service_name}' client. "
+            "Please provide a bedrock-agent-runtime client."
+        )
