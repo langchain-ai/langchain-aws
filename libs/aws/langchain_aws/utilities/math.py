@@ -60,13 +60,14 @@ def cosine_similarity_top_k(
     Returns:
         Tuple of two lists. First contains two-tuples of indices (X_idx, Y_idx),
             second contains corresponding cosine similarities.
+
     """
     if len(X) == 0 or len(Y) == 0:
         return [], []
     score_array = cosine_similarity(X, Y)
     score_threshold = score_threshold or -1.0
     score_array[score_array < score_threshold] = 0
-    top_k = min(top_k or len(score_array), np.count_nonzero(score_array))
+    top_k = min(top_k or len(score_array), int(np.count_nonzero(score_array)))
     top_k_idxs = np.argpartition(score_array, -top_k, axis=None)[-top_k:]  # type: ignore
     top_k_idxs = top_k_idxs[np.argsort(score_array.ravel()[top_k_idxs])][::-1]
     ret_idxs = np.unravel_index(top_k_idxs, score_array.shape)

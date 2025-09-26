@@ -3,15 +3,12 @@ import json
 from unittest.mock import ANY, AsyncMock, Mock, patch
 
 import pytest
-from botocore.config import Config
 from botocore.exceptions import ClientError
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import CheckpointTuple
 from langgraph.constants import ERROR
-from pydantic import SecretStr
 
 from langgraph_checkpoint_aws.async_saver import (
-    AsyncBedrockAgentRuntimeSessionClient,
     AsyncBedrockSessionSaver,
 )
 from langgraph_checkpoint_aws.models import (
@@ -71,7 +68,9 @@ class TestAsyncBedrockSessionSaver:
         # Act & Assert
         with pytest.raises(
             ValueError,
-            match="Invalid client: expected 'bedrock-agent-runtime' client, got 'some-other-service' client. Please provide a bedrock-agent-runtime client.",
+            match="Invalid client: expected 'bedrock-agent-runtime' client, got "
+            "'some-other-service' client. Please provide a bedrock-agent-runtime "
+            "client.",
         ):
             AsyncBedrockSessionSaver(client=mock_wrong_client)
 

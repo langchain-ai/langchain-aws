@@ -9,11 +9,17 @@ import datetime
 import json
 import logging
 from collections import defaultdict
-from typing import Any, Dict, List, Union
+from typing import Any, cast
 
 import boto3
 from botocore.config import Config
-from langgraph.checkpoint.base import CheckpointTuple, SerializerProtocol
+from langgraph.checkpoint.base import (
+    Checkpoint,
+    CheckpointMetadata,
+    CheckpointTuple,
+    RunnableConfig,
+    SerializerProtocol,
+)
 
 from langgraph_checkpoint_aws.agentcore.constants import (
     EMPTY_CHANNEL_VALUE,
@@ -30,28 +36,28 @@ from langgraph_checkpoint_aws.agentcore.models import (
 logger = logging.getLogger(__name__)
 
 # Union type for all events
-EventType = Union[CheckpointEvent, ChannelDataEvent, WritesEvent]
+EventType = CheckpointEvent | ChannelDataEvent | WritesEvent
 
 
 class EventSerializer:
-    """Handles serialization and deserialization of events to store in AgentCore Memory."""
+    """Handles serialization and deserialization of events to store in AgentCore Memory."""  # noqa: E501
 
     def __init__(self, serde: SerializerProtocol):
         self.serde = serde
 
-    def serialize_value(self, value: Any) -> Dict[str, Any]:
+    def serialize_value(self, value: Any) -> dict[str, Any]:
         """Serialize a value using the serde protocol."""
         type_tag, binary_data = self.serde.dumps_typed(value)
         return {"type": type_tag, "data": base64.b64encode(binary_data).decode("utf-8")}
 
-    def deserialize_value(self, serialized: Dict[str, Any]) -> Any:
+    def deserialize_value(self, serialized: dict[str, Any]) -> Any:
         """Deserialize a value using the serde protocol."""
         try:
             type_tag = serialized["type"]
             binary_data = base64.b64decode(serialized["data"])
             return self.serde.loads_typed((type_tag, binary_data))
         except Exception as e:
-            raise EventDecodingError(f"Failed to deserialize value: {e}")
+            raise EventDecodingError(f"Failed to deserialize value: {e}") from e
 
     def serialize_event(self, event: EventType) -> str:
         """Serialize an event to JSON string."""
@@ -114,19 +120,25 @@ class EventSerializer:
                 raise EventDecodingError(f"Unknown event type: {event_type}")
 
         except json.JSONDecodeError as e:
-            raise EventDecodingError(f"Failed to parse JSON: {e}")
+            raise EventDecodingError(f"Failed to parse JSON: {e}") from e
         except Exception as e:
-            raise EventDecodingError(f"Failed to deserialize event: {e}")
+            raise EventDecodingError(f"Failed to deserialize event: {e}") from e
 
 
 class AgentCoreEventClient:
-    """Handles low-level event storage and retrieval from AgentCore Memory for checkpoints."""
+    """Handles low-level event storage and retrieval from AgentCore Memory for checkpoints."""  # noqa: E501
 
     def __init__(
-        self, memory_id: str, serializer: EventSerializer = None, **boto3_kwargs
+        self, memory_id: str, serializer: EventSerializer | None = None, **boto3_kwargs
     ):
         self.memory_id = memory_id
-        self.serializer = serializer
+        # mypy: need to set actual serializer if None
+        if serializer is None:
+            from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+            self.serializer = EventSerializer(JsonPlusSerializer())
+        else:
+            self.serializer = serializer
 
         config = Config(
             user_agent_extra="x-client-framework:langgraph_agentcore_memory"
@@ -148,7 +160,7 @@ class AgentCoreEventClient:
         )
 
     def store_blob_events_batch(
-        self, events: List[EventType], session_id: str, actor_id: str
+        self, events: list[EventType], session_id: str, actor_id: str
     ) -> None:
         """Store multiple events in a single API call to AgentCore Memory."""
         # Serialize all events into payload blobs
@@ -170,7 +182,7 @@ class AgentCoreEventClient:
 
     def get_events(
         self, session_id: str, actor_id: str, limit: int = 100
-    ) -> List[EventType]:
+    ) -> list[EventType]:
         """Retrieve events from AgentCore Memory."""
 
         if limit is not None and limit <= 0:
@@ -245,11 +257,11 @@ class EventProcessor:
 
     @staticmethod
     def process_events(
-        events: List[EventType],
+        events: list[EventType],
     ) -> tuple[
-        Dict[str, CheckpointEvent],
-        Dict[str, List[WriteItem]],
-        Dict[tuple[str, str], Any],
+        dict[str, CheckpointEvent],
+        dict[str, list[WriteItem]],
+        dict[tuple[str, str], Any],
     ]:
         """Process events into organized data structures."""
         checkpoints = {}
@@ -274,8 +286,8 @@ class EventProcessor:
     @staticmethod
     def build_checkpoint_tuple(
         checkpoint_event: CheckpointEvent,
-        writes: List[WriteItem],
-        channel_data: Dict[tuple[str, str], Any],
+        writes: list[WriteItem],
+        channel_data: dict[tuple[str, str], Any],
         config: CheckpointerConfig,
     ) -> CheckpointTuple:
         """Build a CheckpointTuple from processed data."""
@@ -315,8 +327,10 @@ class EventProcessor:
                     "checkpoint_id": checkpoint_event.checkpoint_id,
                 }
             },
-            checkpoint=checkpoint,
-            metadata=checkpoint_event.metadata,
-            parent_config=parent_config,
+            checkpoint=cast(Checkpoint, checkpoint),
+            metadata=cast(CheckpointMetadata, checkpoint_event.metadata),
+            parent_config=cast(RunnableConfig, parent_config)
+            if parent_config
+            else None,
             pending_writes=pending_writes,
         )

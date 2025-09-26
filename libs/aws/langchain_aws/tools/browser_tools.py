@@ -1,5 +1,6 @@
 """Thread-aware browser tools that work with the browser session manager."""
 
+import json
 import logging
 from typing import Any, Dict, Optional, Type
 from urllib.parse import urlparse
@@ -61,17 +62,17 @@ class ThreadAwareBaseTool(BaseTool):
 
     _session_manager: BrowserSessionManager
 
-    def __init__(self, session_manager: BrowserSessionManager):
+    def __init__(self, _session_manager: BrowserSessionManager, **kwargs: Any):
         """Initialize with a session manager."""
-        super().__init__()
-        self._session_manager = session_manager
+        super().__init__(**kwargs)
+        self._session_manager = _session_manager
 
     def get_thread_id(self, config: Optional[RunnableConfig] = None) -> str:
         """Extract thread ID from config."""
         thread_id = "default"
 
         if config and isinstance(config, dict):
-            thread_id = config["configurable"]["thread_id"]
+            thread_id = config.get("configurable", {})["thread_id"]
 
         return thread_id
 
@@ -114,8 +115,8 @@ class ThreadAwareNavigateTool(ThreadAwareBaseTool):
     def _run(
         self,
         url: str,
-        config: RunnableConfig,
-        **_,  # Ignore additional arguments
+        config: Optional[RunnableConfig] = None,
+        **_: Any,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
         thread_id = None
@@ -151,8 +152,8 @@ class ThreadAwareNavigateTool(ThreadAwareBaseTool):
     async def _arun(
         self,
         url: str,
-        config: RunnableConfig,
-        **_,  # Ignore additional arguments
+        config: Optional[RunnableConfig] = None,
+        **_: Any,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
         thread_id = None
@@ -206,8 +207,8 @@ class ThreadAwareClickTool(ThreadAwareBaseTool):
     def _run(
         self,
         selector: str,
-        config: RunnableConfig,
-        **_,  # Ignore additional arguments
+        config: Optional[RunnableConfig] = None,
+        **_: Any,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
         thread_id = None
@@ -249,8 +250,8 @@ class ThreadAwareClickTool(ThreadAwareBaseTool):
     async def _arun(
         self,
         selector: str,
-        config: RunnableConfig,
-        **_,  # Ignore additional arguments
+        config: Optional[RunnableConfig] = None,
+        **_: Any,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
         thread_id = None
@@ -298,8 +299,8 @@ class ThreadAwareNavigateBackTool(ThreadAwareBaseTool):
 
     def _run(
         self,
-        config: RunnableConfig,
-        **_,  # Ignore additional arguments
+        config: Optional[RunnableConfig] = None,
+        **_: Any,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
         thread_id = None
@@ -328,8 +329,8 @@ class ThreadAwareNavigateBackTool(ThreadAwareBaseTool):
 
     async def _arun(
         self,
-        config: RunnableConfig,
-        **_,  # Ignore additional arguments
+        config: Optional[RunnableConfig] = None,
+        **_: Any,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
         thread_id = None
@@ -365,15 +366,15 @@ class ThreadAwareExtractTextTool(ThreadAwareBaseTool):
 
     def _run(
         self,
-        config: RunnableConfig,
-        **_,  # Ignore additional arguments
+        config: Optional[RunnableConfig] = None,
+        **_: Any,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
         thread_id = None
         try:
             # Import BeautifulSoup
             try:
-                from bs4 import BeautifulSoup
+                from bs4 import BeautifulSoup  # type: ignore[import]
             except ImportError:
                 raise ImportError(
                     "The 'beautifulsoup4' package is required to use this tool."
@@ -403,15 +404,15 @@ class ThreadAwareExtractTextTool(ThreadAwareBaseTool):
 
     async def _arun(
         self,
-        config: RunnableConfig,
-        **_,  # Ignore additional arguments
+        config: Optional[RunnableConfig] = None,
+        **_: Any,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
         thread_id = None
         try:
             # Import BeautifulSoup
             try:
-                from bs4 import BeautifulSoup
+                from bs4 import BeautifulSoup  # type: ignore[import]
             except ImportError:
                 raise ImportError(
                     "The 'beautifulsoup4' package is required to use this tool."
@@ -448,17 +449,15 @@ class ThreadAwareExtractHyperlinksTool(ThreadAwareBaseTool):
 
     def _run(
         self,
-        config: RunnableConfig,
-        **_,  # Ignore additional arguments
+        config: Optional[RunnableConfig] = None,
+        **_: Any,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
         thread_id = None
         try:
             # Import BeautifulSoup
             try:
-                import json
-
-                from bs4 import BeautifulSoup
+                from bs4 import BeautifulSoup  # type: ignore[import]
             except ImportError:
                 raise ImportError(
                     "The 'beautifulsoup4' package is required to use this tool."
@@ -497,17 +496,15 @@ class ThreadAwareExtractHyperlinksTool(ThreadAwareBaseTool):
 
     async def _arun(
         self,
-        config: RunnableConfig,
-        **_,  # Ignore additional arguments
+        config: Optional[RunnableConfig] = None,
+        **_: Any,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
         thread_id = None
         try:
             # Import BeautifulSoup
             try:
-                import json
-
-                from bs4 import BeautifulSoup
+                from bs4 import BeautifulSoup  # type: ignore[import]
             except ImportError:
                 raise ImportError(
                     "The 'beautifulsoup4' package is required to use this tool."
@@ -554,8 +551,8 @@ class ThreadAwareGetElementsTool(ThreadAwareBaseTool):
     def _run(
         self,
         selector: str,
-        config: RunnableConfig,
-        **_,  # Ignore additional arguments
+        config: Optional[RunnableConfig] = None,
+        **_: Any,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
         thread_id = None
@@ -591,8 +588,8 @@ class ThreadAwareGetElementsTool(ThreadAwareBaseTool):
     async def _arun(
         self,
         selector: str,
-        config: RunnableConfig,
-        **_,  # Ignore additional arguments
+        config: Optional[RunnableConfig] = None,
+        **_: Any,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
         thread_id = None
@@ -634,8 +631,8 @@ class ThreadAwareCurrentWebPageTool(ThreadAwareBaseTool):
 
     def _run(
         self,
-        config: RunnableConfig,
-        **_,  # Ignore additional arguments
+        config: Optional[RunnableConfig] = None,
+        **_: Any,  # Ignore additional arguments
     ) -> str:
         """Use the sync tool."""
         thread_id = None
@@ -663,8 +660,8 @@ class ThreadAwareCurrentWebPageTool(ThreadAwareBaseTool):
 
     async def _arun(
         self,
-        config: RunnableConfig,
-        **_,  # Ignore additional arguments
+        config: Optional[RunnableConfig] = None,
+        **_: Any,  # Ignore additional arguments
     ) -> str:
         """Use the async tool."""
         thread_id = None
@@ -705,24 +702,25 @@ def create_thread_aware_tools(
     """
     # Import all required tool inputs
     try:
-        import bs4  # noqa: F401
+        import bs4  # noqa: F401  # type: ignore[import]
     except ImportError:
         import warnings
 
         warnings.warn(
-            "The 'beautifulsoup4' package is required for extract_text and extract_hyperlinks tools."
-            " Please install it with 'pip install beautifulsoup4'."
+            "The 'beautifulsoup4' package is required for extract_text and "
+            "extract_hyperlinks tools. Please install it with "
+            "'pip install beautifulsoup4'."
         )
     return {
-        "navigate": ThreadAwareNavigateTool(session_manager=session_manager),
-        "click": ThreadAwareClickTool(session_manager=session_manager),
-        "navigate_back": ThreadAwareNavigateBackTool(session_manager=session_manager),
-        "extract_text": ThreadAwareExtractTextTool(session_manager=session_manager),
+        "navigate": ThreadAwareNavigateTool(_session_manager=session_manager),
+        "click": ThreadAwareClickTool(_session_manager=session_manager),
+        "navigate_back": ThreadAwareNavigateBackTool(_session_manager=session_manager),
+        "extract_text": ThreadAwareExtractTextTool(_session_manager=session_manager),
         "extract_hyperlinks": ThreadAwareExtractHyperlinksTool(
-            session_manager=session_manager
+            _session_manager=session_manager
         ),
-        "get_elements": ThreadAwareGetElementsTool(session_manager=session_manager),
+        "get_elements": ThreadAwareGetElementsTool(_session_manager=session_manager),
         "current_webpage": ThreadAwareCurrentWebPageTool(
-            session_manager=session_manager
+            _session_manager=session_manager
         ),
     }

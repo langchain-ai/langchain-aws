@@ -14,14 +14,14 @@ from langgraph_checkpoint_aws.agentcore.saver import AgentCoreMemorySaver
 
 
 def generate_valid_session_id():
-    """Generate a valid session ID that matches AgentCore pattern [a-zA-Z0-9][a-zA-Z0-9-_]*"""
+    """Generate a valid session ID that matches AgentCore pattern [a-zA-Z0-9][a-zA-Z0-9-_]*"""  # noqa: E501
     # Start with letter, then 6 random alphanumeric chars
     chars = string.ascii_letters + string.digits
     return "test" + "".join(random.choices(chars, k=6))
 
 
 def generate_valid_actor_id():
-    """Generate a valid actor ID that matches AgentCore pattern [a-zA-Z0-9][a-zA-Z0-9-_]*"""
+    """Generate a valid actor ID that matches AgentCore pattern [a-zA-Z0-9][a-zA-Z0-9-_]*"""  # noqa: E501
     # Start with letter, then 6 random alphanumeric chars
     chars = string.ascii_letters + string.digits
     return "actor" + "".join(random.choices(chars, k=6))
