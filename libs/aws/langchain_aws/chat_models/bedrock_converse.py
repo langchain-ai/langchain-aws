@@ -706,14 +706,6 @@ class ChatBedrockConverse(BaseChatModel):
                 # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
                 self.base_model_id = model_arn.split("/")[-1]
 
-        # For regional model IDs (e.g., us.anthropic.claude-3-5-haiku-20241022-v1:0),
-        # extract the base model ID by removing the regional prefix
-        if self.base_model_id is None and self.model_id.startswith(
-            ("us.", "eu.", "ap.", "ca.", "sa.")
-        ):
-            # Extract base model by removing regional prefix
-            self.base_model_id = self.model_id.split(".", 1)[1]
-
         # Handle streaming configuration for application inference profiles
         if "application-inference-profile" in self.model_id:
             self._configure_streaming_for_resolved_model()
@@ -769,7 +761,17 @@ class ChatBedrockConverse(BaseChatModel):
         return self
 
     def _get_base_model(self) -> str:
-        return self.base_model_id if self.base_model_id else self.model_id
+        """Return base model id, stripping any regional prefix."""
+
+        if self.base_model_id:
+            return self.base_model_id
+
+        # For regional model IDs (e.g., us.anthropic.claude-3-5-haiku-20241022-v1:0),
+        # get the base model ID by removing the regional prefix
+        if self.model_id.startswith(("us.", "eu.", "ap.", "ca.", "sa.")):
+            return self.model_id.partition(".")[2]
+
+        return self.model_id
 
     def _configure_streaming_for_resolved_model(self) -> None:
         """Configure streaming support after resolving the base model for application inference profiles."""
