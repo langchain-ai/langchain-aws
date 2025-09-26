@@ -2155,7 +2155,9 @@ def test_get_num_tokens_from_messages_supported_model() -> None:
         region_name="us-east-1",
     )
 
-    messages: List[BaseMessage] = [HumanMessage(content="What is the capital of France?")]
+    messages: List[BaseMessage] = [
+        HumanMessage(content="What is the capital of France?")
+    ]
     token_count = llm.get_num_tokens_from_messages(messages)
 
     assert token_count == 42
