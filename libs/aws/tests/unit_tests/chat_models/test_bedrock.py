@@ -2,6 +2,7 @@
 
 """Test chat model integration."""
 
+import json
 import os
 from contextlib import nullcontext
 from typing import Any, Callable, Dict, Literal, Type, cast
@@ -9,6 +10,7 @@ from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import pytest
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableBinding
 from langchain_core.tools import BaseTool
@@ -1530,3 +1532,71 @@ def test_bedrock_client_uses_explicit_values_over_runtime_client(
         config=explicit_config,
         service_name="bedrock",
     )
+
+
+def test_get_num_tokens_from_messages_with_base_messages():
+    """Test get_num_tokens_from_messages with BaseMessage objects."""
+    mock_client = MagicMock()
+    mock_client.count_tokens.return_value = {"inputTokens": 20}
+
+    chat = ChatBedrock(
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        region="us-west-2",
+        max_tokens=4096,
+    )
+    chat.client = mock_client
+    messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        HumanMessage(content="Why did the chicken cross the road?"),
+    ]
+
+    token_count = chat.get_num_tokens_from_messages(messages)
+    assert token_count == 20
+
+    mock_client.count_tokens.assert_called_once()
+    call_args = mock_client.count_tokens.call_args[1]
+    assert call_args["modelId"] == "anthropic.claude-3-7-sonnet-20250219-v1:0"
+
+    actual_input_body = json.loads(call_args["input"]["invokeModel"]["body"])
+    expected_input_body = {
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 4096,
+        "system": "You are a helpful assistant.",
+        "messages": [
+            {
+                "role": "user",
+                "content": "Why did the chicken cross the road?"
+            }
+        ]
+    }
+
+    assert actual_input_body == expected_input_body
+
+
+@patch("langchain_aws.chat_models.bedrock.create_aws_client")
+@patch("langchain_aws.chat_models.bedrock.count_tokens_api_supported_for_model")
+def test_get_num_tokens_from_messages_fallback(
+    mock_count_tokens_api_supported, mock_create_aws_client
+):
+    """Test get_num_tokens_from_messages falls back to parent method when API not supported."""
+    mock_count_tokens_api_supported.return_value = False
+    mock_client = MagicMock()
+    mock_create_aws_client.return_value = mock_client
+
+    chat = ChatBedrock(
+        model="us.anthropic.claude-3-sonnet-20240229-v1:0",
+        region="us-west-2",
+    )
+
+    with patch.object(
+        BaseChatModel, "get_num_tokens_from_messages", return_value=24
+    ) as mock_parent:
+        messages = [
+            SystemMessage(content="You are a helpful assistant."),
+            HumanMessage(content="Why did the chicken cross the road?"),
+        ]
+
+        token_count = chat.get_num_tokens_from_messages(messages)
+        assert token_count == 24
+        mock_parent.assert_called_once()
+        mock_client.count_tokens.assert_not_called()
