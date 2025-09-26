@@ -20,6 +20,7 @@ python = ">=3.9,<4.0"
 langgraph-checkpoint = ">=2.0.0"
 langgraph = ">=0.2.55,<0.7"
 boto3 = ">=1.37.3"
+bedrock-agentcore = ">=0.1.5"
 
 [tool.poetry.group.dev]
 optional = true
