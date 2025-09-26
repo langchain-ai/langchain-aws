@@ -92,6 +92,12 @@ def anthropic_tokens_supported() -> bool:
 
     return True
 
+def count_tokens_api_supported_for_model(model: str) -> bool:
+    return any(
+        x in model
+        for x in ("claude-3-5-", "claude-3-7-", "claude-opus-4-", "claude-sonnet-4-")
+    )
+
 
 def _get_anthropic_client() -> Any:
     import anthropic
