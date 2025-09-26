@@ -60,7 +60,7 @@ from langchain_aws.function_calling import ToolsOutputParser
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
-    trim_message_whitespace
+    trim_message_whitespace,
 )
 
 logger = logging.getLogger(__name__)
