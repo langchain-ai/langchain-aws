@@ -57,7 +57,11 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.function_calling import ToolsOutputParser
-from langchain_aws.utils import create_aws_client, trim_message_whitespace
+from langchain_aws.utils import (
+    count_tokens_api_supported_for_model,
+    create_aws_client,
+    trim_message_whitespace,
+)
 
 logger = logging.getLogger(__name__)
 _BM = TypeVar("_BM", bound=BaseModel)
@@ -761,7 +765,17 @@ class ChatBedrockConverse(BaseChatModel):
         return self
 
     def _get_base_model(self) -> str:
-        return self.base_model_id if self.base_model_id else self.model_id
+        """Return base model id, stripping any regional prefix."""
+
+        if self.base_model_id:
+            return self.base_model_id
+
+        # For regional model IDs (e.g., us.anthropic.claude-3-5-haiku-20241022-v1:0),
+        # get the base model ID by removing the regional prefix
+        if self.model_id.startswith(("eu.", "us.", "us-gov.", "apac.", "sa.", "amer.", "global.")):
+            return self.model_id.partition(".")[2]
+
+        return self.model_id
 
     def _configure_streaming_for_resolved_model(self) -> None:
         """Configure streaming support after resolving the base model for application inference profiles."""
@@ -1136,6 +1150,57 @@ class ChatBedrockConverse(BaseChatModel):
             "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
             "aws_session_token": "AWS_SESSION_TOKEN",
         }
+
+    def get_num_tokens_from_messages(
+        self,
+        messages: list[BaseMessage],
+        tools: Optional[Sequence] = None,
+    ) -> int:
+        """
+        Get the number of tokens in the messages using AWS Bedrock count_tokens API.
+
+        This method uses AWS Bedrock's count_tokens API which provides accurate
+        token counting for supported models before inference. Falls back to the base
+        implementation for unsupported models.
+
+        Args:
+            messages: The message inputs to tokenize.
+            tools: Tool schemas (currently ignored as count_tokens API doesn't support them).
+
+        Returns:
+            The number of input tokens in the messages.
+        """
+        model_id = self._get_base_model()
+        # Check if the model supports count_tokens API
+        if not count_tokens_api_supported_for_model(model_id):
+            return super().get_num_tokens_from_messages(messages, tools=tools)
+
+        if tools is not None:
+            warnings.warn(
+                "Tool schemas are not yet supported by AWS Bedrock count_tokens API. "
+                "Ignoring tools parameter.",
+                stacklevel=2,
+            )
+
+        try:
+            bedrock_messages, system = (
+                (self.raw_blocks, [])
+                if self.raw_blocks
+                else _messages_to_bedrock(messages)
+            )
+
+            input_data = {"converse": {"messages": bedrock_messages}}
+            if system:
+                input_data["converse"]["system"] = system
+
+            response = self.client.count_tokens(
+                modelId=model_id, input=input_data
+            )
+            return response["inputTokens"]
+
+        except Exception as e:
+            logger.warning(f"count_tokens API failed: {e}. Using fallback.")
+            return super().get_num_tokens_from_messages(messages, tools=tools)
 
 
 def _messages_to_bedrock(
