@@ -1541,6 +1541,7 @@ def test_get_num_tokens_from_messages_with_base_messages():
 
     chat = ChatBedrock(
         model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        region="us-west-2",
         max_tokens=4096,
     )
     chat.client = mock_client
@@ -1584,6 +1585,7 @@ def test_get_num_tokens_from_messages_fallback(
 
     chat = ChatBedrock(
         model="us.anthropic.claude-3-sonnet-20240229-v1:0",
+        region="us-west-2",
     )
 
     with patch.object(
