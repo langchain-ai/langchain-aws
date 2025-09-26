@@ -1515,6 +1515,22 @@ def test_create_cache_point() -> None:
     assert cache_point["cachePoint"]["type"] == "default"
 
 
+def test_create_document() -> None:
+    """Test creating a document."""
+    document = ChatBedrockConverse.create_document(
+        name="MyDoc", source={"text": "Cite me"}, format="txt", enable_citations=True
+    )
+    expected_doc = {
+        "document": {
+            "name": "MyDoc",
+            "source": {"text": "Cite me"},
+            "format": "txt",
+            "citations": {"enabled": True},
+        }
+    }
+    assert document == expected_doc
+
+
 def test_anthropic_tool_with_cache_point() -> None:
     """Test convert_to_anthropic_tool with cache point"""
     # Test with cache point

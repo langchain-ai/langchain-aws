@@ -514,6 +514,70 @@ class ChatBedrockConverse(BaseChatModel):
         """
         return {"cachePoint": {"type": cache_type}}
 
+    @classmethod
+    def create_document(
+        cls,
+        name: str,
+        source: dict[str, Any],
+        format: Literal["pdf", "csv", "doc", "docx", "xls", "xlsx", "html", "txt", "md"],        
+        context: Optional[str] = None,
+        enable_citations: Optional[bool] = False,
+
+    ) -> Dict[str, Any]:
+        """Create a document configuration for Bedrock.
+        Args:
+            name: The name of the document.
+            source: The source of the document.
+            format: The format of the document, or its extension.
+            context: Info for the model to understand the document for citations.
+            enable_citations: Whether to enable the Citations API for the document.
+        Returns:
+            Dictionary containing a properly formatted to add to message content."""
+        if re.search(r"[^A-Za-z0-9 \[\]()\-]|\s{2,}", name):
+            raise ValueError(
+                "Name must be only alphanumeric characters,"
+                " whitespace characters (no more than one in a row),"
+                " hyphens, parentheses, or square brackets."
+            )
+
+        valid_source_types = ["bytes", "content", "s3Location", "text"]
+        if (
+            len(source.keys()) > 1
+            or list(source.keys())[0] not in valid_source_types
+        ):
+            raise ValueError(
+                f"The key for source can only be one of the following: {valid_source_types}"
+            )
+
+        if source.get("bytes") and not isinstance(source.get("bytes"), bytes):
+            raise ValueError(f"Document source with type bytes must be bytes type.")
+
+        if source.get("text") and not isinstance(source.get("text"), str):
+            raise ValueError("Document source with type text must be str type.")
+
+        if source.get("s3Location") and not isinstance(
+            source.get("s3Location").get("uri"), str
+        ):
+            raise ValueError(
+                "Document source with type s3Location"
+                " must have a dictionary with a valid s3 uri as a dict."
+            )
+
+        if source.get("content") and not isinstance(source.get("content", list)):
+            raise ValueError(
+                "Document source with type content must have a list of document content blocks."
+            )
+
+        document = {"name": name, "source": source, "format": format}
+
+        if context:
+            document["context"] = context
+
+        if enable_citations:
+            document["citations"] = {"enabled": True}
+
+        return {"document": document}
+
     @model_validator(mode="before")
     @classmethod
     def build_extra(cls, values: dict[str, Any]) -> Any:
