@@ -8,6 +8,11 @@ from langgraph_checkpoint_aws.agentcore.saver import (
 from langgraph_checkpoint_aws.agentcore.store import (
     AgentCoreMemoryStore,
 )
+from langgraph_checkpoint_aws.agentcore.tools import (
+    create_manage_memory_tool,
+    create_search_memory_tool,
+    create_store_event_tool,
+)
 
 __version__ = "0.1.2"
 SDK_USER_AGENT = f"LangGraphCheckpointAWS#{__version__}"
@@ -16,5 +21,8 @@ SDK_USER_AGENT = f"LangGraphCheckpointAWS#{__version__}"
 __all__ = [
     "AgentCoreMemorySaver",
     "AgentCoreMemoryStore",
+    "create_manage_memory_tool",
+    "create_search_memory_tool",
+    "create_store_event_tool",
     "SDK_USER_AGENT",
 ]
