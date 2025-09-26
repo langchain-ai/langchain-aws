@@ -4,8 +4,8 @@ A custom LangChain checkpointer implementation that uses Bedrock Session Managem
 ## Overview
 This package provides a custom checkpointing solution for LangGraph agents using AWS Bedrock Session Management Service. It enables:
 1. Stateful conversations and interactions
-2. Resumable agent sessions 
-3. Efficient state persistence and retrieval 
+2. Resumable agent sessions
+3. Efficient state persistence and retrieval
 4. Seamless integration with AWS Bedrock
 
 ## Installation
@@ -87,6 +87,8 @@ await graph.ainvoke(1, config)
 
 ```python
 def __init__(
+    client: Optional[Any] = None,
+    session: Optional[boto3.Session] = None,
     region_name: Optional[str] = None,
     credentials_profile_name: Optional[str] = None,
     aws_access_key_id: Optional[SecretStr] = None,
@@ -97,6 +99,8 @@ def __init__(
 )
 ```
 
+- `client`: boto3 Bedrock runtime client (e.g. boto3.client("bedrock-agent-runtime"))
+- `session`: boto3.Session for custom credentials
 - `region_name`: AWS region where Bedrock is available
 - `credentials_profile_name`: Name of AWS credentials profile to use
 - `aws_access_key_id`: AWS access key ID for authentication

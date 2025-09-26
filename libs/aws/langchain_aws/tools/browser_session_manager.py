@@ -19,11 +19,11 @@ class BrowserSessionManager:
     This class maintains separate browser sessions for different threads,
     enabling concurrent usage of browsers in multi-threaded environments.
     Browsers are created lazily only when needed by tools.
-    
-    Concurrency protection is also implemented. Each browser session is tied 
-    to a specific thread_id and includes protection against concurrent usage. 
-    When a browser is obtained via get_async_browser() or get_sync_browser(), 
-    it is marked as "in use", and subsequent attempts to access the same 
+
+    Concurrency protection is also implemented. Each browser session is tied
+    to a specific thread_id and includes protection against concurrent usage.
+    When a browser is obtained via get_async_browser() or get_sync_browser(),
+    it is marked as "in use", and subsequent attempts to access the same
     browser session will raise a RuntimeError until it is released. In general,
     different callers should use different thread_ids to avoid concurrency issues.
     """
@@ -73,7 +73,7 @@ class BrowserSessionManager:
 
         Returns:
             A sync browser instance specific to the thread
-            
+
         Raises:
             RuntimeError: If the browser session is already in use by another caller
         """
@@ -205,30 +205,30 @@ class BrowserSessionManager:
 
         Args:
             thread_id: Unique identifier for the thread
-            
+
         Raises:
             KeyError: If no browser session exists for the specified thread_id
         """
         if thread_id not in self._async_sessions:
             raise KeyError(f"No async browser session found for thread {thread_id}")
-            
+
         client, browser, _ = self._async_sessions[thread_id]
         self._async_sessions[thread_id] = (client, browser, False)
         logger.debug(f"Async browser session released for thread {thread_id}")
-        
+
     def release_sync_browser(self, thread_id: str) -> None:
         """
         Release the sync browser session for the specified thread.
 
         Args:
             thread_id: Unique identifier for the thread
-            
+
         Raises:
             KeyError: If no browser session exists for the specified thread_id
         """
         if thread_id not in self._sync_sessions:
             raise KeyError(f"No sync browser session found for thread {thread_id}")
-            
+
         client, browser, _ = self._sync_sessions[thread_id]
         self._sync_sessions[thread_id] = (client, browser, False)
         logger.debug(f"Sync browser session released for thread {thread_id}")

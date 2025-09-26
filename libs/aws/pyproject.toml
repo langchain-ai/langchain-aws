@@ -60,7 +60,7 @@ optional = true
 optional = true
 
 [tool.poetry.group.lint.dependencies]
-ruff = "^0.1.8"
+ruff = "^0.13.0"
 
 
 
@@ -84,8 +84,8 @@ select = [
 ]
 
 [tool.mypy]
-ignore_missing_imports = "True"
-disallow_untyped_defs = "True"
+ignore_missing_imports = true
+disallow_untyped_defs = true
 exclude = ["notebooks", "samples"]
 
 [tool.coverage.run]
