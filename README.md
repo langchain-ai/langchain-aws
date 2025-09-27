@@ -44,12 +44,11 @@ pip install langgraph-checkpoint-aws
 Here's a simple example of how to use the `langchain-aws` package.
 
 ```python
-from langchain_aws import ChatBedrock
+from langchain_aws import ChatBedrockConverse
 
 # Initialize the Bedrock chat model
-llm = ChatBedrock(
-    model="anthropic.claude-3-sonnet-20240229-v1:0",
-    beta_use_converse_api=True
+llm = ChatBedrockConverse(
+    model="us.anthropic.claude-sonnet-4-20250514-v1:0",
 )
 
 # Invoke the llm
