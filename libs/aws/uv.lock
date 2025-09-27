@@ -600,7 +600,7 @@ dev = [
 ]
 lint = [{ name = "ruff", specifier = ">=0.13.0" }]
 test = [
-    { name = "langchain", specifier = ">=1.0.0a9" },
+    { name = "langchain", specifier = ">=0.3.7" },
     { name = "langchain-tests", specifier = ">=0.3.20" },
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest-asyncio", specifier = ">=0.20,<1" },
