@@ -33,6 +33,7 @@ test = [
     "pytest-asyncio>=0.26.0"
 ]
 test_integration = [
+    "langchain>=1.0.0.a8",
     "langchain-aws>=0.2.31",
 ]
 lint = [

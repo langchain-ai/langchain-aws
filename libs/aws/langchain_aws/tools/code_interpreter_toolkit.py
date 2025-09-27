@@ -31,7 +31,7 @@ class CodeInterpreterToolkit:
         ```python
 
         import asyncio
-        from langgraph.prebuilt import create_react_agent
+        from langchain.agents import create_agent
         from langchain_aws.tools import create_code_interpreter_toolkit
 
         async def main():
@@ -39,8 +39,8 @@ class CodeInterpreterToolkit:
             toolkit, code_tools = await create_code_interpreter_toolkit(region="us-west-2")
 
             # Create a ReAct agent using the code interpreter tools
-            agent = create_react_agent(
-                model="bedrock_converse:us.anthropic.claude-3-5-haiku-20241022-v1:0",
+            agent = create_agent(
+                "bedrock_converse:us.anthropic.claude-3-5-haiku-20241022-v1:0",
                 tools=code_tools
             )
 

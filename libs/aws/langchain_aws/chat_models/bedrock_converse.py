@@ -974,7 +974,7 @@ class ChatBedrockConverse(BaseChatModel):
         *,
         tool_choice: Optional[Union[dict, str, Literal["auto", "any"]]] = None,
         **kwargs: Any,
-    ) -> Runnable[LanguageModelInput, BaseMessage]:
+    ) -> Runnable[LanguageModelInput, AIMessage]:
         formatted_tools: List[Any] = []
         for tool in tools:
             if _is_cache_point(tool):
