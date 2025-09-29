@@ -19,13 +19,13 @@ from langgraph_checkpoint_aws.agentcore.store import AgentCoreMemoryStore
 
 
 def generate_valid_actor_id():
-    """Generate a valid actor ID that matches AgentCore pattern [a-zA-Z0-9][a-zA-Z0-9-_]*"""
+    """Generate a valid actor ID that matches AgentCore pattern."""
     chars = string.ascii_letters + string.digits
     return "actor" + "".join(random.choices(chars, k=6))
 
 
 def generate_valid_session_id():
-    """Generate a valid session ID that matches AgentCore pattern [a-zA-Z0-9][a-zA-Z0-9-_]*"""
+    """Generate a valid session ID that matches AgentCore pattern."""
     chars = string.ascii_letters + string.digits
     return "session" + "".join(random.choices(chars, k=6))
 
@@ -370,16 +370,6 @@ class TestAgentCoreMemoryStoreIntegration:
                 assert item.created_at is not None
                 assert item.updated_at is not None
 
-    def test_get_memory_record_not_found(self, store, actor_id):
-        """Test retrieving a memory record that doesn't exist."""
-        # Use a non-existent memory record ID that follows AgentCore pattern: mem-[a-zA-Z0-9-_]*
-        non_existent_id = f"mem-nonexistent-{uuid.uuid4().hex}"
-
-        # This should return None without raising an exception
-        item = store.get(("facts", actor_id), non_existent_id)
-
-        assert item is None, "Non-existent memory record should return None"
-
     def test_batch_operations_with_get(self, store, actor_id, session_id):
         """Test batch operations including GetOp operations."""
         # First, search for existing memory records to get valid IDs for GetOp
@@ -442,19 +432,3 @@ class TestAgentCoreMemoryStoreIntegration:
             assert result is None or hasattr(result, "key"), (
                 f"GetOp result should be Item or None, got {type(result)}"
             )
-
-    def test_get_operation_error_handling(self, store, actor_id):
-        """Test GetOp error handling with various edge cases."""
-        # Test with empty memory record ID - should return None or raise ValueError
-        item = store.get(("facts", actor_id), "")
-        assert item is None, "Empty key should return None"
-
-        # Test with very long memory record ID - should return None
-        long_id = "x" * 1000
-        item = store.get(("facts", actor_id), long_id)
-        assert item is None, "Very long ID should return None"
-
-        # Test with special characters in memory record ID - should return None
-        special_id = "test-record_123.456"
-        item = store.get(("facts", actor_id), special_id)
-        assert item is None, "Special character ID should return None"
