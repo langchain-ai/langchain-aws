@@ -9,7 +9,7 @@ import logging
 import uuid
 from collections.abc import Iterable
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 import boto3
 from botocore.config import Config
@@ -145,7 +145,7 @@ class AgentCoreMemoryStore(BaseStore):
         )
         logger.debug(f"Created event for message in namespace {op.namespace}")
 
-    def _handle_get(self, op: GetOp) -> Item | None:
+    def _handle_get(self, op: GetOp) -> Optional[Item]:
         """Handle GetOp by retrieving a specific memory record from AgentCore Memory."""
         try:
             response = self.client.get_memory_record(
