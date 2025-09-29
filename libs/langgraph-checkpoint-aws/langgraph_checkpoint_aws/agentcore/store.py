@@ -195,6 +195,8 @@ class AgentCoreMemoryStore(BaseStore):
 
     def _convert_namespace_to_string(self, namespace_tuple: tuple[str, ...]) -> str:
         """Convert namespace tuple to AgentCore namespace string."""
+        if not isinstance(namespace_tuple, tuple):
+            raise TypeError("namespace_tuple must be a tuple")
         if not namespace_tuple:
             return "/"
         return "/" + "/".join(namespace_tuple)

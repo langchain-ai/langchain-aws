@@ -51,7 +51,7 @@ class NamespaceTemplate:
         formatted_parts = []
 
         for part in self.namespace_parts:
-            if "{" in part and "}" in part:
+            if part.startswith("{") and part.endswith("}"):
                 # Format with configurable values
                 try:
                     formatted_part = part.format(**configurable)
