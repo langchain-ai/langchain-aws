@@ -2,11 +2,11 @@ import datetime
 from typing import Literal
 
 import pytest
+from langchain.agents import create_agent
 from langchain_aws import ChatBedrock
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.checkpoint.base.id import uuid6
-from langgraph.prebuilt import create_react_agent
 
 from langgraph_checkpoint_aws.saver import BedrockSessionSaver
 
@@ -98,7 +98,7 @@ class TestBedrockMemorySaver:
         assert session_id, "Session ID should not be empty"
         try:
             # Create graph and config
-            graph = create_react_agent(model, tools=tools, checkpointer=session_saver)
+            graph = create_agent(model, tools=tools, checkpointer=session_saver)
             config = {"configurable": {"thread_id": session_id}}
             # Test weather query
             response = graph.invoke(

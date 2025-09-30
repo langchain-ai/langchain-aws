@@ -5,10 +5,10 @@ import string
 from typing import Literal
 
 import pytest
+from langchain.agents import create_agent
 from langchain_aws import ChatBedrock
 from langchain_core.tools import tool
 from langgraph.checkpoint.base import Checkpoint, uuid6
-from langgraph.prebuilt import create_react_agent
 
 from langgraph_checkpoint_aws.agentcore.saver import AgentCoreMemorySaver
 
@@ -143,7 +143,7 @@ class TestAgentCoreMemorySaver:
         actor_id = generate_valid_actor_id()
 
         try:
-            graph = create_react_agent(model, tools=tools, checkpointer=memory_saver)
+            graph = create_agent(model, tools=tools, checkpointer=memory_saver)
             config = {
                 "configurable": {
                     "thread_id": thread_id,
@@ -196,7 +196,7 @@ class TestAgentCoreMemorySaver:
         actor_id = generate_valid_actor_id()
 
         try:
-            graph = create_react_agent(model, tools=tools, checkpointer=memory_saver)
+            graph = create_agent(model, tools=tools, checkpointer=memory_saver)
             config = {
                 "configurable": {
                     "thread_id": thread_id,
@@ -224,7 +224,7 @@ class TestAgentCoreMemorySaver:
         actor_id = generate_valid_actor_id()
 
         try:
-            graph = create_react_agent(model, tools=tools, checkpointer=memory_saver)
+            graph = create_agent(model, tools=tools, checkpointer=memory_saver)
 
             config_1 = {
                 "configurable": {
@@ -277,7 +277,7 @@ class TestAgentCoreMemorySaver:
         actor_id = generate_valid_actor_id()
 
         try:
-            graph = create_react_agent(model, tools=tools, checkpointer=memory_saver)
+            graph = create_agent(model, tools=tools, checkpointer=memory_saver)
             config = {
                 "configurable": {
                     "thread_id": thread_id,
