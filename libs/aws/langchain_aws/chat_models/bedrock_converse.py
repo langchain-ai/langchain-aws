@@ -793,7 +793,9 @@ class ChatBedrockConverse(BaseChatModel):
 
         # For regional model IDs (e.g., us.anthropic.claude-3-5-haiku-20241022-v1:0),
         # get the base model ID by removing the regional prefix
-        if self.model_id.startswith(("eu.", "us.", "us-gov.", "apac.", "sa.", "amer.", "global.")):
+        if self.model_id.startswith(
+            ("eu.", "us.", "us-gov.", "apac.", "sa.", "amer.", "global.")
+        ):
             return self.model_id.partition(".")[2]
 
         return self.model_id
@@ -1194,7 +1196,7 @@ class ChatBedrockConverse(BaseChatModel):
 
         Args:
             messages: The message inputs to tokenize.
-            tools: Tool schemas (currently ignored as count_tokens API doesn't support them).
+            tools: Tool schemas (ignored, unsupported by count_tokens API).
 
         Returns:
             The number of input tokens in the messages.
@@ -1222,9 +1224,7 @@ class ChatBedrockConverse(BaseChatModel):
             if system:
                 input_data["converse"]["system"] = system
 
-            response = self.client.count_tokens(
-                modelId=model_id, input=input_data
-            )
+            response = self.client.count_tokens(modelId=model_id, input=input_data)
             return response["inputTokens"]
 
         except Exception as e:

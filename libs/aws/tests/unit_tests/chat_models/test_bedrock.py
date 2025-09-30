@@ -1569,11 +1569,8 @@ def test_get_num_tokens_from_messages_with_base_messages():
         "max_tokens": 4096,
         "system": "You are a helpful assistant.",
         "messages": [
-            {
-                "role": "user",
-                "content": "Why did the chicken cross the road?"
-            }
-        ]
+            {"role": "user", "content": "Why did the chicken cross the road?"}
+        ],
     }
 
     assert actual_input_body == expected_input_body
@@ -1584,7 +1581,7 @@ def test_get_num_tokens_from_messages_with_base_messages():
 def test_get_num_tokens_from_messages_fallback(
     mock_count_tokens_api_supported, mock_create_aws_client
 ):
-    """Test get_num_tokens_from_messages falls back to parent method when API not supported."""
+    """Test get_num_tokens_from_messages falls back to parent if API not supported."""
     mock_count_tokens_api_supported.return_value = False
     mock_client = MagicMock()
     mock_create_aws_client.return_value = mock_client

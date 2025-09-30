@@ -11,8 +11,9 @@ from pydantic import SecretStr
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
-    trim_message_whitespace
+    trim_message_whitespace,
 )
+
 
 @pytest.fixture
 def mock_boto3() -> Generator[
@@ -443,7 +444,9 @@ def test_trim_message_whitespace_with_empty_messages() -> None:
         ("us.amazon.nova-pro-v1:0", False),
     ],
 )
-def test_count_tokens_api_supported_for_model(model_id: str, expected_result: bool) -> None:
+def test_count_tokens_api_supported_for_model(
+    model_id: str, expected_result: bool
+) -> None:
     result = count_tokens_api_supported_for_model(model_id)
 
     assert result == expected_result

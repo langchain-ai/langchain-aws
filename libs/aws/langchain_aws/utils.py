@@ -92,6 +92,7 @@ def anthropic_tokens_supported() -> bool:
 
     return True
 
+
 def count_tokens_api_supported_for_model(model: str) -> bool:
     return any(
         x in model
