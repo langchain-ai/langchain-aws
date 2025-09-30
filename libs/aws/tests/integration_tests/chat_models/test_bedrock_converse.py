@@ -652,3 +652,19 @@ def test_bedrock_pdf_inputs() -> None:
         ]
     )
     _ = model.invoke([message])
+
+
+def test_get_num_tokens_from_messages_integration() -> None:
+    chat = ChatBedrockConverse(
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+    )
+
+    base_messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        HumanMessage(content="Why did the chicken cross the road?"),
+    ]
+
+    token_count = chat.get_num_tokens_from_messages(base_messages)
+
+    assert isinstance(token_count, int)
+    assert token_count == 21

@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import warnings
@@ -59,6 +60,7 @@ from langchain_aws.llms.bedrock import (
 )
 from langchain_aws.utils import (
     anthropic_tokens_supported,
+    count_tokens_api_supported_for_model,
     create_aws_client,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
@@ -1099,6 +1101,40 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             final_output.update(output)
         final_output["usage"] = final_usage
         return final_output
+    
+    def get_num_tokens_from_messages(
+        self, 
+        messages: list[BaseMessage],
+        tools: Optional[Sequence] = None
+    ):
+        model_id = self._get_base_model()
+        if (
+            self._model_is_anthropic
+            and count_tokens_api_supported_for_model(model_id)
+        ):
+            system, formatted_messages = ChatPromptAdapter.format_messages(
+                "anthropic", messages
+            )
+            input_to_count_tmpl = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": self.max_tokens if self.max_tokens else 8192,
+                "messages": formatted_messages
+            }
+            if system:
+                input_to_count_tmpl["system"] = system
+            input_to_count = json.dumps(input_to_count_tmpl)
+
+            response = self.client.count_tokens(
+                modelId=model_id,
+                input={
+                    "invokeModel": {
+                        "body": input_to_count
+                    }
+                }
+            )
+            return response["inputTokens"]
+
+        return super().get_num_tokens_from_messages(messages, tools)
 
     def get_num_tokens(self, text: str) -> int:
         if (

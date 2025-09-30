@@ -331,6 +331,24 @@ def test_bedrock_invoke(chat: ChatBedrock) -> None:
     assert result.additional_kwargs["usage"]["prompt_tokens"] == 12
 
 
+@pytest.mark.scheduled
+def test_get_num_tokens_from_messages_integration() -> None:
+    """Test get_num_tokens_from_messages with both message formats."""
+    chat = ChatBedrock(
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+    )
+
+    base_messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        HumanMessage(content="Why did the chicken cross the road?"),
+    ]
+
+    token_count = chat.get_num_tokens_from_messages(base_messages)
+    
+    assert isinstance(token_count, int)
+    assert token_count == 21
+
+
 class GetWeather(BaseModel):
     """Useful for getting the weather in a location."""
 

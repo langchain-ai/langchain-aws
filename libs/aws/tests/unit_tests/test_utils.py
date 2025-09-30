@@ -8,8 +8,11 @@ from botocore.exceptions import UnknownServiceError
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from pydantic import SecretStr
 
-from langchain_aws.utils import create_aws_client, trim_message_whitespace
-
+from langchain_aws.utils import (
+    count_tokens_api_supported_for_model,
+    create_aws_client,
+    trim_message_whitespace
+)
 
 @pytest.fixture
 def mock_boto3() -> Generator[
@@ -426,3 +429,21 @@ def test_trim_message_whitespace_with_empty_messages() -> None:
     result = trim_message_whitespace(messages)
 
     assert result == messages
+
+
+@pytest.mark.parametrize(
+    "model_id,expected_result",
+    [
+        ("us.anthropic.claude-opus-4-20250514-v1:0", True),
+        ("us.anthropic.claude-sonnet-4-20250514-v1:0", True),
+        ("us.anthropic.claude-3-7-sonnet-20250219-v1:0", True),
+        ("us.anthropic.claude-3-5-sonnet-20240620-v1:0", True),
+        ("us.anthropic.claude-3-sonnet-20240229-v1:0", False),
+        ("us.meta.llama4-scout-17b-instruct-v1:0", False),
+        ("us.amazon.nova-pro-v1:0", False),
+    ],
+)
+def test_count_tokens_api_supported_for_model(model_id: str, expected_result: bool) -> None:
+    result = count_tokens_api_supported_for_model(model_id)
+
+    assert result == expected_result
