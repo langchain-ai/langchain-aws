@@ -21,6 +21,7 @@ from langgraph.checkpoint.base import (
     RunnableConfig,
     SerializerProtocol,
 )
+
 from langgraph_checkpoint_aws.agentcore.constants import (
     EMPTY_CHANNEL_VALUE,
     EventDecodingError,
@@ -337,8 +338,8 @@ class EventProcessor:
 
 
 def convert_langchain_messages_to_event_messages(
-    messages: List[BaseMessage],
-) -> List[Dict[str, Any]]:
+    messages: list[BaseMessage],
+) -> list[tuple[str, str]]:
     """Convert LangChain messages to Bedrock Agent Core events
 
     Args:
