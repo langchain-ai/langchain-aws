@@ -1,24 +1,32 @@
 # type: ignore
 
-import json
-import operator
-import time
-import uuid
-from typing import Any, Tuple, Union
-
-import boto3
 import pytest
-from langchain.agents import AgentExecutor
-from langchain_core.tools import tool
-from typing_extensions import Annotated, TypedDict
 
-import langchain_aws.agents.base
-from langchain_aws.agents import (
-    BedrockAgentAction,
-    BedrockAgentFinish,
-    BedrockAgentsRunnable,
-    BedrockInlineAgentsRunnable,
+pytest.skip(
+    "Temporarily skipping Bedrock agent tests due to AgentExecutor usage.",
+    allow_module_level=True,
 )
+try:
+    import json
+    import operator
+    import time
+    import uuid
+    from typing import Any, Tuple, Union
+
+    import boto3
+    from langchain.agents import AgentExecutor
+    from langchain_core.tools import tool
+    from typing_extensions import Annotated, TypedDict
+
+    import langchain_aws.agents.base
+    from langchain_aws.agents import (
+        BedrockAgentAction,
+        BedrockAgentFinish,
+        BedrockAgentsRunnable,
+        BedrockInlineAgentsRunnable,
+    )
+except ImportError:
+    pass
 
 
 def _create_iam_client() -> Any:

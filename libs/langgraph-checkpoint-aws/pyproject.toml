@@ -8,7 +8,7 @@ license = {text = "MIT"}
 requires-python = ">=3.10"
 dependencies = [
     "langgraph-checkpoint>=2.1.1",
-    "langgraph>=0.6.6,<0.7",
+    "langgraph>=1.0.0.a4",
     "boto3>=1.40.19",
 ]
 name = "langgraph-checkpoint-aws"
@@ -33,7 +33,8 @@ test = [
     "pytest-asyncio>=0.26.0"
 ]
 test_integration = [
-    "langchain-aws>=0.2.31",
+    "langchain>=1.0.0.a10",
+    "langchain-aws>=0.2.33",
 ]
 lint = [
     "ruff>=0.12.10",
@@ -42,6 +43,9 @@ typing = [
     "boto3-stubs>=1.40.19",
     "mypy>=1.17.1",
 ]
+
+[tool.uv]
+prerelease = "allow"
 
 [tool.ruff]
 lint.select = [

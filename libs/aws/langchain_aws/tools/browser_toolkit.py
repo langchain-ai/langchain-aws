@@ -22,7 +22,7 @@ class BrowserToolkit:
         ```python
 
         import asyncio
-        from langgraph.prebuilt import create_react_agent
+        from langchain.agents import create_agent
         from langchain_aws.tools import create_browser_toolkit
 
         async def main():
@@ -30,8 +30,8 @@ class BrowserToolkit:
             toolkit, browser_tools = create_browser_toolkit(region="us-west-2")
 
             # Create a ReAct agent using the browser tools
-            agent = create_react_agent(
-                model="bedrock_converse:us.anthropic.claude-3-5-haiku-20241022-v1:0",
+            agent = create_agent(
+                "bedrock_converse:us.anthropic.claude-3-5-haiku-20241022-v1:0",
                 tools=browser_tools
             )
 
