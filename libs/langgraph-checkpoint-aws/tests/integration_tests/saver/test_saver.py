@@ -101,21 +101,29 @@ class TestBedrockMemorySaver:
             config = {"configurable": {"thread_id": session_id}}
 
             # Test weather query
-            response = graph.invoke(
-                {"messages": [("human", "what's the weather in sf")]}, config
-            )
-            assert response, "Response should not be empty"
+            try:
+                response = graph.invoke(
+                    {"messages": [("human", "what's the weather in sf")]}, config
+                )
+                assert response, "Response should not be empty"
 
-            # Test checkpoint retrieval
-            checkpoint = session_saver.get(config)
-            assert checkpoint, "Checkpoint should not be empty"
+                # Test checkpoint retrieval
+                checkpoint = session_saver.get(config)
+                assert checkpoint, "Checkpoint should not be empty"
 
-            # Test checkpoint listing
-            checkpoint_tuples = list(session_saver.list(config))
-            assert checkpoint_tuples, "Checkpoint tuples should not be empty"
-            assert isinstance(checkpoint_tuples, list), (
-                "Checkpoint tuples should be a list"
-            )
+                # Test checkpoint listing
+                checkpoint_tuples = list(session_saver.list(config))
+                assert checkpoint_tuples, "Checkpoint tuples should not be empty"
+                assert isinstance(checkpoint_tuples, list), (
+                    "Checkpoint tuples should be a list"
+                )
+            except Exception as e:
+                if "AccessDeniedException" in str(
+                    e
+                ) or "You don't have access to the model" in str(e):
+                    pytest.skip(f"Skipping test due to Bedrock model access issue: {e}")
+                else:
+                    raise
         finally:
             boto_session_client.end_session(sessionIdentifier=session_id)
             boto_session_client.delete_session(sessionIdentifier=session_id)

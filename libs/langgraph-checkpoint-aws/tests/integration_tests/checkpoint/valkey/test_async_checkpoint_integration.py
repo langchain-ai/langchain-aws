@@ -1,0 +1,136 @@
+"""Tests for the AsyncValkeyCheckpointSaver implementation."""
+
+import os
+from collections.abc import AsyncGenerator
+from datetime import datetime
+
+import pytest
+import pytest_asyncio
+from valkey.asyncio import Valkey as AsyncValkey
+from valkey.asyncio.connection import ConnectionPool as AsyncConnectionPool
+
+from langgraph_checkpoint_aws.checkpoint.valkey import AsyncValkeyCheckpointSaver
+
+
+@pytest.fixture
+def valkey_url() -> str:
+    """Get Valkey server URL from environment or use default."""
+    return os.getenv("VALKEY_URL", "valkey://localhost:6379")
+
+
+@pytest_asyncio.fixture
+async def async_valkey_pool(valkey_url: str) -> AsyncConnectionPool:
+    """Create an AsyncConnectionPool instance."""
+    pool = AsyncConnectionPool.from_url(
+        valkey_url, max_connections=5, retry_on_timeout=True
+    )
+    return pool
+
+
+@pytest.fixture
+async def async_saver(
+    valkey_url: str,
+) -> AsyncGenerator[AsyncValkeyCheckpointSaver, None]:
+    """Create an AsyncValkeyCheckpointSaver instance."""
+    client = AsyncValkey.from_url(valkey_url)
+    saver = AsyncValkeyCheckpointSaver(client, ttl=60.0)
+    yield saver
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_async_from_conn_string(valkey_url: str) -> None:
+    """Test creating async saver from connection string."""
+    async with AsyncValkeyCheckpointSaver.from_conn_string(
+        valkey_url, ttl_seconds=3600.0, pool_size=5
+    ) as saver:
+        assert saver.ttl == 3600  # 3600 seconds
+
+
+@pytest.mark.asyncio
+async def test_async_from_pool(async_valkey_pool: AsyncConnectionPool) -> None:
+    """Test creating async saver from existing pool."""
+    async with AsyncValkeyCheckpointSaver.from_pool(
+        async_valkey_pool, ttl_seconds=3600.0
+    ) as saver:
+        assert saver.ttl == 3600
+
+
+@pytest.mark.asyncio
+async def test_async_operations(valkey_url: str) -> None:
+    """Test async operations using connection pool."""
+    async with AsyncValkeyCheckpointSaver.from_conn_string(
+        valkey_url, ttl_seconds=3600.0, pool_size=5
+    ) as saver:
+        # Test data
+        config = {"configurable": {"thread_id": "test-thread", "checkpoint_ns": "test"}}
+        checkpoint = {"id": "test-1", "state": {"value": 1}, "versions": {}}
+        metadata = {"timestamp": datetime.now().isoformat(), "user": "test"}
+        new_versions = {}
+
+        # Store checkpoint
+        result = await saver.aput(config, checkpoint, metadata, new_versions)
+        assert result["configurable"]["checkpoint_id"] == checkpoint["id"]
+
+        # Get checkpoint
+        result = await saver.aget_tuple(
+            {
+                "configurable": {
+                    "thread_id": "test-thread",
+                    "checkpoint_ns": "test",
+                    "checkpoint_id": checkpoint["id"],
+                }
+            }
+        )
+        assert result is not None
+        assert result.checkpoint["id"] == checkpoint["id"]
+        assert result.checkpoint["state"] == checkpoint["state"]
+        assert result.metadata["user"] == metadata["user"]
+
+
+@pytest.mark.asyncio
+async def test_async_shared_pool(async_valkey_pool: AsyncConnectionPool) -> None:
+    """Test sharing connection pool between async savers."""
+    async with (
+        AsyncValkeyCheckpointSaver.from_pool(
+            async_valkey_pool, ttl_seconds=3600.0
+        ) as saver1,
+        AsyncValkeyCheckpointSaver.from_pool(
+            async_valkey_pool, ttl_seconds=3600.0
+        ) as saver2,
+    ):
+        # Test data
+        config = {"configurable": {"thread_id": "test-thread", "checkpoint_ns": "test"}}
+        checkpoint1 = {"id": "test-1", "state": {"value": 1}, "versions": {}}
+        checkpoint2 = {"id": "test-2", "state": {"value": 2}, "versions": {}}
+        metadata = {"timestamp": datetime.now().isoformat(), "user": "test"}
+        new_versions = {}
+
+        # Store checkpoints in both savers
+        await saver1.aput(config, checkpoint1, metadata, new_versions)
+        await saver2.aput(config, checkpoint2, metadata, new_versions)
+
+        # Get checkpoints from both savers
+        result1 = await saver1.aget_tuple(
+            {
+                "configurable": {
+                    "thread_id": "test-thread",
+                    "checkpoint_ns": "test",
+                    "checkpoint_id": checkpoint1["id"],
+                }
+            }
+        )
+        result2 = await saver2.aget_tuple(
+            {
+                "configurable": {
+                    "thread_id": "test-thread",
+                    "checkpoint_ns": "test",
+                    "checkpoint_id": checkpoint2["id"],
+                }
+            }
+        )
+
+        assert result1 is not None
+        assert result2 is not None
+        assert result1.checkpoint["id"] == checkpoint1["id"]
+        assert result2.checkpoint["id"] == checkpoint2["id"]

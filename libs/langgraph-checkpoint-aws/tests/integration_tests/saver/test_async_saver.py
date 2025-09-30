@@ -115,21 +115,29 @@ class TestAsyncBedrockMemorySaver:
             config = {"configurable": {"thread_id": session_id}}
 
             # Test weather query
-            response = await graph.ainvoke(
-                {"messages": [("human", "what's the weather in sf")]}, config
-            )
-            assert response, "Response should not be empty"
+            try:
+                response = await graph.ainvoke(
+                    {"messages": [("human", "what's the weather in sf")]}, config
+                )
+                assert response, "Response should not be empty"
 
-            # Test checkpoint retrieval
-            checkpoint = await session_saver.aget(config)
-            assert checkpoint, "Checkpoint should not be empty"
+                # Test checkpoint retrieval
+                checkpoint = await session_saver.aget(config)
+                assert checkpoint, "Checkpoint should not be empty"
 
-            # Test checkpoint listing
-            checkpoint_tuples = [tup async for tup in session_saver.alist(config)]
-            assert checkpoint_tuples, "Checkpoint tuples should not be empty"
-            assert isinstance(checkpoint_tuples, list), (
-                "Checkpoint tuples should be a list"
-            )
+                # Test checkpoint listing
+                checkpoint_tuples = [tup async for tup in session_saver.alist(config)]
+                assert checkpoint_tuples, "Checkpoint tuples should not be empty"
+                assert isinstance(checkpoint_tuples, list), (
+                    "Checkpoint tuples should be a list"
+                )
+            except Exception as e:
+                if "AccessDeniedException" in str(
+                    e
+                ) or "You don't have access to the model" in str(e):
+                    pytest.skip(f"Skipping test due to Bedrock model access issue: {e}")
+                else:
+                    raise
         finally:
             # Create proper request objects
             await boto_session_client.end_session(
