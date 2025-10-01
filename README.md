@@ -17,7 +17,8 @@ The following packages are hosted in this repository:
 - **Tools**: Includes tools and toolkits to enable use of [Amazon Bedrock AgentCore](https://aws.amazon.com/bedrock/agentcore/)'s built-in tools with LangChain and LangGraph agents.
 
 ### LangGraph
-- **Checkpointers**: Provides a custom checkpointing solution for LangGraph agents using the [AWS Bedrock Session Management Service](https://docs.aws.amazon.com/bedrock/latest/userguide/sessions.html).
+- **Checkpointers**: Provides a custom checkpointing solution for LangGraph agents using either the [AgentCore Memory Service](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html) or the [AWS Bedrock Session Management Service](https://docs.aws.amazon.com/bedrock/latest/userguide/sessions.html).
+- **Memory Stores** - Provides a memory store solution for saving, processing, and retrieving intelligent long term memories using the [AgentCore Memory Service](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html).
 
 ...and more to come. This repository will continue to expand and offer additional components for various AWS services as development progresses.
 
