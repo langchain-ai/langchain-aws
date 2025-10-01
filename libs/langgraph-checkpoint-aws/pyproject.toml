@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "langgraph-checkpoint-aws"
-version = "0.1.2"
+version = "0.2.0"
 description = "A LangChain checkpointer implementation that uses Bedrock Session Management Service to enable stateful and resumable LangGraph agents."
 authors = []
 license = "MIT"
