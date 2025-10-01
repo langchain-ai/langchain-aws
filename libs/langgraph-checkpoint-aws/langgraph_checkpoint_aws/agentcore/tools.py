@@ -9,7 +9,7 @@ import functools
 import logging
 import typing
 import uuid
-from typing import Optional
+from typing import Optional, Union
 
 from langchain_core.messages import BaseMessage
 from langchain_core.tools import StructuredTool
@@ -30,13 +30,13 @@ logger = logging.getLogger(__name__)
 class NamespaceTemplate:
     """Template for namespace configuration with runtime substitution."""
 
-    def __init__(self, namespace: tuple[str, ...] | str):
+    def __init__(self, namespace: Union[tuple[str, ...], str]):
         if isinstance(namespace, str):
             self.namespace_parts = (namespace,)
         else:
             self.namespace_parts = namespace
 
-    def __call__(self, config: dict | None = None) -> tuple[str, ...]:
+    def __call__(self, config: Optional[dict] = None) -> tuple[str, ...]:
         """Format namespace with runtime configuration."""
         if not config:
             try:
@@ -66,10 +66,10 @@ class NamespaceTemplate:
 
 
 def create_search_memory_tool(
-    namespace: tuple[str, ...] | str,
+    namespace: Union[tuple[str, ...], str],
     *,
     instructions: str = "Search for relevant memories and user preferences to provide context for your responses.",
-    store: BaseStore | None = None,
+    store: Optional[BaseStore] = None,
     response_format: typing.Literal["content", "content_and_artifact"] = "content",
     name: str = "search_memory",
 ):
@@ -165,7 +165,7 @@ def create_search_memory_tool(
         )
 
 
-def _get_store(initial_store: BaseStore | None = None) -> BaseStore:
+def _get_store(initial_store: Optional[BaseStore] = None) -> BaseStore:
     """Get the store instance, either from parameter or configuration."""
     try:
         if initial_store is not None:
