@@ -772,7 +772,9 @@ class ChatBedrockConverse(BaseChatModel):
 
         # For regional model IDs (e.g., us.anthropic.claude-3-5-haiku-20241022-v1:0),
         # get the base model ID by removing the regional prefix
-        if self.model_id.startswith(("eu.", "us.", "us-gov.", "apac.", "sa.", "amer.", "global.")):
+        if self.model_id.startswith(
+            ("eu.", "us.", "us-gov.", "apac.", "sa.", "amer.", "global.", "jp.")
+        ):
             return self.model_id.partition(".")[2]
 
         return self.model_id
