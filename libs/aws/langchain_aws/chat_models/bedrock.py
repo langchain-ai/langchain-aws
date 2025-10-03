@@ -14,6 +14,7 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
+    Type,
     Union,
     cast,
 )
@@ -37,6 +38,8 @@ from langchain_core.messages import (
 from langchain_core.messages.ai import UsageMetadata
 from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.messages.utils import convert_to_openai_messages
+from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
+from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
@@ -1244,7 +1247,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
     def with_structured_output(
         self,
-        schema: Union[Dict, TypeBaseModel],
+        schema: Union[Dict[str, Any], TypeBaseModel, Type],
         *,
         include_raw: bool = False,
         **kwargs: Any,
@@ -1373,11 +1376,21 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             },
         )
         if isinstance(schema, type) and is_basemodel_subclass(schema):
-            output_parser = ToolsOutputParser(
-                first_tool_only=True, pydantic_schemas=[schema]
-            )
+            if self.streaming:
+                output_parser: OutputParserLike = PydanticToolsParser(
+                    first_tool_only=True, tools=[schema]
+                )
+            else:
+                output_parser = ToolsOutputParser(
+                    first_tool_only=True, pydantic_schemas=[schema]
+                )
         else:
-            output_parser = ToolsOutputParser(first_tool_only=True, args_only=True)
+            if self.streaming:
+                output_parser = JsonOutputKeyToolsParser(
+                    first_tool_only=True, key_name=tool_name
+                )
+            else:
+                output_parser = ToolsOutputParser(first_tool_only=True, args_only=True)
 
         if include_raw:
             parser_assign = RunnablePassthrough.assign(
