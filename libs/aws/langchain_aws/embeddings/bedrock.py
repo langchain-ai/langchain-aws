@@ -204,6 +204,13 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                 contentType="application/json",
             )
 
+            response_metadata = response.get("ResponseMetadata", {})
+            if response_metadata:
+                logger.info(
+                    f"Successfully invoked model {self.model_id}. "
+                    f"ResponseMetadata: {response_metadata}"
+                )
+
             response_body = json.loads(response.get("body").read())
             return response_body
         except Exception as e:
