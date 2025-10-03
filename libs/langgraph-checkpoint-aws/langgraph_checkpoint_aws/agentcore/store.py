@@ -9,7 +9,7 @@ import logging
 import uuid
 from collections.abc import Iterable
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 import boto3
 from botocore.config import Config
@@ -78,7 +78,7 @@ class AgentCoreMemoryStore(BaseStore):
 
     def batch(self, ops: Iterable[Op]) -> list[Result]:
         """Execute multiple operations in a single batch."""
-        results = []
+        results: list[Result] = []
 
         for op in ops:
             if isinstance(op, PutOp):
@@ -107,7 +107,7 @@ class AgentCoreMemoryStore(BaseStore):
     def _handle_put(self, op: PutOp) -> None:
         """Handle PutOp by creating conversational events in AgentCore Memory."""
         if op.value is None:
-            # TODO: Delete operation support - need to figure out if we are deleting events or records
+            # TODO: Delete operation support - need to figure out if we are deleting events or records # noqa: E501
             logger.warning("Delete operations not supported in AgentCore Memory")
             return
 
@@ -145,7 +145,7 @@ class AgentCoreMemoryStore(BaseStore):
         )
         logger.debug(f"Created event for message in namespace {op.namespace}")
 
-    def _handle_get(self, op: GetOp) -> Optional[Item]:
+    def _handle_get(self, op: GetOp) -> Result:
         """Handle GetOp by retrieving a specific memory record from AgentCore Memory."""
         try:
             response = self.client.get_memory_record(
@@ -171,7 +171,7 @@ class AgentCoreMemoryStore(BaseStore):
             logger.error(f"Failed to get memory record: {e}")
             raise
 
-    def _handle_search(self, op: SearchOp) -> list[SearchItem]:
+    def _handle_search(self, op: SearchOp) -> Result:
         """Handle SearchOp by retrieving memory records from AgentCore Memory."""
         if not op.query:
             logger.warning("Search requires a query for AgentCore Memory")
@@ -213,7 +213,7 @@ class AgentCoreMemoryStore(BaseStore):
         memory_record_id = memory_record.get("memoryRecordId", str(uuid.uuid4()))
         created_at = memory_record.get("createdAt")
 
-        # Parse timestamp - API only provides createdAt, use it for both created_at and updated_at
+        # Parse timestamp - API only provides createdAt, use it for both created_at and updated_at # noqa: E501
         if isinstance(created_at, str):
             try:
                 created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))

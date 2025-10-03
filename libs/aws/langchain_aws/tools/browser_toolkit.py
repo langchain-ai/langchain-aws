@@ -22,7 +22,7 @@ class BrowserToolkit:
         ```python
 
         import asyncio
-        from langgraph.prebuilt import create_react_agent
+        from langchain.agents import create_agent
         from langchain_aws.tools import create_browser_toolkit
 
         async def main():
@@ -30,8 +30,8 @@ class BrowserToolkit:
             toolkit, browser_tools = create_browser_toolkit(region="us-west-2")
 
             # Create a ReAct agent using the browser tools
-            agent = create_react_agent(
-                model="bedrock_converse:us.anthropic.claude-3-5-haiku-20241022-v1:0",
+            agent = create_agent(
+                "bedrock_converse:us.anthropic.claude-3-5-haiku-20241022-v1:0",
                 tools=browser_tools
             )
 
@@ -44,7 +44,8 @@ class BrowserToolkit:
 
             # Invoke the agent with a specific task using thread ID
             result = await agent.ainvoke(
-                "Navigate to https://www.example.com and tell me the main heading on the page.",
+                "Navigate to https://www.example.com and tell me the main heading "
+                "on the page.",
                 config=config
             )
 
@@ -56,6 +57,7 @@ class BrowserToolkit:
         # Run the example
         asyncio.run(main())
         ```
+
     """
 
     def __init__(self, region: str = "us-west-2"):
@@ -64,6 +66,7 @@ class BrowserToolkit:
 
         Args:
             region: AWS region for the browser client
+
         """
         self.region = region
         self.session_manager = BrowserSessionManager(region=region)
@@ -83,6 +86,7 @@ class BrowserToolkit:
 
         Returns:
             List of LangChain tools
+
         """
         return self.tools
 
@@ -92,6 +96,7 @@ class BrowserToolkit:
 
         Returns:
             Dictionary of {tool_name: tool}
+
         """
         return {tool.name: tool for tool in self.tools}
 
@@ -112,6 +117,7 @@ def create_browser_toolkit(
 
     Returns:
         Tuple of (toolkit, tools)
+
     """
     toolkit = BrowserToolkit(region=region)
     tools = toolkit.get_tools()
