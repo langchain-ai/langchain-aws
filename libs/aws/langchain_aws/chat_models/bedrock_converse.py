@@ -578,6 +578,10 @@ class ChatBedrockConverse(BaseChatModel):
             or
             # Cohere Command R models
             (provider == "cohere" and "command-r" in model_id_lower)
+            or
+            # Qwen models
+            (provider == "qwen" and "qwen3" in model_id_lower)
+            
         ):
             return True
         elif (
