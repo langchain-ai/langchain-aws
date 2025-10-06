@@ -580,8 +580,7 @@ class ChatBedrockConverse(BaseChatModel):
             (provider == "cohere" and "command-r" in model_id_lower)
             or
             # Qwen models
-            (provider == "qwen" and "qwen3" in model_id_lower)
-            
+            (provider == "qwen" and "qwen3" in model_id_lower)   
         ):
             return True
         elif (
