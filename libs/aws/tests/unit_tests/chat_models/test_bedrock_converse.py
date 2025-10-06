@@ -610,6 +610,10 @@ def test_standard_tracing_params() -> None:
         ("us.deepseek.r1-v1:0", "tool_calling"),
         ("openai.gpt-oss-120b-1:0", False),
         ("openai.gpt-oss-20b-1:0", False),
+        ("qwen.qwen3-235b-a22b-2507-v1:0", False),
+        ("qwen.qwen3-32b-v1:0", False),
+        ("qwen.qwen3-coder-480b-a35b-v1:0", False),
+        ("qwen.qwen3-coder-30b-a3b-v1:0", False),
     ],
 )
 def test_set_disable_streaming(
