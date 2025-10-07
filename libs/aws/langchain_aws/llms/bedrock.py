@@ -174,12 +174,16 @@ def _stream_response_to_generation_chunk(
         if k
         not in [output_key, "prompt_token_count", "generation_token_count", "created"]
     }
+
+    if provider in ["mistral", "deepseek", "writer"]:
+        text = stream_response[output_key][0]["text"]
+    elif provider in ["openai", "qwen"]:
+        text = stream_response[output_key][0]["delta"].get("content", "")
+    else:
+        text = stream_response[output_key]
+
     return GenerationChunk(
-        text=(
-            stream_response[output_key]
-            if provider not in ["mistral", "deepseek", "writer"]
-            else stream_response[output_key][0]["text"]
-        ),
+        text=text,
         generation_info=generation_info,
     )
 
@@ -273,6 +277,8 @@ class LLMInputOutputAdapter:
         "deepseek": "choices",
         "meta": "generation",
         "mistral": "outputs",
+        "openai": "choices",
+        "qwen": "choices",
         "writer": "choices",
     }
 
@@ -377,11 +383,16 @@ class LLMInputOutputAdapter:
                     input_body["max_tokens"] = max_tokens
                 elif provider == "writer":
                     input_body["max_tokens"] = max_tokens
-                elif provider == "openai":
-                    input_body["max_output_tokens"] = max_tokens
                 else:
                     # TODO: Add AI21 support, param depends on specific model.
                     pass
+            if temperature is not None:
+                input_body["temperature"] = temperature
+
+        elif provider in ("openai", "qwen"):
+            input_body["messages"] = messages
+            if max_tokens:
+                input_body["max_tokens"] = max_tokens
             if temperature is not None:
                 input_body["temperature"] = temperature
 
@@ -394,12 +405,6 @@ class LLMInputOutputAdapter:
             if temperature is not None:
                 input_body["textGenerationConfig"]["temperature"] = temperature
 
-        elif provider == "openai":
-            input_body["messages"] = messages
-            if max_tokens:
-                input_body["max_tokens"] = max_tokens
-            if temperature is not None:
-                input_body["temperature"] = temperature
         else:
             input_body["inputText"] = prompt
 
@@ -452,6 +457,8 @@ class LLMInputOutputAdapter:
             elif provider == "mistral":
                 text = response_body.get("outputs")[0].get("text")
             elif provider == "openai":
+                text = response_body.get("choices")[0].get("message").get("content")
+            elif provider == "qwen":
                 text = response_body.get("choices")[0].get("message").get("content")
             else:
                 text = response_body.get("results")[0].get("outputText")
@@ -551,6 +558,13 @@ class LLMInputOutputAdapter:
                 yield _get_invocation_metrics_chunk(chunk_obj)
                 return
 
+            elif (
+                provider in ("qwen", "openai")
+                and chunk_obj.get(output_key, [{}])[0].get("finish_reason", "") == "stop"
+            ):
+                yield _get_invocation_metrics_chunk(chunk_obj)
+                return
+
             elif messages_api and (chunk_obj.get("type") == "message_stop"):
                 yield _get_invocation_metrics_chunk(chunk_obj)
                 return
@@ -592,6 +606,13 @@ class LLMInputOutputAdapter:
                 provider == "mistral"
                 and chunk_obj.get(output_key, [{}])[0].get("stop_reason", "") == "stop"
             ):
+                return
+
+            elif (
+                provider in ("qwen", "openai")
+                and chunk_obj.get(output_key, [{}])[0].get("finish_reason", "") == "stop"
+            ):
+                yield _get_invocation_metrics_chunk(chunk_obj)
                 return
 
             generation_chunk = _stream_response_to_generation_chunk(
@@ -1166,7 +1187,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             provider,
             response,
             stop,
-            True if messages else False,
+            True if (messages and provider=="anthropic") else False,
             coerce_content_to_string=coerce_content_to_string,
         ):
             yield chunk
@@ -1235,7 +1256,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             provider,
             response,
             stop,
-            True if messages else False,
+            True if (messages and provider=="anthropic") else False,
         ):
             yield chunk
 

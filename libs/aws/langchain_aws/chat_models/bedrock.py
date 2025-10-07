@@ -274,7 +274,7 @@ def convert_messages_to_prompt_writer(messages: List[BaseMessage]) -> str:
     """Convert a list of messages to a prompt for Writer."""
 
     return "\n".join(
-        [_convert_one_message_to_text_llama(message) for message in messages]
+        [_convert_one_message_to_text_writer(message) for message in messages]
     )
 
 
@@ -311,6 +311,138 @@ def convert_messages_to_prompt_openai(messages: List[BaseMessage]) -> str:
 
     prompt += "<|start|>assistant\n\n"
 
+    return prompt
+
+
+def _convert_one_message_to_text_qwen(message: BaseMessage) -> str:
+    """Convert a single message to text format for Qwen3 models."""
+
+    # Reference chat template: https://huggingface.co/Qwen/Qwen3-235B-A22B?chat_template=default
+    # NOTE: Not currently used as InvokeModel API currently only accepts messages for Qwen3 models
+
+    if isinstance(message, SystemMessage):
+        message_text = f"<|im_start|>system\n{message.content}<|im_end|>"
+    elif isinstance(message, ChatMessage):
+        message_text = f"<|im_start|>{message.role}\n{message.content}<|im_end|>"
+    elif isinstance(message, HumanMessage):
+        message_text = f"<|im_start|>user\n{message.content}<|im_end|>"
+    elif isinstance(message, AIMessage):
+        content = message.content or ""
+        reasoning_content = ""
+
+        if '<think>' in content and '</think>' in content:
+            parts = content.split('</think>')
+            reasoning_content = parts[0].split('<think>')[-1].lstrip('\n')
+            content = parts[-1].lstrip('\n')
+        elif message.additional_kwargs and 'reasoning_content' in message.additional_kwargs:
+            reasoning_content = message.additional_kwargs['reasoning_content']
+        
+        if reasoning_content:
+            message_text = f"<|im_start|>assistant\n<think>\n{reasoning_content.strip()}\n</think>\n\n{content.lstrip()}"
+        else:
+            message_text = f"<|im_start|>assistant\n{content}"
+            
+        # Handle tool calls if present
+        if hasattr(message, 'tool_calls') and message.tool_calls:
+            for i, tool_call in enumerate(message.tool_calls):
+                # Add newline if needed
+                if (i == 0 and content) or (i > 0):
+                    message_text += '\n'
+                
+                # Format function call
+                if hasattr(tool_call, 'function'):
+                    tool_call = tool_call.function
+                
+                message_text += f'<tool_call>\n{{"name": "{tool_call.name}", "arguments": '
+                
+                # Format arguments
+                if isinstance(tool_call.arguments, str):
+                    message_text += tool_call.arguments
+                else:
+                    message_text += json.dumps(tool_call.arguments)
+                
+                message_text += '}\n</tool_call>'
+        
+        message_text += "<|im_end|>"
+    elif isinstance(message, ToolMessage):
+        message_text = f"<|im_start|>user\n<tool_response>\n{message.content}\n</tool_response><|im_end|>"
+    else:
+        raise ValueError(f"Got unknown type {message}")
+    return message_text
+
+
+def convert_messages_to_prompt_qwen(
+    messages: List[BaseMessage],
+    tools: Optional[List[dict]] = None,
+) -> str:
+    """Convert a list of messages (and possible tools) to a prompt for Qwen3 models"""
+
+    # Reference chat template: https://huggingface.co/Qwen/Qwen3-235B-A22B?chat_template=default
+    # NOTE: Not currently used as InvokeModel API currently only accepts messages for Qwen3 models
+
+    prompt = ""
+
+    if tools:
+        prompt += '<|im_start|>system\n'
+        if messages and messages[0].type == 'system':
+            prompt += f'{messages[0].content}\n\n'
+
+        prompt += "# Tools\n\nYou may call one or more functions to assist with the user query.\n\n"
+        prompt += "You are provided with function signatures within <tools></tools> XML tags:\n<tools>"
+
+        for tool in tools:
+            prompt += f"\n{json.dumps(tool)}"
+        
+        prompt += "\n</tools>\n\n"
+        prompt += "For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n"
+        prompt += "<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n"
+
+        if messages and messages[0].type == 'system':
+            messages = messages[1:]
+    else:
+        if messages and messages[0].type == 'system':
+            prompt += _convert_one_message_to_text_qwen(messages[0]) + "\n"
+            messages = messages[1:]
+
+    multi_step_tool = True
+    last_query_index = len(messages) - 1
+
+    for i in range(len(messages) - 1, -1, -1):
+        message = messages[i]
+        if (multi_step_tool and 
+            message.type == "human" and 
+            isinstance(message.content, str) and 
+            not (message.content.startswith('<tool_response>') and 
+                 message.content.endswith('</tool_response>'))):
+            multi_step_tool = False
+            last_query_index = i
+
+    i = 0
+    while i < len(messages):
+        if i > 0 and messages[i].type == "tool" and messages[i-1].type == "tool":
+            i += 1
+            continue
+
+        if messages[i].type == "tool":
+            prompt += '<|im_start|>user'
+
+            j = i
+            while j < len(messages) and messages[j].type == "tool":
+                if isinstance(messages[j].content, str):
+                    content = messages[j].content
+                else:
+                    content = ''
+                prompt += f'\n<tool_response>\n{content}\n</tool_response>'
+                j += 1
+
+            prompt += '<|im_end|>\n'
+            i = j
+        else:
+            prompt += _convert_one_message_to_text_qwen(messages[i]) + "\n"
+            i += 1
+
+    prompt += '<|im_start|>assistant\n'
+    
     return prompt
 
 
@@ -690,6 +822,8 @@ class ChatPromptAdapter:
             prompt = convert_messages_to_prompt_writer(messages=messages)
         elif provider == "openai":
             prompt = convert_messages_to_prompt_openai(messages=messages)
+        elif provider == "qwen":
+            prompt = convert_messages_to_prompt_qwen(messages=messages)
         else:
             raise NotImplementedError(
                 f"Provider {provider} model does not support chat."
@@ -702,7 +836,7 @@ class ChatPromptAdapter:
     ) -> Union[Tuple[Optional[str], List[Dict]], List[Dict]]:
         if provider == "anthropic":
             return _format_anthropic_messages(messages)
-        elif provider == "openai":
+        elif provider in ("openai", "qwen"):
             return convert_to_openai_messages(messages)
         raise NotImplementedError(
             f"Provider {provider} not supported for format_messages"
@@ -855,7 +989,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     system = self.system_prompt_with_tools + f"\n{system}"
                 else:
                     system = self.system_prompt_with_tools
-        elif provider == "openai":
+        elif provider in ("openai", "qwen"):
             formatted_messages = ChatPromptAdapter.format_messages(provider, messages)
         else:
             prompt = ChatPromptAdapter.convert_messages_to_prompt(
@@ -974,7 +1108,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                         system = self.system_prompt_with_tools + f"\n{system}"
                     else:
                         system = self.system_prompt_with_tools
-            elif provider == "openai":
+            elif provider in ("openai", "qwen"):
                 formatted_messages = ChatPromptAdapter.format_messages(
                     provider, messages
                 )
