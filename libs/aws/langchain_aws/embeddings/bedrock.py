@@ -185,8 +185,13 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                     "texts": text_batch,
                 }
             ).get("embeddings")
+            # Embed v3 and v4 schemas
+            if isinstance(batch_embeddings, dict) and "float" in batch_embeddings:
+                processed_embeddings = batch_embeddings["float"]
+            else:
+                processed_embeddings = batch_embeddings
 
-            results += batch_embeddings
+            results += processed_embeddings
 
         return results
 
