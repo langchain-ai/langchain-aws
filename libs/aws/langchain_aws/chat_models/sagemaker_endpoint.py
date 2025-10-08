@@ -2,7 +2,7 @@
 
 import io
 import logging
-from typing import Any, Dict, Iterator, List, Literal, Mapping, Optional, Union
+from typing import Any, Dict, Iterator, List, Mapping, Optional
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import (
@@ -102,11 +102,6 @@ class ChatLineIterator:
                 continue
             self.buffer.seek(0, io.SEEK_END)
             self.buffer.write(chunk["PayloadPart"]["Bytes"])
-
-
-MESSAGE_FORMAT = Dict[
-    Literal["role", "content"], Union[Literal["system", "user", "assistant"], str]
-]
 
 
 class ChatModelContentHandler(ContentHandlerBase[Any, Any]):

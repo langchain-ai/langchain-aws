@@ -631,7 +631,7 @@ requires-dist = [
     { name = "numpy", marker = "python_full_version < '3.12'", specifier = ">=1.0.0,<3" },
     { name = "numpy", marker = "python_full_version >= '3.12'", specifier = ">=2.3.2,<3" },
     { name = "playwright", marker = "extra == 'tools'", specifier = ">=1.53.0" },
-    { name = "pydantic", specifier = ">=2.11.7,<3" },
+    { name = "pydantic", specifier = ">=2.10.6,<3" },
 ]
 provides-extras = ["tools"]
 
