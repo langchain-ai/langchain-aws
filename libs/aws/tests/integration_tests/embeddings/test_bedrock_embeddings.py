@@ -35,7 +35,7 @@ def cohere_embeddings_v4() -> BedrockEmbeddings:
 
 @pytest.fixture(params=[
     ("cohere.embed-english-v3", 1024),
-    ("us.cohere.embed-v4:0", 1536),
+    # ("us.cohere.embed-v4:0", 1536),
 ])
 def cohere_embeddings(request) -> tuple[BedrockEmbeddings, int]:
     model_id, expected_dimension = request.param
