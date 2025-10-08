@@ -127,7 +127,13 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     @property
     def _inferred_provider(self) -> str:
         """Inferred provider of the model."""
-        return self.provider or self.model_id.split(".")[0]
+        if self.provider:
+            return self.provider
+            
+        regions = ("eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp")
+        parts = self.model_id.split(".")
+        return parts[1] if parts[0] in regions else parts[0]
+
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
