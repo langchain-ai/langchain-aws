@@ -141,8 +141,6 @@ def test_bedrock_cohere_embedding_documents(cohere_embeddings) -> None:
     embeddings, expected_dim = cohere_embeddings
     documents = ["foo bar"]
     output = embeddings.embed_documents(documents)
-    print(output)
-    print("\n")
     assert len(output) == 1
     assert len(output[0]) == expected_dim
 
