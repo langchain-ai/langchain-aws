@@ -593,6 +593,12 @@ class ChatBedrockConverse(BaseChatModel):
             or
             # Cohere Command R models
             (provider == "cohere" and "command-r" in model_id_lower)
+            or
+            # DeepSeek-V3 models
+            (provider == "deepseek" and "v3" in model_id_lower)
+            or
+            # Qwen3 models
+            (provider == "qwen" and "qwen3" in model_id_lower)
         ):
             return True
         elif (

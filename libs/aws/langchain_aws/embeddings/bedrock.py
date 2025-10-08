@@ -145,7 +145,13 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     @property
     def _inferred_provider(self) -> str:
         """Inferred provider of the model."""
-        return self.provider or self.model_id.split(".")[0]
+        if self.provider:
+            return self.provider
+            
+        regions = ("eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp")
+        parts = self.model_id.split(".")
+        return parts[1] if parts[0] in regions else parts[0]
+
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
@@ -209,9 +215,14 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                     "texts": text_batch,
                 }
             ).get("embeddings")
+            # Embed v3 and v4 schemas
+            if isinstance(batch_embeddings, dict) and "float" in batch_embeddings:
+                processed_embeddings = batch_embeddings["float"]
+            else:
+                processed_embeddings = batch_embeddings
 
-            if batch_embeddings is not None:
-                results += batch_embeddings
+            if processed_embeddings is not None:
+                results += processed_embeddings
 
         return results
 
