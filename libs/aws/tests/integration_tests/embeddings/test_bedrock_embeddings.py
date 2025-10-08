@@ -36,7 +36,7 @@ def cohere_embeddings_v4() -> BedrockEmbeddings:
 @pytest.fixture(
     params=[
         ("cohere.embed-english-v3", 1024),
-        #("us.cohere.embed-v4:0", 1536),
+        # ("us.cohere.embed-v4:0", 1536),
     ]
 )
 def cohere_embeddings(request) -> tuple[BedrockEmbeddings, int]:
@@ -202,13 +202,13 @@ def test_bedrock_embedding_provider_arg(
     assert cohere_embeddings_model_arn._inferred_provider == "cohere"
 
 
-#@pytest.mark.scheduled
+# @pytest.mark.scheduled
 @pytest.mark.skip(reason="CI does not have access to v4 embeddings.")
 def test_bedrock_cohere_v4_large_input(cohere_embeddings_v4) -> None:
     """Test that Cohere v4 can handle inputs larger than v3's 2048 char limit."""
     # Create a text slightly larger than v3's 2048 char limit
     large_text = "x" * 3000  # 3000 characters > 2048 limit of v3
-    
+
     # This should work with v4 (would fail with v3)
     output = cohere_embeddings_v4.embed_documents([large_text])
     assert len(output) == 1

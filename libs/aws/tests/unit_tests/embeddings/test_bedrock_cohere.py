@@ -1,7 +1,9 @@
 """Test Cohere v4 embedding fixes."""
 
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
+
 from langchain_aws.embeddings.bedrock import (
     BedrockEmbeddings,
     _batch_cohere_embedding_texts,
@@ -54,12 +56,12 @@ class TestCohereV4Fixes:
             list(_batch_cohere_embedding_texts([huge_text], is_v4=True))
         assert "128K tokens" in str(exc_info.value)
 
-    @patch('langchain_aws.embeddings.bedrock.create_aws_client')
-    def test_embedding_func_cohere_v3_schema(self, mock_create_client) -> None:
+    @patch("langchain_aws.embeddings.bedrock.create_aws_client")
+    def test_embedding_func_cohere_v3_schema(self, mock_create_client: Mock) -> None:
         """Test that _embedding_func handles v3 schema correctly."""
         mock_client = Mock()
         mock_create_client.return_value = mock_client
-        
+
         # Mock v3 response (direct array)
         mock_client.invoke_model.return_value = {
             "body": Mock(read=lambda: '{"embeddings": [[0.1, 0.2, 0.3]]}')
@@ -67,15 +69,15 @@ class TestCohereV4Fixes:
 
         embeddings = BedrockEmbeddings(model_id="cohere.embed-english-v3")
         result = embeddings._embedding_func("test text")
-        
+
         assert result == [0.1, 0.2, 0.3]
 
-    @patch('langchain_aws.embeddings.bedrock.create_aws_client')
-    def test_embedding_func_cohere_v4_schema(self, mock_create_client) -> None:
+    @patch("langchain_aws.embeddings.bedrock.create_aws_client")
+    def test_embedding_func_cohere_v4_schema(self, mock_create_client: Mock) -> None:
         """Test that _embedding_func handles v4 schema correctly."""
         mock_client = Mock()
         mock_create_client.return_value = mock_client
-        
+
         # Mock v4 response (dict with "float" key)
         mock_client.invoke_model.return_value = {
             "body": Mock(read=lambda: '{"embeddings": {"float": [[0.1, 0.2, 0.3]]}}')
@@ -83,29 +85,35 @@ class TestCohereV4Fixes:
 
         embeddings = BedrockEmbeddings(model_id="us.cohere.embed-v4:0")
         result = embeddings._embedding_func("test text")
-        
+
         assert result == [0.1, 0.2, 0.3]
 
-    @patch('langchain_aws.embeddings.bedrock.create_aws_client')
-    def test_cohere_multi_embedding_uses_v4_batching(self, mock_create_client) -> None:
+    @patch("langchain_aws.embeddings.bedrock.create_aws_client")
+    def test_cohere_multi_embedding_uses_v4_batching(
+        self, mock_create_client: Mock
+    ) -> None:
         """Test that _cohere_multi_embedding passes v4 flag to batching function."""
         mock_client = Mock()
         mock_create_client.return_value = mock_client
-        
+
         mock_client.invoke_model.return_value = {
-            "body": Mock(read=lambda: '{"embeddings": {"float": [[0.1, 0.2], [0.3, 0.4]]}}')
+            "body": Mock(
+                read=lambda: '{"embeddings": {"float": [[0.1, 0.2], [0.3, 0.4]]}}'
+            )
         }
 
         embeddings = BedrockEmbeddings(model_id="us.cohere.embed-v4:0")
-        
+
         # Use a text that would fail v3 limits but pass v4 limits
         medium_texts = ["x" * 3000, "y" * 3000]
-        
-        with patch('langchain_aws.embeddings.bedrock._batch_cohere_embedding_texts') as mock_batch:
+
+        with patch(
+            "langchain_aws.embeddings.bedrock._batch_cohere_embedding_texts"
+        ) as mock_batch:
             mock_batch.return_value = [medium_texts]  # Single batch
-            
+
             result = embeddings._cohere_multi_embedding(medium_texts)
-            
+
             # Verify the batching function was called with is_v4=True
             mock_batch.assert_called_once_with(medium_texts, is_v4=True)
             assert len(result) == 2
