@@ -27,6 +27,23 @@ def cohere_embeddings_v3() -> BedrockEmbeddings:
 
 
 @pytest.fixture
+def cohere_embeddings_v4() -> BedrockEmbeddings:
+    return BedrockEmbeddings(
+        model_id="us.cohere.embed-v4:0",
+    )
+
+
+@pytest.fixture(params=[
+    ("cohere.embed-english-v3", 1024),
+    # ("us.cohere.embed-v4:0", 1536),
+])
+def cohere_embeddings(request) -> tuple[BedrockEmbeddings, int]:
+    model_id, expected_dimension = request.param
+    embeddings = BedrockEmbeddings(model_id=model_id)
+    return embeddings, expected_dimension
+
+
+@pytest.fixture
 def cohere_embeddings_model_arn() -> BedrockEmbeddings:
     return BedrockEmbeddings(
         model_id="arn:aws:bedrock:us-east-1::foundation-model/cohere.embed-english-v3",
@@ -120,21 +137,22 @@ def test_embed_query_with_size(bedrock_embeddings_v2) -> None:
 
 
 @pytest.mark.scheduled
-def test_bedrock_cohere_embedding_documents(cohere_embeddings_v3) -> None:
+def test_bedrock_cohere_embedding_documents(cohere_embeddings) -> None:
+    embeddings, expected_dim = cohere_embeddings
     documents = ["foo bar"]
-    output = cohere_embeddings_v3.embed_documents(documents)
+    output = embeddings.embed_documents(documents)
     assert len(output) == 1
-    assert len(output[0]) == 1024
+    assert len(output[0]) == expected_dim
 
 
 @pytest.mark.scheduled
-def test_bedrock_cohere_embedding_documents_multiple(cohere_embeddings_v3) -> None:
+def test_bedrock_cohere_embedding_documents_multiple(cohere_embeddings) -> None:
+    embeddings, expected_dim = cohere_embeddings
     documents = ["foo bar", "bar foo", "foo"]
-    output = cohere_embeddings_v3.embed_documents(documents)
+    output = embeddings.embed_documents(documents)
     assert len(output) == 3
-    assert len(output[0]) == 1024
-    assert len(output[1]) == 1024
-    assert len(output[2]) == 1024
+    for x in output:
+        assert len(x) == expected_dim
 
 
 @pytest.mark.scheduled
@@ -159,20 +177,24 @@ def test_bedrock_cohere_batching() -> None:
 
 
 @pytest.mark.scheduled
-def test_bedrock_cohere_embedding_large_document_set(cohere_embeddings_v3) -> None:
+def test_bedrock_cohere_embedding_large_document_set(cohere_embeddings) -> None:
+    embeddings, expected_dim = cohere_embeddings
     lots_of_documents = 200
     documents = [f"text_{val}" for val in range(lots_of_documents)]
-    output = cohere_embeddings_v3.embed_documents(documents)
+    output = embeddings.embed_documents(documents)
     assert len(output) == 200
-    assert len(output[0]) == 1024
-    assert len(output[1]) == 1024
-    assert len(output[2]) == 1024
+    for x in output:
+        assert len(x) == expected_dim
 
 
 @pytest.mark.scheduled
 def test_bedrock_embedding_provider_arg(
-    bedrock_embeddings, cohere_embeddings_v3, cohere_embeddings_model_arn
+    bedrock_embeddings,
+    cohere_embeddings_v3,
+    cohere_embeddings_v4,
+    cohere_embeddings_model_arn
 ) -> None:
     assert bedrock_embeddings._inferred_provider == "amazon"
     assert cohere_embeddings_v3._inferred_provider == "cohere"
+    assert cohere_embeddings_v4._inferred_provider == "cohere"
     assert cohere_embeddings_model_arn._inferred_provider == "cohere"
