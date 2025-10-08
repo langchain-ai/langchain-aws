@@ -22,7 +22,6 @@ from typing import (
 
 import numpy as np
 import yaml  # type: ignore[import-untyped]
-from langchain_core._api import deprecated
 from langchain_core.callbacks import (
     AsyncCallbackManagerForRetrieverRun,
     CallbackManagerForRetrieverRun,
@@ -324,6 +323,7 @@ class InMemoryVectorStore(VectorStore):
 
         Raises:
             ValueError: If the number of metadatas does not match the number of texts.
+
         """
         try:
             import redis  # type: ignore[import-untyped] # noqa: F401
@@ -337,6 +337,12 @@ class InMemoryVectorStore(VectorStore):
             ) from e
 
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
+
+        if redis_url is None:
+            raise ValueError(
+                "redis_url must be provided either as a parameter or as the "
+                "REDIS_URL environment variable"
+            )
 
         if "redis_url" in kwargs:
             kwargs.pop("redis_url")
@@ -455,6 +461,7 @@ class InMemoryVectorStore(VectorStore):
         Raises:
             ValueError: If the number of metadatas does not match the number of texts.
             ImportError: If the redis python package is not installed.
+
         """
         instance, _ = cls.from_texts_return_keys(
             texts,
@@ -512,8 +519,16 @@ class InMemoryVectorStore(VectorStore):
         Raises:
             ValueError: If the index does not exist.
             ImportError: If the redis python package is not installed.
+
         """
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
+
+        if redis_url is None:
+            raise ValueError(
+                "redis_url must be provided either as a parameter or as the "
+                "REDIS_URL environment variable"
+            )
+
         # We need to first remove redis_url from kwargs,
         # otherwise passing it to Redis will result in an error.
         if "redis_url" in kwargs:
@@ -571,8 +586,15 @@ class InMemoryVectorStore(VectorStore):
         Raises:
             ValueError: If the redis python package is not installed.
             ValueError: If the ids (keys in redis) are not provided
+
         """
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
+
+        if redis_url is None:
+            raise ValueError(
+                "redis_url must be provided either as a parameter or as the "
+                "REDIS_URL environment variable"
+            )
 
         if ids is None:
             raise ValueError("'ids' (keys)() were not provided.")
@@ -616,8 +638,16 @@ class InMemoryVectorStore(VectorStore):
 
         Returns:
             bool: Whether or not the drop was successful.
+
         """
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
+
+        if redis_url is None:
+            raise ValueError(
+                "redis_url must be provided either as a parameter or as the "
+                "REDIS_URL environment variable"
+            )
+
         try:
             import redis  # noqa: F401
         except ImportError:
@@ -665,6 +695,7 @@ class InMemoryVectorStore(VectorStore):
 
         Returns:
             List[str]: List of ids added to the vectorstore
+
         """
         ids = []
 
@@ -716,35 +747,6 @@ class InMemoryVectorStore(VectorStore):
         tags.extend(self._get_retriever_tags())
         return InMemoryVectorStoreRetriever(vectorstore=self, **kwargs, tags=tags)
 
-    @deprecated("0.0.1", alternative="similarity_search(distance_threshold=0.1)")
-    def similarity_search_limit_score(
-        self, query: str, k: int = 4, score_threshold: float = 0.2, **kwargs: Any
-    ) -> List[Document]:
-        """
-        Returns the most similar indexed documents to the query text within the
-        score_threshold range.
-
-        Deprecated: Use similarity_search with distance_threshold instead.
-
-        Args:
-            query (str): The query text for which to find similar documents.
-            k (int): The number of documents to return. Default is 4.
-            score_threshold (float): The minimum matching *distance* required
-                for a document to be considered a match. Defaults to 0.2.
-
-        Returns:
-            List[Document]: A list of documents that are most similar to the query text
-                including the match score for each document.
-
-        Note:
-            If there are no documents that satisfy the score_threshold value,
-            an empty list is returned.
-
-        """
-        return self.similarity_search(
-            query, k=k, distance_threshold=score_threshold, **kwargs
-        )
-
     def similarity_search_with_score(
         self,
         query: str,
@@ -770,6 +772,7 @@ class InMemoryVectorStore(VectorStore):
         Returns:
             List[Tuple[Document, float]]: A list of documents that are
                 most similar to the query with the distance for each document.
+
         """
         try:
             import redis
@@ -779,14 +782,6 @@ class InMemoryVectorStore(VectorStore):
                 "Could not import redis python package. "
                 "Please install it with `pip install redis`."
             ) from e
-
-        if "score_threshold" in kwargs:
-            logger.warning(
-                "score_threshold is deprecated. Use distance_threshold instead."
-                + "score_threshold should only be used in "
-                + "similarity_search_with_relevance_scores."
-                + "score_threshold will be removed in a future release.",
-            )
 
         query_embedding = self._embeddings.embed_query(query)
 
@@ -851,6 +846,7 @@ class InMemoryVectorStore(VectorStore):
         Returns:
             List[Document]: A list of documents that are most similar to the query
                 text.
+
         """
         query_embedding = self._embeddings.embed_query(query)
         return self.similarity_search_by_vector(
@@ -887,6 +883,7 @@ class InMemoryVectorStore(VectorStore):
         Returns:
             List[Document]: A list of documents that are most similar to the query
                 text.
+
         """
         try:
             import redis
@@ -896,14 +893,6 @@ class InMemoryVectorStore(VectorStore):
                 "Could not import redis python package. "
                 "Please install it with `pip install redis`."
             ) from e
-
-        if "score_threshold" in kwargs:
-            logger.warning(
-                "score_threshold is deprecated. Use distance_threshold instead."
-                + "score_threshold should only be used in "
-                + "similarity_search_with_relevance_scores."
-                + "score_threshold will be removed in a future release.",
-            )
 
         redis_query, params_dict = self._prepare_query(
             embedding,
@@ -975,6 +964,7 @@ class InMemoryVectorStore(VectorStore):
 
         Returns:
             List[Document]: A list of Documents selected by maximal marginal relevance.
+
         """
         # Embed the query
         query_embedding = self._embeddings.embed_query(query)
@@ -1022,6 +1012,7 @@ class InMemoryVectorStore(VectorStore):
 
         Returns:
             Dict[str, Any]: Collected metadata.
+
         """
         # new metadata dict as modified by this method
         meta = {}
@@ -1117,6 +1108,7 @@ class InMemoryVectorStore(VectorStore):
 
         Returns:
             query: Query object.
+
         """
         try:
             from redis.commands.search.query import Query
@@ -1227,6 +1219,7 @@ class InMemoryVectorStore(VectorStore):
 
         if it's FLOAT32, we need to round the distance to 4 decimal places
         otherwise, round to 7 decimal places.
+
         """
         if self._schema.content_vector.datatype == "FLOAT32":
             return round(float(distance), 4)
@@ -1286,6 +1279,7 @@ def _generate_field_schema(data: Dict[str, Any]) -> Dict[str, Any]:
     Raises:
         ValueError: If a metadata field cannot be categorized into any of
             the three known types.
+
     """
     result: Dict[str, Any] = {
         "text": [],
@@ -1350,6 +1344,7 @@ def _prepare_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
     Raises:
         ValueError: If any metadata value is not one of the known
             types (string, int, float, or list of strings).
+
     """
 
     def raise_error(key: str, value: Any) -> None:
@@ -1393,9 +1388,8 @@ class InMemoryVectorStoreRetriever(VectorStoreRetriever):
 
     search_kwargs: Dict[str, Any] = {
         "k": 4,
-        "score_threshold": 0.9,
         # set to None to avoid distance used in score_threshold search
-        "distance_threshold": None,
+        "distance_threshold": 0.9,
     }
     """Default search kwargs."""
 
@@ -1412,7 +1406,7 @@ class InMemoryVectorStoreRetriever(VectorStoreRetriever):
     )
 
     def _get_relevant_documents(
-        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun, **kwargs: Any
     ) -> List[Document]:
         if self.search_type == "similarity":
             docs = self.vectorstore.similarity_search(query, **self.search_kwargs)
@@ -1440,7 +1434,11 @@ class InMemoryVectorStoreRetriever(VectorStoreRetriever):
         return docs
 
     async def _aget_relevant_documents(
-        self, query: str, *, run_manager: AsyncCallbackManagerForRetrieverRun
+        self,
+        query: str,
+        *,
+        run_manager: AsyncCallbackManagerForRetrieverRun,
+        **kwargs: Any,
     ) -> List[Document]:
         if self.search_type == "similarity":
             docs = await self.vectorstore.asimilarity_search(

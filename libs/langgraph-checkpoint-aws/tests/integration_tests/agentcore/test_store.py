@@ -115,15 +115,18 @@ class TestAgentCoreMemoryStoreIntegration:
         messages = [
             HumanMessage("Hi, I'm planning a trip to Italy"),
             AIMessage(
-                "That sounds wonderful! Italy has so many amazing places to visit. What type of experience are you looking for?"
+                "That sounds wonderful! Italy has so many amazing places to visit. "
+                "What type of experience are you looking for?"
             ),
             HumanMessage("I love art and history, especially Renaissance art"),
             AIMessage(
-                "Perfect! Florence would be ideal for you - it's the birthplace of the Renaissance with incredible museums like the Uffizi Gallery"
+                "Perfect! Florence would be ideal for you - it's the birthplace of "
+                "the Renaissance with incredible museums like the Uffizi Gallery"
             ),
             HumanMessage("That sounds perfect! I also enjoy good food and wine"),
             AIMessage(
-                "Excellent! Tuscany, where Florence is located, is famous for its cuisine and wines. You'll love the local trattorias and vineyards"
+                "Excellent! Tuscany, where Florence is located, is famous for its "
+                "cuisine and wines. You'll love the local trattorias and vineyards"
             ),
         ]
 
@@ -189,7 +192,8 @@ class TestAgentCoreMemoryStoreIntegration:
         messages = [
             HumanMessage("I'm interested in learning about machine learning"),
             AIMessage(
-                "Machine learning is a fascinating field! What specific area interests you most?"
+                "Machine learning is a fascinating field! "
+                "What specific area interests you most?"
             ),
             HumanMessage("I'd like to understand neural networks and deep learning"),
             AIMessage(
@@ -273,7 +277,8 @@ class TestAgentCoreMemoryStoreIntegration:
                 "hot" in result.value.get("content", "").lower() for result in results1
             )
             assert actor1_content_found, (
-                f"Actor1's spicy food preference not found in search results: {[r.value.get('content', '') for r in results1]}"
+                f"Actor1's spicy food preference not found in search results: "
+                f"{[r.value.get('content', '') for r in results1]}"
             )
 
         # Check that actor2's results contain reference to mild food preference
@@ -282,7 +287,8 @@ class TestAgentCoreMemoryStoreIntegration:
                 "mild" in result.value.get("content", "").lower() for result in results2
             )
             assert actor2_content_found, (
-                f"Actor2's mild food preference not found in search results: {[r.value.get('content', '') for r in results2]}"
+                f"Actor2's mild food preference not found in search results: "
+                f"{[r.value.get('content', '') for r in results2]}"
             )
 
         assert True, "Actor isolation test completed with preference verification"

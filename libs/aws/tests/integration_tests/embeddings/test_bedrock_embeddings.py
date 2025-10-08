@@ -33,10 +33,12 @@ def cohere_embeddings_v4() -> BedrockEmbeddings:
     )
 
 
-@pytest.fixture(params=[
-    ("cohere.embed-english-v3", 1024),
-    # ("us.cohere.embed-v4:0", 1536),
-])
+@pytest.fixture(
+    params=[
+        ("cohere.embed-english-v3", 1024),
+        # ("us.cohere.embed-v4:0", 1536),
+    ]
+)
 def cohere_embeddings(request) -> tuple[BedrockEmbeddings, int]:
     model_id, expected_dimension = request.param
     embeddings = BedrockEmbeddings(model_id=model_id)
@@ -192,7 +194,7 @@ def test_bedrock_embedding_provider_arg(
     bedrock_embeddings,
     cohere_embeddings_v3,
     cohere_embeddings_v4,
-    cohere_embeddings_model_arn
+    cohere_embeddings_model_arn,
 ) -> None:
     assert bedrock_embeddings._inferred_provider == "amazon"
     assert cohere_embeddings_v3._inferred_provider == "cohere"

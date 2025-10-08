@@ -16,6 +16,7 @@ class BedrockAgentFinish(AgentFinish):
     Parameters:
         session_id: Session id
         trace_log: trace log as string when enable_trace flag is set
+
     """
 
     session_id: str
@@ -27,6 +28,7 @@ class BedrockAgentFinish(AgentFinish):
 
         Returns:
             False
+
         """
         return False
 
@@ -37,6 +39,7 @@ class BedrockAgentAction(AgentAction):
     Parameters:
         session_id: session id
         trace_log: trace log as string when enable_trace flag is set
+
     """
 
     session_id: str
@@ -49,6 +52,7 @@ class BedrockAgentAction(AgentAction):
 
         Returns:
             False
+
         """
         return False
 

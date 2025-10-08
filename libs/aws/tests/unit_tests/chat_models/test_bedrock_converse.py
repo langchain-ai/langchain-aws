@@ -1565,7 +1565,7 @@ def test_model_kwargs() -> None:
         llm = ChatBedrockConverse(  # type: ignore[call-arg]
             model="my-model",
             region_name="us-west-2",
-            foo="bar",
+            foo="bar",  # type: ignore[call-arg]
         )
     assert llm.model_id == "my-model"
     assert llm.region_name == "us-west-2"
@@ -1575,7 +1575,7 @@ def test_model_kwargs() -> None:
         llm = ChatBedrockConverse(  # type: ignore[call-arg]
             model="my-model",
             region_name="us-west-2",
-            foo="bar",
+            foo="bar",  # type: ignore[call-arg]
             additional_model_request_fields={"baz": "qux"},
         )
     assert llm.model_id == "my-model"
@@ -1609,10 +1609,8 @@ def _create_mock_llm_guard_last_turn_only() -> Tuple[
 
 
 def test_guard_last_turn_only_no_guardrail_config() -> None:
-    """
-    Test that an error is raised if guard_last_turn_only is True but no
-    guardrail_config is provided.
-    """
+    """Test that an error is raised if guard_last_turn_only is True but no
+    guardrail_config is provided."""
     with pytest.raises(ValueError):
         ChatBedrockConverse(
             client=mock.MagicMock(),
@@ -1708,7 +1706,10 @@ def test_get_base_model_with_application_inference_profile(
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "anthropic.claude-3-sonnet-20240229-v1:0"
+                )
             }
         ]
     }
@@ -1773,7 +1774,10 @@ def test_configure_streaming_for_resolved_model(mock_create_client: mock.Mock) -
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "anthropic.claude-3-sonnet-20240229-v1:0"
+                )
             }
         ]
     }
@@ -1805,11 +1809,15 @@ def test_configure_streaming_for_resolved_model_no_tools(
     mock_bedrock_client = mock.Mock()
     mock_runtime_client = mock.Mock()
 
-    # Mock the get_inference_profile response for a model with no-tools streaming support
+    # Mock the get_inference_profile response for a model with no-tools streaming
+    # support
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-text-express-v1"
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "amazon.titan-text-express-v1"
+                )
             }
         ]
     }
@@ -1845,7 +1853,10 @@ def test_configure_streaming_for_resolved_model_no_streaming(
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/stability.stable-image-core-v1:0"
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "stability.stable-image-core-v1:0"
+                )
             }
         ]
     }
@@ -1870,7 +1881,8 @@ def test_configure_streaming_for_resolved_model_no_streaming(
 
 
 def test_nova_provider_extraction() -> None:
-    """Test that provider is correctly extracted from Nova model ID when not provided."""
+    """Test that provider is correctly extracted from Nova model ID when not
+    provided."""
     model = ChatBedrockConverse(
         client=mock.MagicMock(),
         model="us.amazon.nova-pro-v1:0",
@@ -1983,7 +1995,7 @@ def test_bedrock_client_inherits_from_runtime_client(
     mock_bedrock_client = mock.Mock()
 
     mock_runtime_client.meta.region_name = "us-west-2"
-    mock_client_config = mock.Mock()
+    mock.Mock()
 
     def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
@@ -1994,7 +2006,7 @@ def test_bedrock_client_inherits_from_runtime_client(
 
     mock_create_client.side_effect = side_effect
 
-    chat_model = ChatBedrockConverse(
+    ChatBedrockConverse(
         model="us.meta.llama3-3-70b-instruct-v1:0", client=mock_runtime_client
     )
 
@@ -2019,9 +2031,8 @@ def test_bedrock_client_uses_explicit_values_over_runtime_client(
     mock_bedrock_client = mock.Mock()
 
     mock_runtime_client.meta.region_name = "us-west-2"
-    mock_runtime_config = mock.Mock()
-
-    explicit_config = mock.Mock()
+    mock.Mock()
+    mock.Mock()
 
     def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
@@ -2032,7 +2043,7 @@ def test_bedrock_client_uses_explicit_values_over_runtime_client(
 
     mock_create_client.side_effect = side_effect
 
-    chat_model = ChatBedrockConverse(
+    ChatBedrockConverse(
         model="us.meta.llama3-3-70b-instruct-v1:0",
         client=mock_runtime_client,
         region_name="us-east-1",
