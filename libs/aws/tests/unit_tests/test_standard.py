@@ -1,8 +1,7 @@
 """Standard LangChain interface tests"""
 
-from typing import Type
+from typing import Dict, Tuple, Type
 
-import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_tests.unit_tests import ChatModelUnitTests
 
@@ -23,11 +22,31 @@ class TestBedrockStandard(ChatModelUnitTests):
 
     @property
     def standard_chat_model_params(self) -> dict:
-        return {}
+        return {"max_tokens": 100}
 
-    @pytest.mark.xfail(reason="Not implemented.")
-    def test_standard_params(self, model: BaseChatModel) -> None:
-        super().test_standard_params(model)
+    @property
+    def init_from_env_params(
+        self,
+    ) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
+        """Return env vars, init args, and expected instance attrs for initializing
+        from env vars."""
+        return (
+            {
+                "AWS_ACCESS_KEY_ID": "key_id",
+                "AWS_SECRET_ACCESS_KEY": "secret_key",
+                "AWS_SESSION_TOKEN": "token",
+                "AWS_REGION": "region",
+            },
+            {
+                "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
+                "region_name": "us-east-1",
+            },
+            {
+                "aws_access_key_id": "key_id",
+                "aws_secret_access_key": "secret_key",
+                "aws_session_token": "token",
+            },
+        )
 
 
 class TestBedrockAsConverseStandard(ChatModelUnitTests):
@@ -53,6 +72,27 @@ class TestBedrockAsConverseStandard(ChatModelUnitTests):
             }
         }
 
-    @pytest.mark.xfail(reason="Not implemented.")
-    def test_standard_params(self, model: BaseChatModel) -> None:
-        super().test_standard_params(model)
+    @property
+    def init_from_env_params(
+        self,
+    ) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str]]:
+        """Return env vars, init args, and expected instance attrs for initializing
+        from env vars."""
+        return (
+            {
+                "AWS_ACCESS_KEY_ID": "key_id",
+                "AWS_SECRET_ACCESS_KEY": "secret_key",
+                "AWS_SESSION_TOKEN": "token",
+                "AWS_REGION": "region",
+            },
+            {
+                "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
+                "region_name": "us-east-1",
+                "beta_use_converse_api": "True",
+            },
+            {
+                "aws_access_key_id": "key_id",
+                "aws_secret_access_key": "secret_key",
+                "aws_session_token": "token",
+            },
+        )

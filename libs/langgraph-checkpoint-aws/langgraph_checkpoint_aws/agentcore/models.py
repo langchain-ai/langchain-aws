@@ -2,7 +2,7 @@
 Data models for AgentCore Memory Checkpoint Saver.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -13,7 +13,7 @@ class CheckpointerConfig(BaseModel):
     thread_id: str
     actor_id: str
     checkpoint_ns: str = ""
-    checkpoint_id: Optional[str] = None
+    checkpoint_id: str | None = None
 
     @property
     def session_id(self) -> str:
@@ -24,7 +24,7 @@ class CheckpointerConfig(BaseModel):
         return self.thread_id
 
     @classmethod
-    def from_runnable_config(cls, config: Dict[str, Any]) -> "CheckpointerConfig":
+    def from_runnable_config(cls, config: dict[str, Any]) -> "CheckpointerConfig":
         """Create CheckpointerConfig from RunnableConfig."""
         from .constants import InvalidConfigError
 
@@ -62,9 +62,9 @@ class CheckpointEvent(BaseModel):
 
     event_type: str = Field(default="checkpoint")
     checkpoint_id: str
-    checkpoint_data: Dict[str, Any]
-    metadata: Dict[str, Any]
-    parent_checkpoint_id: Optional[str] = None
+    checkpoint_data: dict[str, Any]
+    metadata: dict[str, Any]
+    parent_checkpoint_id: str | None = None
     thread_id: str
     checkpoint_ns: str = ""
 
@@ -85,4 +85,4 @@ class WritesEvent(BaseModel):
 
     event_type: str = Field(default="writes")
     checkpoint_id: str
-    writes: List[WriteItem]
+    writes: list[WriteItem]

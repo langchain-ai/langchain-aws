@@ -5,23 +5,23 @@ import string
 from typing import Literal
 
 import pytest
+from langchain.agents import create_agent
 from langchain_aws import ChatBedrock
 from langchain_core.tools import tool
 from langgraph.checkpoint.base import Checkpoint, uuid6
-from langgraph.prebuilt import create_react_agent
 
 from langgraph_checkpoint_aws.agentcore.saver import AgentCoreMemorySaver
 
 
 def generate_valid_session_id():
-    """Generate a valid session ID that matches AgentCore pattern [a-zA-Z0-9][a-zA-Z0-9-_]*"""
+    """Generate a valid session ID that matches AgentCore pattern [a-zA-Z0-9][a-zA-Z0-9-_]*"""  # noqa: E501
     # Start with letter, then 6 random alphanumeric chars
     chars = string.ascii_letters + string.digits
     return "test" + "".join(random.choices(chars, k=6))
 
 
 def generate_valid_actor_id():
-    """Generate a valid actor ID that matches AgentCore pattern [a-zA-Z0-9][a-zA-Z0-9-_]*"""
+    """Generate a valid actor ID that matches AgentCore pattern [a-zA-Z0-9][a-zA-Z0-9-_]*"""  # noqa: E501
     # Start with letter, then 6 random alphanumeric chars
     chars = string.ascii_letters + string.digits
     return "actor" + "".join(random.choices(chars, k=6))
@@ -143,7 +143,7 @@ class TestAgentCoreMemorySaver:
         actor_id = generate_valid_actor_id()
 
         try:
-            graph = create_react_agent(model, tools=tools, checkpointer=memory_saver)
+            graph = create_agent(model, tools=tools, checkpointer=memory_saver)
             config = {
                 "configurable": {
                     "thread_id": thread_id,
@@ -196,7 +196,7 @@ class TestAgentCoreMemorySaver:
         actor_id = generate_valid_actor_id()
 
         try:
-            graph = create_react_agent(model, tools=tools, checkpointer=memory_saver)
+            graph = create_agent(model, tools=tools, checkpointer=memory_saver)
             config = {
                 "configurable": {
                     "thread_id": thread_id,
@@ -224,7 +224,7 @@ class TestAgentCoreMemorySaver:
         actor_id = generate_valid_actor_id()
 
         try:
-            graph = create_react_agent(model, tools=tools, checkpointer=memory_saver)
+            graph = create_agent(model, tools=tools, checkpointer=memory_saver)
 
             config_1 = {
                 "configurable": {
@@ -277,7 +277,7 @@ class TestAgentCoreMemorySaver:
         actor_id = generate_valid_actor_id()
 
         try:
-            graph = create_react_agent(model, tools=tools, checkpointer=memory_saver)
+            graph = create_agent(model, tools=tools, checkpointer=memory_saver)
             config = {
                 "configurable": {
                     "thread_id": thread_id,

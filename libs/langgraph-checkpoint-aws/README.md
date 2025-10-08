@@ -9,17 +9,21 @@ This package provides a custom checkpointing solution for LangGraph agents using
 4. Seamless integration with AWS Bedrock
 
 ## Installation
+
 You can install the package using pip:
 
 ```bash
 pip install langgraph-checkpoint-aws
 ```
+
 Or with Poetry:
+
 ```bash
 poetry add langgraph-checkpoint-aws
 ```
 
 ## Requirements
+
 ```text
 Python >=3.9
 langgraph >=0.2.55
@@ -341,22 +345,29 @@ def __init__(
 ```
 
 ## Security Considerations
-* Never commit AWS credentials
-* Use environment variables or AWS IAM roles for authentication
-* Follow AWS security best practices
-* Use IAM roles and temporary credentials when possible
-* Implement proper access controls for session management
+
+- Never commit AWS credentials
+
+- Use environment variables or AWS IAM roles for authentication
+- Follow AWS security best practices
+- Use IAM roles and temporary credentials when possible
+- Implement proper access controls for session management
 
 ## Contributing
-* Fork the repository
-* Create a feature branch
-* Make your changes
-* Run tests and linting
-* Submit a pull request
+
+- Fork the repository
+
+- Create a feature branch
+- Make your changes
+- Run tests and linting
+- Submit a pull request
 
 ## License
+
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
-* LangChain team for the base LangGraph framework
-* AWS Bedrock team for the session management service
+
+- LangChain team for the base LangGraph framework
+
+- AWS Bedrock team for the session management service
