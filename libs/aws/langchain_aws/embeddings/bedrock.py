@@ -147,11 +147,10 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         """Inferred provider of the model."""
         if self.provider:
             return self.provider
-            
+
         regions = ("eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp")
         parts = self.model_id.split(".")
         return parts[1] if parts[0] in regions else parts[0]
-
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
