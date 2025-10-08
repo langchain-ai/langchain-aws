@@ -7,11 +7,12 @@ This package contains the LangChain integrations with AWS.
 ```bash
 pip install -U langchain-aws
 ```
+
 All integrations in this package assume that you have the credentials setup to connect with AWS services.
 
 ## Authentication
 
-In order to use Amazon Bedrock models, you need to configure AWS credentials. One of the options is to set the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` environment variables. More information can be found [here](https://docs.aws.amazon.com/bedrock/latest/userguide/security-iam.html). 
+In order to use Amazon Bedrock models, you need to configure AWS credentials. One of the options is to set the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` environment variables. More information can be found [in the docs](https://docs.aws.amazon.com/bedrock/latest/userguide/security-iam.html).
 Alternatively, set the `AWS_BEARER_TOKEN_BEDROCK` environment variable locally for API Key authentication. For additional API key details, refer to [docs](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html).
 
 ## Chat Models
@@ -37,6 +38,7 @@ embeddings.embed_query("What is the meaning of life?")
 ```
 
 ## LLMs
+
 `BedrockLLM` class exposes LLMs from Bedrock.
 
 ```python
@@ -47,6 +49,7 @@ llm.invoke("The meaning of life is")
 ```
 
 ## Retrievers
+
 `AmazonKendraRetriever` class provides a retriever to connect with Amazon Kendra.
 
 ```python
@@ -72,7 +75,7 @@ retriever = AmazonKnowledgeBasesRetriever(
 retriever.get_relevant_documents(query="What is the meaning of life?")
 ```
 
-## VectorStores 
+## VectorStores
 
 ### InMemoryVectorStore
 

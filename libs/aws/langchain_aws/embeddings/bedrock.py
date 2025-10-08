@@ -44,13 +44,17 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                 region_name=region_name,
                 model_id=model_id
             )
+
     """
 
     client: Any = Field(default=None, exclude=True)  #: :meta private:
     """Bedrock client."""
     region_name: Optional[str] = None
-    """The aws region e.g., `us-west-2`. Falls back to AWS_REGION/AWS_DEFAULT_REGION env variable
-    or region specified in ~/.aws/config in case it is not provided here.
+    """The aws region e.g., `us-west-2`. 
+    
+    Falls back to ``AWS_REGION``/``AWS_DEFAULT_REGION`` env variable or region
+    specified  in ``~/.aws/config`` in case it is not provided here.
+
     """
 
     credentials_profile_name: Optional[str] = None
@@ -58,7 +62,9 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     has either access keys or role information specified.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
+
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
     """
 
     aws_access_key_id: Optional[SecretStr] = Field(
@@ -69,9 +75,11 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     If provided, aws_secret_access_key must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
+
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+    If not provided, will be read from ``AWS_ACCESS_KEY_ID`` environment variable.
+
     """
 
     aws_secret_access_key: Optional[SecretStr] = Field(
@@ -82,9 +90,11 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     If provided, aws_access_key_id must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
+    
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+    If not provided, will be read from ``AWS_SECRET_ACCESS_KEY`` environment variable.
+
     """
 
     aws_session_token: Optional[SecretStr] = Field(
@@ -92,32 +102,40 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     )
     """AWS session token. 
 
-    If provided, aws_access_key_id and aws_secret_access_key must also be provided.
+    If provided, ``aws_access_key_id`` and ``aws_secret_access_key`` must also be
+    provided.
+    
     Not required unless using temporary credentials.
+    
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
+    If not provided, will be read from ``AWS_SESSION_TOKEN`` environment variable.
+
     """
 
     model_id: str = "amazon.titan-embed-text-v1"
-    """Id of the model to call, e.g., amazon.titan-embed-text-v1, this is
-    equivalent to the modelId property in the list-foundation-models api"""
+    """Id of the model to call, e.g., ``'amazon.titan-embed-text-v1'``, this is
+    equivalent to the ``modelId`` property in the list-foundation-models api
+    
+    """
 
     model_kwargs: Optional[Dict] = None
     """Keyword arguments to pass to the model."""
 
     provider: Optional[str] = None
     """Name of the provider, e.g., amazon, cohere, etc..
-    If not specified, the provider will be inferred from the model_id."""
+    If not specified, the provider will be inferred from the ``model_id``.
+    
+    """
 
     endpoint_url: Optional[str] = None
-    """Needed if you don't want to default to us-east-1 endpoint"""
+    """Needed if you don't want to default to ``'us-east-1'`` endpoint"""
 
     normalize: bool = False
     """Whether the embeddings should be normalized to unit vectors"""
 
     config: Any = None
-    """An optional botocore.config.Config instance to pass to the client."""
+    """An optional ``botocore.config.Config`` instance to pass to the client."""
 
     model_config = ConfigDict(
         extra="forbid",
@@ -127,7 +145,12 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     @property
     def _inferred_provider(self) -> str:
         """Inferred provider of the model."""
-        return self.provider or self.model_id.split(".")[0]
+        if self.provider:
+            return self.provider
+
+        regions = ("eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp")
+        parts = self.model_id.split(".")
+        return parts[1] if parts[0] in regions else parts[0]
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
@@ -163,19 +186,25 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                     "texts": [text],
                 }
             )
-            return response_body.get("embeddings")[0]
+            embeddings = response_body.get("embeddings")
+            if embeddings is None:
+                raise ValueError("No embeddings returned from model")
+            return embeddings[0]
         else:
             # includes common provider == "amazon"
             response_body = self._invoke_model(
                 input_body={"inputText": text},
             )
-            return response_body.get("embedding")
+            embedding = response_body.get("embedding")
+            if embedding is None:
+                raise ValueError("No embedding returned from model")
+            return embedding
 
-    def _cohere_multi_embedding(self, texts: List[str]) -> List[float]:
+    def _cohere_multi_embedding(self, texts: List[str]) -> List[List[float]]:
         """Call out to Cohere Bedrock embedding endpoint with multiple inputs."""
         # replace newlines, which can negatively affect performance.
         texts = [text.replace(os.linesep, " ") for text in texts]
-        results = []
+        results: List[List[float]] = []
 
         # Iterate through the list of strings in batches
         for text_batch in _batch_cohere_embedding_texts(texts):
@@ -185,8 +214,14 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                     "texts": text_batch,
                 }
             ).get("embeddings")
+            # Embed v3 and v4 schemas
+            if isinstance(batch_embeddings, dict) and "float" in batch_embeddings:
+                processed_embeddings = batch_embeddings["float"]
+            else:
+                processed_embeddings = batch_embeddings
 
-            results += batch_embeddings
+            if processed_embeddings is not None:
+                results += processed_embeddings
 
         return results
 
@@ -231,6 +266,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
         Returns:
             List of embeddings, one for each text.
+
         """
 
         # If we are able to make use of Cohere's multiple embeddings, use that
@@ -267,6 +303,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
         Returns:
             Embeddings for the text.
+
         """
         if self._inferred_provider == "cohere":
             embedding = self._embedding_func(text, input_type="search_query")
@@ -286,6 +323,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
         Returns:
             Embeddings for the text.
+
         """
 
         return await run_in_executor(None, self.embed_query, text)
@@ -298,6 +336,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
         Returns:
             List of embeddings, one for each text.
+
         """
 
         result = await asyncio.gather(*[self.aembed_query(text) for text in texts])
@@ -306,8 +345,11 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
 
 def _batch_cohere_embedding_texts(texts: List[str]) -> Generator[List[str], None, None]:
-    """Batches a set of texts into chunks that are acceptable for the Cohere embedding API:
-    chunks of at most 96 items, or 2048 characters."""
+    """Batches a set of texts into chunks acceptable for the Cohere embedding API.
+
+    Chunks of at most 96 items, or 2048 characters.
+
+    """
 
     # Cohere embeddings want a maximum of 96 items and 2048 characters
     # See: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-embed.html
@@ -315,7 +357,7 @@ def _batch_cohere_embedding_texts(texts: List[str]) -> Generator[List[str], None
     max_chars = 2048
 
     # Initialize batches
-    current_batch = []
+    current_batch: List[str] = []
     current_chars = 0
 
     for text in texts:
@@ -323,7 +365,8 @@ def _batch_cohere_embedding_texts(texts: List[str]) -> Generator[List[str], None
 
         if text_len > max_chars:
             raise ValueError(
-                "The Cohere embedding API does not support texts longer than 2048 characters."
+                "The Cohere embedding API does not support texts longer than "
+                "2048 characters."
             )
 
         # Check if adding the current string would exceed the limits

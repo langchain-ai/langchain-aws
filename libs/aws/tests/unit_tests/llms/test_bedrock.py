@@ -306,28 +306,28 @@ MOCK_STREAMING_RESPONSE_WRITER = [
 
 MOCK_STREAMING_RESPONSE_QWEN = [
     {
-        'chunk': {
-            'bytes': b'{"choices": [{"delta": {"content": "", "role": "assistant"}, '
-                     b'"finish_reason": null, "index": 0}], '
-                     b'"created": 1759875373, '
-                     b'"id": "chatcmpl-a069cbda08ce4599afae798c4d2de095", '
-                     b'"model": "qwen.qwen3-32b-v1:0", '
-                     b'"object": "chat.completion.chunk", '
-                     b'"service_tier": "auto"}'
+        "chunk": {
+            "bytes": b'{"choices": [{"delta": {"content": "", "role": "assistant"}, '
+            b'"finish_reason": null, "index": 0}], '
+            b'"created": 1759875373, '
+            b'"id": "chatcmpl-a069cbda08ce4599afae798c4d2de095", '
+            b'"model": "qwen.qwen3-32b-v1:0", '
+            b'"object": "chat.completion.chunk", '
+            b'"service_tier": "auto"}'
         }
     },
     {
-        'chunk': {
-            'bytes': b'{"choices": [{"delta": {"content": "Hello.  \\nGoodbye."}, '
-                     b'"finish_reason": "stop", "index": 0}], '
-                     b'"created": 1759875373, '
-                     b'"id": "chatcmpl-a069cbda08ce4599afae798c4d2de095", '
-                     b'"model": "qwen.qwen3-32b-v1:0", '
-                     b'"object": "chat.completion.chunk", '
-                     b'"service_tier": "auto", '
-                     b'"amazon-bedrock-invocationMetrics": {'
-                     b'"inputTokenCount": 35, "outputTokenCount": 7, '
-                     b'"invocationLatency": 225, "firstByteLatency": 191}}'
+        "chunk": {
+            "bytes": b'{"choices": [{"delta": {"content": "Hello.  \\nGoodbye."}, '
+            b'"finish_reason": "stop", "index": 0}], '
+            b'"created": 1759875373, '
+            b'"id": "chatcmpl-a069cbda08ce4599afae798c4d2de095", '
+            b'"model": "qwen.qwen3-32b-v1:0", '
+            b'"object": "chat.completion.chunk", '
+            b'"service_tier": "auto", '
+            b'"amazon-bedrock-invocationMetrics": {'
+            b'"inputTokenCount": 35, "outputTokenCount": 7, '
+            b'"invocationLatency": 225, "firstByteLatency": 191}}'
         }
     },
 ]
@@ -336,27 +336,27 @@ MOCK_STREAMING_RESPONSE_OPENAI = [
     {
         "chunk": {
             "bytes": b'{"choices": [{"delta": {"content": "Hello."}, '
-                     b'"finish_reason": null, "index": 0}], '
-                     b'"created": 1759813667, '
-                     b'"id": "chatcmpl-fa6fb768b71046eeb3880cbb4a1b07c1", '
-                     b'"model": "openai.gpt-oss-20b-1:0", '
-                     b'"object": "chat.completion.chunk", "service_tier": "auto"}'
+            b'"finish_reason": null, "index": 0}], '
+            b'"created": 1759813667, '
+            b'"id": "chatcmpl-fa6fb768b71046eeb3880cbb4a1b07c1", '
+            b'"model": "openai.gpt-oss-20b-1:0", '
+            b'"object": "chat.completion.chunk", "service_tier": "auto"}'
         }
     },
     {
         "chunk": {
             "bytes": b'{"choices": [{"delta": {}, '
-                     b'"finish_reason": "stop", "index": 0}],'
-                     b' "created": 1759813667, '
-                     b'"id": "chatcmpl-fa6fb768b71046eeb3880cbb4a1b07c1", '
-                     b'"model": "openai.gpt-oss-20b-1:0", '
-                     b'"object": "chat.completion.chunk", '
-                     b'"service_tier": "auto", '
-                     b'"amazon-bedrock-invocationMetrics": {'
-                     b'"inputTokenCount": 84, '
-                     b'"outputTokenCount": 87, '
-                     b'"invocationLatency": 3981, '
-                     b'"firstByteLatency": 3615}}'
+            b'"finish_reason": "stop", "index": 0}],'
+            b' "created": 1759813667, '
+            b'"id": "chatcmpl-fa6fb768b71046eeb3880cbb4a1b07c1", '
+            b'"model": "openai.gpt-oss-20b-1:0", '
+            b'"object": "chat.completion.chunk", '
+            b'"service_tier": "auto", '
+            b'"amazon-bedrock-invocationMetrics": {'
+            b'"inputTokenCount": 84, '
+            b'"outputTokenCount": 87, '
+            b'"invocationLatency": 3981, '
+            b'"firstByteLatency": 3615}}'
         }
     },
 ]
@@ -973,7 +973,7 @@ def test_get_base_model_with_application_inference_profile(mock_create_client):
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0"
+                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0"  # noqa: E501
             }
         ]
     }
