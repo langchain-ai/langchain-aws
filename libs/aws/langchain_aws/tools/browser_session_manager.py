@@ -13,8 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class BrowserSessionManager:
-    """
-    Manages browser sessions for different threads.
+    """Manages browser sessions for different threads.
 
     This class maintains separate browser sessions for different threads,
     enabling concurrent usage of browsers in multi-threaded environments.
@@ -26,6 +25,7 @@ class BrowserSessionManager:
     it is marked as "in use", and subsequent attempts to access the same
     browser session will raise a RuntimeError until it is released. In general,
     different callers should use different thread_ids to avoid concurrency issues.
+
     """
 
     def __init__(self, region: str = "us-west-2"):
@@ -51,6 +51,7 @@ class BrowserSessionManager:
 
         Raises:
             RuntimeError: If the browser session is already in use by another caller
+
         """
         if thread_id in self._async_sessions:
             client, browser, in_use = self._async_sessions[thread_id]
@@ -76,6 +77,7 @@ class BrowserSessionManager:
 
         Raises:
             RuntimeError: If the browser session is already in use by another caller
+
         """
         if thread_id in self._sync_sessions:
             client, browser, in_use = self._sync_sessions[thread_id]
@@ -101,6 +103,7 @@ class BrowserSessionManager:
 
         Raises:
             Exception: If browser session creation fails
+
         """
         browser_client = BrowserClient(region=self.region)
 
@@ -112,7 +115,8 @@ class BrowserSessionManager:
             ws_url, headers = browser_client.generate_ws_headers()
 
             logger.info(
-                f"Connecting to async WebSocket endpoint for thread {thread_id}: {ws_url}"
+                f"Connecting to async WebSocket endpoint for thread {thread_id}: "
+                f"{ws_url}"
             )
 
             from playwright.async_api import async_playwright
@@ -156,6 +160,7 @@ class BrowserSessionManager:
 
         Raises:
             Exception: If browser session creation fails
+
         """
         browser_client = BrowserClient(region=self.region)
 
@@ -167,7 +172,8 @@ class BrowserSessionManager:
             ws_url, headers = browser_client.generate_ws_headers()
 
             logger.info(
-                f"Connecting to sync WebSocket endpoint for thread {thread_id}: {ws_url}"
+                f"Connecting to sync WebSocket endpoint for thread {thread_id}: "
+                f"{ws_url}"
             )
 
             from playwright.sync_api import sync_playwright
@@ -208,6 +214,7 @@ class BrowserSessionManager:
 
         Raises:
             KeyError: If no browser session exists for the specified thread_id
+
         """
         if thread_id not in self._async_sessions:
             raise KeyError(f"No async browser session found for thread {thread_id}")
@@ -225,6 +232,7 @@ class BrowserSessionManager:
 
         Raises:
             KeyError: If no browser session exists for the specified thread_id
+
         """
         if thread_id not in self._sync_sessions:
             raise KeyError(f"No sync browser session found for thread {thread_id}")
@@ -239,6 +247,7 @@ class BrowserSessionManager:
 
         Args:
             thread_id: Unique identifier for the thread
+
         """
         if thread_id not in self._async_sessions:
             logger.warning(f"No async browser session found for thread {thread_id}")
@@ -274,6 +283,7 @@ class BrowserSessionManager:
 
         Args:
             thread_id: Unique identifier for the thread
+
         """
         if thread_id not in self._sync_sessions:
             logger.warning(f"No sync browser session found for thread {thread_id}")

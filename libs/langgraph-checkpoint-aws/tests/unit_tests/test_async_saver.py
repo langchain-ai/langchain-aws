@@ -1,5 +1,6 @@
 import datetime
 import json
+import sys
 from unittest.mock import ANY, AsyncMock, Mock, patch
 
 import pytest
@@ -710,7 +711,7 @@ class TestAsyncBedrockSessionSaver:
         # Arrange
         task_id = "test_task_id"
         task_path = "test_task_path"
-        writes = [("__error__", "__start__")]
+        writes = [(sys.intern("__error__"), "__start__")]
         runnable_config["configurable"]["checkpoint_id"] = "test_checkpoint_id"
 
         session_saver._create_session_invocation = AsyncMock()

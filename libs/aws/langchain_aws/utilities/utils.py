@@ -10,8 +10,7 @@ from langchain_aws.utilities.math import cosine_similarity
 
 
 class DistanceStrategy(str, Enum):
-    """Enumerator of the Distance strategies for calculating distances
-    between vectors."""
+    """Enumerator of the Distance strategies for calculating distances between vectors."""  # noqa: E501
 
     EUCLIDEAN_DISTANCE = "EUCLIDEAN_DISTANCE"
     MAX_INNER_PRODUCT = "MAX_INNER_PRODUCT"

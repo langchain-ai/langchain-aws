@@ -291,6 +291,7 @@ def read_schema(
 
     Check if it is a dict and return RedisModel otherwise, check if it's a path and
     read in the file assuming it's a yaml file and return a RedisModel
+
     """
     if isinstance(index_schema, dict):
         return index_schema

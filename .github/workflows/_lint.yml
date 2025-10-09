@@ -9,7 +9,6 @@ on:
         description: "From which folder this pipeline executes"
 
 env:
-  POETRY_VERSION: "1.7.1"
   WORKDIR: ${{ inputs.working-directory == '' && '.' || inputs.working-directory }}
 
   # This env var allows us to get inline annotations when ruff has complaints.
@@ -32,30 +31,26 @@ jobs:
         # Starting new jobs is also relatively slow,
         # so linting on fewer versions makes CI faster.
         python-version:
-          - "3.9"
           - "3.12"
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set up Python ${{ matrix.python-version }} + Poetry ${{ env.POETRY_VERSION }}
-        uses: "./.github/actions/poetry_setup"
+      - name: Set up Python ${{ matrix.python-version }} + uv
+        uses: "./.github/actions/uv_setup"
         with:
           python-version: ${{ matrix.python-version }}
-          poetry-version: ${{ env.POETRY_VERSION }}
-          working-directory: ${{ inputs.working-directory }}
-          cache-key: lint-with-extras
 
-      - name: Check Poetry File
+      - name: Check pyproject.toml
         shell: bash
         working-directory: ${{ inputs.working-directory }}
         run: |
-          poetry check
+          uv tree
 
       - name: Check lock file
         shell: bash
         working-directory: ${{ inputs.working-directory }}
         run: |
-          poetry lock --check
+          uv lock --check
 
       - name: Install dependencies
         # Also installs dev/lint/test/typing dependencies, to ensure we have
@@ -68,7 +63,7 @@ jobs:
         # It doesn't matter how you change it, any change will cause a cache-bust.
         working-directory: ${{ inputs.working-directory }}
         run: |
-          poetry install --with lint,typing
+          uv sync --group lint --group typing
 
       - name: Get .mypy_cache to speed up mypy
         uses: actions/cache@v4
@@ -88,7 +83,7 @@ jobs:
       - name: Install unit+integration test dependencies
         working-directory: ${{ inputs.working-directory }}
         run: |
-          poetry install --with test,test_integration
+          uv sync --group test --group test_integration
 
       - name: Get .mypy_cache_test to speed up mypy
         uses: actions/cache@v4

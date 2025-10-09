@@ -70,6 +70,7 @@ class NeptuneRdfGraph:
         limit the permissions granted to the credentials used with this tool.
 
         See https://python.langchain.com/docs/security for more information.
+
     """
 
     def __init__(
@@ -109,16 +110,18 @@ class NeptuneRdfGraph:
                 client_params["endpoint_url"] = f"{protocol}://{host}:{port}"
 
                 if sign:
-                    self.client = self.session.client(service, **client_params)
+                    # boto3 type stubs don't recognize neptunedata service
+                    self.client = self.session.client(service, **client_params)  # type: ignore[call-overload]
                 else:
                     from botocore import UNSIGNED
                     from botocore.config import Config
 
+                    # boto3 type stubs don't recognize neptunedata service
                     self.client = self.session.client(
-                        service,
+                        service,  # type: ignore[arg-type]
                         **client_params,
                         config=Config(signature_version=UNSIGNED),
-                    )
+                    )  # type: ignore[call-overload]
 
         except ImportError:
             raise ModuleNotFoundError(
@@ -145,9 +148,7 @@ class NeptuneRdfGraph:
 
     @property
     def get_schema(self) -> str:
-        """
-        Returns the schema of the graph database.
-        """
+        """Returns the schema of the graph database."""
         return self.schema
 
     @property
@@ -155,25 +156,25 @@ class NeptuneRdfGraph:
         return self.schema_elements
 
     def get_summary(self) -> Dict[str, Any]:
-        """
-        Obtain Neptune statistical summary of classes and predicates in the graph.
-        """
+        """Obtain Neptune statistical summary of classes and predicates in the graph."""
         return self.client.get_rdf_graph_summary(mode="detailed")
 
     def query(
         self,
         query: str,
     ) -> Dict[str, Any]:
-        """
-        Run Neptune query.
-        """
+        """Run Neptune query."""
         request_data = {"query": query}
         data = request_data
-        request_hdr = None
+        request_hdr: dict[str, str] | None = None
 
         if self.use_iam_auth:
             credentials = self.session.get_credentials()
-            credentials = credentials.get_frozen_credentials()
+            if credentials is None:
+                raise ValueError("Unable to get AWS credentials")
+            # get_frozen_credentials() returns ReadOnlyCredentials but type system
+            # expects Credentials
+            credentials = credentials.get_frozen_credentials()  # type: ignore[assignment]
             access_key = credentials.access_key
             secret_key = credentials.secret_key
             service = "neptune-db"
@@ -192,23 +193,29 @@ class NeptuneRdfGraph:
             )
             from botocore.auth import SigV4Auth
 
-            SigV4Auth(creds, service, self.region_name).add_auth(request)
+            # SigV4Auth expects formal Credentials object but SimpleNamespace works
+            # at runtime
+            SigV4Auth(creds, service, self.region_name).add_auth(request)  # type: ignore[arg-type]
             request.headers["Content-Type"] = "application/x-www-form-urlencoded"
-            request_hdr = request.headers
+            # request.headers is HTTPHeaders but we need dict[str, str] for consistency
+            request_hdr = request.headers  # type: ignore[assignment]
         else:
             request_hdr = {}
             request_hdr["Content-Type"] = "application/x-www-form-urlencoded"
 
         queryres = requests.request(
-            method="POST", url=self.query_endpoint, headers=request_hdr, data=data
+            method="POST",
+            url=self.query_endpoint,
+            headers=request_hdr,
+            data=data,  # type: ignore[arg-type]
         )
         json_resp = json.loads(queryres.text)
         return json_resp
 
     def load_schema(self, schema_elements: Dict[str, Any]) -> None:
-        """
-        Generates and sets schema from schema_elements. Helpful in
-        cases where introspected schema needs pruning.
+        """Generates and sets schema from schema_elements. Helpful in cases where
+        introspected schema needs pruning.
+
         """
 
         elem_str = {}
@@ -235,9 +242,7 @@ class NeptuneRdfGraph:
         )
 
     def _get_local_name(self, iri: str) -> Sequence[str]:
-        """
-        Split IRI into prefix and local
-        """
+        """Split IRI into prefix and local"""
         if "#" in iri:
             tokens = iri.split("#")
             return [f"{tokens[0]}#", tokens[-1]]
@@ -248,9 +253,7 @@ class NeptuneRdfGraph:
             raise ValueError(f"Unexpected IRI '{iri}', contains neither '#' nor '/'.")
 
     def _refresh_schema(self) -> None:
-        """
-        Query Neptune to introspect schema.
-        """
+        """Query Neptune to introspect schema."""
         self.schema_elements["distinct_prefixes"] = {}
 
         # get summary and build list of classes and rels

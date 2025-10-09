@@ -1,3 +1,5 @@
+from typing import Any
+
 from langchain_aws.chains import (
     create_neptune_opencypher_qa_chain,
     create_neptune_sparql_qa_chain,
@@ -19,7 +21,7 @@ from langchain_aws.vectorstores.inmemorydb import (
 from langchain_aws.vectorstores.s3_vectors import AmazonS3Vectors
 
 
-def setup_logging():
+def setup_logging() -> None:
     import logging
     import os
 
@@ -56,16 +58,18 @@ try:
         merged_extra = f"{existing} {FRAMEWORK_UA}".strip()
         return cfg.merge(Config(user_agent_extra=merged_extra))
 
-    def _patched_boto3_client(*args, **kwargs):
+    def _patched_boto3_client(*args: Any, **kwargs: Any) -> Any:
         kwargs["config"] = _ensure_framework_ua(kwargs.get("config"))
         return ORIGINAL_BOTO3_CLIENT(*args, **kwargs)
 
-    def _patched_session_client(self, *args, **kwargs):
+    def _patched_session_client(self: Any, *args: Any, **kwargs: Any) -> Any:
         kwargs["config"] = _ensure_framework_ua(kwargs.get("config"))
         return ORIGINAL_SESSION_CLIENT(self, *args, **kwargs)
 
     boto3.client = _patched_boto3_client
-    boto3.session.Session.client = _patched_session_client
+    # Monkey-patch boto3 session client method to inject framework user-agent
+    # mypy complains about assigning to method, but this is intentional monkey-patching
+    boto3.session.Session.client = _patched_session_client  # type: ignore[method-assign]
 except Exception:
     pass
 

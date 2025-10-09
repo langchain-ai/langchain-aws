@@ -1,13 +1,14 @@
 # LangGraph Checkpoint AWS
-A comprehensive AWS-based persistence solution for LangGraph agents that provides multiple storage backends including Bedrock Session Management Service and high-performance Valkey (Redis-compatible) storage.
+A custom AWS-based persistence solution for LangGraph agents that provides multiple storage backends including Bedrock AgentCore Memory and high-performance Valkey (Redis-compatible) storage.
 
 ## Overview
 This package provides multiple persistence solutions for LangGraph agents:
 
-### Bedrock Session Management
-- Stateful conversations and interactions using AWS Bedrock
-- Resumable agent sessions with cloud-native persistence
-- Seamless integration with AWS Bedrock services
+### AWS Bedrock AgentCore Memory Service
+1. Stateful conversations and interactions
+2. Resumable agent sessions
+3. Efficient state persistence and retrieval
+4. Seamless integration with AWS Bedrock
 
 ### Valkey Storage Solutions
 - **High-performance checkpoint storage** with Valkey (Redis-compatible)
@@ -16,22 +17,26 @@ This package provides multiple persistence solutions for LangGraph agents:
 - **AgentCore integration** for enterprise session management
 
 ## Installation
+
 You can install the package using pip:
 
 ```bash
 pip install langgraph-checkpoint-aws
 ```
+
 Or with Poetry:
+
 ```bash
 poetry add langgraph-checkpoint-aws
 ```
 
 ## Requirements
+
 ```text
 Python >=3.9
 langgraph-checkpoint >=2.1.0
 langgraph >=0.2.55
-boto3 >=1.37.3
+boto3 >=1.39.7
 valkey >=6.1.1
 orjson >=3.9.0
 ```
@@ -51,30 +56,115 @@ This package provides four main components:
 ### 1. Bedrock Session Management
 
 ```python
-from langgraph.graph import StateGraph
-from langgraph_checkpoint_aws.saver import BedrockSessionSaver
+# Import LangGraph and LangChain components
+from langchain.chat_models import init_chat_model
+from langgraph.prebuilt import create_react_agent
 
-# Initialize the saver
-session_saver = BedrockSessionSaver(
-    region_name="us-west-2",  # Your AWS region
-    credentials_profile_name="default",  # Optional: AWS credentials profile
+# Import the AgentCoreMemory integrations
+from langgraph_checkpoint_aws import AgentCoreMemorySaver
+
+REGION = "us-west-2"
+MEMORY_ID = "YOUR_MEMORY_ID"
+MODEL_ID = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+
+# Initialize checkpointer for state persistence. No additional setup required.
+# Sessions will be saved and persisted for actor_id/session_id combinations
+checkpointer = AgentCoreMemorySaver(MEMORY_ID, region_name=REGION)
+
+# Initialize LLM
+llm = init_chat_model(MODEL_ID, model_provider="bedrock_converse", region_name=REGION)
+
+# Create a pre-built langgraph agent (configurations work for custom agents too)
+graph = create_react_agent(
+    model=llm,
+    tools=tools,
+    checkpointer=checkpointer, # AgentCoreMemorySaver we created above
 )
 
-# Create a session
-session_id = session_saver.session_client.create_session().session_id
+# Specify config at runtime for ACTOR and SESSION
+config = {
+    "configurable": {
+        "thread_id": "session-1", # REQUIRED: This maps to Bedrock AgentCore session_id under the hood
+        "actor_id": "react-agent-1", # REQUIRED: This maps to Bedrock AgentCore actor_id under the hood
+    }
+}
 
-# Use with LangGraph
-builder = StateGraph(int)
-builder.add_node("add_one", lambda x: x + 1)
-builder.set_entry_point("add_one")
-builder.set_finish_point("add_one")
-
-graph = builder.compile(checkpointer=session_saver)
-config = {"configurable": {"thread_id": session_id}}
-graph.invoke(1, config)
+# Invoke the agent
+response = graph.invoke(
+    {"messages": [("human", "I like sushi with tuna. In general seafood is great.")]},
+    config=config
+)
 ```
 
-### 2. Valkey Checkpoint Storage
+### 2. Bedrock Memory Store
+
+```python
+# Import LangGraph and LangChain components
+from langchain.chat_models import init_chat_model
+from langgraph.prebuilt import create_react_agent
+
+from langgraph_checkpoint_aws import (
+    AgentCoreMemoryStore
+)
+
+REGION = "us-west-2"
+MEMORY_ID = "YOUR_MEMORY_ID"
+MODEL_ID = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+
+# Initialize store for saving and searching over long term memories
+# such as preferences and facts across sessions
+store = AgentCoreMemoryStore(MEMORY_ID, region_name=REGION)
+
+# Pre-model hook runs and saves messages of your choosing to AgentCore Memory
+# for async processing and extraction
+def pre_model_hook(state, config: RunnableConfig, *, store: BaseStore):
+    """Hook that runs pre-LLM invocation to save the latest human message"""
+    actor_id = config["configurable"]["actor_id"]
+    thread_id = config["configurable"]["thread_id"]
+    
+    # Saving the message to the actor and session combination that we get at runtime
+    namespace = (actor_id, thread_id)
+    
+    messages = state.get("messages", [])
+    # Save the last human message we see before LLM invocation
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            store.put(namespace, str(uuid.uuid4()), {"message": msg})
+            break
+            
+    # OPTIONAL: Retrieve user preferences based on the last message and append to state
+    # user_preferences_namespace = ("preferences", actor_id)
+    # preferences = store.search(user_preferences_namespace, query=msg.content, limit=5)
+    # # Add to input messages as needed
+    
+    return {"llm_input_messages": messages}
+
+# Initialize LLM
+llm = init_chat_model(MODEL_ID, model_provider="bedrock_converse", region_name=REGION)
+
+# Create a pre-built langgraph agent (configurations work for custom agents too)
+graph = create_react_agent(
+    model=llm,
+    tools=[],
+    pre_model_hook=pre_model_hook,
+)
+
+# Specify config at runtime for ACTOR and SESSION
+config = {
+    "configurable": {
+        "thread_id": "session-1", # REQUIRED: This maps to Bedrock AgentCore session_id under the hood
+        "actor_id": "react-agent-1", # REQUIRED: This maps to Bedrock AgentCore actor_id under the hood
+    }
+}
+
+# Invoke the agent
+response = graph.invoke(
+    {"messages": [("human", "I like sushi with tuna. In general seafood is great.")]},
+    config=config
+)
+```
+
+### 3. Valkey Checkpoint Storage
 
 High-performance checkpoint storage using Valkey (Redis-compatible):
 
@@ -99,7 +189,7 @@ with ValkeyCheckpointSaver.from_conn_string(
     result = graph.invoke(1, config)
 ```
 
-### 3. Valkey Cache for LLM Responses
+### 4. Valkey Cache for LLM Responses
 
 Intelligent caching to improve performance and reduce costs:
 
@@ -127,7 +217,7 @@ with ValkeyCache.from_conn_string(
         cache.set({cache_key: (computation_result, 3600)})  # Cache for 1 hour
 ```
 
-### 4. Valkey Store for Document Storage
+### 5. Valkey Store for Document Storage
 
 Document storage with vector search capabilities using ValkeyIndexConfig:
 
@@ -203,7 +293,7 @@ with ValkeyStore.from_conn_string(
     pass
 ```
 
-### 5. AgentCore Valkey Integration
+### 6. AgentCore Valkey Integration
 
 Enterprise session management with AgentCore compatibility:
 
@@ -229,7 +319,7 @@ with AgentCoreValkeySaver.from_conn_string(
     result = graph.invoke({"messages": [...]}, config)
 ```
 
-### Async Usage
+## Async Usage
 
 All components support async operations:
 
@@ -440,6 +530,7 @@ exact_config = {
     "index_type": "flat",  # No HNSW parameters needed
 }
 ```
+
 ## Development
 Setting Up Development Environment
 
@@ -500,6 +591,113 @@ Required AWS permissions for Bedrock Session Management:
             "Sid": "BedrockSessionManagement",
             "Effect": "Allow",
             "Action": [
+                "bedrock-agentcore:CreateEvent",
+                "bedrock-agentcore:ListEvents",
+                "bedrock-agentcore:GetEvent",
+            ],
+            "Resource": [
+                "*"
+            ]
+        }
+    ]
+}
+```
+
+## Bedrock Session Saver (Alternative Implementation)
+
+This package also provides an alternative checkpointing solution using AWS Bedrock Session Management Service:
+
+### Usage
+
+```python
+from langgraph.graph import StateGraph
+from langgraph_checkpoint_aws.saver import BedrockSessionSaver
+
+# Initialize the saver
+session_saver = BedrockSessionSaver(
+    region_name="us-west-2",  # Your AWS region
+    credentials_profile_name="default",  # Optional: AWS credentials profile
+)
+
+# Create a session
+session_id = session_saver.session_client.create_session().session_id
+
+# Use with LangGraph
+builder = StateGraph(int)
+builder.add_node("add_one", lambda x: x + 1)
+builder.set_entry_point("add_one")
+builder.set_finish_point("add_one")
+
+graph = builder.compile(checkpointer=session_saver)
+config = {"configurable": {"thread_id": session_id}}
+graph.invoke(1, config)
+```
+
+You can also invoke the graph asynchronously:
+
+```python
+from langgraph.graph import StateGraph
+from langgraph_checkpoint_aws.async_saver import AsyncBedrockSessionSaver
+
+# Initialize the saver
+session_saver = AsyncBedrockSessionSaver(
+    region_name="us-west-2",  # Your AWS region
+    credentials_profile_name="default",  # Optional: AWS credentials profile
+)
+
+# Create a session
+session_create_response = await session_saver.session_client.create_session()
+session_id = session_create_response.session_id
+
+# Use with LangGraph
+builder = StateGraph(int)
+builder.add_node("add_one", lambda x: x + 1)
+builder.set_entry_point("add_one")
+builder.set_finish_point("add_one")
+
+graph = builder.compile(checkpointer=session_saver)
+config = {"configurable": {"thread_id": session_id}}
+await graph.ainvoke(1, config)
+```
+
+### Configuration Options
+
+`BedrockSessionSaver` and `AsyncBedrockSessionSaver` accepts the following parameters:
+
+```python
+def __init__(
+    client: Optional[Any] = None,
+    session: Optional[boto3.Session] = None,
+    region_name: Optional[str] = None,
+    credentials_profile_name: Optional[str] = None,
+    aws_access_key_id: Optional[SecretStr] = None,
+    aws_secret_access_key: Optional[SecretStr] = None,
+    aws_session_token: Optional[SecretStr] = None,
+    endpoint_url: Optional[str] = None,
+    config: Optional[Config] = None,
+)
+```
+
+- `client`: boto3 Bedrock runtime client (e.g. boto3.client("bedrock-agent-runtime"))
+- `session`: boto3.Session for custom credentials
+- `region_name`: AWS region where Bedrock is available
+- `credentials_profile_name`: Name of AWS credentials profile to use
+- `aws_access_key_id`: AWS access key ID for authentication
+- `aws_secret_access_key`: AWS secret access key for authentication
+- `aws_session_token`: AWS session token for temporary credentials
+- `endpoint_url`: Custom endpoint URL for the Bedrock service
+- `config`: Botocore configuration object
+
+### Additional AWS permissions for Session Saver:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "Statement1",
+            "Effect": "Allow",
+            "Action": [
                 "bedrock:CreateSession",
                 "bedrock:GetSession",
                 "bedrock:UpdateSession",
@@ -543,20 +741,20 @@ docker run --name valkey-custom \
   -d valkey/valkey:latest
 ```
 
-#### Using AWS MemoryDB for Redis
+#### Using AWS ElastiCache for Valkey
 ```python
-# Connect to AWS MemoryDB
+# Connect to AWS ElastiCache
 from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver
 
 checkpointer = ValkeyCheckpointSaver.from_conn_string(
-    "valkeys://your-memorydb-cluster.amazonaws.com:6379",
+    "valkeys://your-elasticache-cluster.amazonaws.com:6379",
     pool_size=20
 )
 ```
 
 #### Required Valkey Modules
 For full functionality, ensure these modules are available:
-- **ValkeyJSON**: For JSON document storage
+- **ValkeyHash**: For Hash storage
 - **ValkeySearch**: For vector similarity search (optional)
 
 #### Production Configuration
@@ -620,7 +818,7 @@ results = cache.get(["key1", "key2", "key3"])
 
 ```python
 # Configure vector indexing for semantic search with ValkeyIndexConfig
-store = ValkeyStore.from_conn_string(
+with ValkeyStore.from_conn_string(
     "valkey://localhost:6379",
     index={
         "collection_name": "optimized_search",
@@ -633,16 +831,16 @@ store = ValkeyStore.from_conn_string(
         "hnsw_ef_construction": 300,  # Higher for better index quality
         "hnsw_ef_runtime": 15,  # Higher for better search accuracy
     }
-)
+) as store:
 
-# Optimize search queries
-results = store.search(
-    ("documents",),
-    query="machine learning",
-    filter={"category": "research"},
-    limit=10,
-    offset=0
-)
+    # Optimize search queries
+    results = store.search(
+        ("documents",),
+        query="machine learning",
+        filter={"category": "research"},
+        limit=10,
+        offset=0
+    )
 
 # Algorithm selection based on use case
 # HNSW: Fast approximate search for large datasets
@@ -663,12 +861,11 @@ flat_config = {
 
 ## Security Considerations
 
-### AWS Security
-* Never commit AWS credentials to version control
-* Use environment variables or AWS IAM roles for authentication
-* Follow AWS security best practices
-* Use IAM roles and temporary credentials when possible
-* Implement proper access controls for session management
+- Never commit AWS credentials
+- Use environment variables or AWS IAM roles for authentication
+- Follow AWS security best practices
+- Use IAM roles and temporary credentials when possible
+- Implement proper access controls for session management
 
 ### Valkey Security
 * Use SSL/TLS for production deployments (`valkeys://` protocol)
@@ -729,17 +926,21 @@ valkey-cli config set maxmemory-policy allkeys-lru
 - Use batch operations for bulk data operations
 
 ## Contributing
-* Fork the repository
-* Create a feature branch
-* Make your changes
-* Run tests and linting: `make test && make lint`
-* Submit a pull request
+
+- Fork the repository
+
+- Create a feature branch
+- Make your changes
+- Run tests and linting
+- Submit a pull request
 
 ## License
+
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
-* LangChain team for the base LangGraph framework
-* AWS Bedrock team for the session management service
-* Valkey team for the high-performance Redis-compatible storage
-* OpenAI team for embedding models integration
+
+- LangChain team for the base LangGraph framework
+- AWS Bedrock team for the session management service
+- Valkey team for the high-performance Redis-compatible storage
+
