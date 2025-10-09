@@ -8,9 +8,33 @@ from datetime import datetime
 import pytest
 import pytest_asyncio
 from langgraph.store.base import Item, SearchItem
-from valkey import Valkey
+
+try:
+    from valkey import Valkey
+    VALKEY_AVAILABLE = True
+except ImportError:
+    Valkey = None
+    VALKEY_AVAILABLE = False
 
 from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore, ValkeyIndexConfig
+
+
+def _is_valkey_server_available() -> bool:
+    """Check if a Valkey server is available for testing."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        return False
+    
+    try:
+        valkey_url = os.getenv("VALKEY_URL", "valkey://localhost:6379")
+        client = Valkey.from_url(valkey_url)
+        client.ping()
+        client.close()
+        return True
+    except Exception:
+        return False
+
+
+VALKEY_SERVER_AVAILABLE = _is_valkey_server_available()
 
 
 @pytest.fixture
@@ -22,6 +46,8 @@ def valkey_url() -> str:
 @pytest.fixture
 def async_store(valkey_url: str) -> AsyncValkeyStore:
     """Create an AsyncValkeyStore instance."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        pytest.skip("Valkey not available")
     client = Valkey.from_url(valkey_url)
     return AsyncValkeyStore(client, ttl={"default_ttl": 60.0, "refresh_on_read": True})
 
@@ -31,6 +57,8 @@ async def async_store_with_index(
     valkey_url: str,
 ) -> AsyncGenerator[AsyncValkeyStore, None]:
     """Create an AsyncValkeyStore instance with vector indexing."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        pytest.skip("Valkey not available")
     client = Valkey.from_url(valkey_url)
 
     # Create proper ValkeyIndexConfig
@@ -62,6 +90,7 @@ async def clean_async_store(
 
 
 # AsyncValkeyStore tests
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_put_and_get(clean_async_store: AsyncValkeyStore) -> None:
     """Test basic put and get operations with AsyncValkeyStore."""
@@ -82,6 +111,7 @@ async def test_async_put_and_get(clean_async_store: AsyncValkeyStore) -> None:
     assert isinstance(item.updated_at, datetime)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_put_and_get_with_ttl(clean_async_store: AsyncValkeyStore) -> None:
     """Test TTL functionality with AsyncValkeyStore."""
@@ -106,6 +136,7 @@ async def test_async_put_and_get_with_ttl(clean_async_store: AsyncValkeyStore) -
     assert item is None
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_search(async_store_with_index: AsyncValkeyStore) -> None:
     """Test search functionality with AsyncValkeyStore."""
@@ -138,6 +169,7 @@ async def test_async_search(async_store_with_index: AsyncValkeyStore) -> None:
     assert all(hasattr(r, "score") for r in results)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_delete(clean_async_store: AsyncValkeyStore) -> None:
     """Test delete operation with AsyncValkeyStore."""
@@ -158,6 +190,7 @@ async def test_async_delete(clean_async_store: AsyncValkeyStore) -> None:
     assert item is None
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_list_namespaces(clean_async_store: AsyncValkeyStore) -> None:
     """Test namespace listing with AsyncValkeyStore."""
@@ -181,6 +214,7 @@ async def test_async_list_namespaces(clean_async_store: AsyncValkeyStore) -> Non
     assert all(len(ns) <= 2 for ns in namespaces)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_batch_operations(clean_async_store: AsyncValkeyStore) -> None:
     """Test batch operations with AsyncValkeyStore."""
@@ -202,6 +236,7 @@ async def test_async_batch_operations(clean_async_store: AsyncValkeyStore) -> No
     assert all(r is not None for r in results)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_error_handling(clean_async_store: AsyncValkeyStore) -> None:
     """Test error handling with AsyncValkeyStore."""

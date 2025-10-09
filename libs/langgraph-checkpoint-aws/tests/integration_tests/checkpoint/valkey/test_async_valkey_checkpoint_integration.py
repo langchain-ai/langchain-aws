@@ -3,11 +3,46 @@
 import os
 from collections.abc import AsyncGenerator
 from datetime import datetime
+from typing import Any
 
 import pytest
 import pytest_asyncio
-from valkey.asyncio import Valkey as AsyncValkey
-from valkey.asyncio.connection import ConnectionPool as AsyncConnectionPool
+
+try:
+    from valkey.asyncio import Valkey as AsyncValkey
+    from valkey.asyncio.connection import ConnectionPool as AsyncConnectionPool
+    VALKEY_AVAILABLE = True
+except ImportError:
+    AsyncValkey = None
+    AsyncConnectionPool = None
+    VALKEY_AVAILABLE = False
+
+
+def _is_valkey_server_available() -> bool:
+    """Check if a Valkey server is available for testing."""
+    if not VALKEY_AVAILABLE or AsyncValkey is None:
+        return False
+    
+    try:
+        import asyncio
+        valkey_url = os.getenv("VALKEY_URL", "valkey://localhost:6379")
+        
+        async def check_connection():
+            client = AsyncValkey.from_url(valkey_url)
+            try:
+                await client.ping()
+                return True
+            except Exception:
+                return False
+            finally:
+                await client.aclose()
+        
+        return asyncio.run(check_connection())
+    except Exception:
+        return False
+
+
+VALKEY_SERVER_AVAILABLE = _is_valkey_server_available()
 
 from langgraph_checkpoint_aws.checkpoint.valkey import AsyncValkeyCheckpointSaver
 
@@ -19,8 +54,10 @@ def valkey_url() -> str:
 
 
 @pytest_asyncio.fixture
-async def async_valkey_pool(valkey_url: str) -> AsyncConnectionPool:
+async def async_valkey_pool(valkey_url: str) -> Any:
     """Create an AsyncConnectionPool instance."""
+    if not VALKEY_AVAILABLE:
+        pytest.skip("Valkey not available")
     pool = AsyncConnectionPool.from_url(
         valkey_url, max_connections=5, retry_on_timeout=True
     )
@@ -32,12 +69,15 @@ async def async_saver(
     valkey_url: str,
 ) -> AsyncGenerator[AsyncValkeyCheckpointSaver, None]:
     """Create an AsyncValkeyCheckpointSaver instance."""
+    if not VALKEY_AVAILABLE or AsyncValkey is None:
+        pytest.skip("Valkey not available")
     client = AsyncValkey.from_url(valkey_url)
     saver = AsyncValkeyCheckpointSaver(client, ttl=60.0)
     yield saver
-    await client.close()
+    await client.aclose()
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_from_conn_string(valkey_url: str) -> None:
     """Test creating async saver from connection string."""
@@ -47,8 +87,9 @@ async def test_async_from_conn_string(valkey_url: str) -> None:
         assert saver.ttl == 3600  # 3600 seconds
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
-async def test_async_from_pool(async_valkey_pool: AsyncConnectionPool) -> None:
+async def test_async_from_pool(async_valkey_pool: Any) -> None:
     """Test creating async saver from existing pool."""
     async with AsyncValkeyCheckpointSaver.from_pool(
         async_valkey_pool, ttl_seconds=3600.0
@@ -56,6 +97,7 @@ async def test_async_from_pool(async_valkey_pool: AsyncConnectionPool) -> None:
         assert saver.ttl == 3600
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_operations(valkey_url: str) -> None:
     """Test async operations using connection pool."""
@@ -69,8 +111,8 @@ async def test_async_operations(valkey_url: str) -> None:
         new_versions = {}
 
         # Store checkpoint
-        result = await saver.aput(config, checkpoint, metadata, new_versions)
-        assert result["configurable"]["checkpoint_id"] == checkpoint["id"]
+        result = await saver.aput(config, checkpoint, metadata, new_versions)  # type: ignore
+        assert result["configurable"]["checkpoint_id"] == checkpoint["id"]  # type: ignore
 
         # Get checkpoint
         result = await saver.aget_tuple(
@@ -83,13 +125,14 @@ async def test_async_operations(valkey_url: str) -> None:
             }
         )
         assert result is not None
-        assert result.checkpoint["id"] == checkpoint["id"]
-        assert result.checkpoint["state"] == checkpoint["state"]
-        assert result.metadata["user"] == metadata["user"]
+        assert result.checkpoint["id"] == checkpoint["id"]  # type: ignore
+        assert result.checkpoint["state"] == checkpoint["state"]  # type: ignore
+        assert result.metadata["user"] == metadata["user"]  # type: ignore
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
-async def test_async_shared_pool(async_valkey_pool: AsyncConnectionPool) -> None:
+async def test_async_shared_pool(async_valkey_pool: Any) -> None:
     """Test sharing connection pool between async savers."""
     async with (
         AsyncValkeyCheckpointSaver.from_pool(
@@ -107,8 +150,8 @@ async def test_async_shared_pool(async_valkey_pool: AsyncConnectionPool) -> None
         new_versions = {}
 
         # Store checkpoints in both savers
-        await saver1.aput(config, checkpoint1, metadata, new_versions)
-        await saver2.aput(config, checkpoint2, metadata, new_versions)
+        await saver1.aput(config, checkpoint1, metadata, new_versions)  # type: ignore
+        await saver2.aput(config, checkpoint2, metadata, new_versions)  # type: ignore
 
         # Get checkpoints from both savers
         result1 = await saver1.aget_tuple(
@@ -132,5 +175,5 @@ async def test_async_shared_pool(async_valkey_pool: AsyncConnectionPool) -> None
 
         assert result1 is not None
         assert result2 is not None
-        assert result1.checkpoint["id"] == checkpoint1["id"]
-        assert result2.checkpoint["id"] == checkpoint2["id"]
+        assert result1.checkpoint["id"] == checkpoint1["id"]  # type: ignore
+        assert result2.checkpoint["id"] == checkpoint2["id"]  # type: ignore

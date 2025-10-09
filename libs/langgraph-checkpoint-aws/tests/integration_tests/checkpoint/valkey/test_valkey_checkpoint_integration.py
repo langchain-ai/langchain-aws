@@ -1,12 +1,44 @@
-"""Additional tests to improve code coverage for ValkeyCheckpointSaver."""
+"""Comprehensive integration tests for ValkeyCheckpointSaver implementation.
+
+This file combines tests for basic functionality and additional coverage tests
+to ensure the ValkeyCheckpointSaver works correctly in various scenarios.
+"""
 
 import asyncio
 import os
 import uuid
+from collections.abc import Generator
 from datetime import datetime, timezone
+from typing import Any, cast
 
 import pytest
-from valkey import Valkey
+
+try:
+    from valkey import Valkey
+    from valkey.connection import ConnectionPool
+    VALKEY_AVAILABLE = True
+except ImportError:
+    Valkey = None
+    ConnectionPool = None
+    VALKEY_AVAILABLE = False
+
+
+def _is_valkey_server_available() -> bool:
+    """Check if a Valkey server is available for testing."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        return False
+    
+    try:
+        valkey_url = os.getenv("VALKEY_URL", "valkey://localhost:6379")
+        client = Valkey.from_url(valkey_url)
+        client.ping()
+        client.close()
+        return True
+    except Exception:
+        return False
+
+
+VALKEY_SERVER_AVAILABLE = _is_valkey_server_available()
 
 from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver
 
@@ -18,11 +50,122 @@ def valkey_url() -> str:
 
 
 @pytest.fixture
+def valkey_pool(valkey_url: str) -> Generator[Any, None, None]:
+    """Create a ValkeyPool instance."""
+    if not VALKEY_AVAILABLE:
+        pytest.skip("Valkey not available")
+    pool = ConnectionPool.from_url(valkey_url, max_connections=5)
+    yield pool
+    # Pool cleanup will be automatic
+
+
+@pytest.fixture
 def saver(valkey_url: str) -> ValkeyCheckpointSaver:
     """Create a ValkeyCheckpointSaver instance."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        pytest.skip("Valkey not available")
     return ValkeyCheckpointSaver(Valkey.from_url(valkey_url), ttl=60.0)
 
 
+# Basic Integration Tests
+
+
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
+def test_from_conn_string(valkey_url: str) -> None:
+    """Test creating saver from connection string."""
+    with ValkeyCheckpointSaver.from_conn_string(
+        valkey_url, ttl_seconds=3600.0, pool_size=5
+    ) as saver:
+        assert saver.ttl == 3600  # 3600 seconds
+
+
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
+def test_from_pool(valkey_pool: Any) -> None:
+    """Test creating saver from existing pool."""
+    with ValkeyCheckpointSaver.from_pool(valkey_pool, ttl_seconds=3600.0) as saver:
+        assert saver.ttl == 3600
+
+
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
+def test_sync_operations(valkey_url: str) -> None:
+    """Test sync operations using connection pool."""
+    with ValkeyCheckpointSaver.from_conn_string(
+        valkey_url, ttl_seconds=3600.0, pool_size=5
+    ) as saver:
+        # Test data
+        config = {"configurable": {"thread_id": "test-thread", "checkpoint_ns": "test"}}
+        checkpoint = {"id": "test-1", "state": {"value": 1}, "versions": {}}
+        metadata = {"timestamp": datetime.now(timezone.utc).isoformat(), "user": "test"}
+        new_versions = {}
+
+        # Store checkpoint
+        result = saver.put(config, checkpoint, metadata, new_versions)  # type: ignore
+        assert result["configurable"]["checkpoint_id"] == checkpoint["id"]  # type: ignore
+
+        # Get checkpoint
+        result = saver.get_tuple(
+            {
+                "configurable": {
+                    "thread_id": "test-thread",
+                    "checkpoint_ns": "test",
+                    "checkpoint_id": checkpoint["id"],
+                }
+            }
+        )
+        assert result is not None
+        assert result.checkpoint["id"] == checkpoint["id"]  # type: ignore
+        assert result.checkpoint["state"] == checkpoint["state"]  # type: ignore
+        assert result.metadata["user"] == metadata["user"]  # type: ignore
+
+
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
+def test_sync_shared_pool(valkey_pool: Any) -> None:
+    """Test sharing connection pool between savers."""
+    with (
+        ValkeyCheckpointSaver.from_pool(valkey_pool, ttl_seconds=3600.0) as saver1,
+        ValkeyCheckpointSaver.from_pool(valkey_pool, ttl_seconds=3600.0) as saver2,
+    ):
+        # Test data
+        config = {"configurable": {"thread_id": "test-thread", "checkpoint_ns": "test"}}
+        checkpoint1 = {"id": "test-1", "state": {"value": 1}, "versions": {}}
+        checkpoint2 = {"id": "test-2", "state": {"value": 2}, "versions": {}}
+        metadata = {"timestamp": datetime.now(timezone.utc).isoformat(), "user": "test"}
+        new_versions = {}
+
+        # Store checkpoints in both savers
+        saver1.put(config, checkpoint1, metadata, new_versions)  # type: ignore
+        saver2.put(config, checkpoint2, metadata, new_versions)  # type: ignore
+
+        # Get checkpoints from both savers
+        result1 = saver1.get_tuple(
+            {
+                "configurable": {
+                    "thread_id": "test-thread",
+                    "checkpoint_ns": "test",
+                    "checkpoint_id": checkpoint1["id"],
+                }
+            }
+        )
+        result2 = saver2.get_tuple(
+            {
+                "configurable": {
+                    "thread_id": "test-thread",
+                    "checkpoint_ns": "test",
+                    "checkpoint_id": checkpoint2["id"],
+                }
+            }
+        )
+
+        assert result1 is not None
+        assert result2 is not None
+        assert result1.checkpoint["id"] == checkpoint1["id"]  # type: ignore
+        assert result2.checkpoint["id"] == checkpoint2["id"]  # type: ignore
+
+
+# Coverage Tests
+
+
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_get_tuple_nonexistent_checkpoint(saver: ValkeyCheckpointSaver) -> None:
     """Test getting a nonexistent checkpoint returns None."""
     config = {
@@ -36,13 +179,15 @@ def test_get_tuple_nonexistent_checkpoint(saver: ValkeyCheckpointSaver) -> None:
     assert result is None
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_get_tuple_latest_checkpoint_empty_thread(saver: ValkeyCheckpointSaver) -> None:
     """Test getting latest checkpoint from empty thread returns None."""
     config = {"configurable": {"thread_id": "empty-thread", "checkpoint_ns": "test"}}
-    result = saver.get_tuple(config)
+    result = saver.get_tuple(config)  # type: ignore
     assert result is None
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_get_tuple_latest_checkpoint_with_data(saver: ValkeyCheckpointSaver) -> None:
     """Test getting latest checkpoint when data exists."""
     # First store a checkpoint
@@ -70,12 +215,14 @@ def test_get_tuple_latest_checkpoint_with_data(saver: ValkeyCheckpointSaver) -> 
     assert result.checkpoint["channel_values"] == checkpoint["channel_values"]
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_list_checkpoints_empty_config(saver: ValkeyCheckpointSaver) -> None:
     """Test listing checkpoints with None config returns empty iterator."""
     result = list(saver.list(None))
     assert result == []
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_list_checkpoints_with_before_filter(saver: ValkeyCheckpointSaver) -> None:
     """Test listing checkpoints with before filter."""
     thread_id = f"test-thread-before-{uuid.uuid4()}"
@@ -119,6 +266,7 @@ def test_list_checkpoints_with_before_filter(saver: ValkeyCheckpointSaver) -> No
     assert result[1].checkpoint["id"] == "checkpoint-0"
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_list_checkpoints_with_limit(saver: ValkeyCheckpointSaver) -> None:
     """Test listing checkpoints with limit."""
     thread_id = f"test-thread-limit-{uuid.uuid4()}"
@@ -138,7 +286,7 @@ def test_list_checkpoints_with_limit(saver: ValkeyCheckpointSaver) -> None:
             "pending_sends": [],
         }
         metadata = {"timestamp": datetime.now(timezone.utc).isoformat(), "user": "test"}
-        saver.put(config, checkpoint, metadata, {})
+        saver.put(config, checkpoint, metadata, {})  # type: ignore
 
     # List with limit
     result = list(
@@ -153,6 +301,7 @@ def test_list_checkpoints_with_limit(saver: ValkeyCheckpointSaver) -> None:
     assert result[1].checkpoint["id"] == "checkpoint-3"
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_list_checkpoints_with_metadata_filter(saver: ValkeyCheckpointSaver) -> None:
     """Test listing checkpoints with metadata filter."""
     thread_id = f"test-thread-filter-{uuid.uuid4()}"
@@ -175,7 +324,7 @@ def test_list_checkpoints_with_metadata_filter(saver: ValkeyCheckpointSaver) -> 
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "user": "test" if i % 2 == 0 else "other",
         }
-        saver.put(config, checkpoint, metadata, {})
+        saver.put(config, checkpoint, metadata, {})  # type: ignore
 
     # List with metadata filter
     result = list(
@@ -188,9 +337,10 @@ def test_list_checkpoints_with_metadata_filter(saver: ValkeyCheckpointSaver) -> 
     # Should only get checkpoints with user="test"
     assert len(result) == 2
     for checkpoint_tuple in result:
-        assert checkpoint_tuple.metadata["user"] == "test"
+        assert checkpoint_tuple.metadata["user"] == "test"  # type: ignore
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_put_writes(saver: ValkeyCheckpointSaver) -> None:
     """Test storing writes linked to a checkpoint."""
     config = {
@@ -213,27 +363,28 @@ def test_put_writes(saver: ValkeyCheckpointSaver) -> None:
     metadata = {"timestamp": datetime.now(timezone.utc).isoformat(), "user": "test"}
     saver.put(
         {"configurable": {"thread_id": "test-thread-writes", "checkpoint_ns": "test"}},
-        checkpoint,
-        metadata,
+        checkpoint,  # type: ignore
+        metadata,  # type: ignore
         {},
     )
 
     # Store writes
     writes = [("channel1", "value1"), ("channel2", "value2")]
-    saver.put_writes(config, writes, "task-1", "path/to/task")
+    saver.put_writes(config, writes, "task-1", "path/to/task")  # type: ignore
 
     # Store additional writes
     more_writes = [("channel3", "value3")]
-    saver.put_writes(config, more_writes, "task-2", "path/to/task2")
+    saver.put_writes(config, more_writes, "task-2", "path/to/task2")  # type: ignore
 
     # Get checkpoint to verify writes are stored
-    result = saver.get_tuple(config)
+    result = saver.get_tuple(config)  # type: ignore
     assert result is not None
     # The writes should be included in the checkpoint tuple
     if result.pending_writes:
         assert len(result.pending_writes) >= 3
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_delete_thread(saver: ValkeyCheckpointSaver) -> None:
     """Test deleting all data for a thread."""
     thread_id = "test-thread-delete"
@@ -254,7 +405,7 @@ def test_delete_thread(saver: ValkeyCheckpointSaver) -> None:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "user": "test",
             }
-            saver.put(config, checkpoint, metadata, {})
+            saver.put(config, checkpoint, metadata, {})  # type: ignore
 
             # Also store writes
             writes_config = {
@@ -264,7 +415,7 @@ def test_delete_thread(saver: ValkeyCheckpointSaver) -> None:
                     "checkpoint_id": f"checkpoint-{i}",
                 }
             }
-            saver.put_writes(writes_config, [("channel", "value")], "task", "")
+            saver.put_writes(writes_config, [("channel", "value")], "task", "")  # type: ignore
 
     # Verify data exists
     result = saver.get_tuple(
@@ -294,19 +445,20 @@ def test_delete_thread(saver: ValkeyCheckpointSaver) -> None:
     assert result is None
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_async_methods_not_implemented(saver: ValkeyCheckpointSaver) -> None:
     """Test that async methods raise NotImplementedError."""
     config = {"configurable": {"thread_id": "test-thread", "checkpoint_ns": "test"}}
 
     # Test aget_tuple
     with pytest.raises(NotImplementedError) as exc_info:
-        asyncio.run(saver.aget_tuple(config))
+        asyncio.run(saver.aget_tuple(config))  # type: ignore
     assert "ValkeyCheckpointSaver does not support async methods" in str(exc_info.value)
     assert "AsyncValkeyCheckpointSaver" in str(exc_info.value)
 
     # Test alist
     async def test_alist():
-        async for _ in saver.alist(config):
+        async for _ in saver.alist(config):  # type: ignore
             pass
 
     with pytest.raises(NotImplementedError) as exc_info:
@@ -325,10 +477,11 @@ def test_async_methods_not_implemented(saver: ValkeyCheckpointSaver) -> None:
     metadata = {"timestamp": datetime.now(timezone.utc).isoformat(), "user": "test"}
 
     with pytest.raises(NotImplementedError) as exc_info:
-        asyncio.run(saver.aput(config, checkpoint, metadata, {}))
+        asyncio.run(saver.aput(config, checkpoint, metadata, {}))  # type: ignore
     assert "ValkeyCheckpointSaver does not support async methods" in str(exc_info.value)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_list_checkpoints_missing_checkpoint_data(saver: ValkeyCheckpointSaver) -> None:
     """Test listing checkpoints when checkpoint data is missing."""
     thread_id = "test-thread-missing"
@@ -348,6 +501,7 @@ def test_list_checkpoints_missing_checkpoint_data(saver: ValkeyCheckpointSaver) 
     assert len(result) == 0
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_get_tuple_missing_checkpoint_data(saver: ValkeyCheckpointSaver) -> None:
     """Test getting checkpoint when checkpoint data is missing."""
     thread_id = "test-thread-missing-data"
@@ -365,6 +519,7 @@ def test_get_tuple_missing_checkpoint_data(saver: ValkeyCheckpointSaver) -> None
     assert result is None
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_list_checkpoints_before_nonexistent(saver: ValkeyCheckpointSaver) -> None:
     """Test listing checkpoints with before filter for nonexistent checkpoint."""
     thread_id = f"test-thread-before-nonexistent-{uuid.uuid4()}"
@@ -381,7 +536,7 @@ def test_list_checkpoints_before_nonexistent(saver: ValkeyCheckpointSaver) -> No
         "pending_sends": [],
     }
     metadata = {"timestamp": datetime.now(timezone.utc).isoformat(), "user": "test"}
-    saver.put(config, checkpoint, metadata, {})
+    saver.put(config, checkpoint, metadata, {})  # type: ignore
 
     # List checkpoints before nonexistent checkpoint
     before_config = {
@@ -395,7 +550,7 @@ def test_list_checkpoints_before_nonexistent(saver: ValkeyCheckpointSaver) -> No
     result = list(
         saver.list(
             {"configurable": {"thread_id": thread_id, "checkpoint_ns": checkpoint_ns}},
-            before=before_config,
+            before=before_config,  # type: ignore
         )
     )
 
@@ -404,8 +559,12 @@ def test_list_checkpoints_before_nonexistent(saver: ValkeyCheckpointSaver) -> No
     assert result[0].checkpoint["id"] == "checkpoint-1"
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_initialization_with_different_parameters() -> None:
     """Test ValkeyCheckpointSaver initialization with different parameters."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        pytest.skip("Valkey not available")
+    
     valkey_url = os.getenv("VALKEY_URL", "valkey://localhost:6379")
     client = Valkey.from_url(valkey_url)
 
@@ -423,6 +582,7 @@ def test_initialization_with_different_parameters() -> None:
     assert saver3.serde is not None  # Should use default serde
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_from_conn_string_with_kwargs() -> None:
     """Test creating saver from connection string with additional kwargs."""
     valkey_url = os.getenv("VALKEY_URL", "valkey://localhost:6379")
@@ -437,5 +597,5 @@ def test_from_conn_string_with_kwargs() -> None:
         assert saver.ttl == 1800.0
         # Verify the saver works
         config = {"configurable": {"thread_id": "test-kwargs", "checkpoint_ns": "test"}}
-        result = saver.get_tuple(config)
+        result = saver.get_tuple(config)  # type: ignore
         assert result is None  # Should work without error

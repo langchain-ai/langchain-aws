@@ -6,10 +6,34 @@ from collections.abc import AsyncGenerator, Generator
 import pytest
 import pytest_asyncio
 from langgraph.store.base import SearchItem
-from valkey import Valkey
+
+try:
+    from valkey import Valkey
+    VALKEY_AVAILABLE = True
+except ImportError:
+    Valkey = None
+    VALKEY_AVAILABLE = False
 
 from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore, ValkeyStore
 from langgraph_checkpoint_aws.store.valkey.base import ValkeyIndexConfig
+
+
+def _is_valkey_server_available() -> bool:
+    """Check if a Valkey server is available for testing."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        return False
+    
+    try:
+        valkey_url = os.getenv("VALKEY_URL", "valkey://localhost:6379")
+        client = Valkey.from_url(valkey_url)
+        client.ping()
+        client.close()
+        return True
+    except Exception:
+        return False
+
+
+VALKEY_SERVER_AVAILABLE = _is_valkey_server_available()
 
 
 @pytest.fixture
@@ -61,6 +85,8 @@ class MockEmbeddings:
 @pytest.fixture
 def store_with_vector_search(valkey_url: str) -> Generator[ValkeyStore, None, None]:
     """Create a sync ValkeyStore with vector search enabled."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        pytest.skip("Valkey not available")
     client = Valkey.from_url(valkey_url)
     index_config: ValkeyIndexConfig = {
         "collection_name": "test_store_idx",
@@ -81,6 +107,8 @@ def store_with_vector_search(valkey_url: str) -> Generator[ValkeyStore, None, No
 @pytest.fixture
 def store_without_vector_search(valkey_url: str) -> Generator[ValkeyStore, None, None]:
     """Create a sync ValkeyStore without vector search (fallback only)."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        pytest.skip("Valkey not available")
     client = Valkey.from_url(valkey_url)
     store = ValkeyStore(client, ttl={"default_ttl": 60.0})
     yield store
@@ -96,6 +124,8 @@ async def async_store_with_vector_search(
     valkey_url: str,
 ) -> AsyncGenerator[AsyncValkeyStore, None]:
     """Create an async ValkeyStore with vector search enabled."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        pytest.skip("Valkey not available")
     client = Valkey.from_url(valkey_url)
     index_config: ValkeyIndexConfig = {
         "collection_name": "test_async_store_idx",
@@ -118,6 +148,8 @@ async def async_store_without_vector_search(
     valkey_url: str,
 ) -> AsyncGenerator[AsyncValkeyStore, None]:
     """Create an async ValkeyStore without vector search (fallback only)."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        pytest.skip("Valkey not available")
     client = Valkey.from_url(valkey_url)
     store = AsyncValkeyStore(client, ttl={"default_ttl": 60.0})
     yield store
@@ -131,6 +163,7 @@ async def async_store_without_vector_search(
 # Sync ValkeyStore Vector Search Tests
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_sync_vector_search_with_embeddings(
     store_with_vector_search: ValkeyStore,
 ) -> None:
@@ -174,6 +207,7 @@ def test_sync_vector_search_with_embeddings(
     assert scores == sorted(scores, reverse=True)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_sync_vector_search_with_filters(store_with_vector_search: ValkeyStore) -> None:
     """Test vector search with additional filters."""
     # Add test documents
@@ -215,6 +249,7 @@ def test_sync_vector_search_with_filters(store_with_vector_search: ValkeyStore) 
         assert result.value.get("level") == "advanced"
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_sync_fallback_to_key_search(store_without_vector_search: ValkeyStore) -> None:
     """Test fallback to key pattern search when vector search is not available."""
     # Add test documents
@@ -246,6 +281,7 @@ def test_sync_fallback_to_key_search(store_without_vector_search: ValkeyStore) -
     assert all(isinstance(r, SearchItem) for r in results)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_sync_search_with_pagination(store_with_vector_search: ValkeyStore) -> None:
     """Test search pagination functionality."""
     # Add multiple test documents
@@ -272,6 +308,7 @@ def test_sync_search_with_pagination(store_with_vector_search: ValkeyStore) -> N
     assert page1_keys.isdisjoint(page2_keys)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_sync_search_error_handling(store_with_vector_search: ValkeyStore) -> None:
     """Test error handling in search operations."""
     # Test search with invalid parameters should not crash
@@ -288,6 +325,7 @@ def test_sync_search_error_handling(store_with_vector_search: ValkeyStore) -> No
 # Async ValkeyStore Vector Search Tests
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_vector_search_with_embeddings(
     async_store_with_vector_search: AsyncValkeyStore,
@@ -330,6 +368,7 @@ async def test_async_vector_search_with_embeddings(
     assert all(r.score is not None for r in results)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_vector_search_with_filters(
     async_store_with_vector_search: AsyncValkeyStore,
@@ -376,6 +415,7 @@ async def test_async_vector_search_with_filters(
         assert result.value.get("level") == "advanced"
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_fallback_to_key_search(
     async_store_without_vector_search: AsyncValkeyStore,
@@ -412,6 +452,7 @@ async def test_async_fallback_to_key_search(
     assert all(isinstance(r, SearchItem) for r in results)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_search_with_pagination(
     async_store_with_vector_search: AsyncValkeyStore,
@@ -441,6 +482,7 @@ async def test_async_search_with_pagination(
     assert page1_keys.isdisjoint(page2_keys)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_search_error_handling(
     async_store_with_vector_search: AsyncValkeyStore,
@@ -460,6 +502,7 @@ async def test_async_search_error_handling(
 # TTL and Refresh Tests
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_sync_search_with_ttl_refresh(store_with_vector_search: ValkeyStore) -> None:
     """Test TTL refresh functionality during search."""
     # Add document with TTL
@@ -479,6 +522,7 @@ def test_sync_search_with_ttl_refresh(store_with_vector_search: ValkeyStore) -> 
     # TTL should be refreshed (hard to test directly, but operation should succeed)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_search_with_ttl_refresh(
     async_store_with_vector_search: AsyncValkeyStore,
@@ -504,6 +548,7 @@ async def test_async_search_with_ttl_refresh(
 # Edge Cases and Robustness Tests
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_sync_search_empty_results(store_with_vector_search: ValkeyStore) -> None:
     """Test search behavior with no matching results."""
     # Search for non-existent content
@@ -515,6 +560,7 @@ def test_sync_search_empty_results(store_with_vector_search: ValkeyStore) -> Non
     assert len(results) == 0
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_search_empty_results(
     async_store_with_vector_search: AsyncValkeyStore,
@@ -529,6 +575,7 @@ async def test_async_search_empty_results(
     assert len(results) == 0
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_sync_search_with_special_characters(
     store_with_vector_search: ValkeyStore,
 ) -> None:
@@ -549,6 +596,7 @@ def test_sync_search_with_special_characters(
     assert isinstance(results, list)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_async_search_with_special_characters(
     async_store_with_vector_search: AsyncValkeyStore,

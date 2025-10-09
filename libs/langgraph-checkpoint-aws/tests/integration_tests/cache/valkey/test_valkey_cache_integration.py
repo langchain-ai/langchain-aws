@@ -3,11 +3,37 @@
 import asyncio
 import os
 from collections.abc import Generator
+from typing import Any
 
 import pytest
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-from valkey import Valkey
-from valkey.connection import ConnectionPool
+
+try:
+    from valkey import Valkey
+    from valkey.connection import ConnectionPool
+    VALKEY_AVAILABLE = True
+except ImportError:
+    Valkey = None
+    ConnectionPool = None
+    VALKEY_AVAILABLE = False
+
+
+def _is_valkey_server_available() -> bool:
+    """Check if a Valkey server is available for testing."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        return False
+    
+    try:
+        valkey_url = os.getenv("VALKEY_URL", "valkey://localhost:6379")
+        client = Valkey.from_url(valkey_url)
+        client.ping()
+        client.close()
+        return True
+    except Exception:
+        return False
+
+
+VALKEY_SERVER_AVAILABLE = _is_valkey_server_available()
 
 from langgraph_checkpoint_aws.cache.valkey import ValkeyCache
 
@@ -19,8 +45,10 @@ def valkey_url() -> str:
 
 
 @pytest.fixture
-def valkey_pool(valkey_url: str) -> Generator[ConnectionPool, None, None]:
+def valkey_pool(valkey_url: str) -> Generator[Any, None, None]:
     """Create a ValkeyPool instance."""
+    if not VALKEY_AVAILABLE:
+        pytest.skip("Valkey not available")
     pool = ConnectionPool.from_url(
         url=valkey_url, min_size=1, max_connections=5, timeout=30.0
     )
@@ -31,12 +59,16 @@ def valkey_pool(valkey_url: str) -> Generator[ConnectionPool, None, None]:
 @pytest.fixture
 def cache(valkey_url: str) -> ValkeyCache:
     """Create a ValkeyCache instance."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        pytest.skip("Valkey not available")
     return ValkeyCache(Valkey.from_url(valkey_url), prefix="test:cache:")
 
 
 @pytest.fixture
 def cache_with_ttl(valkey_url: str) -> ValkeyCache:
     """Create a ValkeyCache instance with default TTL."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        pytest.skip("Valkey not available")
     return ValkeyCache(
         Valkey.from_url(valkey_url),
         prefix="test:cache:ttl:",
@@ -65,6 +97,7 @@ def clean_cache_with_ttl(
 class TestValkeyCache:
     """Test suite for ValkeyCache."""
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     def test_init(self, valkey_url: str):
         """Test ValkeyCache initialization."""
         client = Valkey.from_url(valkey_url)
@@ -75,6 +108,7 @@ class TestValkeyCache:
         assert cache.ttl == 60  # 60 seconds
         assert isinstance(cache.serde, JsonPlusSerializer)
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     def test_init_with_custom_serde(self, valkey_url: str):
         """Test ValkeyCache initialization with custom serializer."""
         client = Valkey.from_url(valkey_url)
@@ -83,6 +117,7 @@ class TestValkeyCache:
 
         assert cache.serde is serde
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     def test_make_key(self, clean_cache: ValkeyCache):
         """Test key creation from namespace and key."""
         # Test with empty namespace
@@ -97,6 +132,7 @@ class TestValkeyCache:
         key = clean_cache._make_key(("ns1", "ns2", "ns3"), "test_key")
         assert key == "test:cache:ns1/ns2/ns3/test_key"
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     def test_parse_key(self, clean_cache: ValkeyCache):
         """Test parsing Valkey key back to namespace and key."""
         # Test with empty namespace
@@ -114,17 +150,20 @@ class TestValkeyCache:
         assert ns == ("ns1", "ns2", "ns3")
         assert key == "test_key"
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     def test_parse_key_invalid_prefix(self, clean_cache: ValkeyCache):
         """Test parsing key with invalid prefix raises error."""
         with pytest.raises(ValueError, match="does not start with prefix"):
             clean_cache._parse_key("invalid:key")
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     @pytest.mark.asyncio
     async def test_aget_empty_keys(self, clean_cache: ValkeyCache):
         """Test async get with empty keys list."""
         result = await clean_cache.aget([])
         assert result == {}
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     @pytest.mark.asyncio
     async def test_aget_nonexistent_keys(self, clean_cache: ValkeyCache):
         """Test async get with nonexistent keys."""
@@ -132,6 +171,7 @@ class TestValkeyCache:
         result = await clean_cache.aget(keys)
         assert result == {}
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     @pytest.mark.asyncio
     async def test_aset_and_aget_basic(self, clean_cache: ValkeyCache):
         """Test basic async set and get operations."""
@@ -154,6 +194,7 @@ class TestValkeyCache:
         assert result[(("ns1",), "key2")] == {"value": "test2", "number": 42}
         assert result[(("ns1", "ns2"), "key3")] == [1, 2, 3]
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     def test_set_and_get_sync(self, clean_cache: ValkeyCache):
         """Test synchronous set and get operations."""
         # Test data
@@ -173,6 +214,7 @@ class TestValkeyCache:
         assert result[((), "sync_key1")] == {"value": "sync_test1"}
         assert result[(("sync_ns",), "sync_key2")] == {"value": "sync_test2"}
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     @pytest.mark.asyncio
     async def test_aset_with_ttl(self, clean_cache: ValkeyCache):
         """Test async set with TTL."""
@@ -192,6 +234,7 @@ class TestValkeyCache:
         result = await clean_cache.aget([((), "ttl_key")])
         assert result == {}
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     @pytest.mark.asyncio
     async def test_aset_with_default_ttl(self, clean_cache_with_ttl: ValkeyCache):
         """Test async set with default TTL."""
@@ -206,12 +249,14 @@ class TestValkeyCache:
 
         # Note: We don't wait for default TTL to expire as it's 1 second
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     @pytest.mark.asyncio
     async def test_aset_empty_pairs(self, clean_cache: ValkeyCache):
         """Test async set with empty pairs."""
         await clean_cache.aset({})
         # Should not raise any errors
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     @pytest.mark.asyncio
     async def test_aclear_all(self, clean_cache: ValkeyCache):
         """Test clearing all cached values."""
@@ -235,6 +280,7 @@ class TestValkeyCache:
         result = await clean_cache.aget(keys)
         assert result == {}
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     @pytest.mark.asyncio
     async def test_aclear_specific_namespaces(self, clean_cache: ValkeyCache):
         """Test clearing specific namespaces."""
@@ -257,6 +303,7 @@ class TestValkeyCache:
         assert (("ns1",), "key1") not in result
         assert (("ns1", "sub"), "key2") not in result
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     def test_clear_sync(self, clean_cache: ValkeyCache):
         """Test synchronous clear operation."""
         # Set some test data
@@ -276,6 +323,7 @@ class TestValkeyCache:
         result = clean_cache.get([((), "sync_clear_key")])
         assert result == {}
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     def test_from_conn_string(self, valkey_url: str):
         """Test creating cache from connection string."""
         with ValkeyCache.from_conn_string(
@@ -283,8 +331,10 @@ class TestValkeyCache:
         ) as cache:
             assert cache.prefix == "test:conn:"
             assert cache.ttl == 1800  # 30 minutes in seconds
-            assert isinstance(cache.client, Valkey)
+            if VALKEY_AVAILABLE:
+                assert isinstance(cache.client, Valkey)
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     def test_from_conn_string_with_pool(self, valkey_url: str):
         """Test creating cache from connection string with pool."""
         with ValkeyCache.from_conn_string(
@@ -296,17 +346,21 @@ class TestValkeyCache:
         ) as cache:
             assert cache.prefix == "test:pool:"
             assert cache.ttl == 900  # 15 minutes in seconds
-            assert isinstance(cache.client, Valkey)
+            if VALKEY_AVAILABLE:
+                assert isinstance(cache.client, Valkey)
 
-    def test_from_pool(self, valkey_pool: ConnectionPool):
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
+    def test_from_pool(self, valkey_pool: Any):
         """Test creating cache from existing pool."""
         with ValkeyCache.from_pool(
             valkey_pool, prefix="test:existing_pool:", ttl_seconds=2700.0
         ) as cache:
             assert cache.prefix == "test:existing_pool:"
             assert cache.ttl == 2700  # 45 minutes in seconds
-            assert isinstance(cache.client, Valkey)
+            if VALKEY_AVAILABLE:
+                assert isinstance(cache.client, Valkey)
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     @pytest.mark.asyncio
     async def test_integration_workflow(self, clean_cache: ValkeyCache):
         """Test a complete workflow with multiple operations."""
@@ -347,6 +401,7 @@ class TestValkeyCache:
         result = await clean_cache.aget([(("temp",), "session1")])
         assert result == {}
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     @pytest.mark.asyncio
     async def test_complex_data_types(self, clean_cache: ValkeyCache):
         """Test caching complex data types."""
@@ -370,6 +425,7 @@ class TestValkeyCache:
         expected = complex_data[(("complex",), "nested")][0]
         assert result[(("complex",), "nested")] == expected
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     @pytest.mark.asyncio
     async def test_batch_operations(self, clean_cache: ValkeyCache):
         """Test batch operations with many keys."""
@@ -396,6 +452,7 @@ class TestValkeyCache:
             expected_value = {"id": i, "data": f"batch_item_{i}"}
             assert result[(ns, key)] == expected_value
 
+    @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
     @pytest.mark.asyncio
     async def test_namespace_isolation(self, clean_cache: ValkeyCache):
         """Test that namespaces properly isolate data."""

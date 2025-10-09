@@ -3,13 +3,44 @@
 import os
 from collections.abc import Generator
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from langgraph.store.base import Item, SearchItem
-from valkey import Valkey
-from valkey.connection import ConnectionPool
+
+if TYPE_CHECKING:
+    from valkey.connection import ConnectionPool
+else:
+    ConnectionPool = Any
+
+try:
+    from valkey import Valkey
+    from valkey.connection import ConnectionPool as _ConnectionPool
+    VALKEY_AVAILABLE = True
+    ConnectionPool = _ConnectionPool
+except ImportError:
+    Valkey = None
+    VALKEY_AVAILABLE = False
 
 from langgraph_checkpoint_aws.store.valkey import ValkeyIndexConfig, ValkeyStore
+
+
+def _is_valkey_server_available() -> bool:
+    """Check if a Valkey server is available for testing."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        return False
+    
+    try:
+        valkey_url = os.getenv("VALKEY_URL", "valkey://localhost:6379")
+        client = Valkey.from_url(valkey_url)
+        client.ping()
+        client.close()
+        return True
+    except Exception:
+        return False
+
+
+VALKEY_SERVER_AVAILABLE = _is_valkey_server_available()
 
 
 @pytest.fixture
@@ -19,8 +50,10 @@ def valkey_url() -> str:
 
 
 @pytest.fixture
-def valkey_pool(valkey_url: str) -> Generator[ConnectionPool, None, None]:
+def valkey_pool(valkey_url: str) -> "Generator[Any, None, None]":
     """Create a ValkeyPool instance."""
+    if not VALKEY_AVAILABLE:
+        pytest.skip("Valkey not available")
     pool = ConnectionPool(url=valkey_url, min_size=1, max_size=5, timeout=30.0)
     yield pool
     # Pool cleanup will be automatic
@@ -29,6 +62,8 @@ def valkey_pool(valkey_url: str) -> Generator[ConnectionPool, None, None]:
 @pytest.fixture
 def store(valkey_url: str) -> ValkeyStore:
     """Create a Valkey store instance."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        pytest.skip("Valkey not available")
     client = Valkey.from_url(valkey_url)
     return ValkeyStore(client, ttl={"default_ttl": 60.0, "refresh_on_read": True})
 
@@ -36,6 +71,8 @@ def store(valkey_url: str) -> ValkeyStore:
 @pytest.fixture
 def store_with_index(valkey_url: str) -> Generator[ValkeyStore, None]:
     """Create a Valkey store instance with vector indexing."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        pytest.skip("Valkey not available")
     client = Valkey.from_url(valkey_url)
 
     index_config: ValkeyIndexConfig = {
@@ -63,6 +100,7 @@ def clean_store(store: ValkeyStore) -> Generator[ValkeyStore, None, None]:
         pass
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_sync_put_and_get(clean_store: ValkeyStore) -> None:
     """Test basic put and get operations with sync ValkeyStore."""
     namespace = ("test", "docs")
@@ -82,6 +120,7 @@ def test_sync_put_and_get(clean_store: ValkeyStore) -> None:
     assert isinstance(item.updated_at, datetime)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_sync_put_and_get_with_ttl(clean_store: ValkeyStore) -> None:
     """Test TTL functionality with sync ValkeyStore."""
     namespace = ("test", "cache")
@@ -107,6 +146,7 @@ def test_sync_put_and_get_with_ttl(clean_store: ValkeyStore) -> None:
     assert item is None
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_sync_search(store_with_index: ValkeyStore) -> None:
     """Test search functionality with sync ValkeyStore."""
     # Add test data
@@ -134,6 +174,7 @@ def test_sync_search(store_with_index: ValkeyStore) -> None:
     assert all(hasattr(r, "score") for r in results)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_sync_delete(clean_store: ValkeyStore) -> None:
     """Test delete operation with sync ValkeyStore."""
     namespace = ("test", "delete")
@@ -153,6 +194,7 @@ def test_sync_delete(clean_store: ValkeyStore) -> None:
     assert item is None
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_sync_list_namespaces(clean_store: ValkeyStore) -> None:
     """Test namespace listing with sync ValkeyStore."""
     # Create test data in different namespaces
@@ -175,6 +217,7 @@ def test_sync_list_namespaces(clean_store: ValkeyStore) -> None:
     assert all(len(ns) <= 2 for ns in namespaces)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_sync_batch_operations(clean_store: ValkeyStore) -> None:
     """Test batch operations with sync ValkeyStore."""
     # Create multiple items
@@ -193,6 +236,7 @@ def test_sync_batch_operations(clean_store: ValkeyStore) -> None:
     assert all(r is not None for r in results)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_sync_error_handling(clean_store: ValkeyStore) -> None:
     """Test error handling with sync ValkeyStore."""
     # Test invalid namespace
@@ -216,6 +260,8 @@ def store_with_valkey_index_config(
     valkey_url: str,
 ) -> Generator[ValkeyStore, None, None]:
     """Create a Valkey store instance with ValkeyIndexConfig."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        pytest.skip("Valkey not available")
     client = Valkey.from_url(valkey_url)
 
     config: ValkeyIndexConfig = {
@@ -244,6 +290,8 @@ def store_with_valkey_index_config(
 @pytest.fixture
 def store_with_flat_index(valkey_url: str) -> Generator[ValkeyStore, None, None]:
     """Create a Valkey store instance with FLAT index configuration."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        pytest.skip("Valkey not available")
     client = Valkey.from_url(valkey_url)
 
     config: ValkeyIndexConfig = {
@@ -266,6 +314,7 @@ def store_with_flat_index(valkey_url: str) -> Generator[ValkeyStore, None, None]
         pass
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_valkey_index_config_initialization(
     store_with_valkey_index_config: ValkeyStore,
 ) -> None:
@@ -281,6 +330,7 @@ def test_valkey_index_config_initialization(
     assert store.hnsw_ef_runtime == 10
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_valkey_index_config_hnsw_search(
     store_with_valkey_index_config: ValkeyStore,
 ) -> None:
@@ -342,6 +392,7 @@ def test_valkey_index_config_hnsw_search(
             raise
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_valkey_index_config_flat_search(store_with_flat_index: ValkeyStore) -> None:
     """Test vector search with FLAT index configuration."""
     store = store_with_flat_index
@@ -371,6 +422,7 @@ def test_valkey_index_config_flat_search(store_with_flat_index: ValkeyStore) -> 
     assert all(isinstance(r, SearchItem) for r in results)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_valkey_index_config_collection_naming(
     store_with_valkey_index_config: ValkeyStore,
 ) -> None:
@@ -400,6 +452,7 @@ def test_valkey_index_config_collection_naming(
     assert found_doc.value["text"] == "Collection naming test"
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_valkey_index_config_timezone_handling(
     store_with_valkey_index_config: ValkeyStore,
 ) -> None:
@@ -422,6 +475,7 @@ def test_valkey_index_config_timezone_handling(
     assert isinstance(item.updated_at, datetime)
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_valkey_index_config_hnsw_parameters(
     store_with_valkey_index_config: ValkeyStore,
 ) -> None:
@@ -456,8 +510,11 @@ def test_valkey_index_config_hnsw_parameters(
             assert score1 >= score2
 
 
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 def test_valkey_index_config_backward_compatibility(valkey_url: str) -> None:
     """Test backward compatibility with legacy IndexConfig."""
+    if not VALKEY_AVAILABLE or Valkey is None:
+        pytest.skip("Valkey not available")
     client = Valkey.from_url(valkey_url)
 
     # Legacy configuration without ValkeyIndexConfig fields
