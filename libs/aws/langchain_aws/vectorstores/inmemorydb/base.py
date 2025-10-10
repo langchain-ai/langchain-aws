@@ -302,24 +302,18 @@ class InMemoryVectorStore(VectorStore):
                 )
 
         Args:
-            texts (List[str]): List of texts to add to the vectorstore.
-            embedding (Embeddings): Embeddings to use for the vectorstore.
-            metadatas (Optional[List[dict]], optional): Optional list of metadata
-                dicts to add to the vectorstore. Defaults to None.
-            index_name (Optional[str], optional): Optional name of the index to
-                create or add to. Defaults to None.
-            index_schema (Optional[Union[Dict[str, ListOfDict], str, os.PathLike]],
-                optional):
-                Optional fields to index within the metadata. Overrides generated
-                schema. Defaults to None.
-            vector_schema (Optional[Dict[str, Union[str, int]]], optional): Optional
-                vector schema to use. Defaults to None.
-            **kwargs (Any): Additional keyword arguments to pass to the Redis client.
+            texts: List of texts to add to the vectorstore.
+            embedding: Embeddings to use for the vectorstore.
+            metadatas: Optional list of metadata dicts to add to the vectorstore.
+            index_name: Optional name of the index to create or add to.
+            index_schema: Optional fields to index within the metadata. Overrides
+                generated schema.
+            vector_schema: Optional vector schema to use.
+            **kwargs: Additional keyword arguments to pass to the Redis client.
 
-                Returns:
-            Tuple[InMemoryVectorStore, List[str]]:
-            Tuple of the InMemoryVectorStore instance and the keys of
-            the newly created documents.
+        Returns:
+            Tuple[InMemoryVectorStore, List[str]]: Tuple of the InMemoryVectorStore
+                instance and the keys of the newly created documents.
 
         Raises:
             ValueError: If the number of metadatas does not match the number of texts.
@@ -439,21 +433,16 @@ class InMemoryVectorStore(VectorStore):
                                 embeddings = OpenAIEmbeddings()
 
         Args:
-            texts (List[str]): List of texts to add to the vectorstore.
-            embedding (Embeddings): Embedding model class (i.e. OpenAIEmbeddings)
-                for embedding queries.
-            metadatas (Optional[List[dict]], optional): Optional list of metadata dicts
-                to add to the vectorstore. Defaults to None.
-            index_name (Optional[str], optional): Optional name of the index to create
-                or add to. Defaults to None.
-            index_schema (Optional[Union[Dict[str, ListOfDict], str, os.PathLike]],
-                optional):
-                Optional fields to index within the metadata. Overrides generated
-                schema. Defaults to None.
-            vector_schema (Optional[Dict[str, Union[str, int]]], optional): Optional
-                vector schema to use. Defaults to None.
-            **kwargs (Any): Additional keyword arguments to pass to the
-            InMemoryVectorStore client.
+            texts: List of texts to add to the vectorstore.
+            embedding: Embedding model class (i.e. OpenAIEmbeddings) for
+                embedding queries.
+            metadatas: Optional list of metadata dicts to add to the vectorstore.
+            index_name: Optional name of the index to create or add to.
+            index_schema: Optional fields to index within the metadata. Overrides
+                generated schema.
+            vector_schema: Optional vector schema to use.
+            **kwargs: Additional keyword arguments to pass to the
+                InMemoryVectorStore client.
 
         Returns:
             InMemoryVectorStore: InMemoryVectorStore VectorStore instance.
@@ -509,8 +498,7 @@ class InMemoryVectorStore(VectorStore):
                 Schema of the index and the vector schema. Can be a dict, or path to
                 yaml file.
             key_prefix (Optional[str]): Prefix to use for all keys in
-            InMemoryVectorStore associated
-                with this index.
+                InMemoryVectorStore associated with this index.
             **kwargs (Any): Additional keyword arguments to pass to the Redis client.
 
         Returns:
@@ -572,20 +560,19 @@ class InMemoryVectorStore(VectorStore):
         ids: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> bool:
-        """
-        Delete a InMemoryVectorStore entry.
+        """Delete a InMemoryVectorStore entry.
 
         Args:
             ids: List of ids (keys in redis) to delete.
-            redis_url: Redis connection url. This should be passed in the kwargs
-                or set as an environment variable: redis_url.
+            **kwargs: Additional keyword arguments. Supports ``redis_url`` for Redis
+                connection url (can also be set as an environment variable: REDIS_URL).
 
         Returns:
             bool: Whether or not the deletions were successful.
 
         Raises:
             ValueError: If the redis python package is not installed.
-            ValueError: If the ids (keys in redis) are not provided
+            ValueError: If the ids (keys in redis) are not provided.
 
         """
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
@@ -686,15 +673,14 @@ class InMemoryVectorStore(VectorStore):
         Args:
             texts (Iterable[str]): Iterable of strings/text to add to the vectorstore.
             metadatas (Optional[List[dict]], optional): Optional list of metadatas.
-                Defaults to None.
             embeddings (Optional[List[List[float]]], optional): Optional pre-generated
-                embeddings. Defaults to None.
-            keys (List[str]) or ids (List[str]): Identifiers of entries.
-                Defaults to None.
+                embeddings.
             batch_size (int, optional): Batch size to use for writes. Defaults to 1000.
+            **kwargs: Additional keyword arguments. Supports ``keys`` or ``ids`` for
+                identifiers of entries.
 
         Returns:
-            List[str]: List of ids added to the vectorstore
+            List[str]: List of ids added to the vectorstore.
 
         """
         ids = []
@@ -765,9 +751,7 @@ class InMemoryVectorStore(VectorStore):
             query (str): The query text for which to find similar documents.
             k (int): The number of documents to return. Default is 4.
             filter (InMemoryDBFilterExpression, optional): Optional metadata filter.
-                Defaults to None.
             return_metadata (bool, optional): Whether to return metadata.
-                Defaults to True.
 
         Returns:
             List[Tuple[Document, float]]: A list of documents that are
@@ -837,11 +821,9 @@ class InMemoryVectorStore(VectorStore):
             query (str): The query text for which to find similar documents.
             k (int): The number of documents to return. Default is 4.
             filter (InMemoryDBFilterExpression, optional): Optional metadata filter.
-                Defaults to None.
             return_metadata (bool, optional): Whether to return metadata.
-                Defaults to True.
             distance_threshold (Optional[float], optional): Maximum vector distance
-                between selected documents and the query vector. Defaults to None.
+                between selected documents and the query vector.
 
         Returns:
             List[Document]: A list of documents that are most similar to the query
@@ -874,11 +856,9 @@ class InMemoryVectorStore(VectorStore):
                 documents.
             k (int): The number of documents to return. Default is 4.
             filter (InMemoryDBFilterExpression, optional): Optional metadata filter.
-                Defaults to None.
             return_metadata (bool, optional): Whether to return metadata.
-                Defaults to True.
             distance_threshold (Optional[float], optional): Maximum vector distance
-                between selected documents and the query vector. Defaults to None.
+                between selected documents and the query vector.
 
         Returns:
             List[Document]: A list of documents that are most similar to the query
@@ -956,11 +936,9 @@ class InMemoryVectorStore(VectorStore):
                 to maximum diversity and 1 to minimum diversity.
                 Defaults to 0.5.
             filter (InMemoryDBFilterExpression, optional): Optional metadata filter.
-                Defaults to None.
             return_metadata (bool, optional): Whether to return metadata.
-                Defaults to True.
             distance_threshold (Optional[float], optional): Maximum vector distance
-                between selected documents and the query vector. Defaults to None.
+                between selected documents and the query vector.
 
         Returns:
             List[Document]: A list of Documents selected by maximal marginal relevance.

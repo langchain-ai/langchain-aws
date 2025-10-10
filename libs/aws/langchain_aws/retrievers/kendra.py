@@ -336,7 +336,7 @@ KENDRA_CONFIDENCE_MAPPING = {
 class AmazonKendraRetriever(BaseRetriever):
     """`Amazon Kendra Index` retriever.
 
-    Args:
+    Attributes:
         index_id: Kendra index id
 
         region_name: The aws region e.g., ``'us-west-2'``.

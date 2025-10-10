@@ -35,6 +35,7 @@ from langchain_core.messages import (
     SystemMessage,
     is_data_content_block,
 )
+from langchain_core.messages import content as types
 from langchain_core.messages.ai import UsageMetadata
 from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.messages.utils import convert_to_openai_messages
@@ -49,6 +50,7 @@ from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 from langchain_core.utils.utils import _build_model_kwargs
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from langchain_aws.chat_models._compat import _convert_from_v1_to_anthropic
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 from langchain_aws.function_calling import (
     AnthropicTool,
@@ -59,6 +61,7 @@ from langchain_aws.function_calling import (
 )
 from langchain_aws.llms.bedrock import (
     BedrockBase,
+    _citations_enabled,
     _combine_generation_info_for_llm_result,
 )
 from langchain_aws.utils import (
@@ -348,7 +351,7 @@ def _format_image(image_url: str) -> Dict:
 def _format_data_content_block(block: dict) -> dict:
     """Format standard data content block to format expected by Converse API."""
     if block["type"] == "image":
-        if block["source_type"] == "base64":
+        if "base64" in block or block.get("source_type") == "base64":
             if "mime_type" not in block:
                 error_message = "mime_type key is required for base64 data."
                 raise ValueError(error_message)
@@ -357,7 +360,7 @@ def _format_data_content_block(block: dict) -> dict:
                 "source": {
                     "type": "base64",
                     "media_type": block["mime_type"],
-                    "data": block["data"],
+                    "data": block.get("base64") or block.get("data", ""),
                 },
             }
         else:
@@ -417,6 +420,20 @@ def _format_anthropic_messages(
     messages: List[BaseMessage],
 ) -> Tuple[Optional[Union[str, List[Dict[str, Any]]]], List[Dict[str, Any]]]:
     """Format messages for anthropic."""
+    for idx, message in enumerate(messages):
+        # Translate v1 content
+        if (
+            isinstance(message, AIMessage)
+            and message.response_metadata.get("output_version") == "v1"
+        ):
+            messages[idx] = message.model_copy(
+                update={
+                    "content": _convert_from_v1_to_anthropic(
+                        cast(list[types.ContentBlock], message.content),
+                        message.response_metadata.get("model_provider"),
+                    )
+                }
+            )
     system: Optional[Union[str, List[Dict[str, Any]]]] = None
     formatted_messages: List[Dict[str, Any]] = []
 
@@ -558,6 +575,8 @@ def _format_anthropic_messages(
                             content_item = {"type": "text", "text": text}
                             if item.get("cache_control"):
                                 content_item["cache_control"] = {"type": "ephemeral"}
+                            if item.get("citations"):
+                                content_item["citations"] = item["citations"]
                             native_blocks.append(content_item)
                     else:
                         tool_blocks.append(item)
@@ -918,6 +937,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             **kwargs,
         ):
             if isinstance(chunk, AIMessageChunk):
+                chunk.response_metadata["model_provider"] = "bedrock"
                 generation_chunk = ChatGenerationChunk(message=chunk)
                 if run_manager:
                     run_manager.on_llm_new_token(
@@ -950,6 +970,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     if response_metadata is not None
                     else AIMessageChunk(content=delta)
                 )
+                generation_chunk.message.response_metadata["model_provider"] = "bedrock"
                 if run_manager:
                     run_manager.on_llm_new_token(
                         generation_chunk.text, chunk=generation_chunk
@@ -986,6 +1007,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         completion = ""
         llm_output: Dict[str, Any] = {}
         tool_calls: List[ToolCall] = []
+        citations_enabled: Optional[bool] = None
         provider_stop_reason_code = self.provider_stop_reason_key_map.get(
             self._get_provider(), "stop_reason"
         )
@@ -1037,6 +1059,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                         system = self.system_prompt_with_tools
                 else:
                     system = system_str
+                citations_enabled = _citations_enabled(formatted_messages)
             elif provider in ("openai", "qwen"):
                 formatted_messages = cast(
                     List[Dict[str, Any]],
@@ -1050,7 +1073,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             if stop:
                 params["stop_sequences"] = stop
 
-            completion, tool_calls, llm_output = self._prepare_input_and_invoke(
+            completion, tool_calls, llm_output, body = self._prepare_input_and_invoke(
                 prompt=prompt,
                 stop=stop,
                 run_manager=run_manager,
@@ -1077,12 +1100,24 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             usage_metadata = None
         logger.debug(f"The message received from Bedrock: {completion}")
         llm_output["model_id"] = self.model_id  # backward-compatibility
-        llm_output["model_name"] = self.model_id
+
+        # Use raw response content in some cases, so that thinking and citations
+        # are properly stored in content array
+        content = completion
+        if (response_content := body.get("content")) and (
+            (_ := llm_output.pop("thinking", None)) or citations_enabled
+        ):
+            content = response_content
+
         msg = AIMessage(
-            content=completion,
+            content=content,
             additional_kwargs=llm_output,
             tool_calls=cast(List[ToolCall], tool_calls),
             usage_metadata=usage_metadata,
+            response_metadata={
+                "model_provider": "bedrock",
+                "model_name": self.model_id,
+            },
         )
         return ChatResult(
             generations=[
