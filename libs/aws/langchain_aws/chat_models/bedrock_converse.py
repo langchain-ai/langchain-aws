@@ -38,6 +38,7 @@ from langchain_core.messages import (
     is_data_content_block,
     merge_message_runs,
 )
+from langchain_core.messages import content as types
 from langchain_core.messages.ai import AIMessageChunk, UsageMetadata
 from langchain_core.messages.tool import tool_call as create_tool_call
 from langchain_core.messages.tool import tool_call_chunk
@@ -56,6 +57,7 @@ from langchain_core.utils.utils import _build_model_kwargs
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
+from langchain_aws.chat_models._compat import _convert_from_v1_to_converse
 from langchain_aws.function_calling import ToolsOutputParser
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
@@ -887,6 +889,7 @@ class ChatBedrockConverse(BaseChatModel):
         )
         logger.debug(f"Response from Bedrock: {response}")
         response_message = _parse_response(response)
+        response_message.response_metadata["model_provider"] = "bedrock_converse"
         response_message.response_metadata["model_name"] = self.model_id
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
@@ -946,6 +949,7 @@ class ChatBedrockConverse(BaseChatModel):
                     if metadata := response.get("ResponseMetadata"):
                         message_chunk.response_metadata["ResponseMetadata"] = metadata
                     added_model_name = True
+                message_chunk.response_metadata["model_provider"] = "bedrock_converse"
                 generation_chunk = ChatGenerationChunk(message=message_chunk)
                 if run_manager:
                     run_manager.on_llm_new_token(
@@ -1242,6 +1246,21 @@ def _messages_to_bedrock(
     messages: List[BaseMessage],
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Handle Bedrock converse and Anthropic style content blocks"""
+    for idx, message in enumerate(messages):
+        # Translate v1 content
+        if (
+            isinstance(message, AIMessage)
+            and message.response_metadata.get("output_version") == "v1"
+        ):
+            messages[idx] = message.model_copy(
+                update={
+                    "content": _convert_from_v1_to_converse(
+                        cast(list[types.ContentBlock], message.content),
+                        message.response_metadata.get("model_provider"),
+                    )
+                }
+            )
+
     bedrock_messages: List[Dict[str, Any]] = []
     bedrock_system: List[Dict[str, Any]] = []
     trimmed_messages = trim_message_whitespace(messages)
@@ -1447,14 +1466,18 @@ def _mime_type_to_format(mime_type: str) -> str:
 def _format_data_content_block(block: dict) -> dict:
     """Format standard data content block to format expected by Converse API."""
     if block["type"] == "image":
-        if block["sourceType"] == "base64":
+        if "base64" in block or block.get("sourceType") == "base64":
             if "mimeType" not in block:
                 error_message = "mime_type key is required for base64 data."
                 raise ValueError(error_message)
             formatted_block = {
                 "image": {
                     "format": _mime_type_to_format(block["mimeType"]),
-                    "source": {"bytes": _b64str_to_bytes(block["data"])},
+                    "source": {
+                        "bytes": _b64str_to_bytes(
+                            block.get("base64") or block.get("data", "")
+                        )
+                    },
                 }
             }
         else:
@@ -1462,14 +1485,18 @@ def _format_data_content_block(block: dict) -> dict:
             raise ValueError(error_message)
 
     elif block["type"] == "file":
-        if block["sourceType"] == "base64":
+        if "base64" in block or block.get("sourceType") == "base64":
             if "mimeType" not in block:
                 error_message = "mime_type key is required for base64 data."
                 raise ValueError(error_message)
             formatted_block = {
                 "document": {
                     "format": _mime_type_to_format(block["mimeType"]),
-                    "source": {"bytes": _b64str_to_bytes(block["data"])},
+                    "source": {
+                        "bytes": _b64str_to_bytes(
+                            block.get("base64") or block.get("data", "")
+                        )
+                    },
                 }
             }
             if citations := block.get("citations"):
@@ -1480,11 +1507,15 @@ def _format_data_content_block(block: dict) -> dict:
                 formatted_block["document"]["name"] = name
             elif (metadata := block.get("metadata")) and "name" in metadata:
                 formatted_block["document"]["name"] = metadata["name"]
+            elif (extras := block.get("extras")) and "name" in extras:
+                formatted_block["document"]["name"] = extras["name"]
+            elif (extras := block.get("extras")) and "filename" in extras:
+                formatted_block["document"]["name"] = extras["filename"]
             else:
                 warnings.warn(
                     "Bedrock Converse may require a filename for file inputs. Specify "
-                    "a filename in the content block: {'type': 'file', 'source_type': "
-                    "'base64', 'mime_type': 'application/pdf', 'data': '...', "
+                    "a filename in the content block: {'type': 'file', "
+                    "'mime_type': 'application/pdf', 'base64': '...', "
                     "'name': 'my-pdf'}"
                 )
         else:
