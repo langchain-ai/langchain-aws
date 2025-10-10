@@ -2,7 +2,7 @@
 
 import base64
 import os
-from typing import Any, Dict, List, Tuple, Type, Union, cast
+from typing import Any, Dict, List, Literal, Tuple, Type, Union, cast
 from unittest import mock
 
 import pytest
@@ -196,6 +196,67 @@ def test_llama_bind_tools_tool_choice_variants(
             chat_model.bind_tools([GetWeather], tool_choice="any")
         with pytest.raises(ValueError):
             chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+
+
+@pytest.mark.parametrize(
+    "model,expected_values",
+    [
+        ("us.deepseek.r1-v1:0", ()),
+        ("deepseek.v3-v1:0", ("any",)),
+        ("deepseek.v3-x:0", ("any", "tool",)),
+    ],
+)
+def test_deepseek_supports_tool_choice_values(
+    model: str, expected_values: tuple[Literal["auto", "any", "tool"], ...]
+) -> None:
+    chat_model = ChatBedrockConverse(model=model, region_name="us-east-1")
+    assert chat_model.supports_tool_choice_values == expected_values
+
+
+def test_deepseek_r1_no_tool_choice_support() -> None:
+    chat_model = ChatBedrockConverse(
+        model="deepseek.r1-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    assert chat_model.supports_tool_choice_values == ()
+
+    with pytest.raises(ValueError):
+        chat_model.bind_tools([GetWeather], tool_choice="auto")
+
+    with pytest.raises(ValueError):
+        chat_model.bind_tools([GetWeather], tool_choice="any")
+        
+    with pytest.raises(ValueError):
+        chat_model.bind_tools(
+            [GetWeather], tool_choice={"tool": {"name": "GetWeather"}}
+        )
+    
+    with pytest.raises(ValueError):
+        chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+
+
+def test_deepseek_v3_bind_tools_tool_choice_variants() -> None:
+    chat_model = ChatBedrockConverse(
+        model="deepseek.v3-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="any")
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {"any": {}}
+
+    with pytest.raises(ValueError):
+        chat_model.bind_tools([GetWeather], tool_choice="auto")
+    
+    with pytest.raises(ValueError):
+        chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+
+
+def test_deepseek_v3_bind_tools_default_tool_choice() -> None:
+    chat_model = ChatBedrockConverse(
+        model="deepseek.v3-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    chat_model_with_tools = chat_model.bind_tools([GetWeather])
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {"any": {}}
 
 
 def test__messages_to_bedrock() -> None:
