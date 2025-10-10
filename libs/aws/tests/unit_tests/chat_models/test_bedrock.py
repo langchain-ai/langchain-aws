@@ -2,6 +2,7 @@
 
 """Test chat model integration."""
 
+import json
 import os
 from contextlib import nullcontext
 from typing import Any, Callable, Dict, Literal, Type, cast
@@ -9,6 +10,7 @@ from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import pytest
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableBinding
 from langchain_core.tools import BaseTool
@@ -351,7 +353,7 @@ def test__format_anthropic_messages_system_message_list_content() -> None:
 
 
 def test__format_anthropic_multiple_system_messages() -> None:
-    """Test that multiple system messages can be passed, and that none of them are required to be at position 0."""
+    """Test that multiple system messages can be passed, and that none of them are required to be at position 0."""  # noqa: E501
     system1 = SystemMessage("foo")  # type: ignore[misc]
     system2 = SystemMessage("bar")  # type: ignore[misc]
     human = HumanMessage("Hello!")
@@ -681,13 +683,13 @@ def test_beta_use_converse_api_with_inference_profile(mock_create_aws_client):
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"  # noqa: E501
             }
         ]
     }
     mock_create_aws_client.return_value = mock_bedrock_client
 
-    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"
+    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"  # noqa: E501
     chat = ChatBedrock(
         model_id=aip_model_id,
         region_name="us-west-2",
@@ -709,13 +711,13 @@ def test_beta_use_converse_api_with_inference_profile_as_nova_model(
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-micro-v1:0"
+                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-micro-v1:0"  # noqa: E501
             }
         ]
     }
     mock_create_aws_client.return_value = mock_bedrock_client
 
-    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"
+    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"  # noqa: E501
     chat = ChatBedrock(
         model_id=aip_model_id,
         region_name="us-west-2",
@@ -738,6 +740,13 @@ def test_beta_use_converse_api_with_inference_profile_as_nova_model(
             "amazon",
             nullcontext(),
             "us-west-2",
+        ),
+        (
+            "jp.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            None,
+            "anthropic",
+            nullcontext(),
+            "ap-northeast-1",
         ),
         (
             "global.anthropic.claude-sonnet-4-20250514-v1:0",
@@ -867,9 +876,13 @@ def test__format_anthropic_messages_with_thinking_blocks() -> None:
 
 
 def test__format_anthropic_messages_with_image_conversion_in_tool() -> None:
-    """Test that ToolMessage with OpenAI-style image content is correctly converted to Anthropic format."""
+    """Test that ToolMessage with OpenAI-style image content is correctly
+    converted to Anthropic format."""
     # Create a dummy base64 image string
-    dummy_base64_image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    dummy_base64_image = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9aw"
+        "AAAABJRU5ErkJggg=="
+    )
 
     messages = [
         ToolMessage(  # type: ignore[misc]
@@ -922,7 +935,8 @@ def test__convert_messages_to_prompt_anthropic_message_is_empty() -> None:
 
 
 def test__format_anthropic_messages_with_thinking_in_content_blocks() -> None:
-    """Test that thinking blocks in content are correctly ordered (first) in messages."""
+    """Test that thinking blocks in content are correctly ordered (first) in
+    messages."""
     system = SystemMessage("System instruction")  # type: ignore[misc]
     human = HumanMessage("What is the weather in NYC?")  # type: ignore[misc]
 
@@ -989,7 +1003,8 @@ def test__format_anthropic_messages_with_thinking_in_content_blocks() -> None:
 
 
 def test__format_anthropic_messages_after_tool_use_no_thinking() -> None:
-    """Test message formatting for assistant responses after tool use (which shouldn't have thinking)."""
+    """Test message formatting for assistant responses after tool use (which
+    shouldn't have thinking)."""
     system = SystemMessage("System instruction")  # type: ignore[misc]
     human = HumanMessage("What is the weather in NYC?")  # type: ignore[misc]
 
@@ -1066,7 +1081,8 @@ def test__format_anthropic_messages_tool_result_ordering() -> None:
 
 
 def test__format_anthropic_messages_tool_use_ordering() -> None:
-    """Test that tool type content blocks in AssistantMessage are always moved to the end."""
+    """Test that tool type content blocks in AssistantMessage are always moved to
+    the end."""
     ai_message = AIMessage(  # type: ignore[misc]
         [
             {"type": "text", "text": "Let me analyze this for you."},
@@ -1098,7 +1114,8 @@ def test__format_anthropic_messages_tool_use_ordering() -> None:
 
 
 def test__format_anthropic_messages_preserves_content_order() -> None:
-    """Test that _format_anthropic_messages preserves the original order of mixed text and image content."""
+    """Test that _format_anthropic_messages preserves the original order of mixed
+    text and image content."""
     content = [
         {"type": "text", "text": "Some text..."},
         {
@@ -1184,7 +1201,7 @@ def test__format_anthropic_messages_preserves_content_order() -> None:
 def test_chat_prompt_adapter_with_model_detection(
     model_id, base_model_id, provider, expected_format_marker
 ):
-    """Test that ChatPromptAdapter correctly formats prompts when base_model is provided."""
+    """Test that ChatPromptAdapter correctly formats prompts when base_model is provided."""  # noqa: E501
     messages = [
         SystemMessage(content="You are a helpful assistant"),
         HumanMessage(content="Hello"),
@@ -1364,7 +1381,7 @@ def test_model_kwargs() -> None:
 
 
 def test__format_anthropic_messages_strips_trailing_whitespace_string() -> None:
-    """Test that _format_anthropic_messages strips trailing whitespace from AIMessage string content."""
+    """Test that _format_anthropic_messages strips trailing whitespace from AIMessage string content."""  # noqa: E501
     messages = [
         SystemMessage(content="System message"),
         HumanMessage(content="Human message"),
@@ -1380,7 +1397,7 @@ def test__format_anthropic_messages_strips_trailing_whitespace_string() -> None:
 
 
 def test__format_anthropic_messages_strips_trailing_whitespace_blocks() -> None:
-    """Test that _format_anthropic_messages strips trailing whitespace from AIMessage dict content."""
+    """Test that _format_anthropic_messages strips trailing whitespace from AIMessage dict content."""  # noqa: E501
     messages = [
         SystemMessage(content="System message"),
         HumanMessage(content="Human message"),
@@ -1407,10 +1424,10 @@ def test__format_anthropic_messages_strips_trailing_whitespace_blocks() -> None:
     )
 
 
-def test__format_anthropic_messages_preserves_whitespace_non_last_aimessage_string() -> (
+def test__format_anthropic_messages_preserves_whitespace_non_last_aimessage_string() -> (  # noqa: E501
     None
 ):
-    """Test that _format_anthropic_messages preserves trailing whitespace in non-last AIMessages."""
+    """Test that _format_anthropic_messages preserves trailing whitespace in non-last AIMessages."""  # noqa: E501
     messages = [
         SystemMessage(content="System message"),
         HumanMessage(content="First human message"),
@@ -1427,10 +1444,10 @@ def test__format_anthropic_messages_preserves_whitespace_non_last_aimessage_stri
     )
 
 
-def test__format_anthropic_messages_preserves_whitespace_non_last_aimessage_blocks() -> (
+def test__format_anthropic_messages_preserves_whitespace_non_last_aimessage_blocks() -> (  # noqa: E501
     None
 ):
-    """Test that _format_anthropic_messages preserves trailing whitespace in non-last AIMessages."""
+    """Test that _format_anthropic_messages preserves trailing whitespace in non-last AIMessages."""  # noqa: E501
     messages = [
         SystemMessage(content="System message"),
         HumanMessage(content="First human message"),
@@ -1474,9 +1491,7 @@ def test_bedrock_client_inherits_from_runtime_client(
 
     mock_create_client.side_effect = side_effect
 
-    llm = ChatBedrock(
-        model="us.meta.llama3-3-70b-instruct-v1:0", client=mock_runtime_client
-    )
+    ChatBedrock(model="us.meta.llama3-3-70b-instruct-v1:0", client=mock_runtime_client)
 
     mock_create_client.assert_called_with(
         region_name="us-west-2",
@@ -1513,7 +1528,7 @@ def test_bedrock_client_uses_explicit_values_over_runtime_client(
 
     mock_create_client.side_effect = side_effect
 
-    llm = ChatBedrock(
+    ChatBedrock(
         model="us.meta.llama3-3-70b-instruct-v1:0",
         client=mock_runtime_client,
         region="us-east-1",
@@ -1530,3 +1545,68 @@ def test_bedrock_client_uses_explicit_values_over_runtime_client(
         config=explicit_config,
         service_name="bedrock",
     )
+
+
+def test_get_num_tokens_from_messages_with_base_messages():
+    """Test get_num_tokens_from_messages with BaseMessage objects."""
+    mock_client = MagicMock()
+    mock_client.count_tokens.return_value = {"inputTokens": 20}
+
+    chat = ChatBedrock(
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        region="us-west-2",
+        max_tokens=4096,
+    )
+    chat.client = mock_client
+    messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        HumanMessage(content="Why did the chicken cross the road?"),
+    ]
+
+    token_count = chat.get_num_tokens_from_messages(messages)
+    assert token_count == 20
+
+    mock_client.count_tokens.assert_called_once()
+    call_args = mock_client.count_tokens.call_args[1]
+    assert call_args["modelId"] == "anthropic.claude-3-7-sonnet-20250219-v1:0"
+
+    actual_input_body = json.loads(call_args["input"]["invokeModel"]["body"])
+    expected_input_body = {
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 4096,
+        "system": "You are a helpful assistant.",
+        "messages": [
+            {"role": "user", "content": "Why did the chicken cross the road?"}
+        ],
+    }
+
+    assert actual_input_body == expected_input_body
+
+
+@patch("langchain_aws.chat_models.bedrock.create_aws_client")
+@patch("langchain_aws.chat_models.bedrock.count_tokens_api_supported_for_model")
+def test_get_num_tokens_from_messages_fallback(
+    mock_count_tokens_api_supported, mock_create_aws_client
+):
+    """Test get_num_tokens_from_messages falls back to parent if API not supported."""
+    mock_count_tokens_api_supported.return_value = False
+    mock_client = MagicMock()
+    mock_create_aws_client.return_value = mock_client
+
+    chat = ChatBedrock(
+        model="us.anthropic.claude-3-sonnet-20240229-v1:0",
+        region="us-west-2",
+    )
+
+    with patch.object(
+        BaseChatModel, "get_num_tokens_from_messages", return_value=24
+    ) as mock_parent:
+        messages = [
+            SystemMessage(content="You are a helpful assistant."),
+            HumanMessage(content="Why did the chicken cross the road?"),
+        ]
+
+        token_count = chat.get_num_tokens_from_messages(messages)
+        assert token_count == 24
+        mock_parent.assert_called_once()
+        mock_client.count_tokens.assert_not_called()

@@ -79,6 +79,7 @@ class AmazonS3Vectors(VectorStore):
             vector_store.similarity_search_with_score(
                 "adventures in space", filter={"genre": {"$eq": "family"}}
             )
+
     """
 
     def __init__(
@@ -159,6 +160,7 @@ class AmazonS3Vectors(VectorStore):
                 the client.
             client (Any): Boto3 client for s3vectors
             kwargs (Any): Additional keyword arguments.
+
         """
         self.vector_bucket_name = vector_bucket_name
         self.index_name = index_name
@@ -203,7 +205,7 @@ class AmazonS3Vectors(VectorStore):
         texts: Iterable[str],
         metadatas: Optional[List[dict]] = None,
         *,
-        ids: Optional[List[Optional[str]]] = None,
+        ids: Optional[List[str]] = None,
         batch_size: int = 200,
         **kwargs: Any,
     ) -> List[str]:
@@ -213,31 +215,34 @@ class AmazonS3Vectors(VectorStore):
             texts (Iterable[str]): Iterable of strings/text to add to the vectorstore.
             metadatas (Optional[List[dict]], optional): Optional list of metadatas.
                 Defaults to None.
-            embedding (Optional[List[List[float]]], optional): Optional pre-generated
-                embedding. Defaults to None.
             ids (Optional[list[str | None]]): Optional list of IDs associated
                 with the texts.
             batch_size (int): Batch size for put_vectors.
             kwargs (Any): Additional keyword arguments.
 
         Returns:
-            List[str]: List of ids added to the vectorstore
+            List[str]: List of ids added to the vectorstore.
+
         """
+        # Convert iterable to list to allow indexing and len operations
+        texts_list = list(texts)
 
         # type check for metadata
         if metadatas:
-            if isinstance(metadatas, list) and len(metadatas) != len(texts):  # type: ignore
+            if isinstance(metadatas, list) and len(metadatas) != len(texts_list):
                 raise ValueError("Number of metadatas must match number of texts")
             if not (isinstance(metadatas, list) and isinstance(metadatas[0], dict)):
                 raise ValueError("Metadatas must be a list of dicts")
         # check for ids
-        if isinstance(ids, list) and len(ids) != len(texts):  # type: ignore
+        if isinstance(ids, list) and len(ids) != len(texts_list):
             raise ValueError("Number of ids must match number of texts")
 
         result_ids = []
-        for i in range(0, len(texts), batch_size):
+        for i in range(0, len(texts_list), batch_size):
             vectors = []
-            sliced_texts = texts[i : i + batch_size]
+            sliced_texts = texts_list[i : i + batch_size]
+            if self.embeddings is None:
+                raise ValueError("Embeddings object is required for adding texts")
             sliced_data = self.embeddings.embed_documents(sliced_texts)
             if i == 0 and self.create_index_if_not_exist:
                 if self._get_index() is None:
@@ -286,6 +291,7 @@ class AmazonS3Vectors(VectorStore):
 
         Returns:
             Optional[bool]: Always True.
+
         """
 
         if ids is None:
@@ -313,6 +319,7 @@ class AmazonS3Vectors(VectorStore):
 
         Returns:
             List of Documents.
+
         """
 
         docs = []
@@ -369,7 +376,10 @@ class AmazonS3Vectors(VectorStore):
 
         Returns:
             List of Documents most similar to the query.
+
         """
+        if self.embeddings is None:
+            raise ValueError("Embeddings object is required for similarity search")
         embedding = self.embeddings.embed_query(query)
         return self.similarity_search_by_vector(embedding, k=k, filter=filter, **kwargs)
 
@@ -392,7 +402,10 @@ class AmazonS3Vectors(VectorStore):
 
         Returns:
             List of Tuples of (doc, distance).
+
         """
+        if self.embeddings is None:
+            raise ValueError("Embeddings object is required for similarity search")
         embedding = self.embeddings.embed_query(query)
         response = self.client.query_vectors(
             vectorBucketName=self.vector_bucket_name,
@@ -426,6 +439,7 @@ class AmazonS3Vectors(VectorStore):
 
         Returns:
             List of Documents most similar to the query vector.
+
         """
         response = self.client.query_vectors(
             vectorBucketName=self.vector_bucket_name,
@@ -446,7 +460,7 @@ class AmazonS3Vectors(VectorStore):
         return AmazonS3VectorsRetriever(vectorstore=self, **kwargs, tags=tags)
 
     @classmethod
-    def from_texts(
+    def from_texts(  # type: ignore[override]
         cls: type[AmazonS3Vectors],
         texts: list[str],
         embedding: Embeddings,
@@ -534,6 +548,7 @@ class AmazonS3Vectors(VectorStore):
 
         Returns:
             AmazonS3Vectors initialized from texts and embeddings.
+
         """
 
         instance = cls(

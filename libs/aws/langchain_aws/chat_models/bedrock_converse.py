@@ -25,7 +25,7 @@ from typing import (
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
-from langchain_core.language_models.chat_models import LangSmithParams
+from langchain_core.language_models.base import LangSmithParams
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -59,7 +59,11 @@ from typing_extensions import Self
 
 from langchain_aws.chat_models._compat import _convert_from_v1_to_converse
 from langchain_aws.function_calling import ToolsOutputParser
-from langchain_aws.utils import create_aws_client, trim_message_whitespace
+from langchain_aws.utils import (
+    count_tokens_api_supported_for_model,
+    create_aws_client,
+    trim_message_whitespace,
+)
 
 logger = logging.getLogger(__name__)
 _BM = TypeVar("_BM", bound=BaseModel)
@@ -341,6 +345,7 @@ class ChatBedrockConverse(BaseChatModel):
               'RetryAttempts': 0},
              'stopReason': 'end_turn',
              'metrics': {'latencyMs': 1290}}
+
     """  # noqa: E501
 
     client: Any = Field(default=None, exclude=True)  #: :meta private:
@@ -350,18 +355,20 @@ class ChatBedrockConverse(BaseChatModel):
     """The bedrock client for making control plane API calls"""
 
     model_id: str = Field(alias="model")
-    """Id of the model to call.
-
-    e.g., ``"anthropic.claude-3-sonnet-20240229-v1:0"``. This is equivalent to the
-    modelID property in the list-foundation-models api. For custom and provisioned
-    models, an ARN value is expected. See
-    https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html#model-ids-arns
+    """ID of the model to call.
+    
+    e.g., ``"anthropic.claude-3-sonnet-20240229-v1:0"``. This is equivalent to the 
+    modelID property in the list-foundation-models api. For custom and provisioned 
+    models, an ARN value is expected. See 
+    https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html#model-ids-arns 
     for a list of all supported built-in models.
+
     """
 
     base_model_id: Optional[str] = Field(default=None, alias="base_model")
     """An optional field to pass the base model id. If provided, this will be used over
     the value of model_id to identify the base model.
+
     """
 
     max_tokens: Optional[int] = None
@@ -377,10 +384,12 @@ class ChatBedrockConverse(BaseChatModel):
     """The percentage of most-likely candidates that are considered for the next token.
 
     Must be 0 to 1.
-
-    For example, if you choose a value of 0.8 for topP, the model selects from
-    the top 80% of the probability distribution of tokens that could be next in the
-    sequence."""
+    
+    For example, if you choose a value of 0.8 for topP, the model selects from 
+    the top 80% of the probability distribution of tokens that could be next in the 
+    sequence.
+    
+    """
 
     region_name: Optional[str] = None
     """The aws region, e.g., `us-west-2`.
@@ -396,6 +405,7 @@ class ChatBedrockConverse(BaseChatModel):
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
     """
 
     aws_access_key_id: Optional[SecretStr] = Field(
@@ -409,6 +419,7 @@ class ChatBedrockConverse(BaseChatModel):
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
     If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+
     """
 
     aws_secret_access_key: Optional[SecretStr] = Field(
@@ -443,6 +454,7 @@ class ChatBedrockConverse(BaseChatModel):
     'amazon' in 'amazon.titan-text-express-v1'. This value should be provided for model
     ids that do not have the provider in them, like custom and provisioned models that
     have an ARN associated with them.
+
     """
 
     endpoint_url: Optional[str] = Field(default=None, alias="base_url")
@@ -459,6 +471,7 @@ class ChatBedrockConverse(BaseChatModel):
 
     Parameters beyond the base set of inference parameters that Converse supports in the
     inferenceConfig field.
+
     """
 
     additional_model_response_field_paths: Optional[List[str]] = None
@@ -467,6 +480,7 @@ class ChatBedrockConverse(BaseChatModel):
     Converse returns the requested fields as a JSON Pointer object in the
     additionalModelResponseFields field. The following is example JSON for
     additionalModelResponseFieldPaths.
+
     """
 
     supports_tool_choice_values: Optional[Sequence[Literal["auto", "any", "tool"]]] = (
@@ -477,6 +491,7 @@ class ChatBedrockConverse(BaseChatModel):
     Inferred if not specified. Inferred as ('auto', 'any', 'tool') if a 'claude-3'
     model is used, ('auto', 'any') if a 'mistral-large' model is used,
     ('auto') if a 'nova' model is used, empty otherwise.
+
     """
 
     performance_config: Optional[Mapping[str, Any]] = Field(
@@ -497,8 +512,10 @@ class ChatBedrockConverse(BaseChatModel):
 
     raw_blocks: Optional[List[Dict[str, Any]]] = None
     """Raw Bedrock message blocks that can be passed in.
-    LangChain will relay them unchanged, enabling any combination of content block types.
-    This is useful for custom guardrail wrapping
+    
+    LangChain will relay them unchanged, enabling any combination of content
+    block types. This is useful for custom guardrail wrapping.
+
     """
 
     model_config = ConfigDict(
@@ -513,6 +530,7 @@ class ChatBedrockConverse(BaseChatModel):
             cache_type: Type of cache point. Default is "default".
         Returns:
             Dictionary containing prompt caching configuration.
+
         """
         return {"cachePoint": {"type": cache_type}}
 
@@ -546,6 +564,7 @@ class ChatBedrockConverse(BaseChatModel):
             True: Full streaming support
             "no_tools": Streaming supported but not with tools
             False: No streaming support
+
         """
         # Determine if the model supports plain-text streaming (ConverseStream)
         # Here we check based on the updated AWS documentation.
@@ -576,6 +595,12 @@ class ChatBedrockConverse(BaseChatModel):
             or
             # Cohere Command R models
             (provider == "cohere" and "command-r" in model_id_lower)
+            or
+            # DeepSeek-V3 models
+            (provider == "deepseek" and "v3" in model_id_lower)
+            or
+            # Qwen3 models
+            (provider == "qwen" and "qwen3" in model_id_lower)
         ):
             return True
         elif (
@@ -618,13 +643,16 @@ class ChatBedrockConverse(BaseChatModel):
     @classmethod
     def set_disable_streaming(cls, values: Dict) -> Any:
         model_id = values.get("model_id", values.get("model"))
+        if model_id is None:
+            raise ValueError("Either model_id or model must be specified")
 
         # Extract provider from the model_id
         # (e.g., "amazon", "anthropic", "ai21", "meta", "mistral")
         if "provider" not in values or values["provider"] == "":
             if model_id.startswith("arn"):
                 raise ValueError(
-                    "Model provider should be supplied when passing a model ARN as model_id."
+                    "Model provider should be supplied when passing a model ARN "
+                    "as model_id."
                 )
             model_parts = model_id.split(".")
             values["provider"] = (
@@ -633,9 +661,12 @@ class ChatBedrockConverse(BaseChatModel):
 
         provider = values["provider"]
 
-        model_id_lower = values.get(
+        base_model_value = values.get(
             "base_model_id", values.get("base_model", model_id)
-        ).lower()
+        )
+        if base_model_value is None:
+            raise ValueError("base_model_id, base_model, or model_id must be specified")
+        model_id_lower = base_model_value.lower()
 
         streaming_support = cls._get_streaming_support(provider, model_id_lower)
 
@@ -763,10 +794,22 @@ class ChatBedrockConverse(BaseChatModel):
         return self
 
     def _get_base_model(self) -> str:
-        return self.base_model_id if self.base_model_id else self.model_id
+        """Return base model id, stripping any regional prefix."""
+
+        if self.base_model_id:
+            return self.base_model_id
+
+        # For regional model IDs (e.g., us.anthropic.claude-3-5-haiku-20241022-v1:0),
+        # get the base model ID by removing the regional prefix
+        if self.model_id.startswith(
+            ("eu.", "us.", "us-gov.", "apac.", "sa.", "amer.", "global.", "jp.")
+        ):
+            return self.model_id.partition(".")[2]
+
+        return self.model_id
 
     def _configure_streaming_for_resolved_model(self) -> None:
-        """Configure streaming support after resolving the base model for application inference profiles."""
+        """Configure streaming support after resolving the base model for application inference profiles."""  # noqa: E501
         base_model = self._get_base_model()
         model_id_lower = base_model.lower()
 
@@ -803,6 +846,7 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> ChatResult:
         """Top Level call"""
 
+        system: List[Dict[str, Any]]
         if self.raw_blocks is not None:
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
@@ -830,7 +874,8 @@ class ChatBedrockConverse(BaseChatModel):
                 "Converting tool blocks to text format to avoid ValidationException."
             )
             warnings.warn(
-                "Tool messages were passed without toolConfig, converting to text format",
+                "Tool messages were passed without toolConfig, "
+                "converting to text format",
                 RuntimeWarning,
             )
 
@@ -855,6 +900,7 @@ class ChatBedrockConverse(BaseChatModel):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
+        system: List[Dict[str, Any]]
         if self.raw_blocks is not None:
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
@@ -880,7 +926,8 @@ class ChatBedrockConverse(BaseChatModel):
                 "Converting tool blocks to text format to avoid ValidationException."
             )
             warnings.warn(
-                "Tool messages were passed without toolConfig, converting to text format",
+                "Tool messages were passed without toolConfig, "
+                "converting to text format",
                 RuntimeWarning,
             )
 
@@ -953,8 +1000,8 @@ class ChatBedrockConverse(BaseChatModel):
         *,
         tool_choice: Optional[Union[dict, str, Literal["auto", "any"]]] = None,
         **kwargs: Any,
-    ) -> Runnable[LanguageModelInput, BaseMessage]:
-        formatted_tools = []
+    ) -> Runnable[LanguageModelInput, AIMessage]:
+        formatted_tools: List[Any] = []
         for tool in tools:
             if _is_cache_point(tool):
                 formatted_tools.append(tool)
@@ -969,12 +1016,16 @@ class ChatBedrockConverse(BaseChatModel):
             if tool_choice_type not in list(self.supports_tool_choice_values or []):
                 if self.supports_tool_choice_values:
                     supported = (
-                        f"Model {self._get_base_model()} does not currently support tool_choice "
-                        f"of type {tool_choice_type}. The following tool_choice types "
-                        f"are supported: {self.supports_tool_choice_values}."
+                        f"Model {self._get_base_model()} does not currently support "
+                        f"tool_choice of type {tool_choice_type}. The following "
+                        f"tool_choice types are supported: "
+                        f"{self.supports_tool_choice_values}."
                     )
                 else:
-                    supported = f"Model {self._get_base_model()} does not currently support tool_choice."
+                    supported = (
+                        f"Model {self._get_base_model()} does not currently support "
+                        f"tool_choice."
+                    )
 
                 raise ValueError(
                     f"{supported} Please see "
@@ -1141,6 +1192,55 @@ class ChatBedrockConverse(BaseChatModel):
             "aws_session_token": "AWS_SESSION_TOKEN",
         }
 
+    def get_num_tokens_from_messages(
+        self,
+        messages: list[BaseMessage],
+        tools: Optional[Sequence] = None,
+    ) -> int:
+        """
+        Get the number of tokens in the messages using AWS Bedrock count_tokens API.
+
+        This method uses AWS Bedrock's count_tokens API which provides accurate
+        token counting for supported models before inference. Falls back to the base
+        implementation for unsupported models.
+
+        Args:
+            messages: The message inputs to tokenize.
+            tools: Tool schemas (ignored, unsupported by count_tokens API).
+
+        Returns:
+            The number of input tokens in the messages.
+        """
+        model_id = self._get_base_model()
+        # Check if the model supports count_tokens API
+        if not count_tokens_api_supported_for_model(model_id):
+            return super().get_num_tokens_from_messages(messages, tools=tools)
+
+        if tools is not None:
+            warnings.warn(
+                "Tool schemas are not yet supported by AWS Bedrock count_tokens API. "
+                "Ignoring tools parameter.",
+                stacklevel=2,
+            )
+
+        try:
+            bedrock_messages, system = (
+                (self.raw_blocks, [])
+                if self.raw_blocks
+                else _messages_to_bedrock(messages)
+            )
+
+            input_data = {"converse": {"messages": bedrock_messages}}
+            if system:
+                input_data["converse"]["system"] = system
+
+            response = self.client.count_tokens(modelId=model_id, input=input_data)
+            return response["inputTokens"]
+
+        except Exception as e:
+            logger.warning(f"count_tokens API failed: {e}. Using fallback.")
+            return super().get_num_tokens_from_messages(messages, tools=tools)
+
 
 def _messages_to_bedrock(
     messages: List[BaseMessage],
@@ -1252,9 +1352,10 @@ def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
 def _parse_response(response: Dict[str, Any]) -> AIMessage:
     if "output" not in response:
         raise ValueError(
-            "No 'output' key found in the response from the Bedrock Converse API.  This usually "
-            "happens due to misconfiguration of endpoint or region, ensure that you are using valid "
-            "values for endpoint_url (on AWS this starts with bedrock-runtime), see: "
+            "No 'output' key found in the response from the Bedrock Converse API. "
+            "This usually happens due to misconfiguration of endpoint or region, "
+            "ensure that you are using valid values for endpoint_url (on AWS this "
+            "starts with bedrock-runtime), see: "
             "https://docs.aws.amazon.com/general/latest/gr/bedrock.html"
         )
     lc_content = _bedrock_to_lc(response.pop("output")["message"]["content"])
@@ -1294,7 +1395,10 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         # always keep block inside a list to preserve merging compatibility
         content = [block]
 
-        return AIMessageChunk(content=content, tool_call_chunks=tool_call_chunks)
+        return AIMessageChunk(
+            content=cast(List[Union[str, Dict[Any, Any]]], content),
+            tool_call_chunks=tool_call_chunks,
+        )
     elif "contentBlockDelta" in event:
         block = {
             **_bedrock_to_lc([event["contentBlockDelta"]["delta"]])[0],
@@ -1313,7 +1417,10 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         # always keep block inside a list to preserve merging compatibility
         content = [block]
 
-        return AIMessageChunk(content=content, tool_call_chunks=tool_call_chunks)
+        return AIMessageChunk(
+            content=cast(List[Union[str, Dict[Any, Any]]], content),
+            tool_call_chunks=tool_call_chunks,
+        )
     elif "contentBlockStop" in event:
         # TODO: needed?
         return AIMessageChunk(content=[])
@@ -1351,7 +1458,8 @@ def _mime_type_to_format(mime_type: str) -> str:
         return format_part
 
     raise ValueError(
-        f"Unsupported MIME type: {mime_type}. Please refer to the Bedrock Converse API documentation for supported formats."
+        f"Unsupported MIME type: {mime_type}. Please refer to the Bedrock Converse API"
+        " documentation for supported formats."
     )
 
 
@@ -1854,11 +1962,11 @@ def _upsert_tool_calls_to_bedrock_content(
 
 
 def _format_openai_image_url(image_url: str) -> Dict:
-    """
-    Formats an image of format data:image/jpeg;base64,{b64_string}
-    to a dict for bedrock api.
+    """Formats an image of format data:image/jpeg;base64,{b64_string} to a dict for
+    bedrock api.
 
     And throws an error if url is not a b64 image.
+
     """
     regex = r"^data:image/(?P<media_type>.+);base64,(?P<data>.+)$"
     match = re.match(regex, image_url)
@@ -1874,11 +1982,11 @@ def _format_openai_image_url(image_url: str) -> Dict:
 
 
 def _format_openai_video_url(video_url: str) -> Dict:
-    """
-    Formats a video of format data:video/mp4;base64,{b64_string}
-    to a dict for bedrock api.
+    """Formats a video of format data:video/mp4;base64,{b64_string} to a dict for
+    bedrock api.
 
     And throws an error if url is not a b64 video.
+
     """
     regex = r"^data:video/(?P<media_type>.+);base64,(?P<data>.+)$"
     match = re.match(regex, video_url)
@@ -1894,11 +2002,12 @@ def _format_openai_video_url(video_url: str) -> Dict:
 
 
 def _is_cache_point(cache_point: Any) -> bool:
-    return (
-        isinstance(cache_point, dict)
-        and "cachePoint" in cache_point
-        and cache_point.get("cachePoint").get("type") is not None
-    )
+    if not isinstance(cache_point, dict) or "cachePoint" not in cache_point:
+        return False
+    cache_point_data = cache_point.get("cachePoint")
+    if cache_point_data is None:
+        return False
+    return cache_point_data.get("type") is not None
 
 
 def _has_tool_use_or_result_blocks(messages: List[Dict[str, Any]]) -> bool:
@@ -1913,7 +2022,8 @@ def _has_tool_use_or_result_blocks(messages: List[Dict[str, Any]]) -> bool:
 def _convert_tool_blocks_to_text(
     messages: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Convert toolUse and toolResult blocks to text blocks preserving only necessary content."""
+    """Convert toolUse and toolResult blocks to text blocks preserving
+    only necessary content."""
     converted_messages = []
 
     for message in messages:
@@ -1928,14 +2038,16 @@ def _convert_tool_blocks_to_text(
 
                 # format function call description
                 if tool_inputs:
-                    tool_text = f"[Called {tool_name} with parameters: {json.dumps(tool_inputs)}]"
+                    tool_text = (
+                        f"[Called {tool_name} with parameters: "
+                        f"{json.dumps(tool_inputs)}]"
+                    )
                 else:
                     tool_text = f"[Called {tool_name}]"
 
                 converted_message["content"].append({"text": tool_text})
 
             elif "toolResult" in block:
-                # convert toolResult to indicate it's tool output without exposing internal details
                 tool_result = block["toolResult"]
 
                 content_parts = []
@@ -1947,7 +2059,6 @@ def _convert_tool_blocks_to_text(
                     # skip other internal content types
                 result_content = "".join(content_parts)
 
-                # only include result if there's actual content, but mark it as tool output
                 if result_content.strip():
                     tool_output_text = f"[Tool output: {result_content}]"
                     converted_message["content"].append({"text": tool_output_text})

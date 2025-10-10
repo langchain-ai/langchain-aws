@@ -4,7 +4,7 @@ import json
 import logging
 import uuid
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from botocore.exceptions import UnknownServiceError
 from langchain_core.callbacks import CallbackManager
@@ -45,9 +45,7 @@ logger = logging.getLogger(__name__)
 
 
 class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
-    """
-    Invoke a Bedrock Agent
-    """
+    """Invoke a Bedrock Agent"""
 
     agent_id: Optional[str]
     """Bedrock Agent Id"""
@@ -158,12 +156,13 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             enable_trace: Boolean flag to specify whether trace should be enabled when
                 invoking the agent
             enable_human_input: Boolean flag to specify whether a human as a tool should
-                 be enabled for the agent.
+                be enabled for the agent.
             enable_code_interpreter: Boolean flag to specify whether a code interpreter
             should be enabled for this session.
             **kwargs: Additional arguments
         Returns:
             BedrockAgentsRunnable configured to invoke the Bedrock agent
+
         """
         client_params, session = get_boto_session(
             credentials_profile_name=credentials_profile_name,
@@ -179,7 +178,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             agent_id = bedrock_agent["agentId"]
             agent_status = bedrock_agent["agentStatus"]
             if agent_status != "PREPARED":
-                _prepare_agent(bedrock_client, agent_id)
+                _prepare_agent(bedrock_client, cast(str, agent_id))
         else:
             try:
                 agent_id = _create_bedrock_agent(
@@ -196,12 +195,12 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                 )
                 _create_bedrock_action_groups(
                     bedrock_client,
-                    agent_id,
+                    cast(str, agent_id),
                     tools,
                     enable_human_input,
                     enable_code_interpreter,
                 )
-                _prepare_agent(bedrock_client, agent_id)
+                _prepare_agent(bedrock_client, cast(str, agent_id))
             except Exception as exception:
                 logger.exception("Error in create agent call")
                 raise exception
@@ -234,6 +233,7 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
 
         Returns:
             Union[List[BedrockAgentAction], BedrockAgentFinish]
+
         """
         config = ensure_config(config)
         callback_manager = CallbackManager.configure(
@@ -429,7 +429,7 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
     def invoke(
         self,
         input: List[BaseMessage],
-        config: Optional[Dict[str, Any]] = None,
+        config: Optional[RunnableConfig] = None,
         **kwargs: Any,
     ) -> BaseMessage:
         """Call InvokeInlineAgent to generate a chat completion"""
@@ -448,6 +448,8 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
         last_message = input[-1]
         if isinstance(last_message, ToolMessage):
             roc_bloc = self._get_roc_block(input)
+            if roc_bloc is None:
+                raise ValueError("Unable to find ROC block in messages")
             function_name = roc_bloc["invocationInputs"][0]["functionInvocationInput"][
                 "function"
             ]
@@ -466,7 +468,8 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
                     }
                 ],
             }
-            self.inline_agent_config["inline_session_state"] = roc_input
+            if self.inline_agent_config is not None:
+                self.inline_agent_config["inline_session_state"] = roc_input
 
         input_dict = {
             "input_text": input_text,
@@ -492,13 +495,15 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
                     ),
                 },
             )
-        else:  # BedrockAgentAction
+        else:  # List[BedrockAgentAction]
             # Handle tool use response: parse_agent_response()
             # returns BedrockAgentAction list
             tool_calls: list[ToolCall] = [
                 {
                     "name": action.tool,
-                    "args": action.tool_input,
+                    "args": action.tool_input
+                    if isinstance(action.tool_input, dict)
+                    else {"input": action.tool_input},
                     "id": action.invocation_id
                     if action.invocation_id is not None
                     else str(uuid.uuid4()),
@@ -552,7 +557,7 @@ class BedrockInlineAgentsRunnable(RunnableSerializable[List[BaseMessage], BaseMe
     def _invoke_inline_agent(
         self,
         input_dict: Dict[str, Any],
-    ) -> Union[BedrockAgentAction, BedrockAgentFinish]:
+    ) -> Union[List[BedrockAgentAction], BedrockAgentFinish]:
         """Invoke the inline agent with the given input."""
         # Merge configurations
         runtime_config = input_dict.get("inline_agent_config", {})

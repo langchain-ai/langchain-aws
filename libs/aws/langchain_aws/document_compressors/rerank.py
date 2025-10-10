@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional, Sequence, Union
 
-from langchain_core.callbacks.manager import Callbacks
+from langchain_core.callbacks.base import Callbacks
 from langchain_core.documents import BaseDocumentCompressor, Document
 from langchain_core.utils import from_env, secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
@@ -23,8 +23,8 @@ class BedrockRerank(BaseDocumentCompressor):
     region_name: Optional[str] = None
     """The aws region, e.g., `us-west-2`.
 
-    Falls back to AWS_REGION or AWS_DEFAULT_REGION env variable or region specified in
-    ~/.aws/config in case it is not provided here.
+    Falls back to ``AWS_REGION`` or ``AWS_DEFAULT_REGION`` env variable or region
+    specified in  ``~/.aws/config`` in case it is not provided here.
     """
 
     credentials_profile_name: Optional[str] = Field(
@@ -37,12 +37,14 @@ class BedrockRerank(BaseDocumentCompressor):
     )
     """AWS access key id.
 
-    If provided, aws_secret_access_key must also be provided.
+    If provided, ``aws_secret_access_key`` must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
+
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+    If not provided, will be read from ``AWS_ACCESS_KEY_ID`` environment variable.
+
     """
 
     aws_secret_access_key: Optional[SecretStr] = Field(
@@ -53,9 +55,11 @@ class BedrockRerank(BaseDocumentCompressor):
     If provided, aws_access_key_id must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
+
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+    If not provided, will be read from ``AWS_SECRET_ACCESS_KEY`` environment variable.
+
     """
 
     aws_session_token: Optional[SecretStr] = Field(
@@ -65,9 +69,11 @@ class BedrockRerank(BaseDocumentCompressor):
 
     If provided, aws_access_key_id and aws_secret_access_key must
     also be provided. Not required unless using temporary credentials.
+
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
+    If not provided, will be read from ``AWS_SESSION_TOKEN`` environment variable.
+
     """
 
     endpoint_url: Optional[str] = Field(default=None, alias="base_url")
@@ -115,6 +121,7 @@ class BedrockRerank(BaseDocumentCompressor):
 
         Returns:
             List[Dict[str, Any]]: A list of ranked documents with relevance scores.
+
         """
         if len(documents) == 0:
             return []
@@ -174,6 +181,7 @@ class BedrockRerank(BaseDocumentCompressor):
 
         Returns:
             A sequence of compressed documents.
+
         """
         compressed = []
         for res in self.rerank(documents, query):

@@ -1,65 +1,51 @@
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
 
-[tool.poetry]
-name = "langgraph-checkpoint-aws"
-version = "0.1.2"
-description = "A LangChain checkpointer implementation that uses Bedrock Session Management Service to enable stateful and resumable LangGraph agents."
+[project]
 authors = []
-license = "MIT"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "langgraph-checkpoint>=2.1.1",
+    "langgraph>=1.0.0.a4",
+    "boto3>=1.40.19",
+]
+name = "langgraph-checkpoint-aws"
+version = "1.0.0a1"
+description = "A LangChain checkpointer implementation that uses Bedrock Session Management Service to enable stateful and resumable LangGraph agents."
 readme = "README.md"
-repository = "https://github.com/langchain-ai/langchain-aws"
 keywords = ["aws", "bedrock", "langchain", "langgraph", "checkpointer"]
 
-[tool.poetry.urls]
+[project.urls]
 "Source Code" = "https://github.com/langchain-ai/langchain-aws/tree/main/libs/langgraph-checkpoint-aws"
+repository = "https://github.com/langchain-ai/langchain-aws"
 
-[tool.poetry.dependencies]
-python = ">=3.9,<4.0"
-langgraph-checkpoint = ">=2.0.0"
-langgraph = ">=0.2.55,<0.7"
-boto3 = ">=1.37.3"
+[dependency-groups]
+dev = [
+    "ruff>=0.13.0",
+    "mypy>=1.17.1",
+]
+test = [
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
+    "pytest-socket>=0.7.0",
+    "pytest-asyncio>=0.26.0"
+]
+test_integration = [
+    "langchain>=1.0.0.a10",
+    "langchain-aws>=0.2.33",
+]
+lint = [
+    "ruff>=0.12.10",
+]
+typing = [
+    "boto3-stubs>=1.40.19",
+    "mypy>=1.17.1",
+]
 
-[tool.poetry.group.dev]
-optional = true
-
-[tool.poetry.group.dev.dependencies]
-ruff = ">=0.1.9"
-mypy = ">=1.7.1"
-codespell = ">=2.2.6"
-
-[tool.poetry.group.test]
-optional = true
-
-[tool.poetry.group.test.dependencies]
-pytest = ">=7.4.3"
-pytest-cov = ">=4.1.0"
-pytest-asyncio = ">=0.26.0"
-
-[tool.poetry.group.test_integration]
-optional = true
-
-[tool.poetry.group.test_integration.dependencies]
-langchain-aws = ">=0.2.31"
-
-[tool.poetry.group.lint]
-optional = true
-
-[tool.poetry.group.lint.dependencies]
-ruff = ">=0.1.9"
-
-[tool.poetry.group.typing]
-optional = true
-
-[tool.poetry.group.typing.dependencies]
-mypy = ">=1.7.1"
-
-[tool.poetry.group.codespell]
-optional = true
-
-[tool.poetry.group.codespell.dependencies]
-codespell = ">=2.2.6"
+[tool.uv]
+prerelease = "allow"
 
 [tool.ruff]
 lint.select = [
@@ -70,10 +56,6 @@ lint.select = [
     "I",      # isort
     "T201",   # print
 ]
-
-[tool.codespell]
-skip = '.git,*.pdf,*.svg'
-ignore-words-list = ''
 
 [tool.mypy]
 ignore_missing_imports = "True"

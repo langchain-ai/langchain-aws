@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import ANY, Mock, patch
 
 import pytest
 
@@ -30,6 +30,32 @@ class TestBedrockAgentRuntimeSessionClient:
         with patch("boto3.Session") as mock_boto3_session:
             mock_boto3_session.return_value.client.return_value = mock_boto_client
             yield BedrockAgentRuntimeSessionClient()
+
+    def test_init_with_custom_session(self, mock_boto_client):
+        """Test initialization with a custom boto3 session"""
+        # Arrange
+        mock_custom_session = Mock()
+        mock_custom_session.client.return_value = mock_boto_client
+
+        # Act
+        client = BedrockAgentRuntimeSessionClient(session=mock_custom_session)
+
+        # Assert
+        mock_custom_session.client.assert_called_once_with(
+            "bedrock-agent-runtime", config=ANY
+        )
+        assert client.client == mock_boto_client
+
+    def test_init_without_session(self, mock_boto_client):
+        """Test initialization without custom session (default behavior)"""
+        # Arrange & Act
+        with patch("boto3.Session") as mock_boto3_session:
+            mock_boto3_session.return_value.client.return_value = mock_boto_client
+            client = BedrockAgentRuntimeSessionClient()
+
+            # Assert
+            mock_boto3_session.assert_called_once()
+            assert client.client == mock_boto_client
 
     class TestSession:
         def test_create_session(

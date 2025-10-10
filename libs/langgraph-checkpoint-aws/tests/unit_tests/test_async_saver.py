@@ -1,17 +1,14 @@
 import datetime
 import json
+import sys
 from unittest.mock import ANY, AsyncMock, Mock, patch
 
 import pytest
-from botocore.config import Config
 from botocore.exceptions import ClientError
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import CheckpointTuple
-from langgraph.constants import ERROR
-from pydantic import SecretStr
 
 from langgraph_checkpoint_aws.async_saver import (
-    AsyncBedrockAgentRuntimeSessionClient,
     AsyncBedrockSessionSaver,
 )
 from langgraph_checkpoint_aws.models import (
@@ -36,6 +33,46 @@ class TestAsyncBedrockSessionSaver:
                 "checkpoint_ns": "test_namespace",
             }
         )
+
+    def test_init_with_custom_session(self, mock_boto_client):
+        """Test AsyncBedrockSessionSaver initialization with custom session"""
+        # Arrange
+        mock_custom_session = Mock()
+        mock_custom_session.client.return_value = mock_boto_client
+
+        # Act
+        saver = AsyncBedrockSessionSaver(session=mock_custom_session)
+
+        # Assert
+        assert saver.session_client.session == mock_custom_session
+        assert saver.session_client.client == mock_boto_client
+
+    def test_init_with_pre_configured_client(self):
+        """Test AsyncBedrockSessionSaver initialization with pre-configured client"""
+        # Arrange
+        mock_client = Mock()
+        mock_client.meta.service_model.service_name = "bedrock-agent-runtime"
+
+        # Act
+        saver = AsyncBedrockSessionSaver(client=mock_client)
+
+        # Assert
+        assert saver.session_client.client == mock_client
+
+    def test_init_with_wrong_service_client(self):
+        """Test AsyncBedrockSessionSaver raises error with wrong service client"""
+        # Arrange
+        mock_wrong_client = Mock()
+        mock_wrong_client.meta.service_model.service_name = "some-other-service"
+
+        # Act & Assert
+        with pytest.raises(
+            ValueError,
+            match="Invalid client: expected 'bedrock-agent-runtime' client, got "
+            "'some-other-service' client. Please provide a bedrock-agent-runtime "
+            "client.",
+        ):
+            AsyncBedrockSessionSaver(client=mock_wrong_client)
 
     @pytest.mark.asyncio
     async def test__create_session_invocation_success(
@@ -672,7 +709,7 @@ class TestAsyncBedrockSessionSaver:
         # Arrange
         task_id = "test_task_id"
         task_path = "test_task_path"
-        writes = [(ERROR, "__start__")]
+        writes = [(sys.intern("__error__"), "__start__")]
         runnable_config["configurable"]["checkpoint_id"] = "test_checkpoint_id"
 
         session_saver._create_session_invocation = AsyncMock()
