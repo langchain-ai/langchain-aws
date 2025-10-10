@@ -215,15 +215,13 @@ class AmazonS3Vectors(VectorStore):
             texts (Iterable[str]): Iterable of strings/text to add to the vectorstore.
             metadatas (Optional[List[dict]], optional): Optional list of metadatas.
                 Defaults to None.
-            embedding (Optional[List[List[float]]], optional): Optional pre-generated
-                embedding. Defaults to None.
             ids (Optional[list[str | None]]): Optional list of IDs associated
                 with the texts.
             batch_size (int): Batch size for put_vectors.
             kwargs (Any): Additional keyword arguments.
 
         Returns:
-            List[str]: List of ids added to the vectorstore
+            List[str]: List of ids added to the vectorstore.
 
         """
         # Convert iterable to list to allow indexing and len operations

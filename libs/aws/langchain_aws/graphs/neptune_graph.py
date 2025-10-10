@@ -342,8 +342,12 @@ class NeptuneGraph(BaseNeptuneGraph):
         client: optional boto3 Neptune client
         credentials_profile_name: optional AWS profile name
         region_name: optional AWS region, e.g., us-west-2
-        service: optional service name, default is neptunedata
-        sign: optional, whether to sign the request payload, default is True
+        sign: whether to sign the request payload, default is True
+        aws_access_key_id: optional AWS access key ID
+        aws_secret_access_key: optional AWS secret access key
+        aws_session_token: optional AWS session token
+        endpoint_url: optional custom endpoint URL
+        config: optional botocore Config object
 
     Example:
         .. code-block:: python
