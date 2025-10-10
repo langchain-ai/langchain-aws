@@ -1473,7 +1473,11 @@ def _format_data_content_block(block: dict) -> dict:
             formatted_block = {
                 "image": {
                     "format": _mime_type_to_format(block["mimeType"]),
-                    "source": {"bytes": _b64str_to_bytes(block.get("base64") or block.get("data", ""))},
+                    "source": {
+                        "bytes": _b64str_to_bytes(
+                            block.get("base64") or block.get("data", "")
+                        )
+                    },
                 }
             }
         else:
@@ -1488,7 +1492,11 @@ def _format_data_content_block(block: dict) -> dict:
             formatted_block = {
                 "document": {
                     "format": _mime_type_to_format(block["mimeType"]),
-                    "source": {"bytes": _b64str_to_bytes(block.get("base64") or block.get("data", ""))},
+                    "source": {
+                        "bytes": _b64str_to_bytes(
+                            block.get("base64") or block.get("data", "")
+                        )
+                    },
                 }
             }
             if citations := block.get("citations"):

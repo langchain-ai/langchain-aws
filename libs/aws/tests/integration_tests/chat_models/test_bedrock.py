@@ -581,7 +581,6 @@ async def test_function_call_invoke_without_system_astream(chat: ChatBedrock) ->
 
 @pytest.mark.parametrize("output_version", ["v0", "v1"])
 def test_agent_loop_bedrock(output_version: Literal["v0", "v1"]) -> None:
-
     @tool
     def get_weather(location: str) -> str:
         """Get the weather for a location."""
@@ -612,7 +611,6 @@ def test_agent_loop_bedrock(output_version: Literal["v0", "v1"]) -> None:
 
 @pytest.mark.parametrize("output_version", ["v0", "v1"])
 def test_agent_loop_streaming_bedrock(output_version: Literal["v0", "v1"]) -> None:
-
     @tool
     def get_weather(location: str) -> str:
         """Get the weather for a location."""
@@ -719,7 +717,7 @@ def test_citations_bedrock(output_version: Literal["v0", "v1"]) -> None:
                 "citations": {"enabled": True},
             },
             {"type": "text", "text": "How many days of annual leave do employees get?"},
-        ]
+        ],
     }
 
     full: Optional[BaseMessageChunk] = None

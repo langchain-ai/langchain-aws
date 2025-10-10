@@ -361,7 +361,7 @@ def _format_data_content_block(block: dict) -> dict:
                     "type": "base64",
                     "media_type": block["mime_type"],
                     "data": block.get("base64") or block.get("data", ""),
-                }
+                },
             }
         else:
             error_message = "Image data only supported through in-line base64 format."
@@ -1104,12 +1104,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         # Use raw response content in some cases, so that thinking and citations
         # are properly stored in content array
         content = completion
-        if (
-            (response_content := body.get("content"))
-            and (
-                (_ := llm_output.pop("thinking", None))
-                or citations_enabled
-            )
+        if (response_content := body.get("content")) and (
+            (_ := llm_output.pop("thinking", None)) or citations_enabled
         ):
             content = response_content
 
@@ -1118,7 +1114,10 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             additional_kwargs=llm_output,
             tool_calls=cast(List[ToolCall], tool_calls),
             usage_metadata=usage_metadata,
-            response_metadata={"model_provider": "bedrock", "model_name": self.model_id},
+            response_metadata={
+                "model_provider": "bedrock",
+                "model_name": self.model_id,
+            },
         )
         return ChatResult(
             generations=[

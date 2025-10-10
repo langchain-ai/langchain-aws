@@ -6,7 +6,9 @@ from typing import Any, Optional, cast
 from langchain_core.messages import content as types
 
 
-def _convert_annotation_from_v1_to_converse(annotation: types.Annotation) -> dict[str, Any]:
+def _convert_annotation_from_v1_to_converse(
+    annotation: types.Annotation,
+) -> dict[str, Any]:
     """Convert LangChain annotation format to Converse's native citation format."""
     if annotation["type"] == "non_standard_annotation":
         return annotation["value"]
@@ -20,7 +22,7 @@ def _convert_annotation_from_v1_to_converse(annotation: types.Annotation) -> dic
     for key, value in annotation.get("extras", {}).items():
         if key not in out:
             out[key] = value
-    
+
     return out
 
 
@@ -34,7 +36,8 @@ def _convert_from_v1_to_converse(
             if model_provider == "bedrock_converse" and "annotations" in block:
                 new_block: dict[str, Any] = {"type": "text"}
                 new_block["citations"] = [
-                    _convert_annotation_from_v1_to_converse(a) for a in block["annotations"]
+                    _convert_annotation_from_v1_to_converse(a)
+                    for a in block["annotations"]
                 ]
                 if "text" in block:
                     new_block["text"] = block["text"]
@@ -95,7 +98,7 @@ def _convert_from_v1_to_converse(
 
 
 def _convert_annotation_from_v1_to_anthropic(
-    annotation: types.Annotation
+    annotation: types.Annotation,
 ) -> dict[str, Any]:
     """Convert LangChain annotation format to Anthropic's native citation format."""
     if annotation["type"] == "non_standard_annotation":

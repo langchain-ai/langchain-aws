@@ -515,7 +515,6 @@ def test_structured_output_thinking_force_tool_use() -> None:
 @pytest.mark.vcr
 @pytest.mark.parametrize("output_version", ["v0", "v1"])
 def test_agent_loop(output_version: Literal["v0", "v1"]) -> None:
-
     @tool
     def get_weather(location: str) -> str:
         """Get the weather for a location."""
@@ -548,7 +547,6 @@ def test_agent_loop(output_version: Literal["v0", "v1"]) -> None:
 @pytest.mark.vcr
 @pytest.mark.parametrize("output_version", ["v0", "v1"])
 def test_agent_loop_streaming(output_version: Literal["v0", "v1"]) -> None:
-
     @tool
     def get_weather(location: str) -> str:
         """Get the weather for a location."""
@@ -606,7 +604,10 @@ def test_thinking(output_version: Literal["v0", "v1"]) -> None:
 
     # Raw content
     if output_version == "v0":
-        assert [block["type"] for block in full.content] == ["reasoning_content", "text"]  # type: ignore[index,union-attr]
+        assert [block["type"] for block in full.content] == [  # type: ignore[index]
+            "reasoning_content",
+            "text",
+        ]  # type: ignore[index,union-attr]
         assert "text" in full.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
         assert "signature" in full.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
     else:
@@ -625,7 +626,10 @@ def test_thinking(output_version: Literal["v0", "v1"]) -> None:
     response = llm.invoke([input_message, full, next_message])
 
     if output_version == "v0":
-        assert [block["type"] for block in response.content] == ["reasoning_content", "text"]  # type: ignore[index,union-attr]
+        assert [block["type"] for block in response.content] == [  # type: ignore[index]
+            "reasoning_content",
+            "text",
+        ]  # type: ignore[index,union-attr]
         assert "text" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
         assert "signature" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
     else:
@@ -727,7 +731,7 @@ def test_citations_v1(output_version: Literal["v0", "v1"]) -> None:
         "content": [
             PLAINTEXT_DOCUMENT,
             {"type": "text", "text": "How many days of annual leave do employees get?"},
-        ]
+        ],
     }
 
     full: Optional[BaseMessageChunk] = None

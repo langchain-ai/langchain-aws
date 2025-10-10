@@ -263,6 +263,7 @@ def extract_tool_calls(content: List[dict]) -> List[ToolCall]:
         )
     return tool_calls
 
+
 def _citations_enabled(messages: list[dict[str, Any]]) -> bool:
     for message in messages:
         if isinstance(message.get("content"), list):
@@ -1183,7 +1184,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 )
             elif thinking_in_params(params):
                 coerce_content_to_string = False
-            elif _citations_enabled(messages):
+            elif messages is not None and _citations_enabled(messages):
                 coerce_content_to_string = False
 
         body = json.dumps(input_body)
