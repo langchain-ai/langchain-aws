@@ -781,6 +781,11 @@ class ChatBedrockConverse(BaseChatModel):
                 self.supports_tool_choice_values = ("auto", "any")
             elif "nova" in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
+            elif "deepseek" in base_model and "r1-v1" not in base_model:
+                if "v3-v1" in base_model:
+                    self.supports_tool_choice_values = ("any",)
+                else:
+                    self.supports_tool_choice_values = ("any", "tool")
             else:
                 self.supports_tool_choice_values = ()
 
@@ -1033,6 +1038,8 @@ class ChatBedrockConverse(BaseChatModel):
                     f"for the latest documentation on models that support tool choice."
                 )
             kwargs["tool_choice"] = _format_tool_choice(tool_choice)
+        elif "deepseek.v3" in self._get_base_model():
+            kwargs["tool_choice"] = _format_tool_choice("any")
 
         return self.bind(tools=formatted_tools, **kwargs)
 
