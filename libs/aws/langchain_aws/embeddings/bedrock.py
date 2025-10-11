@@ -152,6 +152,11 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         parts = self.model_id.split(".")
         return parts[1] if parts[0] in regions else parts[0]
 
+    @property
+    def _is_cohere_v4(self) -> bool:
+        """Check if the model is Cohere Embed v4."""
+        return "cohere.embed-v4" in self.model_id
+
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
@@ -189,7 +194,12 @@ class BedrockEmbeddings(BaseModel, Embeddings):
             embeddings = response_body.get("embeddings")
             if embeddings is None:
                 raise ValueError("No embeddings returned from model")
-            return embeddings[0]
+            # Embed v3 and v4 schemas
+            if isinstance(embeddings, dict) and "float" in embeddings:
+                processed_embeddings = embeddings["float"]
+            else:
+                processed_embeddings = embeddings
+            return processed_embeddings[0]
         else:
             # includes common provider == "amazon"
             response_body = self._invoke_model(
@@ -207,7 +217,9 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         results: List[List[float]] = []
 
         # Iterate through the list of strings in batches
-        for text_batch in _batch_cohere_embedding_texts(texts):
+        for text_batch in _batch_cohere_embedding_texts(
+            texts, is_v4=self._is_cohere_v4
+        ):
             batch_embeddings = self._invoke_model(
                 input_body={
                     "input_type": "search_document",
@@ -344,17 +356,35 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         return list(result)
 
 
-def _batch_cohere_embedding_texts(texts: List[str]) -> Generator[List[str], None, None]:
+def _batch_cohere_embedding_texts(
+    texts: List[str], is_v4: bool = False
+) -> Generator[List[str], None, None]:
     """Batches a set of texts into chunks acceptable for the Cohere embedding API.
 
-    Chunks of at most 96 items, or 2048 characters.
+    For Cohere Embed v3: Chunks of at most 96 items, or 2048 characters.
+    For Cohere Embed v4: Chunks of at most 96 items, or ~512,000 characters
+    (approx 128K tokens).
 
     """
 
-    # Cohere embeddings want a maximum of 96 items and 2048 characters
-    # See: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-embed.html
     max_items = 96
-    max_chars = 2048
+    if is_v4:
+        # Cohere Embed v4 supports up to 128K tokens per input
+        # Using conservative estimate of ~4 chars per token = ~512K chars
+        # See: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-embed-v4.html
+        max_chars = 512_000
+        char_limit_msg = (
+            "The Cohere Embed v4 embedding API does not support texts longer than "
+            "approximately 128K tokens (~512,000 characters)."
+        )
+    else:
+        # Cohere Embed v3 limit
+        # See: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-embed.html
+        max_chars = 2048
+        char_limit_msg = (
+            "The Cohere embedding API does not support texts longer than "
+            "2048 characters."
+        )
 
     # Initialize batches
     current_batch: List[str] = []
@@ -364,10 +394,7 @@ def _batch_cohere_embedding_texts(texts: List[str]) -> Generator[List[str], None
         text_len = len(text)
 
         if text_len > max_chars:
-            raise ValueError(
-                "The Cohere embedding API does not support texts longer than "
-                "2048 characters."
-            )
+            raise ValueError(char_limit_msg)
 
         # Check if adding the current string would exceed the limits
         if len(current_batch) >= max_items or current_chars + text_len > max_chars:
