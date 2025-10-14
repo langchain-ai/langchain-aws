@@ -206,11 +206,11 @@ class NeptuneAnalyticsGraph(BaseNeptuneGraph):
         graph_identifier: the graph identifier for a Neptune Analytics graph
 
     Example:
-        .. code-block:: python
-
+        ```python
         graph = NeptuneAnalyticsGraph(
             graph_identifier='<my-graph-id>'
         )
+        ```
 
     *Security note*: Make sure that the database connection uses credentials
         that are narrowly-scoped to only include necessary permissions.
@@ -350,12 +350,12 @@ class NeptuneGraph(BaseNeptuneGraph):
         config: optional botocore Config object
 
     Example:
-        .. code-block:: python
-
+        ```python
         graph = NeptuneGraph(
             host='<my-cluster>',
             port=8182
         )
+        ```
 
     *Security note*: Make sure that the database connection uses credentials
         that are narrowly-scoped to only include necessary permissions.

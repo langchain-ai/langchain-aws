@@ -113,9 +113,9 @@ class ChatBedrockConverse(BaseChatModel):
 
         Once that's completed, install the LangChain integration:
 
-        .. code-block:: bash
-
-            pip install -U langchain-aws
+        ```bash
+        pip install -U langchain-aws
+        ```
 
     Key init args — completion params:
         model: str
@@ -137,214 +137,214 @@ class ChatBedrockConverse(BaseChatModel):
     See full list of supported init args and their descriptions in the params section.
 
     Instantiate:
-        .. code-block:: python
+        ```python
+        from langchain_aws import ChatBedrockConverse
 
-            from langchain_aws import ChatBedrockConverse
-
-            llm = ChatBedrockConverse(
-                model="anthropic.claude-3-sonnet-20240229-v1:0",
-                temperature=0,
-                max_tokens=None,
-                # other params...
-            )
+        llm = ChatBedrockConverse(
+            model="anthropic.claude-3-sonnet-20240229-v1:0",
+            temperature=0,
+            max_tokens=None,
+            # other params...
+        )
+        ```
 
     Invoke:
-        .. code-block:: python
+        ```python
+        messages = [
+            ("system", "You are a helpful translator. Translate the user sentence to French."),
+            ("human", "I love programming."),
+        ]
+        llm.invoke(messages)
+        ```
 
-            messages = [
-                ("system", "You are a helpful translator. Translate the user sentence to French."),
-                ("human", "I love programming."),
-            ]
-            llm.invoke(messages)
-
-        .. code-block:: python
-
-            AIMessage(content=[{'type': 'text', 'text': "J'aime la programmation."}], response_metadata={'ResponseMetadata': {'RequestId': '9ef1e313-a4c1-4f79-b631-171f658d3c0e', 'HTTPStatusCode': 200, 'HTTPHeaders': {'date': 'Sat, 15 Jun 2024 01:19:24 GMT', 'content-type': 'application/json', 'content-length': '205', 'connection': 'keep-alive', 'x-amzn-requestid': '9ef1e313-a4c1-4f79-b631-171f658d3c0e'}, 'RetryAttempts': 0}, 'stopReason': 'end_turn', 'metrics': {'latencyMs': 609}}, id='run-754e152b-2b41-4784-9538-d40d71a5c3bc-0', usage_metadata={'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36})
+        ```python
+        AIMessage(content=[{'type': 'text', 'text': "J'aime la programmation."}], response_metadata={'ResponseMetadata': {'RequestId': '9ef1e313-a4c1-4f79-b631-171f658d3c0e', 'HTTPStatusCode': 200, 'HTTPHeaders': {'date': 'Sat, 15 Jun 2024 01:19:24 GMT', 'content-type': 'application/json', 'content-length': '205', 'connection': 'keep-alive', 'x-amzn-requestid': '9ef1e313-a4c1-4f79-b631-171f658d3c0e'}, 'RetryAttempts': 0}, 'stopReason': 'end_turn', 'metrics': {'latencyMs': 609}}, id='run-754e152b-2b41-4784-9538-d40d71a5c3bc-0', usage_metadata={'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36})
+        ```
 
     Stream:
-        .. code-block:: python
+        ```python
+        for chunk in llm.stream(messages):
+            print(chunk)
+        ```
 
-            for chunk in llm.stream(messages):
-                print(chunk)
+        ```python
+        AIMessageChunk(content=[], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+        AIMessageChunk(content=[{'type': 'text', 'text': 'J', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+        AIMessageChunk(content=[{'text': "'", 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+        AIMessageChunk(content=[{'text': 'a', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+        AIMessageChunk(content=[{'text': 'ime', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+        AIMessageChunk(content=[{'text': ' la', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+        AIMessageChunk(content=[{'text': ' programm', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+        AIMessageChunk(content=[{'text': 'ation', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+        AIMessageChunk(content=[{'text': '.', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+        AIMessageChunk(content=[{'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+        AIMessageChunk(content=[], response_metadata={'stopReason': 'end_turn'}, id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+        AIMessageChunk(content=[], response_metadata={'metrics': {'latencyMs': 581}}, id='run-da3c2606-4792-440a-ac66-72e0d1f6d117', usage_metadata={'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36})
+        ```
 
-        .. code-block:: python
+        ```python
+        stream = llm.stream(messages)
+        full = next(stream)
+        for chunk in stream:
+            full += chunk
+        full
+        ```
 
-            AIMessageChunk(content=[], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-            AIMessageChunk(content=[{'type': 'text', 'text': 'J', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-            AIMessageChunk(content=[{'text': "'", 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-            AIMessageChunk(content=[{'text': 'a', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-            AIMessageChunk(content=[{'text': 'ime', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-            AIMessageChunk(content=[{'text': ' la', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-            AIMessageChunk(content=[{'text': ' programm', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-            AIMessageChunk(content=[{'text': 'ation', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-            AIMessageChunk(content=[{'text': '.', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-            AIMessageChunk(content=[{'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-            AIMessageChunk(content=[], response_metadata={'stopReason': 'end_turn'}, id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-            AIMessageChunk(content=[], response_metadata={'metrics': {'latencyMs': 581}}, id='run-da3c2606-4792-440a-ac66-72e0d1f6d117', usage_metadata={'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36})
-
-        .. code-block:: python
-
-            stream = llm.stream(messages)
-            full = next(stream)
-            for chunk in stream:
-                full += chunk
-            full
-
-        .. code-block:: python
-
-            AIMessageChunk(content=[{'type': 'text', 'text': "J'aime la programmation.", 'index': 0}], response_metadata={'stopReason': 'end_turn', 'metrics': {'latencyMs': 554}}, id='run-56a5a5e0-de86-412b-9835-624652dc3539', usage_metadata={'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36})
+        ```python
+        AIMessageChunk(content=[{'type': 'text', 'text': "J'aime la programmation.", 'index': 0}], response_metadata={'stopReason': 'end_turn', 'metrics': {'latencyMs': 554}}, id='run-56a5a5e0-de86-412b-9835-624652dc3539', usage_metadata={'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36})
+        ```
 
     Tool calling:
-        .. code-block:: python
+        ```python
+        from pydantic import BaseModel, Field
 
-            from pydantic import BaseModel, Field
+        class GetWeather(BaseModel):
+            '''Get the current weather in a given location'''
 
-            class GetWeather(BaseModel):
-                '''Get the current weather in a given location'''
+            location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
 
-                location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+        class GetPopulation(BaseModel):
+            '''Get the current population in a given location'''
 
-            class GetPopulation(BaseModel):
-                '''Get the current population in a given location'''
+            location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
 
-                location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+        llm_with_tools = llm.bind_tools([GetWeather, GetPopulation])
+        ai_msg = llm_with_tools.invoke("Which city is hotter today and which is bigger: LA or NY?")
+        ai_msg.tool_calls
+        ```
 
-            llm_with_tools = llm.bind_tools([GetWeather, GetPopulation])
-            ai_msg = llm_with_tools.invoke("Which city is hotter today and which is bigger: LA or NY?")
-            ai_msg.tool_calls
+        ```python
+        [{'name': 'GetWeather',
+          'args': {'location': 'Los Angeles, CA'},
+          'id': 'tooluse_Mspi2igUTQygp-xbX6XGVw'},
+         {'name': 'GetWeather',
+          'args': {'location': 'New York, NY'},
+          'id': 'tooluse_tOPHiDhvR2m0xF5_5tyqWg'},
+         {'name': 'GetPopulation',
+          'args': {'location': 'Los Angeles, CA'},
+          'id': 'tooluse__gcY_klbSC-GqB-bF_pxNg'},
+         {'name': 'GetPopulation',
+          'args': {'location': 'New York, NY'},
+          'id': 'tooluse_-1HSoGX0TQCSaIg7cdFy8Q'}]
+        ```
 
-        .. code-block:: python
-
-            [{'name': 'GetWeather',
-              'args': {'location': 'Los Angeles, CA'},
-              'id': 'tooluse_Mspi2igUTQygp-xbX6XGVw'},
-             {'name': 'GetWeather',
-              'args': {'location': 'New York, NY'},
-              'id': 'tooluse_tOPHiDhvR2m0xF5_5tyqWg'},
-             {'name': 'GetPopulation',
-              'args': {'location': 'Los Angeles, CA'},
-              'id': 'tooluse__gcY_klbSC-GqB-bF_pxNg'},
-             {'name': 'GetPopulation',
-              'args': {'location': 'New York, NY'},
-              'id': 'tooluse_-1HSoGX0TQCSaIg7cdFy8Q'}]
-
-        See ``ChatBedrockConverse.bind_tools()`` method for more.
+        See `ChatBedrockConverse.bind_tools()` method for more.
 
     Structured output:
-        .. code-block:: python
+        ```python
+        from typing import Optional
 
-            from typing import Optional
+        from pydantic import BaseModel, Field
 
-            from pydantic import BaseModel, Field
+        class Joke(BaseModel):
+            '''Joke to tell user.'''
 
-            class Joke(BaseModel):
-                '''Joke to tell user.'''
+            setup: str = Field(description="The setup of the joke")
+            punchline: str = Field(description="The punchline to the joke")
+            rating: Optional[int] = Field(description="How funny the joke is, from 1 to 10")
 
-                setup: str = Field(description="The setup of the joke")
-                punchline: str = Field(description="The punchline to the joke")
-                rating: Optional[int] = Field(description="How funny the joke is, from 1 to 10")
+        structured_llm = llm.with_structured_output(Joke)
+        structured_llm.invoke("Tell me a joke about cats")
+        ```
 
-            structured_llm = llm.with_structured_output(Joke)
-            structured_llm.invoke("Tell me a joke about cats")
+        ```python
+        Joke(setup='What do you call a cat that gets all dressed up?', punchline='A purrfessional!', rating=7)
+        ```
 
-        .. code-block:: python
-
-            Joke(setup='What do you call a cat that gets all dressed up?', punchline='A purrfessional!', rating=7)
-
-        See ``ChatBedrockConverse.with_structured_output()`` for more.
+        See `ChatBedrockConverse.with_structured_output()` for more.
 
     Extended thinking:
         Some models, such as Claude 3.7 Sonnet, support an extended thinking
         feature that outputs the step-by-step reasoning process that led to an
         answer.
 
-        To use it, specify the ``thinking`` parameter when initializing
-        ``ChatBedrockConverse`` as shown below.
+        To use it, specify the `thinking` parameter when initializing
+        `ChatBedrockConverse` as shown below.
 
         You will need to specify a token budget to use this feature. See usage example:
 
-        .. code-block:: python
+        ```python
+        from langchain_aws import ChatBedrockConverse
 
-            from langchain_aws import ChatBedrockConverse
-
-            thinking_params= {
-                "thinking": {
-                    "type": "enabled",
-                    "budget_tokens": 2000
-                }
+        thinking_params= {
+            "thinking": {
+                "type": "enabled",
+                "budget_tokens": 2000
             }
+        }
 
-            llm = ChatBedrockConverse(
-                model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-                max_tokens=5000,
-                region_name="us-west-2",
-                additional_model_request_fields=thinking_params,
-            )
+        llm = ChatBedrockConverse(
+            model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            max_tokens=5000,
+            region_name="us-west-2",
+            additional_model_request_fields=thinking_params,
+        )
 
-            response = llm.invoke("What is the cube root of 50.653?")
-            print(response.content)
+        response = llm.invoke("What is the cube root of 50.653?")
+        print(response.content)
+        ```
 
-        .. code-block:: python
-
-            [
-                {'type': 'reasoning_content', 'reasoning_content': {'type': 'text', 'text': 'I need to calculate the cube root of... ', 'signature': '...'}},
-                {'type': 'text', 'text': 'The cube root of 50.653 is...'}
-            ]
+        ```python
+        [
+            {'type': 'reasoning_content', 'reasoning_content': {'type': 'text', 'text': 'I need to calculate the cube root of... ', 'signature': '...'}},
+            {'type': 'text', 'text': 'The cube root of 50.653 is...'}
+        ]
+        ```
 
     Image input:
-        .. code-block:: python
+        ```python
+        import base64
+        import httpx
+        from langchain_core.messages import HumanMessage
 
-            import base64
-            import httpx
-            from langchain_core.messages import HumanMessage
+        image_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+        image_data = base64.b64encode(httpx.get(image_url).content).decode("utf-8")
+        message = HumanMessage(
+            content=[
+                {"type": "text", "text": "describe the weather in this image"},
+                {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": "image/jpeg", "data": image_data},
+                },
+            ],
+        )
+        ai_msg = llm.invoke([message])
+        ai_msg.content
+        ```
 
-            image_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
-            image_data = base64.b64encode(httpx.get(image_url).content).decode("utf-8")
-            message = HumanMessage(
-                content=[
-                    {"type": "text", "text": "describe the weather in this image"},
-                    {
-                        "type": "image",
-                        "source": {"type": "base64", "media_type": "image/jpeg", "data": image_data},
-                    },
-                ],
-            )
-            ai_msg = llm.invoke([message])
-            ai_msg.content
-
-        .. code-block:: python
-
-            [{'type': 'text',
-              'text': 'The image depicts a sunny day with a partly cloudy sky. The sky is a brilliant blue color with scattered white clouds drifting across. The lighting and cloud patterns suggest pleasant, mild weather conditions. The scene shows an open grassy field or meadow, indicating warm temperatures conducive for vegetation growth. Overall, the weather portrayed in this scenic outdoor image appears to be sunny with some clouds, likely representing a nice, comfortable day.'}]
+        ```python
+        [{'type': 'text',
+          'text': 'The image depicts a sunny day with a partly cloudy sky. The sky is a brilliant blue color with scattered white clouds drifting across. The lighting and cloud patterns suggest pleasant, mild weather conditions. The scene shows an open grassy field or meadow, indicating warm temperatures conducive for vegetation growth. Overall, the weather portrayed in this scenic outdoor image appears to be sunny with some clouds, likely representing a nice, comfortable day.'}]
+        ```
 
     Token usage:
-        .. code-block:: python
+        ```python
+        ai_msg = llm.invoke(messages)
+        ai_msg.usage_metadata
+        ```
 
-            ai_msg = llm.invoke(messages)
-            ai_msg.usage_metadata
-
-        .. code-block:: python
-
-            {'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36}
+        ```python
+        {'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36}
+        ```
 
     Response metadata
-        .. code-block:: python
+        ```python
+        ai_msg = llm.invoke(messages)
+        ai_msg.response_metadata
+        ```
 
-            ai_msg = llm.invoke(messages)
-            ai_msg.response_metadata
-
-        .. code-block:: python
-
-            {'ResponseMetadata': {'RequestId': '776a2a26-5946-45ae-859e-82dc5f12017c',
-              'HTTPStatusCode': 200,
-              'HTTPHeaders': {'date': 'Mon, 17 Jun 2024 01:37:05 GMT',
-               'content-type': 'application/json',
-               'content-length': '206',
-               'connection': 'keep-alive',
-               'x-amzn-requestid': '776a2a26-5946-45ae-859e-82dc5f12017c'},
-              'RetryAttempts': 0},
-             'stopReason': 'end_turn',
-             'metrics': {'latencyMs': 1290}}
+        ```python
+        {'ResponseMetadata': {'RequestId': '776a2a26-5946-45ae-859e-82dc5f12017c',
+          'HTTPStatusCode': 200,
+          'HTTPHeaders': {'date': 'Mon, 17 Jun 2024 01:37:05 GMT',
+           'content-type': 'application/json',
+           'content-length': '206',
+           'connection': 'keep-alive',
+           'x-amzn-requestid': '776a2a26-5946-45ae-859e-82dc5f12017c'},
+          'RetryAttempts': 0},
+         'stopReason': 'end_turn',
+         'metrics': {'latencyMs': 1290}}
+        ```
 
     """  # noqa: E501
 
@@ -357,7 +357,7 @@ class ChatBedrockConverse(BaseChatModel):
     model_id: str = Field(alias="model")
     """ID of the model to call.
     
-    e.g., ``"anthropic.claude-3-sonnet-20240229-v1:0"``. This is equivalent to the 
+    e.g., `"anthropic.claude-3-sonnet-20240229-v1:0"`. This is equivalent to the 
     modelID property in the list-foundation-models api. For custom and provisioned 
     models, an ARN value is expected. See 
     https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html#model-ids-arns 
