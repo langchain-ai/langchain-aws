@@ -626,25 +626,6 @@ class TestAsyncValkeyStoreTargetedCoverage:
         from langgraph_checkpoint_aws.store.valkey.async_store import AsyncValkeyStore
         assert hasattr(AsyncValkeyStore, 'from_pool')
 
-    def test_batch_sync_wrapper(self):
-        """Test batch synchronous wrapper (lines 305-307)."""
-        from langgraph_checkpoint_aws.store.valkey.async_store import AsyncValkeyStore
-
-        store = AsyncValkeyStore.__new__(AsyncValkeyStore)
-
-        # Mock the async abatch method
-        mock_result = [{'result': 'test'}]
-
-        # Mock asyncio.run to return our test result
-        with patch('langgraph_checkpoint_aws.store.valkey.async_store.asyncio.run', return_value=mock_result) as mock_run:
-            store.abatch = AsyncMock(return_value=mock_result)
-
-            ops = [MagicMock()]
-            result = store.batch(ops)
-
-            # Should call asyncio.run with abatch
-            mock_run.assert_called_once()
-            assert result == mock_result
 
     def test_embedding_query_vector_generation_paths(self):
         """Test different embedding query vector generation paths (lines 507-530)."""

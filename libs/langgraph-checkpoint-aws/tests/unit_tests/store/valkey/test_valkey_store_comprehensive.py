@@ -294,23 +294,6 @@ class TestValkeyStoreBatchOperations:
         with pytest.raises(ValueError, match="Unknown operation type"):
             store.batch(ops)  # type: ignore
 
-    def test_abatch_async_compatibility(self, mock_valkey_client):
-        """Test abatch method for async compatibility."""
-        store = ValkeyStore(mock_valkey_client)
-
-        # Mock successful batch operation
-        with patch.object(store, 'batch', return_value=[None]) as mock_batch:
-            
-            async def test_abatch():
-                ops = [PutOp(namespace=("test",), key="key1", value={"title": "test"})]
-                results = await store.abatch(ops)
-                return results
-
-            # Run the async test
-            results = asyncio.run(test_abatch())
-            
-            assert results == [None]
-            mock_batch.assert_called_once()
 
 
 class TestValkeyStoreGetOperations:

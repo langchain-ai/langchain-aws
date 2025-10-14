@@ -543,7 +543,7 @@ class ValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         raise NotImplementedError(
             "The ValkeyCheckpointSaver does not support async methods. "
             "Consider using AsyncValkeyCheckpointSaver instead.\n"
-            "from langgraph.checkpoint.valkey.aio import AsyncValkeyCheckpointSaver\n"
+            "from langgraph_checkpoint_aws.checkpoint.valkey import AsyncValkeyCheckpointSaver\n"
             "See the documentation for more information."
         )
 
@@ -567,7 +567,7 @@ class ValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         raise NotImplementedError(
             "The ValkeyCheckpointSaver does not support async methods. "
             "Consider using AsyncValkeyCheckpointSaver instead.\n"
-            "from langgraph.checkpoint.valkey.aio import AsyncValkeyCheckpointSaver\n"
+            "from langgraph_checkpoint_aws.checkpoint.valkey import AsyncValkeyCheckpointSaver\n"
             "See the documentation for more information."
         )
         yield  # This line is needed to make this an async generator
@@ -591,6 +591,6 @@ class ValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         raise NotImplementedError(
             "The ValkeyCheckpointSaver does not support async methods. "
             "Consider using AsyncValkeyCheckpointSaver instead.\n"
-            "from langgraph.checkpoint.valkey.aio import AsyncValkeyCheckpointSaver\n"
+            "from langgraph_checkpoint_aws.checkpoint.valkey import AsyncValkeyCheckpointSaver\n"
             "See the documentation for more information."
         )

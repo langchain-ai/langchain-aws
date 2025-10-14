@@ -900,7 +900,7 @@ class TestAsyncValkeyCheckpointSaverSyncMethods:
             client=mock_valkey_client, serde=mock_serializer
         )
 
-        with pytest.raises(NotImplementedError, match="Use aget_tuple"):
+        with pytest.raises(NotImplementedError, match="The AsyncValkeyCheckpointSaver does not support sync methods"):
             saver.get_tuple(sample_config)
 
     def test_list_not_implemented(self, mock_valkey_client, mock_serializer, sample_config):
@@ -909,7 +909,7 @@ class TestAsyncValkeyCheckpointSaverSyncMethods:
             client=mock_valkey_client, serde=mock_serializer
         )
 
-        with pytest.raises(NotImplementedError, match="Use alist"):
+        with pytest.raises(NotImplementedError, match="The AsyncValkeyCheckpointSaver does not support sync methods"):
             list(saver.list(sample_config))
 
     def test_put_not_implemented(
@@ -920,7 +920,7 @@ class TestAsyncValkeyCheckpointSaverSyncMethods:
             client=mock_valkey_client, serde=mock_serializer
         )
 
-        with pytest.raises(NotImplementedError, match="Use aput"):
+        with pytest.raises(NotImplementedError, match="The AsyncValkeyCheckpointSaver does not support sync methods"):
             saver.put(sample_config, sample_checkpoint, sample_metadata, {"test_channel": 1})
 
     def test_put_writes_not_implemented(
@@ -934,7 +934,7 @@ class TestAsyncValkeyCheckpointSaverSyncMethods:
         writes = [("channel", "value")]
         task_id = "test-task"
 
-        with pytest.raises(NotImplementedError, match="Use aput_writes"):
+        with pytest.raises(NotImplementedError, match="The AsyncValkeyCheckpointSaver does not support sync methods"):
             saver.put_writes(sample_config, writes, task_id)
 
     def test_delete_thread_not_implemented(self, mock_valkey_client, mock_serializer):
@@ -943,7 +943,7 @@ class TestAsyncValkeyCheckpointSaverSyncMethods:
             client=mock_valkey_client, serde=mock_serializer
         )
 
-        with pytest.raises(NotImplementedError, match="Use adelete_thread"):
+        with pytest.raises(NotImplementedError, match="The AsyncValkeyCheckpointSaver does not support sync methods"):
             saver.delete_thread("test-thread")
 
 

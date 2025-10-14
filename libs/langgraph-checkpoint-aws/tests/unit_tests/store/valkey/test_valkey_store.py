@@ -418,28 +418,6 @@ class TestValkeyStoreBatchOperations:
         with pytest.raises(ValueError, match="Unknown operation type"):
             store.batch(ops)
 
-    @pytest.mark.asyncio
-    async def test_abatch_operations(self, mock_valkey_client):
-        """Test async batch operations."""
-        # Mock some basic data
-        mock_valkey_client.hgetall.return_value = {
-            "value": json.dumps({"title": "Async Doc"}),
-            "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat(),
-        }
-
-        store = ValkeyStore(mock_valkey_client)
-
-        ops = [
-            GetOp(namespace=("test",), key="doc1"),
-            PutOp(namespace=("test",), key="doc2", value={"title": "Doc 2"}),
-        ]
-
-        results = await store.abatch(ops)
-
-        assert len(results) == 2
-        assert isinstance(results[0], Item)
-        assert results[1] is None
 
 
 class TestValkeyStoreSearch:
@@ -1056,6 +1034,60 @@ class TestValkeyStoreInternalMethods:
             # Reset side effect
             mock_valkey_client.hset.side_effect = None
             mock_valkey_client.hset.return_value = 1
+
+
+class TestValkeyStoreAsyncMethodStubs:
+    """Test that ValkeyStore async method stubs raise NotImplementedError."""
+
+    @pytest.mark.asyncio
+    async def test_async_get_raises_not_implemented(self, mock_valkey_client):
+        """Test that async get method raises NotImplementedError."""
+        store = ValkeyStore(client=mock_valkey_client)
+
+        with pytest.raises(NotImplementedError, match="The ValkeyStore does not support async methods"):
+            await store.aget(("test",), "key1")
+
+    @pytest.mark.asyncio
+    async def test_async_put_raises_not_implemented(self, mock_valkey_client):
+        """Test that async put method raises NotImplementedError."""
+        store = ValkeyStore(client=mock_valkey_client)
+
+        with pytest.raises(NotImplementedError, match="The ValkeyStore does not support async methods"):
+            await store.aput(("test",), "key1", {"data": "value"})
+
+    @pytest.mark.asyncio
+    async def test_async_delete_raises_not_implemented(self, mock_valkey_client):
+        """Test that async delete method raises NotImplementedError."""
+        store = ValkeyStore(client=mock_valkey_client)
+
+        with pytest.raises(NotImplementedError, match="The ValkeyStore does not support async methods"):
+            await store.adelete(("test",), "key1")
+
+    @pytest.mark.asyncio
+    async def test_async_search_raises_not_implemented(self, mock_valkey_client):
+        """Test that async search method raises NotImplementedError."""
+        store = ValkeyStore(client=mock_valkey_client)
+
+        with pytest.raises(NotImplementedError, match="The ValkeyStore does not support async methods"):
+            await store.asearch(("test",), query="search")
+
+    @pytest.mark.asyncio
+    async def test_async_list_namespaces_raises_not_implemented(self, mock_valkey_client):
+        """Test that async list_namespaces method raises NotImplementedError."""
+        store = ValkeyStore(client=mock_valkey_client)
+
+        with pytest.raises(NotImplementedError, match="The ValkeyStore does not support async methods"):
+            await store.alist_namespaces()
+
+    @pytest.mark.asyncio
+    async def test_async_batch_raises_not_implemented(self, mock_valkey_client):
+        """Test that async batch method raises NotImplementedError."""
+        store = ValkeyStore(client=mock_valkey_client)
+
+        ops = [GetOp(namespace=("test",), key="key1")]
+
+        with pytest.raises(NotImplementedError, match="The ValkeyStore does not support async methods"):
+            await store.abatch(ops)
 
 
 class TestValkeyStoreContextManagers:

@@ -1240,19 +1240,6 @@ class TestAsyncValkeyStoreAdditionalCoverage:
             # Should process list values and generate embeddings through executor
             mock_executor.assert_called_once()
 
-    async def test_batch_sync_method(self, mock_valkey_client):
-        """Test synchronous batch method - line 1003."""
-        store = AsyncValkeyStore(mock_valkey_client)
-        
-        ops = [GetOp(namespace=("test",), key="key1")]
-        
-        with patch('asyncio.run') as mock_run:
-            mock_run.return_value = [None]
-            results = store.batch(ops)
-            
-            # Should call asyncio.run with abatch
-            mock_run.assert_called_once()
-            assert results == [None]
 
     async def test_handle_put_async_ttl_setting(self, mock_valkey_client):
         """Test handle put async TTL setting - lines 1022-1025."""

@@ -41,7 +41,7 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
 
     Examples:
 
-        >>> from langgraph_checkpoint_aws.checkpoint.valkey.async_saver import AsyncValkeyCheckpointSaver
+        >>> from langgraph_checkpoint_aws.checkpoint.valkey import AsyncValkeyCheckpointSaver
         >>> from langgraph.graph import StateGraph
         >>>
         >>> builder = StateGraph(int)
@@ -549,8 +549,21 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
 
     # Sync methods that raise NotImplementedError
     def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
-        """Sync method not supported in AsyncValkeyCheckpointSaver."""
-        raise NotImplementedError("Use aget_tuple() for async operations")
+        """Get a checkpoint tuple from the database synchronously.
+
+        Note:
+            This sync method is not supported by the AsyncValkeyCheckpointSaver class.
+            Use aget_tuple() instead, or consider using ValkeyCheckpointSaver.
+
+        Raises:
+            NotImplementedError: Always, as this class doesn't support sync operations.
+        """
+        raise NotImplementedError(
+            "The AsyncValkeyCheckpointSaver does not support sync methods. "
+            "Consider using ValkeyCheckpointSaver instead.\n"
+            "from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver\n"
+            "See the documentation for more information."
+        )
 
     def list(
         self,
@@ -560,8 +573,21 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         before: RunnableConfig | None = None,
         limit: int | None = None,
     ) -> Iterator[CheckpointTuple]:
-        """Sync method not supported in AsyncValkeyCheckpointSaver."""
-        raise NotImplementedError("Use alist() for async operations")
+        """List checkpoints from the database synchronously.
+
+        Note:
+            This sync method is not supported by the AsyncValkeyCheckpointSaver class.
+            Use alist() instead, or consider using ValkeyCheckpointSaver.
+
+        Raises:
+            NotImplementedError: Always, as this class doesn't support sync operations.
+        """
+        raise NotImplementedError(
+            "The AsyncValkeyCheckpointSaver does not support sync methods. "
+            "Consider using ValkeyCheckpointSaver instead.\n"
+            "from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver\n"
+            "See the documentation for more information."
+        )
 
     def put(
         self,
@@ -570,8 +596,21 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         metadata: CheckpointMetadata,
         new_versions: ChannelVersions,
     ) -> RunnableConfig:
-        """Sync method not supported in AsyncValkeyCheckpointSaver."""
-        raise NotImplementedError("Use aput() for async operations")
+        """Save a checkpoint to the database synchronously.
+
+        Note:
+            This sync method is not supported by the AsyncValkeyCheckpointSaver class.
+            Use aput() instead, or consider using ValkeyCheckpointSaver.
+
+        Raises:
+            NotImplementedError: Always, as this class doesn't support sync operations.
+        """
+        raise NotImplementedError(
+            "The AsyncValkeyCheckpointSaver does not support sync methods. "
+            "Consider using ValkeyCheckpointSaver instead.\n"
+            "from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver\n"
+            "See the documentation for more information."
+        )
 
     def put_writes(
         self,
@@ -580,12 +619,38 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         task_id: str,
         task_path: str = "",
     ) -> None:
-        """Sync method not supported in AsyncValkeyCheckpointSaver."""
-        raise NotImplementedError("Use aput_writes() for async operations")
+        """Store intermediate writes linked to a checkpoint synchronously.
+
+        Note:
+            This sync method is not supported by the AsyncValkeyCheckpointSaver class.
+            Use aput_writes() instead, or consider using ValkeyCheckpointSaver.
+
+        Raises:
+            NotImplementedError: Always, as this class doesn't support sync operations.
+        """
+        raise NotImplementedError(
+            "The AsyncValkeyCheckpointSaver does not support sync methods. "
+            "Consider using ValkeyCheckpointSaver instead.\n"
+            "from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver\n"
+            "See the documentation for more information."
+        )
 
     def delete_thread(self, thread_id: str) -> None:
-        """Sync method not supported in AsyncValkeyCheckpointSaver."""
-        raise NotImplementedError("Use adelete_thread() for async operations")
+        """Delete all checkpoints and writes associated with a thread ID synchronously.
+
+        Note:
+            This sync method is not supported by the AsyncValkeyCheckpointSaver class.
+            Use adelete_thread() instead, or consider using ValkeyCheckpointSaver.
+
+        Raises:
+            NotImplementedError: Always, as this class doesn't support sync operations.
+        """
+        raise NotImplementedError(
+            "The AsyncValkeyCheckpointSaver does not support sync methods. "
+            "Consider using ValkeyCheckpointSaver instead.\n"
+            "from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver\n"
+            "See the documentation for more information."
+        )
 
 
 __all__ = ["AsyncValkeyCheckpointSaver"]

@@ -392,15 +392,6 @@ class TestAsyncValkeyStoreBatchOperations:
         with pytest.raises((ValueError, AttributeError, TypeError)):
             await store.abatch(ops)
 
-    async def test_batch_sync_not_implemented(self, mock_valkey_client):
-        """Test that sync batch raises NotImplementedError."""
-        store = AsyncValkeyStore(client=mock_valkey_client)
-
-        ops = [GetOp(namespace=("test",), key="key1")]
-
-        # This raises RuntimeError because asyncio.run can't be called from running loop
-        with pytest.raises(RuntimeError, match="asyncio.run\\(\\) cannot be called from a running event loop"):
-            store.batch(ops)
 
 
 class TestAsyncValkeyStoreSearch:
@@ -952,6 +943,54 @@ class TestAsyncValkeyStoreContextManagers:
                         assert isinstance(store, AsyncValkeyStore)
                         # Store creates its own client through the pool, connection may vary
                         assert store.client is not None
+
+class TestAsyncValkeyStoreSyncMethodStubs:
+    """Test AsyncValkeyStore sync method stubs that should raise NotImplementedError."""
+
+    async def test_sync_get_raises_not_implemented(self, mock_valkey_client):
+        """Test that sync get method raises NotImplementedError."""
+        store = AsyncValkeyStore(client=mock_valkey_client)
+
+        with pytest.raises(NotImplementedError, match="The AsyncValkeyStore does not support sync methods"):
+            store.get(("test",), "key1")
+
+    async def test_sync_put_raises_not_implemented(self, mock_valkey_client):
+        """Test that sync put method raises NotImplementedError."""
+        store = AsyncValkeyStore(client=mock_valkey_client)
+
+        with pytest.raises(NotImplementedError, match="The AsyncValkeyStore does not support sync methods"):
+            store.put(("test",), "key1", {"data": "value"})
+
+    async def test_sync_delete_raises_not_implemented(self, mock_valkey_client):
+        """Test that sync delete method raises NotImplementedError."""
+        store = AsyncValkeyStore(client=mock_valkey_client)
+
+        with pytest.raises(NotImplementedError, match="The AsyncValkeyStore does not support sync methods"):
+            store.delete(("test",), "key1")
+
+    async def test_sync_search_raises_not_implemented(self, mock_valkey_client):
+        """Test that sync search method raises NotImplementedError."""
+        store = AsyncValkeyStore(client=mock_valkey_client)
+
+        with pytest.raises(NotImplementedError, match="The AsyncValkeyStore does not support sync methods"):
+            store.search(("test",), query="search")
+
+    async def test_sync_list_namespaces_raises_not_implemented(self, mock_valkey_client):
+        """Test that sync list_namespaces method raises NotImplementedError."""
+        store = AsyncValkeyStore(client=mock_valkey_client)
+
+        with pytest.raises(NotImplementedError, match="The AsyncValkeyStore does not support sync methods"):
+            store.list_namespaces()
+
+    async def test_sync_batch_raises_not_implemented(self, mock_valkey_client):
+        """Test that sync batch method raises NotImplementedError."""
+        store = AsyncValkeyStore(client=mock_valkey_client)
+
+        ops = [GetOp(namespace=("test",), key="key1")]
+
+        with pytest.raises(NotImplementedError, match="The AsyncValkeyStore does not support sync methods"):
+            store.batch(ops)
+
 
 class TestAsyncValkeyStoreAdvancedOperations:
     """Test AsyncValkeyStore advanced operations."""

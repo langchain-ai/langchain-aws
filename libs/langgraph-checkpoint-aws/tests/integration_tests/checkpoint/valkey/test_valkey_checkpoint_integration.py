@@ -453,7 +453,7 @@ def test_async_methods_not_implemented(saver: ValkeyCheckpointSaver) -> None:
     # Test aget_tuple
     with pytest.raises(NotImplementedError) as exc_info:
         asyncio.run(saver.aget_tuple(config))  # type: ignore
-    assert "ValkeyCheckpointSaver does not support async methods" in str(exc_info.value)
+    assert "The ValkeyCheckpointSaver does not support async methods" in str(exc_info.value)
     assert "AsyncValkeyCheckpointSaver" in str(exc_info.value)
 
     # Test alist
@@ -463,7 +463,7 @@ def test_async_methods_not_implemented(saver: ValkeyCheckpointSaver) -> None:
 
     with pytest.raises(NotImplementedError) as exc_info:
         asyncio.run(test_alist())
-    assert "ValkeyCheckpointSaver does not support async methods" in str(exc_info.value)
+    assert "The ValkeyCheckpointSaver does not support async methods" in str(exc_info.value)
 
     # Test aput
     checkpoint = {
@@ -478,7 +478,7 @@ def test_async_methods_not_implemented(saver: ValkeyCheckpointSaver) -> None:
 
     with pytest.raises(NotImplementedError) as exc_info:
         asyncio.run(saver.aput(config, checkpoint, metadata, {}))  # type: ignore
-    assert "ValkeyCheckpointSaver does not support async methods" in str(exc_info.value)
+    assert "The ValkeyCheckpointSaver does not support async methods" in str(exc_info.value)
 
 
 @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")

@@ -6,6 +6,7 @@ import asyncio
 import logging
 from collections.abc import Generator, Iterable
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Any, Literal
 
 import orjson
@@ -60,18 +61,25 @@ class AsyncValkeyStore(BaseValkeyStore):
     - Batch operations
 
     Examples:
-        Basic usage with ValkeyIndexConfig:
+        Basic usage with BedrockEmbeddings:
 
         ```python
         from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore
+        from langchain_aws import BedrockEmbeddings
 
-        # Using connection string with ValkeyIndexConfig
+        # Create BedrockEmbeddings instance
+        embeddings = BedrockEmbeddings(
+            model_id="amazon.titan-embed-text-v1",
+            region_name="us-east-1"
+        )
+
+        # Using connection string with BedrockEmbeddings
         with AsyncValkeyStore.from_conn_string(
             "valkey://localhost:6379",
             index={
                 "collection_name": "my_documents",
                 "dims": 1536,
-                "embed": "openai:text-embedding-3-small",
+                "embed": embeddings,
                 "fields": ["text"],
                 "timezone": "UTC",
                 "index_type": "hnsw"
@@ -81,13 +89,17 @@ class AsyncValkeyStore(BaseValkeyStore):
         ) as store:
             # Use store...
 
-        # Advanced HNSW configuration
+        # Advanced HNSW configuration with Cohere embeddings
+        cohere_embeddings = BedrockEmbeddings(
+            model_id="cohere.embed-english-v3",
+            region_name="us-east-1"
+        )
         with AsyncValkeyStore.from_conn_string(
             "valkey://localhost:6379",
             index={
                 "collection_name": "embeddings_store",
-                "dims": 768,
-                "embed": "openai:text-embedding-3-small",
+                "dims": 1024,
+                "embed": cohere_embeddings,
                 "fields": ["text", "title"],
                 "timezone": "America/New_York",
                 "index_type": "hnsw",
@@ -100,7 +112,7 @@ class AsyncValkeyStore(BaseValkeyStore):
         ) as store:
             # Store with optimized HNSW parameters
 
-        # Using connection pool with FLAT index
+        # Using connection pool with FLAT index and OpenAI embeddings
         pool = ConnectionPool(
             "valkey://localhost:6379",
             min_size=5,
@@ -111,7 +123,7 @@ class AsyncValkeyStore(BaseValkeyStore):
             pool,
             index={
                 "collection_name": "exact_search_store",
-                "dims": 384,
+                "dims": 1536,
                 "embed": "openai:text-embedding-3-small",
                 "index_type": "flat",
                 "algorithm": "FLAT",
@@ -120,13 +132,17 @@ class AsyncValkeyStore(BaseValkeyStore):
         ) as store:
             # Use store with exact search...
 
-        # Direct initialization with ValkeyIndexConfig
+        # Direct initialization with BedrockEmbeddings
+        embeddings = BedrockEmbeddings(
+            model_id="amazon.titan-embed-text-v1",
+            region_name="us-east-1"
+        )
         store = AsyncValkeyStore(
             Valkey("valkey://localhost:6379"),
             index={
                 "collection_name": "langgraph_store_idx",
                 "dims": 1536,
-                "embed": "openai:text-embedding-3-small",
+                "embed": embeddings,
                 "fields": ["text"]
             }
         )
@@ -304,7 +320,10 @@ class AsyncValkeyStore(BaseValkeyStore):
 
     def batch(self, ops: Iterable[Op]) -> list[Result]:
         """Execute operations synchronously."""
-        return asyncio.run(self.abatch(ops))
+        raise NotImplementedError(
+            "The AsyncValkeyStore does not support sync methods. "
+            "Use ValkeyStore for synchronous operations."
+        )
 
     async def abatch(self, ops: Iterable[Op]) -> list[Result]:
         """Execute operations asynchronously."""
@@ -589,7 +608,7 @@ class AsyncValkeyStore(BaseValkeyStore):
                 docs = getattr(results, "docs", None)
                 if docs:
                     # Skip offset items and process results
-                    for _i, doc in enumerate(docs[op.offset :]):
+                    for _i, doc in enumerate(docs):
                         try:
                             # Parse document data
                             doc_data = doc.__dict__
@@ -614,10 +633,15 @@ class AsyncValkeyStore(BaseValkeyStore):
                             if value_data is None:
                                 continue
 
-                            # Parse document
-                            value, created_at, updated_at = self._parse_document(
-                                value_data
-                            )
+                            # Parse document using DocumentProcessor
+                            try:
+                                parsed_data = orjson.loads(value_data)
+                                value = parsed_data.get("value", {})
+                                created_at = datetime.fromisoformat(parsed_data.get("created_at", datetime.now().isoformat()))
+                                updated_at = datetime.fromisoformat(parsed_data.get("updated_at", datetime.now().isoformat()))
+                            except Exception as e:
+                                logger.error(f"Error parsing document data: {e}")
+                                continue
 
                             # Apply additional filters
                             if not self._apply_filter(value, op.filter):
@@ -755,17 +779,25 @@ class AsyncValkeyStore(BaseValkeyStore):
                 if value_data:
                     value_data = await self._handle_response_t_async(value_data)
                     if value_data:
-                        value, created_at, updated_at = self._parse_document(value_data)
-                        items.append(
-                            SearchItem(
-                                namespace=namespace,
-                                key=key,
-                                value=value,
-                                created_at=created_at,
-                                updated_at=updated_at,
-                                score=score,
+                        # Parse document using DocumentProcessor
+                        try:
+                            parsed_data = orjson.loads(value_data)
+                            value = parsed_data.get("value", {})
+                            created_at = datetime.fromisoformat(parsed_data.get("created_at", datetime.now().isoformat()))
+                            updated_at = datetime.fromisoformat(parsed_data.get("updated_at", datetime.now().isoformat()))
+                            items.append(
+                                SearchItem(
+                                    namespace=namespace,
+                                    key=key,
+                                    value=value,
+                                    created_at=created_at,
+                                    updated_at=updated_at,
+                                    score=score,
+                                )
                             )
-                        )
+                        except Exception as e:
+                            logger.error(f"Error parsing document data: {e}")
+                            continue
             except Exception as e:
                 logger.debug(f"Error converting result {namespace}/{key}: {e}")
                 continue
@@ -1046,3 +1078,124 @@ class AsyncValkeyStore(BaseValkeyStore):
             return result
         else:
             return []
+
+    # Sync methods that raise NotImplementedError
+    def get(
+        self,
+        namespace: tuple[str, ...],
+        key: str,
+        *,
+        refresh_ttl: bool | None = None,
+    ) -> Item | None:
+        """Get an item from the store synchronously.
+
+        Note:
+            This sync method is not supported by the AsyncValkeyStore class.
+            Use aget() instead, or consider using ValkeyStore.
+
+        Raises:
+            NotImplementedError: Always, as this class doesn't support sync operations.
+        """
+        raise NotImplementedError(
+            "The AsyncValkeyStore does not support sync methods. "
+            "Consider using ValkeyStore instead.\n"
+            "from langgraph_checkpoint_aws.store.valkey import ValkeyStore\n"
+            "See the documentation for more information."
+        )
+
+    def put(
+        self,
+        namespace: tuple[str, ...],
+        key: str,
+        value: dict[str, Any],
+        index: Literal[False] | list[str] | None = None,
+        *,
+        ttl: float | None | NotProvided = NOT_PROVIDED,
+    ) -> None:
+        """Put an item in the store synchronously.
+
+        Note:
+            This sync method is not supported by the AsyncValkeyStore class.
+            Use aput() instead, or consider using ValkeyStore.
+
+        Raises:
+            NotImplementedError: Always, as this class doesn't support sync operations.
+        """
+        raise NotImplementedError(
+            "The AsyncValkeyStore does not support sync methods. "
+            "Consider using ValkeyStore instead.\n"
+            "from langgraph_checkpoint_aws.store.valkey import ValkeyStore\n"
+            "See the documentation for more information."
+        )
+
+    def delete(
+        self,
+        namespace: tuple[str, ...],
+        key: str,
+    ) -> None:
+        """Delete an item from the store synchronously.
+
+        Note:
+            This sync method is not supported by the AsyncValkeyStore class.
+            Use adelete() instead, or consider using ValkeyStore.
+
+        Raises:
+            NotImplementedError: Always, as this class doesn't support sync operations.
+        """
+        raise NotImplementedError(
+            "The AsyncValkeyStore does not support sync methods. "
+            "Consider using ValkeyStore instead.\n"
+            "from langgraph_checkpoint_aws.store.valkey import ValkeyStore\n"
+            "See the documentation for more information."
+        )
+
+    def search(
+        self,
+        namespace_prefix: tuple[str, ...],
+        *,
+        query: str | None = None,
+        filter: dict[str, Any] | None = None,
+        limit: int = 10,
+        offset: int = 0,
+        refresh_ttl: bool | None = None,
+    ) -> list[SearchItem]:
+        """Search for items in the store synchronously.
+
+        Note:
+            This sync method is not supported by the AsyncValkeyStore class.
+            Use asearch() instead, or consider using ValkeyStore.
+
+        Raises:
+            NotImplementedError: Always, as this class doesn't support sync operations.
+        """
+        raise NotImplementedError(
+            "The AsyncValkeyStore does not support sync methods. "
+            "Consider using ValkeyStore instead.\n"
+            "from langgraph_checkpoint_aws.store.valkey import ValkeyStore\n"
+            "See the documentation for more information."
+        )
+
+    def list_namespaces(
+        self,
+        *,
+        prefix: tuple[str, ...] | None = None,
+        suffix: tuple[str, ...] | None = None,
+        max_depth: int | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[tuple[str, ...]]:
+        """List namespaces in the store synchronously.
+
+        Note:
+            This sync method is not supported by the AsyncValkeyStore class.
+            Use alist_namespaces() instead, or consider using ValkeyStore.
+
+        Raises:
+            NotImplementedError: Always, as this class doesn't support sync operations.
+        """
+        raise NotImplementedError(
+            "The AsyncValkeyStore does not support sync methods. "
+            "Consider using ValkeyStore instead.\n"
+            "from langgraph_checkpoint_aws.store.valkey import ValkeyStore\n"
+            "See the documentation for more information."
+        )

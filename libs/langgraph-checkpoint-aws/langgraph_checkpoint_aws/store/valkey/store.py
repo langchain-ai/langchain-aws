@@ -65,18 +65,25 @@ class ValkeyStore(BaseValkeyStore):
     - Batch operations
 
     Examples:
-        Basic usage with ValkeyIndexConfig:
+        Basic usage with BedrockEmbeddings:
 
         ```python
         from langgraph_checkpoint_aws.store.valkey import ValkeyStore
+        from langchain_aws import BedrockEmbeddings
 
-        # Using connection string with ValkeyIndexConfig
+        # Create BedrockEmbeddings instance
+        embeddings = BedrockEmbeddings(
+            model_id="amazon.titan-embed-text-v1",
+            region_name="us-east-1"
+        )
+
+        # Using connection string with BedrockEmbeddings
         with ValkeyStore.from_conn_string(
             "valkey://localhost:6379",
             index={
                 "collection_name": "my_documents",
                 "dims": 1536,
-                "embed": "openai:text-embedding-3-small",
+                "embed": embeddings,
                 "fields": ["text"],
                 "timezone": "UTC",
                 "index_type": "hnsw"
@@ -86,13 +93,17 @@ class ValkeyStore(BaseValkeyStore):
         ) as store:
             # Use store...
 
-        # Advanced HNSW configuration
+        # Advanced HNSW configuration with Cohere embeddings
+        cohere_embeddings = BedrockEmbeddings(
+            model_id="cohere.embed-english-v3",
+            region_name="us-east-1"
+        )
         with ValkeyStore.from_conn_string(
             "valkey://localhost:6379",
             index={
                 "collection_name": "embeddings_store",
-                "dims": 768,
-                "embed": "openai:text-embedding-3-small",
+                "dims": 1024,
+                "embed": cohere_embeddings,
                 "fields": ["text", "title"],
                 "timezone": "America/New_York",
                 "index_type": "hnsw",
@@ -105,7 +116,7 @@ class ValkeyStore(BaseValkeyStore):
         ) as store:
             # Store with optimized HNSW parameters
 
-        # Using connection pool with FLAT index
+        # Using connection pool with FLAT index and OpenAI embeddings
         pool = ConnectionPool(
             "valkey://localhost:6379",
             min_size=5,
@@ -116,7 +127,7 @@ class ValkeyStore(BaseValkeyStore):
             pool,
             index={
                 "collection_name": "exact_search_store",
-                "dims": 384,
+                "dims": 1536,
                 "embed": "openai:text-embedding-3-small",
                 "index_type": "flat",
                 "algorithm": "FLAT",
@@ -125,13 +136,17 @@ class ValkeyStore(BaseValkeyStore):
         ) as store:
             # Use store with exact search...
 
-        # Direct initialization with ValkeyIndexConfig
+        # Direct initialization with BedrockEmbeddings
+        embeddings = BedrockEmbeddings(
+            model_id="amazon.titan-embed-text-v1",
+            region_name="us-east-1"
+        )
         store = ValkeyStore(
             Valkey("valkey://localhost:6379"),
             index={
                 "collection_name": "langgraph_store_idx",
                 "dims": 1536,
-                "embed": "openai:text-embedding-3-small",
+                "embed": embeddings,
                 "fields": ["text"]
             }
         )
@@ -197,12 +212,19 @@ class ValkeyStore(BaseValkeyStore):
 
         Example:
             ```python
+            from langchain_aws import BedrockEmbeddings
+            
+            embeddings = BedrockEmbeddings(
+                model_id="amazon.titan-embed-text-v1",
+                region_name="us-east-1"
+            )
+            
             with ValkeyStore.from_conn_string(
                 "valkey://localhost:6379",
                 index={
                     "collection_name": "ml_reports",
                     "dims": 1536,
-                    "embed": "openai:text-embedding-3-small",
+                    "embed": embeddings,
                     "fields": ["text"],
                     "timezone": "UTC",
                     "index_type": "hnsw",
@@ -213,7 +235,7 @@ class ValkeyStore(BaseValkeyStore):
                 ttl={"default_ttl": 60.0},
                 pool_size=10
             ) as store:
-                # Store with ValkeyIndexConfig vector indexing
+                # Store with BedrockEmbeddings vector indexing
                 store.put(
                     ("docs", "user123"),
                     "report",
@@ -268,6 +290,8 @@ class ValkeyStore(BaseValkeyStore):
 
         Example:
             ```python
+            from langchain_aws import BedrockEmbeddings
+            
             # Create custom pool
             pool = ConnectionPool(
                 "valkey://localhost:6379",
@@ -276,13 +300,19 @@ class ValkeyStore(BaseValkeyStore):
                 timeout=30
             )
 
-            # Use pool with ValkeyIndexConfig
+            # Create BedrockEmbeddings instance
+            embeddings = BedrockEmbeddings(
+                model_id="amazon.titan-embed-text-v2",
+                region_name="us-west-2"
+            )
+
+            # Use pool with BedrockEmbeddings
             with ValkeyStore.from_pool(
                 pool,
                 index={
                     "collection_name": "shared_documents",
-                    "dims": 1536,
-                    "embed": "openai:text-embedding-3-small",
+                    "dims": 1024,
+                    "embed": embeddings,
                     "fields": ["text", "title"],
                     "timezone": "America/Los_Angeles",
                     "index_type": "hnsw",
@@ -291,7 +321,7 @@ class ValkeyStore(BaseValkeyStore):
                     "hnsw_ef_runtime": 15
                 }
             ) as store:
-                # Store with ValkeyIndexConfig vector indexing
+                # Store with BedrockEmbeddings vector indexing
                 store.put(
                     ("docs", "user123"),
                     "report",
@@ -335,11 +365,141 @@ class ValkeyStore(BaseValkeyStore):
         return results
 
     async def abatch(self, ops: Iterable[Op]) -> list[Result]:
-        """Execute operations asynchronously by running batch in executor."""
-        # For the sync ValkeyStore, we run the sync batch method in an executor
-        # to provide async interface compatibility
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.batch, ops)
+        """Execute operations asynchronously.
+
+        Note:
+            This async method is not supported by the ValkeyStore class.
+            Use batch() instead, or consider using AsyncValkeyStore.
+
+        Raises:
+            NotImplementedError: Always, as this class doesn't support async operations.
+        """
+        raise NotImplementedError(
+            "The ValkeyStore does not support async methods. "
+            "Consider using AsyncValkeyStore instead.\n"
+            "from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore\n"
+            "See the documentation for more information."
+        )
+
+    async def aget(
+        self,
+        namespace: tuple[str, ...],
+        key: str,
+        *,
+        refresh_ttl: bool | None = None,
+    ) -> Item | None:
+        """Get an item from the store asynchronously.
+
+        Note:
+            This async method is not supported by the ValkeyStore class.
+            Use get() instead, or consider using AsyncValkeyStore.
+
+        Raises:
+            NotImplementedError: Always, as this class doesn't support async operations.
+        """
+        raise NotImplementedError(
+            "The ValkeyStore does not support async methods. "
+            "Consider using AsyncValkeyStore instead.\n"
+            "from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore\n"
+            "See the documentation for more information."
+        )
+
+    async def aput(
+        self,
+        namespace: tuple[str, ...],
+        key: str,
+        value: dict[str, Any],
+        index: Literal[False] | list[str] | None = None,
+        *,
+        ttl: float | None | NotProvided = NOT_PROVIDED,
+    ) -> None:
+        """Put an item in the store asynchronously.
+
+        Note:
+            This async method is not supported by the ValkeyStore class.
+            Use put() instead, or consider using AsyncValkeyStore.
+
+        Raises:
+            NotImplementedError: Always, as this class doesn't support async operations.
+        """
+        raise NotImplementedError(
+            "The ValkeyStore does not support async methods. "
+            "Consider using AsyncValkeyStore instead.\n"
+            "from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore\n"
+            "See the documentation for more information."
+        )
+
+    async def adelete(
+        self,
+        namespace: tuple[str, ...],
+        key: str,
+    ) -> None:
+        """Delete an item from the store asynchronously.
+
+        Note:
+            This async method is not supported by the ValkeyStore class.
+            Use delete() instead, or consider using AsyncValkeyStore.
+
+        Raises:
+            NotImplementedError: Always, as this class doesn't support async operations.
+        """
+        raise NotImplementedError(
+            "The ValkeyStore does not support async methods. "
+            "Consider using AsyncValkeyStore instead.\n"
+            "from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore\n"
+            "See the documentation for more information."
+        )
+
+    async def asearch(
+        self,
+        namespace_prefix: tuple[str, ...],
+        *,
+        query: str | None = None,
+        filter: dict[str, Any] | None = None,
+        limit: int = 10,
+        offset: int = 0,
+        refresh_ttl: bool | None = None,
+    ) -> list[SearchItem]:
+        """Search for items in the store asynchronously.
+
+        Note:
+            This async method is not supported by the ValkeyStore class.
+            Use search() instead, or consider using AsyncValkeyStore.
+
+        Raises:
+            NotImplementedError: Always, as this class doesn't support async operations.
+        """
+        raise NotImplementedError(
+            "The ValkeyStore does not support async methods. "
+            "Consider using AsyncValkeyStore instead.\n"
+            "from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore\n"
+            "See the documentation for more information."
+        )
+
+    async def alist_namespaces(
+        self,
+        *,
+        prefix: tuple[str, ...] | None = None,
+        suffix: tuple[str, ...] | None = None,
+        max_depth: int | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[tuple[str, ...]]:
+        """List namespaces in the store asynchronously.
+
+        Note:
+            This async method is not supported by the ValkeyStore class.
+            Use list_namespaces() instead, or consider using AsyncValkeyStore.
+
+        Raises:
+            NotImplementedError: Always, as this class doesn't support async operations.
+        """
+        raise NotImplementedError(
+            "The ValkeyStore does not support async methods. "
+            "Consider using AsyncValkeyStore instead.\n"
+            "from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore\n"
+            "See the documentation for more information."
+        )
 
     def _handle_get(self, op: GetOp) -> Item | None:
         """Handle get operation."""
