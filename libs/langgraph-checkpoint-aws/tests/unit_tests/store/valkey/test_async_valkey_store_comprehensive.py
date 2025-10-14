@@ -1190,21 +1190,35 @@ class TestAsyncValkeyStoreAdditionalCoverage:
         store = AsyncValkeyStore(mock_valkey_client, ttl=ttl_config)
         
         # Mock successful get with data
-        mock_valkey_client.hgetall.return_value = {
+        hash_data = {
             b'value': b'{"data": "test"}',
             b'created_at': b'2023-01-01T00:00:00',
             b'updated_at': b'2023-01-01T00:00:00'
         }
         
-        with patch('asyncio.get_event_loop') as mock_loop:
-            mock_executor = AsyncMock(return_value=True)
-            mock_loop.return_value.run_in_executor = mock_executor
-            
+        # Mock _execute_client_method to handle both hgetall and expire calls
+        def mock_execute_side_effect(method_name, *args, **kwargs):
+            if method_name == "hgetall":
+                return hash_data
+            elif method_name == "expire":
+                return True
+            return None
+        
+        with patch.object(store, '_execute_client_method', side_effect=mock_execute_side_effect) as mock_execute:
             op = GetOp(namespace=("test",), key="key1", refresh_ttl=True)
             result = await store._handle_get_async(op)
             
-            # Should call expire with TTL
-            mock_executor.assert_called_once()
+            # Should call both hgetall and expire through _execute_client_method
+            assert mock_execute.call_count == 2
+            
+            # Check the calls were made correctly
+            calls = mock_execute.call_args_list
+            assert calls[0][0] == ("hgetall", "langgraph:test/key1")
+            assert calls[1][0] == ("expire", "langgraph:test/key1", 3600)  # 60 minutes * 60 seconds
+            
+            # Verify the result is not None
+            assert result is not None
+            assert result.value == {"data": "test"}
 
     async def test_handle_put_async_list_field_values(self, mock_valkey_client):
         """Test handle put async with list field values - lines 922-923."""

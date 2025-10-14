@@ -354,44 +354,31 @@ class AsyncValkeyStore(BaseValkeyStore):
             if not result:
                 return None
 
-            # Use DocumentProcessor to convert hash fields back to document format
-            document = DocumentProcessor.convert_hash_to_document(result)
-            if document is None:
+            # Handle ResponseT type for async context
+            result = await self._handle_response_t_async(result)
+            if result is None:
                 return None
 
-            # Parse the JSON-encoded value using DocumentProcessor
-            parsed_value = DocumentProcessor.parse_document_value(document)
-            if parsed_value is None:
+            # Use shared core logic from base class
+            item = self._handle_get_core(op, result)
+            if item is None:
                 return None
 
-            # Parse timestamps using DocumentProcessor
-            created_at, updated_at = DocumentProcessor.parse_timestamps(document)
-
-            # Refresh TTL if configured
+            # Refresh TTL if configured (async version)
             if op.refresh_ttl and self.ttl_config:
                 ttl = self.ttl_config.get("default_ttl")
                 if ttl:
-                    await asyncio.get_event_loop().run_in_executor(
-                        None, self.client.expire, key, int(ttl * 60)
-                    )
+                    await self._execute_client_method("expire", key, int(ttl * 60))
 
-            return Item(
-                value=parsed_value,
-                key=op.key,
-                namespace=op.namespace,
-                created_at=created_at,
-                updated_at=updated_at,
-            )
+            return item
         except Exception as e:
             logger.error(f"Error in get operation: {e}")
             return None
 
     async def _handle_put_async(self, op: PutOp) -> None:
         """Handle put operation asynchronously."""
-        # Use base class validation
-        self._validate_put_operation(op.namespace, op.value)
-
-        key = self._build_key(op.namespace, op.key)
+        # Use shared core logic from base class
+        key, hash_fields = self._handle_put_core(op)
 
         if op.value is None:
             # Handle deletion
@@ -401,45 +388,15 @@ class AsyncValkeyStore(BaseValkeyStore):
                 logger.error(f"Error deleting key {key}: {e}")
             return
 
-        # Generate embeddings if indexing is enabled
-        vector = None
-        if self.embeddings and op.index is not False:
-            try:
-                fields = op.index or self.index_fields
-                if fields:
-                    texts = []
-                    for field in fields:
-                        field_value = get_text_at_path(op.value, field)
-                        if isinstance(field_value, list):
-                            texts.extend(str(v) for v in field_value)
-                        elif field_value:
-                            texts.append(str(field_value))
-
-                    if texts:
-                        # Use async embedding method
-                        try:
-                            if hasattr(self.embeddings, 'aembed_documents'):
-                                vectors = await self.embeddings.aembed_documents(texts)
-                                vector = vectors[0] if vectors else None
-                            elif hasattr(self.embeddings, 'embed_documents'):
-                                # Run sync embeddings in executor
-                                loop = asyncio.get_running_loop()
-                                vectors = await loop.run_in_executor(
-                                    None, self.embeddings.embed_documents, texts
-                                )
-                                vector = vectors[0] if vectors else None
-                        except Exception as e:
-                            logger.error(f"Error generating embeddings: {e}")
-                            vector = None
-            except Exception as e:
-                logger.error(f"Error generating embeddings: {e}")
-
-        # Use DocumentProcessor to create hash fields for storage
-        hash_fields = DocumentProcessor.create_hash_fields(
-            op.value, 
-            vector, 
-            self.index_fields
-        )
+        # Generate embeddings asynchronously if needed
+        if hash_fields and self.embeddings and op.index is not False:
+            vector = await self._generate_embeddings_async(op)
+            if vector:
+                # Update hash_fields with vector - convert to base64 string for storage
+                import base64
+                import struct
+                vector_bytes = b"".join(struct.pack("<f", x) for x in vector)
+                hash_fields["vector"] = base64.b64encode(vector_bytes).decode('utf-8')
 
         try:
             # Use HSET to store as hash fields for better vector search compatibility
@@ -452,6 +409,53 @@ class AsyncValkeyStore(BaseValkeyStore):
         except Exception as e:
             logger.error(f"Error in put operation: {e}")
             raise
+
+    def _generate_embeddings(self, texts: list[str]) -> list[float] | None:
+        """Override base class method to handle async embedding generation."""
+        # This method should not be called directly in async context
+        # Use _generate_embeddings_async instead
+        logger.warning("_generate_embeddings called in async context, use _generate_embeddings_async")
+        return None
+
+    async def _generate_embeddings_async(self, op: PutOp) -> list[float] | None:
+        """Generate embeddings asynchronously for the given operation."""
+        if not self.embeddings:
+            return None
+            
+        try:
+            fields = op.index or self.index_fields
+            if not fields:
+                return None
+
+            texts = []
+            for field in fields:
+                field_value = get_text_at_path(op.value, field)
+                if isinstance(field_value, list):
+                    texts.extend(str(v) for v in field_value)
+                elif field_value:
+                    texts.append(str(field_value))
+
+            if not texts:
+                return None
+
+            # Use async embedding method if available
+            try:
+                if hasattr(self.embeddings, 'aembed_documents'):
+                    vectors = await self.embeddings.aembed_documents(texts)
+                    return vectors[0] if vectors else None
+                elif hasattr(self.embeddings, 'embed_documents'):
+                    # Run sync embeddings in executor
+                    loop = asyncio.get_running_loop()
+                    vectors = await loop.run_in_executor(
+                        None, self.embeddings.embed_documents, texts
+                    )
+                    return vectors[0] if vectors else None
+            except Exception as e:
+                logger.error(f"Error generating embeddings: {e}")
+                return None
+        except Exception as e:
+            logger.error(f"Error in embedding generation: {e}")
+            return None
 
     async def _handle_search_async(self, op: SearchOp) -> list[SearchItem]:
         """Handle search operation using search strategy pattern asynchronously."""
@@ -482,6 +486,11 @@ class AsyncValkeyStore(BaseValkeyStore):
             for pattern in patterns:
                 try:
                     keys_result = await self._execute_client_method("keys", pattern)
+                    # Handle ResponseT type for async context
+                    keys_result = await self._handle_response_t_async(keys_result)
+                    if keys_result is None:
+                        continue
+                    
                     # Convert keys to strings
                     keys = []
                     if hasattr(keys_result, "__iter__") and not isinstance(keys_result, (str, bytes)):
@@ -497,25 +506,8 @@ class AsyncValkeyStore(BaseValkeyStore):
                     logger.error(f"Error scanning pattern {pattern}: {e}")
                     continue
 
-            # Remove langgraph: prefix from keys before extracting namespaces
-            cleaned_keys = []
-            for key in all_keys:
-                if key.startswith("langgraph:"):
-                    cleaned_keys.append(key[10:])  # Remove "langgraph:" prefix
-                else:
-                    cleaned_keys.append(key)
-
-            # Extract namespaces using base class method
-            namespaces = self._extract_namespaces_from_keys(cleaned_keys, op.max_depth)
-
-            # Convert to sorted list and apply pagination
-            namespace_list = sorted(list(namespaces))
-
-            # Apply offset and limit
-            start_idx = op.offset or 0
-            end_idx = start_idx + (op.limit or len(namespace_list))
-
-            return namespace_list[start_idx:end_idx]
+            # Use shared core logic from base class
+            return self._handle_list_core(op, all_keys)
 
         except Exception as e:
             logger.error(f"Error listing namespaces: {e}")
@@ -824,6 +816,12 @@ class AsyncValkeyStore(BaseValkeyStore):
                 scan_result = await self._execute_client_method("scan", cursor, match=pattern, count=1000)
                 if scan_result is None:
                     break
+                
+                # Handle ResponseT type for scan result
+                scan_result = await self._handle_response_t_async(scan_result)
+                if scan_result is None:
+                    break
+                    
                 cursor, keys = scan_result
                 # Convert keys to strings directly
                 parsed_keys = []

@@ -2,20 +2,36 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Any, NotRequired
+from collections.abc import Generator, Iterable
+from contextlib import contextmanager
+from datetime import datetime
+from typing import Any, NotRequired, Literal
 
 import orjson
 from langgraph.store.base import (
     BaseStore,
     IndexConfig,
     TTLConfig,
+    NOT_PROVIDED,
+    GetOp,
+    Item,
+    ListNamespacesOp,
+    MatchCondition,
+    NotProvided,
+    Op,
+    PutOp,
+    Result,
+    SearchItem,
+    SearchOp,
+    _ensure_ttl,
 )
-from langgraph.store.base.embed import ensure_embeddings
+from langgraph.store.base.embed import ensure_embeddings, get_text_at_path
 from valkey import Valkey
 from valkey.connection import ConnectionPool
 
-from ...checkpoint.valkey.utils import set_client_info
+from ...checkpoint.valkey.utils import set_client_info, aset_client_info
 from .constants import (
     DEFAULT_COLLECTION_NAME,
     DEFAULT_TIMEZONE,
@@ -24,6 +40,8 @@ from .constants import (
     DEFAULT_HNSW_M,
     DEFAULT_HNSW_EF_CONSTRUCTION,
     DEFAULT_HNSW_EF_RUNTIME,
+    LANGGRAPH_KEY_PREFIX,
+    MIN_SEARCH_SCORE,
 )
 from .document_utils import DocumentProcessor, FilterProcessor, ScoreCalculator
 from .exceptions import (
@@ -396,3 +414,205 @@ class BaseValkeyStore(BaseStore):
             return result
         else:
             return []
+
+    # Shared operation handlers - these contain the core logic that's identical between sync/async
+    def _handle_get_core(self, op: GetOp, hash_data: dict[str, Any]) -> Item | None:
+        """Core get operation logic shared between sync and async implementations."""
+        if not hash_data:
+            return None
+
+        # Use DocumentProcessor to convert hash fields back to document format
+        document = DocumentProcessor.convert_hash_to_document(hash_data)
+        if document is None:
+            return None
+
+        # Parse the JSON-encoded value using DocumentProcessor
+        parsed_value = DocumentProcessor.parse_document_value(document)
+        if parsed_value is None:
+            return None
+
+        # Parse timestamps using DocumentProcessor
+        created_at, updated_at = DocumentProcessor.parse_timestamps(document)
+
+        return Item(
+            value=parsed_value,
+            key=op.key,
+            namespace=op.namespace,
+            created_at=created_at,
+            updated_at=updated_at,
+        )
+
+    def _handle_put_core(self, op: PutOp) -> tuple[str, dict[str, str] | None]:
+        """Core put operation logic shared between sync and async implementations.
+        
+        Returns:
+            Tuple of (key, hash_fields) where hash_fields is None for deletion
+        """
+        # Use base class validation
+        self._validate_put_operation(op.namespace, op.value)
+
+        key = self._build_key(op.namespace, op.key)
+
+        if op.value is None:
+            # Handle deletion
+            return key, None
+
+        # Generate embeddings if indexing is enabled
+        vector = None
+        if self.embeddings and op.index is not False:
+            try:
+                fields = op.index or self.index_fields
+                if fields:
+                    texts = []
+                    for field in fields:
+                        field_value = get_text_at_path(op.value, field)
+                        if isinstance(field_value, list):
+                            texts.extend(str(v) for v in field_value)
+                        elif field_value:
+                            texts.append(str(field_value))
+
+                    if texts:
+                        # This will be handled differently by sync/async implementations
+                        vector = self._generate_embeddings(texts)
+            except Exception as e:
+                logger.error(f"Error generating embeddings: {e}")
+
+        # Use DocumentProcessor to create hash fields for storage
+        hash_fields = DocumentProcessor.create_hash_fields(
+            op.value, 
+            vector, 
+            self.index_fields
+        )
+
+        return key, hash_fields
+
+    def _generate_embeddings(self, texts: list[str]) -> list[float] | None:
+        """Generate embeddings for texts. Override in subclasses for sync/async handling."""
+        # This is a placeholder - subclasses should override this method
+        # to handle sync vs async embedding generation appropriately
+        return None
+
+    def _handle_list_core(self, op: ListNamespacesOp, all_keys: list[str]) -> list[tuple[str, ...]]:
+        """Core list namespaces logic shared between sync and async implementations."""
+        # Remove langgraph: prefix from keys before extracting namespaces
+        cleaned_keys = []
+        for key in all_keys:
+            if key.startswith("langgraph:"):
+                cleaned_keys.append(key[10:])  # Remove "langgraph:" prefix
+            else:
+                cleaned_keys.append(key)
+
+        # Extract namespaces using base class method
+        namespaces = self._extract_namespaces_from_keys(cleaned_keys, op.max_depth)
+
+        # Convert to sorted list and apply pagination
+        namespace_list = sorted(list(namespaces))
+
+        # Apply offset and limit
+        start_idx = op.offset or 0
+        end_idx = start_idx + (op.limit or len(namespace_list))
+
+        return namespace_list[start_idx:end_idx]
+
+    def _refresh_ttl_for_items_core(self, items: list[SearchItem]) -> list[tuple[str, int]]:
+        """Core TTL refresh logic - returns list of (key, ttl_seconds) tuples for processing."""
+        if not self.ttl_config:
+            return []
+
+        ttl_seconds = self.ttl_config.get("default_ttl")
+        if not ttl_seconds:
+            return []
+
+        ttl_operations = []
+        for item in items:
+            item_key = self._build_key(item.namespace, item.key)
+            ttl_operations.append((item_key, int(ttl_seconds * 60)))
+
+        return ttl_operations
+
+    def _convert_to_search_items_core(
+        self, results: list[tuple[tuple[str, ...], str, float]], hash_data_getter
+    ) -> list[SearchItem]:
+        """Core logic for converting search results to SearchItem objects.
+        
+        Args:
+            results: List of (namespace, key, score) tuples
+            hash_data_getter: Function that takes a key and returns hash data
+        """
+        items = []
+        for namespace, key, score in results:
+            try:
+                # Get full document data using the provided getter function
+                full_key = self._build_key(namespace, key)
+                hash_data = hash_data_getter(full_key)
+                if not hash_data or not isinstance(hash_data, dict):
+                    continue
+
+                # Use DocumentProcessor to convert hash fields back to document format
+                document = DocumentProcessor.convert_hash_to_document(hash_data)
+                if document is None:
+                    continue
+
+                # Parse the JSON-encoded value using DocumentProcessor
+                parsed_value = DocumentProcessor.parse_document_value(document)
+                if parsed_value is None:
+                    continue
+
+                # Parse timestamps using DocumentProcessor
+                created_at, updated_at = DocumentProcessor.parse_timestamps(document)
+
+                items.append(
+                    SearchItem(
+                        namespace=namespace,
+                        key=key,
+                        value=parsed_value,
+                        created_at=created_at,
+                        updated_at=updated_at,
+                        score=score,
+                    )
+                )
+            except Exception as e:
+                logger.debug(f"Error converting result {namespace}/{key}: {e}")
+                continue
+        return items
+
+    # Factory methods - these can be shared with minor modifications
+    @classmethod
+    def _create_client_from_conn_string(
+        cls,
+        conn_string: str,
+        pool_size: int | None = None,
+        pool_timeout: float | None = None,
+    ) -> Valkey:
+        """Create Valkey client from connection string."""
+        if pool_size:
+            # Create connection pool
+            pool = ConnectionPool.from_url(
+                url=conn_string,
+                max_connections=pool_size,
+                timeout=pool_timeout or 30.0,
+            )
+            client = Valkey.from_pool(pool)
+        else:
+            # Single connection
+            client = Valkey.from_url(conn_string)
+        return client
+
+    @classmethod
+    def _create_client_from_pool(cls, pool: ConnectionPool) -> Valkey:
+        """Create Valkey client from connection pool."""
+        return Valkey.from_pool(connection_pool=pool)
+
+    def _setup_client_info_sync(self) -> None:
+        """Setup client info for sync clients."""
+        try:
+            set_client_info(self.client)
+        except Exception as e:
+            raise ValkeyConnectionError(f"Failed to set client info: {e}") from e
+
+    async def _setup_client_info_async(self) -> None:
+        """Setup client info for async clients."""
+        try:
+            await aset_client_info(self.client)
+        except Exception as e:
+            raise ValkeyConnectionError(f"Failed to set client info: {e}") from e

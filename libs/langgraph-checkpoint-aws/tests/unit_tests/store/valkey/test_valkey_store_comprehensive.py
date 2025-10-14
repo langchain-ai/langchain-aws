@@ -382,8 +382,8 @@ class TestValkeyStoreGetOperations:
 
         mock_valkey_client.hgetall.return_value = {"value": "test"}
         
-        # Mock DocumentProcessor methods to return None
-        with patch('langgraph_checkpoint_aws.store.valkey.store.DocumentProcessor') as mock_dp:
+        # Mock DocumentProcessor methods to return None - fix import path to base module
+        with patch('langgraph_checkpoint_aws.store.valkey.base.DocumentProcessor') as mock_dp:
             mock_dp.convert_hash_to_document.return_value = None
             
             op = GetOp(namespace=("test",), key="key1")

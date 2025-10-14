@@ -514,32 +514,16 @@ class ValkeyStore(BaseValkeyStore):
             if result is None:
                 return None
 
-            # Use DocumentProcessor to convert hash fields back to document format
-            document = DocumentProcessor.convert_hash_to_document(result)
-            if document is None:
-                return None
-
-            # Parse the JSON-encoded value using DocumentProcessor
-            parsed_value = DocumentProcessor.parse_document_value(document)
-            if parsed_value is None:
-                return None
-
-            # Parse timestamps using DocumentProcessor
-            created_at, updated_at = DocumentProcessor.parse_timestamps(document)
-
+            # Use shared core logic
+            item = self._handle_get_core(op, result)
+            
             # Refresh TTL if configured
-            if op.refresh_ttl and self.ttl_config:
+            if item and op.refresh_ttl and self.ttl_config:
                 ttl = self.ttl_config.get("default_ttl")
                 if ttl:
                     self.client.expire(key, int(ttl * 60))
 
-            return Item(
-                value=parsed_value,
-                key=op.key,
-                namespace=op.namespace,
-                created_at=created_at,
-                updated_at=updated_at,
-            )
+            return item
         except Exception as e:
             logger.error(f"Error in get operation: {e}")
             return None
