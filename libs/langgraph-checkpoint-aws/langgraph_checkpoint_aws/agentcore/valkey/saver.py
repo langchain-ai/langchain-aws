@@ -7,12 +7,13 @@ Combines AgentCore session management concepts with Valkey storage backend.
 from __future__ import annotations
 
 import builtins
+import logging
 import random
 import threading
 import time
 from collections.abc import AsyncIterator, Iterator, Sequence
-from contextlib import contextmanager
-from typing import Any
+from contextlib import asynccontextmanager, contextmanager
+from typing import Any, Optional, Union, cast, Awaitable
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
@@ -29,6 +30,7 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from valkey import Valkey
 from valkey.asyncio import Valkey as AsyncValkey
 from valkey.connection import ConnectionPool
+from valkey.exceptions import ConnectionError, TimeoutError, ValkeyError
 
 from ...checkpoint.valkey.utils import set_client_info
 from ..constants import InvalidConfigError
@@ -39,6 +41,8 @@ from .models import (
     StoredWrite,
     ValkeyCheckpointerConfig,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
@@ -76,27 +80,92 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
 
     def __init__(
         self,
-        client: Valkey | AsyncValkey,
+        client: Union[Valkey, AsyncValkey],
         *,
         ttl: float | None = None,
         serde: SerializerProtocol | None = None,
+        max_retries: int = 3,
+        retry_delay: float = 0.1,
         **kwargs: Any,
     ) -> None:
         super().__init__(serde=serde, **kwargs)
 
         self.client = client
         self.ttl = ttl
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
         self.jsonplus_serde = JsonPlusSerializer()
         self.event_serializer = EventSerializer(self.serde)
         self.lock = threading.Lock()
+        self.is_async: bool = hasattr(client, "aclose") or hasattr(client, "__aenter__")
 
         # Set client info for library identification
-        if hasattr(client, "aclose") or hasattr(client, "__aenter__"):
-            # Async client - will be handled in async methods
-            pass
-        else:
-            # Sync client
+        if not self.is_async:
             set_client_info(client)
+
+        # Validate configuration
+        if ttl is not None and ttl <= 0:
+            raise ValueError("TTL must be positive")
+        if max_retries < 0:
+            raise ValueError("max_retries must be non-negative")
+        if retry_delay < 0:
+            raise ValueError("retry_delay must be non-negative")
+
+    def _execute_with_retry(self, operation, *args, **kwargs):
+        """Execute a Valkey operation with exponential backoff retry logic."""
+        last_exception = None
+        
+        for attempt in range(self.max_retries + 1):
+            try:
+                return operation(*args, **kwargs)
+            except (ConnectionError, TimeoutError, ValkeyError) as e:
+                last_exception = e
+                if attempt == self.max_retries:
+                    logger.error(
+                        "Valkey operation failed after %d attempts: %s",
+                        self.max_retries + 1, str(e)
+                    )
+                    break
+                
+                # Exponential backoff with jitter
+                delay = self.retry_delay * (2 ** attempt) + random.uniform(0, 0.1)
+                logger.warning(
+                    "Valkey operation failed (attempt %d/%d), retrying in %.2fs: %s",
+                    attempt + 1, self.max_retries + 1, delay, str(e)
+                )
+                time.sleep(delay)
+        
+        # Re-raise the last exception if all retries failed
+        raise last_exception
+
+    async def _aexecute_with_retry(self, operation, *args, **kwargs):
+        """Execute an async Valkey operation with exponential backoff retry logic."""
+        import asyncio
+        
+        last_exception = None
+        
+        for attempt in range(self.max_retries + 1):
+            try:
+                return await operation(*args, **kwargs)
+            except (ConnectionError, TimeoutError, ValkeyError) as e:
+                last_exception = e
+                if attempt == self.max_retries:
+                    logger.error(
+                        "Async Valkey operation failed after %d attempts: %s",
+                        self.max_retries + 1, str(e)
+                    )
+                    break
+                
+                # Exponential backoff with jitter
+                delay = self.retry_delay * (2 ** attempt) + random.uniform(0, 0.1)
+                logger.warning(
+                    "Async Valkey operation failed (attempt %d/%d), retrying in %.2fs: %s",
+                    attempt + 1, self.max_retries + 1, delay, str(e)
+                )
+                await asyncio.sleep(delay)
+        
+        # Re-raise the last exception if all retries failed
+        raise last_exception
 
     @classmethod
     @contextmanager
@@ -154,6 +223,41 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         finally:
             client.close()
 
+    @classmethod
+    @asynccontextmanager
+    async def afrom_conn_string(
+        cls,
+        conn_string: str,
+        *,
+        ttl_seconds: float | None = None,
+        pool_size: int = 10,
+        **kwargs: Any,
+    ) -> AsyncIterator[AgentCoreValkeySaver]:
+        """Create a new AgentCoreValkeySaver instance from a connection string (async).
+
+        Args:
+            conn_string: The Valkey connection string.
+            ttl_seconds: Time-to-live for stored checkpoints in seconds.
+            pool_size: Maximum number of connections in the pool.
+            **kwargs: Additional arguments passed to AsyncValkey client.
+
+        Yields:
+            AgentCoreValkeySaver: A new AgentCoreValkeySaver instance.
+
+        Examples:
+            >>> async with AgentCoreValkeySaver.afrom_conn_string("valkey://localhost:6379") as saver:
+            ...     # Use the saver instance
+            ...     pass
+        """
+        from valkey.asyncio import ConnectionPool as AsyncConnectionPool
+        
+        pool = AsyncConnectionPool.from_url(conn_string, max_connections=pool_size)
+        client = AsyncValkey(connection_pool=pool, **kwargs)
+        try:
+            yield cls(client, ttl=ttl_seconds)
+        finally:
+            await client.aclose()
+
     def _make_checkpoint_key(
         self, config: ValkeyCheckpointerConfig, checkpoint_id: str
     ) -> str:
@@ -183,7 +287,10 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         metadata: CheckpointMetadata,
     ) -> StoredCheckpoint:
         """Serialize checkpoint data for storage."""
-        checkpoint_config = ValkeyCheckpointerConfig.from_runnable_config(config)
+        checkpoint_config = cast(
+            ValkeyCheckpointerConfig,
+            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config))
+        )
 
         # Serialize checkpoint and metadata
         checkpoint_data = self.event_serializer.serialize_value(checkpoint)
@@ -230,7 +337,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
             }
 
         # Deserialize writes
-        pending_writes = []
+        pending_writes: list[tuple[str, str, Any]] = []
         for write in writes:
             deserialized_value = self.event_serializer.deserialize_value(write.value)
             pending_writes.append((write.task_id, write.channel, deserialized_value))
@@ -256,7 +363,10 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
 
     def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         """Get a checkpoint tuple from Valkey storage."""
-        checkpoint_config = ValkeyCheckpointerConfig.from_runnable_config(config)
+        checkpoint_config = cast(
+            ValkeyCheckpointerConfig,
+            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config))
+        )
 
         # Get specific checkpoint or latest
         if checkpoint_config.checkpoint_id:
@@ -306,12 +416,12 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
             raise ValueError(f"Failed to parse writes data: {e}") from e
 
         # Get channel data (if needed)
-        channel_data = {}
+        channel_data: dict[str, StoredChannelData] = {}
 
         # Create a config that includes the checkpoint_id for the return value
-        result_config = {
+        result_config: RunnableConfig = {
             "configurable": {
-                **config["configurable"],
+                **config.get("configurable", {}),
                 "checkpoint_id": stored_checkpoint.checkpoint_id,
             }
         }
@@ -332,7 +442,10 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         if not config:
             return
 
-        checkpoint_config = ValkeyCheckpointerConfig.from_runnable_config(config)
+        checkpoint_config = cast(
+            ValkeyCheckpointerConfig,
+            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config))
+        )
         before_checkpoint_id = get_checkpoint_id(before) if before else None
 
         # Get checkpoint list from session
@@ -376,7 +489,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
             writes = [StoredWrite.model_validate_json(w) for w in writes_data]
 
             # Get channel data
-            channel_data = {}
+            channel_data: dict[str, StoredChannelData] = {}
 
             yield self._deserialize_checkpoint(stored_checkpoint, writes, channel_data)
             count += 1
@@ -389,7 +502,10 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         new_versions: ChannelVersions,
     ) -> RunnableConfig:
         """Save a checkpoint to Valkey storage."""
-        checkpoint_config = ValkeyCheckpointerConfig.from_runnable_config(config)
+        checkpoint_config = cast(
+            ValkeyCheckpointerConfig,
+            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config))
+        )
 
         # Serialize checkpoint
         stored_checkpoint = self._serialize_checkpoint(config, checkpoint, metadata)
@@ -409,15 +525,16 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         if self.ttl:
             self.client.expire(session_key, int(self.ttl))
 
-        # Store channel data
-        checkpoint_copy = checkpoint.copy()
-        channel_values: dict[str, Any] = checkpoint_copy.pop("channel_values", {})
+        # Store channel data - create a copy without channel_values to avoid TypedDict deletion issue
+        checkpoint_copy = {k: v for k, v in checkpoint.items() if k != "channel_values"}
+        channel_values_raw = checkpoint.get("channel_values", {})
+        channel_values: dict[str, Any] = channel_values_raw if isinstance(channel_values_raw, dict) else {}
 
         for channel, version in new_versions.items():
             if channel in channel_values:
                 channel_data = StoredChannelData(
                     channel=channel,
-                    version=version,
+                    version=str(version),
                     value=self.event_serializer.serialize_value(
                         channel_values[channel]
                     ),
@@ -452,7 +569,10 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         task_path: str = "",
     ) -> None:
         """Save pending writes to Valkey storage."""
-        checkpoint_config = ValkeyCheckpointerConfig.from_runnable_config(config)
+        checkpoint_config = cast(
+            ValkeyCheckpointerConfig,
+            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config))
+        )
 
         if not checkpoint_config.checkpoint_id:
             raise InvalidConfigError("checkpoint_id is required for put_writes")
@@ -476,7 +596,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
             if self.ttl:
                 self.client.expire(writes_key, int(self.ttl))
 
-    def delete_thread(self, thread_id: str, actor_id: str) -> None:
+    def delete_thread(self, thread_id: str, actor_id: str = "") -> None:
         """Delete all checkpoints and writes associated with a thread."""
         # Create a temporary config to get keys
         temp_config = ValkeyCheckpointerConfig(
@@ -487,6 +607,12 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
 
         # Get all checkpoint IDs for this session
         session_key = self._make_session_checkpoints_key(temp_config)
+        
+        # Handle both sync and async clients
+        if self.is_async:
+            # For async clients, delegate to async method
+            logger.warning("Sync delete_thread called on async client, operation may block")
+        
         checkpoint_ids = self.client.lrange(session_key, 0, -1)
 
         # Delete all checkpoint-related keys
@@ -506,18 +632,26 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
             # Add channel keys (use pattern matching)
             channel_pattern = f"{temp_config.channel_key_prefix}:*:{checkpoint_id}"
             channel_keys = self.client.keys(channel_pattern)
-            keys_to_delete.extend(channel_keys)
+            if isinstance(channel_keys, list):  # Ensure it's a list for sync client
+                keys_to_delete.extend(channel_keys)
 
         # Delete all keys in batch
         if keys_to_delete:
             self.client.delete(*keys_to_delete)
 
-    # ===== Async methods (delegated to sync for now) =====
+    # ===== Async methods =====
     async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         """Async version of get_tuple."""
-        # For now, delegate to sync version
-        # In a full implementation, this would use async Valkey client
-        return self.get_tuple(config)
+        import asyncio
+        
+        if not self.is_async:
+            # For sync clients, run in executor to avoid blocking
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(None, self.get_tuple, config)
+        
+        # For async clients, delegate to sync method in executor
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.get_tuple, config)
 
     async def alist(
         self,
@@ -528,8 +662,16 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
         """Async version of list."""
-        # For now, delegate to sync version
-        for item in self.list(config, filter=filter, before=before, limit=limit):
+        import asyncio
+        
+        # Run sync list method in executor and yield results
+        loop = asyncio.get_running_loop()
+        
+        def _sync_list():
+            return list(self.list(config, filter=filter, before=before, limit=limit))
+        
+        items = await loop.run_in_executor(None, _sync_list)
+        for item in items:
             yield item
 
     async def aput(
@@ -540,7 +682,13 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         new_versions: ChannelVersions,
     ) -> RunnableConfig:
         """Async version of put."""
-        return self.put(config, checkpoint, metadata, new_versions)
+        import asyncio
+        
+        # Run sync put method in executor
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, self.put, config, checkpoint, metadata, new_versions
+        )
 
     async def aput_writes(
         self,
@@ -550,13 +698,25 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         task_path: str = "",
     ) -> None:
         """Async version of put_writes."""
-        return self.put_writes(config, writes, task_id, task_path)
+        import asyncio
+        
+        # Run sync put_writes method in executor
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None, self.put_writes, config, writes, task_id, task_path
+        )
 
-    async def adelete_thread(self, thread_id: str, actor_id: str) -> None:
+    async def adelete_thread(self, thread_id: str, actor_id: str = "") -> None:
         """Async version of delete_thread."""
-        return self.delete_thread(thread_id, actor_id)
+        import asyncio
+        
+        # Run sync delete_thread method in executor
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self.delete_thread, thread_id, actor_id)
 
-    def get_next_version(self, current: str | None, channel: None) -> str:
+    def get_next_version(
+        self, current: str | int | None, channel: str | None = None
+    ) -> str:
         """Generate next version string."""
         if current is None:
             current_v = 0

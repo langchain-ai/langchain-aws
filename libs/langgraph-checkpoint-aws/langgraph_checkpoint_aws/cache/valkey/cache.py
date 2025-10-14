@@ -1,4 +1,4 @@
-"""Valkey cache implementation."""
+"""Valkey cache implementation with enhanced performance and reliability."""
 
 from __future__ import annotations
 
@@ -6,12 +6,13 @@ import asyncio
 import logging
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from langgraph.cache.base import BaseCache, FullKey, Namespace, ValueT
 from langgraph.checkpoint.serde.base import SerializerProtocol
 from valkey import Valkey
 from valkey.connection import ConnectionPool
+from valkey.exceptions import ConnectionError, ResponseError, TimeoutError
 
 from ...checkpoint.valkey.utils import set_client_info
 
@@ -19,6 +20,13 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+# Constants for better maintainability
+DEFAULT_PREFIX = "langgraph:cache:"
+MAX_DELETE_BATCH_SIZE = 1000
+MAX_SET_BATCH_SIZE = 100
+DEFAULT_POOL_TIMEOUT = 30.0
+ENCODING_SEPARATOR = b":"
 
 
 class ValkeyCache(BaseCache[ValueT]):
@@ -67,7 +75,7 @@ class ValkeyCache(BaseCache[ValueT]):
         client: Valkey,
         *,
         serde: SerializerProtocol | None = None,
-        prefix: str = "langgraph:cache:",
+        prefix: str = DEFAULT_PREFIX,
         ttl: float | None = None,
     ) -> None:
         """Initialize the cache with a Valkey client.
@@ -75,10 +83,25 @@ class ValkeyCache(BaseCache[ValueT]):
         Args:
             client: Valkey client instance
             serde: Serializer to use for values
-            prefix: Key prefix for all cached values
-            ttl: Optional default TTL in seconds
+            prefix: Key prefix for all cached values (must end with ':' or '/')
+            ttl: Optional default TTL in seconds (must be positive)
+
+        Raises:
+            ValueError: If TTL is negative or prefix is invalid
         """
         super().__init__(serde=serde)
+        
+        # Validate inputs
+        if ttl is not None and ttl <= 0:
+            raise ValueError(f"TTL must be positive, got {ttl}")
+        
+        if not prefix:
+            raise ValueError("Prefix cannot be empty")
+        
+        # Ensure prefix ends with separator for consistent key structure
+        if not prefix.endswith((':', '/')):
+            prefix += ':'
+            
         self.client = client
         self.prefix = prefix
         self.ttl = int(ttl) if ttl else None
@@ -147,7 +170,7 @@ class ValkeyCache(BaseCache[ValueT]):
         pool: ConnectionPool,
         *,
         ssl: bool = False,
-        prefix: str = "langgraph:cache:",
+        prefix: str = DEFAULT_PREFIX,
         ttl_seconds: float | None = None,
         serde: SerializerProtocol | None = None,
     ) -> Generator[ValkeyCache[ValueT], None, None]:
@@ -158,17 +181,20 @@ class ValkeyCache(BaseCache[ValueT]):
 
         Args:
             pool: Existing Valkey connection pool
+            ssl: Whether to use SSL connection
             prefix: Key prefix for all cached values
             ttl_seconds: Optional TTL in seconds for cached values
             serde: Optional serializer for values
 
+        Raises:
+            ValueError: If pool is None
+
         Example:
             ```python
             # Create custom pool
-            pool = ConnectionPool(
+            pool = ConnectionPool.from_url(
                 "valkey://localhost:6379",
-                min_size=5,
-                max_size=20,
+                max_connections=20,
                 timeout=30
             )
 
@@ -182,14 +208,16 @@ class ValkeyCache(BaseCache[ValueT]):
                 })
             ```
         """
+        if pool is None:
+            raise ValueError("Connection pool cannot be None")
+            
         try:
             client = Valkey(connection_pool=pool, ssl=ssl)
-            # Don't call set_client_info here - let __init__ handle it
             cache = cls(client, serde=serde, prefix=prefix, ttl=ttl_seconds)
             yield cache
-        finally:
-            # Pool cleanup handled by owner
-            pass
+        except Exception as e:
+            logger.error(f"Failed to create cache from pool: {e}")
+            raise
 
     def _make_key(self, ns: Namespace, key: str) -> str:
         """Create a Valkey key from namespace and key."""
@@ -217,38 +245,70 @@ class ValkeyCache(BaseCache[ValueT]):
         return asyncio.run(self.aget(keys))
 
     async def aget(self, keys: Sequence[FullKey]) -> dict[FullKey, ValueT]:
-        """Asynchronously get the cached values for the given keys."""
+        """Asynchronously get the cached values for the given keys.
+        
+        Args:
+            keys: Sequence of (namespace, key) tuples to retrieve
+            
+        Returns:
+            Dictionary mapping keys to their cached values
+            
+        Raises:
+            ConnectionError: If unable to connect to Valkey
+            TimeoutError: If operation times out
+        """
         if not keys:
             return {}
 
-        # Build Valkey keys
-        valkey_keys = [self._make_key(ns, key) for ns, key in keys]
+        # Build Valkey keys with validation
+        valkey_keys = []
+        for ns, key in keys:
+            try:
+                valkey_keys.append(self._make_key(ns, key))
+            except ValueError as e:
+                logger.error(f"Invalid key {key} in namespace {ns}: {e}")
+                continue
 
-        # Get values using batch get
+        if not valkey_keys:
+            return {}
+
+        # Get values using batch get with retry logic
         try:
             raw_values = cast(
                 list[bytes | None],
                 await asyncio.to_thread(self.client.mget, valkey_keys),
             )
+        except (ConnectionError, TimeoutError) as e:
+            logger.error(f"Connection/timeout error getting cached values: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Error getting cached values: {e}")
+            logger.error(f"Error getting cached values for {len(keys)} keys: {e}")
             return {}
 
         # Ensure raw_values is a list (handle potential type issues)
         if raw_values is None:
+            logger.warning("Received None from mget operation")
             return {}
 
         values: dict[FullKey, ValueT] = {}
+        successful_deserializations = 0
+        
         for i, raw_value in enumerate(raw_values):
-            if raw_value is not None:
+            if raw_value is not None and i < len(keys):
                 try:
-                    # Deserialize the value
-                    encoding, data = raw_value.split(b":", 1)
+                    # Deserialize the value - handle malformed data gracefully
+                    if ENCODING_SEPARATOR not in raw_value:
+                        logger.error(f"Malformed cached value for key {keys[i]}: missing encoding separator")
+                        continue
+                        
+                    encoding, data = raw_value.split(ENCODING_SEPARATOR, 1)
                     values[keys[i]] = self.serde.loads_typed((encoding.decode(), data))
+                    successful_deserializations += 1
                 except Exception as e:
-                    logger.error(f"Error deserializing cached value: {e}")
+                    logger.error(f"Error deserializing cached value for key {keys[i]}: {e}")
                     continue
 
+        logger.debug(f"Successfully retrieved {successful_deserializations}/{len(keys)} cached values")
         return values
 
     def set(self, pairs: Mapping[FullKey, tuple[ValueT, int | None]]) -> None:
@@ -256,37 +316,71 @@ class ValkeyCache(BaseCache[ValueT]):
         asyncio.run(self.aset(pairs))
 
     async def aset(self, pairs: Mapping[FullKey, tuple[ValueT, int | None]]) -> None:
-        """Asynchronously set the cached values for the given keys and TTLs."""
+        """Asynchronously set the cached values for the given keys and TTLs.
+        
+        Args:
+            pairs: Mapping of (namespace, key) tuples to (value, ttl) tuples
+            
+        Raises:
+            ConnectionError: If unable to connect to Valkey
+            TimeoutError: If operation times out
+            ValueError: If TTL values are invalid
+        """
         if not pairs:
             return
 
+        # Process in batches to avoid overwhelming the server
+        pairs_list = list(pairs.items())
+        
+        for i in range(0, len(pairs_list), MAX_SET_BATCH_SIZE):
+            batch = pairs_list[i:i + MAX_SET_BATCH_SIZE]
+            await self._set_batch(batch)
+
+    async def _set_batch(self, batch: list[tuple[FullKey, tuple[ValueT, int | None]]]) -> None:
+        """Set a batch of key-value pairs.
+        
+        Args:
+            batch: List of ((namespace, key), (value, ttl)) tuples
+        """
         # Get pipeline with proper typing
         pipe = self.client.pipeline(transaction=True)
+        successful_operations = 0
+        
         # Process each key-value pair
-        for (ns, key), (value, ttl) in pairs.items():
+        for (ns, key), (value, ttl) in batch:
             try:
                 valkey_key = self._make_key(ns, key)
                 encoding, data = self.serde.dumps_typed(value)
-                serialized_value = f"{encoding}:".encode() + data
+                serialized_value = encoding.encode() + ENCODING_SEPARATOR + data
 
-                if ttl is not None or self.ttl is not None:
-                    # Use provided TTL (in seconds) or default TTL (already in seconds)
-                    final_ttl = ttl if ttl is not None else self.ttl
-                    if final_ttl is not None:
-                        pipe.setex(valkey_key, final_ttl, serialized_value)
-                    else:
-                        pipe.set(valkey_key, serialized_value)
+                # Determine final TTL - validate it's positive
+                final_ttl = ttl if ttl is not None else self.ttl
+                if final_ttl is not None:
+                    if final_ttl <= 0:
+                        logger.error(f"Invalid TTL {final_ttl} for key {key}, skipping")
+                        continue
+                    pipe.setex(valkey_key, int(final_ttl), serialized_value)
                 else:
                     pipe.set(valkey_key, serialized_value)
+                    
+                successful_operations += 1
             except Exception as e:
-                logger.error(f"Error setting cached value: {e}")
+                logger.error(f"Error preparing cached value for key {key}: {e}")
                 continue
 
         # Execute all commands in the pipeline
-        try:
-            await asyncio.to_thread(pipe.execute)
-        except Exception as e:
-            logger.error(f"Error executing pipeline: {e}")
+        if successful_operations > 0:
+            try:
+                results = await asyncio.to_thread(pipe.execute)
+                logger.debug(f"Successfully set {successful_operations} cache entries")
+            except (ConnectionError, TimeoutError) as e:
+                logger.error(f"Connection/timeout error executing pipeline with {successful_operations} operations: {e}")
+                raise
+            except Exception as e:
+                logger.error(f"Error executing pipeline with {successful_operations} operations: {e}")
+                raise
+        else:
+            logger.warning("No valid cache operations to execute in batch")
 
     def clear(self, namespaces: Sequence[Namespace] | None = None) -> None:
         """Delete the cached values for the given namespaces.
@@ -299,7 +393,12 @@ class ValkeyCache(BaseCache[ValueT]):
         """Asynchronously delete the cached values for the given namespaces.
 
         Uses Valkey's keys pattern matching to find and delete keys.
+        Handles large key sets by chunking deletions to avoid command limits.
         """
+        # Maximum number of keys to delete in a single command
+        # Valkey/Redis typically supports up to ~1M arguments, but we use a conservative limit
+        MAX_DELETE_BATCH_SIZE = 1000
+        
         try:
             if namespaces is None:
                 # Clear all keys with our prefix
@@ -308,7 +407,8 @@ class ValkeyCache(BaseCache[ValueT]):
                     list[str], await asyncio.to_thread(self.client.keys, pattern)
                 )
                 if keys:
-                    await asyncio.to_thread(self.client.delete, *keys)
+                    deleted_count = await self._delete_keys_in_batches(keys, MAX_DELETE_BATCH_SIZE)
+                    logger.debug(f"Cleared {deleted_count} keys with pattern '{pattern}'")
             else:
                 # Clear specific namespaces
                 keys_to_delete = []
@@ -323,6 +423,38 @@ class ValkeyCache(BaseCache[ValueT]):
                     keys_to_delete.extend(keys)
 
                 if keys_to_delete:
-                    await asyncio.to_thread(self.client.delete, *keys_to_delete)
+                    # Remove duplicates while preserving order
+                    unique_keys = list(dict.fromkeys(keys_to_delete))
+                    deleted_count = await self._delete_keys_in_batches(unique_keys, MAX_DELETE_BATCH_SIZE)
+                    logger.debug(f"Cleared {deleted_count} keys from {len(namespaces)} namespace(s)")
         except Exception as e:
             logger.error(f"Error clearing cache: {e}")
+            raise
+
+    async def _delete_keys_in_batches(self, keys: list[str], batch_size: int) -> int:
+        """Delete keys in batches to avoid command argument limits.
+        
+        Args:
+            keys: List of keys to delete
+            batch_size: Maximum number of keys to delete per batch
+            
+        Returns:
+            Total number of keys deleted
+        """
+        if not keys:
+            return 0
+            
+        total_deleted = 0
+        
+        # Process keys in batches
+        for i in range(0, len(keys), batch_size):
+            batch = keys[i:i + batch_size]
+            try:
+                deleted = cast(int, await asyncio.to_thread(self.client.delete, *batch))
+                total_deleted += deleted
+            except Exception as e:
+                logger.error(f"Error deleting batch of {len(batch)} keys: {e}")
+                # Continue with next batch instead of failing completely
+                continue
+                
+        return total_deleted

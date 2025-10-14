@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from importlib.metadata import version
 
 logger = logging.getLogger(__name__)
 
 # Package information
 LIBRARY_NAME = "langgraph_checkpoint_aws"
-LIBRARY_VERSION = "0.1.2"
+try:
+    LIBRARY_VERSION = version("langgraph-checkpoint-aws")
+except Exception:
+    # Fallback version if package is not installed
+    LIBRARY_VERSION = "1.0.0a1"
 
 
 def set_client_info(client: Any) -> None:

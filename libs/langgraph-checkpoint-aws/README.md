@@ -222,16 +222,21 @@ with ValkeyCache.from_conn_string(
 Document storage with vector search capabilities using ValkeyIndexConfig:
 
 ```python
+from langchain_aws import BedrockEmbeddings
 from langgraph_checkpoint_aws.store.valkey import ValkeyStore
-
+# Initialize Bedrock embeddings
+embeddings = BedrockEmbeddings(
+    model_id="amazon.titan-embed-text-v1",
+    region_name=AWS_REGION
+)
 # Basic usage with ValkeyIndexConfig
 with ValkeyStore.from_conn_string(
     "valkey://localhost:6379",
     index={
         "collection_name": "my_documents",
         "dims": 1536,
-        "embed": "openai:text-embedding-3-small",
-        "fields": ["text", "content"],
+        "embed": embeddings,
+        "fields": ["text", "author"],
         "timezone": "UTC",
         "index_type": "hnsw"
     },
@@ -266,7 +271,7 @@ with ValkeyStore.from_conn_string(
     index={
         "collection_name": "high_performance_docs",
         "dims": 768,
-        "embed": "openai:text-embedding-3-small",
+        "embed": embeddings,
         "fields": ["text", "title", "summary"],
         "timezone": "America/New_York",
         "index_type": "hnsw",
@@ -284,7 +289,7 @@ with ValkeyStore.from_conn_string(
     index={
         "collection_name": "exact_search_docs",
         "dims": 384,
-        "embed": "openai:text-embedding-3-small",
+        "embed": embeddings,
         "fields": ["text"],
         "index_type": "flat"  # Exact search, no approximation
     }
@@ -406,7 +411,7 @@ index_config = {
     # Basic configuration
     "collection_name": "my_documents",  # Index collection name
     "dims": 1536,  # Vector dimensions
-    "embed": "openai:text-embedding-3-small",  # Embedding model
+    "embed": embeddings,  # Embedding model
     "fields": ["text", "content"],  # Fields to index
     
     # Valkey-specific configuration
@@ -424,45 +429,7 @@ ttl_config = {
     "default_ttl": 60.0  # Default TTL in minutes
 }
 ```
-
-#### AgentCoreValkeySaver Options
-```python
-AgentCoreValkeySaver(
-    client: Valkey,
-    ttl: float | None = None,  # TTL in seconds
-    serde: SerializerProtocol | None = None
-)
-```
-
-### ValkeyIndexConfig - Advanced Vector Search Configuration
-
-The `ValkeyIndexConfig` extends the base `IndexConfig` with Valkey-specific options for optimizing vector search performance:
-
-#### Configuration Fields
-
-```python
-from langgraph_checkpoint_aws.store.valkey import ValkeyIndexConfig
-
-# Complete ValkeyIndexConfig specification
-config: ValkeyIndexConfig = {
-    # Required fields (inherited from IndexConfig)
-    "dims": 1536,  # Vector dimensions - must match embedding model
-    "embed": "openai:text-embedding-3-small",  # Embedding model identifier
-    "fields": ["text", "content"],  # Document fields to index
-    
-    # Valkey-specific fields
-    "collection_name": "my_collection",  # Index collection identifier
-    "timezone": "UTC",  # Timezone for operations (default: "UTC")
-    "index_type": "hnsw",  # Algorithm: "hnsw" or "flat" (default: "hnsw")
-    
-    # HNSW algorithm parameters (used when index_type="hnsw")
-    "hnsw_m": 16,  # Number of connections per layer (default: 16)
-    "hnsw_ef_construction": 200,  # Search width during index construction (default: 200)
-    "hnsw_ef_runtime": 10,  # Search width during queries (default: 10)
-}
-```
-
-#### Algorithm Selection Guide
+##### Algorithm Selection Guide
 
 **HNSW (Hierarchical Navigable Small World)**
 - **Best for**: Large datasets (>10K vectors), fast approximate search
@@ -494,7 +461,7 @@ config: ValkeyIndexConfig = {
 - **Lower values**: Faster queries, potentially lower recall
 - **Recommendation**: 10-50 depending on speed/accuracy requirements
 
-#### Configuration Examples
+##### Configuration Examples
 
 ```python
 # High-speed configuration (prioritize speed)
@@ -529,6 +496,16 @@ exact_config = {
     "collection_name": "exact_search",
     "index_type": "flat",  # No HNSW parameters needed
 }
+```
+
+
+#### AgentCoreValkeySaver Options
+```python
+AgentCoreValkeySaver(
+    client: Valkey,
+    ttl: float | None = None,  # TTL in seconds
+    serde: SerializerProtocol | None = None
+)
 ```
 
 ## Development
@@ -738,12 +715,12 @@ docker run --name valkey-bundle -p 6379:6379 -d valkey/valkey-bundle:latest
 docker run --name valkey-custom \
   -p 6379:6379 \
   -v $(pwd)/valkey.conf:/etc/valkey/valkey.conf \
-  -d valkey/valkey:latest
+  -d valkey/valkey-bundle:latest
 ```
 
 #### Using AWS ElastiCache for Valkey
 ```python
-# Connect to AWS ElastiCache
+# Connect to AWS ElastiCache from host running inside VPC with access to cache
 from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver
 
 checkpointer = ValkeyCheckpointSaver.from_conn_string(
@@ -751,11 +728,7 @@ checkpointer = ValkeyCheckpointSaver.from_conn_string(
     pool_size=20
 )
 ```
-
-#### Required Valkey Modules
-For full functionality, ensure these modules are available:
-- **ValkeyHash**: For Hash storage
-- **ValkeySearch**: For vector similarity search (optional)
+If you want to connect to cache from a host outside of VPC, use ElastiCache console to setup a jump host so you could create SSH tunnel to access cache locally. 
 
 #### Production Configuration
 ```bash
@@ -872,7 +845,7 @@ flat_config = {
 * Configure authentication with strong passwords
 * Implement network security (VPC, security groups)
 * Regular security updates and monitoring
-* Use AWS MemoryDB for managed Redis with encryption
+* Use AWS ElastiCache for managed Valkey with encryption
 
 ```python
 # Secure connection example
@@ -928,7 +901,6 @@ valkey-cli config set maxmemory-policy allkeys-lru
 ## Contributing
 
 - Fork the repository
-
 - Create a feature branch
 - Make your changes
 - Run tests and linting

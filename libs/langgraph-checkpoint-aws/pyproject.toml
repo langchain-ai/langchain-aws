@@ -5,7 +5,7 @@ build-backend = "pdm.backend"
 [project]
 authors = []
 license = {text = "MIT"}
-requires-python = ">=3.10"
+requires-python = ">=3.10,<4.0"
 dependencies = [
     "langgraph-checkpoint>=2.1.1",
     "langgraph>=1.0.0.a4",
@@ -33,7 +33,8 @@ test = [
     "pytest-cov>=6.2.1",
     "pytest-socket>=0.7.0",
     "pytest-asyncio>=0.26.0",
-    "pytest-mock>=3.15.1"
+    "pytest-mock>=3.15.1",
+    "fakeredis>=2.25.1"
 ]
 test_integration = [
     "langchain>=1.0.0.a10",
@@ -93,7 +94,6 @@ show_missing = true
 directory = "htmlcov"
 
 [tool.pytest.ini_options]
-asyncio_default_fixture_loop_scope = "function"
 addopts = "--strict-markers --strict-config --durations=5"
 markers = [
     "requires: mark tests as requiring a specific library",
@@ -101,3 +101,4 @@ markers = [
     "compile: mark placeholder test used to compile integration tests without running them",
     "scheduled: mark tests to run in scheduled testing",
 ]
+asyncio_mode = "auto"

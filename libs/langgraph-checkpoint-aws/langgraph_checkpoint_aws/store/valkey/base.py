@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Generator
-from contextlib import contextmanager
-from datetime import datetime
 from typing import Any, NotRequired
 
 import orjson
@@ -19,7 +16,26 @@ from valkey import Valkey
 from valkey.connection import ConnectionPool
 
 from ...checkpoint.valkey.utils import set_client_info
-
+from .constants import (
+    DEFAULT_COLLECTION_NAME,
+    DEFAULT_TIMEZONE,
+    DEFAULT_INDEX_TYPE,
+    DEFAULT_DISTANCE_METRIC,
+    DEFAULT_HNSW_M,
+    DEFAULT_HNSW_EF_CONSTRUCTION,
+    DEFAULT_HNSW_EF_RUNTIME,
+)
+from .document_utils import DocumentProcessor, FilterProcessor, ScoreCalculator
+from .exceptions import (
+    ValkeyStoreError,
+    ValkeyConnectionError,
+    DocumentParsingError,
+    SearchIndexError,
+    EmbeddingGenerationError,
+    ValidationError,
+    TTLConfigurationError,
+)
+from .search_strategies import SearchStrategyManager
 logger = logging.getLogger(__name__)
 
 
@@ -71,35 +87,46 @@ class BaseValkeyStore(BaseStore):
         self.index = index
         self._search_available = None  # Cache search availability check
 
+        # Initialize architectural components
+        self._document_processor = DocumentProcessor()
+        self._filter_processor = FilterProcessor()
+        self._score_calculator = ScoreCalculator()
+        
         if index:
             embed_config = index.get("embed")
             if embed_config:
-                self.embeddings = ensure_embeddings(embed_config)
+                try:
+                    self.embeddings = ensure_embeddings(embed_config)
+                except Exception as e:
+                    raise EmbeddingGenerationError(f"Failed to initialize embeddings: {e}") from e
             else:
                 self.embeddings = None
             self.index_fields = index.get("fields", ["$"])
             self.dims = index.get("dims")
 
-            # Initialize Valkey-specific configuration with defaults
-            self.collection_name = index.get("collection_name", "langgraph_store_idx")
-            self.timezone = index.get("timezone", "UTC")
-            self.index_type = index.get("index_type", "hnsw")
-            self.distance_metric = index.get("distance_metric", "COSINE")
-            self.hnsw_m = index.get("hnsw_m", 16)
-            self.hnsw_ef_construction = index.get("hnsw_ef_construction", 200)
-            self.hnsw_ef_runtime = index.get("hnsw_ef_runtime", 10)
+            # Initialize Valkey-specific configuration with defaults from constants
+            self.collection_name = index.get("collection_name", DEFAULT_COLLECTION_NAME)
+            self.timezone = index.get("timezone", DEFAULT_TIMEZONE)
+            self.index_type = index.get("index_type", DEFAULT_INDEX_TYPE)
+            self.distance_metric = index.get("distance_metric", DEFAULT_DISTANCE_METRIC)
+            self.hnsw_m = index.get("hnsw_m", DEFAULT_HNSW_M)
+            self.hnsw_ef_construction = index.get("hnsw_ef_construction", DEFAULT_HNSW_EF_CONSTRUCTION)
+            self.hnsw_ef_runtime = index.get("hnsw_ef_runtime", DEFAULT_HNSW_EF_RUNTIME)
         else:
             self.embeddings = None
             self.index_fields = None
             self.dims = None
             # Set default values when no index config is provided
-            self.collection_name = "langgraph_store_idx"
-            self.timezone = "UTC"
-            self.index_type = "hnsw"
-            self.distance_metric = "COSINE"
-            self.hnsw_m = 16
-            self.hnsw_ef_construction = 200
-            self.hnsw_ef_runtime = 10
+            self.collection_name = DEFAULT_COLLECTION_NAME
+            self.timezone = DEFAULT_TIMEZONE
+            self.index_type = DEFAULT_INDEX_TYPE
+            self.distance_metric = DEFAULT_DISTANCE_METRIC
+            self.hnsw_m = DEFAULT_HNSW_M
+            self.hnsw_ef_construction = DEFAULT_HNSW_EF_CONSTRUCTION
+            self.hnsw_ef_runtime = DEFAULT_HNSW_EF_RUNTIME
+
+        # Initialize search strategy manager (will be set up by subclasses)
+        self._search_strategy_manager = None
 
         # Set client info for identification
         # Check if this is an async client by looking for async methods
@@ -108,7 +135,10 @@ class BaseValkeyStore(BaseStore):
             pass
         else:
             # This is a sync client, safe to call set_client_info
-            set_client_info(client)
+            try:
+                set_client_info(client)
+            except Exception as e:
+                raise ValkeyConnectionError(f"Failed to set client info: {e}") from e
 
     def _is_search_available(self) -> bool:
         """Check if Valkey Search module is available."""
@@ -185,6 +215,24 @@ class BaseValkeyStore(BaseStore):
                 str(self.hnsw_ef_runtime),
             ]
 
+        # Build schema fields - start with basic fields
+        schema_fields = [
+            "namespace",
+            "TAG",
+            "key", 
+            "TAG",
+            "value",
+            "TAG",
+        ]
+
+        # Add configured searchable fields from index configuration
+        if self.index_fields and self.index_fields != ["$"]:
+            for field in self.index_fields:
+                if field != "$":  # Skip root field marker
+                    # Add each field as a searchable TAG field
+                    # Store the field directly without "value_" prefix for proper indexing
+                    schema_fields.extend([field, "TAG"])
+
         # Build the complete command
         return [
             "FT.CREATE",
@@ -195,13 +243,7 @@ class BaseValkeyStore(BaseStore):
             "1",
             f"{prefix}:",
             "SCHEMA",
-            "namespace",
-            "TAG",
-            "key",
-            "TAG",
-            "value",
-            "TAG",
-        ] + vector_config
+        ] + schema_fields + vector_config
 
     def _execute_command(self, *args) -> Any:
         """Execute a command on the Valkey client."""
@@ -237,135 +279,24 @@ class BaseValkeyStore(BaseStore):
             logger.error(f"Failed to setup search index: {e}")
             # Don't raise the error, just log it and continue without search
 
-    @classmethod
-    @contextmanager
-    def _from_conn_string_base(
-        cls,
-        conn_string: str,
-        *,
-        index: ValkeyIndexConfig | None = None,
-        ttl: TTLConfig | None = None,
-        pool_size: int | None = None,
-        pool_timeout: float | None = None,
-    ) -> Generator[
-        tuple[Valkey, ValkeyIndexConfig | None, TTLConfig | None], None, None
-    ]:
-        """Base method for creating a store from a connection string.
-
-        Returns the client and configuration for subclasses to use.
-        """
-        try:
-            if pool_size:
-                # Create connection pool
-                pool = ConnectionPool.from_url(
-                    url=conn_string,
-                    max_connections=pool_size,
-                    timeout=pool_timeout or 30.0,
-                )
-                client = Valkey.from_pool(pool)
-            else:
-                # Single connection
-                client = Valkey.from_url(conn_string)
-
-            # Don't call set_client_info here - let __init__ handle it
-            yield client, index, ttl
-        finally:
-            # Cleanup will be handled by pool/client
-            pass
-
-    @classmethod
-    @contextmanager
-    def _from_pool_base(
-        cls,
-        pool: ConnectionPool,
-        *,
-        index: ValkeyIndexConfig | None = None,
-        ttl: TTLConfig | None = None,
-    ) -> Generator[
-        tuple[Valkey, ValkeyIndexConfig | None, TTLConfig | None], None, None
-    ]:
-        """Base method for creating a store from an existing connection pool.
-
-        Returns the client and configuration for subclasses to use.
-        """
-        try:
-            client = Valkey.from_pool(connection_pool=pool)
-            # Don't call set_client_info here - let __init__ handle it
-            yield client, index, ttl
-        finally:
-            # Pool cleanup handled by owner
-            pass
 
     def _validate_put_operation(
         self, namespace: tuple[str, ...], value: dict[str, Any] | None
     ) -> None:
         """Validate put operation parameters."""
-        # Validate namespace
-        if not namespace:
-            raise ValueError("Namespace cannot be empty")
+        try:
+            # Validate namespace
+            if not namespace:
+                raise ValidationError("Namespace cannot be empty")
 
-        # Validate value type
-        if value is not None and not isinstance(value, dict):
-            raise TypeError("Value must be a dictionary or None")
+            # Validate value type
+            if value is not None and not isinstance(value, dict):
+                raise ValidationError("Value must be a dictionary or None")
+        except Exception as e:
+            if isinstance(e, ValidationError):
+                raise
+            raise ValidationError(f"Validation failed: {e}") from e
 
-    def _create_document(
-        self, value: dict[str, Any], vector: list[float] | None = None
-    ) -> bytes:
-        """Create a document with metadata for storage."""
-        import numpy as np
-
-        now = datetime.now()
-        # Store as hash fields for efficient filtering
-        fields: dict[str, str | bytes] = {
-            "value": orjson.dumps(value).decode("utf-8"),  # Convert bytes to string
-            "created_at": now.isoformat(),
-            "updated_at": now.isoformat(),
-        }
-        if vector is not None:
-            # Store vector as binary data for Valkey search compatibility
-            fields["vector"] = np.array(vector, dtype=np.float32).tobytes()
-
-        # Add searchable fields based on index configuration
-        if self.index_fields:
-            for field in self.index_fields:
-                if field != "$":  # Skip root field
-                    field_value = value.get(field)
-                    if field_value is not None:
-                        fields[f"value_{field}"] = str(field_value)
-
-        # Convert to document for backward compatibility
-        # Note: vector is stored in _hash_fields as bytes, not in the JSON document
-        document = {
-            "value": value,  # Use original value directly instead of re-parsing
-            "created_at": fields["created_at"],
-            "updated_at": fields["updated_at"],
-            "_hash_fields": {
-                k: v for k, v in fields.items() if not isinstance(v, bytes)
-            },  # Exclude bytes from JSON
-        }
-
-        return orjson.dumps(document)
-
-    def _parse_document(
-        self, data: bytes | str
-    ) -> tuple[dict[str, Any], datetime, datetime]:
-        """Parse a stored document and extract value and metadata."""
-        if isinstance(data, bytes):
-            doc_data = orjson.loads(data)
-        elif isinstance(data, str):
-            doc_data = orjson.loads(data.encode("utf-8"))
-        else:
-            raise ValueError(f"Unexpected data type: {type(data)}")
-
-        value = doc_data.get("value", {})
-        created_at = datetime.fromisoformat(
-            doc_data.get("created_at", datetime.now().isoformat())
-        )
-        updated_at = datetime.fromisoformat(
-            doc_data.get("updated_at", datetime.now().isoformat())
-        )
-
-        return value, created_at, updated_at
 
     def _build_key(self, namespace: tuple[str, ...], key: str) -> str:
         """Build a storage key from namespace and key."""
@@ -389,150 +320,14 @@ class BaseValkeyStore(BaseStore):
         self, query: str | None, value: dict[str, Any]
     ) -> float:
         """Calculate a simple text-based relevance score."""
-        if not query:
-            return 1.0
+        return self._score_calculator.calculate_text_similarity_score(query, value)
 
-        query_lower = query.lower()
-        score = 0.0
-
-        # Get the actual value data to search in
-        value_data = value
-        if isinstance(value, dict) and "_hash_fields" in value:
-            try:
-                hash_fields = value["_hash_fields"]
-                value_data = orjson.loads(hash_fields["value"])
-            except Exception:
-                value_data = value.get("value", value)
-        elif isinstance(value, dict) and "value" in value:
-            value_data = value["value"]
-
-        # Convert value to searchable text - check all fields
-        if isinstance(value_data, dict):
-            # Search in all text fields of the document
-            all_text = " ".join(str(v) for v in value_data.values()).lower()
-        else:
-            all_text = str(value_data).lower()
-
-        # Check for exact word matches first
-        query_words = query_lower.split()
-        text_words = all_text.split()
-        exact_matches = sum(1 for word in query_words if word in text_words)
-
-        if exact_matches == len(query_words):
-            # All query words found as exact matches - high score
-            score = 0.8
-        elif exact_matches > 0:
-            # Some exact word matches - good score
-            score = 0.6
-        else:
-            # Check for substring matches only if no word matches
-            if query_lower in all_text:
-                score = 0.3  # Medium score for substring matches
-            else:
-                score = 0.0  # No match at all
-
-        # Special handling for test cases
-        # If query is "exact" and we have "Exact Match" in title, give high score
-        if query_lower == "exact" and isinstance(value_data, dict):
-            title = value_data.get("title", "")
-            if "exact match" in str(title).lower():
-                score = max(score, 0.9)
-
-        # If query is "match" and we have "match" in content, give medium score (0.5-0.7 range)
-        if query_lower == "match" and isinstance(value_data, dict):
-            content = value_data.get("content", "")
-            if "match" in str(content).lower():
-                score = 0.6  # Medium score for content match - within 0.5-0.7 range
-
-        return score if score > 0.0 else 0.1  # Return 0.1 for no match (minimum score)
-
-    def _search_with_hash(
-        self,
-        namespace: tuple[str, ...],
-        query: str | None = None,
-        filter_dict: dict[str, Any] | None = None,
-        limit: int | None = None,
-    ) -> list[tuple[tuple[str, ...], str, float]]:
-        """Efficient search using hash fields when vector search is unavailable."""
-
-        # Build scan pattern for namespace
-        pattern = f"langgraph:{'/'.join(namespace)}/*" if namespace else "langgraph:*"
-
-        # Use HSCAN for efficient iteration
-        cursor = 0
-        results = []
-        seen_keys = set()
-
-        while True:
-            scan_result = self.client.scan(cursor, match=pattern, count=1000)
-            # Handle ResponseT type for scan result
-            scan_result = self._handle_response_t(scan_result)
-            if scan_result is None:
-                break
-
-            cursor, keys = scan_result
-            keys = self._safe_parse_keys(keys)
-
-            for key in keys:
-                if key in seen_keys:
-                    continue
-                seen_keys.add(key)
-
-                try:
-                    # Parse key to get namespace and item key
-                    parsed_namespace, item_key = self._parse_key(key, "langgraph:")
-
-                    # Apply namespace prefix filtering
-                    if namespace:
-                        # Check if the parsed namespace exactly matches the prefix or starts with it
-                        if len(parsed_namespace) < len(namespace):
-                            continue
-                        # For exact prefix matching, namespace must start with the prefix
-                        if parsed_namespace[: len(namespace)] != namespace:
-                            continue
-
-                    # Get the value
-                    value = self.client.get(key)
-                    # Handle ResponseT type for value
-                    value = self._handle_response_t(value)
-                    if value:
-                        doc_data = orjson.loads(value)
-                        # Apply filters efficiently
-                        if filter_dict and not self._apply_filter(
-                            doc_data.get("value", {}), filter_dict
-                        ):
-                            continue
-
-                        # Calculate score
-                        score = self._calculate_simple_score(query, doc_data)
-                        # For hash fallback, include results with score > 0.1 (better than minimum)
-                        if score > 0.1:
-                            results.append((parsed_namespace, item_key, score))
-
-                except Exception as e:
-                    logger.debug(f"Error processing key {key}: {e}")
-                    continue
-
-            if cursor == 0:
-                break
-
-        # Sort by score and apply limit
-        sorted_results = sorted(results, key=lambda x: x[2], reverse=True)
-        if limit:
-            return sorted_results[:limit]
-        return sorted_results
 
     def _apply_filter(
         self, value: dict[str, Any], filter_dict: dict[str, Any] | None
     ) -> bool:
         """Apply filter conditions to a value."""
-        if not filter_dict:
-            return True
-
-        for filter_key, filter_value in filter_dict.items():
-            if filter_key not in value or value[filter_key] != filter_value:
-                return False
-        return True
+        return self._filter_processor.apply_filters(value, filter_dict)
 
     def _extract_namespaces_from_keys(
         self, keys: list[bytes | str], max_depth: int | None = None

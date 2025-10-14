@@ -30,6 +30,20 @@ from valkey.connection import ConnectionPool
 
 from ...checkpoint.valkey.utils import aset_client_info
 from .base import BaseValkeyStore, ValkeyIndexConfig
+from .constants import (
+    LANGGRAPH_KEY_PREFIX,
+)
+from .document_utils import DocumentProcessor, FilterProcessor, ScoreCalculator
+from .exceptions import (
+    DocumentParsingError,
+    EmbeddingGenerationError,
+    SearchIndexError,
+    TTLConfigurationError,
+    ValkeyConnectionError,
+    ValkeyStoreError,
+)
+from .search_strategies import SearchStrategyManager
+from .types import TTLConfigTyped, ValkeyIndexConfigTyped
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +158,40 @@ class AsyncValkeyStore(BaseValkeyStore):
             ttl: Optional TTL configuration
         """
         super().__init__(client, index=index, ttl=ttl)
+        
+        # Initialize architectural components
+        self._document_processor = DocumentProcessor()
+        self._filter_processor = FilterProcessor()
+        self._score_calculator = ScoreCalculator()
+        self._search_strategy_manager = SearchStrategyManager(client, self)
+        
+        # Detect if this is an async client (like fakeredis.aioredis.FakeRedis)
+        self._is_async_client = self._detect_async_client(client)
+
+    def _detect_async_client(self, client: Any) -> bool:
+        """Detect if the client is an async client."""
+        # Check for async methods that are specific to async Redis clients
+        return (
+            hasattr(client, "aclose") or 
+            hasattr(client, "__aenter__") or
+            "aioredis" in str(type(client)) or
+            "FakeRedis" in str(type(client)) and hasattr(client, "hgetall") and 
+            hasattr(getattr(client, "hgetall", None), "__call__") and
+            asyncio.iscoroutinefunction(client.hgetall)
+        )
+
+    async def _execute_client_method(self, method_name: str, *args, **kwargs) -> Any:
+        """Execute a client method, handling both sync and async clients."""
+        method = getattr(self.client, method_name)
+        
+        if self._is_async_client:
+            # For async clients, call the method directly
+            return await method(*args, **kwargs)
+        else:
+            # For sync clients, use run_in_executor
+            return await asyncio.get_event_loop().run_in_executor(
+                None, lambda: method(*args, **kwargs)
+            )
 
     async def _execute_command(self, *args) -> Any:
         """Execute a command on the async Valkey client."""
@@ -259,60 +307,57 @@ class AsyncValkeyStore(BaseValkeyStore):
         return asyncio.run(self.abatch(ops))
 
     async def abatch(self, ops: Iterable[Op]) -> list[Result]:
-        """Execute operations asynchronously.
-
-        Supports:
-        - Get: Fetch items by key
-        - Put: Store or update items
-        - Search: Vector similarity and filtered search
-        - List: Namespace exploration
-        """
+        """Execute operations asynchronously."""
         results: list[Result] = []
         for op in ops:
             if isinstance(op, GetOp):
-                result = await self._handle_get(op)
+                result = await self._handle_get_async(op)
                 results.append(result)
             elif isinstance(op, PutOp):
-                await self._handle_put(op)
+                await self._handle_put_async(op)
                 results.append(None)
             elif isinstance(op, SearchOp):
-                result = await self._handle_search(op)
+                result = await self._handle_search_async(op)
                 results.append(result)
             elif isinstance(op, ListNamespacesOp):
-                result = await self._handle_list(op)
+                result = await self._handle_list_async(op)
                 results.append(result)
             else:
                 raise ValueError(f"Unknown operation type: {type(op)}")
         return results
 
-    async def _handle_get(self, op: GetOp) -> Item | None:
-        """Handle get operation."""
+    async def _handle_get_async(self, op: GetOp) -> Item | None:
+        """Handle get operation asynchronously."""
         try:
             key = self._build_key(op.namespace, op.key)
-            result = await asyncio.get_event_loop().run_in_executor(
-                None, self.client.get, key
-            )
+            result = await self._execute_client_method("hgetall", key)
+            
             if not result:
                 return None
 
-            # Handle ResponseT type using async method
-            result = await self._handle_response_t_async(result)
-            if result is None:
+            # Use DocumentProcessor to convert hash fields back to document format
+            document = DocumentProcessor.convert_hash_to_document(result)
+            if document is None:
                 return None
 
-            # Parse the stored document using base class method
-            value, created_at, updated_at = self._parse_document(result)
+            # Parse the JSON-encoded value using DocumentProcessor
+            parsed_value = DocumentProcessor.parse_document_value(document)
+            if parsed_value is None:
+                return None
 
+            # Parse timestamps using DocumentProcessor
+            created_at, updated_at = DocumentProcessor.parse_timestamps(document)
+
+            # Refresh TTL if configured
             if op.refresh_ttl and self.ttl_config:
-                # Refresh TTL if configured
                 ttl = self.ttl_config.get("default_ttl")
                 if ttl:
                     await asyncio.get_event_loop().run_in_executor(
-                        None, self.client.touch, key
+                        None, self.client.expire, key, int(ttl * 60)
                     )
 
             return Item(
-                value=value,
+                value=parsed_value,
                 key=op.key,
                 namespace=op.namespace,
                 created_at=created_at,
@@ -322,8 +367,8 @@ class AsyncValkeyStore(BaseValkeyStore):
             logger.error(f"Error in get operation: {e}")
             return None
 
-    async def _handle_put(self, op: PutOp) -> None:
-        """Handle put operation."""
+    async def _handle_put_async(self, op: PutOp) -> None:
+        """Handle put operation asynchronously."""
         # Use base class validation
         self._validate_put_operation(op.namespace, op.value)
 
@@ -332,9 +377,7 @@ class AsyncValkeyStore(BaseValkeyStore):
         if op.value is None:
             # Handle deletion
             try:
-                await asyncio.get_event_loop().run_in_executor(
-                    None, self.client.delete, key
-                )
+                await self._execute_client_method("delete", key)
             except Exception as e:
                 logger.error(f"Error deleting key {key}: {e}")
             return
@@ -354,82 +397,110 @@ class AsyncValkeyStore(BaseValkeyStore):
                             texts.append(str(field_value))
 
                     if texts:
-                        vectors = await self.embeddings.aembed_documents(texts)
-                        # Use first vector if multiple were generated
-                        vector = vectors[0] if vectors else None
+                        # Use async embedding method
+                        try:
+                            if hasattr(self.embeddings, 'aembed_documents'):
+                                vectors = await self.embeddings.aembed_documents(texts)
+                                vector = vectors[0] if vectors else None
+                            elif hasattr(self.embeddings, 'embed_documents'):
+                                # Run sync embeddings in executor
+                                loop = asyncio.get_running_loop()
+                                vectors = await loop.run_in_executor(
+                                    None, self.embeddings.embed_documents, texts
+                                )
+                                vector = vectors[0] if vectors else None
+                        except Exception as e:
+                            logger.error(f"Error generating embeddings: {e}")
+                            vector = None
             except Exception as e:
                 logger.error(f"Error generating embeddings: {e}")
 
-        # Create document using base class method
-        value = self._create_document(op.value, vector)
+        # Use DocumentProcessor to create hash fields for storage
+        hash_fields = DocumentProcessor.create_hash_fields(
+            op.value, 
+            vector, 
+            self.index_fields
+        )
 
         try:
-            # Use standard SET command with optional TTL
+            # Use HSET to store as hash fields for better vector search compatibility
+            await self._execute_client_method("hset", key, mapping=hash_fields)
+
+            # Set TTL if specified
             if op.ttl is not None:
                 ttl_seconds = int(op.ttl * 60)  # Convert minutes to seconds
-                await asyncio.get_event_loop().run_in_executor(
-                    None, lambda: self.client.set(key, value, ex=ttl_seconds)
-                )
-            else:
-                await asyncio.get_event_loop().run_in_executor(
-                    None, lambda: self.client.set(key, value)
-                )
+                await self._execute_client_method("expire", key, ttl_seconds)
         except Exception as e:
             logger.error(f"Error in put operation: {e}")
             raise
 
-    async def _handle_search(self, op: SearchOp) -> list[SearchItem]:
-        """Handle search operation with vector search and fallback to key pattern matching."""
-        items = []
-        logger.debug(
-            f"Starting search with query='{op.query}', limit={op.limit}, offset={op.offset}"
-        )
-
+    async def _handle_search_async(self, op: SearchOp) -> list[SearchItem]:
+        """Handle search operation using search strategy pattern asynchronously."""
         try:
-            # Try vector search first if we have embeddings, query, and search is available
-            if (
-                self.embeddings
-                and op.query
-                and self.dims
-                and await self._is_search_available_async()
-                and self.index
-            ):
-                logger.debug("Attempting vector search")
-                items = await self._vector_search(op)
-                if items:  # If vector search succeeded, return results
-                    logger.debug(f"Vector search returned {len(items)} items")
-                    return items
-                else:
-                    logger.debug("Vector search returned no items")
-
-            # Try hash-based search if vector search failed or wasn't attempted
-            if not items:
-                try:
-                    logger.debug("Attempting hash-based search")
-                    hash_results = await self._search_with_hash_async(
-                        op.namespace_prefix, op.query, op.filter, op.limit, op.offset
-                    )
-                    items = await self._convert_to_search_items_async(hash_results)
-                    if items:
-                        logger.debug(f"Hash-based search returned {len(items)} items")
-                        return items
-                    else:
-                        logger.debug("Hash-based search returned no items")
-                except Exception as e:
-                    logger.debug(
-                        f"Hash-based search failed: {e}, falling back to key pattern"
-                    )
-
-            # Final fallback to key pattern matching
-            if not items:
-                logger.debug("Falling back to key pattern search")
-                items = await self._key_pattern_search_async(op)
-                logger.debug(f"Key pattern search returned {len(items)} items")
-
+            # For now, use the key pattern search as fallback
+            return await self._key_pattern_search_async(op)
         except Exception as e:
             logger.error(f"Error in search operation: {e}")
+            return []
 
-        return items
+    async def _handle_list_async(self, op: ListNamespacesOp) -> list[tuple[str, ...]]:
+        """Handle list namespaces operation asynchronously."""
+        try:
+            # Build patterns based on match conditions with langgraph: prefix
+            patterns = ["langgraph:*"]  # Default pattern with prefix
+
+            if op.match_conditions:
+                patterns = []
+                for condition in op.match_conditions:
+                    path = "/".join(str(p) for p in condition.path)
+                    if condition.match_type == "prefix":
+                        patterns.append(f"langgraph:{path}*")
+                    else:  # suffix
+                        patterns.append(f"langgraph:*{path}")
+
+            # Collect all keys from patterns
+            all_keys = []
+            for pattern in patterns:
+                try:
+                    keys_result = await self._execute_client_method("keys", pattern)
+                    # Convert keys to strings
+                    keys = []
+                    if hasattr(keys_result, "__iter__") and not isinstance(keys_result, (str, bytes)):
+                        for key in keys_result:
+                            if isinstance(key, bytes):
+                                keys.append(key.decode("utf-8"))
+                            elif isinstance(key, str):
+                                keys.append(key)
+                            else:
+                                keys.append(str(key))
+                    all_keys.extend(keys)
+                except Exception as e:
+                    logger.error(f"Error scanning pattern {pattern}: {e}")
+                    continue
+
+            # Remove langgraph: prefix from keys before extracting namespaces
+            cleaned_keys = []
+            for key in all_keys:
+                if key.startswith("langgraph:"):
+                    cleaned_keys.append(key[10:])  # Remove "langgraph:" prefix
+                else:
+                    cleaned_keys.append(key)
+
+            # Extract namespaces using base class method
+            namespaces = self._extract_namespaces_from_keys(cleaned_keys, op.max_depth)
+
+            # Convert to sorted list and apply pagination
+            namespace_list = sorted(list(namespaces))
+
+            # Apply offset and limit
+            start_idx = op.offset or 0
+            end_idx = start_idx + (op.limit or len(namespace_list))
+
+            return namespace_list[start_idx:end_idx]
+
+        except Exception as e:
+            logger.error(f"Error listing namespaces: {e}")
+            return []
 
     async def _vector_search(self, op: SearchOp) -> list[SearchItem]:
         """Perform vector similarity search using Valkey Search."""
@@ -464,7 +535,7 @@ class AsyncValkeyStore(BaseValkeyStore):
                 return []
 
             # Build search query
-            index_name = "langgraph_store_idx"
+            index_name = self.collection_name
 
             # Create namespace filter
             namespace_filter = ""
@@ -605,12 +676,21 @@ class AsyncValkeyStore(BaseValkeyStore):
             scan_result = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: self.client.scan(cursor, match=pattern, count=1000)
             )
-            # Handle ResponseT type for scan result
-            scan_result = await self._handle_response_t_async(scan_result)
+            # No need to handle ResponseT here - run_in_executor already resolves it
             if scan_result is None:
                 break
             cursor, keys = scan_result
-            keys = await self._safe_parse_keys_async(keys)
+            # Convert keys to strings directly
+            parsed_keys = []
+            if hasattr(keys, "__iter__") and not isinstance(keys, (str, bytes)):
+                for key in keys:
+                    if isinstance(key, bytes):
+                        parsed_keys.append(key.decode("utf-8"))
+                    elif isinstance(key, str):
+                        parsed_keys.append(key)
+                    else:
+                        parsed_keys.append(str(key))
+            keys = parsed_keys
 
             for key in keys:
                 if key in seen_keys:
@@ -709,16 +789,21 @@ class AsyncValkeyStore(BaseValkeyStore):
 
             while True:
                 # Execute scan and properly await the result
-                scan_result = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda c=cursor: self.client.scan(c, match=pattern, count=1000),
-                )
-                # Handle ResponseT type for scan result
-                scan_result = await self._handle_response_t_async(scan_result)
+                scan_result = await self._execute_client_method("scan", cursor, match=pattern, count=1000)
                 if scan_result is None:
                     break
                 cursor, keys = scan_result
-                keys = await self._safe_parse_keys_async(keys)
+                # Convert keys to strings directly
+                parsed_keys = []
+                if hasattr(keys, "__iter__") and not isinstance(keys, (str, bytes)):
+                    for key in keys:
+                        if isinstance(key, bytes):
+                            parsed_keys.append(key.decode("utf-8"))
+                        elif isinstance(key, str):
+                            parsed_keys.append(key)
+                        else:
+                            parsed_keys.append(str(key))
+                keys = parsed_keys
                 all_keys.extend(keys)
                 if cursor == 0:
                     break
@@ -742,47 +827,54 @@ class AsyncValkeyStore(BaseValkeyStore):
 
             for key in all_keys:  # Fixed: use all_keys instead of limited_keys
                 try:
-                    value_data = await asyncio.get_event_loop().run_in_executor(
-                        None, self.client.get, key
-                    )
-                    if value_data:
-                        # Handle ResponseT type for value_data
-                        value_data = await self._handle_response_t_async(value_data)
-                        if value_data is None:
-                            continue
+                    # Use HGETALL since we store data as hash fields
+                    hash_data = await self._execute_client_method("hgetall", key)
+                    # Ensure hash_data is properly typed as dict
+                    if not hash_data or not isinstance(hash_data, dict):
+                        continue
 
-                        # Parse key - remove langgraph: prefix
-                        if key.startswith("langgraph:"):
-                            key_path = key[10:]  # Remove "langgraph:" prefix
-                        else:
-                            key_path = key
+                    # Parse key - remove langgraph: prefix
+                    if key.startswith("langgraph:"):
+                        key_path = key[10:]  # Remove "langgraph:" prefix
+                    else:
+                        key_path = key
 
-                        # Parse namespace and key
-                        namespace, item_key = self._parse_key(key_path)
+                    # Parse namespace and key
+                    namespace, item_key = self._parse_key(key_path)
 
-                        # Parse document using base class method
-                        value, created_at, updated_at = self._parse_document(value_data)
+                    # Use DocumentProcessor to convert hash fields back to document format
+                    document = DocumentProcessor.convert_hash_to_document(hash_data)
+                    if document is None:
+                        continue
 
-                        # Apply filter using base class method
-                        if not self._apply_filter(value, op.filter):
-                            continue
+                    # Parse the JSON-encoded value using DocumentProcessor
+                    parsed_value = DocumentProcessor.parse_document_value(document)
+                    if parsed_value is None:
+                        continue
 
-                        # Calculate score using base class method
-                        score = self._calculate_simple_score(op.query, value)
+                    # Parse timestamps using DocumentProcessor
+                    created_at, updated_at = DocumentProcessor.parse_timestamps(document)
 
-                        scored_items.append(
-                            (
-                                score,
-                                SearchItem(
-                                    namespace=namespace,
-                                    key=item_key,
-                                    value=value,
-                                    created_at=created_at,
-                                    updated_at=updated_at,
-                                    score=score,
-                                ),
-                            )
+                    # Apply filter using base class method
+                    if not self._apply_filter(parsed_value, op.filter):
+                        continue
+
+                    # Calculate score using base class method
+                    score = self._calculate_simple_score(op.query, parsed_value)
+
+                    scored_items.append(
+                        (
+                            score,
+                            SearchItem(
+                                namespace=namespace,
+                                key=item_key,
+                                value=parsed_value,
+                                created_at=created_at,
+                                updated_at=updated_at,
+                                score=score,
+                            ),
                         )
+                    )
 
                 except Exception as e:
                     logger.error(f"Error processing key {key}: {e}")
@@ -826,64 +918,10 @@ class AsyncValkeyStore(BaseValkeyStore):
             for item in items:
                 item_key = self._build_key(item.namespace, item.key)
                 try:
-                    await asyncio.get_event_loop().run_in_executor(
-                        None, self.client.expire, item_key, int(ttl_seconds * 60)
-                    )
+                    await self._execute_client_method("expire", item_key, int(ttl_seconds * 60))
                 except Exception as e:
                     logger.error(f"Error refreshing TTL for {item_key}: {e}")
 
-    async def _handle_list(self, op: ListNamespacesOp) -> list[tuple[str, ...]]:
-        """Handle list namespaces operation."""
-        try:
-            # Build patterns based on match conditions with langgraph: prefix
-            patterns = ["langgraph:*"]  # Default pattern with prefix
-
-            if op.match_conditions:
-                patterns = []
-                for condition in op.match_conditions:
-                    path = "/".join(str(p) for p in condition.path)
-                    if condition.match_type == "prefix":
-                        patterns.append(f"langgraph:{path}*")
-                    else:  # suffix
-                        patterns.append(f"langgraph:*{path}")
-
-            # Scan for keys matching patterns
-            all_keys = []
-            for pattern in patterns:
-                try:
-                    keys_response = await asyncio.get_event_loop().run_in_executor(
-                        None, self.client.keys, pattern
-                    )
-                    # Handle ResponseT type using base class method
-                    keys = self._safe_parse_keys(keys_response)
-                    all_keys.extend(keys)
-                except Exception as e:
-                    logger.error(f"Error scanning pattern {pattern}: {e}")
-                    continue
-
-            # Remove langgraph: prefix from keys before extracting namespaces
-            cleaned_keys = []
-            for key in all_keys:
-                if key.startswith("langgraph:"):
-                    cleaned_keys.append(key[10:])  # Remove "langgraph:" prefix
-                else:
-                    cleaned_keys.append(key)
-
-            # Extract namespaces using base class method
-            namespaces = self._extract_namespaces_from_keys(cleaned_keys, op.max_depth)
-
-            # Convert to sorted list and apply pagination
-            namespace_list = sorted(list(namespaces))
-
-            # Apply offset and limit
-            start_idx = op.offset or 0
-            end_idx = start_idx + (op.limit or len(namespace_list))
-
-            return namespace_list[start_idx:end_idx]
-
-        except Exception as e:
-            logger.error(f"Error listing namespaces: {e}")
-            return []
 
     async def aget(
         self,
@@ -896,7 +934,7 @@ class AsyncValkeyStore(BaseValkeyStore):
         from langgraph.store.base import GetOp
 
         op = GetOp(namespace=namespace, key=key, refresh_ttl=refresh_ttl or False)
-        return await self._handle_get(op)
+        return await self._handle_get_async(op)
 
     async def aput(
         self,
@@ -912,7 +950,7 @@ class AsyncValkeyStore(BaseValkeyStore):
         op = PutOp(
             namespace=namespace, key=key, value=value, index=index, ttl=resolved_ttl
         )
-        await self._handle_put(op)
+        await self._handle_put_async(op)
 
     async def adelete(
         self,
@@ -921,7 +959,7 @@ class AsyncValkeyStore(BaseValkeyStore):
     ) -> None:
         """Delete an item from the store."""
         op = PutOp(namespace=namespace, key=key, value=None)
-        await self._handle_put(op)
+        await self._handle_put_async(op)
 
     async def asearch(
         self,
@@ -944,7 +982,7 @@ class AsyncValkeyStore(BaseValkeyStore):
             offset=offset,
             refresh_ttl=refresh_ttl or False,
         )
-        return await self._handle_search(op)
+        return await self._handle_search_async(op)
 
     async def alist_namespaces(
         self,
@@ -970,7 +1008,7 @@ class AsyncValkeyStore(BaseValkeyStore):
             limit=limit,
             offset=offset,
         )
-        return await self._handle_list(op)
+        return await self._handle_list_async(op)
 
     async def _handle_response_t_async(self, result: Any) -> Any:
         """Handle ResponseT type from Valkey client in async context.

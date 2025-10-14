@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Literal
 
+import orjson
 from langgraph.store.base import (
     NOT_PROVIDED,
     GetOp,
@@ -27,8 +28,28 @@ from langgraph.store.base import (
 from langgraph.store.base.embed import get_text_at_path
 from valkey import Valkey  # type: ignore[import-untyped]
 from valkey.connection import ConnectionPool  # type: ignore[import-untyped]
+from valkey.commands.search.query import Query  # type: ignore[import-untyped]
 
 from .base import BaseValkeyStore, ValkeyIndexConfig
+from .constants import LANGGRAPH_KEY_PREFIX, SCAN_COUNT_BATCH_SIZE
+from .document_utils import DocumentProcessor, ScoreCalculator, FilterProcessor
+from .exceptions import (
+    DocumentParsingError,
+    EmbeddingGenerationError,
+    SearchIndexError,
+    TTLConfigurationError,
+    ValidationError,
+    ValkeyConnectionError,
+    ValkeyStoreError,
+)
+from .search_strategies import SearchStrategyManager
+from .types import (
+    FilterDict,
+    NamespaceTuple,
+    ValkeyIndexConfigTyped,
+    ValkeyResponse,
+    VectorData,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +163,8 @@ class ValkeyStore(BaseValkeyStore):
             ttl: Optional TTL configuration
         """
         super().__init__(client, index=index, ttl=ttl)
+        # Initialize search strategy manager
+        self._search_manager = SearchStrategyManager(client, self)
 
     def setup(self) -> None:
         """Setup the store, including creating vector search index if configured."""
@@ -201,15 +224,28 @@ class ValkeyStore(BaseValkeyStore):
                 )
             ```
         """
-        with cls._from_conn_string_base(
-            conn_string,
-            index=index,
-            ttl=ttl,
-            pool_size=pool_size,
-            pool_timeout=pool_timeout,
-        ) as (client, index_config, ttl_config):
-            store = cls(client, index=index_config, ttl=ttl_config)
+        try:
+            if pool_size:
+                # Create connection pool
+                pool = ConnectionPool.from_url(
+                    url=conn_string,
+                    max_connections=pool_size,
+                    timeout=pool_timeout or 30.0,
+                )
+                client = Valkey.from_pool(pool)
+            else:
+                # Single connection
+                client = Valkey.from_url(conn_string)
+
+            # Set client info for library identification
+            from ...checkpoint.valkey.utils import set_client_info
+            set_client_info(client)
+            
+            store = cls(client, index=index, ttl=ttl)
             yield store
+        finally:
+            # Cleanup will be handled by pool/client
+            pass
 
     @classmethod
     @contextmanager
@@ -266,13 +302,17 @@ class ValkeyStore(BaseValkeyStore):
                 )
             ```
         """
-        with cls._from_pool_base(pool, index=index, ttl=ttl) as (
-            client,
-            index_config,
-            ttl_config,
-        ):
-            store = cls(client, index=index_config, ttl=ttl_config)
+        try:
+            client = Valkey.from_pool(connection_pool=pool)
+            # Set client info for library identification
+            from ...checkpoint.valkey.utils import set_client_info
+            set_client_info(client)
+            
+            store = cls(client, index=index, ttl=ttl)
             yield store
+        finally:
+            # Pool cleanup handled by owner
+            pass
 
     def batch(self, ops: Iterable[Op]) -> list[Result]:
         """Execute operations synchronously."""
@@ -314,65 +354,27 @@ class ValkeyStore(BaseValkeyStore):
             if result is None:
                 return None
 
-            # Convert hash fields back to document format
-            if isinstance(result, dict) and result:
-                # Reconstruct document from hash fields
-                document = {
-                    "value": result.get(b"value", result.get("value")),
-                    "created_at": result.get(b"created_at", result.get("created_at")),
-                    "updated_at": result.get(b"updated_at", result.get("updated_at")),
-                    "vector": result.get(b"vector", result.get("vector")),
-                }
-
-                # Handle bytes keys/values
-                for key_name, value in document.items():
-                    if isinstance(value, bytes):
-                        document[key_name] = value.decode("utf-8")
-
-                # Parse the JSON-encoded value back to dictionary
-                import orjson
-
-                try:
-                    # The "value" field contains JSON-encoded data that needs to be parsed
-                    if document["value"]:
-                        parsed_value = orjson.loads(document["value"])
-                    else:
-                        parsed_value = None
-                except (orjson.JSONDecodeError, TypeError):
-                    # If parsing fails, use the raw value
-                    parsed_value = document["value"]
-
-                # Parse timestamps
-                try:
-                    created_at = (
-                        datetime.fromisoformat(document["created_at"])
-                        if document["created_at"]
-                        else datetime.now()
-                    )
-                except (ValueError, TypeError):
-                    created_at = datetime.now()
-
-                try:
-                    updated_at = (
-                        datetime.fromisoformat(document["updated_at"])
-                        if document["updated_at"]
-                        else datetime.now()
-                    )
-                except (ValueError, TypeError):
-                    updated_at = datetime.now()
-
-                value = parsed_value
-            else:
+            # Use DocumentProcessor to convert hash fields back to document format
+            document = DocumentProcessor.convert_hash_to_document(result)
+            if document is None:
                 return None
 
+            # Parse the JSON-encoded value using DocumentProcessor
+            parsed_value = DocumentProcessor.parse_document_value(document)
+            if parsed_value is None:
+                return None
+
+            # Parse timestamps using DocumentProcessor
+            created_at, updated_at = DocumentProcessor.parse_timestamps(document)
+
+            # Refresh TTL if configured
             if op.refresh_ttl and self.ttl_config:
-                # Refresh TTL if configured
                 ttl = self.ttl_config.get("default_ttl")
                 if ttl:
                     self.client.expire(key, int(ttl * 60))
 
             return Item(
-                value=value,
+                value=parsed_value,
                 key=op.key,
                 namespace=op.namespace,
                 created_at=created_at,
@@ -412,50 +414,42 @@ class ValkeyStore(BaseValkeyStore):
                             texts.append(str(field_value))
 
                     if texts:
-                        # For sync version, we need to handle embeddings differently
-                        # Since embeddings are typically async, we'll run them in the event loop
+                        # For sync version, try to use sync embeddings if available
                         try:
-                            # Use asyncio.get_running_loop() to check if we're in an async context
-                            try:
-                                asyncio.get_running_loop()
-                                # If we're already in an async context, we can't use asyncio.run
-                                # In this case, we'll skip embeddings for the sync version
-                                logger.warning(
-                                    "Cannot generate embeddings in sync context within async loop"
-                                )
-                                vector = None
-                            except RuntimeError:
-                                # No running event loop, safe to create one with asyncio.run
-                                vectors = asyncio.run(
-                                    self.embeddings.aembed_documents(texts)
-                                )
+                            # Check if embeddings has sync methods
+                            if hasattr(self.embeddings, 'embed_documents'):
+                                # Use sync embedding method
+                                vectors = self.embeddings.embed_documents(texts)
                                 vector = vectors[0] if vectors else None
+                            else:
+                                # Fallback: try async embeddings only if not in async context
+                                try:
+                                    asyncio.get_running_loop()
+                                    # If we're already in an async context, skip embeddings
+                                    logger.warning(
+                                        "Cannot generate embeddings in sync context within async loop"
+                                    )
+                                    vector = None
+                                except RuntimeError:
+                                    # No running event loop, safe to create one with asyncio.run
+                                    vectors = asyncio.run(
+                                        self.embeddings.aembed_documents(texts)
+                                    )
+                                    vector = vectors[0] if vectors else None
                         except Exception as e:
                             logger.error(
-                                f"Error handling async embeddings in sync context: {e}"
+                                f"Error generating embeddings: {e}"
                             )
                             vector = None
             except Exception as e:
                 logger.error(f"Error generating embeddings: {e}")
 
-        # Create document using base class method
-        document_bytes = self._create_document(op.value, vector)
-
-        # Parse the document to get hash fields
-        import orjson
-
-        document = orjson.loads(document_bytes)
-        hash_fields = document.get("_hash_fields", {})
-
-        # If no hash fields, create them from the document
-        if not hash_fields:
-            hash_fields = {
-                "value": orjson.dumps(document.get("value", op.value)).decode("utf-8"),
-                "created_at": document.get("created_at", datetime.now().isoformat()),
-                "updated_at": document.get("updated_at", datetime.now().isoformat()),
-            }
-            if document.get("vector") is not None:
-                hash_fields["vector"] = orjson.dumps(document["vector"]).decode("utf-8")
+        # Use DocumentProcessor to create hash fields for storage
+        hash_fields = DocumentProcessor.create_hash_fields(
+            op.value, 
+            vector, 
+            self.index_fields
+        )
 
         try:
             # Use HSET to store as hash fields for better vector search compatibility
@@ -470,47 +464,12 @@ class ValkeyStore(BaseValkeyStore):
             raise
 
     def _handle_search(self, op: SearchOp) -> list[SearchItem]:
-        """Handle search operation with vector search and fallback to key pattern matching."""
-        items = []
-
+        """Handle search operation using search strategy pattern."""
         try:
-            # Try vector search first if we have embeddings, query, and search is available
-            if (
-                self.embeddings
-                and op.query
-                and self.dims
-                and self._is_search_available()
-                and self.index
-            ):
-                items = self._vector_search(op)
-                if items:  # If vector search succeeded, return results
-                    return items
-
-            # Try hash-based search if vector search failed or wasn't attempted
-            if not items:
-                try:
-                    hash_results = self._search_with_hash(
-                        op.namespace_prefix, op.query, op.filter, op.limit + op.offset
-                    )
-                    items = self._convert_to_search_items(hash_results)
-                    if items:
-                        # Apply offset and limit to hash results
-                        start_idx = op.offset
-                        end_idx = start_idx + op.limit
-                        return items[start_idx:end_idx]
-                except Exception as e:
-                    logger.debug(
-                        f"Hash-based search failed: {e}, falling back to key pattern"
-                    )
-
-            # Final fallback to key pattern matching
-            if not items:
-                items = self._key_pattern_search(op)
-
+            return self._search_manager.search(op)
         except Exception as e:
             logger.error(f"Error in search operation: {e}")
-
-        return items
+            return []
 
     def _convert_to_search_items(
         self, results: list[tuple[tuple[str, ...], str, float]]
@@ -522,68 +481,36 @@ class ValkeyStore(BaseValkeyStore):
                 # Get full document data using HGETALL since data is stored as hash fields
                 full_key = self._build_key(namespace, key)
                 hash_data = self.client.hgetall(full_key)
-                if hash_data:
-                    hash_data = self._handle_response_t(hash_data)
-                    if hash_data and isinstance(hash_data, dict):
-                        # Convert hash fields back to document format (similar to _handle_get)
-                        document = {
-                            "value": hash_data.get(b"value", hash_data.get("value")),
-                            "created_at": hash_data.get(
-                                b"created_at", hash_data.get("created_at")
-                            ),
-                            "updated_at": hash_data.get(
-                                b"updated_at", hash_data.get("updated_at")
-                            ),
-                            "vector": hash_data.get(b"vector", hash_data.get("vector")),
-                        }
+                if not hash_data:
+                    continue
 
-                        # Handle bytes keys/values
-                        for key_name, value in document.items():
-                            if isinstance(value, bytes):
-                                document[key_name] = value.decode("utf-8")
+                hash_data = self._handle_response_t(hash_data)
+                if not hash_data or not isinstance(hash_data, dict):
+                    continue
 
-                        # Parse the JSON-encoded value back to dictionary
-                        import orjson
+                # Use DocumentProcessor to convert hash fields back to document format
+                document = DocumentProcessor.convert_hash_to_document(hash_data)
+                if document is None:
+                    continue
 
-                        try:
-                            if document["value"]:
-                                parsed_value = orjson.loads(document["value"])
-                            else:
-                                parsed_value = None
-                        except (orjson.JSONDecodeError, TypeError):
-                            parsed_value = document["value"]
+                # Parse the JSON-encoded value using DocumentProcessor
+                parsed_value = DocumentProcessor.parse_document_value(document)
+                if parsed_value is None:
+                    continue
 
-                        # Parse timestamps
-                        try:
-                            created_at = (
-                                datetime.fromisoformat(document["created_at"])
-                                if document["created_at"]
-                                else datetime.now()
-                            )
-                        except (ValueError, TypeError):
-                            created_at = datetime.now()
+                # Parse timestamps using DocumentProcessor
+                created_at, updated_at = DocumentProcessor.parse_timestamps(document)
 
-                        try:
-                            updated_at = (
-                                datetime.fromisoformat(document["updated_at"])
-                                if document["updated_at"]
-                                else datetime.now()
-                            )
-                        except (ValueError, TypeError):
-                            updated_at = datetime.now()
-
-                        # Only add item if we have valid parsed value
-                        if parsed_value is not None:
-                            items.append(
-                                SearchItem(
-                                    namespace=namespace,
-                                    key=key,
-                                    value=parsed_value,
-                                    created_at=created_at,
-                                    updated_at=updated_at,
-                                    score=score,
-                                )
-                            )
+                items.append(
+                    SearchItem(
+                        namespace=namespace,
+                        key=key,
+                        value=parsed_value,
+                        created_at=created_at,
+                        updated_at=updated_at,
+                        score=score,
+                    )
+                )
             except Exception as e:
                 logger.debug(f"Error converting result {namespace}/{key}: {e}")
                 continue
@@ -593,7 +520,7 @@ class ValkeyStore(BaseValkeyStore):
         """Perform vector similarity search using Valkey Search."""
         try:
             # Build search query using Valkey vector search syntax
-            index_name = "langgraph_store_idx"
+            index_name = self.collection_name
 
             # Create namespace filter for hybrid queries
             filter_parts = []
@@ -634,116 +561,7 @@ class ValkeyStore(BaseValkeyStore):
 
             try:
                 results = self.client.ft(index_name).search(query, query_params)
-
-                items = []
-                # Check if results has docs attribute and process results
-                docs = getattr(results, "docs", None)
-                if docs:
-                    # Skip offset items and process results
-                    for _i, doc in enumerate(docs[op.offset :]):
-                        try:
-                            # For mock docs, handle both dict-like and object-like access
-                            if hasattr(doc, "__dict__"):
-                                doc_data = doc.__dict__
-                            else:
-                                doc_data = doc
-
-                            # Extract document ID - handle both 'id' attribute and direct access
-                            doc_id = getattr(doc, "id", None) or doc_data.get("id", "")
-                            if doc_id.startswith("langgraph:"):
-                                key_path = doc_id[10:]  # Remove 'langgraph:' prefix
-                                namespace, item_key = self._parse_key(key_path)
-                            else:
-                                continue
-
-                            # Get the actual document content using HGETALL since data is stored as hash fields
-                            full_key = self._build_key(namespace, item_key)
-                            hash_data = self.client.hgetall(full_key)
-                            if not hash_data:
-                                continue
-
-                            hash_data = self._handle_response_t(hash_data)
-                            if hash_data is None or not isinstance(hash_data, dict):
-                                continue
-
-                            # Convert hash fields back to document format (similar to _handle_get)
-                            document = {
-                                "value": hash_data.get(
-                                    b"value", hash_data.get("value")
-                                ),
-                                "created_at": hash_data.get(
-                                    b"created_at", hash_data.get("created_at")
-                                ),
-                                "updated_at": hash_data.get(
-                                    b"updated_at", hash_data.get("updated_at")
-                                ),
-                                "vector": hash_data.get(
-                                    b"vector", hash_data.get("vector")
-                                ),
-                            }
-
-                            # Handle bytes keys/values
-                            for key_name, doc_value in document.items():
-                                if isinstance(doc_value, bytes):
-                                    document[key_name] = doc_value.decode("utf-8")
-
-                            # Parse the JSON-encoded value back to dictionary
-                            import orjson
-
-                            try:
-                                if document["value"]:
-                                    value = orjson.loads(document["value"])
-                                else:
-                                    value = None
-                            except (orjson.JSONDecodeError, TypeError):
-                                value = document["value"]
-
-                            # Skip if no valid value
-                            if value is None:
-                                continue
-
-                            # Parse timestamps
-                            try:
-                                created_at = (
-                                    datetime.fromisoformat(document["created_at"])
-                                    if document["created_at"]
-                                    else datetime.now()
-                                )
-                            except (ValueError, TypeError):
-                                created_at = datetime.now()
-
-                            try:
-                                updated_at = (
-                                    datetime.fromisoformat(document["updated_at"])
-                                    if document["updated_at"]
-                                    else datetime.now()
-                                )
-                            except (ValueError, TypeError):
-                                updated_at = datetime.now()
-
-                            # For vector search, filters are handled by the search index
-                            # so we don't need to apply additional filtering here
-                            # (unlike hash-based search where we filter manually)
-
-                            # Get similarity score from search results - handle both attribute and dict access
-                            score = getattr(doc, "score", None) or doc_data.get(
-                                "score", 0.0
-                            )
-                            score = float(score)
-
-                            item = SearchItem(
-                                namespace=namespace,
-                                key=item_key,
-                                value=value,
-                                created_at=created_at,
-                                updated_at=updated_at,
-                                score=score,
-                            )
-                            items.append(item)
-
-                        except Exception as e:
-                            logger.error(f"Error processing search result: {e}")
-                            continue
+                items = self._process_vector_search_results(results, op)
 
                 # Refresh TTL if configured
                 if op.refresh_ttl and self.ttl_config:
@@ -759,17 +577,112 @@ class ValkeyStore(BaseValkeyStore):
             logger.error(f"Error in vector search: {e}")
             return []
 
+    def _process_vector_search_results(self, results: Any, op: SearchOp) -> list[SearchItem]:
+        """Process vector search results into SearchItem objects."""
+        items = []
+        
+        # Check if results has docs attribute and process results
+        docs = getattr(results, "docs", None)
+        if not docs:
+            return items
+
+        # Skip offset items and process results
+        for _i, doc in enumerate(docs[op.offset :]):
+            try:
+                # Extract document metadata
+                doc_id, score = self._extract_doc_metadata(doc)
+                if not doc_id:
+                    continue
+
+                # Parse document ID to get namespace and key
+                if doc_id.startswith("langgraph:"):
+                    key_path = doc_id[10:]  # Remove 'langgraph:' prefix
+                    namespace, item_key = self._parse_key(key_path)
+                else:
+                    continue
+
+                # Get and process document content
+                search_item = self._create_search_item_from_key(
+                    namespace, item_key, score
+                )
+                if search_item:
+                    items.append(search_item)
+
+            except Exception as e:
+                logger.error(f"Error processing search result: {e}")
+                continue
+
+        return items
+
+    def _extract_doc_metadata(self, doc: Any) -> tuple[str, float]:
+        """Extract document ID and score from search result."""
+        try:
+            # For mock docs, handle both dict-like and object-like access
+            if hasattr(doc, "__dict__"):
+                doc_data = doc.__dict__
+            else:
+                doc_data = doc
+
+            # Extract document ID - handle both 'id' attribute and direct access
+            doc_id = getattr(doc, "id", None) or doc_data.get("id", "")
+            
+            # Get similarity score from search results - handle both attribute and dict access
+            score = getattr(doc, "score", None) or doc_data.get("score", 0.0)
+            score = float(score)
+
+            return doc_id, score
+        except Exception as e:
+            logger.error(f"Error extracting document metadata: {e}")
+            return "", 0.0
+
+    def _create_search_item_from_key(
+        self, namespace: tuple[str, ...], key: str, score: float
+    ) -> SearchItem | None:
+        """Create SearchItem from namespace, key, and score."""
+        try:
+            # Get the actual document content using HGETALL since data is stored as hash fields
+            full_key = self._build_key(namespace, key)
+            hash_data = self.client.hgetall(full_key)
+            if not hash_data:
+                return None
+
+            hash_data = self._handle_response_t(hash_data)
+            if hash_data is None or not isinstance(hash_data, dict):
+                return None
+
+            # Use DocumentProcessor to convert hash fields back to document format
+            document = DocumentProcessor.convert_hash_to_document(hash_data)
+            if document is None:
+                return None
+
+            # Parse the JSON-encoded value using DocumentProcessor
+            parsed_value = DocumentProcessor.parse_document_value(document)
+            if parsed_value is None:
+                return None
+
+            # Parse timestamps using DocumentProcessor
+            created_at, updated_at = DocumentProcessor.parse_timestamps(document)
+
+            return SearchItem(
+                namespace=namespace,
+                key=key,
+                value=parsed_value,
+                created_at=created_at,
+                updated_at=updated_at,
+                score=score,
+            )
+
+        except Exception as e:
+            logger.error(f"Error creating search item for {namespace}/{key}: {e}")
+            return None
+
     def _key_pattern_search(self, op: SearchOp) -> list[SearchItem]:
         """Fallback search using key pattern matching."""
         items = []
 
         try:
-            # Build pattern with langgraph: prefix - be more specific for namespace filtering
-            if op.namespace_prefix:
-                namespace_path = "/".join(op.namespace_prefix)
-                pattern = f"langgraph:{namespace_path}/*"
-            else:
-                pattern = "langgraph:*"
+            # Use FilterProcessor to build namespace pattern
+            pattern = FilterProcessor.build_namespace_pattern(op.namespace_prefix)
 
             # Use SCAN for better performance with large datasets
             cursor = 0
@@ -822,18 +735,28 @@ class ValkeyStore(BaseValkeyStore):
                                 document[key_name] = doc_value.decode("utf-8")
 
                         # Parse the JSON-encoded value back to dictionary
-                        import orjson
-
                         try:
                             if document["value"]:
+                                # Safely parse vector field
+                                vector_data = None
+                                if document.get("vector"):
+                                    try:
+                                        vector_data = orjson.loads(document["vector"])
+                                    except (orjson.JSONDecodeError, TypeError):
+                                        vector_data = None
+                                
+                                # Parse the main value field
+                                if document["value"] is not None:
+                                    parsed_value = orjson.loads(str(document["value"]))
+                                else:
+                                    continue
+                                
                                 value_data = orjson.dumps(
                                     {
-                                        "value": orjson.loads(document["value"]),
+                                        "value": parsed_value,
                                         "created_at": document["created_at"],
                                         "updated_at": document["updated_at"],
-                                        "vector": orjson.loads(document["vector"])
-                                        if document.get("vector")
-                                        else None,
+                                        "vector": vector_data,
                                     }
                                 ).decode("utf-8")
                             else:
@@ -850,46 +773,35 @@ class ValkeyStore(BaseValkeyStore):
                         # Parse namespace and key
                         namespace, item_key = self._parse_key(key_path)
 
-                        # Check namespace prefix filtering more strictly
-                        if op.namespace_prefix:
-                            # Ensure the namespace exactly matches the prefix or starts with it
-                            if len(namespace) < len(op.namespace_prefix):
-                                continue
-                            # For exact prefix matching, namespace must start with the prefix
-                            if (
-                                namespace[: len(op.namespace_prefix)]
-                                != op.namespace_prefix
-                            ):
-                                continue
-                            # Additional strict check: if we're looking for ("test", "public"),
-                            # only return items that are exactly in that namespace or deeper
-                            # This prevents returning ("test", "private") when searching for ("test", "public")
-
-                            # For the test case: searching for ("test", "public") should NOT return ("test", "private")
-                            # We need exact prefix match, not just starting with the first part
-                            prefix_len = len(op.namespace_prefix)
-                            if len(namespace) >= prefix_len:
-                                # Check if the namespace exactly matches the prefix for the first N elements
-                                if namespace[:prefix_len] != op.namespace_prefix:
-                                    continue
-                                # If namespace is longer than prefix, that's fine (deeper nesting)
-                                # If namespace equals prefix, that's also fine (exact match)
-                            else:
-                                # Namespace is shorter than prefix, skip
-                                continue
-
-                        # Parse document using base class method
-                        value, created_at, updated_at = self._parse_document(value_data)
-
-                        # Apply filter using base class method
-                        if not self._apply_filter(value, op.filter):
+                        # Use FilterProcessor to check namespace prefix filtering
+                        if op.namespace_prefix and not FilterProcessor.matches_namespace_prefix(
+                            namespace, op.namespace_prefix
+                        ):
                             continue
 
-                        # Calculate score using base class method
-                        score = self._calculate_simple_score(op.query, value)
+                        # Parse document using DocumentProcessor
+                        try:
+                            doc_dict = orjson.loads(value_data)
+                            value = doc_dict.get("value", {})
+                            # Create a document-like structure for parse_timestamps
+                            temp_doc = {
+                                "created_at": doc_dict.get("created_at"),
+                                "updated_at": doc_dict.get("updated_at")
+                            }
+                            created_at, updated_at = DocumentProcessor.parse_timestamps(temp_doc)
+                        except (orjson.JSONDecodeError, TypeError):
+                            continue
 
-                        # Filter out very low scores for better relevance, but be more lenient
-                        if op.query and score <= 0.1:
+                        # Use FilterProcessor to apply filters
+                        if not FilterProcessor.apply_filters(value, op.filter):
+                            continue
+
+                        # Use ScoreCalculator to calculate text similarity score
+                        score = ScoreCalculator.calculate_text_similarity_score(op.query, value)
+
+                        # Filter out very low scores for better relevance
+                        from .constants import MIN_SEARCH_SCORE
+                        if op.query and score <= MIN_SEARCH_SCORE:
                             continue
 
                         item = SearchItem(

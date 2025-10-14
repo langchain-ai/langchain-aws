@@ -1,8 +1,9 @@
 """Tests for the AsyncValkeyCheckpointSaver implementation."""
 
 import os
+import uuid
 from collections.abc import AsyncGenerator
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import pytest
@@ -64,7 +65,7 @@ async def async_valkey_pool(valkey_url: str) -> Any:
     return pool
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def async_saver(
     valkey_url: str,
 ) -> AsyncGenerator[AsyncValkeyCheckpointSaver, None]:
@@ -177,3 +178,44 @@ async def test_async_shared_pool(async_valkey_pool: Any) -> None:
         assert result2 is not None
         assert result1.checkpoint["id"] == checkpoint1["id"]  # type: ignore
         assert result2.checkpoint["id"] == checkpoint2["id"]  # type: ignore
+
+
+@pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
+@pytest.mark.asyncio
+async def test_alist_checkpoints_before_nonexistent(async_saver: AsyncValkeyCheckpointSaver) -> None:
+    """Test listing checkpoints with before filter for nonexistent checkpoint."""
+    thread_id = f"test-thread-before-nonexistent-{uuid.uuid4()}"
+    checkpoint_ns = "test"
+
+    # Store a checkpoint
+    config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": checkpoint_ns}}
+    checkpoint = {
+        "id": "checkpoint-1",
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "channel_values": {"value": 1},
+        "channel_versions": {},
+        "versions_seen": {},
+        "pending_sends": [],
+    }
+    metadata = {"timestamp": datetime.now(timezone.utc).isoformat(), "user": "test"}
+    await async_saver.aput(config, checkpoint, metadata, {})  # type: ignore
+
+    # List checkpoints before nonexistent checkpoint
+    before_config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "checkpoint_ns": checkpoint_ns,
+            "checkpoint_id": "nonexistent-checkpoint",
+        }
+    }
+
+    result = []
+    async for checkpoint_tuple in async_saver.alist(
+        {"configurable": {"thread_id": thread_id, "checkpoint_ns": checkpoint_ns}},
+        before=before_config,  # type: ignore
+    ):
+        result.append(checkpoint_tuple)
+
+    # Should get all checkpoints since before checkpoint doesn't exist
+    assert len(result) == 1
+    assert result[0].checkpoint["id"] == "checkpoint-1"

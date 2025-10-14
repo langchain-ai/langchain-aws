@@ -1,5 +1,8 @@
 """Tests for ValkeyIndexConfig functionality."""
 
+import pytest
+import fakeredis
+from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
 from langgraph_checkpoint_aws.store.valkey import (
@@ -7,6 +10,17 @@ from langgraph_checkpoint_aws.store.valkey import (
     ValkeyIndexConfig,
     ValkeyStore,
 )
+
+
+def mock_embed_fn(texts):
+    """Mock embedding function that returns fixed vectors."""
+    return [[0.1, 0.2] * 64 for _ in texts]  # 128-dim vectors
+
+
+@pytest.fixture
+def fake_valkey_client():
+    """Create a fake Valkey client using fakeredis."""
+    return fakeredis.FakeStrictRedis(decode_responses=False)
 
 
 class TestValkeyIndexConfig:
@@ -62,6 +76,62 @@ class TestValkeyIndexConfig:
         assert config["dims"] == 512
         assert config["collection_name"] == "flat_collection"
         assert config["index_type"] == "flat"
+
+
+class TestCollectionNameConfiguration:
+    """Test suite for collection_name configuration in ValkeyStore."""
+
+    def test_uses_configured_collection_name_in_vector_search(self, fake_valkey_client):
+        """Test that vector search uses the configured collection_name instead of hardcoded value."""
+        # Create store with custom collection name
+        custom_collection_name = "enterprise_memory_vectors"
+        store = ValkeyStore(
+            fake_valkey_client,
+            index={
+                "dims": 128,
+                "fields": ["title", "content"],
+                "embed": mock_embed_fn,
+                "collection_name": custom_collection_name,
+            },
+        )
+
+        # Verify the custom collection name is set
+        assert store.collection_name == custom_collection_name
+
+        # Perform search to trigger vector search (should not raise errors)
+        results = store.search(
+            namespace_prefix=("test",), 
+            query="test query", 
+            filter={"type": "document"}
+        )
+        
+        # Should return empty results but not error
+        assert isinstance(results, list)
+
+    def test_uses_default_collection_name_when_not_configured(self, fake_valkey_client):
+        """Test that default collection_name is used when not explicitly configured."""
+        # Create store without custom collection name
+        store = ValkeyStore(
+            fake_valkey_client,
+            index={
+                "dims": 128,
+                "fields": ["title", "content"],
+                "embed": mock_embed_fn,
+                # No collection_name specified
+            }, # type: ignore
+        )
+
+        # Verify the default collection name is set
+        assert store.collection_name == "langgraph_store_idx"
+
+        # Perform search to trigger vector search (should not raise errors)
+        results = store.search(
+            namespace_prefix=("test",), 
+            query="test query"
+        )
+        
+        # Should return empty results but not error
+        assert isinstance(results, list)
 
 
 class TestValkeyStoreWithValkeyIndexConfig:
@@ -147,7 +217,11 @@ class TestValkeyStoreWithValkeyIndexConfig:
         # Mock _is_search_available to return True and set up necessary attributes
         store._search_available = True
         store.dims = 128
-        store.embeddings = lambda x: [[0.1] * 128]  # Mock embeddings function
+        
+        # Create a proper mock embeddings object with the expected interface
+        mock_embeddings = MagicMock()
+        mock_embeddings.embed_documents.return_value = [[0.1] * 128]
+        store.embeddings = mock_embeddings
 
         # Mock the setup method to actually call _setup_search_index_sync
         store.setup = lambda: store._setup_search_index_sync()
@@ -308,6 +382,7 @@ class TestValkeyStoreWithValkeyIndexConfig:
 
         assert store.client == mock_client
         assert store.collection_name == "embed_test"
+        assert store.index is not None
         assert callable(store.index.get("embed"))
         assert store.index.get("fields") == ["title", "content"]
 
@@ -412,7 +487,7 @@ class TestValkeyIndexConfigValidation:
             "fields": ["title", "content"],
         }
 
-        store = ValkeyStore(client=mock_client, index=legacy_config)
+        store = ValkeyStore(client=mock_client, index=legacy_config) # pyright: ignore[reportArgumentType]
 
         # Should work without errors and apply defaults
         assert store.collection_name == "langgraph_store_idx"
@@ -520,3 +595,154 @@ class TestValkeyIndexConfigIntegration:
         assert store.hnsw_m == 48
         assert store.hnsw_ef_construction == 500
         assert store.hnsw_ef_runtime == 25
+
+
+class TestCollectionNameConfigurationExtended:
+    """Extended tests for collection_name configuration in ValkeyStore."""
+
+    def test_index_creation_uses_configured_collection_name(self, fake_valkey_client):
+        """Test that index creation uses the configured collection_name."""
+        custom_collection_name = "enterprise_memory_vectors"
+        
+        # Create store with custom collection name
+        store = ValkeyStore(
+            fake_valkey_client,
+            index={
+                "dims": 128,
+                "fields": ["user_id", "memory_type", "content"],
+                "embed": mock_embed_fn,
+                "collection_name": custom_collection_name,
+            },
+        )
+
+        # Verify the custom collection name is set
+        assert store.collection_name == custom_collection_name
+
+        # Setup the store (this should create the index)
+        store.setup()
+
+        # Verify no errors occurred during setup
+        assert store.collection_name == custom_collection_name
+
+    def test_index_creation_includes_configured_fields(self, fake_valkey_client):
+        """Test that index creation includes all configured searchable fields."""
+        custom_fields = ["user_id", "memory_type", "importance", "content", "tags"]
+        
+        # Create store with custom fields
+        store = ValkeyStore(
+            fake_valkey_client,
+            index={
+                "dims": 128,
+                "fields": custom_fields,
+                "embed": mock_embed_fn,
+                "collection_name": "test_store_idx",
+            },
+        )
+
+        # Verify the fields are configured
+        assert store.index_fields == custom_fields
+
+        # Setup the store (this should create the index with all fields)
+        store.setup()
+
+        # Verify no errors occurred during setup
+        assert store.index_fields == custom_fields
+
+    def test_document_creation_includes_searchable_fields(self, fake_valkey_client):
+        """Test that document creation includes searchable fields as hash fields."""
+        # Create store with searchable fields
+        store = ValkeyStore(
+            fake_valkey_client,
+            index={
+                "dims": 128,
+                "fields": ["user_id", "memory_type", "content", "tags"],
+                "embed": mock_embed_fn,
+                "collection_name": "test_store_idx",
+            },
+        )
+
+        # Test document with searchable fields
+        test_value = {
+            "user_id": "user123",
+            "memory_type": "fact",
+            "content": "Test memory content",
+            "tags": ["important", "work"],
+            "other_field": "not indexed"
+        }
+
+        # Put the document
+        store.put(("test",), "doc1", test_value)
+
+        # Retrieve the document to verify it was stored correctly
+        result = store.get(("test",), "doc1")
+        assert result is not None
+        assert result.value == test_value
+
+        # Check the raw hash fields to verify searchable fields are stored
+        key = store._build_key(("test",), "doc1")
+        hash_fields = fake_valkey_client.hgetall(key)
+        
+        # Convert bytes keys/values to strings for easier checking
+        hash_fields_str = {}
+        for k, v in hash_fields.items():
+            key_str = k.decode('utf-8') if isinstance(k, bytes) else k
+            val_str = v.decode('utf-8') if isinstance(v, bytes) else v
+            hash_fields_str[key_str] = val_str
+
+        # Verify that searchable fields are included in hash fields (without value_ prefix)
+        assert "user_id" in hash_fields_str
+        assert "memory_type" in hash_fields_str
+        assert "content" in hash_fields_str
+        assert "tags" in hash_fields_str
+        
+        # Verify the values are correct
+        assert hash_fields_str["user_id"] == "user123"
+        assert hash_fields_str["memory_type"] == "fact"
+        assert hash_fields_str["content"] == "Test memory content"
+        assert hash_fields_str["tags"] == "important,work"  # List should be comma-separated
+
+        # Verify non-indexed fields are not included as separate hash fields
+        assert "other_field" not in hash_fields_str
+
+    def test_list_fields_handled_correctly(self, fake_valkey_client):
+        """Test that list fields are properly converted to comma-separated strings for TAG indexing."""
+        # Create store with fields that might contain lists
+        store = ValkeyStore(
+            fake_valkey_client,
+            index={
+                "dims": 128,
+                "fields": ["tags", "categories"],
+                "embed": mock_embed_fn,
+                "collection_name": "test_store_idx",
+            },
+        )
+
+        # Test document with list fields
+        test_value = {
+            "tags": ["machine-learning", "ai", "python"],
+            "categories": ["tech", "tutorial"],
+            "title": "ML Guide"
+        }
+
+        # Put the document
+        store.put(("test",), "doc1", test_value)
+
+        # Retrieve the document to verify it was stored correctly
+        result = store.get(("test",), "doc1")
+        assert result is not None
+        assert result.value == test_value
+
+        # Check the raw hash fields to verify list conversion
+        key = store._build_key(("test",), "doc1")
+        hash_fields = fake_valkey_client.hgetall(key)
+        
+        # Convert bytes keys/values to strings for easier checking
+        hash_fields_str = {}
+        for k, v in hash_fields.items():
+            key_str = k.decode('utf-8') if isinstance(k, bytes) else k
+            val_str = v.decode('utf-8') if isinstance(v, bytes) else v
+            hash_fields_str[key_str] = val_str
+
+        # Verify that list fields are converted to comma-separated strings
+        assert hash_fields_str["tags"] == "machine-learning,ai,python"
+        assert hash_fields_str["categories"] == "tech,tutorial"

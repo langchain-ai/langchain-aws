@@ -7,6 +7,7 @@ import orjson
 import pytest
 
 from langgraph_checkpoint_aws.store.valkey.base import BaseValkeyStore
+from langgraph_checkpoint_aws.store.valkey.exceptions import ValidationError
 
 
 class ConcreteValkeyStore(BaseValkeyStore):
@@ -186,14 +187,14 @@ class TestBaseValkeyStoreValidation:
         """Test _validate_put with empty namespace (COVERS line 293)."""
         store = ConcreteValkeyStore(mock_valkey_client)
 
-        with pytest.raises(ValueError, match="Namespace cannot be empty"):
+        with pytest.raises(ValidationError, match="Namespace cannot be empty"):
             store._validate_put_operation(tuple(), {"value": "test"})
 
     def test_validate_put_invalid_value_type(self, mock_valkey_client):
         """Test _validate_put with non-dict value."""
         store = ConcreteValkeyStore(mock_valkey_client)
 
-        with pytest.raises(TypeError, match="Value must be a dictionary or None"):
+        with pytest.raises(ValidationError, match="Value must be a dictionary or None"):
             store._validate_put_operation(("namespace",), "not_a_dict")
 
     def test_validate_put_none_value(self, mock_valkey_client):
@@ -204,42 +205,6 @@ class TestBaseValkeyStoreValidation:
         store._validate_put_operation(("namespace",), None)
 
 
-class TestBaseValkeyStoreDocumentCreation:
-    """Test document creation functionality."""
-
-    def test_create_document_with_vector(self, mock_valkey_client):
-        """Test _create_document with vector data (COVERS line 312)."""
-        store = ConcreteValkeyStore(mock_valkey_client)
-
-        test_value = {"title": "Test Document", "content": "Test content"}
-        test_vector = [0.1, 0.2, 0.3, 0.4]
-
-        result = store._create_document(test_value, test_vector)
-
-        assert isinstance(result, bytes)
-        # Verify the document structure contains the vector as bytes
-        doc_data = orjson.loads(result)
-        assert "value" in doc_data
-        assert doc_data["value"] == test_value
-
-    def test_create_document_with_index_fields(self, mock_valkey_client):
-        """Test _create_document with index fields (COVERS lines 316-320)."""
-        store = ConcreteValkeyStore(
-            mock_valkey_client, index={"dims": 128, "fields": ["title", "category"]}
-        )
-
-        test_value = {
-            "title": "Indexed Document",
-            "category": "test",
-            "description": "This should not be indexed",
-        }
-
-        result = store._create_document(test_value)
-
-        assert isinstance(result, bytes)
-        # The document should include searchable fields
-        doc_data = orjson.loads(result)
-        assert doc_data["value"] == test_value
 
 
 class TestBaseValkeyStoreKeyParsing:
@@ -335,114 +300,6 @@ class TestBaseValkeyStoreScoring:
         assert score >= 0.6  # Some exact word matches
 
 
-class TestBaseValkeyStoreSearchWithHash:
-    """Test _search_with_hash functionality."""
-
-    def test_search_with_hash_scan_result_none(self, mock_valkey_client):
-        """Test _search_with_hash when scan returns None (COVERS line 447)."""
-        store = ConcreteValkeyStore(mock_valkey_client)
-
-        # Mock scan to return None after _handle_response_t
-        mock_valkey_client.scan.return_value = (0, [])
-
-        with patch.object(store, "_handle_response_t", return_value=None):
-            results = store._search_with_hash(
-                namespace=("test",), query="search", filter_dict={}, limit=10
-            )
-
-            assert results == []
-
-    def test_search_with_hash_namespace_filtering(self, mock_valkey_client):
-        """Test _search_with_hash with namespace filtering (COVERS lines 462-471)."""
-        store = ConcreteValkeyStore(mock_valkey_client)
-
-        # Mock scan to return keys
-        mock_valkey_client.scan.return_value = (
-            0,
-            ["langgraph:test/sub/doc1", "langgraph:other/doc2"],
-        )
-
-        # Mock get to return document data
-        mock_valkey_client.get.return_value = orjson.dumps(
-            {
-                "value": {"title": "Test Document", "content": "Test content"},
-                "created_at": "2024-01-01T00:00:00Z",
-                "updated_at": "2024-01-01T00:00:00Z",
-            }
-        )
-
-        with patch.object(store, "_handle_response_t") as mock_handle:
-            mock_handle.side_effect = lambda x: x  # Return input unchanged
-
-            with patch.object(store, "_parse_document") as mock_parse:
-                mock_parse.return_value = (
-                    {"title": "Test Document"},
-                    datetime.now(),
-                    datetime.now(),
-                )
-
-                results = store._search_with_hash(
-                    namespace=("test", "sub"),  # Should match test/sub namespace
-                    query="document",
-                    filter_dict={},
-                    limit=10,
-                )
-
-                # Should return results since namespace matches
-                assert isinstance(results, list)
-
-    def test_search_with_hash_score_filtering(self, mock_valkey_client):
-        """Test _search_with_hash with score filtering (COVERS lines 480-484)."""
-        store = ConcreteValkeyStore(mock_valkey_client)
-
-        # Mock scan to return a key
-        mock_valkey_client.scan.return_value = (0, ["langgraph:test/doc1"])
-
-        # Mock get to return document
-        mock_valkey_client.get.return_value = orjson.dumps(
-            {"value": {"title": "Low relevance doc"}}
-        )
-
-        with patch.object(store, "_handle_response_t") as mock_handle:
-            mock_handle.side_effect = lambda x: x
-
-            with patch.object(store, "_parse_document") as mock_parse:
-                mock_parse.return_value = (
-                    {"title": "Low relevance doc"},
-                    datetime.now(),
-                    datetime.now(),
-                )
-
-                with patch.object(
-                    store, "_calculate_simple_score", return_value=0.05
-                ):  # Low score
-                    results = store._search_with_hash(
-                        namespace=("test",),
-                        query="irrelevant search",
-                        filter_dict={},
-                        limit=10,
-                    )
-
-                    # Should filter out low-scoring results (score <= 0.1)
-                    assert len(results) == 0
-
-    def test_search_with_hash_cursor_loop_termination(self, mock_valkey_client):
-        """Test _search_with_hash cursor loop termination (COVERS line 490)."""
-        store = ConcreteValkeyStore(mock_valkey_client)
-
-        # Mock scan to return cursor 0 (end of scan)
-        mock_valkey_client.scan.return_value = (0, [])
-
-        with patch.object(store, "_handle_response_t") as mock_handle:
-            mock_handle.side_effect = lambda x: x
-
-            results = store._search_with_hash(
-                namespace=("test",), query="search", filter_dict={}, limit=10
-            )
-
-            assert results == []
-            # Should call scan once and stop when cursor is 0
-            mock_valkey_client.scan.assert_called_once()
 
 
 class TestBaseValkeyStoreNamespaceExtraction:

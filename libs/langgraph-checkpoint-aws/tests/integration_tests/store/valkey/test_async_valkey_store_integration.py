@@ -17,6 +17,7 @@ except ImportError:
     VALKEY_AVAILABLE = False
 
 from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore, ValkeyIndexConfig
+from langgraph_checkpoint_aws.store.valkey.exceptions import ValidationError
 
 
 def _is_valkey_server_available() -> bool:
@@ -241,13 +242,13 @@ async def test_async_batch_operations(clean_async_store: AsyncValkeyStore) -> No
 async def test_async_error_handling(clean_async_store: AsyncValkeyStore) -> None:
     """Test error handling with AsyncValkeyStore."""
     # Test invalid namespace
-    with pytest.raises(ValueError):
+    with pytest.raises(ValidationError):
         await clean_async_store.aput((), "key", {"test": "value"})
 
-    # Test invalid value type - this should raise a TypeError
+    # Test invalid value type - this should raise a ValidationError
     # but we need to use Any type to bypass static type checking
     from typing import Any
 
     invalid_value: Any = "not a dict"
-    with pytest.raises(TypeError):
+    with pytest.raises(ValidationError):
         await clean_async_store.aput(("test",), "key", invalid_value)

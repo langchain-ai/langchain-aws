@@ -241,9 +241,9 @@ class TestValkeyStoreGet:
 
         result = store.get(("test",), "doc1")
 
-        # ValkeyStore actually returns Item with None value rather than None result
-        assert result is not None
-        assert result.value is None
+        # When value is empty string, DocumentProcessor.parse_document_value returns None
+        # and the _handle_get method returns None for the entire result
+        assert result is None
 
     def test_handle_get_no_hash_data(self, mock_valkey_client):
         """Test handling when hgetall returns no data."""
