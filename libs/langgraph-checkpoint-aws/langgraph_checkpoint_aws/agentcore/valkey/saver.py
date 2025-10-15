@@ -405,7 +405,8 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
                 return None
 
             checkpoint_key = self._make_checkpoint_key(
-                checkpoint_config, latest_checkpoint_id.decode()  # type: ignore[union-attr]
+                checkpoint_config,
+                latest_checkpoint_id.decode(),  # type: ignore[union-attr]
             )
             checkpoint_data = self.client.get(checkpoint_key)
             if not checkpoint_data:
