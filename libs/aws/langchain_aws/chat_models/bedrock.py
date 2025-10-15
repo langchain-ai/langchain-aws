@@ -1324,13 +1324,13 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 answer: str
                 justification: str
 
-            llm =ChatBedrock(
+            llm = ChatBedrock(
                 model_id="anthropic.claude-3-sonnet-20240229-v1:0",
                 model_kwargs={"temperature": 0.001},
             )  # type: ignore[call-arg]
-            structured_llm = llm.with_structured_output(AnswerWithJustification)
+            structured_model = model.with_structured_output(AnswerWithJustification)
 
-            structured_llm.invoke("What weighs more a pound of bricks or a pound of feathers")
+            structured_model.invoke("What weighs more a pound of bricks or a pound of feathers")
 
             # -> AnswerWithJustification(
             #     answer='They weigh the same',
@@ -1348,13 +1348,13 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 answer: str
                 justification: str
 
-            llm =ChatBedrock(
+            model = ChatBedrock(
                 model_id="anthropic.claude-3-sonnet-20240229-v1:0",
                 model_kwargs={"temperature": 0.001},
             )  # type: ignore[call-arg]
-            structured_llm = llm.with_structured_output(AnswerWithJustification, include_raw=True)
+            structured_model = model.with_structured_output(AnswerWithJustification, include_raw=True)
 
-            structured_llm.invoke("What weighs more a pound of bricks or a pound of feathers")
+            structured_model.invoke("What weighs more a pound of bricks or a pound of feathers")
             # -> {
             #     'raw': AIMessage(content='', additional_kwargs={'tool_calls': [{'id': 'call_Ao02pnFYXD6GN1yzc0uXPsvF', 'function': {'arguments': '{"answer":"They weigh the same.","justification":"Both a pound of bricks and a pound of feathers weigh one pound. The weight is the same, but the volume or density of the objects may differ."}', 'name': 'AnswerWithJustification'}, 'type': 'function'}]}),
             #     'parsed': AnswerWithJustification(answer='They weigh the same.', justification='Both a pound of bricks and a pound of feathers weigh one pound. The weight is the same, but the volume or density of the objects may differ.'),
@@ -1378,13 +1378,13 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     "required": ["answer", "justification"]
                 }
             }
-            llm =ChatBedrock(
+            model = ChatBedrock(
                 model_id="anthropic.claude-3-sonnet-20240229-v1:0",
                 model_kwargs={"temperature": 0.001},
             )  # type: ignore[call-arg]
-            structured_llm = llm.with_structured_output(schema)
+            structured_model = model.with_structured_output(schema)
 
-            structured_llm.invoke("What weighs more a pound of bricks or a pound of feathers")
+            structured_model.invoke("What weighs more a pound of bricks or a pound of feathers")
             # -> {
             #     'answer': 'They weigh the same',
             #     'justification': 'Both a pound of bricks and a pound of feathers weigh one pound. The weight is the same, but the volume and density of the two substances differ.'

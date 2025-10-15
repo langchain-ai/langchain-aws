@@ -277,21 +277,21 @@ class ChatSagemakerEndpoint(BaseChatModel):
     """
     Example:
         ```python
-        from langchain_community.llms.sagemaker_endpoint import ChatContentHandler
+        from langchain_aws.chat_models.sagemaker_endpoint import ChatModelContentHandler
 
-        class ContentHandler(ChatContentHandler):
-                content_type = "application/json"
-                accepts = "application/json"
+        class ContentHandler(ChatModelContentHandler):
+            content_type = "application/json"
+            accepts = "application/json"
 
-                def transform_input(
-                    self, prompt: List[Dict[str, Any]], model_kwargs: Dict
-                ) -> bytes:
-                    input_str = json.dumps({prompt: prompt, **model_kwargs})
-                    return input_str.encode('utf-8')
+            def transform_input(
+                self, prompt: List[Dict[str, Any]], model_kwargs: Dict
+            ) -> bytes:
+                input_str = json.dumps({prompt: prompt, **model_kwargs})
+                return input_str.encode('utf-8')
 
-                def transform_output(self, output: bytes) -> BaseMessage:
-                    response_json = json.loads(output.read().decode("utf-8"))
-                    return response_json[0]["generated_text"]
+            def transform_output(self, output: bytes) -> BaseMessage:
+                response_json = json.loads(output.read().decode("utf-8"))
+                return response_json[0]["generated_text"]
         ```
     """
 

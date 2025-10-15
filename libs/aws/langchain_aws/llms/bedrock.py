@@ -1310,7 +1310,7 @@ class BedrockLLM(LLM, BedrockBase):
     """
     Example:
         ```python
-        from bedrock_langchain.bedrock_llm import BedrockLLM
+        from langchain_aws import BedrockLLM
 
         llm = BedrockLLM(
             credentials_profile_name="default",

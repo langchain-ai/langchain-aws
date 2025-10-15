@@ -140,7 +140,7 @@ class ChatBedrockConverse(BaseChatModel):
         ```python
         from langchain_aws import ChatBedrockConverse
 
-        llm = ChatBedrockConverse(
+        model = ChatBedrockConverse(
             model="anthropic.claude-3-sonnet-20240229-v1:0",
             temperature=0,
             max_tokens=None,
@@ -154,7 +154,7 @@ class ChatBedrockConverse(BaseChatModel):
             ("system", "You are a helpful translator. Translate the user sentence to French."),
             ("human", "I love programming."),
         ]
-        llm.invoke(messages)
+        model.invoke(messages)
         ```
 
         ```python
@@ -163,7 +163,7 @@ class ChatBedrockConverse(BaseChatModel):
 
     Stream:
         ```python
-        for chunk in llm.stream(messages):
+        for chunk in model.stream(messages):
             print(chunk)
         ```
 
@@ -183,7 +183,7 @@ class ChatBedrockConverse(BaseChatModel):
         ```
 
         ```python
-        stream = llm.stream(messages)
+        stream = model.stream(messages)
         full = next(stream)
         for chunk in stream:
             full += chunk
@@ -208,8 +208,8 @@ class ChatBedrockConverse(BaseChatModel):
 
             location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
 
-        llm_with_tools = llm.bind_tools([GetWeather, GetPopulation])
-        ai_msg = llm_with_tools.invoke("Which city is hotter today and which is bigger: LA or NY?")
+        model_with_tools = model.bind_tools([GetWeather, GetPopulation])
+        ai_msg = model_with_tools.invoke("Which city is hotter today and which is bigger: LA or NY?")
         ai_msg.tool_calls
         ```
 
@@ -243,8 +243,8 @@ class ChatBedrockConverse(BaseChatModel):
             punchline: str = Field(description="The punchline to the joke")
             rating: Optional[int] = Field(description="How funny the joke is, from 1 to 10")
 
-        structured_llm = llm.with_structured_output(Joke)
-        structured_llm.invoke("Tell me a joke about cats")
+        structured_model = model.with_structured_output(Joke)
+        structured_model.invoke("Tell me a joke about cats")
         ```
 
         ```python
@@ -273,14 +273,14 @@ class ChatBedrockConverse(BaseChatModel):
             }
         }
 
-        llm = ChatBedrockConverse(
+        model = ChatBedrockConverse(
             model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
             max_tokens=5000,
             region_name="us-west-2",
             additional_model_request_fields=thinking_params,
         )
 
-        response = llm.invoke("What is the cube root of 50.653?")
+        response = model.invoke("What is the cube root of 50.653?")
         print(response.content)
         ```
 
@@ -308,7 +308,7 @@ class ChatBedrockConverse(BaseChatModel):
                 },
             ],
         )
-        ai_msg = llm.invoke([message])
+        ai_msg = model.invoke([message])
         ai_msg.content
         ```
 
@@ -319,7 +319,7 @@ class ChatBedrockConverse(BaseChatModel):
 
     Token usage:
         ```python
-        ai_msg = llm.invoke(messages)
+        ai_msg = model.invoke(messages)
         ai_msg.usage_metadata
         ```
 
@@ -329,7 +329,7 @@ class ChatBedrockConverse(BaseChatModel):
 
     Response metadata
         ```python
-        ai_msg = llm.invoke(messages)
+        ai_msg = model.invoke(messages)
         ai_msg.response_metadata
         ```
 
