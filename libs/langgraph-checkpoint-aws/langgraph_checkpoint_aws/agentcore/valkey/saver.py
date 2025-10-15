@@ -392,7 +392,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
                 return None
             try:
                 stored_checkpoint = StoredCheckpoint.model_validate_json(
-                    checkpoint_data
+                    checkpoint_data  # type: ignore[arg-type]
                 )
             except Exception as e:
                 # Handle corrupted data by raising an exception
@@ -405,14 +405,14 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
                 return None
 
             checkpoint_key = self._make_checkpoint_key(
-                checkpoint_config, latest_checkpoint_id.decode()
+                checkpoint_config, latest_checkpoint_id.decode()  # type: ignore[union-attr]
             )
             checkpoint_data = self.client.get(checkpoint_key)
             if not checkpoint_data:
                 return None
             try:
                 stored_checkpoint = StoredCheckpoint.model_validate_json(
-                    checkpoint_data
+                    checkpoint_data  # type: ignore[arg-type]
                 )
             except Exception as e:
                 # Handle corrupted data by raising an exception
@@ -424,7 +424,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         )
         writes_data = self.client.lrange(writes_key, 0, -1)
         try:
-            writes = [StoredWrite.model_validate_json(w) for w in writes_data]
+            writes = [StoredWrite.model_validate_json(w) for w in writes_data]  # type: ignore[arg-type,union-attr]
         except Exception as e:
             # Handle corrupted writes data
             raise ValueError(f"Failed to parse writes data: {e}") from e
@@ -467,7 +467,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         checkpoint_ids = self.client.lrange(session_key, 0, -1)
 
         count = 0
-        for checkpoint_id_bytes in checkpoint_ids:
+        for checkpoint_id_bytes in checkpoint_ids:  # type: ignore[union-attr]
             checkpoint_id = checkpoint_id_bytes.decode()
 
             # Apply before filter
@@ -484,7 +484,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
             if not checkpoint_data:
                 continue
 
-            stored_checkpoint = StoredCheckpoint.model_validate_json(checkpoint_data)
+            stored_checkpoint = StoredCheckpoint.model_validate_json(checkpoint_data)  # type: ignore[arg-type]
 
             # Apply metadata filter
             if filter:
@@ -500,7 +500,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
             # Get writes for this checkpoint
             writes_key = self._make_writes_key(checkpoint_config, checkpoint_id)
             writes_data = self.client.lrange(writes_key, 0, -1)
-            writes = [StoredWrite.model_validate_json(w) for w in writes_data]
+            writes = [StoredWrite.model_validate_json(w) for w in writes_data]  # type: ignore[arg-type,union-attr]
 
             # Get channel data
             channel_data: dict[str, StoredChannelData] = {}
@@ -635,7 +635,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         # Delete all checkpoint-related keys
         keys_to_delete = [session_key]
 
-        for checkpoint_id_bytes in checkpoint_ids:
+        for checkpoint_id_bytes in checkpoint_ids:  # type: ignore[union-attr]
             checkpoint_id = checkpoint_id_bytes.decode()
 
             # Add checkpoint key

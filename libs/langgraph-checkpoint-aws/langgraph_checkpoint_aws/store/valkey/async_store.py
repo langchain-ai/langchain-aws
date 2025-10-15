@@ -169,7 +169,7 @@ class AsyncValkeyStore(BaseValkeyStore):
         self._document_processor = DocumentProcessor()
         self._filter_processor = FilterProcessor()
         self._score_calculator = ScoreCalculator()
-        self._search_strategy_manager = SearchStrategyManager(client, self)
+        self._search_strategy_manager = SearchStrategyManager(client, self)  # type: ignore[assignment]
 
         # Detect if this is an async client (like fakeredis.aioredis.FakeRedis)
         self._is_async_client = self._detect_async_client(client)
@@ -219,11 +219,11 @@ class AsyncValkeyStore(BaseValkeyStore):
         try:
             # Try to execute a simple FT.INFO command to check if search is available
             await self._execute_command("FT._LIST")
-            self._search_available = True
+            self._search_available = True  # type: ignore[assignment]
             return True
         except Exception as e:
             logger.debug(f"Valkey Search not available: {e}")
-            self._search_available = False
+            self._search_available = False  # type: ignore[assignment]
             return False
 
     async def _setup_search_index_async(self) -> None:
@@ -335,11 +335,11 @@ class AsyncValkeyStore(BaseValkeyStore):
                 await self._handle_put_async(op)
                 results.append(None)
             elif isinstance(op, SearchOp):
-                result = await self._handle_search_async(op)
-                results.append(result)
+                search_result = await self._handle_search_async(op)
+                results.append(search_result)  # type: ignore[arg-type]
             elif isinstance(op, ListNamespacesOp):
-                result = await self._handle_list_async(op)
-                results.append(result)
+                list_result = await self._handle_list_async(op)
+                results.append(list_result)  # type: ignore[arg-type]
             else:
                 raise ValueError(f"Unknown operation type: {type(op)}")
         return results
@@ -430,7 +430,7 @@ class AsyncValkeyStore(BaseValkeyStore):
             if not fields:
                 return None
 
-            texts = []
+            texts: list[str] = []
             for field in fields:
                 field_value = get_text_at_path(op.value, field)
                 if isinstance(field_value, list):
@@ -453,6 +453,8 @@ class AsyncValkeyStore(BaseValkeyStore):
                         None, self.embeddings.embed_documents, texts
                     )
                     return vectors[0] if vectors else None
+                else:
+                    return None
             except Exception as e:
                 logger.error(f"Error generating embeddings: {e}")
                 return None

@@ -341,11 +341,11 @@ class ValkeyStore(BaseValkeyStore):
                 self._handle_put(op)
                 results.append(None)
             elif isinstance(op, SearchOp):
-                result = self._handle_search(op)
-                results.append(result)
+                search_result = self._handle_search(op)
+                results.append(search_result)  # type: ignore[arg-type]
             elif isinstance(op, ListNamespacesOp):
-                result = self._handle_list(op)
-                results.append(result)
+                list_result = self._handle_list(op)
+                results.append(list_result)  # type: ignore[arg-type]
             else:
                 raise ValueError(f"Unknown operation type: {type(op)}")
         return results
@@ -535,7 +535,7 @@ class ValkeyStore(BaseValkeyStore):
             try:
                 fields = op.index or self.index_fields
                 if fields:
-                    texts = []
+                    texts: list[str] = []
                     for field in fields:
                         field_value = get_text_at_path(op.value, field)
                         if isinstance(field_value, list):
@@ -712,7 +712,7 @@ class ValkeyStore(BaseValkeyStore):
         self, results: Any, op: SearchOp
     ) -> list[SearchItem]:
         """Process vector search results into SearchItem objects."""
-        items = []
+        items: list[SearchItem] = []
 
         # Check if results has docs attribute and process results
         docs = getattr(results, "docs", None)
@@ -960,7 +960,7 @@ class ValkeyStore(BaseValkeyStore):
                     continue
 
             # Sort by score descending
-            scored_items.sort(key=lambda x: x.score, reverse=True)
+            scored_items.sort(key=lambda x: x.score or 0.0, reverse=True)
 
             # Apply offset and limit after scoring and sorting
             start_idx = op.offset or 0
@@ -1026,7 +1026,8 @@ class ValkeyStore(BaseValkeyStore):
                     cleaned_keys.append(key)
 
             # Extract namespaces using base class method
-            namespaces = self._extract_namespaces_from_keys(cleaned_keys, op.max_depth)
+            # Type ignore: list[str] is compatible with list[bytes | str] at runtime
+            namespaces = self._extract_namespaces_from_keys(cleaned_keys, op.max_depth)  # type: ignore[arg-type]
 
             # Convert to sorted list and apply pagination
             namespace_list = sorted(list(namespaces))

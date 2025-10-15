@@ -107,7 +107,7 @@ class BaseValkeyStore(BaseStore):
                         f"Failed to initialize embeddings: {e}"
                     ) from e
             else:
-                self.embeddings = None
+                self.embeddings = None  # type: ignore[assignment]
             self.index_fields = index.get("fields", ["$"])
             self.dims = index.get("dims")
 
@@ -122,7 +122,7 @@ class BaseValkeyStore(BaseStore):
             )
             self.hnsw_ef_runtime = index.get("hnsw_ef_runtime", DEFAULT_HNSW_EF_RUNTIME)
         else:
-            self.embeddings = None
+            self.embeddings = None  # type: ignore[assignment]
             self.index_fields = None
             self.dims = None
             # Set default values when no index config is provided
@@ -157,11 +157,11 @@ class BaseValkeyStore(BaseStore):
         try:
             # Try to execute a simple FT.INFO command to check if search is available
             self.client.execute_command("FT._LIST")
-            self._search_available = True
+            self._search_available = True  # type: ignore[assignment]
             return True
         except Exception as e:
             logger.debug(f"Valkey Search not available: {e}")
-            self._search_available = False
+            self._search_available = False  # type: ignore[assignment]
             return False
 
     def _create_index_command(self, index_name: str, prefix: str) -> list[str]:
@@ -457,7 +457,7 @@ class BaseValkeyStore(BaseStore):
             try:
                 fields = op.index or self.index_fields
                 if fields:
-                    texts = []
+                    texts: list[str] = []
                     for field in fields:
                         field_value = get_text_at_path(op.value, field)
                         if isinstance(field_value, list):
@@ -497,7 +497,9 @@ class BaseValkeyStore(BaseStore):
                 cleaned_keys.append(key)
 
         # Extract namespaces using base class method
-        namespaces = self._extract_namespaces_from_keys(cleaned_keys, op.max_depth)
+        # Note: cleaned_keys is list[str] but method expects Sequence[bytes | str]
+        # Type ignore: list[str] is compatible with list[bytes | str] at runtime
+        namespaces = self._extract_namespaces_from_keys(cleaned_keys, op.max_depth)  # type: ignore[arg-type]
 
         # Convert to sorted list and apply pagination
         namespace_list = sorted(list(namespaces))

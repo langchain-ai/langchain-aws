@@ -170,7 +170,7 @@ class VectorSearchStrategy(SearchStrategy):
         self, results: Any, op: SearchOp
     ) -> list[SearchItem]:
         """Process vector search results into SearchItem objects."""
-        items = []
+        items: list[SearchItem] = []
 
         # Check if results has docs attribute and process results
         docs = getattr(results, "docs", None)
@@ -475,7 +475,7 @@ class KeyPatternSearchStrategy(SearchStrategy):
                     continue
 
             # Sort by score descending
-            scored_items.sort(key=lambda x: x.score, reverse=True)
+            scored_items.sort(key=lambda x: x.score or 0.0, reverse=True)
 
             # Apply offset and limit after scoring and sorting
             start_idx = op.offset or 0
