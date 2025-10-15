@@ -44,12 +44,12 @@ MODEL_ID = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
 # Sessions will be saved and persisted for actor_id/session_id combinations
 checkpointer = AgentCoreMemorySaver(MEMORY_ID, region_name=REGION)
 
-# Initialize LLM
-llm = init_chat_model(MODEL_ID, model_provider="bedrock_converse", region_name=REGION)
+# Initialize chat model
+model = init_chat_model(MODEL_ID, model_provider="bedrock_converse", region_name=REGION)
 
 # Create a pre-built langgraph agent (configurations work for custom agents too)
 graph = create_react_agent(
-    model=llm,
+    model=model,
     tools=tools,
     checkpointer=checkpointer, # AgentCoreMemorySaver we created above
 )
@@ -91,7 +91,7 @@ store = AgentCoreMemoryStore(MEMORY_ID, region_name=REGION)
 # Pre-model hook runs and saves messages of your choosing to AgentCore Memory
 # for async processing and extraction
 def pre_model_hook(state, config: RunnableConfig, *, store: BaseStore):
-    """Hook that runs pre-LLM invocation to save the latest human message"""
+    """Hook that runs pre-model invocation to save the latest human message"""
     actor_id = config["configurable"]["actor_id"]
     thread_id = config["configurable"]["thread_id"]
     
@@ -99,7 +99,7 @@ def pre_model_hook(state, config: RunnableConfig, *, store: BaseStore):
     namespace = (actor_id, thread_id)
     
     messages = state.get("messages", [])
-    # Save the last human message we see before LLM invocation
+    # Save the last human message we see before model invocation
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
             store.put(namespace, str(uuid.uuid4()), {"message": msg})
@@ -110,14 +110,14 @@ def pre_model_hook(state, config: RunnableConfig, *, store: BaseStore):
     # preferences = store.search(user_preferences_namespace, query=msg.content, limit=5)
     # # Add to input messages as needed
     
-    return {"llm_input_messages": messages}
+    return {"model_input_messages": messages}
 
-# Initialize LLM
-llm = init_chat_model(MODEL_ID, model_provider="bedrock_converse", region_name=REGION)
+# Initialize chat model
+model = init_chat_model(MODEL_ID, model_provider="bedrock_converse", region_name=REGION)
 
 # Create a pre-built langgraph agent (configurations work for custom agents too)
 graph = create_react_agent(
-    model=llm,
+    model=model,
     tools=[],
     pre_model_hook=pre_model_hook,
 )

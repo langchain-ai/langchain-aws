@@ -149,11 +149,7 @@ class InMemorySemanticCache(BaseCache):
             redis_url (str): URL to connect to MemoryDB.
             embedding (Embedding): Embedding provider for semantic encoding and search.
             score_threshold (float, 0.2):
-
-        Example:
-
-        .. code-block:: python
-
+        Example:            ```python
             from langchain_core.globals import set_llm_cache
 
             from langchain_aws.cache import InMemorySemanticCache
@@ -162,6 +158,7 @@ class InMemorySemanticCache(BaseCache):
                 redis_url="redis://localhost:6379",
                 embedding=OpenAIEmbeddings()
             ))
+            ```
 
         """
         self._cache_dict: Dict[str, InMemoryVectorStore] = {}

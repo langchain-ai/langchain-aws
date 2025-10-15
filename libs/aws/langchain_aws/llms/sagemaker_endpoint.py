@@ -103,7 +103,7 @@ class SagemakerEndpoint(LLM):
     https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
     If a specific credential profile should be used, you must pass
-    the name of the profile from the ``~/.aws/credentials`` file that is to be used.
+    the name of the profile from the `~/.aws/credentials` file that is to be used.
 
     Make sure the credentials / roles used have the required policies to
     access the Sagemaker endpoint.
@@ -114,12 +114,12 @@ class SagemakerEndpoint(LLM):
     """
     Args:        
 
-        region_name: The aws region e.g., ``'us-west-2'``.
-            Falls back to ``AWS_REGION``/``AWS_DEFAULT_REGION`` env variable
-            or region specified in ``~/.aws/config``.
+        region_name: The aws region e.g., `'us-west-2'`.
+            Falls back to `AWS_REGION`/`AWS_DEFAULT_REGION` env variable
+            or region specified in `~/.aws/config`.
 
-        credentials_profile_name: The name of the profile in the ``~/.aws/credentials``
-            or ~/.aws/config files, which has either access keys or role information
+        credentials_profile_name: The name of the profile in the `~/.aws/credentials`
+            or `~/.aws/config` files, which has either access keys or role information
             specified. If not specified, the default credential profile or, if on an
             EC2 instance, credentials from IMDS will be used.
 
@@ -129,42 +129,42 @@ class SagemakerEndpoint(LLM):
 
 
     Example:
-        .. code-block:: python
+        ```python
+        from langchain_community.llms import SagemakerEndpoint
+        endpoint_name = (
+            "my-endpoint-name"
+        )
+        region_name = (
+            "us-west-2"
+        )
+        credentials_profile_name = (
+            "default"
+        )
+        se = SagemakerEndpoint(
+            endpoint_name=endpoint_name,
+            region_name=region_name,
+            credentials_profile_name=credentials_profile_name
+        )
+    
+        # Usage with Inference Component
+        se = SagemakerEndpoint(
+            endpoint_name=endpoint_name,
+            inference_component_name=inference_component_name,
+            region_name=region_name,
+            credentials_profile_name=credentials_profile_name
+        )
 
-            from langchain_community.llms import SagemakerEndpoint
-            endpoint_name = (
-                "my-endpoint-name"
-            )
-            region_name = (
-                "us-west-2"
-            )
-            credentials_profile_name = (
-                "default"
-            )
-            se = SagemakerEndpoint(
-                endpoint_name=endpoint_name,
-                region_name=region_name,
-                credentials_profile_name=credentials_profile_name
-            )
-        
-            # Usage with Inference Component
-            se = SagemakerEndpoint(
-                endpoint_name=endpoint_name,
-                inference_component_name=inference_component_name,
-                region_name=region_name,
-                credentials_profile_name=credentials_profile_name
-            )
+        # Use with boto3 client
+        client = boto3.client(
+                    "sagemaker-runtime",
+                    region_name=region_name
+                )
 
-        #Use with boto3 client
-            client = boto3.client(
-                        "sagemaker-runtime",
-                        region_name=region_name
-                    )
-
-            se = SagemakerEndpoint(
-                endpoint_name=endpoint_name,
-                client=client
-            )
+        se = SagemakerEndpoint(
+            endpoint_name=endpoint_name,
+            client=client
+        )
+        ```
 
     """
     client: Any = None
@@ -181,10 +181,10 @@ class SagemakerEndpoint(LLM):
     """Optional name of the inference component to invoke if specified with endpoint name."""  # noqa: E501
 
     region_name: str = ""
-    """The aws region where the Sagemaker model is deployed, eg. ``'us-west-2'``."""
+    """The aws region where the Sagemaker model is deployed, eg. `'us-west-2'`."""
 
     credentials_profile_name: Optional[str] = None
-    """The name of the profile in the ``~/.aws/credentials`` or ``~/.aws/config`` files,
+    """The name of the profile in the `~/.aws/credentials` or `~/.aws/config` files,
     which has either access keys or role information specified.
     
     If not specified, the default credential profile or, if on an EC2 instance,
@@ -210,16 +210,16 @@ class SagemakerEndpoint(LLM):
     aws_secret_access_key: Optional[SecretStr] = Field(
         default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
     )
-    """AWS ``secret_access_key``. 
+    """AWS `secret_access_key`. 
 
-    If provided, ``aws_access_key_id`` must also be provided.
+    If provided, `aws_access_key_id` must also be provided.
     
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
     
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from ``AWS_SECRET_ACCESS_KEY`` environment variable.
+    If not provided, will be read from `AWS_SECRET_ACCESS_KEY` environment variable.
 
     """
 
@@ -228,22 +228,22 @@ class SagemakerEndpoint(LLM):
     )
     """AWS session token. 
 
-    If provided, ``aws_access_key_id`` and ``aws_secret_access_key`` must also be
+    If provided, `aws_access_key_id` and `aws_secret_access_key` must also be
     provided.
     
     Not required unless using temporary credentials.
     
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from ``AWS_SESSION_TOKEN`` environment variable.
+    If not provided, will be read from `AWS_SESSION_TOKEN` environment variable.
 
     """
 
     config: Any = None
-    """An optional ``botocore.config.Config`` instance to pass to the client."""
+    """An optional `botocore.config.Config` instance to pass to the client."""
 
     endpoint_url: Optional[str] = None
-    """Needed if you don't want to default to ``'us-east-1'`` endpoint"""
+    """Needed if you don't want to default to `'us-east-1'` endpoint"""
 
     content_handler: LLMContentHandler
     """The content handler class that provides an input and output transform functions
@@ -256,8 +256,7 @@ class SagemakerEndpoint(LLM):
 
     """
      Example:
-        .. code-block:: python
-
+        ```python
         from langchain_community.llms.sagemaker_endpoint import LLMContentHandler
 
         class ContentHandler(LLMContentHandler):
@@ -271,7 +270,7 @@ class SagemakerEndpoint(LLM):
                 def transform_output(self, output: bytes) -> str:
                     response_json = json.loads(output.read().decode("utf-8"))
                     return response_json[0]["generated_text"]
-
+        ```
     """
 
     model_kwargs: Optional[Dict] = None
@@ -279,9 +278,9 @@ class SagemakerEndpoint(LLM):
 
     endpoint_kwargs: Optional[Dict] = None
     """Optional attributes passed to the invoke_endpoint
-    function. See ``boto3``_. docs for more info.
+    function. See `boto3` docs for more info.
 
-    .. _boto3: <https://boto3.amazonaws.com/v1/documentation/api/latest/index.html>
+    [boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html)
 
     """
 
@@ -383,9 +382,9 @@ class SagemakerEndpoint(LLM):
             The string generated by the model.
 
         Example:
-            .. code-block:: python
-
-                response = se("Tell me a joke.")
+            ```python
+            response = se("Tell me a joke.")
+            ```
 
         """
         _model_kwargs = self.model_kwargs or {}

@@ -70,10 +70,12 @@ def check_index_exists(client: InMemoryDBType, index_name: str) -> bool:
 class InMemoryVectorStore(VectorStore):
     """InMemoryVectorStore vector database.
 
-    To use, you should have the ``redis`` python package installed
-    for  AWS MemoryDB
+    To use, you should have the `redis` python package installed
+    for  AWS MemoryDB:
 
-    .. code-block:: bash
+        ```bash
+        pip install redis
+        ```
 
     Once running, you can connect to the MemoryDB server with the following url schemas:
     - redis://<host>:<port> # simple connection
@@ -88,70 +90,67 @@ class InMemoryVectorStore(VectorStore):
     LangChain.
 
     For all the following examples assume we have the following imports:
+        ```python
+        from langchain_aws.vectorstores import InMemoryVectorStore
+        ```
 
-    .. code-block:: python
-
+    Initialize, create index, and load Documents:
+        ```python
         from langchain_aws.vectorstores import InMemoryVectorStore
 
+        rds = InMemoryVectorStore.from_documents(
+            documents, # a list of Document objects from loaders or created
+            embeddings, # an Embeddings object
+            redis_url="redis://cluster_endpoint:6379",
+        )
+        ```
 
-    Initialize, create index, and load Documents
-        .. code-block:: python
-
-            from langchain_aws.vectorstores import InMemoryVectorStore
-
-            rds = InMemoryVectorStore.from_documents(
-                documents, # a list of Document objects from loaders or created
-                embeddings, # an Embeddings object
-                redis_url="redis://cluster_endpoint:6379",
-            )
-
-    Initialize, create index, and load Documents with metadata
-        .. code-block:: python
-
-
-            rds = InMemoryVectorStore.from_texts(
-                texts, # a list of strings
-                metadata, # a list of metadata dicts
-                embeddings, # an Embeddings object
-                redis_url="redis://cluster_endpoint:6379",
-            )
+    Initialize, create index, and load Documents with metadata:
+        ```python
+        rds = InMemoryVectorStore.from_texts(
+            texts, # a list of strings
+            metadata, # a list of metadata dicts
+            embeddings, # an Embeddings object
+            redis_url="redis://cluster_endpoint:6379",
+        )
+        ```
 
     Initialize, create index, and load Documents with metadata and return keys
 
-        .. code-block:: python
-
-            rds, keys = InMemoryVectorStore.from_texts_return_keys(
-                texts, # a list of strings
-                metadata, # a list of metadata dicts
-                embeddings, # an Embeddings object
-                redis_url="redis://cluster_endpoint:6379",
-            )
+        ```python
+        rds, keys = InMemoryVectorStore.from_texts_return_keys(
+            texts, # a list of strings
+            metadata, # a list of metadata dicts
+            embeddings, # an Embeddings object
+            redis_url="redis://cluster_endpoint:6379",
+        )
+        ```
 
     For use cases where the index needs to stay alive, you can initialize
     with an index name such that it's easier to reference later
 
-        .. code-block:: python
-
-            rds = InMemoryVectorStore.from_texts(
-                texts, # a list of strings
-                metadata, # a list of metadata dicts
-                embeddings, # an Embeddings object
-                index_name="my-index",
-                redis_url="redis://cluster_endpoint:6379",
-            )
+        ```python
+        rds = InMemoryVectorStore.from_texts(
+            texts, # a list of strings
+            metadata, # a list of metadata dicts
+            embeddings, # an Embeddings object
+            index_name="my-index",
+            redis_url="redis://cluster_endpoint:6379",
+        )
+        ```
 
     Initialize and connect to an existing index (from above)
 
-        .. code-block:: python
-
-            # must pass in schema and key_prefix from another index
-            existing_rds = InMemoryVectorStore.from_existing_index(
-                embeddings, # an Embeddings object
-                index_name="my-index",
-                schema=rds.schema, # schema dumped from another index
-                key_prefix=rds.key_prefix, # key prefix from another index
-                redis_url="redis://cluster_endpoint:6379",
-            )
+        ```python
+        # must pass in schema and key_prefix from another index
+        existing_rds = InMemoryVectorStore.from_existing_index(
+            embeddings, # an Embeddings object
+            index_name="my-index",
+            schema=rds.schema, # schema dumped from another index
+            key_prefix=rds.key_prefix, # key prefix from another index
+            redis_url="redis://username:password@cluster_endpoint:6379",
+        )
+        ```
 
 
     Advanced examples:
@@ -162,19 +161,19 @@ class InMemoryVectorStore(VectorStore):
     vector schema for your use case. ex. using HNSW instead of
     FLAT (knn) which is the default
 
-        .. code-block:: python
+        ```python
+        vector_schema = {
+            "algorithm": "HNSW"
+        }
 
-            vector_schema = {
-                "algorithm": "HNSW"
-            }
-
-            rds = InMemoryVectorStore.from_texts(
-                texts, # a list of strings
-                metadata, # a list of metadata dicts
-                embeddings, # an Embeddings object
-                vector_schema=vector_schema,
-                redis_url="redis://cluster_endpoint:6379",
-            )
+        rds = InMemoryVectorStore.from_texts(
+            texts, # a list of strings
+            metadata, # a list of metadata dicts
+            embeddings, # an Embeddings object
+            vector_schema=vector_schema,
+            redis_url="redis://cluster_endpoint:6379",
+        )
+        ```
 
     Custom index schema can be supplied to change the way that the
     metadata is indexed. This is useful for you would like to use the
@@ -193,30 +192,30 @@ class InMemoryVectorStore(VectorStore):
 
     To override these rules, you can pass in a custom index schema like the following
 
-        .. code-block:: yaml
+        ```yaml
+        tag:
+            - name: credit_score
+        text:
+            - name: user
+            - name: job
+        ```
 
-            tag:
-                - name: credit_score
-            text:
-                - name: user
-                - name: job
-
-    Typically, the ``credit_score`` field would be a text field since it's a string,
+    Typically, the `credit_score` field would be a text field since it's a string,
     however, we can override this behavior by specifying the field type as shown with
     the yaml config (can also be a dictionary) above and the code below.
 
-        .. code-block:: python
-
-            rds = InMemoryVectorStore.from_texts(
-                texts, # a list of strings
-                metadata, # a list of metadata dicts
-                embeddings, # an Embeddings object
-                index_schema="path/to/index_schema.yaml", # can also be a dictionary
-                redis_url="redis://cluster_endpoint:6379",
-            )
+        ```python
+        rds = InMemoryVectorStore.from_texts(
+            texts, # a list of strings
+            metadata, # a list of metadata dicts
+            embeddings, # an Embeddings object
+            index_schema="path/to/index_schema.yaml", # can also be a dictionary
+            redis_url="redis://cluster_endpoint:6379",
+        )
+        ```
 
     When connecting to an existing index where a custom schema has been applied, it's
-    important to pass in the same schema to the ``from_existing_index`` method.
+    important to pass in the same schema to the `from_existing_index` method.
     Otherwise, the schema for newly added samples will be incorrect and metadata
     will not be returned.
 
@@ -291,15 +290,15 @@ class InMemoryVectorStore(VectorStore):
         always present in the langchain schema.
 
         Example:
-            .. code-block:: python
-
-                from langchain_aws.vectorstores import InMemoryVectorStore
-                                embeddings = OpenAIEmbeddings()
-                redis, keys = InMemoryVectorStore.from_texts_return_keys(
-                    texts,
-                    embeddings,
-                    redis_url="redis://cluster_endpoint:6379"
-                )
+            ```python
+            from langchain_aws.vectorstores import InMemoryVectorStore
+                            embeddings = OpenAIEmbeddings()
+            redis, keys = InMemoryVectorStore.from_texts_return_keys(
+                texts,
+                embeddings,
+                redis_url="redis://cluster_endpoint:6379"
+            )
+            ```
 
         Args:
             texts: List of texts to add to the vectorstore.
@@ -427,10 +426,11 @@ class InMemoryVectorStore(VectorStore):
 
 
         Example:
-            .. code-block:: python
+            ```python
+            from langchain_aws.vectorstores import InMemoryVectorStore
 
-                from langchain_aws.vectorstores import InMemoryVectorStore
-                                embeddings = OpenAIEmbeddings()
+            embeddings = OpenAIEmbeddings()
+            ```
 
         Args:
             texts: List of texts to add to the vectorstore.
@@ -475,20 +475,20 @@ class InMemoryVectorStore(VectorStore):
         """Connect to an existing InMemoryVectorStore index.
 
         Example:
-            .. code-block:: python
+            ```python
+            from langchain_aws.vectorstores import InMemoryVectorStore
 
-                from langchain_aws.vectorstores import InMemoryVectorStore
+            embeddings = OpenAIEmbeddings()
 
-                embeddings = OpenAIEmbeddings()
-
-                # must pass in schema and key_prefix from another index
-                existing_rds = InMemoryVectorStore.from_existing_index(
-                    embeddings,
-                    index_name="my-index",
-                    schema=rds.schema, # schema dumped from another index
-                    key_prefix=rds.key_prefix, # key prefix from another index
-                    redis_url="redis://username:password@cluster_endpoint:6379",
-                )
+            # must pass in schema and key_prefix from another index
+            existing_rds = InMemoryVectorStore.from_existing_index(
+                embeddings,
+                index_name="my-index",
+                schema=rds.schema, # schema dumped from another index
+                key_prefix=rds.key_prefix, # key prefix from another index
+                redis_url="redis://username:password@cluster_endpoint:6379",
+            )
+            ```
 
         Args:
             embedding (Embeddings): Embedding model class (i.e. OpenAIEmbeddings)
@@ -564,7 +564,7 @@ class InMemoryVectorStore(VectorStore):
 
         Args:
             ids: List of ids (keys in redis) to delete.
-            **kwargs: Additional keyword arguments. Supports ``redis_url`` for Redis
+            **kwargs: Additional keyword arguments. Supports `redis_url` for Redis
                 connection url (can also be set as an environment variable: REDIS_URL).
 
         Returns:
@@ -676,7 +676,7 @@ class InMemoryVectorStore(VectorStore):
             embeddings (Optional[List[List[float]]], optional): Optional pre-generated
                 embeddings.
             batch_size (int, optional): Batch size to use for writes. Defaults to 1000.
-            **kwargs: Additional keyword arguments. Supports ``keys`` or ``ids`` for
+            **kwargs: Additional keyword arguments. Supports `keys` or `ids` for
                 identifiers of entries.
 
         Returns:
@@ -745,7 +745,7 @@ class InMemoryVectorStore(VectorStore):
 
         The "scores" returned from this function are the raw vector
         distances from the query vector. For similarity scores, use
-        ``similarity_search_with_relevance_scores``.
+        `similarity_search_with_relevance_scores`.
 
         Args:
             query (str): The query text for which to find similar documents.

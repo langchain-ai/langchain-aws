@@ -32,19 +32,18 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
     """
     Example:
-        .. code-block:: python
+        ```python
+        from langchain_community.bedrock_embeddings import BedrockEmbeddings
+        region_name ="us-east-1"
+        credentials_profile_name = "default"
+        model_id = "amazon.titan-embed-text-v1"
 
-            from langchain_community.bedrock_embeddings import BedrockEmbeddings
-            region_name ="us-east-1"
-            credentials_profile_name = "default"
-            model_id = "amazon.titan-embed-text-v1"
-
-            be = BedrockEmbeddings(
-                credentials_profile_name=credentials_profile_name,
-                region_name=region_name,
-                model_id=model_id
-            )
-
+        be = BedrockEmbeddings(
+            credentials_profile_name=credentials_profile_name,
+            region_name=region_name,
+            model_id=model_id
+        )
+        ```
     """
 
     client: Any = Field(default=None, exclude=True)  #: :meta private:
@@ -52,14 +51,14 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     region_name: Optional[str] = None
     """The aws region e.g., `us-west-2`. 
     
-    Falls back to ``AWS_REGION``/``AWS_DEFAULT_REGION`` env variable or region
-    specified  in ``~/.aws/config`` in case it is not provided here.
+    Falls back to `AWS_REGION`/`AWS_DEFAULT_REGION` env variable or region
+    specified in `~/.aws/config` in case it is not provided here.
 
     """
 
     credentials_profile_name: Optional[str] = None
-    """The name of the profile in the ~/.aws/credentials or ~/.aws/config files, which
-    has either access keys or role information specified.
+    """The name of the profile in the `~/.aws/credentials` or `~/.aws/config` files, 
+    which has either access keys or role information specified.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
 
@@ -78,7 +77,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from ``AWS_ACCESS_KEY_ID`` environment variable.
+    If not provided, will be read from `AWS_ACCESS_KEY_ID` environment variable.
 
     """
 
@@ -93,7 +92,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from ``AWS_SECRET_ACCESS_KEY`` environment variable.
+    If not provided, will be read from `AWS_SECRET_ACCESS_KEY` environment variable.
 
     """
 
@@ -102,20 +101,20 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     )
     """AWS session token. 
 
-    If provided, ``aws_access_key_id`` and ``aws_secret_access_key`` must also be
+    If provided, `aws_access_key_id` and `aws_secret_access_key` must also be
     provided.
     
     Not required unless using temporary credentials.
     
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from ``AWS_SESSION_TOKEN`` environment variable.
+    If not provided, will be read from `AWS_SESSION_TOKEN` environment variable.
 
     """
 
     model_id: str = "amazon.titan-embed-text-v1"
-    """Id of the model to call, e.g., ``'amazon.titan-embed-text-v1'``, this is
-    equivalent to the ``modelId`` property in the list-foundation-models api
+    """Id of the model to call, e.g., `'amazon.titan-embed-text-v1'`, this is
+    equivalent to the `modelId` property in the list-foundation-models api
     
     """
 
@@ -129,13 +128,13 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     """
 
     endpoint_url: Optional[str] = None
-    """Needed if you don't want to default to ``'us-east-1'`` endpoint"""
+    """Needed if you don't want to default to `'us-east-1'` endpoint"""
 
     normalize: bool = False
     """Whether the embeddings should be normalized to unit vectors"""
 
     config: Any = None
-    """An optional ``botocore.config.Config`` instance to pass to the client."""
+    """An optional `botocore.config.Config` instance to pass to the client."""
 
     model_config = ConfigDict(
         extra="forbid",

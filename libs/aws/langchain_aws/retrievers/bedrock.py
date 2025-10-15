@@ -59,34 +59,34 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
 
     Attributes:
         knowledge_base_id: Knowledge Base ID.
-        region_name: The aws region e.g., ``'us-west-2'``.
-            Fallback to ``AWS_REGION``/``AWS_DEFAULT_REGION`` env variable or region
-            specified in ``~/.aws/config``.
-        credentials_profile_name: The name of the profile in the ``~/.aws/credentials``
-            or ``~/.aws/config`` files, which has either access keys or role information
+        region_name: The aws region e.g., `'us-west-2'`.
+            Fallback to `AWS_REGION`/`AWS_DEFAULT_REGION` env variable or region
+            specified in `~/.aws/config`.
+        credentials_profile_name: The name of the profile in the `~/.aws/credentials`
+            or `~/.aws/config` files, which has either access keys or role information
             specified. If not specified, the default credential profile or, if on an
             EC2 instance, credentials from IMDS will be used.
         aws_access_key_id: AWS access key id. If provided, ``aws_secret_access_key``
             must also be provided. If not specified, the default credential profile or,
             if on an EC2 instance, credentials from IMDS will be used. See:
             https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-            If not provided, will be read from ``AWS_ACCESS_KEY_ID`` environment
+            If not provided, will be read from `AWS_ACCESS_KEY_ID` environment
             variable.
-        aws_secret_access_key: AWS ``secret_access_key``. If provided,
+        aws_secret_access_key: AWS `secret_access_key`. If provided,
             ``aws_access_key_id`` must also be provided. If not specified, the default
             credential profile or, if on an EC2 instance, credentials from IMDS will be
             used.
             See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-            If not provided, will be read from ``AWS_SECRET_ACCESS_KEY`` environment
+            If not provided, will be read from `AWS_SECRET_ACCESS_KEY` environment
             variable.
-        aws_session_token: AWS session token. If provided, ``aws_access_key_id`` and
-            ``aws_secret_access_key`` must also be provided. Not required unless using
+        aws_session_token: AWS session token. If provided, `aws_access_key_id` and
+            `aws_secret_access_key` must also be provided. Not required unless using
             temporary credentials.
             See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-            If not provided, will be read from ``AWS_SESSION_TOKEN`` environment
+            If not provided, will be read from `AWS_SESSION_TOKEN` environment
             variable.
-        endpoint_url: Needed if you don't want to default to ``'us-east-1'`` endpoint.
-        config: An optional ``botocore.config.Config`` instance to pass to the client.
+        endpoint_url: Needed if you don't want to default to `'us-east-1'` endpoint.
+        config: An optional `botocore.config.Config` instance to pass to the client.
         client: boto3 client for bedrock agent runtime.
         guardrail_config: Configuration information for a guardrail that you want
             to use in the request.
@@ -96,18 +96,18 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
             (0.0 to 1.0).
 
     Example:
-        .. code-block:: python
+        ```python
+        from langchain_community.retrievers import AmazonKnowledgeBasesRetriever
 
-            from langchain_community.retrievers import AmazonKnowledgeBasesRetriever
-
-            retriever = AmazonKnowledgeBasesRetriever(
-                knowledge_base_id="<knowledge-base-id>",
-                retrieval_config={
-                    "vectorSearchConfiguration": {
-                        "numberOfResults": 4
-                    }
-                },
-            )
+        retriever = AmazonKnowledgeBasesRetriever(
+            knowledge_base_id="<knowledge-base-id>",
+            retrieval_config={
+                "vectorSearchConfiguration": {
+                    "numberOfResults": 4
+                }
+            },
+        )
+        ```
 
     """
 
@@ -176,9 +176,12 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
     ) -> List[Document]:
         """Get relevant document from a KnowledgeBase
 
-        :param query: the user's query
-        :param run_manager: The callback handler to use
-        :return: List of relevant documents
+        Parameters:
+            query: The user's query.
+            run_manager: The callback handler to use.
+
+        Returns:
+            A list of relevant documents.
 
         """
         retrieve_request: Dict[str, Any] = self._get_retrieve_request(query)
@@ -191,12 +194,7 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
         return self._filter_by_score_confidence(docs=documents)
 
     def _get_retrieve_request(self, query: str) -> Dict[str, Any]:
-        """Build a Retrieve request
-
-        :param query:
-        :return:
-
-        """
+        """Build a Retrieve request."""
         request: Dict[str, Any] = {
             "retrievalQuery": {"text": query.strip()},
             "knowledgeBaseId": self.knowledge_base_id,
@@ -226,9 +224,11 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
     ) -> List[Document]:
         """Convert the Retrieve API results to LangChain Documents
 
-        :param results:  Retrieve API results list
-        :return: List of LangChain Documents
+        Parameters:
+            results: Retrieve API results list.
 
+        Returns:
+            A list of LangChain Documents.
         """
         documents = []
         for result in results:
@@ -251,8 +251,11 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
     def _get_content_from_result(result: Dict[str, Any]) -> Optional[str]:
         """Convert the content from one Retrieve API result to string
 
-        :param result: Retrieve API search result
-        :return: string representation of the content attribute
+        Parameters:
+            result: Retrieve API search result.
+
+        Returns:
+            A string representation of the content attribute.
 
         """
         if not result:

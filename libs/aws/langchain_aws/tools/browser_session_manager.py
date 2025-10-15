@@ -21,7 +21,7 @@ class BrowserSessionManager:
 
     Concurrency protection is also implemented. Each browser session is tied
     to a specific thread_id and includes protection against concurrent usage.
-    When a browser is obtained via get_async_browser() or get_sync_browser(),
+    When a browser is obtained via `get_async_browser()` or `get_sync_browser()`,
     it is marked as "in use", and subsequent attempts to access the same
     browser session will raise a RuntimeError until it is released. In general,
     different callers should use different thread_ids to avoid concurrency issues.
