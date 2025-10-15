@@ -288,7 +288,7 @@ class AsyncValkeyStore(BaseValkeyStore):
         finally:
             if client:
                 try:
-                    if hasattr(client, 'close'):
+                    if hasattr(client, "close"):
                         client.close()
                 except Exception as e:
                     logger.debug(f"Error closing client: {e}")
@@ -306,14 +306,13 @@ class AsyncValkeyStore(BaseValkeyStore):
         client = None
         try:
             client = Valkey.from_pool(connection_pool=pool)
-            
             await aset_client_info(client)
             store = cls(client, index=index, ttl=ttl)
             yield store
         finally:
             if client:
                 try:
-                    if hasattr(client, 'close'):
+                    if hasattr(client, "close"):
                         client.close()
                 except Exception as e:
                     logger.debug(f"Error closing client: {e}")

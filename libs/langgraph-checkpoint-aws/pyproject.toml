@@ -11,7 +11,8 @@ dependencies = [
     "langgraph>=1.0.0.a4",
     "boto3>=1.40.19",
     "valkey>=6.1.1",
-    "orjson>=3.11.3"
+    "orjson>=3.11.3",
+    "typing_extensions>=4.0.0"
 ]
 name = "langgraph-checkpoint-aws"
 version = "1.0.0a1"

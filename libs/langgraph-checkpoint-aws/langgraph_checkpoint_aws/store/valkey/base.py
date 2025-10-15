@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, NotRequired
+from typing import Any
+
+try:
+    from typing import NotRequired
+except ImportError:
+    from typing_extensions import NotRequired
 
 from langgraph.store.base import (
     BaseStore,

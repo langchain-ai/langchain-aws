@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, Literal, NotRequired, Protocol, TypedDict
+from typing import Any, Literal, Protocol, TypedDict
+
+try:
+    from typing import NotRequired
+except ImportError:
+    from typing_extensions import NotRequired
 
 # Type aliases for embedding functions from LangGraph documentation
 EmbeddingsFunc = Callable[[list[str]], list[list[float]]]
