@@ -210,15 +210,16 @@ class TestAsyncValkeyStoreContextManagers:
 
     @patch('valkey.Valkey.from_url')
     @patch('valkey.ConnectionPool.from_url')
-    @patch('asyncio.run')
-    def test_from_conn_string_with_pool(self, mock_asyncio_run, mock_pool_from_url, mock_from_url):
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(10)
+    async def test_from_conn_string_with_pool(self, mock_pool_from_url, mock_from_url):
         """Test from_conn_string with connection pool."""
         mock_pool = Mock()
         mock_pool_from_url.return_value = mock_pool
         mock_client = Mock()
         
         with patch('valkey.Valkey.from_pool', return_value=mock_client):
-            with AsyncValkeyStore.from_conn_string(
+            async with AsyncValkeyStore.from_conn_string(
                 "valkey://localhost:6379",
                 pool_size=10,
                 pool_timeout=60.0
@@ -226,24 +227,26 @@ class TestAsyncValkeyStoreContextManagers:
                 assert isinstance(store, AsyncValkeyStore)
 
     @patch('valkey.Valkey.from_url')
-    @patch('asyncio.run')
-    def test_from_conn_string_single_connection(self, mock_asyncio_run, mock_from_url):
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(10)
+    async def test_from_conn_string_single_connection(self, mock_from_url):
         """Test from_conn_string with single connection."""
         mock_client = Mock()
         mock_from_url.return_value = mock_client
         
-        with AsyncValkeyStore.from_conn_string("valkey://localhost:6379") as store:
+        async with AsyncValkeyStore.from_conn_string("valkey://localhost:6379") as store:
             assert isinstance(store, AsyncValkeyStore)
 
     @patch('valkey.Valkey.from_pool')
-    @patch('asyncio.run')
-    def test_from_pool_context_manager(self, mock_asyncio_run, mock_from_pool):
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(10)
+    async def test_from_pool_context_manager(self, mock_from_pool):
         """Test from_pool context manager."""
         mock_pool = Mock()
         mock_client = Mock()
         mock_from_pool.return_value = mock_client
         
-        with AsyncValkeyStore.from_pool(mock_pool) as store:
+        async with AsyncValkeyStore.from_pool(mock_pool) as store:
             assert isinstance(store, AsyncValkeyStore)
 
 
@@ -323,11 +326,16 @@ class TestAsyncValkeyStoreSearchWithHash:
         store = AsyncValkeyStore(mock_valkey_client)
         store._is_async_client = False  # Force sync client path
         
-        # Mock the scan method to return proper tuple format
+        # Mock scan to properly simulate cursor progression to avoid infinite loops
+        scan_call_count = 0
         def mock_scan(cursor, match=None, count=None):
-            if cursor == 0:
+            nonlocal scan_call_count
+            scan_call_count += 1
+            if scan_call_count == 1:
+                # First call returns some keys with non-zero cursor
                 return (123, ["langgraph:test/key1", "langgraph:test/key2"])
             else:
+                # Subsequent calls return zero cursor to end iteration
                 return (0, [])
         
         # Mock the get method to return JSON data
@@ -335,12 +343,18 @@ class TestAsyncValkeyStoreSearchWithHash:
             return '{"value": {"data": "test"}, "created_at": "2023-01-01T00:00:00", "updated_at": "2023-01-01T00:00:00"}'
         
         with patch('asyncio.get_event_loop') as mock_loop:
-            # Create a side effect function that returns the right result based on the lambda
-            def executor_side_effect(executor, func):
-                if 'scan' in str(func):
-                    # Extract cursor from the lambda closure
-                    return mock_scan(0)  # Start with cursor 0
-                elif 'get' in str(func):
+            # Create a side effect function that properly handles the scan cursor progression
+            call_count = 0
+            def executor_side_effect(executor, func, *args):
+                nonlocal call_count
+                call_count += 1
+                if 'scan' in str(func) or hasattr(func, '__name__') and 'scan' in func.__name__:
+                    # Simulate proper cursor progression: first call returns cursor 123, second returns 0
+                    if call_count == 1:
+                        return (123, ["langgraph:test/key1", "langgraph:test/key2"])
+                    else:
+                        return (0, [])  # End the scan loop
+                elif 'get' in str(func) or hasattr(func, '__name__') and 'get' in func.__name__:
                     return mock_get("test_key")
                 return None
             
@@ -860,8 +874,9 @@ class TestAsyncValkeyStoreAdditionalCoverage:
 
     @patch('valkey.ConnectionPool.from_url')
     @patch('valkey.Valkey.from_pool')
-    @patch('asyncio.run')
-    def test_from_conn_string_pool_creation(self, mock_asyncio_run, mock_from_pool, mock_pool_from_url):
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(10)
+    async def test_from_conn_string_pool_creation(self, mock_from_pool, mock_pool_from_url):
         """Test from_conn_string pool creation path - lines 501-503."""
         mock_pool = Mock()
         mock_pool_from_url.return_value = mock_pool
@@ -869,7 +884,7 @@ class TestAsyncValkeyStoreAdditionalCoverage:
         mock_from_pool.return_value = mock_client
         
         # Test with pool_size to trigger pool creation
-        with AsyncValkeyStore.from_conn_string(
+        async with AsyncValkeyStore.from_conn_string(
             "valkey://localhost:6379",
             pool_size=10,
             pool_timeout=60.0
@@ -904,26 +919,28 @@ class TestAsyncValkeyStoreAdditionalCoverage:
         # First result should be an Item, others should be list or None
         assert results[1] is None  # PutOp returns None
 
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(10)
     async def test_from_pool_context_manager_cleanup(self):
         """Test from_pool context manager cleanup - lines 542-547."""
         mock_pool = Mock()
         mock_client = Mock()
         
         with patch('valkey.Valkey.from_pool', return_value=mock_client):
-            with patch('asyncio.run'):
-                with AsyncValkeyStore.from_pool(mock_pool) as store:
+            async with AsyncValkeyStore.from_pool(mock_pool) as store:
                     assert isinstance(store, AsyncValkeyStore)
                 # Context manager should exit cleanly
 
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(10)
     async def test_from_conn_string_cleanup_path(self):
         """Test from_conn_string cleanup path - lines 548-551."""
         mock_client = Mock()
         
         with patch('valkey.Valkey.from_url', return_value=mock_client):
-            with patch('asyncio.run'):
-                with AsyncValkeyStore.from_conn_string("valkey://localhost:6379") as store:
-                    assert isinstance(store, AsyncValkeyStore)
-                # Context manager should exit cleanly
+            async with AsyncValkeyStore.from_conn_string("valkey://localhost:6379") as store:
+                assert isinstance(store, AsyncValkeyStore)
+            # Context manager should exit cleanly
 
     async def test_vector_search_no_query_vector(self, mock_valkey_client):
         """Test vector search when no query vector is generated - lines 587-647."""
@@ -969,30 +986,31 @@ class TestAsyncValkeyStoreAdditionalCoverage:
         store = AsyncValkeyStore(mock_valkey_client)
         store._is_async_client = False
         
-        # Mock scan to return multiple batches
-        scan_results = [
-            (456, ["langgraph:test/key1"]),  # First batch with non-zero cursor
-            (0, ["langgraph:test/key2"])     # Second batch with zero cursor (end)
-        ]
-        
+        # Mock scan to return multiple batches with proper cursor progression
+        call_count = 0
         def mock_scan_side_effect(cursor, match=None, count=None):
-            if cursor == 0:
-                return scan_results[0]
-            elif cursor == 456:
-                return scan_results[1]
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return (456, ["langgraph:test/key1"])  # First batch with non-zero cursor
+            elif call_count == 2:
+                return (0, ["langgraph:test/key2"])    # Second batch with zero cursor (end)
             else:
-                return (0, [])
+                return (0, [])  # Ensure we always end
         
         def mock_get(key):
             return '{"value": {"data": "test"}, "created_at": "2023-01-01T00:00:00", "updated_at": "2023-01-01T00:00:00"}'
         
         with patch('asyncio.get_event_loop') as mock_loop:
-            def executor_side_effect(executor, func):
+            executor_call_count = 0
+            def executor_side_effect(executor, func, *args):
+                nonlocal executor_call_count
+                executor_call_count += 1
                 func_str = str(func)
-                if 'scan' in func_str:
-                    # Extract cursor from lambda - simulate the scan call
-                    return mock_scan_side_effect(0)
-                elif 'get' in func_str:
+                if 'scan' in func_str or hasattr(func, '__name__') and 'scan' in func.__name__:
+                    # Properly simulate cursor progression
+                    return mock_scan_side_effect(0, match="langgraph:test/*", count=1000)
+                elif 'get' in func_str or hasattr(func, '__name__') and 'get' in func.__name__:
                     return mock_get("test_key")
                 return None
             
@@ -1017,11 +1035,15 @@ class TestAsyncValkeyStoreAdditionalCoverage:
             return '{"value": {"category": "wrong", "data": "test"}, "created_at": "2023-01-01T00:00:00", "updated_at": "2023-01-01T00:00:00"}'
         
         with patch('asyncio.get_event_loop') as mock_loop:
-            def executor_side_effect(executor, func):
+            call_count = 0
+            def executor_side_effect(executor, func, *args):
+                nonlocal call_count
+                call_count += 1
                 func_str = str(func)
-                if 'scan' in func_str:
+                if 'scan' in func_str or hasattr(func, '__name__') and 'scan' in func.__name__:
+                    # Always return cursor 0 to end scan immediately
                     return (0, ["langgraph:test/key1"])
-                elif 'get' in func_str:
+                elif 'get' in func_str or hasattr(func, '__name__') and 'get' in func.__name__:
                     return mock_get("test_key")
                 return None
             
@@ -1050,18 +1072,27 @@ class TestAsyncValkeyStoreAdditionalCoverage:
             "langgraph:different/key3"
         ]
         
-        with patch.object(store, '_execute_client_method') as mock_execute:
-            mock_execute.return_value = (0, all_keys)
-            
+        # Mock _execute_client_method to handle scan operations properly
+        scan_call_count = 0
+        async def mock_execute_side_effect(method_name, *args, **kwargs):
+            nonlocal scan_call_count
+            if method_name == "scan":
+                scan_call_count += 1
+                if scan_call_count == 1:
+                    return (0, all_keys)  # Return all keys with cursor 0 to end scan
+                else:
+                    return (0, [])  # Subsequent calls return empty
+            elif method_name == "hgetall":
+                return {}  # Return empty hash
+            return None
+        
+        with patch.object(store, '_execute_client_method', side_effect=mock_execute_side_effect):
             op = SearchOp(
                 namespace_prefix=("test", "sub"),
                 query="search",
                 limit=10,
                 offset=0
             )
-            
-            # Mock hgetall to return empty to avoid processing
-            mock_valkey_client.hgetall.return_value = {}
             
             results = await store._key_pattern_search_async(op)
             

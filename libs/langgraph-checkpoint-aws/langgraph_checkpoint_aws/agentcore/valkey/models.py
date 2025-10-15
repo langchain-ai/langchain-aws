@@ -25,7 +25,10 @@ class ValkeyCheckpointerConfig(CheckpointerConfig):
     @property
     def checkpoint_key_prefix(self) -> str:
         """Generate checkpoint key prefix for Valkey storage."""
-        return f"agentcore:checkpoint:{self.session_id}:{self.actor_id}:{self.checkpoint_ns}"
+        return (
+            f"agentcore:checkpoint:{self.session_id}:{self.actor_id}:"
+            f"{self.checkpoint_ns}"
+        )
 
     @property
     def writes_key_prefix(self) -> str:

@@ -13,7 +13,7 @@ import threading
 import time
 from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
-from typing import Any, Optional, Union, cast, Awaitable
+from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
@@ -55,7 +55,8 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
 
     Args:
         client: The Valkey client instance (sync or async).
-        ttl: Time-to-live for stored checkpoints in seconds. Defaults to None (no expiration).
+        ttl: Time-to-live for stored checkpoints in seconds.
+            Defaults to None (no expiration).
         serde: Serialization protocol to be used. Defaults to JsonPlusSerializer.
         **kwargs: Additional arguments passed to the base class.
 
@@ -80,7 +81,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
 
     def __init__(
         self,
-        client: Union[Valkey, AsyncValkey],
+        client: Valkey | AsyncValkey,
         *,
         ttl: float | None = None,
         serde: SerializerProtocol | None = None,
@@ -114,7 +115,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
     def _execute_with_retry(self, operation, *args, **kwargs):
         """Execute a Valkey operation with exponential backoff retry logic."""
         last_exception = None
-        
+
         for attempt in range(self.max_retries + 1):
             try:
                 return operation(*args, **kwargs)
@@ -123,27 +124,31 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
                 if attempt == self.max_retries:
                     logger.error(
                         "Valkey operation failed after %d attempts: %s",
-                        self.max_retries + 1, str(e)
+                        self.max_retries + 1,
+                        str(e),
                     )
                     break
-                
+
                 # Exponential backoff with jitter
-                delay = self.retry_delay * (2 ** attempt) + random.uniform(0, 0.1)
+                delay = self.retry_delay * (2**attempt) + random.uniform(0, 0.1)
                 logger.warning(
                     "Valkey operation failed (attempt %d/%d), retrying in %.2fs: %s",
-                    attempt + 1, self.max_retries + 1, delay, str(e)
+                    attempt + 1,
+                    self.max_retries + 1,
+                    delay,
+                    str(e),
                 )
                 time.sleep(delay)
-        
+
         # Re-raise the last exception if all retries failed
         raise last_exception
 
     async def _aexecute_with_retry(self, operation, *args, **kwargs):
         """Execute an async Valkey operation with exponential backoff retry logic."""
         import asyncio
-        
+
         last_exception = None
-        
+
         for attempt in range(self.max_retries + 1):
             try:
                 return await operation(*args, **kwargs)
@@ -152,18 +157,23 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
                 if attempt == self.max_retries:
                     logger.error(
                         "Async Valkey operation failed after %d attempts: %s",
-                        self.max_retries + 1, str(e)
+                        self.max_retries + 1,
+                        str(e),
                     )
                     break
-                
+
                 # Exponential backoff with jitter
-                delay = self.retry_delay * (2 ** attempt) + random.uniform(0, 0.1)
+                delay = self.retry_delay * (2**attempt) + random.uniform(0, 0.1)
                 logger.warning(
-                    "Async Valkey operation failed (attempt %d/%d), retrying in %.2fs: %s",
-                    attempt + 1, self.max_retries + 1, delay, str(e)
+                    "Async Valkey operation failed (attempt %d/%d), "
+                    "retrying in %.2fs: %s",
+                    attempt + 1,
+                    self.max_retries + 1,
+                    delay,
+                    str(e),
                 )
                 await asyncio.sleep(delay)
-        
+
         # Re-raise the last exception if all retries failed
         raise last_exception
 
@@ -189,7 +199,9 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
             AgentCoreValkeySaver: A new AgentCoreValkeySaver instance.
 
         Examples:
-            >>> with AgentCoreValkeySaver.from_conn_string("valkey://localhost:6379") as saver:
+            >>> with AgentCoreValkeySaver.from_conn_string(
+            ...     "valkey://localhost:6379"
+            ... ) as saver:
             ...     # Use the saver instance
             ...     pass
         """
@@ -245,12 +257,14 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
             AgentCoreValkeySaver: A new AgentCoreValkeySaver instance.
 
         Examples:
-            >>> async with AgentCoreValkeySaver.afrom_conn_string("valkey://localhost:6379") as saver:
+            >>> async with AgentCoreValkeySaver.afrom_conn_string(
+            ...     "valkey://localhost:6379"
+            ... ) as saver:
             ...     # Use the saver instance
             ...     pass
         """
         from valkey.asyncio import ConnectionPool as AsyncConnectionPool
-        
+
         pool = AsyncConnectionPool.from_url(conn_string, max_connections=pool_size)
         client = AsyncValkey(connection_pool=pool, **kwargs)
         try:
@@ -289,7 +303,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         """Serialize checkpoint data for storage."""
         checkpoint_config = cast(
             ValkeyCheckpointerConfig,
-            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config))
+            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config)),
         )
 
         # Serialize checkpoint and metadata
@@ -365,7 +379,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         """Get a checkpoint tuple from Valkey storage."""
         checkpoint_config = cast(
             ValkeyCheckpointerConfig,
-            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config))
+            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config)),
         )
 
         # Get specific checkpoint or latest
@@ -444,7 +458,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
 
         checkpoint_config = cast(
             ValkeyCheckpointerConfig,
-            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config))
+            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config)),
         )
         before_checkpoint_id = get_checkpoint_id(before) if before else None
 
@@ -504,7 +518,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         """Save a checkpoint to Valkey storage."""
         checkpoint_config = cast(
             ValkeyCheckpointerConfig,
-            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config))
+            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config)),
         )
 
         # Serialize checkpoint
@@ -525,10 +539,11 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         if self.ttl:
             self.client.expire(session_key, int(self.ttl))
 
-        # Store channel data - create a copy without channel_values to avoid TypedDict deletion issue
-        checkpoint_copy = {k: v for k, v in checkpoint.items() if k != "channel_values"}
+        # Store channel data
         channel_values_raw = checkpoint.get("channel_values", {})
-        channel_values: dict[str, Any] = channel_values_raw if isinstance(channel_values_raw, dict) else {}
+        channel_values: dict[str, Any] = (
+            channel_values_raw if isinstance(channel_values_raw, dict) else {}
+        )
 
         for channel, version in new_versions.items():
             if channel in channel_values:
@@ -571,7 +586,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         """Save pending writes to Valkey storage."""
         checkpoint_config = cast(
             ValkeyCheckpointerConfig,
-            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config))
+            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config)),
         )
 
         if not checkpoint_config.checkpoint_id:
@@ -607,12 +622,14 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
 
         # Get all checkpoint IDs for this session
         session_key = self._make_session_checkpoints_key(temp_config)
-        
+
         # Handle both sync and async clients
         if self.is_async:
             # For async clients, delegate to async method
-            logger.warning("Sync delete_thread called on async client, operation may block")
-        
+            logger.warning(
+                "Sync delete_thread called on async client, operation may block"
+            )
+
         checkpoint_ids = self.client.lrange(session_key, 0, -1)
 
         # Delete all checkpoint-related keys
@@ -643,12 +660,12 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
     async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         """Async version of get_tuple."""
         import asyncio
-        
+
         if not self.is_async:
             # For sync clients, run in executor to avoid blocking
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(None, self.get_tuple, config)
-        
+
         # For async clients, delegate to sync method in executor
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.get_tuple, config)
@@ -663,13 +680,13 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
     ) -> AsyncIterator[CheckpointTuple]:
         """Async version of list."""
         import asyncio
-        
+
         # Run sync list method in executor and yield results
         loop = asyncio.get_running_loop()
-        
+
         def _sync_list():
             return list(self.list(config, filter=filter, before=before, limit=limit))
-        
+
         items = await loop.run_in_executor(None, _sync_list)
         for item in items:
             yield item
@@ -683,7 +700,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
     ) -> RunnableConfig:
         """Async version of put."""
         import asyncio
-        
+
         # Run sync put method in executor
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
@@ -699,7 +716,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
     ) -> None:
         """Async version of put_writes."""
         import asyncio
-        
+
         # Run sync put_writes method in executor
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(
@@ -709,7 +726,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
     async def adelete_thread(self, thread_id: str, actor_id: str = "") -> None:
         """Async version of delete_thread."""
         import asyncio
-        
+
         # Run sync delete_thread method in executor
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self.delete_thread, thread_id, actor_id)

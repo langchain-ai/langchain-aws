@@ -6,7 +6,6 @@ import asyncio
 import logging
 from collections.abc import Generator, Iterable
 from contextlib import contextmanager
-from datetime import datetime
 from typing import Any, Literal
 
 import orjson
@@ -28,28 +27,12 @@ from langgraph.store.base import (
 from langgraph.store.base.embed import get_text_at_path
 from valkey import Valkey  # type: ignore[import-untyped]
 from valkey.connection import ConnectionPool  # type: ignore[import-untyped]
-from valkey.commands.search.query import Query  # type: ignore[import-untyped]
 
+# Import AsyncValkeyStore for convenience
+from .async_store import AsyncValkeyStore
 from .base import BaseValkeyStore, ValkeyIndexConfig
-from .constants import LANGGRAPH_KEY_PREFIX, SCAN_COUNT_BATCH_SIZE
-from .document_utils import DocumentProcessor, ScoreCalculator, FilterProcessor
-from .exceptions import (
-    DocumentParsingError,
-    EmbeddingGenerationError,
-    SearchIndexError,
-    TTLConfigurationError,
-    ValidationError,
-    ValkeyConnectionError,
-    ValkeyStoreError,
-)
+from .document_utils import DocumentProcessor, FilterProcessor, ScoreCalculator
 from .search_strategies import SearchStrategyManager
-from .types import (
-    FilterDict,
-    NamespaceTuple,
-    ValkeyIndexConfigTyped,
-    ValkeyResponse,
-    VectorData,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +76,7 @@ class ValkeyStore(BaseValkeyStore):
         ) as store:
             # Use store...
 
-        # Advanced HNSW configuration with Cohere embeddings
+        # Advanced HNSW config with Cohere embeddings
         cohere_embeddings = BedrockEmbeddings(
             model_id="cohere.embed-english-v3",
             region_name="us-east-1"
@@ -153,12 +136,13 @@ class ValkeyStore(BaseValkeyStore):
         ```
 
     Note:
-        Semantic search is disabled by default. You can enable it by providing an `index` configuration
-        when creating the store. Without this configuration, all `index` arguments passed to
-        `put` or `aput` will have no effect.
+        Semantic search is disabled by default. You can enable it by providing an
+        `index` config when creating the store. Without this configuration, all
+        `index` arguments passed to `put` or `aput` will have no effect.
 
     Warning:
-        Make sure to call `setup()` before first use to create necessary tables and indexes.
+        Make sure to call `setup()` before first use to create necessary tables and
+        indexes.
     """
 
     supports_ttl = True
@@ -213,12 +197,12 @@ class ValkeyStore(BaseValkeyStore):
         Example:
             ```python
             from langchain_aws import BedrockEmbeddings
-            
+
             embeddings = BedrockEmbeddings(
                 model_id="amazon.titan-embed-text-v1",
                 region_name="us-east-1"
             )
-            
+
             with ValkeyStore.from_conn_string(
                 "valkey://localhost:6379",
                 index={
@@ -261,8 +245,9 @@ class ValkeyStore(BaseValkeyStore):
 
             # Set client info for library identification
             from ...checkpoint.valkey.utils import set_client_info
+
             set_client_info(client)
-            
+
             store = cls(client, index=index, ttl=ttl)
             yield store
         finally:
@@ -291,7 +276,7 @@ class ValkeyStore(BaseValkeyStore):
         Example:
             ```python
             from langchain_aws import BedrockEmbeddings
-            
+
             # Create custom pool
             pool = ConnectionPool(
                 "valkey://localhost:6379",
@@ -336,8 +321,9 @@ class ValkeyStore(BaseValkeyStore):
             client = Valkey.from_pool(connection_pool=pool)
             # Set client info for library identification
             from ...checkpoint.valkey.utils import set_client_info
+
             set_client_info(client)
-            
+
             store = cls(client, index=index, ttl=ttl)
             yield store
         finally:
@@ -516,7 +502,7 @@ class ValkeyStore(BaseValkeyStore):
 
             # Use shared core logic
             item = self._handle_get_core(op, result)
-            
+
             # Refresh TTL if configured
             if item and op.refresh_ttl and self.ttl_config:
                 ttl = self.ttl_config.get("default_ttl")
@@ -561,42 +547,40 @@ class ValkeyStore(BaseValkeyStore):
                         # For sync version, try to use sync embeddings if available
                         try:
                             # Check if embeddings has sync methods
-                            if hasattr(self.embeddings, 'embed_documents'):
+                            if hasattr(self.embeddings, "embed_documents"):
                                 # Use sync embedding method
                                 vectors = self.embeddings.embed_documents(texts)
                                 vector = vectors[0] if vectors else None
                             else:
-                                # Fallback: try async embeddings only if not in async context
+                                # Fallback: try async embeddings only if not in async
+                                # context
                                 try:
                                     asyncio.get_running_loop()
-                                    # If we're already in an async context, skip embeddings
+                                    # If we're already in an async context, skip
+                                    # embeddings
                                     logger.warning(
-                                        "Cannot generate embeddings in sync context within async loop"
+                                        "Cannot generate embeddings in sync context"
                                     )
                                     vector = None
                                 except RuntimeError:
-                                    # No running event loop, safe to create one with asyncio.run
+                                    # No running event loop, safe to create one
                                     vectors = asyncio.run(
                                         self.embeddings.aembed_documents(texts)
                                     )
                                     vector = vectors[0] if vectors else None
                         except Exception as e:
-                            logger.error(
-                                f"Error generating embeddings: {e}"
-                            )
+                            logger.error(f"Error generating embeddings: {e}")
                             vector = None
             except Exception as e:
                 logger.error(f"Error generating embeddings: {e}")
 
         # Use DocumentProcessor to create hash fields for storage
         hash_fields = DocumentProcessor.create_hash_fields(
-            op.value, 
-            vector, 
-            self.index_fields
+            op.value, vector, self.index_fields
         )
 
         try:
-            # Use HSET to store as hash fields for better vector search compatibility
+            # Use HSET to store as hash fields for vector search compatibility
             self.client.hset(key, mapping=hash_fields)
 
             # Set TTL if specified
@@ -622,7 +606,7 @@ class ValkeyStore(BaseValkeyStore):
         items = []
         for namespace, key, score in results:
             try:
-                # Get full document data using HGETALL since data is stored as hash fields
+                # Get full document data using HGETALL since data is stored
                 full_key = self._build_key(namespace, key)
                 hash_data = self.client.hgetall(full_key)
                 if not hash_data:
@@ -632,7 +616,7 @@ class ValkeyStore(BaseValkeyStore):
                 if not hash_data or not isinstance(hash_data, dict):
                     continue
 
-                # Use DocumentProcessor to convert hash fields back to document format
+                # Use DocumentProcessor to convert hash fields back to document
                 document = DocumentProcessor.convert_hash_to_document(hash_data)
                 if document is None:
                     continue
@@ -682,12 +666,15 @@ class ValkeyStore(BaseValkeyStore):
             if filter_parts:
                 # Hybrid query: combine filters with vector search
                 filter_expr = " ".join(filter_parts)
-                vector_query = f"({filter_expr})=>[KNN {op.limit + op.offset} @vector $vec AS score]"
+                vector_query = (
+                    f"({filter_expr})=>[KNN {op.limit + op.offset} "
+                    f"@vector $vec AS score]"
+                )
             else:
                 # Pure vector search
                 vector_query = f"*=>[KNN {op.limit + op.offset} @vector $vec AS score]"
 
-            # Create the query object with proper dialect - don't use sort_by with vector search
+            # Create the query object with proper dialect - don't use sort_by
             from valkey.commands.search.query import Query
 
             query = (
@@ -721,10 +708,12 @@ class ValkeyStore(BaseValkeyStore):
             logger.error(f"Error in vector search: {e}")
             return []
 
-    def _process_vector_search_results(self, results: Any, op: SearchOp) -> list[SearchItem]:
+    def _process_vector_search_results(
+        self, results: Any, op: SearchOp
+    ) -> list[SearchItem]:
         """Process vector search results into SearchItem objects."""
         items = []
-        
+
         # Check if results has docs attribute and process results
         docs = getattr(results, "docs", None)
         if not docs:
@@ -769,8 +758,8 @@ class ValkeyStore(BaseValkeyStore):
 
             # Extract document ID - handle both 'id' attribute and direct access
             doc_id = getattr(doc, "id", None) or doc_data.get("id", "")
-            
-            # Get similarity score from search results - handle both attribute and dict access
+
+            # Get similarity score from search results - handle both types
             score = getattr(doc, "score", None) or doc_data.get("score", 0.0)
             score = float(score)
 
@@ -784,7 +773,7 @@ class ValkeyStore(BaseValkeyStore):
     ) -> SearchItem | None:
         """Create SearchItem from namespace, key, and score."""
         try:
-            # Get the actual document content using HGETALL since data is stored as hash fields
+            # Get the actual document content using HGETALL since data is stored
             full_key = self._build_key(namespace, key)
             hash_data = self.client.hgetall(full_key)
             if not hash_data:
@@ -794,7 +783,7 @@ class ValkeyStore(BaseValkeyStore):
             if hash_data is None or not isinstance(hash_data, dict):
                 return None
 
-            # Use DocumentProcessor to convert hash fields back to document format
+            # Use DocumentProcessor to convert hash fields back to document
             document = DocumentProcessor.convert_hash_to_document(hash_data)
             if document is None:
                 return None
@@ -861,7 +850,7 @@ class ValkeyStore(BaseValkeyStore):
                         if hash_data is None or not isinstance(hash_data, dict):
                             continue
 
-                        # Convert hash fields back to document format (similar to _handle_get)
+                        # Convert hash fields back to document format
                         document = {
                             "value": hash_data.get(b"value", hash_data.get("value")),
                             "created_at": hash_data.get(
@@ -888,13 +877,13 @@ class ValkeyStore(BaseValkeyStore):
                                         vector_data = orjson.loads(document["vector"])
                                     except (orjson.JSONDecodeError, TypeError):
                                         vector_data = None
-                                
+
                                 # Parse the main value field
                                 if document["value"] is not None:
                                     parsed_value = orjson.loads(str(document["value"]))
                                 else:
                                     continue
-                                
+
                                 value_data = orjson.dumps(
                                     {
                                         "value": parsed_value,
@@ -918,8 +907,11 @@ class ValkeyStore(BaseValkeyStore):
                         namespace, item_key = self._parse_key(key_path)
 
                         # Use FilterProcessor to check namespace prefix filtering
-                        if op.namespace_prefix and not FilterProcessor.matches_namespace_prefix(
-                            namespace, op.namespace_prefix
+                        if (
+                            op.namespace_prefix
+                            and not FilterProcessor.matches_namespace_prefix(
+                                namespace, op.namespace_prefix
+                            )
                         ):
                             continue
 
@@ -930,9 +922,11 @@ class ValkeyStore(BaseValkeyStore):
                             # Create a document-like structure for parse_timestamps
                             temp_doc = {
                                 "created_at": doc_dict.get("created_at"),
-                                "updated_at": doc_dict.get("updated_at")
+                                "updated_at": doc_dict.get("updated_at"),
                             }
-                            created_at, updated_at = DocumentProcessor.parse_timestamps(temp_doc)
+                            created_at, updated_at = DocumentProcessor.parse_timestamps(
+                                temp_doc
+                            )
                         except (orjson.JSONDecodeError, TypeError):
                             continue
 
@@ -941,10 +935,13 @@ class ValkeyStore(BaseValkeyStore):
                             continue
 
                         # Use ScoreCalculator to calculate text similarity score
-                        score = ScoreCalculator.calculate_text_similarity_score(op.query, value)
+                        score = ScoreCalculator.calculate_text_similarity_score(
+                            op.query, value
+                        )
 
                         # Filter out very low scores for better relevance
                         from .constants import MIN_SEARCH_SCORE
+
                         if op.query and score <= MIN_SEARCH_SCORE:
                             continue
 
@@ -1135,8 +1132,5 @@ class ValkeyStore(BaseValkeyStore):
         )
         return self._handle_list(op)
 
-
-# Import AsyncValkeyStore for convenience
-from .async_store import AsyncValkeyStore
 
 __all__ = ["ValkeyStore", "AsyncValkeyStore"]

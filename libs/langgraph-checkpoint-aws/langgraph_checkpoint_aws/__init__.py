@@ -8,11 +8,11 @@ from importlib.metadata import version
 from langgraph_checkpoint_aws.agentcore.saver import (
     AgentCoreMemorySaver,
 )
-from langgraph_checkpoint_aws.agentcore.valkey import (
-    AgentCoreValkeySaver,
-)
 from langgraph_checkpoint_aws.agentcore.store import (
     AgentCoreMemoryStore,
+)
+from langgraph_checkpoint_aws.agentcore.valkey import (
+    AgentCoreValkeySaver,
 )
 
 try:

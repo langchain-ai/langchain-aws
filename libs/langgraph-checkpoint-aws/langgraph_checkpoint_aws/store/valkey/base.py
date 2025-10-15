@@ -2,58 +2,40 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from collections.abc import Generator, Iterable
-from contextlib import contextmanager
-from datetime import datetime
-from typing import Any, NotRequired, Literal
+from typing import Any, NotRequired
 
-import orjson
 from langgraph.store.base import (
     BaseStore,
-    IndexConfig,
-    TTLConfig,
-    NOT_PROVIDED,
     GetOp,
+    IndexConfig,
     Item,
     ListNamespacesOp,
-    MatchCondition,
-    NotProvided,
-    Op,
     PutOp,
-    Result,
     SearchItem,
-    SearchOp,
-    _ensure_ttl,
+    TTLConfig,
 )
 from langgraph.store.base.embed import ensure_embeddings, get_text_at_path
 from valkey import Valkey
 from valkey.connection import ConnectionPool
 
-from ...checkpoint.valkey.utils import set_client_info, aset_client_info
+from ...checkpoint.valkey.utils import aset_client_info, set_client_info
 from .constants import (
     DEFAULT_COLLECTION_NAME,
-    DEFAULT_TIMEZONE,
-    DEFAULT_INDEX_TYPE,
     DEFAULT_DISTANCE_METRIC,
-    DEFAULT_HNSW_M,
     DEFAULT_HNSW_EF_CONSTRUCTION,
     DEFAULT_HNSW_EF_RUNTIME,
-    LANGGRAPH_KEY_PREFIX,
-    MIN_SEARCH_SCORE,
+    DEFAULT_HNSW_M,
+    DEFAULT_INDEX_TYPE,
+    DEFAULT_TIMEZONE,
 )
 from .document_utils import DocumentProcessor, FilterProcessor, ScoreCalculator
 from .exceptions import (
-    ValkeyStoreError,
-    ValkeyConnectionError,
-    DocumentParsingError,
-    SearchIndexError,
     EmbeddingGenerationError,
     ValidationError,
-    TTLConfigurationError,
+    ValkeyConnectionError,
 )
-from .search_strategies import SearchStrategyManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -109,14 +91,16 @@ class BaseValkeyStore(BaseStore):
         self._document_processor = DocumentProcessor()
         self._filter_processor = FilterProcessor()
         self._score_calculator = ScoreCalculator()
-        
+
         if index:
             embed_config = index.get("embed")
             if embed_config:
                 try:
                     self.embeddings = ensure_embeddings(embed_config)
                 except Exception as e:
-                    raise EmbeddingGenerationError(f"Failed to initialize embeddings: {e}") from e
+                    raise EmbeddingGenerationError(
+                        f"Failed to initialize embeddings: {e}"
+                    ) from e
             else:
                 self.embeddings = None
             self.index_fields = index.get("fields", ["$"])
@@ -128,7 +112,9 @@ class BaseValkeyStore(BaseStore):
             self.index_type = index.get("index_type", DEFAULT_INDEX_TYPE)
             self.distance_metric = index.get("distance_metric", DEFAULT_DISTANCE_METRIC)
             self.hnsw_m = index.get("hnsw_m", DEFAULT_HNSW_M)
-            self.hnsw_ef_construction = index.get("hnsw_ef_construction", DEFAULT_HNSW_EF_CONSTRUCTION)
+            self.hnsw_ef_construction = index.get(
+                "hnsw_ef_construction", DEFAULT_HNSW_EF_CONSTRUCTION
+            )
             self.hnsw_ef_runtime = index.get("hnsw_ef_runtime", DEFAULT_HNSW_EF_RUNTIME)
         else:
             self.embeddings = None
@@ -185,7 +171,8 @@ class BaseValkeyStore(BaseStore):
                 "vector",
                 "VECTOR",
                 "HNSW",
-                "12",  # Attribute count: TYPE, FLOAT32, DIM, dims, DISTANCE_METRIC, metric, M, m, EF_CONSTRUCTION, ef_construction, EF_RUNTIME, ef_runtime
+                "12",  # Attribute count: TYPE, FLOAT32, DIM, dims, DISTANCE_METRIC,
+                # metric, M, m, EF_CONSTRUCTION, ef_construction, EF_RUNTIME, ef_runtime
                 "TYPE",
                 "FLOAT32",
                 "DIM",
@@ -204,7 +191,8 @@ class BaseValkeyStore(BaseStore):
                 "vector",
                 "VECTOR",
                 "FLAT",
-                "6",  # Attribute count: TYPE, FLOAT32, DIM, dims, DISTANCE_METRIC, metric
+                "6",  # Attribute count: TYPE, FLOAT32, DIM, dims, DISTANCE_METRIC,
+                # metric
                 "TYPE",
                 "FLOAT32",
                 "DIM",
@@ -237,7 +225,7 @@ class BaseValkeyStore(BaseStore):
         schema_fields = [
             "namespace",
             "TAG",
-            "key", 
+            "key",
             "TAG",
             "value",
             "TAG",
@@ -248,20 +236,24 @@ class BaseValkeyStore(BaseStore):
             for field in self.index_fields:
                 if field != "$":  # Skip root field marker
                     # Add each field as a searchable TAG field
-                    # Store the field directly without "value_" prefix for proper indexing
+                    # Store the field directly without "value_" prefix for indexing
                     schema_fields.extend([field, "TAG"])
 
         # Build the complete command
-        return [
-            "FT.CREATE",
-            index_name,
-            "ON",
-            "HASH",
-            "PREFIX",
-            "1",
-            f"{prefix}:",
-            "SCHEMA",
-        ] + schema_fields + vector_config
+        return (
+            [
+                "FT.CREATE",
+                index_name,
+                "ON",
+                "HASH",
+                "PREFIX",
+                "1",
+                f"{prefix}:",
+                "SCHEMA",
+            ]
+            + schema_fields
+            + vector_config
+        )
 
     def _execute_command(self, *args) -> Any:
         """Execute a command on the Valkey client."""
@@ -297,7 +289,6 @@ class BaseValkeyStore(BaseStore):
             logger.error(f"Failed to setup search index: {e}")
             # Don't raise the error, just log it and continue without search
 
-
     def _validate_put_operation(
         self, namespace: tuple[str, ...], value: dict[str, Any] | None
     ) -> None:
@@ -314,7 +305,6 @@ class BaseValkeyStore(BaseStore):
             if isinstance(e, ValidationError):
                 raise
             raise ValidationError(f"Validation failed: {e}") from e
-
 
     def _build_key(self, namespace: tuple[str, ...], key: str) -> str:
         """Build a storage key from namespace and key."""
@@ -339,7 +329,6 @@ class BaseValkeyStore(BaseStore):
     ) -> float:
         """Calculate a simple text-based relevance score."""
         return self._score_calculator.calculate_text_similarity_score(query, value)
-
 
     def _apply_filter(
         self, value: dict[str, Any], filter_dict: dict[str, Any] | None
@@ -415,7 +404,7 @@ class BaseValkeyStore(BaseStore):
         else:
             return []
 
-    # Shared operation handlers - these contain the core logic that's identical between sync/async
+    # Shared operation handlers - core logic identical between sync/async
     def _handle_get_core(self, op: GetOp, hash_data: dict[str, Any]) -> Item | None:
         """Core get operation logic shared between sync and async implementations."""
         if not hash_data:
@@ -444,7 +433,7 @@ class BaseValkeyStore(BaseStore):
 
     def _handle_put_core(self, op: PutOp) -> tuple[str, dict[str, str] | None]:
         """Core put operation logic shared between sync and async implementations.
-        
+
         Returns:
             Tuple of (key, hash_fields) where hash_fields is None for deletion
         """
@@ -479,20 +468,20 @@ class BaseValkeyStore(BaseStore):
 
         # Use DocumentProcessor to create hash fields for storage
         hash_fields = DocumentProcessor.create_hash_fields(
-            op.value, 
-            vector, 
-            self.index_fields
+            op.value, vector, self.index_fields
         )
 
         return key, hash_fields
 
     def _generate_embeddings(self, texts: list[str]) -> list[float] | None:
-        """Generate embeddings for texts. Override in subclasses for sync/async handling."""
+        """Generate embeddings for texts. Override in subclasses for sync/async."""
         # This is a placeholder - subclasses should override this method
         # to handle sync vs async embedding generation appropriately
         return None
 
-    def _handle_list_core(self, op: ListNamespacesOp, all_keys: list[str]) -> list[tuple[str, ...]]:
+    def _handle_list_core(
+        self, op: ListNamespacesOp, all_keys: list[str]
+    ) -> list[tuple[str, ...]]:
         """Core list namespaces logic shared between sync and async implementations."""
         # Remove langgraph: prefix from keys before extracting namespaces
         cleaned_keys = []
@@ -514,8 +503,10 @@ class BaseValkeyStore(BaseStore):
 
         return namespace_list[start_idx:end_idx]
 
-    def _refresh_ttl_for_items_core(self, items: list[SearchItem]) -> list[tuple[str, int]]:
-        """Core TTL refresh logic - returns list of (key, ttl_seconds) tuples for processing."""
+    def _refresh_ttl_for_items_core(
+        self, items: list[SearchItem]
+    ) -> list[tuple[str, int]]:
+        """Core TTL refresh logic - returns list of (key, ttl_seconds) tuples."""
         if not self.ttl_config:
             return []
 
@@ -534,7 +525,7 @@ class BaseValkeyStore(BaseStore):
         self, results: list[tuple[tuple[str, ...], str, float]], hash_data_getter
     ) -> list[SearchItem]:
         """Core logic for converting search results to SearchItem objects.
-        
+
         Args:
             results: List of (namespace, key, score) tuples
             hash_data_getter: Function that takes a key and returns hash data

@@ -36,12 +36,15 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
 
     Args:
         client: The AsyncValkey client instance.
-        ttl: Time-to-live for stored checkpoints in seconds. Defaults to None (no expiration).
+        ttl: Time-to-live for stored checkpoints in seconds.
+            Defaults to None (no expiration).
         serde: The serializer to use for serializing and deserializing checkpoints.
 
     Examples:
 
-        >>> from langgraph_checkpoint_aws.checkpoint.valkey import AsyncValkeyCheckpointSaver
+        >>> from langgraph_checkpoint_aws.checkpoint.valkey import (
+        ...     AsyncValkeyCheckpointSaver,
+        ... )
         >>> from langgraph.graph import StateGraph
         >>>
         >>> builder = StateGraph(int)
@@ -49,13 +52,21 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         >>> builder.set_entry_point("add_one")
         >>> builder.set_finish_point("add_one")
         >>> # Create a new AsyncValkeyCheckpointSaver instance using context manager
-        >>> async with AsyncValkeyCheckpointSaver.from_conn_string("valkey://localhost:6379") as memory:
+        >>> async with AsyncValkeyCheckpointSaver.from_conn_string(
+        ...     "valkey://localhost:6379"
+        ... ) as memory:
         >>>     graph = builder.compile(checkpointer=memory)
         >>>     config = {"configurable": {"thread_id": "1"}}
         >>>     state = await graph.aget_state(config)
         >>>     result = await graph.ainvoke(3, config)
         >>>     final_state = await graph.aget_state(config)
-        StateSnapshot(values=4, next=(), config={'configurable': {'thread_id': '1', 'checkpoint_ns': '', 'checkpoint_id': '...'}}, parent_config=None)
+        StateSnapshot(values=4, next=(), config={'configurable': {
+            'thread_id': '1', 'checkpoint_ns': '', 'checkpoint_id': '...'
+        }}, parent_config=None)
+
+    Note:
+        The example output shows the state snapshot with a long config line that
+        exceeds normal formatting limits for demonstration purposes.
     """
 
     def __init__(
@@ -67,7 +78,8 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
     ) -> None:
         super().__init__(client, ttl=ttl, serde=serde)
         # Note: aset_client_info cannot be called here since __init__ is not async
-        # It should be called in async factory methods like from_conn_string and from_pool
+        # It should be called in async factory methods like from_conn_string
+        # and from_pool
 
     @classmethod
     @asynccontextmanager
@@ -94,7 +106,9 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
 
         Examples:
 
-            >>> async with AsyncValkeyCheckpointSaver.from_conn_string("valkey://localhost:6379") as memory:
+            >>> async with AsyncValkeyCheckpointSaver.from_conn_string(
+            ...     "valkey://localhost:6379"
+            ... ) as memory:
             ...     # Use the memory instance
             ...     pass
         """
@@ -125,7 +139,9 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
 
         Examples:
 
-            >>> from valkey.asyncio.connection import ConnectionPool as AsyncConnectionPool
+            >>> from valkey.asyncio.connection import (
+            ...     ConnectionPool as AsyncConnectionPool,
+            ... )
             >>> pool = AsyncConnectionPool.from_url("valkey://localhost:6379")
             >>> async with AsyncValkeyCheckpointSaver.from_pool(pool) as memory:
             ...     # Use the memory instance
@@ -143,12 +159,12 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         self, thread_id: str, checkpoint_ns: str, checkpoint_id: str
     ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
         """Helper method to get checkpoint and writes data.
-        
+
         Args:
             thread_id: The thread ID.
             checkpoint_ns: The checkpoint namespace.
             checkpoint_id: The checkpoint ID.
-            
+
         Returns:
             Tuple of (checkpoint_info, writes) or (None, []) if not found.
         """
@@ -166,7 +182,9 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
 
             # Ensure we have exactly 2 results
             if not results or len(results) != 2:
-                logger.warning(f"Unexpected pipeline results for {checkpoint_id}: {results}")
+                logger.warning(
+                    f"Unexpected pipeline results for {checkpoint_id}: {results}"
+                )
                 return None, []
 
             checkpoint_data, writes_data = results
@@ -176,13 +194,19 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
             checkpoint_info = orjson.loads(checkpoint_data)
             if writes_data:
                 if isinstance(writes_data, str):
-                    writes_data = writes_data.encode('utf-8')
+                    writes_data = writes_data.encode("utf-8")
                 writes = orjson.loads(writes_data)
             else:
                 writes = []
             return checkpoint_info, writes
 
-        except (ValkeyError, orjson.JSONDecodeError, ValueError, ConnectionError, asyncio.TimeoutError) as e:
+        except (
+            ValkeyError,
+            orjson.JSONDecodeError,
+            ValueError,
+            ConnectionError,
+            asyncio.TimeoutError,
+        ) as e:
             logger.error(f"Error retrieving checkpoint data for {checkpoint_id}: {e}")
             return None, []
 
@@ -190,15 +214,16 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         """Get a checkpoint tuple from the database asynchronously.
 
         This method retrieves a checkpoint tuple from the Valkey database based on the
-        provided config. If the config contains a "checkpoint_id" key, the checkpoint with
-        the matching thread ID and checkpoint ID is retrieved. Otherwise, the latest checkpoint
-        for the given thread ID is retrieved.
+        provided config. If the config contains a "checkpoint_id" key, the checkpoint
+        with the matching thread ID and checkpoint ID is retrieved. Otherwise, the
+        latest checkpoint for the given thread ID is retrieved.
 
         Args:
             config: The config to use for retrieving the checkpoint.
 
         Returns:
-            Optional[CheckpointTuple]: The retrieved checkpoint tuple, or None if no matching checkpoint was found.
+            Optional[CheckpointTuple]: The retrieved checkpoint tuple, or None if no
+                matching checkpoint was found.
         """
         try:
             configurable = config.get("configurable", {})
@@ -214,13 +239,20 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
                     return None
 
                 return self._deserialize_checkpoint_data(
-                    checkpoint_info, writes, thread_id, checkpoint_ns, checkpoint_id, config
+                    checkpoint_info,
+                    writes,
+                    thread_id,
+                    checkpoint_ns,
+                    checkpoint_id,
+                    config,
                 )
 
             else:
                 # Get latest checkpoint
                 thread_key = self._make_thread_key(thread_id, checkpoint_ns)
-                checkpoint_ids = await self.client.lrange(thread_key, 0, 0)  # Get most recent
+                checkpoint_ids = await self.client.lrange(
+                    thread_key, 0, 0
+                )  # Get most recent
 
                 if not checkpoint_ids:
                     return None
@@ -242,7 +274,12 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
                 }
 
                 return self._deserialize_checkpoint_data(
-                    checkpoint_info, writes, thread_id, checkpoint_ns, checkpoint_id, updated_config
+                    checkpoint_info,
+                    writes,
+                    thread_id,
+                    checkpoint_ns,
+                    checkpoint_id,
+                    updated_config,
                 )
 
         except (ValkeyError, KeyError) as e:
@@ -260,13 +297,15 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         """List checkpoints from the database asynchronously.
 
         This method retrieves a list of checkpoint tuples from the Valkey database based
-        on the provided config. The checkpoints are ordered by checkpoint ID in descending order (newest first).
+        on the provided config. The checkpoints are ordered by checkpoint ID in
+        descending order (newest first).
         Uses batching for better performance with large datasets.
 
         Args:
             config: The config to use for listing the checkpoints.
             filter: Additional filtering criteria for metadata. Defaults to None.
-            before: If provided, only checkpoints before the specified checkpoint ID are returned. Defaults to None.
+            before: If provided, only checkpoints before the specified checkpoint ID
+                are returned. Defaults to None.
             limit: The maximum number of checkpoints to return. Defaults to None.
 
         Yields:
@@ -305,7 +344,9 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
                 if limit and yielded_count + batch_size > limit:
                     end_idx = start_idx + (limit - yielded_count) - 1
 
-                checkpoint_ids = await self.client.lrange(thread_key, start_idx, end_idx)
+                checkpoint_ids = await self.client.lrange(
+                    thread_key, start_idx, end_idx
+                )
                 if not checkpoint_ids:
                     break
 
@@ -343,7 +384,11 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
                         writes = orjson.loads(writes_data) if writes_data else []
 
                         yield self._deserialize_checkpoint_data(
-                            checkpoint_info, writes, thread_id, checkpoint_ns, checkpoint_id
+                            checkpoint_info,
+                            writes,
+                            thread_id,
+                            checkpoint_ns,
+                            checkpoint_id,
                         )
 
                         yielded_count += 1
@@ -351,7 +396,9 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
                             return
 
                     except orjson.JSONDecodeError as e:
-                        logger.warning(f"Failed to decode checkpoint {checkpoint_id}: {e}")
+                        logger.warning(
+                            f"Failed to decode checkpoint {checkpoint_id}: {e}"
+                        )
                         continue
 
                 start_idx += batch_size
@@ -369,8 +416,9 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
     ) -> RunnableConfig:
         """Save a checkpoint to the database asynchronously.
 
-        This method saves a checkpoint to the Valkey database. The checkpoint is associated
-        with the provided config and its parent config (if any). Uses transactions for atomicity.
+        This method saves a checkpoint to the Valkey database. The checkpoint is
+        associated with the provided config and its parent config (if any). Uses
+        transactions for atomicity.
 
         Args:
             config: The config to associate with the checkpoint.
@@ -388,7 +436,9 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
             checkpoint_id = checkpoint["id"]
 
             # Serialize checkpoint data
-            checkpoint_info = self._serialize_checkpoint_data(config, checkpoint, metadata)
+            checkpoint_info = self._serialize_checkpoint_data(
+                config, checkpoint, metadata
+            )
 
             # Store checkpoint atomically
             checkpoint_key = self._make_checkpoint_key(
@@ -429,7 +479,8 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
     ) -> None:
         """Store intermediate writes linked to a checkpoint asynchronously.
 
-        This method saves intermediate writes associated with a checkpoint to the Valkey database.
+        This method saves intermediate writes associated with a checkpoint to the
+        Valkey database.
         Uses atomic operations to ensure consistency.
 
         Args:
@@ -448,20 +499,21 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
 
             # Get existing writes first
             existing_data = await self.client.get(writes_key)
-            
+
             existing_writes = []
             if existing_data:
                 try:
                     # Handle string vs bytes for orjson
                     if isinstance(existing_data, str):
-                        existing_data = existing_data.encode('utf-8')
+                        existing_data = existing_data.encode("utf-8")
                     elif not isinstance(existing_data, (bytes, bytearray, memoryview)):
-                        # Handle other types (like Mock objects) by converting to JSON string first
+                        # Handle other types (like Mock objects) by converting to
+                        # JSON string first
                         try:
                             existing_data = orjson.dumps(existing_data)
                         except (TypeError, ValueError):
-                            existing_data = b'[]'  # Default to empty array
-                    
+                            existing_data = b"[]"  # Default to empty array
+
                     parsed_data = orjson.loads(existing_data)
                     # Ensure we have a list
                     if isinstance(parsed_data, list):
@@ -522,9 +574,9 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
 
                 # Collect keys in batches
                 for i in range(0, len(checkpoint_ids), batch_size):
-                    batch_ids = checkpoint_ids[i:i + batch_size]
+                    batch_ids = checkpoint_ids[i : i + batch_size]
                     batch_keys = []
-                    
+
                     for checkpoint_id_bytes in batch_ids:
                         checkpoint_id = checkpoint_id_bytes.decode()
                         checkpoint_key = self._make_checkpoint_key(
@@ -534,13 +586,13 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
                             thread_id, checkpoint_ns, checkpoint_id
                         )
                         batch_keys.extend([checkpoint_key, writes_key])
-                    
+
                     all_keys_to_delete.extend(batch_keys)
 
             # Delete all keys in batches
             if all_keys_to_delete:
                 for i in range(0, len(all_keys_to_delete), batch_size):
-                    batch_keys = all_keys_to_delete[i:i + batch_size]
+                    batch_keys = all_keys_to_delete[i : i + batch_size]
                     await self.client.delete(*batch_keys)
 
         except ValkeyError as e:
@@ -561,7 +613,8 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         raise NotImplementedError(
             "The AsyncValkeyCheckpointSaver does not support sync methods. "
             "Consider using ValkeyCheckpointSaver instead.\n"
-            "from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver\n"
+            "from langgraph_checkpoint_aws.checkpoint.valkey import "
+            "ValkeyCheckpointSaver\n"
             "See the documentation for more information."
         )
 
@@ -585,7 +638,8 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         raise NotImplementedError(
             "The AsyncValkeyCheckpointSaver does not support sync methods. "
             "Consider using ValkeyCheckpointSaver instead.\n"
-            "from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver\n"
+            "from langgraph_checkpoint_aws.checkpoint.valkey import "
+            "ValkeyCheckpointSaver\n"
             "See the documentation for more information."
         )
 
@@ -608,7 +662,8 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         raise NotImplementedError(
             "The AsyncValkeyCheckpointSaver does not support sync methods. "
             "Consider using ValkeyCheckpointSaver instead.\n"
-            "from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver\n"
+            "from langgraph_checkpoint_aws.checkpoint.valkey import "
+            "ValkeyCheckpointSaver\n"
             "See the documentation for more information."
         )
 
@@ -631,7 +686,8 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         raise NotImplementedError(
             "The AsyncValkeyCheckpointSaver does not support sync methods. "
             "Consider using ValkeyCheckpointSaver instead.\n"
-            "from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver\n"
+            "from langgraph_checkpoint_aws.checkpoint.valkey import "
+            "ValkeyCheckpointSaver\n"
             "See the documentation for more information."
         )
 
@@ -648,7 +704,8 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         raise NotImplementedError(
             "The AsyncValkeyCheckpointSaver does not support sync methods. "
             "Consider using ValkeyCheckpointSaver instead.\n"
-            "from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver\n"
+            "from langgraph_checkpoint_aws.checkpoint.valkey import "
+            "ValkeyCheckpointSaver\n"
             "See the documentation for more information."
         )
 

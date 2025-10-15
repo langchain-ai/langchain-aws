@@ -4,9 +4,10 @@ import json
 import pytest
 from unittest.mock import AsyncMock, Mock, patch, MagicMock
 from datetime import datetime
+from typing import cast
 
 from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore, ValkeyIndexConfig
-from langgraph.store.base import GetOp, PutOp, SearchOp, ListNamespacesOp
+from langgraph.store.base import GetOp, PutOp, SearchOp, ListNamespacesOp, TTLConfig
 
 
 @pytest.fixture
@@ -37,15 +38,15 @@ def mock_valkey_client():
 @pytest.fixture
 def basic_index_config():
     """Basic index configuration for testing."""
-    return ValkeyIndexConfig(
-        collection_name="test_collection",
-        vector_field="vector",
-        vector_size=128,
-        distance_metric="COSINE",
-        text_fields=["title", "content"],
-        numeric_fields=["score"],
-        tag_fields=["category"]
-    )
+    return {
+        "collection_name": "test_collection",
+        "vector_field": "vector",
+        "vector_size": 128,
+        "distance_metric": "COSINE",
+        "text_fields": ["title", "content"],
+        "numeric_fields": ["score"],
+        "tag_fields": ["category"]
+    }
 
 
 @pytest.fixture
@@ -67,7 +68,11 @@ class TestAsyncValkeyStoreInit:
 
     async def test_init_with_ttl_config(self, mock_valkey_client):
         """Test initialization with TTL configuration."""
-        ttl_config = {"default": 3600}
+        ttl_config = cast(TTLConfig, {
+            "refresh_on_read": True,
+            "default_ttl": 3600.0,
+            "sweep_interval_minutes": 60
+        })
         store = AsyncValkeyStore(client=mock_valkey_client, ttl=ttl_config)
         assert store.client == mock_valkey_client
         assert store.ttl_config == ttl_config
@@ -83,11 +88,10 @@ class TestAsyncValkeyStoreInit:
             mock_client = AsyncMock()
             mock_from_url.return_value = mock_client
             with patch('langgraph_checkpoint_aws.store.valkey.async_store.aset_client_info'):
-                with patch('asyncio.run'):
-                    # Test that context manager works (but don't test async context manager syntax here)
-                    with AsyncValkeyStore.from_conn_string("valkey://localhost:6379") as store:
-                        assert isinstance(store, AsyncValkeyStore)
-                        assert store.client is not None  # Client exists
+                # Test that async context manager works correctly
+                async with AsyncValkeyStore.from_conn_string("valkey://localhost:6379") as store:
+                    assert isinstance(store, AsyncValkeyStore)
+                    assert store.client is not None  # Client exists
 
 
 class TestAsyncValkeyStoreSetupAndConfig:
@@ -257,11 +261,15 @@ class TestAsyncValkeyStorePut:
 
     async def test_put_with_ttl(self, mock_valkey_client):
         """Test putting item with TTL."""
-        ttl_config = {"default": 3600}
+        ttl_config = cast(TTLConfig, {
+            "refresh_on_read": True,
+            "default_ttl": 3600.0,
+            "sweep_interval_minutes": 60
+        })
         store = AsyncValkeyStore(client=mock_valkey_client, ttl=ttl_config)
         test_value = {"test": "data"}
 
-        await store.aput(("test",), "key1", test_value, ttl=1800)
+        await store.aput(("test",), "key1", test_value, ttl=1800.0)
 
         mock_valkey_client.hset.assert_called()
         mock_valkey_client.expire.assert_called()
@@ -610,7 +618,11 @@ class TestAsyncValkeyStoreTTLFunctionality:
 
     async def test_get_with_ttl_refresh(self, mock_valkey_client):
         """Test get operation with TTL refresh."""
-        ttl_config = {"default": 3600}
+        ttl_config = cast(TTLConfig, {
+            "refresh_on_read": True,
+            "default_ttl": 3600.0,
+            "sweep_interval_minutes": 60
+        })
         store = AsyncValkeyStore(client=mock_valkey_client, ttl=ttl_config)
 
         # Mock successful get
@@ -623,8 +635,7 @@ class TestAsyncValkeyStoreTTLFunctionality:
 
         result = await store.aget(("test",), "key1", refresh_ttl=True)
 
-        # TTL refresh functionality exists but uses different config key
-        # ttl_config uses "default_ttl" not "default"
+        # TTL refresh functionality should work with correct config key
         assert result is not None
 
     async def test_get_with_ttl_refresh_no_ttl_config(self, mock_valkey_client):
@@ -645,7 +656,11 @@ class TestAsyncValkeyStoreTTLFunctionality:
 
     async def test_refresh_ttl_for_items(self, mock_valkey_client):
         """Test refreshing TTL for search items."""
-        ttl_config = {"default": 3600}
+        ttl_config = cast(TTLConfig, {
+            "refresh_on_read": True,
+            "default_ttl": 3600.0,
+            "sweep_interval_minutes": 60
+        })
         store = AsyncValkeyStore(client=mock_valkey_client, ttl=ttl_config)
 
         # Create mock search items
@@ -672,8 +687,7 @@ class TestAsyncValkeyStoreTTLFunctionality:
 
         await store._refresh_ttl_for_items_async(items)
 
-        # TTL refresh doesn't work because config uses "default_ttl" not "default"
-        # Implementation expects different config key format
+        # TTL refresh should work with correct config key format
 
     async def test_refresh_ttl_for_items_no_ttl_config(self, mock_valkey_client):
         """Test refreshing TTL when no TTL config is set."""
@@ -870,10 +884,9 @@ class TestAsyncValkeyStoreInternalMethods:
         with patch('valkey.from_url') as mock_from_url:
             mock_from_url.return_value = mock_valkey_client
 
-            with patch('asyncio.run') as mock_asyncio_run:
-                mock_asyncio_run.return_value = None
-                # Context managers are sync, not async
-                with AsyncValkeyStore.from_conn_string("valkey://localhost:6379") as store:
+            with patch('langgraph_checkpoint_aws.store.valkey.async_store.aset_client_info'):
+                # Context managers are async, not sync
+                async with AsyncValkeyStore.from_conn_string("valkey://localhost:6379") as store:
                     assert isinstance(store, AsyncValkeyStore)
                     # The store creates its own client, not the mock we injected
 
@@ -913,10 +926,9 @@ class TestAsyncValkeyStoreContextManagers:
 
         conn_string = "valkey://localhost:6379/0"
 
-        with patch('asyncio.run') as mock_asyncio_run:
-            mock_asyncio_run.return_value = None
-            # Context managers are sync, not async
-            with AsyncValkeyStore.from_conn_string(conn_string) as store:
+        with patch('langgraph_checkpoint_aws.store.valkey.async_store.aset_client_info'):
+            # Context managers are async, not sync
+            async with AsyncValkeyStore.from_conn_string(conn_string) as store:
                 assert isinstance(store, AsyncValkeyStore)
                 # Store creates its own client using from_url, not the mock we injected
 
@@ -936,10 +948,9 @@ class TestAsyncValkeyStoreContextManagers:
             with patch('valkey.Valkey.from_pool') as mock_from_pool:
                 mock_from_pool.return_value = mock_client
 
-                with patch('asyncio.run') as mock_asyncio_run:
-                    mock_asyncio_run.return_value = None
-                    # Context managers are sync, not async
-                    with AsyncValkeyStore.from_pool(mock_pool) as store:
+                with patch('langgraph_checkpoint_aws.store.valkey.async_store.aset_client_info'):
+                    # Context managers are async, not sync
+                    async with AsyncValkeyStore.from_pool(mock_pool) as store:
                         assert isinstance(store, AsyncValkeyStore)
                         # Store creates its own client through the pool, connection may vary
                         assert store.client is not None
@@ -1106,12 +1117,16 @@ class TestAsyncValkeyStoreAdvancedOperations:
 
     async def test_ttl_operations_comprehensive(self, mock_valkey_client):
         """Test comprehensive TTL operations."""
-        ttl_config = {"default": 3600, "short": 300, "long": 86400}
+        ttl_config = cast(TTLConfig, {
+            "refresh_on_read": True,
+            "default_ttl": 3600.0,
+            "sweep_interval_minutes": 60
+        })
         store = AsyncValkeyStore(client=mock_valkey_client, ttl=ttl_config)
 
         # Test put with different TTL values
         await store.aput(("test",), "key1", {"data": "value1"})  # Default TTL
-        await store.aput(("test",), "key2", {"data": "value2"}, ttl=1800)  # Custom TTL
+        await store.aput(("test",), "key2", {"data": "value2"}, ttl=1800.0)  # Custom TTL
         await store.aput(("test",), "key3", {"data": "value3"}, ttl=None)  # No TTL
 
         # Should call expire for items with TTL

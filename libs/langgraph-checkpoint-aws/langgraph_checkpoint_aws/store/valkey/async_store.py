@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Generator, Iterable
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator, Iterable
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Literal
 
@@ -31,20 +31,8 @@ from valkey.connection import ConnectionPool
 
 from ...checkpoint.valkey.utils import aset_client_info
 from .base import BaseValkeyStore, ValkeyIndexConfig
-from .constants import (
-    LANGGRAPH_KEY_PREFIX,
-)
 from .document_utils import DocumentProcessor, FilterProcessor, ScoreCalculator
-from .exceptions import (
-    DocumentParsingError,
-    EmbeddingGenerationError,
-    SearchIndexError,
-    TTLConfigurationError,
-    ValkeyConnectionError,
-    ValkeyStoreError,
-)
 from .search_strategies import SearchStrategyManager
-from .types import TTLConfigTyped, ValkeyIndexConfigTyped
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +62,7 @@ class AsyncValkeyStore(BaseValkeyStore):
         )
 
         # Using connection string with BedrockEmbeddings
-        with AsyncValkeyStore.from_conn_string(
+        async with AsyncValkeyStore.from_conn_string(
             "valkey://localhost:6379",
             index={
                 "collection_name": "my_documents",
@@ -94,7 +82,7 @@ class AsyncValkeyStore(BaseValkeyStore):
             model_id="cohere.embed-english-v3",
             region_name="us-east-1"
         )
-        with AsyncValkeyStore.from_conn_string(
+        async with AsyncValkeyStore.from_conn_string(
             "valkey://localhost:6379",
             index={
                 "collection_name": "embeddings_store",
@@ -119,7 +107,7 @@ class AsyncValkeyStore(BaseValkeyStore):
             max_size=20,
             timeout=30
         )
-        with AsyncValkeyStore.from_pool(
+        async with AsyncValkeyStore.from_pool(
             pool,
             index={
                 "collection_name": "exact_search_store",
@@ -149,12 +137,14 @@ class AsyncValkeyStore(BaseValkeyStore):
         ```
 
     Note:
-        Semantic search is disabled by default. You can enable it by providing an `index` configuration
-        when creating the store. Without this configuration, all `index` arguments passed to
+        Semantic search is disabled by default. You can enable it by providing
+        an `index` configuration when creating the store. Without this configuration,
+        all `index` arguments passed to
         `put` or `aput` will have no effect.
 
     Warning:
-        Make sure to call `setup()` before first use to create necessary tables and indexes.
+        Make sure to call `setup()` before first use to create necessary
+        tables and indexes.
     """
 
     supports_ttl = True
@@ -174,13 +164,13 @@ class AsyncValkeyStore(BaseValkeyStore):
             ttl: Optional TTL configuration
         """
         super().__init__(client, index=index, ttl=ttl)
-        
+
         # Initialize architectural components
         self._document_processor = DocumentProcessor()
         self._filter_processor = FilterProcessor()
         self._score_calculator = ScoreCalculator()
         self._search_strategy_manager = SearchStrategyManager(client, self)
-        
+
         # Detect if this is an async client (like fakeredis.aioredis.FakeRedis)
         self._is_async_client = self._detect_async_client(client)
 
@@ -188,18 +178,19 @@ class AsyncValkeyStore(BaseValkeyStore):
         """Detect if the client is an async client."""
         # Check for async methods that are specific to async Redis clients
         return (
-            hasattr(client, "aclose") or 
-            hasattr(client, "__aenter__") or
-            "aioredis" in str(type(client)) or
-            "FakeRedis" in str(type(client)) and hasattr(client, "hgetall") and 
-            hasattr(getattr(client, "hgetall", None), "__call__") and
-            asyncio.iscoroutinefunction(client.hgetall)
+            hasattr(client, "aclose")
+            or hasattr(client, "__aenter__")
+            or "aioredis" in str(type(client))
+            or "FakeRedis" in str(type(client))
+            and hasattr(client, "hgetall")
+            and callable(getattr(client, "hgetall", None))
+            and asyncio.iscoroutinefunction(client.hgetall)
         )
 
     async def _execute_client_method(self, method_name: str, *args, **kwargs) -> Any:
         """Execute a client method, handling both sync and async clients."""
         method = getattr(self.client, method_name)
-        
+
         if self._is_async_client:
             # For async clients, call the method directly
             return await method(*args, **kwargs)
@@ -266,8 +257,8 @@ class AsyncValkeyStore(BaseValkeyStore):
             # Don't raise the error, just log it and continue without search
 
     @classmethod
-    @contextmanager
-    def from_conn_string(
+    @asynccontextmanager
+    async def from_conn_string(
         cls,
         conn_string: str,
         *,
@@ -275,8 +266,9 @@ class AsyncValkeyStore(BaseValkeyStore):
         ttl: TTLConfig | None = None,
         pool_size: int | None = None,
         pool_timeout: float | None = None,
-    ) -> Generator[AsyncValkeyStore, None, None]:
+    ) -> AsyncGenerator[AsyncValkeyStore, None]:
         """Create an AsyncValkeyStore from a connection string."""
+        client = None
         try:
             if pool_size:
                 # Create connection pool
@@ -290,33 +282,41 @@ class AsyncValkeyStore(BaseValkeyStore):
                 # Single connection
                 client = Valkey.from_url(conn_string)
 
-            # Set client info for library identification
-            asyncio.run(aset_client_info(client))
+            await aset_client_info(client)
             store = cls(client, index=index, ttl=ttl)
             yield store
         finally:
-            # Cleanup will be handled by pool/client
-            pass
+            if client:
+                try:
+                    if hasattr(client, 'close'):
+                        client.close()
+                except Exception as e:
+                    logger.debug(f"Error closing client: {e}")
 
     @classmethod
-    @contextmanager
-    def from_pool(
+    @asynccontextmanager
+    async def from_pool(
         cls,
         pool: ConnectionPool,
         *,
         index: ValkeyIndexConfig | None = None,
         ttl: TTLConfig | None = None,
-    ) -> Generator[AsyncValkeyStore, None, None]:
+    ) -> AsyncGenerator[AsyncValkeyStore, None]:
         """Create an AsyncValkeyStore from an existing connection pool."""
+        client = None
         try:
             client = Valkey.from_pool(connection_pool=pool)
-            # Set client info for library identification
-            asyncio.run(aset_client_info(client))
+            
+            await aset_client_info(client)
             store = cls(client, index=index, ttl=ttl)
             yield store
         finally:
-            # Pool cleanup handled by owner
-            pass
+            if client:
+                try:
+                    if hasattr(client, 'close'):
+                        client.close()
+                except Exception as e:
+                    logger.debug(f"Error closing client: {e}")
 
     def batch(self, ops: Iterable[Op]) -> list[Result]:
         """Execute operations synchronously."""
@@ -350,7 +350,7 @@ class AsyncValkeyStore(BaseValkeyStore):
         try:
             key = self._build_key(op.namespace, op.key)
             result = await self._execute_client_method("hgetall", key)
-            
+
             if not result:
                 return None
 
@@ -395,8 +395,9 @@ class AsyncValkeyStore(BaseValkeyStore):
                 # Update hash_fields with vector - convert to base64 string for storage
                 import base64
                 import struct
+
                 vector_bytes = b"".join(struct.pack("<f", x) for x in vector)
-                hash_fields["vector"] = base64.b64encode(vector_bytes).decode('utf-8')
+                hash_fields["vector"] = base64.b64encode(vector_bytes).decode("utf-8")
 
         try:
             # Use HSET to store as hash fields for better vector search compatibility
@@ -414,14 +415,17 @@ class AsyncValkeyStore(BaseValkeyStore):
         """Override base class method to handle async embedding generation."""
         # This method should not be called directly in async context
         # Use _generate_embeddings_async instead
-        logger.warning("_generate_embeddings called in async context, use _generate_embeddings_async")
+        logger.warning(
+            "_generate_embeddings called in async context, use "
+            "_generate_embeddings_async"
+        )
         return None
 
     async def _generate_embeddings_async(self, op: PutOp) -> list[float] | None:
         """Generate embeddings asynchronously for the given operation."""
         if not self.embeddings:
             return None
-            
+
         try:
             fields = op.index or self.index_fields
             if not fields:
@@ -440,10 +444,10 @@ class AsyncValkeyStore(BaseValkeyStore):
 
             # Use async embedding method if available
             try:
-                if hasattr(self.embeddings, 'aembed_documents'):
+                if hasattr(self.embeddings, "aembed_documents"):
                     vectors = await self.embeddings.aembed_documents(texts)
                     return vectors[0] if vectors else None
-                elif hasattr(self.embeddings, 'embed_documents'):
+                elif hasattr(self.embeddings, "embed_documents"):
                     # Run sync embeddings in executor
                     loop = asyncio.get_running_loop()
                     vectors = await loop.run_in_executor(
@@ -490,10 +494,12 @@ class AsyncValkeyStore(BaseValkeyStore):
                     keys_result = await self._handle_response_t_async(keys_result)
                     if keys_result is None:
                         continue
-                    
+
                     # Convert keys to strings
                     keys = []
-                    if hasattr(keys_result, "__iter__") and not isinstance(keys_result, (str, bytes)):
+                    if hasattr(keys_result, "__iter__") and not isinstance(
+                        keys_result, (str, bytes)
+                    ):
                         for key in keys_result:
                             if isinstance(key, bytes):
                                 keys.append(key.decode("utf-8"))
@@ -522,7 +528,8 @@ class AsyncValkeyStore(BaseValkeyStore):
                 try:
                     # Handle different types of embedding functions
                     if callable(self.embeddings):
-                        # Try calling it directly (works for mock functions and simple callables)
+                        # Try calling it directly (works for mock functions and
+                        # simple callables)
                         vectors = self.embeddings([op.query])
                         query_vector = vectors[0] if vectors else None
                     elif hasattr(self.embeddings, "embed_documents"):
@@ -579,7 +586,8 @@ class AsyncValkeyStore(BaseValkeyStore):
             # Create query using the recommended .paging() method
             query = (
                 Query(
-                    f"({query_filter})=>[KNN {op.limit + op.offset} @vector $BLOB AS score]"
+                    f"({query_filter})=>[KNN {op.limit + op.offset} @vector $BLOB "
+                    f"AS score]"
                 )
                 .sort_by("score")
                 .return_fields("id", "score")
@@ -629,8 +637,16 @@ class AsyncValkeyStore(BaseValkeyStore):
                             try:
                                 parsed_data = orjson.loads(value_data)
                                 value = parsed_data.get("value", {})
-                                created_at = datetime.fromisoformat(parsed_data.get("created_at", datetime.now().isoformat()))
-                                updated_at = datetime.fromisoformat(parsed_data.get("updated_at", datetime.now().isoformat()))
+                                created_at = datetime.fromisoformat(
+                                    parsed_data.get(
+                                        "created_at", datetime.now().isoformat()
+                                    )
+                                )
+                                updated_at = datetime.fromisoformat(
+                                    parsed_data.get(
+                                        "updated_at", datetime.now().isoformat()
+                                    )
+                                )
                             except Exception as e:
                                 logger.error(f"Error parsing document data: {e}")
                                 continue
@@ -688,9 +704,12 @@ class AsyncValkeyStore(BaseValkeyStore):
         results = []
         seen_keys = set()
 
+        def scan_with_cursor(c):
+            return self.client.scan(c, match=pattern, count=1000)
+
         while True:
             scan_result = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: self.client.scan(cursor, match=pattern, count=1000)
+                None, scan_with_cursor, cursor
             )
             # No need to handle ResponseT here - run_in_executor already resolves it
             if scan_result is None:
@@ -751,7 +770,9 @@ class AsyncValkeyStore(BaseValkeyStore):
         end_idx = start_idx + limit if limit else len(sorted_results)
 
         logger.debug(
-            f"Hash search: total results={len(sorted_results)}, offset={offset}, limit={limit}, start_idx={start_idx}, end_idx={end_idx}"
+            f"Hash search: total results={len(sorted_results)}, "
+            f"offset={offset}, limit={limit}, start_idx={start_idx}, "
+            f"end_idx={end_idx}"
         )
 
         return sorted_results[start_idx:end_idx]
@@ -775,8 +796,16 @@ class AsyncValkeyStore(BaseValkeyStore):
                         try:
                             parsed_data = orjson.loads(value_data)
                             value = parsed_data.get("value", {})
-                            created_at = datetime.fromisoformat(parsed_data.get("created_at", datetime.now().isoformat()))
-                            updated_at = datetime.fromisoformat(parsed_data.get("updated_at", datetime.now().isoformat()))
+                            created_at = datetime.fromisoformat(
+                                parsed_data.get(
+                                    "created_at", datetime.now().isoformat()
+                                )
+                            )
+                            updated_at = datetime.fromisoformat(
+                                parsed_data.get(
+                                    "updated_at", datetime.now().isoformat()
+                                )
+                            )
                             items.append(
                                 SearchItem(
                                     namespace=namespace,
@@ -813,15 +842,17 @@ class AsyncValkeyStore(BaseValkeyStore):
 
             while True:
                 # Execute scan and properly await the result
-                scan_result = await self._execute_client_method("scan", cursor, match=pattern, count=1000)
+                scan_result = await self._execute_client_method(
+                    "scan", cursor, match=pattern, count=1000
+                )
                 if scan_result is None:
                     break
-                
+
                 # Handle ResponseT type for scan result
                 scan_result = await self._handle_response_t_async(scan_result)
                 if scan_result is None:
                     break
-                    
+
                 cursor, keys = scan_result
                 # Convert keys to strings directly
                 parsed_keys = []
@@ -872,7 +903,8 @@ class AsyncValkeyStore(BaseValkeyStore):
                     # Parse namespace and key
                     namespace, item_key = self._parse_key(key_path)
 
-                    # Use DocumentProcessor to convert hash fields back to document format
+                    # Use DocumentProcessor to convert hash fields back to document
+                    # format
                     document = DocumentProcessor.convert_hash_to_document(hash_data)
                     if document is None:
                         continue
@@ -883,7 +915,9 @@ class AsyncValkeyStore(BaseValkeyStore):
                         continue
 
                     # Parse timestamps using DocumentProcessor
-                    created_at, updated_at = DocumentProcessor.parse_timestamps(document)
+                    created_at, updated_at = DocumentProcessor.parse_timestamps(
+                        document
+                    )
 
                     # Apply filter using base class method
                     if not self._apply_filter(parsed_value, op.filter):
@@ -920,7 +954,9 @@ class AsyncValkeyStore(BaseValkeyStore):
 
             # Debug logging for pagination
             logger.debug(
-                f"Key pattern search: total items={len(scored_items)}, offset={op.offset}, limit={op.limit}, start_idx={start_idx}, end_idx={end_idx}, paginated_count={len(paginated_items)}"
+                f"Key pattern search: total items={len(scored_items)}, "
+                f"offset={op.offset}, limit={op.limit}, start_idx={start_idx}, "
+                f"end_idx={end_idx}, paginated_count={len(paginated_items)}"
             )
             if paginated_items:
                 keys = [item[1].key for item in paginated_items]
@@ -948,10 +984,11 @@ class AsyncValkeyStore(BaseValkeyStore):
             for item in items:
                 item_key = self._build_key(item.namespace, item.key)
                 try:
-                    await self._execute_client_method("expire", item_key, int(ttl_seconds * 60))
+                    await self._execute_client_method(
+                        "expire", item_key, int(ttl_seconds * 60)
+                    )
                 except Exception as e:
                     logger.error(f"Error refreshing TTL for {item_key}: {e}")
-
 
     async def aget(
         self,

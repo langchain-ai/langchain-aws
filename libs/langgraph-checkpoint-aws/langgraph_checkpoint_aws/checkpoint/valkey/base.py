@@ -31,7 +31,8 @@ class BaseValkeyCheckpointSaver(BaseCheckpointSaver[str]):
 
     Args:
         client: The Valkey client instance (sync or async).
-        ttl: Time-to-live for stored checkpoints in seconds. Defaults to None (no expiration).
+        ttl: Time-to-live for stored checkpoints in seconds. Defaults to None (no
+            expiration).
         serde: The serializer to use for serializing and deserializing checkpoints.
     """
 
@@ -256,13 +257,15 @@ class BaseValkeyCheckpointSaver(BaseCheckpointSaver[str]):
     def get_next_version(self, current: str | None, channel: None) -> str:
         """Generate the next version ID for a channel.
 
-        This method creates a new version identifier for a channel based on its current version.
+        This method creates a new version identifier for a channel based on its
+        current version.
 
         Args:
             current (Optional[str]): The current version identifier of the channel.
 
         Returns:
-            str: The next version identifier, which is guaranteed to be monotonically increasing.
+            str: The next version identifier, which is guaranteed to be
+                monotonically increasing.
         """
         if current is None:
             current_v = 0

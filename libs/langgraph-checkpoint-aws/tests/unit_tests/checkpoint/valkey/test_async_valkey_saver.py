@@ -118,12 +118,14 @@ class TestAsyncValkeyCheckpointSaverInit:
         assert saver.serde is not None
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(10)
     async def test_from_conn_string(self):
         """Test creating saver from connection string."""
         with patch(
             "langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey"
         ) as mock_valkey_class:
             mock_client = AsyncMock()
+            mock_client.aclose = AsyncMock()
             mock_valkey_class.from_url.return_value = mock_client
 
             async with AsyncValkeyCheckpointSaver.from_conn_string(
@@ -133,10 +135,12 @@ class TestAsyncValkeyCheckpointSaverInit:
                 mock_valkey_class.from_url.assert_called_once()
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(10)
     async def test_from_conn_string_with_ttl(self):
         """Test creating saver from connection string with TTL."""
-        with patch("valkey.asyncio.Valkey") as mock_valkey_class:
+        with patch("langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey") as mock_valkey_class:
             mock_client = AsyncMock()
+            mock_client.aclose = AsyncMock()
             mock_valkey_class.from_url.return_value = mock_client
 
             async with AsyncValkeyCheckpointSaver.from_conn_string(
@@ -145,10 +149,12 @@ class TestAsyncValkeyCheckpointSaverInit:
                 assert saver.ttl == 7200.0
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(10)
     async def test_from_pool_basic(self):
         """Test creating saver from connection pool."""
         with patch("langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey") as mock_valkey_class:
             mock_client = AsyncMock()
+            mock_client.aclose = AsyncMock()
             mock_valkey_class.return_value = mock_client
 
             mock_pool = Mock()
@@ -161,10 +167,12 @@ class TestAsyncValkeyCheckpointSaverInit:
                 mock_valkey_class.assert_called_once_with(connection_pool=mock_pool)
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(10)
     async def test_from_pool_no_ttl(self):
         """Test creating saver from connection pool without TTL."""
         with patch("langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey") as mock_valkey_class:
             mock_client = AsyncMock()
+            mock_client.aclose = AsyncMock()
             mock_valkey_class.return_value = mock_client
 
             mock_pool = Mock()
@@ -276,6 +284,7 @@ class TestAsyncValkeyCheckpointSaverGetTuple:
         assert result.pending_writes is not None and len(result.pending_writes) > 0
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(5)
     async def test_aget_tuple_valkey_error(
         self, mock_valkey_client, mock_serializer
     ):
@@ -469,6 +478,7 @@ class TestAsyncValkeyCheckpointSaverAlist:
         assert result == []
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(5)
     async def test_alist_valkey_error(
         self, mock_valkey_client, mock_serializer, sample_config
     ):
@@ -827,6 +837,7 @@ class TestAsyncValkeyCheckpointSaverAdeleteThread:
         mock_valkey_client.delete.assert_not_called()
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(5)
     async def test_adelete_thread_basic_functionality(
         self, mock_valkey_client, mock_serializer
     ):
@@ -974,10 +985,12 @@ class TestAsyncValkeyCheckpointSaverContextManagement:
     """Test context manager functionality and cleanup."""
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(10)
     async def test_from_conn_string_context_manager(self):
         """Test from_conn_string context manager functionality."""
         with patch("langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey") as mock_valkey_class:
             mock_client = AsyncMock()
+            mock_client.aclose = AsyncMock()
             mock_valkey_class.from_url.return_value = mock_client
 
             async with AsyncValkeyCheckpointSaver.from_conn_string(
@@ -989,10 +1002,12 @@ class TestAsyncValkeyCheckpointSaverContextManagement:
             mock_client.aclose.assert_called_once()
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(10)
     async def test_from_conn_string_context_manager_exception_handling(self):
         """Test from_conn_string context manager handles exceptions properly."""
         with patch("langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey") as mock_valkey_class:
             mock_client = AsyncMock()
+            mock_client.aclose = AsyncMock()
             mock_valkey_class.from_url.return_value = mock_client
 
             try:
@@ -1007,10 +1022,12 @@ class TestAsyncValkeyCheckpointSaverContextManagement:
             mock_client.aclose.assert_called_once()
 
     @pytest.mark.asyncio
+    @pytest.mark.timeout(10)
     async def test_from_pool_context_manager(self):
         """Test from_pool context manager functionality."""
         with patch("langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey") as mock_valkey_class:
             mock_client = AsyncMock()
+            mock_client.aclose = AsyncMock()
             mock_valkey_class.return_value = mock_client
             mock_pool = Mock()
 
