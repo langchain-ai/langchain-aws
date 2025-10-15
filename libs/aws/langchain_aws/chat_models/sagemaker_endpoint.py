@@ -146,44 +146,43 @@ class ChatSagemakerEndpoint(BaseChatModel):
 
 
     Example:
-        .. code-block:: python
+        ```python
+        from langchain_aws.chat_models.sagemaker_endpoint import
+        ChatSagemakerEndpoint
+        endpoint_name = (
+            "my-endpoint-name"
+        )
+        region_name = (
+            "us-west-2"
+        )
+        credentials_profile_name = (
+            "default"
+        )
+        se = ChatSagemakerEndpoint(
+            endpoint_name=endpoint_name,
+            region_name=region_name,
+            credentials_profile_name=credentials_profile_name
+        )
 
-            from langchain_aws.chat_models.sagemaker_endpoint import
-            ChatSagemakerEndpoint
-            endpoint_name = (
-                "my-endpoint-name"
-            )
-            region_name = (
-                "us-west-2"
-            )
-            credentials_profile_name = (
-                "default"
-            )
-            se = ChatSagemakerEndpoint(
-                endpoint_name=endpoint_name,
-                region_name=region_name,
-                credentials_profile_name=credentials_profile_name
-            )
-
-            # Usage with Inference Component
-            se = ChatSagemakerEndpoint(
-                endpoint_name=endpoint_name,
-                inference_component_name=inference_component_name,
-                region_name=region_name,
-                credentials_profile_name=credentials_profile_name
-            )
+        # Usage with Inference Component
+        se = ChatSagemakerEndpoint(
+            endpoint_name=endpoint_name,
+            inference_component_name=inference_component_name,
+            region_name=region_name,
+            credentials_profile_name=credentials_profile_name
+        )
 
         #Use with boto3 client
-            client = boto3.client(
-                        "sagemaker-runtime",
-                        region_name=region_name
-                    )
+        client = boto3.client(
+                    "sagemaker-runtime",
+                    region_name=region_name
+                )
 
-            se = ChatSagemakerEndpoint(
-                endpoint_name=endpoint_name,
-                client=client
-            )
-
+        se = ChatSagemakerEndpoint(
+            endpoint_name=endpoint_name,
+            client=client
+        )
+        ```
     """
     client: Any = None
     """Boto3 client for sagemaker runtime"""
@@ -204,12 +203,12 @@ class ChatSagemakerEndpoint(BaseChatModel):
     region_name: Optional[str] = ""
     """The aws region, e.g., `us-west-2`.
 
-    Falls back to ``AWS_REGION`` or ``AWS_DEFAULT_REGION`` env variable or region
-    specified in  ``~/.aws/config`` in case it is not provided here.
+    Falls back to `AWS_REGION` or `AWS_DEFAULT_REGION` env variable or region
+    specified in  `~/.aws/config` in case it is not provided here.
     """
 
     credentials_profile_name: Optional[str] = Field(default=None, exclude=True)
-    """The name of the profile in the ``~/.aws/credentials`` or ``~/.aws/config`` files.
+    """The name of the profile in the `~/.aws/credentials` or `~/.aws/config` files.
 
     Profile should either have access keys or role information specified.
     If not specified, the default credential profile or, if on an EC2 instance,
@@ -227,11 +226,10 @@ class ChatSagemakerEndpoint(BaseChatModel):
     If provided, aws_secret_access_key must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
-    
+
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from ``AWS_ACCESS_KEY_ID`` environment variable.
-    
+    If not provided, will be read from `AWS_ACCESS_KEY_ID` environment variable.
     """
 
     aws_secret_access_key: Optional[SecretStr] = Field(
@@ -239,12 +237,12 @@ class ChatSagemakerEndpoint(BaseChatModel):
     )
     """AWS secret_access_key.
 
-    If provided, ``aws_access_key_id`` must also be provided.
+    If provided, `aws_access_key_id` must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from ``AWS_SECRET_ACCESS_KEY`` environment variable.
+    If not provided, will be read from `AWS_SECRET_ACCESS_KEY` environment variable.
 
     """
 
@@ -258,7 +256,7 @@ class ChatSagemakerEndpoint(BaseChatModel):
 
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-    If not provided, will be read from ``AWS_SESSION_TOKEN`` environment variable.
+    If not provided, will be read from `AWS_SESSION_TOKEN` environment variable.
     """
 
     endpoint_url: Optional[str] = Field(default=None, alias="base_url")
@@ -278,23 +276,23 @@ class ChatSagemakerEndpoint(BaseChatModel):
 
     """
     Example:
-        .. code-block:: python
+        ```python
+        from langchain_aws.chat_models.sagemaker_endpoint import ChatModelContentHandler
 
-        from langchain_community.llms.sagemaker_endpoint import ChatContentHandler
+        class ContentHandler(ChatModelContentHandler):
+            content_type = "application/json"
+            accepts = "application/json"
 
-        class ContentHandler(ChatContentHandler):
-                content_type = "application/json"
-                accepts = "application/json"
+            def transform_input(
+                self, prompt: List[Dict[str, Any]], model_kwargs: Dict
+            ) -> bytes:
+                input_str = json.dumps({prompt: prompt, **model_kwargs})
+                return input_str.encode('utf-8')
 
-                def transform_input(
-                    self, prompt: List[Dict[str, Any]], model_kwargs: Dict
-                ) -> bytes:
-                    input_str = json.dumps({prompt: prompt, **model_kwargs})
-                    return input_str.encode('utf-8')
-
-                def transform_output(self, output: bytes) -> BaseMessage:
-                    response_json = json.loads(output.read().decode("utf-8"))
-                    return response_json[0]["generated_text"]
+            def transform_output(self, output: bytes) -> BaseMessage:
+                response_json = json.loads(output.read().decode("utf-8"))
+                return response_json[0]["generated_text"]
+        ```
     """
 
     model_kwargs: Optional[Dict] = None

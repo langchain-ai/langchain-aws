@@ -29,7 +29,6 @@ class CodeInterpreterToolkit:
 
     Example:
         ```python
-
         import asyncio
         from langchain.agents import create_agent
         from langchain_aws.tools import create_code_interpreter_toolkit
