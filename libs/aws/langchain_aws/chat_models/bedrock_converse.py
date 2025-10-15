@@ -586,7 +586,7 @@ class ChatBedrockConverse(BaseChatModel):
                 provider == "anthropic"
                 and any(
                     x in model_id_lower
-                    for x in ["claude-3", "claude-sonnet-4", "claude-opus-4", , "claude-haiku-4"]
+                    for x in ["claude-3", "claude-sonnet-4", "claude-opus-4", "claude-haiku-4"]
                 )
             )
             or
