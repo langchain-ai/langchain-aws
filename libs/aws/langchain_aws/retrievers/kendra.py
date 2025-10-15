@@ -339,12 +339,12 @@ class AmazonKendraRetriever(BaseRetriever):
     Attributes:
         index_id: Kendra index id
 
-        region_name: The aws region e.g., ``'us-west-2'``.
-            Falls back to ``AWS_REGION``/``AWS_DEFAULT_REGION`` env variable
-            or region specified in ``~/.aws/config``.
+        region_name: The aws region e.g., `'us-west-2'`.
+            Falls back to `AWS_REGION`/`AWS_DEFAULT_REGION` env variable
+            or region specified in `~/.aws/config`.
 
-        credentials_profile_name: The name of the profile in the ``~/.aws/credentials``
-            or ``~/.aws/config`` files, which has either access keys or role information
+        credentials_profile_name: The name of the profile in the `~/.aws/credentials`
+            or `~/.aws/config` files, which has either access keys or role information
             specified. If not specified, the default credential profile or, if on an
             EC2 instance, credentials from IMDS will be used.
 
@@ -354,30 +354,30 @@ class AmazonKendraRetriever(BaseRetriever):
 
             See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-            If not provided, will be read from ``AWS_ACCESS_KEY_ID`` environment
+            If not provided, will be read from `AWS_ACCESS_KEY_ID` environment
             variable.
 
-        aws_secret_access_key: AWS secret_access_key. If provided, ``aws_access_key_id``
+        aws_secret_access_key: AWS secret_access_key. If provided, `aws_access_key_id`
             must also be provided. If not specified, the default credential profile or,
             if on an EC2 instance, credentials from IMDS will be used.
 
             See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-            If not provided, will be read from ``AWS_SECRET_ACCESS_KEY`` environment
+            If not provided, will be read from `AWS_SECRET_ACCESS_KEY` environment
             variable.
 
-        aws_session_token: AWS session token. If provided, ``aws_access_key_id`` and
-            ``aws_secret_access_key`` must also be provided. Not required unless using
+        aws_session_token: AWS session token. If provided, `aws_access_key_id` and
+            `aws_secret_access_key` must also be provided. Not required unless using
             temporary credentials.
 
             See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
-            If not provided, will be read from ``AWS_SESSION_TOKEN`` environment
+            If not provided, will be read from `AWS_SESSION_TOKEN` environment
             variable.
 
-        endpoint_url: Needed if you don't want to default to ``'us-east-1'`` endpoint.
+        endpoint_url: Needed if you don't want to default to `'us-east-1'` endpoint.
 
-        config: An optional ``botocore.config.Config`` instance to pass to the client.
+        config: An optional `botocore.config.Config` instance to pass to the client.
 
         top_k: No of results to return
 
@@ -395,11 +395,11 @@ class AmazonKendraRetriever(BaseRetriever):
             See: https://docs.aws.amazon.com/kendra/latest/APIReference
 
     Example:
-        .. code-block:: python
-
-            retriever = AmazonKendraRetriever(
-                index_id="c0806df7-e76b-4bce-9b5c-d5582f6b1a03"
-            )
+        ```python
+        retriever = AmazonKendraRetriever(
+            index_id="c0806df7-e76b-4bce-9b5c-d5582f6b1a03"
+        )
+        ```
 
     """
 
@@ -505,10 +505,9 @@ class AmazonKendraRetriever(BaseRetriever):
         """Run search on Kendra index and get top k documents
 
         Example:
-        .. code-block:: python
-
+            ```python
             docs = retriever.get_relevant_documents('This is my query')
-
+            ```
         """
         result_items = self._kendra_query(query)
         top_k_docs = self._get_top_k_docs(result_items)

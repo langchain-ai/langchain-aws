@@ -20,7 +20,6 @@ class BrowserToolkit:
 
     Example:
         ```python
-
         import asyncio
         from langchain.agents import create_agent
         from langchain_aws.tools import create_browser_toolkit

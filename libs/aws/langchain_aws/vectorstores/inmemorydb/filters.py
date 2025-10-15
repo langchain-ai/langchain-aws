@@ -154,8 +154,10 @@ class InMemoryDBTag(InMemoryDBFilterField):
                 The tag(s) to filter on.
 
         Example:
-            >>> from langchain_community.vectorstores.InMemoryDB import InMemoryDBTag
-            >>> filter = InMemoryDBTag("brand") == "nike"
+            ```python
+            from langchain_community.vectorstores.InMemoryDB import InMemoryDBTag
+            filter = InMemoryDBTag("brand") == "nike"
+            ```
         """
         self._set_tag_value(other, InMemoryDBFilterOperator.EQ)
         return InMemoryDBFilterExpression(str(self))
@@ -171,8 +173,10 @@ class InMemoryDBTag(InMemoryDBFilterField):
                 The tag(s) to filter on.
 
         Example:
-            >>> from langchain_community.vectorstores.InMemoryDB import InMemoryDBTag
-            >>> filter = InMemoryDBTag("brand") != "nike"
+            ```python
+            from langchain_community.vectorstores.InMemoryDB import InMemoryDBTag
+            filter = InMemoryDBTag("brand") != "nike"
+            ```
         """
         self._set_tag_value(other, InMemoryDBFilterOperator.NE)
         return InMemoryDBFilterExpression(str(self))
@@ -238,8 +242,10 @@ class InMemoryDBNum(InMemoryDBFilterField):
             other (Union[int, float]): The value to filter on.
 
         Example:
-            >>> from langchain_community.vectorstores.InMemoryDB import InMemoryDBNum
-            >>> filter = InMemoryDBNum("zipcode") == 90210
+            ```python
+            from langchain_community.vectorstores.InMemoryDB import InMemoryDBNum
+            filter = InMemoryDBNum("zipcode") == 90210
+            ```
 
         """
         self._set_value(other, self.SUPPORTED_VAL_TYPES, InMemoryDBFilterOperator.EQ)  # type: ignore
@@ -253,8 +259,10 @@ class InMemoryDBNum(InMemoryDBFilterField):
             other (Union[int, float]): The value to filter on.
 
         Example:
-            >>> from langchain_community.vectorstores.InMemoryDB import InMemoryDBNum
-            >>> filter = InMemoryDBNum("zipcode") != 90210
+            ```python
+            from langchain_community.vectorstores.InMemoryDB import InMemoryDBNum
+            filter = InMemoryDBNum("zipcode") != 90210
+            ```
 
         """
         self._set_value(other, self.SUPPORTED_VAL_TYPES, InMemoryDBFilterOperator.NE)  # type: ignore
@@ -267,8 +275,10 @@ class InMemoryDBNum(InMemoryDBFilterField):
             other (Union[int, float]): The value to filter on.
 
         Example:
-            >>> from langchain_community.vectorstores.InMemoryDB import InMemoryDBNum
-            >>> filter = InMemoryDBNum("age") > 18
+            ```python
+            from langchain_community.vectorstores.InMemoryDB import InMemoryDBNum
+            filter = InMemoryDBNum("age") > 18
+            ```
 
         """
         self._set_value(other, self.SUPPORTED_VAL_TYPES, InMemoryDBFilterOperator.GT)  # type: ignore
@@ -281,8 +291,10 @@ class InMemoryDBNum(InMemoryDBFilterField):
             other (Union[int, float]): The value to filter on.
 
         Example:
-            >>> from langchain_community.vectorstores.InMemoryDB import InMemoryDBNum
-            >>> filter = InMemoryDBNum("age") < 18
+            ```python
+            from langchain_community.vectorstores.InMemoryDB import InMemoryDBNum
+            filter = InMemoryDBNum("age") < 18
+            ```
 
         """
         self._set_value(other, self.SUPPORTED_VAL_TYPES, InMemoryDBFilterOperator.LT)  # type: ignore
@@ -295,8 +307,10 @@ class InMemoryDBNum(InMemoryDBFilterField):
             other (Union[int, float]): The value to filter on.
 
         Example:
-            >>> from langchain_community.vectorstores.InMemoryDB import InMemoryDBNum
-            >>> filter = InMemoryDBNum("age") >= 18
+            ```python
+            from langchain_community.vectorstores.InMemoryDB import InMemoryDBNum
+            filter = InMemoryDBNum("age") >= 18
+            ```
 
         """
         self._set_value(other, self.SUPPORTED_VAL_TYPES, InMemoryDBFilterOperator.GE)  # type: ignore
@@ -309,8 +323,10 @@ class InMemoryDBNum(InMemoryDBFilterField):
             other (Union[int, float]): The value to filter on.
 
         Example:
-            >>> from langchain_community.vectorstores.InMemoryDB import InMemoryDBNum
-            >>> filter = InMemoryDBNum("age") <= 18
+            ```python
+            from langchain_community.vectorstores.InMemoryDB import InMemoryDBNum
+            filter = InMemoryDBNum("age") <= 18
+            ```
 
         """
         self._set_value(other, self.SUPPORTED_VAL_TYPES, InMemoryDBFilterOperator.LE)  # type: ignore
@@ -340,8 +356,10 @@ class InMemoryDBText(InMemoryDBFilterField):
             other (str): The text value to filter on.
 
         Example:
-            >>> from langchain_community.vectorstores.InMemoryDB import InMemoryDBText
-            >>> filter = InMemoryDBText("job") == "engineer"
+            ```python
+            from langchain_community.vectorstores.InMemoryDB import InMemoryDBText
+            filter = InMemoryDBText("job") == "engineer"
+            ```
 
         """
         self._set_value(other, self.SUPPORTED_VAL_TYPES, InMemoryDBFilterOperator.EQ)  # type: ignore
@@ -355,8 +373,10 @@ class InMemoryDBText(InMemoryDBFilterField):
             other (str): The text value to filter on.
 
         Example:
-            >>> from langchain_community.vectorstores.InMemoryDB import InMemoryDBText
-            >>> filter = InMemoryDBText("job") != "engineer"
+            ```python
+            from langchain_community.vectorstores.InMemoryDB import InMemoryDBText
+            filter = InMemoryDBText("job") != "engineer"
+            ```
         """
         self._set_value(other, self.SUPPORTED_VAL_TYPES, InMemoryDBFilterOperator.NE)  # type: ignore
         return InMemoryDBFilterExpression(str(self))
@@ -368,11 +388,13 @@ class InMemoryDBText(InMemoryDBFilterField):
             other (str): The text value to filter on.
 
         Example:
-            >>> from langchain_aws.vectorstores.inmemorydb import InMemoryDBText
-            >>> filter = InMemoryDBText("job") % "engine*"   # suffix wild card match
-            >>> filter = InMemoryDBText("job") % "%%engine%%"   # fuzzy match w/ LD
-            >>> filter = InMemoryDBText("job") % "engineer|doctor" # contains either
-            >>> filter = InMemoryDBText("job") % "engineer doctor" # contains both
+            ```python
+            from langchain_aws.vectorstores.inmemorydb import InMemoryDBText
+            filter = InMemoryDBText("job") % "engine*"   # suffix wild card match
+            filter = InMemoryDBText("job") % "%%engine%%"   # fuzzy match w/ LD
+            filter = InMemoryDBText("job") % "engineer|doctor" # contains either
+            filter = InMemoryDBText("job") % "engineer doctor" # contains both
+            ```
 
         """
         self._set_value(other, self.SUPPORTED_VAL_TYPES, InMemoryDBFilterOperator.LIKE)  # type: ignore
@@ -402,14 +424,18 @@ class InMemoryDBFilterExpression:
     by combining InMemoryDBFilterFields using the & and | operators.
 
     Examples:
-    >>> from langchain_aws.vectorstores.inmemorydb import (
-    ...     InMemoryDBTag, InMemoryDBNum
-    ... )
-    >>> brand_is_nike = InMemoryDBTag("brand") == "nike"
-    >>> price_is_under_100 = InMemoryDBNum("price") < 100
-    >>> filter = brand_is_nike & price_is_under_100
-    >>> print(str(filter))
-    (@brand:{nike} @price:[-inf (100)])
+        ```python
+        from langchain_aws.vectorstores.inmemorydb import (
+            InMemoryDBTag, InMemoryDBNum
+        )
+        brand_is_nike = InMemoryDBTag("brand") == "nike"
+        price_is_under_100 = InMemoryDBNum("price") < 100
+        filter = brand_is_nike & price_is_under_100
+        print(str(filter))
+
+        # Result
+        # (@brand:{nike} @price:[-inf (100)])
+        ```
 
     """
 

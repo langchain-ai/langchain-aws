@@ -38,47 +38,48 @@ class AmazonS3Vectors(VectorStore):
 
     For all the following examples assume we have the following:
 
-    .. code-block:: python
-
+        ```python
         from langchain_aws.embeddings import BedrockEmbeddings
         from langchain_aws.vectorstores.s3_vectors import AmazonS3Vectors
 
         embedding = BedrockEmbeddings()
+        ```
 
-    Initialize, create vector index if not exist, and add texts
-        .. code-block:: python
+    Initialize, create vector index if it does not exist, and add texts:
 
-            vector_store = AmazonS3Vectors.from_texts(
-                ["hello", "developer", "wife"],
-                vector_bucket_name="<vector bucket name>",
-                index_name="<vector index name>",
-                embedding=embedding,
-            )
+        ```python
+        vector_store = AmazonS3Vectors.from_texts(
+            ["hello", "developer", "wife"],
+            vector_bucket_name="<vector bucket name>",
+            index_name="<vector index name>",
+            embedding=embedding,
+        )
+        ```
 
-    Initialize, create vector index if not exist, and add texts and add Documents
-        .. code-block:: python
+    Initialize, create vector index if it does not exist, and add Documents:
+        ```python
+        from langchain_core.documents import Document
 
-            from langchain_core.documents import Document
+        vector_store = AmazonS3Vectors(
+            vector_bucket_name="<vector bucket name>",
+            index_name="<vector index name>",
+            embedding=embedding,
+        )
+        vector_store.add_documents(
+            [
+                Document("Star Wars", id="key1", metadata={"genre": "scifi"}),
+                Document("Jurassic Park", id="key2", metadata={"genre": "scifi"}),
+                Document("Finding Nemo", id="key3", metadata={"genre": "family"}),
+            ]
+        )
+        ```
 
-            vector_store = AmazonS3Vectors(
-                vector_bucket_name="<vector bucket name>",
-                index_name="<vector index name>",
-                embedding=embedding,
-            )
-            vector_store.add_documents(
-                [
-                    Document("Star Wars", id="key1", metadata={"genre": "scifi"}),
-                    Document("Jurassic Park", id="key2", metadata={"genre": "scifi"}),
-                    Document("Finding Nemo", id="key3", metadata={"genre": "family"}),
-                ]
-            )
-
-    Search with score(distance) and metadata filter
-        .. code-block:: python
-
-            vector_store.similarity_search_with_score(
-                "adventures in space", filter={"genre": {"$eq": "family"}}
-            )
+    Search with score(distance) and metadata filter:
+        ```python
+        vector_store.similarity_search_with_score(
+            "adventures in space", filter={"genre": {"$eq": "family"}}
+        )
+        ```
 
     """
 
@@ -119,7 +120,7 @@ class AmazonS3Vectors(VectorStore):
                 keys
             page_content_metadata_key (Optional[str]): Key of metadata to store
                 page_content in Document. If None, embedding page_content
-                but stored as an empty string. Default is "_page_content".
+                but stored as an empty string. Default is `_page_content`.
             create_index_if_not_exist (bool): Automatically create vector index if it
                 does not exist. Default is True.
             relevance_score_fn (Optional[Callable[[float], float]]): The 'correct'
@@ -138,25 +139,25 @@ class AmazonS3Vectors(VectorStore):
                 If not specified, the default credential profile or,
                 if on an EC2 instance, credentials from IMDS will be used.
                 See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-                If not provided, will be read from 'AWS_ACCESS_KEY_ID'
+                If not provided, will be read from `AWS_ACCESS_KEY_ID`
                 environment variable.
             aws_secret_access_key (Optional[str]): AWS secret_access_key.
                 If provided, aws_access_key_id must also be provided.
                 If not specified, the default credential profile or,
                 if on an EC2 instance, credentials from IMDS will be used.
                 See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-                If not provided, will be read from 'AWS_SECRET_ACCESS_KEY'
+                If not provided, will be read from `AWS_SECRET_ACCESS_KEY`
                 environment variable.
             aws_session_token (Optional[str]): AWS session token.
                 If provided, aws_access_key_id and
                 aws_secret_access_key must also be provided.
                 Not required unless using temporary credentials.
                 See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-                If not provided, will be read from 'AWS_SESSION_TOKEN'
+                If not provided, will be read from `AWS_SESSION_TOKEN`
                 environment variable.
             endpoint_url (Optional[str]): Needed if you don't want to default to
                 us-east-1 endpoint
-            config (Any): An optional botocore.config.Config instance to pass to
+            config (Any): An optional `botocore.config.Config` instance to pass to
                 the client.
             client (Any): Boto3 client for s3vectors
             kwargs (Any): Additional keyword arguments.
@@ -371,7 +372,7 @@ class AmazonS3Vectors(VectorStore):
             query: Input text.
             k: Number of Documents to return. Defaults to 4.
             filter: Metadata filter to apply during the query.
-                See:https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-metadata-filtering.html
+                See: https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-metadata-filtering.html
             **kwargs: Arguments to pass to the search method.
 
         Returns:
@@ -397,7 +398,7 @@ class AmazonS3Vectors(VectorStore):
             query: Input text.
             k: Number of Documents to return. Defaults to 4.
             filter: Metadata filter to apply during the query.
-                See:https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-metadata-filtering.html
+                See: https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-metadata-filtering.html
             **kwargs: Additional keyword arguments.
 
         Returns:
@@ -434,7 +435,7 @@ class AmazonS3Vectors(VectorStore):
             embedding: Embedding to look up documents similar to.
             k: Number of Documents to return. Defaults to 4.
             filter: Metadata filter to apply during the query.
-                See:https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-metadata-filtering.html
+                See: https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-metadata-filtering.html
             **kwargs: Additional keyword arguments.
 
         Returns:
@@ -523,25 +524,25 @@ class AmazonS3Vectors(VectorStore):
                 If not specified, the default credential profile or,
                 if on an EC2 instance, credentials from IMDS will be used.
                 See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-                If not provided, will be read from 'AWS_ACCESS_KEY_ID'
+                If not provided, will be read from `AWS_ACCESS_KEY_ID`
                 environment variable.
             aws_secret_access_key (Optional[str]): AWS secret_access_key.
                 If provided, aws_access_key_id must also be provided.
                 If not specified, the default credential profile or,
                 if on an EC2 instance, credentials from IMDS will be used.
                 See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-                If not provided, will be read from 'AWS_SECRET_ACCESS_KEY'
+                If not provided, will be read from `AWS_SECRET_ACCESS_KEY`
                 environment variable.
             aws_session_token (Optional[str]): AWS session token.
                 If provided, aws_access_key_id and
                 aws_secret_access_key must also be provided.
                 Not required unless using temporary credentials.
                 See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-                If not provided, will be read from 'AWS_SESSION_TOKEN'
+                If not provided, will be read from `AWS_SESSION_TOKEN`
                 environment variable.
             endpoint_url (Optional[str]): Needed if you don't want to default to
                 us-east-1 endpoint
-            config (Any): An optional botocore.config.Config instance to pass to
+            config (Any): An optional `botocore.config.Config` instance to pass to
                 the client.
             client (Any): Boto3 client for s3vectors
             kwargs: Arguments to pass to AmazonS3Vectors.

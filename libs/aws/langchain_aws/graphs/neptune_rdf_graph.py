@@ -43,8 +43,7 @@ class NeptuneRdfGraph:
         sign: optional, whether to sign the request payload, default is True
 
     Example:
-        .. code-block:: python
-
+        ```python
         graph = NeptuneRdfGraph(
             host='<SPARQL host'>,
             port=<SPARQL port>
@@ -59,6 +58,7 @@ class NeptuneRdfGraph:
         schema_elem = graph.get_schema_elements()
         #... change schema_elements ...
         graph.load_schema(schema_elem)
+        ```
 
     *Security note*: Make sure that the database connection uses credentials
         that are narrowly-scoped to only include necessary permissions.
