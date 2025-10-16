@@ -1,8 +1,4 @@
-"""Comprehensive integration tests for ValkeyCheckpointSaver implementation.
-
-This file combines tests for basic functionality and additional coverage tests
-to ensure the ValkeyCheckpointSaver works correctly in various scenarios.
-"""
+"""Integration tests for ValkeyCheckpointSaver implementation."""
 
 import asyncio
 import os

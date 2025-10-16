@@ -457,7 +457,7 @@ checkpointer = ValkeyCheckpointSaver.from_conn_string(
 ```
 If you want to connect to cache from a host outside of VPC, use ElastiCache console to setup a jump host so you could create SSH tunnel to access cache locally. 
 
-#### Using Docker (Recommended)
+#### Using Docker
 ```bash
 # Start Valkey with required modules
 docker run --name valkey-bundle -p 6379:6379 -d valkey/valkey-bundle:latest
