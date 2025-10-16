@@ -117,9 +117,9 @@ async def test_async_operations(valkey_url: str) -> None:
 
         # Store checkpoint
         result = await saver.aput(
-            config,
-            checkpoint,
-            metadata,
+            config,  # type: ignore[arg-type]
+            checkpoint,  # type: ignore[arg-type]
+            metadata,  # type: ignore[arg-type]
             new_versions,  # type: ignore[arg-type]
         )
         assert result["configurable"]["checkpoint_id"] == checkpoint["id"]  # type: ignore

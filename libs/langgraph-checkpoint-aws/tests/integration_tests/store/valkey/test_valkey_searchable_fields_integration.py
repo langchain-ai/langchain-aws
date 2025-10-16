@@ -168,8 +168,8 @@ def test_searchable_fields_are_indexed(
     # Store all documents
     for doc in test_docs:
         store_with_searchable_fields.put(  # type: ignore[arg-type]
-            doc["namespace"],
-            doc["key"],
+            doc["namespace"],  # type: ignore[arg-type]
+            doc["key"],  # type: ignore[arg-type]
             doc["value"],  # type: ignore[arg-type]
         )
 
@@ -249,8 +249,8 @@ def test_list_fields_searchable(store_with_searchable_fields: ValkeyStore) -> No
     # Store documents
     for doc in test_docs:
         store_with_searchable_fields.put(  # type: ignore[arg-type]
-            doc["namespace"],
-            doc["key"],
+            doc["namespace"],  # type: ignore[arg-type]
+            doc["key"],  # type: ignore[arg-type]
             doc["value"],  # type: ignore[arg-type]
         )
 
@@ -359,8 +359,8 @@ def test_multiple_field_filters(store_with_searchable_fields: ValkeyStore) -> No
     # Store documents
     for doc in test_docs:
         store_with_searchable_fields.put(  # type: ignore[arg-type]
-            doc["namespace"],
-            doc["key"],
+            doc["namespace"],  # type: ignore[arg-type]
+            doc["key"],  # type: ignore[arg-type]
             doc["value"],  # type: ignore[arg-type]
         )
 

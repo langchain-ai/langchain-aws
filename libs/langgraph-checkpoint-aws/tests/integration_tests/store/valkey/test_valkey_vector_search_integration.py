@@ -191,8 +191,8 @@ def test_sync_vector_search_with_embeddings(
     # Store documents
     for doc in test_docs:
         store_with_vector_search.put(  # type: ignore[arg-type]
-            doc["namespace"],
-            doc["key"],
+            doc["namespace"],  # type: ignore[arg-type]
+            doc["key"],  # type: ignore[arg-type]
             doc["value"],  # type: ignore[arg-type]
         )
 
@@ -239,8 +239,8 @@ def test_sync_vector_search_with_filters(store_with_vector_search: ValkeyStore) 
 
     for doc in test_docs:
         store_with_vector_search.put(  # type: ignore[arg-type]
-            doc["namespace"],
-            doc["key"],
+            doc["namespace"],  # type: ignore[arg-type]
+            doc["key"],  # type: ignore[arg-type]
             doc["value"],  # type: ignore[arg-type]
         )
 
@@ -277,8 +277,8 @@ def test_sync_fallback_to_key_search(store_without_vector_search: ValkeyStore) -
 
     for doc in test_docs:
         store_without_vector_search.put(  # type: ignore[arg-type]
-            doc["namespace"],
-            doc["key"],
+            doc["namespace"],  # type: ignore[arg-type]
+            doc["key"],  # type: ignore[arg-type]
             doc["value"],  # type: ignore[arg-type]
         )
 
@@ -366,8 +366,8 @@ async def test_async_vector_search_with_embeddings(
     # Store documents
     for doc in test_docs:
         await async_store_with_vector_search.aput(  # type: ignore[arg-type]
-            doc["namespace"],
-            doc["key"],
+            doc["namespace"],  # type: ignore[arg-type]
+            doc["key"],  # type: ignore[arg-type]
             doc["value"],  # type: ignore[arg-type]
         )
 
@@ -413,8 +413,8 @@ async def test_async_vector_search_with_filters(
 
     for doc in test_docs:
         await async_store_with_vector_search.aput(  # type: ignore[arg-type]
-            doc["namespace"],
-            doc["key"],
+            doc["namespace"],  # type: ignore[arg-type]
+            doc["key"],  # type: ignore[arg-type]
             doc["value"],  # type: ignore[arg-type]
         )
 
@@ -454,8 +454,8 @@ async def test_async_fallback_to_key_search(
 
     for doc in test_docs:
         await async_store_without_vector_search.aput(  # type: ignore[arg-type]
-            doc["namespace"],
-            doc["key"],
+            doc["namespace"],  # type: ignore[arg-type]
+            doc["key"],  # type: ignore[arg-type]
             doc["value"],  # type: ignore[arg-type]
         )
 
