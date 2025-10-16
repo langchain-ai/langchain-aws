@@ -128,7 +128,7 @@ class TestValkeyCheckpointSaverUnit:
             "test-thread", "", sample_checkpoint["id"]
         )
         thread_key = saver._make_thread_key("test-thread", "")
-        
+
         assert fake_valkey_client.exists(checkpoint_key)
         assert fake_valkey_client.exists(thread_key)
 
@@ -146,7 +146,7 @@ class TestValkeyCheckpointSaverUnit:
             "test-thread", "test-ns", sample_checkpoint["id"]
         )
         thread_key = saver._make_thread_key("test-thread", "test-ns")
-        
+
         assert fake_valkey_client.ttl(checkpoint_key) > 0
         assert fake_valkey_client.ttl(thread_key) > 0
 
@@ -167,7 +167,7 @@ class TestValkeyCheckpointSaverUnit:
             "configurable": {"thread_id": "test-thread", "checkpoint_id": "test-id"}
         }
         metadata = {"source": "input", "step": 1}
-        
+
         # Store the checkpoint using put method
         saver.put(config, checkpoint_data, metadata, {"key": 1})
 
@@ -200,7 +200,7 @@ class TestValkeyCheckpointSaverUnit:
             "versions_seen": {"key": {"key": 1}},
             "pending_sends": [],
         }
-        
+
         checkpoint2 = {
             "v": 1,
             "id": "id2",
@@ -235,7 +235,7 @@ class TestValkeyCheckpointSaverUnit:
             "versions_seen": {"key": {"key": 1}},
             "pending_sends": [],
         }
-        
+
         checkpoint2 = {
             "v": 1,
             "id": "id2",
@@ -314,10 +314,10 @@ class TestValkeyCheckpointSaverUnit:
         """Test error handling when Valkey connection fails."""
         # Create a saver with a client that will raise errors
         saver = ValkeyCheckpointSaver(fake_valkey_client)
-        
+
         # Patch the client's get method to raise an exception
         with patch.object(
-            fake_valkey_client, 'get', side_effect=Exception("Connection error")
+            fake_valkey_client, "get", side_effect=Exception("Connection error")
         ):
             config = {
                 "configurable": {"thread_id": "test-thread", "checkpoint_id": "test-id"}
@@ -373,7 +373,7 @@ class TestValkeyCheckpointSaverUnit:
             "versions_seen": {"key": {"key": 1}},
             "pending_sends": [],
         }
-        
+
         config = {"configurable": {"thread_id": "test-thread", "checkpoint_ns": "ns1"}}
         saver.put(config, checkpoint, {"step": 1}, {"key": 1})
 
@@ -383,7 +383,7 @@ class TestValkeyCheckpointSaverUnit:
         # Verify data was deleted
         thread_key = saver._make_thread_key("test-thread", "ns1")
         checkpoint_key = saver._make_checkpoint_key("test-thread", "ns1", "test-id")
-        
+
         assert not fake_valkey_client.exists(thread_key)
         assert not fake_valkey_client.exists(checkpoint_key)
 
@@ -415,7 +415,7 @@ class TestValkeyCheckpointSaverUnit:
 
         # Should handle complex data without errors
         assert result["configurable"]["checkpoint_id"] == complex_checkpoint["id"]
-        
+
         # Verify we can retrieve it
         retrieved = saver.get_tuple(result)
         assert retrieved is not None
@@ -442,7 +442,7 @@ class TestValkeyCheckpointSaverUnit:
             "test-thread", "test-ns", "test-checkpoint-id"
         )
         assert fake_valkey_client.exists(writes_key)
-        
+
         # Verify the writes contain both batches
         writes_data = fake_valkey_client.get(writes_key)
         writes = json.loads(writes_data)
@@ -501,6 +501,7 @@ class TestValkeyCheckpointSaverUnit:
 
 # Additional tests migrated from test_valkey_simple.py
 
+
 def test_mock_serializer_functionality():
     """Test the mock serializer works correctly."""
 
@@ -528,7 +529,7 @@ class TestMockConfiguration:
     def test_valkey_client_mock_methods(self):
         """Test that all required Valkey client methods are properly mocked."""
         from unittest.mock import Mock
-        
+
         client = Mock()
 
         # Configure common methods
@@ -612,7 +613,7 @@ class TestErrorScenarios:
     def test_connection_error_simulation(self):
         """Test connection error simulation."""
         from unittest.mock import Mock
-        
+
         client = Mock()
         client.hgetall.side_effect = ConnectionError("Connection lost")
 
@@ -623,7 +624,7 @@ class TestErrorScenarios:
     def test_serialization_error_simulation(self):
         """Test serialization error simulation."""
         from unittest.mock import Mock
-        
+
         serializer = Mock()
         serializer.dumps.side_effect = ValueError("Serialization error")
 
@@ -742,7 +743,7 @@ class TestPipelineOperations:
     def test_pipeline_mock_setup(self):
         """Test pipeline mock setup."""
         from unittest.mock import Mock
-        
+
         client = Mock()
         pipeline = Mock()
 
@@ -760,7 +761,7 @@ class TestPipelineOperations:
     def test_pipeline_error_handling(self):
         """Test pipeline error handling."""
         from unittest.mock import Mock
-        
+
         client = Mock()
         pipeline = Mock()
 
@@ -788,7 +789,7 @@ class TestTTLHandling:
     def test_expire_operations(self):
         """Test expire operations."""
         from unittest.mock import Mock
-        
+
         client = Mock()
         client.expire.return_value = True
 

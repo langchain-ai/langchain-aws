@@ -11,6 +11,7 @@ from langgraph.store.base import Item, SearchItem
 
 try:
     from valkey import Valkey
+
     VALKEY_AVAILABLE = True
 except ImportError:
     Valkey = None  # type: ignore[assignment, misc]
@@ -24,7 +25,7 @@ def _is_valkey_server_available() -> bool:
     """Check if a Valkey server is available for testing."""
     if not VALKEY_AVAILABLE or Valkey is None:
         return False
-    
+
     try:
         valkey_url = os.getenv("VALKEY_URL", "valkey://localhost:6379")
         client = Valkey.from_url(valkey_url)

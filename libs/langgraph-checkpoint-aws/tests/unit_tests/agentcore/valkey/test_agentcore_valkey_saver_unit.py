@@ -97,7 +97,7 @@ class TestAgentCoreValkeySaver:
         # Remove async detection attributes to make it sync
         del mock_valkey_client.aclose
         del mock_valkey_client.__aenter__
-        
+
         saver = AgentCoreValkeySaver(mock_valkey_client)
 
         assert saver.client == mock_valkey_client
@@ -136,7 +136,7 @@ class TestAgentCoreValkeySaver:
         """Test successful retry execution."""
         operation = MagicMock(return_value="success")
         result = saver._execute_with_retry(operation, "arg1", kwarg1="value1")
-        
+
         assert result == "success"
         operation.assert_called_once_with("arg1", kwarg1="value1")
 
@@ -144,10 +144,10 @@ class TestAgentCoreValkeySaver:
         """Test retry logic with failure then success."""
         operation = MagicMock()
         operation.side_effect = [ConnectionError("Connection failed"), "success"]
-        
-        with patch('time.sleep'):  # Mock sleep to speed up test
+
+        with patch("time.sleep"):  # Mock sleep to speed up test
             result = saver._execute_with_retry(operation)
-        
+
         assert result == "success"
         assert operation.call_count == 2
 
@@ -155,19 +155,19 @@ class TestAgentCoreValkeySaver:
         """Test retry logic with all failures."""
         operation = MagicMock()
         operation.side_effect = ConnectionError("Connection failed")
-        
-        with patch('time.sleep'):  # Mock sleep to speed up test
+
+        with patch("time.sleep"):  # Mock sleep to speed up test
             with pytest.raises(ConnectionError):
                 saver._execute_with_retry(operation)
-        
+
         assert operation.call_count == saver.max_retries + 1
 
     def test_execute_with_retry_timeout_error(self, saver):
         """Test retry logic with TimeoutError."""
         operation = MagicMock()
         operation.side_effect = TimeoutError("Timeout")
-        
-        with patch('time.sleep'):
+
+        with patch("time.sleep"):
             with pytest.raises(TimeoutError):
                 saver._execute_with_retry(operation)
 
@@ -175,8 +175,8 @@ class TestAgentCoreValkeySaver:
         """Test retry logic with ValkeyError."""
         operation = MagicMock()
         operation.side_effect = ValkeyError("Valkey error")
-        
-        with patch('time.sleep'):
+
+        with patch("time.sleep"):
             with pytest.raises(ValkeyError):
                 saver._execute_with_retry(operation)
 
@@ -185,7 +185,7 @@ class TestAgentCoreValkeySaver:
         """Test successful async retry execution."""
         operation = AsyncMock(return_value="success")
         result = await saver._aexecute_with_retry(operation, "arg1", kwarg1="value1")
-        
+
         assert result == "success"
         operation.assert_called_once_with("arg1", kwarg1="value1")
 
@@ -194,10 +194,10 @@ class TestAgentCoreValkeySaver:
         """Test async retry logic with failure then success."""
         operation = AsyncMock()
         operation.side_effect = [ConnectionError("Connection failed"), "success"]
-        
-        with patch('asyncio.sleep', new_callable=AsyncMock):
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
             result = await saver._aexecute_with_retry(operation)
-        
+
         assert result == "success"
         assert operation.call_count == 2
 
@@ -206,37 +206,36 @@ class TestAgentCoreValkeySaver:
         """Test async retry logic with all failures."""
         operation = AsyncMock()
         operation.side_effect = ConnectionError("Connection failed")
-        
-        with patch('asyncio.sleep', new_callable=AsyncMock):
+
+        with patch("asyncio.sleep", new_callable=AsyncMock):
             with pytest.raises(ConnectionError):
                 await saver._aexecute_with_retry(operation)
-        
+
         assert operation.call_count == saver.max_retries + 1
 
     def test_from_conn_string(self):
         """Test creating saver from connection string."""
-        with patch(
-            'langgraph_checkpoint_aws.agentcore.valkey.saver.ConnectionPool.from_url'
-        ) as mock_pool_from_url, patch(
-            'langgraph_checkpoint_aws.agentcore.valkey.saver.Valkey'
-        ) as mock_valkey:
-            
+        with (
+            patch(
+                "langgraph_checkpoint_aws.agentcore.valkey.saver.ConnectionPool.from_url"
+            ) as mock_pool_from_url,
+            patch(
+                "langgraph_checkpoint_aws.agentcore.valkey.saver.Valkey"
+            ) as mock_valkey,
+        ):
             mock_pool = MagicMock()
             mock_pool_from_url.return_value = mock_pool
             mock_client = MagicMock()
             mock_valkey.return_value = mock_client
-            
+
             with AgentCoreValkeySaver.from_conn_string(
-                "valkey://localhost:6379", 
-                ttl_seconds=3600,
-                pool_size=20
+                "valkey://localhost:6379", ttl_seconds=3600, pool_size=20
             ) as saver:
                 assert isinstance(saver, AgentCoreValkeySaver)
                 assert saver.ttl == 3600
-            
+
             mock_pool_from_url.assert_called_once_with(
-                "valkey://localhost:6379", 
-                max_connections=20
+                "valkey://localhost:6379", max_connections=20
             )
             mock_valkey.assert_called_once_with(connection_pool=mock_pool)
             mock_client.close.assert_called_once()
@@ -244,16 +243,16 @@ class TestAgentCoreValkeySaver:
     def test_from_pool(self):
         """Test creating saver from connection pool."""
         with patch(
-            'langgraph_checkpoint_aws.agentcore.valkey.saver.Valkey'
+            "langgraph_checkpoint_aws.agentcore.valkey.saver.Valkey"
         ) as mock_valkey:
             mock_pool = MagicMock()
             mock_client = MagicMock()
             mock_valkey.return_value = mock_client
-            
+
             with AgentCoreValkeySaver.from_pool(mock_pool, ttl_seconds=1800) as saver:
                 assert isinstance(saver, AgentCoreValkeySaver)
                 assert saver.ttl == 1800
-            
+
             mock_valkey.assert_called_once_with(connection_pool=mock_pool)
             mock_client.close.assert_called_once()
 
@@ -265,36 +264,33 @@ class TestAgentCoreValkeySaver:
         mock_client.aclose = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
-        
+
         # Create a mock saver instance
         mock_saver = AgentCoreValkeySaver(mock_client, ttl=3600)
-        
+
         # Mock the async context manager
         class MockAsyncContextManager:
             async def __aenter__(self):
                 return mock_saver
+
             async def __aexit__(self, exc_type, exc_val, exc_tb):
                 await mock_client.aclose()
-        
+
         # Patch the method to return our mock context manager
-        with patch.object(AgentCoreValkeySaver, 'afrom_conn_string') as mock_method:
+        with patch.object(AgentCoreValkeySaver, "afrom_conn_string") as mock_method:
             mock_method.return_value = MockAsyncContextManager()
-            
+
             async with AgentCoreValkeySaver.afrom_conn_string(
-                "valkey://localhost:6379",
-                ttl_seconds=3600,
-                pool_size=20
+                "valkey://localhost:6379", ttl_seconds=3600, pool_size=20
             ) as saver:
                 assert isinstance(saver, AgentCoreValkeySaver)
                 assert saver.ttl == 3600
-            
+
             # Verify the method was called with correct arguments
             mock_method.assert_called_once_with(
-                "valkey://localhost:6379",
-                ttl_seconds=3600,
-                pool_size=20
+                "valkey://localhost:6379", ttl_seconds=3600, pool_size=20
             )
-            
+
             # Verify aclose was called
             mock_client.aclose.assert_called_once()
 
@@ -424,9 +420,7 @@ class TestAgentCoreValkeySaver:
 
         result = saver._deserialize_checkpoint(stored_checkpoint, [], {}, config)
 
-        assert (
-            result.config.get("configurable", {}).get("thread_id") == "custom-thread"
-        )
+        assert result.config.get("configurable", {}).get("thread_id") == "custom-thread"
         assert (
             result.config.get("configurable", {}).get("checkpoint_id")
             == "custom-checkpoint"
@@ -460,9 +454,7 @@ class TestAgentCoreValkeySaver:
         result = saver.get_tuple(sample_config)
 
         assert isinstance(result, CheckpointTuple)
-        assert (
-            result.config["configurable"]["checkpoint_id"] == "checkpoint-1"
-        )  # pyright: ignore[reportTypedDictNotRequiredAccess]
+        assert result.config["configurable"]["checkpoint_id"] == "checkpoint-1"  # pyright: ignore[reportTypedDictNotRequiredAccess]
 
     def test_get_tuple_corrupted_checkpoint_data(
         self, saver, mock_valkey_client, sample_config
@@ -534,9 +526,7 @@ class TestAgentCoreValkeySaver:
         result = saver.get_tuple(config)
 
         assert isinstance(result, CheckpointTuple)
-        assert (
-            result.config["configurable"]["checkpoint_id"] == "checkpoint-2"
-        )  # pyright: ignore[reportTypedDictNotRequiredAccess]
+        assert result.config["configurable"]["checkpoint_id"] == "checkpoint-2"  # pyright: ignore[reportTypedDictNotRequiredAccess]
 
     def test_get_tuple_latest_checkpoint_corrupted(self, saver, mock_valkey_client):
         """Test getting latest checkpoint with corrupted data."""
@@ -830,9 +820,7 @@ class TestAgentCoreValkeySaver:
         metadata = {"user": "test"}
         new_versions: dict[str, str | int | float] = {"messages": 1.0}
 
-        saver.put(
-            sample_config, sample_checkpoint, metadata, new_versions
-        )  # pyright: ignore[reportArgumentType]
+        saver.put(sample_config, sample_checkpoint, metadata, new_versions)  # pyright: ignore[reportArgumentType]
 
         # Verify set was called instead of setex
         mock_valkey_client.set.assert_called()
@@ -935,7 +923,7 @@ class TestAgentCoreValkeySaver:
         mock_async_valkey_client.delete = MagicMock(return_value=1)
 
         with patch(
-            'langgraph_checkpoint_aws.agentcore.valkey.saver.logger'
+            "langgraph_checkpoint_aws.agentcore.valkey.saver.logger"
         ) as mock_logger:
             async_saver.delete_thread(thread_id, actor_id)
             mock_logger.warning.assert_called_with(
@@ -1028,11 +1016,7 @@ class TestAgentCoreValkeySaver:
 
     def test_init_with_custom_retry_params(self, mock_valkey_client):
         """Test initialization with custom retry parameters."""
-        saver = AgentCoreValkeySaver(
-            mock_valkey_client, 
-            max_retries=5, 
-            retry_delay=0.5
-        )
+        saver = AgentCoreValkeySaver(mock_valkey_client, max_retries=5, retry_delay=0.5)
         assert saver.max_retries == 5
         assert saver.retry_delay == 0.5
 
@@ -1045,15 +1029,17 @@ class TestAgentCoreValkeySaver:
         """Test retry logic uses exponential backoff."""
         operation = MagicMock()
         operation.side_effect = [
-            ConnectionError("fail1"), 
-            ConnectionError("fail2"), 
-            "success"
+            ConnectionError("fail1"),
+            ConnectionError("fail2"),
+            "success",
         ]
-        
-        with patch('time.sleep') as mock_sleep, \
-             patch('random.uniform', return_value=0.05):
+
+        with (
+            patch("time.sleep") as mock_sleep,
+            patch("random.uniform", return_value=0.05),
+        ):
             result = saver._execute_with_retry(operation)
-        
+
         assert result == "success"
         # Check exponential backoff: 0.1 * 2^0 + 0.05, 0.1 * 2^1 + 0.05
         expected_delays = [0.15, 0.25]  # 0.1 + 0.05, 0.2 + 0.05
@@ -1068,15 +1054,17 @@ class TestAgentCoreValkeySaver:
         """Test async retry logic uses exponential backoff."""
         operation = AsyncMock()
         operation.side_effect = [
-            ConnectionError("fail1"), 
-            ConnectionError("fail2"), 
-            "success"
+            ConnectionError("fail1"),
+            ConnectionError("fail2"),
+            "success",
         ]
-        
-        with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep, \
-             patch('random.uniform', return_value=0.05):
+
+        with (
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch("random.uniform", return_value=0.05),
+        ):
             result = await saver._aexecute_with_retry(operation)
-        
+
         assert result == "success"
         # Check exponential backoff
         expected_delays = [0.15, 0.25]
@@ -1222,14 +1210,14 @@ class TestAgentCoreValkeySaverIntegration:
         # Create multiple checkpoints
         for i in range(3):
             checkpoint = {
-                "id": f"checkpoint-{i+1}",
-                "ts": f"2024-01-0{i+1}T00:00:00Z",
+                "id": f"checkpoint-{i + 1}",
+                "ts": f"2024-01-0{i + 1}T00:00:00Z",
                 "channel_values": {
-                    "messages": [{"role": "user", "content": f"Hello {i+1}"}]
+                    "messages": [{"role": "user", "content": f"Hello {i + 1}"}]
                 },
             }
-            metadata = {"user": f"test_user_{i+1}"}
-            new_versions = {"messages": f"{i+1}.0"}
+            metadata = {"user": f"test_user_{i + 1}"}
+            new_versions = {"messages": f"{i + 1}.0"}
 
             integration_saver.put(config, checkpoint, metadata, new_versions)
 
@@ -1242,9 +1230,9 @@ class TestAgentCoreValkeySaverIntegration:
         assert len(limited_checkpoints) == 2
 
         # Test with filter
-        filtered_checkpoints = list(integration_saver.list(
-            config, filter={"user": "test_user_2"}
-        ))
+        filtered_checkpoints = list(
+            integration_saver.list(config, filter={"user": "test_user_2"})
+        )
         assert len(filtered_checkpoints) == 1
 
     def test_writes_lifecycle(self, integration_saver):
@@ -1297,18 +1285,28 @@ class TestAgentCoreValkeySaverIntegration:
         integration_saver.put(config, checkpoint, {}, {"messages": "1.0"})
 
         # Verify checkpoint exists
-        retrieved = integration_saver.get_tuple({
-            **config,
-            "configurable": {**config["configurable"], "checkpoint_id": "checkpoint-1"}
-        })
+        retrieved = integration_saver.get_tuple(
+            {
+                **config,
+                "configurable": {
+                    **config["configurable"],
+                    "checkpoint_id": "checkpoint-1",
+                },
+            }
+        )
         assert retrieved is not None
 
         # Delete thread
         integration_saver.delete_thread("session-1", "agent-1")
 
         # Verify checkpoint is gone
-        retrieved_after_delete = integration_saver.get_tuple({
-            **config,
-            "configurable": {**config["configurable"], "checkpoint_id": "checkpoint-1"}
-        })
+        retrieved_after_delete = integration_saver.get_tuple(
+            {
+                **config,
+                "configurable": {
+                    **config["configurable"],
+                    "checkpoint_id": "checkpoint-1",
+                },
+            }
+        )
         assert retrieved_after_delete is None

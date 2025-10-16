@@ -16,6 +16,7 @@ else:
 try:
     from valkey import Valkey
     from valkey.connection import ConnectionPool as _ConnectionPool
+
     VALKEY_AVAILABLE = True
     ConnectionPool = _ConnectionPool  # type: ignore[misc]
 except ImportError:
@@ -30,7 +31,7 @@ def _is_valkey_server_available() -> bool:
     """Check if a Valkey server is available for testing."""
     if not VALKEY_AVAILABLE or Valkey is None:
         return False
-    
+
     try:
         valkey_url = os.getenv("VALKEY_URL", "valkey://localhost:6379")
         client = Valkey.from_url(valkey_url)

@@ -29,14 +29,14 @@ def mock_valkey_client():
     """Create a mock sync Valkey client."""
     client = MagicMock()
     # Remove async attributes to ensure it's detected as sync
-    delattr_list = ['aclose', '__aenter__', '__aexit__', 'aset', 'aget', 'ahgetall']
+    delattr_list = ["aclose", "__aenter__", "__aexit__", "aset", "aget", "ahgetall"]
     for attr in delattr_list:
         if hasattr(client, attr):
             try:
                 delattr(client, attr)
             except AttributeError:
                 pass
-    
+
     # Set up common mock returns
     client.ping.return_value = True
     client.hgetall.return_value = {}
@@ -64,9 +64,7 @@ def basic_index_config():
 class TestValkeyStoreInitialization:
     """Test ValkeyStore initialization and configuration."""
 
-    def test_init_with_index_config(
-        self, mock_valkey_client, basic_index_config
-    ):
+    def test_init_with_index_config(self, mock_valkey_client, basic_index_config):
         """Test initialization with index configuration."""
         with patch(
             "langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings"
@@ -91,22 +89,16 @@ class TestValkeyStoreInitialization:
         assert store.index is None
         assert store.embeddings is None
         assert store.index_fields is None
-        assert (
-            store.collection_name == "langgraph_store_idx"
-        )  # Default value
+        assert store.collection_name == "langgraph_store_idx"  # Default value
 
     def test_init_with_ttl_config(self, mock_valkey_client):
         """Test initialization with TTL configuration."""
-        ttl_config = TTLConfig(
-            default_ttl=3600, refresh_on_read=True
-        )
+        ttl_config = TTLConfig(default_ttl=3600, refresh_on_read=True)
         store = ValkeyStore(mock_valkey_client, ttl=ttl_config)
 
         assert store.ttl_config == ttl_config
 
-    def test_init_with_invalid_embeddings(
-        self, mock_valkey_client, basic_index_config
-    ):
+    def test_init_with_invalid_embeddings(self, mock_valkey_client, basic_index_config):
         """Test initialization with invalid embeddings configuration."""
         with patch(
             "langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings",
@@ -148,8 +140,8 @@ class TestValkeyStoreSetup:
         }
 
         with patch(
-            'langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings',
-            return_value=MagicMock()
+            "langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings",
+            return_value=MagicMock(),
         ):
             store = ValkeyStore(mock_valkey_client, index=basic_index_config)
             store.setup()
@@ -162,12 +154,12 @@ class TestValkeyStoreSetup:
         # First call fails (index doesn't exist), second call succeeds (creates index)
         mock_valkey_client.execute_command.side_effect = [
             Exception("Index not found"),  # FT.INFO fails
-            "OK"  # FT.CREATE succeeds
+            "OK",  # FT.CREATE succeeds
         ]
 
         with patch(
-            'langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings',
-            return_value=MagicMock()
+            "langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings",
+            return_value=MagicMock(),
         ):
             store = ValkeyStore(mock_valkey_client, index=basic_index_config)
             store.setup()
@@ -177,10 +169,10 @@ class TestValkeyStoreSetup:
     def test_setup_search_index_method_coverage(self, mock_valkey_client):
         """Test _setup_search_index method for coverage."""
         store = ValkeyStore(mock_valkey_client)
-        
-        with patch.object(store, '_setup_search_index_sync') as mock_setup_sync:
+
+        with patch.object(store, "_setup_search_index_sync") as mock_setup_sync:
             result = store._setup_search_index()
-            
+
             mock_setup_sync.assert_called_once()
             assert result == mock_setup_sync.return_value
 
@@ -190,7 +182,7 @@ class TestValkeyStoreContextManagers:
 
     def test_from_conn_string_context_manager(self):
         """Test from_conn_string context manager."""
-        with patch('valkey.Valkey.from_url') as mock_from_url:
+        with patch("valkey.Valkey.from_url") as mock_from_url:
             mock_client = MagicMock()
             mock_client.close = Mock()
             mock_from_url.return_value = mock_client
@@ -201,9 +193,10 @@ class TestValkeyStoreContextManagers:
 
     def test_from_conn_string_with_pool_parameters(self):
         """Test from_conn_string with pool_size and pool_timeout parameters."""
-        with patch('valkey.connection.ConnectionPool.from_url') as mock_pool_from_url, \
-             patch('valkey.Valkey') as mock_valkey_class:
-            
+        with (
+            patch("valkey.connection.ConnectionPool.from_url") as mock_pool_from_url,
+            patch("valkey.Valkey") as mock_valkey_class,
+        ):
             mock_pool = Mock()
             mock_client = Mock()
             mock_pool_from_url.return_value = mock_pool
@@ -212,16 +205,14 @@ class TestValkeyStoreContextManagers:
 
             # Test with pool parameters - this should trigger the pool creation path
             with ValkeyStore.from_conn_string(
-                "valkey://localhost:6379",
-                pool_size=10,
-                pool_timeout=30.0
+                "valkey://localhost:6379", pool_size=10, pool_timeout=30.0
             ) as store:
                 assert isinstance(store, ValkeyStore)
                 mock_pool_from_url.assert_called_once()
 
     def test_from_conn_string_without_pool_parameters(self):
         """Test from_conn_string without pool parameters."""
-        with patch('valkey.Valkey.from_url') as mock_from_url:
+        with patch("valkey.Valkey.from_url") as mock_from_url:
             mock_client = Mock()
             mock_client.close = Mock()
             mock_from_url.return_value = mock_client
@@ -233,7 +224,7 @@ class TestValkeyStoreContextManagers:
 
     def test_from_pool_context_manager(self):
         """Test from_pool context manager."""
-        with patch('valkey.Valkey.from_pool') as mock_from_pool:
+        with patch("valkey.Valkey.from_pool") as mock_from_pool:
             mock_pool = Mock()
             mock_client = Mock()
             mock_client.close = Mock()
@@ -253,7 +244,7 @@ class TestValkeyStoreBatchOperations:
         mock_valkey_client.hgetall.return_value = {
             "value": '{"title": "test"}',
             "created_at": "2023-01-01T00:00:00.000000",
-            "updated_at": "2023-01-01T00:00:00.000000"
+            "updated_at": "2023-01-01T00:00:00.000000",
         }
 
         store = ValkeyStore(mock_valkey_client)
@@ -300,7 +291,8 @@ class TestValkeyStoreBatchOperations:
     def test_batch_list_namespaces_operation(self, mock_valkey_client):
         """Test batch with ListNamespacesOp."""
         mock_valkey_client.keys.return_value = [
-            "langgraph:test/key1", "langgraph:test/key2"
+            "langgraph:test/key1",
+            "langgraph:test/key2",
         ]
 
         store = ValkeyStore(mock_valkey_client)
@@ -324,7 +316,6 @@ class TestValkeyStoreBatchOperations:
             store.batch(ops)  # type: ignore
 
 
-
 class TestValkeyStoreGetOperations:
     """Test ValkeyStore get operations."""
 
@@ -334,7 +325,7 @@ class TestValkeyStoreGetOperations:
         hash_data = {
             "value": '{"title": "test"}',
             "created_at": "2023-01-01T00:00:00.000000",
-            "updated_at": "2023-01-01T00:00:00.000000"
+            "updated_at": "2023-01-01T00:00:00.000000",
         }
         mock_valkey_client.hgetall.return_value = hash_data
 
@@ -364,7 +355,7 @@ class TestValkeyStoreGetOperations:
         hash_data = {
             "value": '{"title": "test"}',
             "created_at": "2023-01-01T00:00:00.000000",
-            "updated_at": "2023-01-01T00:00:00.000000"
+            "updated_at": "2023-01-01T00:00:00.000000",
         }
         mock_valkey_client.hgetall.return_value = hash_data
         mock_valkey_client.expire.return_value = True
@@ -398,11 +389,11 @@ class TestValkeyStoreGetOperations:
 
         # Mock hgetall to return data, but _handle_response_t to return None
         mock_valkey_client.hgetall.return_value = {"some": "data"}
-        
-        with patch.object(store, '_handle_response_t', return_value=None):
+
+        with patch.object(store, "_handle_response_t", return_value=None):
             op = GetOp(namespace=("test",), key="key1")
             result = store._handle_get(op)
-            
+
             assert result is None
 
     def test_handle_get_document_processor_returns_none(self, mock_valkey_client):
@@ -410,16 +401,16 @@ class TestValkeyStoreGetOperations:
         store = ValkeyStore(mock_valkey_client)
 
         mock_valkey_client.hgetall.return_value = {"value": "test"}
-        
+
         # Mock DocumentProcessor methods to return None - fix import path to base module
         with patch(
-            'langgraph_checkpoint_aws.store.valkey.base.DocumentProcessor'
+            "langgraph_checkpoint_aws.store.valkey.base.DocumentProcessor"
         ) as mock_dp:
             mock_dp.convert_hash_to_document.return_value = None
-            
+
             op = GetOp(namespace=("test",), key="key1")
             result = store._handle_get(op)
-            
+
             assert result is None
 
 
@@ -466,12 +457,9 @@ class TestValkeyStorePutOperations:
         # Create mock embeddings with sync method
         mock_embeddings = Mock()
         mock_embeddings.embed_documents.return_value = [[0.1, 0.2, 0.3]]
-        
+
         index_config = ValkeyIndexConfig(
-            collection_name="test",
-            dims=3,
-            embed=mock_embeddings,
-            fields=["title"]
+            collection_name="test", dims=3, embed=mock_embeddings, fields=["title"]
         )
 
         store = ValkeyStore(mock_valkey_client, index=index_config)
@@ -479,9 +467,9 @@ class TestValkeyStorePutOperations:
         store.index_fields = ["title"]
 
         op = PutOp(namespace=("test",), key="key1", value={"title": "test content"})
-        
+
         store._handle_put(op)
-        
+
         # Verify sync embedding method was called
         mock_embeddings.embed_documents.assert_called_once()
         mock_valkey_client.hset.assert_called_once()
@@ -491,17 +479,14 @@ class TestValkeyStorePutOperations:
         # Create mock embeddings with only async method
         mock_embeddings = Mock()
         del mock_embeddings.embed_documents  # Remove sync method
-        
+
         async def mock_aembed_documents(texts):
             return [[0.1, 0.2, 0.3]]
-        
+
         mock_embeddings.aembed_documents = mock_aembed_documents
-        
+
         index_config = ValkeyIndexConfig(
-            collection_name="test",
-            dims=3,
-            embed=mock_embeddings,
-            fields=["title"]
+            collection_name="test", dims=3, embed=mock_embeddings, fields=["title"]
         )
 
         store = ValkeyStore(mock_valkey_client, index=index_config)
@@ -509,13 +494,13 @@ class TestValkeyStorePutOperations:
         store.index_fields = ["title"]
 
         op = PutOp(namespace=("test",), key="key1", value={"title": "test content"})
-        
+
         # Mock asyncio.run to simulate successful async embedding
-        with patch('asyncio.run') as mock_run:
+        with patch("asyncio.run") as mock_run:
             mock_run.return_value = [[0.1, 0.2, 0.3]]
-            
+
             store._handle_put(op)
-            
+
             mock_run.assert_called_once()
             mock_valkey_client.hset.assert_called_once()
 
@@ -523,12 +508,9 @@ class TestValkeyStorePutOperations:
         """Test _handle_put with embeddings when already in async context."""
         mock_embeddings = Mock()
         del mock_embeddings.embed_documents  # Remove sync method
-        
+
         index_config = ValkeyIndexConfig(
-            collection_name="test",
-            dims=3,
-            embed=mock_embeddings,
-            fields=["title"]
+            collection_name="test", dims=3, embed=mock_embeddings, fields=["title"]
         )
 
         store = ValkeyStore(mock_valkey_client, index=index_config)
@@ -536,13 +518,13 @@ class TestValkeyStorePutOperations:
         store.index_fields = ["title"]
 
         op = PutOp(namespace=("test",), key="key1", value={"title": "test content"})
-        
+
         # Mock asyncio.get_running_loop to simulate being in async context
-        with patch('asyncio.get_running_loop') as mock_get_loop:
+        with patch("asyncio.get_running_loop") as mock_get_loop:
             mock_get_loop.return_value = Mock()  # Simulate running loop
-            
+
             store._handle_put(op)
-            
+
             # Should skip embeddings and log warning
             mock_valkey_client.hset.assert_called_once()
 
@@ -550,12 +532,9 @@ class TestValkeyStorePutOperations:
         """Test _handle_put when embedding generation fails."""
         mock_embeddings = Mock()
         mock_embeddings.embed_documents.side_effect = Exception("Embedding failed")
-        
+
         index_config = ValkeyIndexConfig(
-            collection_name="test",
-            dims=3,
-            embed=mock_embeddings,
-            fields=["title"]
+            collection_name="test", dims=3, embed=mock_embeddings, fields=["title"]
         )
 
         store = ValkeyStore(mock_valkey_client, index=index_config)
@@ -563,22 +542,19 @@ class TestValkeyStorePutOperations:
         store.index_fields = ["title"]
 
         op = PutOp(namespace=("test",), key="key1", value={"title": "test content"})
-        
+
         # Should handle embedding error gracefully
         store._handle_put(op)
-        
+
         mock_valkey_client.hset.assert_called_once()
 
     def test_handle_put_with_list_field_values(self, mock_valkey_client):
         """Test _handle_put with list values in indexed fields."""
         mock_embeddings = Mock()
         mock_embeddings.embed_documents.return_value = [[0.1, 0.2, 0.3]]
-        
+
         index_config = ValkeyIndexConfig(
-            collection_name="test",
-            dims=3,
-            embed=mock_embeddings,
-            fields=["tags"]
+            collection_name="test", dims=3, embed=mock_embeddings, fields=["tags"]
         )
 
         store = ValkeyStore(mock_valkey_client, index=index_config)
@@ -587,13 +563,11 @@ class TestValkeyStorePutOperations:
 
         # Value with list field
         op = PutOp(
-            namespace=("test",),
-            key="key1",
-            value={"tags": ["tag1", "tag2", "tag3"]}
+            namespace=("test",), key="key1", value={"tags": ["tag1", "tag2", "tag3"]}
         )
-        
+
         store._handle_put(op)
-        
+
         # Should handle list values by extending texts
         mock_embeddings.embed_documents.assert_called_once()
         call_args = mock_embeddings.embed_documents.call_args[0][0]
@@ -606,12 +580,12 @@ class TestValkeyStorePutOperations:
     def test_handle_put_with_empty_field_values(self, mock_valkey_client):
         """Test _handle_put with empty field values."""
         mock_embeddings = Mock()
-        
+
         index_config = ValkeyIndexConfig(
             collection_name="test",
             dims=3,
             embed=mock_embeddings,
-            fields=["title", "content"]
+            fields=["title", "content"],
         )
 
         store = ValkeyStore(mock_valkey_client, index=index_config)
@@ -620,9 +594,9 @@ class TestValkeyStorePutOperations:
 
         # Value with completely missing fields (no title or content)
         op = PutOp(namespace=("test",), key="key1", value={"other": "data"})
-        
+
         store._handle_put(op)
-        
+
         # Should not call embeddings when no valid text found
         mock_embeddings.embed_documents.assert_not_called()
 
@@ -686,27 +660,24 @@ class TestValkeyStoreSearchOperations:
         mock_embeddings.embed_query.return_value = [0.1, 0.2, 0.3]
 
         index_config = ValkeyIndexConfig(
-            collection_name="test",
-            dims=3,
-            embed=mock_embeddings,
-            fields=["title"]
+            collection_name="test", dims=3, embed=mock_embeddings, fields=["title"]
         )
 
         with patch(
-            'langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings',
-            return_value=mock_embeddings
+            "langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings",
+            return_value=mock_embeddings,
         ):
             # Mock search being available
             mock_valkey_client.execute_command.return_value = [
                 1,  # Total results
                 "langgraph:test/key1",  # Document ID
-                ["score", "0.9", "value", '{"title": "test"}']  # Document fields
+                ["score", "0.9", "value", '{"title": "test"}'],  # Document fields
             ]
 
             store = ValkeyStore(mock_valkey_client, index=index_config)
 
             # Mock search availability
-            with patch.object(store, '_is_search_available', return_value=True):
+            with patch.object(store, "_is_search_available", return_value=True):
                 op = SearchOp(namespace_prefix=("test",), query="test")
                 results = store._handle_search(op)
 
@@ -715,12 +686,12 @@ class TestValkeyStoreSearchOperations:
     def test_vector_search_with_namespace_and_filters(self, mock_valkey_client):
         """Test _vector_search with both namespace prefix and filters."""
         mock_embeddings = Mock()
-        
+
         index_config = ValkeyIndexConfig(
             collection_name="test_index",
             dims=3,
             embed=mock_embeddings,
-            fields=["title"]
+            fields=["title"],
         )
 
         store = ValkeyStore(mock_valkey_client, index=index_config)
@@ -737,11 +708,11 @@ class TestValkeyStoreSearchOperations:
             query="test query",
             filter={"type": "document", "status": "active"},
             limit=10,
-            offset=0
+            offset=0,
         )
 
         results = store._vector_search(op)
-        
+
         assert isinstance(results, list)
         # Verify search was called with proper query construction
         mock_valkey_client.ft.assert_called_with("test_index")
@@ -749,12 +720,12 @@ class TestValkeyStoreSearchOperations:
     def test_vector_search_pure_vector_no_filters(self, mock_valkey_client):
         """Test _vector_search with pure vector search (no filters)."""
         mock_embeddings = Mock()
-        
+
         index_config = ValkeyIndexConfig(
             collection_name="test_index",
             dims=3,
             embed=mock_embeddings,
-            fields=["title"]
+            fields=["title"],
         )
 
         store = ValkeyStore(mock_valkey_client, index=index_config)
@@ -769,22 +740,22 @@ class TestValkeyStoreSearchOperations:
             query="test query",
             filter=None,  # No additional filters
             limit=10,
-            offset=0
+            offset=0,
         )
 
         results = store._vector_search(op)
-        
+
         assert isinstance(results, list)
 
     def test_vector_search_error_handling(self, mock_valkey_client):
         """Test _vector_search error handling."""
         mock_embeddings = Mock()
-        
+
         index_config = ValkeyIndexConfig(
             collection_name="test_index",
             dims=3,
             embed=mock_embeddings,
-            fields=["title"]
+            fields=["title"],
         )
 
         store = ValkeyStore(mock_valkey_client, index=index_config)
@@ -796,14 +767,11 @@ class TestValkeyStoreSearchOperations:
         )
 
         op = SearchOp(
-            namespace_prefix=("test",),
-            query="test query",
-            limit=10,
-            offset=0
+            namespace_prefix=("test",), query="test query", limit=10, offset=0
         )
 
         results = store._vector_search(op)
-        
+
         # Should return empty list on error
         assert results == []
 
@@ -837,11 +805,11 @@ class TestValkeyStoreSearchOperations:
             namespace_prefix=("test",),
             query="test",
             limit=10,
-            offset=2  # Skip first 2 results
+            offset=2,  # Skip first 2 results
         )
 
         results = store._process_vector_search_results(mock_results, op)
-        
+
         # Should process docs starting from offset
         assert len(results) == 3  # 5 total - 2 offset = 3
 
@@ -851,9 +819,9 @@ class TestValkeyStoreSearchOperations:
 
         # Test with dict-like doc
         doc_dict = {"id": "langgraph:test/doc1", "score": 0.85}
-        
+
         doc_id, score = store._extract_doc_metadata(doc_dict)
-        
+
         assert doc_id == "langgraph:test/doc1"
         assert score == 0.85
 
@@ -866,9 +834,9 @@ class TestValkeyStoreSearchOperations:
         doc_obj.id = "langgraph:test/doc2"
         doc_obj.score = 0.75
         doc_obj.__dict__ = {"id": "langgraph:test/doc2", "score": 0.75}
-        
+
         doc_id, score = store._extract_doc_metadata(doc_obj)
-        
+
         assert doc_id == "langgraph:test/doc2"
         assert score == 0.75
 
@@ -880,9 +848,9 @@ class TestValkeyStoreSearchOperations:
         doc_bad = Mock()
         doc_bad.id = None
         doc_bad.score = "invalid"
-        
+
         doc_id, score = store._extract_doc_metadata(doc_bad)
-        
+
         assert doc_id == ""
         assert score == 0.0
 
@@ -894,7 +862,7 @@ class TestValkeyStoreSearchOperations:
         mock_valkey_client.hgetall.side_effect = Exception("Connection error")
 
         result = store._create_search_item_from_key(("test",), "doc1", 0.9)
-        
+
         assert result is None
 
     def test_key_pattern_search_with_complex_data(self, mock_valkey_client):
@@ -903,16 +871,17 @@ class TestValkeyStoreSearchOperations:
 
         # Mock scan to return keys
         mock_valkey_client.scan.return_value = (
-            0, ["langgraph:test/doc1", "langgraph:test/doc2"]
+            0,
+            ["langgraph:test/doc1", "langgraph:test/doc2"],
         )
 
         # Mock hgetall with complex data
         def mock_hgetall(key):
             if "doc1" in key:
                 return {
-                    b"value": orjson.dumps({
-                        "title": "Test Doc 1", "content": "Complex content"
-                    }).decode(),
+                    b"value": orjson.dumps(
+                        {"title": "Test Doc 1", "content": "Complex content"}
+                    ).decode(),
                     b"created_at": b"2024-01-01T00:00:00",
                     b"updated_at": b"2024-01-01T00:00:00",
                     b"vector": orjson.dumps([0.1, 0.2, 0.3]).decode(),
@@ -928,15 +897,10 @@ class TestValkeyStoreSearchOperations:
 
         mock_valkey_client.hgetall.side_effect = mock_hgetall
 
-        op = SearchOp(
-            namespace_prefix=("test",),
-            query="Test",
-            limit=10,
-            offset=0
-        )
+        op = SearchOp(namespace_prefix=("test",), query="Test", limit=10, offset=0)
 
         results = store._key_pattern_search(op)
-        
+
         assert isinstance(results, list)
 
     def test_key_pattern_search_with_malformed_data(self, mock_valkey_client):
@@ -952,15 +916,10 @@ class TestValkeyStoreSearchOperations:
             "updated_at": "2024-01-01T00:00:00",
         }
 
-        op = SearchOp(
-            namespace_prefix=("test",),
-            query="test",
-            limit=10,
-            offset=0
-        )
+        op = SearchOp(namespace_prefix=("test",), query="test", limit=10, offset=0)
 
         results = store._key_pattern_search(op)
-        
+
         # Should handle malformed data gracefully
         assert isinstance(results, list)
 
@@ -981,11 +940,11 @@ class TestValkeyStoreSearchOperations:
             # This should result in low score
             query="very specific query that won't match",
             limit=10,
-            offset=0
+            offset=0,
         )
 
         results = store._key_pattern_search(op)
-        
+
         # Should filter out results with very low scores
         assert isinstance(results, list)
 
@@ -996,7 +955,7 @@ class TestValkeyStoreSearchOperations:
         # Mock scan to return cursor continuation
         scan_calls = [
             (100, ["langgraph:test/doc1"]),  # First call with cursor 100
-            (0, ["langgraph:test/doc2"])     # Second call with cursor 0 (end)
+            (0, ["langgraph:test/doc2"]),  # Second call with cursor 0 (end)
         ]
         mock_valkey_client.scan.side_effect = scan_calls
 
@@ -1006,15 +965,10 @@ class TestValkeyStoreSearchOperations:
             "updated_at": "2024-01-01T00:00:00",
         }
 
-        op = SearchOp(
-            namespace_prefix=("test",),
-            query="test",
-            limit=10,
-            offset=0
-        )
+        op = SearchOp(namespace_prefix=("test",), query="test", limit=10, offset=0)
 
         results = store._key_pattern_search(op)
-        
+
         # Should handle cursor continuation
         assert isinstance(results, list)
         assert mock_valkey_client.scan.call_count == 2
@@ -1036,11 +990,11 @@ class TestValkeyStoreSearchOperations:
         store = ValkeyStore(mock_valkey_client)
 
         mock_valkey_client.hgetall.return_value = {"some": "data"}
-        
-        with patch.object(store, '_handle_response_t', return_value=None):
+
+        with patch.object(store, "_handle_response_t", return_value=None):
             results = [(("test",), "doc1", 0.9)]
             items = store._convert_to_search_items(results)
-            
+
             assert len(items) == 0
 
     def test_convert_to_search_items_non_dict_response(self, mock_valkey_client):
@@ -1048,11 +1002,11 @@ class TestValkeyStoreSearchOperations:
         store = ValkeyStore(mock_valkey_client)
 
         mock_valkey_client.hgetall.return_value = {"some": "data"}
-        
-        with patch.object(store, '_handle_response_t', return_value="not_a_dict"):
+
+        with patch.object(store, "_handle_response_t", return_value="not_a_dict"):
             results = [(("test",), "doc1", 0.9)]
             items = store._convert_to_search_items(results)
-            
+
             assert len(items) == 0
 
     def test_key_pattern_search_handle_response_t_none(self, mock_valkey_client):
@@ -1060,17 +1014,12 @@ class TestValkeyStoreSearchOperations:
         store = ValkeyStore(mock_valkey_client)
 
         mock_valkey_client.scan.return_value = (0, ["langgraph:test/doc1"])
-        
-        with patch.object(store, '_handle_response_t', return_value=None):
-            op = SearchOp(
-                namespace_prefix=("test",),
-                query="test",
-                limit=10,
-                offset=0
-            )
+
+        with patch.object(store, "_handle_response_t", return_value=None):
+            op = SearchOp(namespace_prefix=("test",), query="test", limit=10, offset=0)
 
             results = store._key_pattern_search(op)
-            
+
             # Should handle None response gracefully
             assert isinstance(results, list)
 
@@ -1083,7 +1032,7 @@ class TestValkeyStoreListOperations:
         mock_valkey_client.keys.return_value = [
             "langgraph:test/key1",
             "langgraph:test/subtest/key2",
-            "langgraph:other/key3"
+            "langgraph:other/key3",
         ]
 
         store = ValkeyStore(mock_valkey_client)
@@ -1098,13 +1047,11 @@ class TestValkeyStoreListOperations:
         """Test list namespaces with match conditions."""
         mock_valkey_client.keys.return_value = [
             "langgraph:prefix_test/key1",
-            "langgraph:other_suffix/key2"
+            "langgraph:other_suffix/key2",
         ]
 
         store = ValkeyStore(mock_valkey_client)
-        match_conditions = (
-            MatchCondition(path=("prefix",), match_type="prefix"),
-        )
+        match_conditions = (MatchCondition(path=("prefix",), match_type="prefix"),)
         op = ListNamespacesOp(match_conditions=match_conditions)
 
         results = store._handle_list(op)
@@ -1119,16 +1066,14 @@ class TestValkeyStoreListOperations:
         mock_valkey_client.keys.return_value = [
             "langgraph:test_suffix/doc1",
             "langgraph:other_suffix/doc2",
-            "langgraph:no_match/doc3"
+            "langgraph:no_match/doc3",
         ]
 
-        match_conditions = (
-            MatchCondition(path=("suffix",), match_type="suffix"),
-        )
+        match_conditions = (MatchCondition(path=("suffix",), match_type="suffix"),)
         op = ListNamespacesOp(match_conditions=match_conditions)
 
         results = store._handle_list(op)
-        
+
         assert isinstance(results, list)
 
     def test_handle_list_keys_error_recovery(self, mock_valkey_client):
@@ -1141,7 +1086,7 @@ class TestValkeyStoreListOperations:
         op = ListNamespacesOp()
 
         results = store._handle_list(op)
-        
+
         # Should return empty list on error
         assert results == []
 
@@ -1160,12 +1105,12 @@ class TestValkeyStoreListOperations:
 
         match_conditions = (
             MatchCondition(path=("prefix",), match_type="prefix"),
-            MatchCondition(path=("suffix",), match_type="suffix")
+            MatchCondition(path=("suffix",), match_type="suffix"),
         )
         op = ListNamespacesOp(match_conditions=match_conditions)
 
         results = store._handle_list(op)
-        
+
         # Should handle partial failures gracefully
         assert isinstance(results, list)
 
@@ -1201,16 +1146,14 @@ class TestValkeyStoreListOperations:
 
         mock_valkey_client.keys.return_value = [
             "langgraph:test_prefix/doc1",
-            "langgraph:other_suffix/doc2"
+            "langgraph:other_suffix/doc2",
         ]
 
-        match_conditions = (
-            MatchCondition(path=("prefix",), match_type="prefix"),
-        )
+        match_conditions = (MatchCondition(path=("prefix",), match_type="prefix"),)
         op = ListNamespacesOp(match_conditions=match_conditions)
 
         results = store._handle_list(op)
-        
+
         assert isinstance(results, list)
 
 
@@ -1222,7 +1165,7 @@ class TestValkeyStorePublicAPI:
         hash_data = {
             "value": '{"title": "test"}',
             "created_at": "2023-01-01T00:00:00.000000",
-            "updated_at": "2023-01-01T00:00:00.000000"
+            "updated_at": "2023-01-01T00:00:00.000000",
         }
         mock_valkey_client.hgetall.return_value = hash_data
 
@@ -1255,7 +1198,7 @@ class TestValkeyStorePublicAPI:
 
     def test_search_method(self, mock_valkey_client):
         """Test public search method."""
-        with patch.object(ValkeyStore, '_handle_search', return_value=[]):
+        with patch.object(ValkeyStore, "_handle_search", return_value=[]):
             store = ValkeyStore(mock_valkey_client)
 
             results = store.search(("test",), query="test")
@@ -1264,7 +1207,7 @@ class TestValkeyStorePublicAPI:
 
     def test_list_namespaces_method(self, mock_valkey_client):
         """Test public list_namespaces method."""
-        with patch.object(ValkeyStore, '_handle_list', return_value=[]):
+        with patch.object(ValkeyStore, "_handle_list", return_value=[]):
             store = ValkeyStore(mock_valkey_client)
 
             results = store.list_namespaces()
@@ -1327,7 +1270,7 @@ class TestValkeyStoreTTLOperations:
 
         # Should return early when no TTL config
         store._refresh_ttl_for_items(items)
-        
+
         # Expire should not be called
         mock_valkey_client.expire.assert_not_called()
 
@@ -1349,7 +1292,7 @@ class TestValkeyStoreTTLOperations:
 
         # Should return early when no default_ttl
         store._refresh_ttl_for_items(items)
-        
+
         # Expire should not be called
         mock_valkey_client.expire.assert_not_called()
 
@@ -1375,8 +1318,8 @@ class TestValkeyStoreErrorHandling:
         )
 
         with patch(
-            'langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings',
-            return_value=MagicMock()
+            "langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings",
+            return_value=MagicMock(),
         ):
             store = ValkeyStore(mock_valkey_client, index=basic_index_config)
 
@@ -1389,15 +1332,12 @@ class TestValkeyStoreErrorHandling:
         mock_embeddings.embed_documents.side_effect = Exception("Embedding failed")
 
         index_config = ValkeyIndexConfig(
-            collection_name="test",
-            dims=3,
-            embed=mock_embeddings,
-            fields=["title"]
+            collection_name="test", dims=3, embed=mock_embeddings, fields=["title"]
         )
 
         with patch(
-            'langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings',
-            return_value=mock_embeddings
+            "langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings",
+            return_value=mock_embeddings,
         ):
             store = ValkeyStore(mock_valkey_client, index=index_config)
             mock_valkey_client.hset.return_value = 1

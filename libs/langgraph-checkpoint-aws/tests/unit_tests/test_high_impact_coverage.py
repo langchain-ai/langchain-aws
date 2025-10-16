@@ -13,7 +13,7 @@ class TestModelsModule:
         from langgraph_checkpoint_aws import models
 
         # Test model classes if they exist
-        model_classes = [attr for attr in dir(models) if not attr.startswith('_')]
+        model_classes = [attr for attr in dir(models) if not attr.startswith("_")]
 
         for model_name in model_classes:
             model_class = getattr(models, model_name)
@@ -34,10 +34,11 @@ class TestSessionModule:
         """Test session module import."""
         try:
             from langgraph_checkpoint_aws import session
+
             assert session is not None
 
             # Test any classes or functions in the module
-            items = [attr for attr in dir(session) if not attr.startswith('_')]
+            items = [attr for attr in dir(session) if not attr.startswith("_")]
             assert len(items) >= 0  # Module should have some content
 
         except ImportError as e:
@@ -51,13 +52,14 @@ class TestAsyncSaverModule:
         """Test async_saver module import."""
         try:
             from langgraph_checkpoint_aws import async_saver
+
             assert async_saver is not None
 
             # Test any classes in the module
-            items = [attr for attr in dir(async_saver) if not attr.startswith('_')]
+            items = [attr for attr in dir(async_saver) if not attr.startswith("_")]
             for item_name in items:
                 item = getattr(async_saver, item_name)
-                if hasattr(item, '__name__') and item.__name__.endswith('Saver'):
+                if hasattr(item, "__name__") and item.__name__.endswith("Saver"):
                     # This is likely a saver class
                     assert item is not None
 
@@ -72,22 +74,24 @@ class TestUtilsModule:
         """Test utils module import."""
         try:
             from langgraph_checkpoint_aws import utils
+
             assert utils is not None
 
             # Test utility functions if they exist
             util_functions = [
-                attr for attr in dir(utils)
-                if not attr.startswith('_') and callable(getattr(utils, attr))
+                attr
+                for attr in dir(utils)
+                if not attr.startswith("_") and callable(getattr(utils, attr))
             ]
 
             for func_name in util_functions:
                 func = getattr(utils, func_name)
                 try:
                     # Try calling with minimal args
-                    if func_name.startswith('get_'):
+                    if func_name.startswith("get_"):
                         result = func()
                         assert result is not None or result is None
-                    elif func_name.startswith('validate_'):
+                    elif func_name.startswith("validate_"):
                         result = func({})
                         assert result is not None or result is None
                 except Exception:
@@ -105,15 +109,16 @@ class TestCacheValkeyModule:
         """Test cache valkey module import."""
         try:
             from langgraph_checkpoint_aws.cache.valkey import cache
+
             assert cache is not None
 
             # Test ValkeyCache class if it exists
-            if hasattr(cache, 'ValkeyCache'):
+            if hasattr(cache, "ValkeyCache"):
                 cache_class = cache.ValkeyCache
                 assert cache_class is not None
 
                 # Test class properties and methods without instantiation
-                assert hasattr(cache_class, '__init__')
+                assert hasattr(cache_class, "__init__")
 
         except ImportError as e:
             pytest.skip(f"Cache valkey module has import dependencies: {e}")
@@ -127,14 +132,14 @@ class TestCheckpointUtilsModule:
         from langgraph_checkpoint_aws.checkpoint.valkey import utils
 
         # Test utility functions if they exist
-        if hasattr(utils, 'get_checkpoint_ns'):
+        if hasattr(utils, "get_checkpoint_ns"):
             try:
                 result = utils.get_checkpoint_ns("test")
                 assert isinstance(result, str) or result is None
             except Exception:
                 pass
 
-        if hasattr(utils, 'get_checkpoint_id'):
+        if hasattr(utils, "get_checkpoint_id"):
             try:
                 result = utils.get_checkpoint_id("test")
                 assert isinstance(result, str) or result is None
@@ -152,16 +157,17 @@ class TestAgentcoreHelpersModule:
 
             # Test helper functions with safe defaults
             helper_functions = [
-                attr for attr in dir(helpers)
-                if not attr.startswith('_') and callable(getattr(helpers, attr))
+                attr
+                for attr in dir(helpers)
+                if not attr.startswith("_") and callable(getattr(helpers, attr))
             ]
 
             for func_name in helper_functions[:5]:  # Test first 5 functions
                 func = getattr(helpers, func_name)
                 try:
-                    if 'config' in func_name.lower():
+                    if "config" in func_name.lower():
                         result = func({})
-                    elif 'format' in func_name.lower():
+                    elif "format" in func_name.lower():
                         result = func("test")
                     else:
                         # Try with no args
@@ -184,17 +190,18 @@ class TestAgentcoreModelsModule:
 
         # Test model classes
         model_classes = [
-            attr for attr in dir(models)
-            if not attr.startswith('_') and callable(getattr(models, attr))
+            attr
+            for attr in dir(models)
+            if not attr.startswith("_") and callable(getattr(models, attr))
         ]
 
         for model_name in model_classes[:3]:  # Test first 3 models
             model_class = getattr(models, model_name)
             try:
                 # Try basic instantiation
-                if 'Config' in model_name:
+                if "Config" in model_name:
                     instance = model_class()
-                elif 'Request' in model_name:
+                elif "Request" in model_name:
                     instance = model_class(id="test")
                 else:
                     instance = model_class()
@@ -211,12 +218,14 @@ class TestAgentcoreStoreModule:
         """Test agentcore store import."""
         try:
             from langgraph_checkpoint_aws.agentcore import store
+
             assert store is not None
 
             # Test any store classes
             store_classes = [
-                attr for attr in dir(store)
-                if not attr.startswith('_') and 'Store' in attr
+                attr
+                for attr in dir(store)
+                if not attr.startswith("_") and "Store" in attr
             ]
 
             for store_name in store_classes:
@@ -234,12 +243,14 @@ class TestAgentcoreSaverModule:
         """Test agentcore saver import."""
         try:
             from langgraph_checkpoint_aws.agentcore import saver
+
             assert saver is not None
 
             # Test any saver classes
             saver_classes = [
-                attr for attr in dir(saver)
-                if not attr.startswith('_') and 'Saver' in attr
+                attr
+                for attr in dir(saver)
+                if not attr.startswith("_") and "Saver" in attr
             ]
 
             for saver_name in saver_classes:
@@ -258,15 +269,15 @@ class TestCheckpointSaverModules:
         from langgraph_checkpoint_aws.checkpoint.valkey import base
 
         # Test BaseValkeyCheckpointSaver if it exists
-        if hasattr(base, 'BaseValkeyCheckpointSaver'):
+        if hasattr(base, "BaseValkeyCheckpointSaver"):
             base_class = base.BaseValkeyCheckpointSaver
             assert base_class is not None
 
             # Test class methods without instantiation
-            assert hasattr(base_class, '__init__')
+            assert hasattr(base_class, "__init__")
 
             # Test utility methods if they exist
-            if hasattr(base_class, '_make_checkpoint_key'):
+            if hasattr(base_class, "_make_checkpoint_key"):
                 try:
                     # Create a mock instance to test static-like methods
                     mock_client = MagicMock()
@@ -281,7 +292,7 @@ class TestCheckpointSaverModules:
         try:
             from langgraph_checkpoint_aws.checkpoint.valkey import saver
 
-            if hasattr(saver, 'ValkeyCheckpointSaver'):
+            if hasattr(saver, "ValkeyCheckpointSaver"):
                 saver_class = saver.ValkeyCheckpointSaver
                 assert saver_class is not None
 
@@ -292,7 +303,7 @@ class TestCheckpointSaverModules:
                     assert instance is not None
 
                     # Test key building methods
-                    if hasattr(instance, '_make_checkpoint_key'):
+                    if hasattr(instance, "_make_checkpoint_key"):
                         key = instance._make_checkpoint_key(
                             "thread", "ns", "checkpoint"
                         )
@@ -313,13 +324,12 @@ class TestMainPackageInit:
         import langgraph_checkpoint_aws
 
         # Test that package has version or other attributes
-        assert (
-            hasattr(langgraph_checkpoint_aws, '__version__')
-            or hasattr(langgraph_checkpoint_aws, '__name__')
+        assert hasattr(langgraph_checkpoint_aws, "__version__") or hasattr(
+            langgraph_checkpoint_aws, "__name__"
         )
 
         # Test submodule imports
-        submodules = ['store', 'checkpoint', 'agentcore']
+        submodules = ["store", "checkpoint", "agentcore"]
         for submodule in submodules:
             try:
                 submod = getattr(langgraph_checkpoint_aws, submodule)

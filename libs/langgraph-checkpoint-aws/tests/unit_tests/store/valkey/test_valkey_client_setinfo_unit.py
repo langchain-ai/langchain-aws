@@ -133,7 +133,7 @@ class TestCheckpointSaverClientSetInfo:
     def test_sync_checkpoint_saver_direct_init(
         self, mock_set_client_info: Mock, mock_valkey_client: Mock
     ):
-        """Test CLIENT SETINFO is called when directly initializing 
+        """Test CLIENT SETINFO is called when directly initializing
         ValkeyCheckpointSaver."""
         ValkeyCheckpointSaver(mock_valkey_client)
         mock_set_client_info.assert_called_once_with(mock_valkey_client)
@@ -142,13 +142,13 @@ class TestCheckpointSaverClientSetInfo:
     def test_async_checkpoint_saver_direct_init(
         self, mock_set_client_info: Mock, mock_async_valkey_client: Mock
     ):
-        """Test CLIENT SETINFO is NOT called when directly initializing 
+        """Test CLIENT SETINFO is NOT called when directly initializing
         AsyncValkeyCheckpointSaver with async client."""
         AsyncValkeyCheckpointSaver(mock_async_valkey_client)
 
-        # set_client_info should NOT be called for async clients to avoid 
+        # set_client_info should NOT be called for async clients to avoid
         # unawaited coroutines
-        # The base class should detect the async client and skip the sync 
+        # The base class should detect the async client and skip the sync
         # set_client_info call
         mock_set_client_info.assert_not_called()
 
@@ -170,7 +170,7 @@ class TestCheckpointSaverClientSetInfo:
 
             with ValkeyCheckpointSaver.from_conn_string(valkey_url) as saver:
                 # Should be called once: only in __init__ (base class)
-                # The actual client passed will be the real Valkey instance, 
+                # The actual client passed will be the real Valkey instance,
                 # not our mock
                 mock_set_client_info.assert_called_once()
                 assert saver is not None
@@ -192,10 +192,10 @@ class TestCheckpointSaverClientSetInfo:
         mock_from_url.return_value = mock_client
 
         async with AsyncValkeyCheckpointSaver.from_conn_string(valkey_url):
-            # Should be called in from_conn_string but NOT in __init__ 
+            # Should be called in from_conn_string but NOT in __init__
             # (async client detection)
             mock_aset_client_info.assert_called_once_with(mock_client)
-            # set_client_info should NOT be called for async clients to avoid 
+            # set_client_info should NOT be called for async clients to avoid
             # unawaited coroutines
             mock_set_client_info.assert_not_called()
 
@@ -215,13 +215,13 @@ class TestStoreClientSetInfo:
     def test_async_store_direct_init(
         self, mock_set_client_info: Mock, mock_async_valkey_client: Mock
     ):
-        """Test CLIENT SETINFO is NOT called when directly initializing 
+        """Test CLIENT SETINFO is NOT called when directly initializing
         AsyncValkeyStore with async client."""
         AsyncValkeyStore(mock_async_valkey_client)
 
-        # set_client_info should NOT be called for async clients to avoid 
+        # set_client_info should NOT be called for async clients to avoid
         # unawaited coroutines
-        # The base class should detect the async client and skip the sync 
+        # The base class should detect the async client and skip the sync
         # set_client_info call
         mock_set_client_info.assert_not_called()
 
@@ -335,11 +335,11 @@ class TestConnectionPoolClientSetInfo:
         mock_from_url.return_value = mock_pool
         pool = AsyncConnectionPool.from_url(valkey_url)
 
-        async with await pool.get_connection('dummy_command') as conn1:
+        async with await pool.get_connection("dummy_command") as conn1:
             await mock_aset_client_info(conn1)  # Call the mock directly
             mock_aset_client_info.assert_called_once_with(conn1)
 
-            async with await pool.get_connection('dummy_command') as conn2:
+            async with await pool.get_connection("dummy_command") as conn2:
                 await mock_aset_client_info(conn2)  # Call the mock directly
                 mock_aset_client_info.assert_has_calls(
                     [
@@ -351,8 +351,8 @@ class TestConnectionPoolClientSetInfo:
                 assert mock_aset_client_info.call_count == 2
                 assert mock_pool.get_connection.call_count == 2
                 assert mock_pool.get_connection.call_args_list == [
-                    call('dummy_command'),
-                    call('dummy_command'),
+                    call("dummy_command"),
+                    call("dummy_command"),
                 ]
 
     @pytest.mark.asyncio

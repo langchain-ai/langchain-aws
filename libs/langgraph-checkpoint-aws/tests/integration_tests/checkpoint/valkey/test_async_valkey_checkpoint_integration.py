@@ -16,6 +16,7 @@ from langgraph_checkpoint_aws.checkpoint.valkey import (
 try:
     from valkey.asyncio import Valkey as AsyncValkey
     from valkey.asyncio.connection import ConnectionPool as AsyncConnectionPool
+
     VALKEY_AVAILABLE = True
 except ImportError:
     AsyncValkey = None  # type: ignore[assignment, misc]
@@ -27,11 +28,12 @@ def _is_valkey_server_available() -> bool:
     """Check if a Valkey server is available for testing."""
     if not VALKEY_AVAILABLE or AsyncValkey is None:
         return False
-    
+
     try:
         import asyncio
+
         valkey_url = os.getenv("VALKEY_URL", "valkey://localhost:6379")
-        
+
         async def check_connection():
             client = AsyncValkey.from_url(valkey_url)
             try:
@@ -41,7 +43,7 @@ def _is_valkey_server_available() -> bool:
                 return False
             finally:
                 await client.aclose()
-        
+
         return asyncio.run(check_connection())
     except Exception:
         return False
@@ -115,11 +117,12 @@ async def test_async_operations(valkey_url: str) -> None:
 
         # Store checkpoint
         result = await saver.aput(
-            config, checkpoint, metadata, new_versions  # type: ignore[arg-type]
+            config,
+            checkpoint,
+            metadata,
+            new_versions,  # type: ignore[arg-type]
         )
-        assert (
-            result["configurable"]["checkpoint_id"] == checkpoint["id"]
-        )  # type: ignore
+        assert result["configurable"]["checkpoint_id"] == checkpoint["id"]  # type: ignore
 
         # Get checkpoint
         checkpoint_tuple = await saver.aget_tuple(

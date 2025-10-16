@@ -2,7 +2,7 @@
 
 This file combines tests from:
 - test_valkey_specific_coverage.py
-- test_valkey_high_impact_coverage.py  
+- test_valkey_high_impact_coverage.py
 - test_valkey_coverage_improvements.py
 - test_valkey_utils_final.py
 """
@@ -48,9 +48,9 @@ class TestValkeyCheckpointBase:
 
         except Exception:
             # If instantiation fails, at least test that methods exist
-            assert hasattr(BaseValkeyCheckpointSaver, '_make_checkpoint_key')
-            assert hasattr(BaseValkeyCheckpointSaver, '_make_writes_key')
-            assert hasattr(BaseValkeyCheckpointSaver, '_make_thread_key')
+            assert hasattr(BaseValkeyCheckpointSaver, "_make_checkpoint_key")
+            assert hasattr(BaseValkeyCheckpointSaver, "_make_writes_key")
+            assert hasattr(BaseValkeyCheckpointSaver, "_make_thread_key")
 
     def test_get_next_version_method(self):
         """Test get_next_version method."""
@@ -72,7 +72,7 @@ class TestValkeyCheckpointBase:
 
         except Exception:
             # If instantiation fails, test method exists
-            assert hasattr(BaseValkeyCheckpointSaver, 'get_next_version')
+            assert hasattr(BaseValkeyCheckpointSaver, "get_next_version")
 
     def test_base_checkpoint_saver_methods(self):
         """Test BaseValkeyCheckpointSaver has expected methods."""
@@ -82,8 +82,11 @@ class TestValkeyCheckpointBase:
 
         # Test class methods exist
         expected_methods = [
-            '__init__', '_make_checkpoint_key', '_make_writes_key',
-            '_make_thread_key', 'get_next_version'
+            "__init__",
+            "_make_checkpoint_key",
+            "_make_writes_key",
+            "_make_thread_key",
+            "get_next_version",
         ]
 
         for method_name in expected_methods:
@@ -98,14 +101,14 @@ class TestValkeyStoreDocumentUtils:
         from langgraph_checkpoint_aws.store.valkey import document_utils
 
         # Test if DocumentProcessor exists
-        if hasattr(document_utils, 'DocumentProcessor'):
+        if hasattr(document_utils, "DocumentProcessor"):
             processor = document_utils.DocumentProcessor
 
             # Test processor methods with safe data
             test_data = {"test": "value", "number": 123}
 
             # Test convert methods if they exist
-            if hasattr(processor, 'convert_to_hash'):
+            if hasattr(processor, "convert_to_hash"):
                 try:
                     result = processor.convert_to_hash(test_data)
                     assert result is not None
@@ -113,7 +116,7 @@ class TestValkeyStoreDocumentUtils:
                     # Method might require specific format
                     pass
 
-            if hasattr(processor, 'convert_hash_to_document'):
+            if hasattr(processor, "convert_hash_to_document"):
                 try:
                     hash_data = {"value": '{"test": "value"}'}
                     result = processor.convert_hash_to_document(hash_data)
@@ -128,10 +131,11 @@ class TestValkeyStoreDocumentUtils:
 
         # Get all functions (not classes or private methods)
         functions = [
-            attr for attr in dir(document_utils)
-            if not attr.startswith('_')
+            attr
+            for attr in dir(document_utils)
+            if not attr.startswith("_")
             and callable(getattr(document_utils, attr))
-            and not hasattr(getattr(document_utils, attr), '__bases__')
+            and not hasattr(getattr(document_utils, attr), "__bases__")
         ]
 
         for func_name in functions:
@@ -142,11 +146,11 @@ class TestValkeyStoreDocumentUtils:
 
             # Try calling with simple test data
             try:
-                if 'convert' in func_name.lower():
+                if "convert" in func_name.lower():
                     result = func({"test": "data"})
-                elif 'validate' in func_name.lower():
+                elif "validate" in func_name.lower():
                     result = func("test_input")
-                elif 'parse' in func_name.lower():
+                elif "parse" in func_name.lower():
                     result = func("test_string")
                 else:
                     # Try with no arguments
@@ -169,22 +173,22 @@ class TestValkeyStoreDocumentUtils:
         # Get simple functions (not classes)
         functions = []
         for attr_name in dir(document_utils):
-            if not attr_name.startswith('_'):
+            if not attr_name.startswith("_"):
                 attr = getattr(document_utils, attr_name)
-                if callable(attr) and not hasattr(attr, '__bases__'):
+                if callable(attr) and not hasattr(attr, "__bases__"):
                     functions.append((attr_name, attr))
 
         # Test simple function calls
         for func_name, func in functions:
             try:
-                if 'validate' in func_name.lower():
-                    result = func({'test': 'data'})
-                elif 'convert' in func_name.lower():
-                    result = func({'simple': 'value'})
-                elif 'parse' in func_name.lower():
-                    result = func('test_string')
-                elif 'format' in func_name.lower():
-                    result = func({'data': 'test'})
+                if "validate" in func_name.lower():
+                    result = func({"test": "data"})
+                elif "convert" in func_name.lower():
+                    result = func({"simple": "value"})
+                elif "parse" in func_name.lower():
+                    result = func("test_string")
+                elif "format" in func_name.lower():
+                    result = func({"data": "test"})
                 else:
                     # Try no-argument call
                     result = func()
@@ -205,7 +209,7 @@ class TestValkeySearchStrategiesAdvanced:
         from langgraph_checkpoint_aws.store.valkey import search_strategies
 
         # Test if SearchStrategy class exists
-        if hasattr(search_strategies, 'SearchStrategy'):
+        if hasattr(search_strategies, "SearchStrategy"):
             strategy_class = search_strategies.SearchStrategy
             assert strategy_class is not None
 
@@ -222,7 +226,7 @@ class TestValkeySearchStrategiesAdvanced:
         """Test strategies list functionality."""
         from langgraph_checkpoint_aws.store.valkey import search_strategies
 
-        if hasattr(search_strategies, 'strategies'):
+        if hasattr(search_strategies, "strategies"):
             strategies = search_strategies.strategies
 
             # Test strategies list properties
@@ -233,10 +237,10 @@ class TestValkeySearchStrategiesAdvanced:
                 assert strategy is not None
 
                 # Test if strategy has expected methods
-                if hasattr(strategy, 'search'):
+                if hasattr(strategy, "search"):
                     assert callable(strategy.search)
 
-                if hasattr(strategy, 'name'):
+                if hasattr(strategy, "name"):
                     assert strategy.name is not None
 
     def test_search_strategies_import(self):
@@ -247,7 +251,7 @@ class TestValkeySearchStrategiesAdvanced:
 
         # Test strategies exist
         strategy_attrs = dir(search_strategies)
-        expected_items = ['strategies', 'SearchStrategy']
+        expected_items = ["strategies", "SearchStrategy"]
 
         for item in expected_items:
             if item in strategy_attrs:
@@ -259,7 +263,7 @@ class TestValkeySearchStrategiesAdvanced:
         from langgraph_checkpoint_aws.store.valkey import search_strategies
 
         # Test strategies list if it exists
-        if hasattr(search_strategies, 'strategies'):
+        if hasattr(search_strategies, "strategies"):
             strategies_list = search_strategies.strategies
             assert isinstance(strategies_list, list)
             assert len(strategies_list) >= 0
@@ -273,7 +277,7 @@ class TestValkeySearchStrategiesAdvanced:
 
         # Test module attributes
         module_attrs = [
-            attr for attr in dir(search_strategies) if not attr.startswith('_')
+            attr for attr in dir(search_strategies) if not attr.startswith("_")
         ]
 
         for attr_name in module_attrs:
@@ -287,7 +291,7 @@ class TestValkeySearchStrategiesAdvanced:
                 assert len(attr) >= 0
 
             # If it's a class, test name
-            if hasattr(attr, '__name__'):
+            if hasattr(attr, "__name__"):
                 assert attr.__name__ is not None
 
 
@@ -301,15 +305,10 @@ class TestValkeyStoreExceptionsAdvanced:
         # Get all exception classes
         exception_classes = []
         for attr_name in dir(exceptions):
-            if not attr_name.startswith('_'):
+            if not attr_name.startswith("_"):
                 attr = getattr(exceptions, attr_name)
-                if (
-                    hasattr(attr, '__bases__') and
-                    any(
-                        issubclass(base, Exception)
-                        for base in attr.__mro__
-                        if base != attr
-                    )
+                if hasattr(attr, "__bases__") and any(
+                    issubclass(base, Exception) for base in attr.__mro__ if base != attr
                 ):
                     exception_classes.append((attr_name, attr))
 
@@ -339,11 +338,11 @@ class TestValkeyStoreExceptionsAdvanced:
         assert exceptions is not None
 
         # Test exception classes if they exist
-        exception_attrs = [attr for attr in dir(exceptions) if not attr.startswith('_')]
+        exception_attrs = [attr for attr in dir(exceptions) if not attr.startswith("_")]
 
         for exc_name in exception_attrs:
             exc_class = getattr(exceptions, exc_name)
-            if hasattr(exc_class, '__bases__') and Exception in exc_class.__mro__:
+            if hasattr(exc_class, "__bases__") and Exception in exc_class.__mro__:
                 # This is an exception class, test basic instantiation
                 try:
                     instance = exc_class("test message")
@@ -360,19 +359,13 @@ class TestValkeyStoreExceptionsAdvanced:
         exception_attrs = dir(exceptions)
 
         for attr_name in exception_attrs:
-            if not attr_name.startswith('_'):
+            if not attr_name.startswith("_"):
                 attr = getattr(exceptions, attr_name)
 
                 # Check if it's an exception class
-                if (
-                    hasattr(attr, '__bases__') and
-                    any(
-                        issubclass(base, Exception)
-                        for base in attr.__mro__
-                        if base != attr
-                    )
+                if hasattr(attr, "__bases__") and any(
+                    issubclass(base, Exception) for base in attr.__mro__ if base != attr
                 ):
-
                     # Test basic instantiation
                     try:
                         exc = attr("Test error message")
@@ -402,7 +395,7 @@ class TestValkeyConstantsAdvanced:
         from langgraph_checkpoint_aws.store.valkey import constants
 
         # Test constants have reasonable values
-        constant_names = [attr for attr in dir(constants) if not attr.startswith('_')]
+        constant_names = [attr for attr in dir(constants) if not attr.startswith("_")]
 
         for const_name in constant_names:
             const_value = getattr(constants, const_name)
@@ -411,11 +404,11 @@ class TestValkeyConstantsAdvanced:
             assert const_value is not None
 
             # Test constant is expected type
-            if 'PREFIX' in const_name.upper():
+            if "PREFIX" in const_name.upper():
                 assert isinstance(const_value, str)
-            elif 'SIZE' in const_name.upper() or 'LIMIT' in const_name.upper():
+            elif "SIZE" in const_name.upper() or "LIMIT" in const_name.upper():
                 assert isinstance(const_value, int)
-            elif 'TIMEOUT' in const_name.upper():
+            elif "TIMEOUT" in const_name.upper():
                 assert isinstance(const_value, (int, float))
 
     def test_cache_constants_values(self):
@@ -425,7 +418,7 @@ class TestValkeyConstantsAdvanced:
 
             assert isinstance(DEFAULT_PREFIX, str)
             assert len(DEFAULT_PREFIX) > 0
-            assert DEFAULT_PREFIX.endswith(':')  # Typical Redis key prefix format
+            assert DEFAULT_PREFIX.endswith(":")  # Typical Redis key prefix format
 
         except ImportError:
             pytest.skip("Cache constants not available")
@@ -435,7 +428,7 @@ class TestValkeyConstantsAdvanced:
         from langgraph_checkpoint_aws.store.valkey import constants
 
         # Access each constant to ensure coverage
-        constant_names = [attr for attr in dir(constants) if not attr.startswith('_')]
+        constant_names = [attr for attr in dir(constants) if not attr.startswith("_")]
 
         for const_name in constant_names:
             const_value = getattr(constants, const_name)
@@ -444,10 +437,10 @@ class TestValkeyConstantsAdvanced:
             assert const_value is not None
 
             # Test string constants are strings, numbers are numbers
-            if 'PREFIX' in const_name or 'SEPARATOR' in const_name:
+            if "PREFIX" in const_name or "SEPARATOR" in const_name:
                 assert isinstance(const_value, str)
             elif (
-                'SIZE' in const_name or 'LIMIT' in const_name or 'TIMEOUT' in const_name
+                "SIZE" in const_name or "LIMIT" in const_name or "TIMEOUT" in const_name
             ):
                 assert isinstance(const_value, (int, float))
 
@@ -464,7 +457,7 @@ class TestValkeyConstantsAdvanced:
         from langgraph_checkpoint_aws.store.valkey import constants
 
         # Test constants exist
-        constant_attrs = [attr for attr in dir(constants) if not attr.startswith('_')]
+        constant_attrs = [attr for attr in dir(constants) if not attr.startswith("_")]
 
         for const_name in constant_attrs:
             const_value = getattr(constants, const_name)
@@ -481,8 +474,11 @@ class TestValkeyUtilsAdvanced:
 
         # Test functions that might exist
         potential_functions = [
-            'get_checkpoint_ns', 'get_checkpoint_id', 'format_checkpoint_key',
-            'parse_checkpoint_key', 'validate_checkpoint_data'
+            "get_checkpoint_ns",
+            "get_checkpoint_id",
+            "format_checkpoint_key",
+            "parse_checkpoint_key",
+            "validate_checkpoint_data",
         ]
 
         for func_name in potential_functions:
@@ -492,15 +488,15 @@ class TestValkeyUtilsAdvanced:
 
                 # Try calling with reasonable test data
                 try:
-                    if 'get_checkpoint_ns' == func_name:
+                    if "get_checkpoint_ns" == func_name:
                         result = func("test_config")
-                    elif 'get_checkpoint_id' == func_name:
+                    elif "get_checkpoint_id" == func_name:
                         result = func("test_config")
-                    elif 'format_checkpoint_key' == func_name:
+                    elif "format_checkpoint_key" == func_name:
                         result = func("thread", "ns", "checkpoint")
-                    elif 'parse_checkpoint_key' == func_name:
+                    elif "parse_checkpoint_key" == func_name:
                         result = func("test:key:structure")
-                    elif 'validate_checkpoint_data' == func_name:
+                    elif "validate_checkpoint_data" == func_name:
                         result = func({"test": "data"})
 
                     # Verify result
@@ -519,7 +515,7 @@ class TestValkeyUtilsAdvanced:
 
         # Test functions exist if they're available
         utils_attrs = dir(utils)
-        expected_functions = ['get_checkpoint_ns', 'get_checkpoint_id']
+        expected_functions = ["get_checkpoint_ns", "get_checkpoint_id"]
 
         for func_name in expected_functions:
             if func_name in utils_attrs:
@@ -532,8 +528,9 @@ class TestValkeyUtilsAdvanced:
 
         # Test any functions that exist in utils
         utils_functions = [
-            attr for attr in dir(utils)
-            if not attr.startswith('_') and callable(getattr(utils, attr))
+            attr
+            for attr in dir(utils)
+            if not attr.startswith("_") and callable(getattr(utils, attr))
         ]
 
         for func_name in utils_functions:
@@ -541,12 +538,12 @@ class TestValkeyUtilsAdvanced:
 
             # Try simple calls to cover basic paths
             try:
-                if 'checkpoint' in func_name.lower():
-                    result = func('test_config')
-                elif 'namespace' in func_name.lower():
-                    result = func('test_namespace')
-                elif 'key' in func_name.lower():
-                    result = func('test_key')
+                if "checkpoint" in func_name.lower():
+                    result = func("test_config")
+                elif "namespace" in func_name.lower():
+                    result = func("test_namespace")
+                elif "key" in func_name.lower():
+                    result = func("test_key")
                 else:
                     result = func()
 
@@ -555,7 +552,7 @@ class TestValkeyUtilsAdvanced:
             except Exception:
                 # Function might require specific parameters
                 try:
-                    result = func('test', 'param', 'extra')
+                    result = func("test", "param", "extra")
                     assert result is not None or result is None
                 except Exception:
                     pass
@@ -566,8 +563,9 @@ class TestValkeyUtilsAdvanced:
 
         # Test utility functions
         util_functions = [
-            attr for attr in dir(utils)
-            if not attr.startswith('_') and callable(getattr(utils, attr))
+            attr
+            for attr in dir(utils)
+            if not attr.startswith("_") and callable(getattr(utils, attr))
         ]
 
         # Just verify functions exist - don't call them
@@ -581,8 +579,9 @@ class TestValkeyUtilsAdvanced:
 
         # Test utility functions
         util_functions = [
-            attr for attr in dir(document_utils)
-            if not attr.startswith('_') and callable(getattr(document_utils, attr))
+            attr
+            for attr in dir(document_utils)
+            if not attr.startswith("_") and callable(getattr(document_utils, attr))
         ]
 
         # Just verify functions exist - don't call them
@@ -594,7 +593,7 @@ class TestValkeyUtilsAdvanced:
 class TestAsyncValkeyStoreTargetedCoverage:
     """Target specific uncovered lines in async_store.py (247 missing lines)."""
 
-    @patch('langgraph_checkpoint_aws.store.valkey.async_store.logger')
+    @patch("langgraph_checkpoint_aws.store.valkey.async_store.logger")
     def test_search_availability_detection_paths(self, mock_logger):
         """Test search availability detection with different scenarios."""
         from langgraph_checkpoint_aws.store.valkey.async_store import AsyncValkeyStore
@@ -641,7 +640,7 @@ class TestAsyncValkeyStoreTargetedCoverage:
 
         asyncio.run(test_cached_result())
 
-    @patch('langgraph_checkpoint_aws.store.valkey.async_store.logger')
+    @patch("langgraph_checkpoint_aws.store.valkey.async_store.logger")
     def test_setup_search_index_async_paths(self, mock_logger):
         """Test search index setup paths."""
         from langgraph_checkpoint_aws.store.valkey.async_store import AsyncValkeyStore
@@ -658,13 +657,13 @@ class TestAsyncValkeyStoreTargetedCoverage:
 
         asyncio.run(test_setup_no_search())
 
-    @patch('langgraph_checkpoint_aws.store.valkey.async_store.Valkey')
+    @patch("langgraph_checkpoint_aws.store.valkey.async_store.Valkey")
     def test_from_pool_context_manager(self, mock_valkey):
         """Test from_pool context manager paths."""
         # Test that from_pool method exists
         from langgraph_checkpoint_aws.store.valkey.async_store import AsyncValkeyStore
-        assert hasattr(AsyncValkeyStore, 'from_pool')
 
+        assert hasattr(AsyncValkeyStore, "from_pool")
 
     def test_embedding_query_vector_generation_paths(self):
         """Test different embedding query vector generation paths."""
@@ -690,7 +689,7 @@ class TestAsyncValkeyStoreTargetedCoverage:
 class TestBaseValkeyStoreTargetedCoverage:
     """Target specific uncovered lines in base.py (152 missing lines)."""
 
-    @patch('langgraph_checkpoint_aws.store.valkey.base.ValkeyConnectionError')
+    @patch("langgraph_checkpoint_aws.store.valkey.base.ValkeyConnectionError")
     def test_client_info_exception_handling(self, mock_error_class):
         """Test client info exception handling."""
 
@@ -701,28 +700,32 @@ class TestBaseValkeyStoreTargetedCoverage:
         """Test search availability caching."""
         # Test that the method exists in BaseValkeyStore
         from langgraph_checkpoint_aws.store.valkey.base import BaseValkeyStore
-        assert hasattr(BaseValkeyStore, '_is_search_available')
+
+        assert hasattr(BaseValkeyStore, "_is_search_available")
 
     def test_validation_methods_exist(self):
         """Test that validation methods exist in BaseValkeyStore."""
         # Test that validation methods exist in BaseValkeyStore
         from langgraph_checkpoint_aws.store.valkey.base import BaseValkeyStore
-        assert hasattr(BaseValkeyStore, '_validate_put_operation')
+
+        assert hasattr(BaseValkeyStore, "_validate_put_operation")
 
     def test_key_building_methods_exist(self):
         """Test that key building methods exist in BaseValkeyStore."""
         # Test that key building methods exist in BaseValkeyStore
         from langgraph_checkpoint_aws.store.valkey.base import BaseValkeyStore
-        assert hasattr(BaseValkeyStore, '_build_key')
-        assert hasattr(BaseValkeyStore, '_parse_key')
+
+        assert hasattr(BaseValkeyStore, "_build_key")
+        assert hasattr(BaseValkeyStore, "_parse_key")
 
     def test_utility_methods_exist(self):
         """Test that utility methods exist in BaseValkeyStore."""
         # Test that utility methods exist in BaseValkeyStore
         from langgraph_checkpoint_aws.store.valkey.base import BaseValkeyStore
-        assert hasattr(BaseValkeyStore, '_calculate_simple_score')
-        assert hasattr(BaseValkeyStore, '_apply_filter')
-        assert hasattr(BaseValkeyStore, '_extract_namespaces_from_keys')
+
+        assert hasattr(BaseValkeyStore, "_calculate_simple_score")
+        assert hasattr(BaseValkeyStore, "_apply_filter")
+        assert hasattr(BaseValkeyStore, "_extract_namespaces_from_keys")
 
     def test_base_store_classes(self):
         """Test base store classes exist."""
@@ -733,7 +736,7 @@ class TestBaseValkeyStoreTargetedCoverage:
 
         # Test classes exist
         base_attrs = dir(base)
-        expected_classes = ['BaseValkeyStore']
+        expected_classes = ["BaseValkeyStore"]
 
         for class_name in expected_classes:
             if class_name in base_attrs:
@@ -751,8 +754,8 @@ class TestValkeyStoreSearchIndexSetup:
         store = AsyncValkeyStore.__new__(AsyncValkeyStore)
 
         # Test that index fields can be set
-        store.index_fields = ['field1', 'field2', 'vector_field']
-        assert store.index_fields == ['field1', 'field2', 'vector_field']
+        store.index_fields = ["field1", "field2", "vector_field"]
+        assert store.index_fields == ["field1", "field2", "vector_field"]
 
     def test_vector_dimension_validation(self):
         """Test vector dimension validation paths."""
@@ -771,7 +774,7 @@ class TestValkeyConnectionManagement:
 
         # Test different pool configuration scenarios
         with patch(
-            'langgraph_checkpoint_aws.store.valkey.async_store.ConnectionPool'
+            "langgraph_checkpoint_aws.store.valkey.async_store.ConnectionPool"
         ) as mock_pool_class:
             mock_pool = MagicMock()
             mock_pool_class.return_value = mock_pool
@@ -782,10 +785,7 @@ class TestValkeyConnectionManagement:
 
             # Test pool configuration
             pool = store._create_connection_pool(
-                host='localhost',
-                port=6379,
-                db=0,
-                max_connections=20
+                host="localhost", port=6379, db=0, max_connections=20
             )
 
             assert pool == mock_pool
@@ -821,6 +821,7 @@ class TestValkeyModuleImports:
     def test_valkey_cache_init_import(self):
         """Test Valkey cache __init__ import."""
         from langgraph_checkpoint_aws.cache.valkey import ValkeyCache
+
         assert ValkeyCache is not None
 
     def test_valkey_checkpoint_init_imports(self):
@@ -829,6 +830,7 @@ class TestValkeyModuleImports:
             AsyncValkeyCheckpointSaver,
             ValkeyCheckpointSaver,
         )
+
         assert ValkeyCheckpointSaver is not None
         assert AsyncValkeyCheckpointSaver is not None
 
@@ -836,11 +838,13 @@ class TestValkeyModuleImports:
         from langgraph_checkpoint_aws.checkpoint.valkey.base import (
             BaseValkeyCheckpointSaver,
         )
+
         assert BaseValkeyCheckpointSaver is not None
 
     def test_valkey_store_init_imports(self):
         """Test Valkey store __init__ imports."""
         from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore, ValkeyStore
+
         assert ValkeyStore is not None
         assert AsyncValkeyStore is not None
 
@@ -853,8 +857,8 @@ class TestValkeyModuleImports:
         assert AsyncValkeyStore is not None
 
         # Test class names
-        assert ValkeyStore.__name__ == 'ValkeyStore'
-        assert AsyncValkeyStore.__name__ == 'AsyncValkeyStore'
+        assert ValkeyStore.__name__ == "ValkeyStore"
+        assert AsyncValkeyStore.__name__ == "AsyncValkeyStore"
 
     def test_checkpoint_valkey_init_coverage(self):
         """Test checkpoint valkey __init__ coverage."""
@@ -868,8 +872,8 @@ class TestValkeyModuleImports:
         assert AsyncValkeyCheckpointSaver is not None
 
         # Test class names
-        assert ValkeyCheckpointSaver.__name__ == 'ValkeyCheckpointSaver'
-        assert AsyncValkeyCheckpointSaver.__name__ == 'AsyncValkeyCheckpointSaver'
+        assert ValkeyCheckpointSaver.__name__ == "ValkeyCheckpointSaver"
+        assert AsyncValkeyCheckpointSaver.__name__ == "AsyncValkeyCheckpointSaver"
 
     def test_cache_valkey_init_coverage(self):
         """Test cache valkey __init__ coverage."""
@@ -877,7 +881,7 @@ class TestValkeyModuleImports:
 
         # This import should be covered
         assert ValkeyCache is not None
-        assert ValkeyCache.__name__ == 'ValkeyCache'
+        assert ValkeyCache.__name__ == "ValkeyCache"
 
 
 class TestValkeyModuleIntegration:
@@ -890,6 +894,7 @@ class TestValkeyModuleIntegration:
             from langgraph_checkpoint_aws.checkpoint.valkey.base import (
                 BaseValkeyCheckpointSaver,
             )
+
             assert BaseValkeyCheckpointSaver is not None
 
         except ImportError:
@@ -943,8 +948,9 @@ class TestValkeyErrorHandling:
 
         # Test functions with invalid inputs
         functions = [
-            attr for attr in dir(document_utils)
-            if not attr.startswith('_') and callable(getattr(document_utils, attr))
+            attr
+            for attr in dir(document_utils)
+            if not attr.startswith("_") and callable(getattr(document_utils, attr))
         ]
 
         for func_name in functions[:3]:  # Test first 3 functions
@@ -977,7 +983,7 @@ class TestValkeyKeyManagement:
         )
 
         # Test key-related methods exist
-        key_methods = ['_make_checkpoint_key', '_make_writes_key', '_make_thread_key']
+        key_methods = ["_make_checkpoint_key", "_make_writes_key", "_make_thread_key"]
 
         for method_name in key_methods:
             assert hasattr(BaseValkeyCheckpointSaver, method_name)
@@ -992,10 +998,11 @@ class TestValkeyStoreTypes:
         """Test store types module basic functionality."""
         try:
             from langgraph_checkpoint_aws.store.valkey import types
+
             assert types is not None
 
             # Test any type definitions exist
-            type_attrs = [attr for attr in dir(types) if not attr.startswith('_')]
+            type_attrs = [attr for attr in dir(types) if not attr.startswith("_")]
             assert len(type_attrs) >= 0  # Module should have some content
 
         except ImportError:
@@ -1007,7 +1014,7 @@ class TestValkeyStoreTypes:
         from langgraph_checkpoint_aws.store.valkey import types
 
         # Access all type definitions
-        type_attrs = [attr for attr in dir(types) if not attr.startswith('_')]
+        type_attrs = [attr for attr in dir(types) if not attr.startswith("_")]
 
         for type_name in type_attrs:
             type_obj = getattr(types, type_name)
@@ -1016,11 +1023,11 @@ class TestValkeyStoreTypes:
             assert type_obj is not None
 
             # If it's a class, test basic properties
-            if hasattr(type_obj, '__name__'):
+            if hasattr(type_obj, "__name__"):
                 assert type_obj.__name__ is not None
 
             # If it's a type, try to check some properties
-            if hasattr(type_obj, '__annotations__'):
+            if hasattr(type_obj, "__annotations__"):
                 annotations = type_obj.__annotations__
                 assert isinstance(annotations, dict)
 
@@ -1032,13 +1039,15 @@ class TestValkeyAgentcoreIntegration:
         """Test agentcore Valkey module import."""
         try:
             from langgraph_checkpoint_aws.agentcore.valkey import saver
+
             assert saver is not None
 
             # Test saver classes exist
             saver_attrs = dir(saver)
             saver_classes = [
-                attr for attr in saver_attrs
-                if 'Saver' in attr and not attr.startswith('_')
+                attr
+                for attr in saver_attrs
+                if "Saver" in attr and not attr.startswith("_")
             ]
 
             for saver_name in saver_classes:
@@ -1057,17 +1066,17 @@ class TestValkeyAgentcoreIntegration:
         assert models is not None
 
         # Test model classes
-        model_attrs = [attr for attr in dir(models) if not attr.startswith('_')]
+        model_attrs = [attr for attr in dir(models) if not attr.startswith("_")]
 
         for attr_name in model_attrs:
             attr = getattr(models, attr_name)
 
             # If it's a class, test basic properties
-            if hasattr(attr, '__name__'):
+            if hasattr(attr, "__name__"):
                 assert attr.__name__ is not None
 
                 # Try to get class documentation
-                if hasattr(attr, '__doc__'):
+                if hasattr(attr, "__doc__"):
                     doc = attr.__doc__
                     assert doc is not None or doc is None
 
@@ -1080,10 +1089,11 @@ class TestValkeyModuleStructure:
         from langgraph_checkpoint_aws.cache import valkey
 
         # Test main cache class is accessible
-        assert hasattr(valkey, 'ValkeyCache')
+        assert hasattr(valkey, "ValkeyCache")
 
         # Test cache submodule
         from langgraph_checkpoint_aws.cache.valkey import cache
+
         assert cache is not None
 
     def test_checkpoint_module_structure(self):
@@ -1092,10 +1102,7 @@ class TestValkeyModuleStructure:
 
         # Test main classes are accessible
         # (BaseValkeyCheckpointSaver is not exposed in __init__)
-        expected_classes = [
-            'ValkeyCheckpointSaver',
-            'AsyncValkeyCheckpointSaver'
-        ]
+        expected_classes = ["ValkeyCheckpointSaver", "AsyncValkeyCheckpointSaver"]
 
         for class_name in expected_classes:
             assert hasattr(valkey, class_name)
@@ -1104,6 +1111,7 @@ class TestValkeyModuleStructure:
         from langgraph_checkpoint_aws.checkpoint.valkey.base import (
             BaseValkeyCheckpointSaver,
         )
+
         assert BaseValkeyCheckpointSaver is not None
 
     def test_store_module_structure(self):
@@ -1111,7 +1119,7 @@ class TestValkeyModuleStructure:
         from langgraph_checkpoint_aws.store import valkey
 
         # Test main classes are accessible
-        expected_classes = ['ValkeyStore', 'AsyncValkeyStore']
+        expected_classes = ["ValkeyStore", "AsyncValkeyStore"]
 
         for class_name in expected_classes:
             assert hasattr(valkey, class_name)
@@ -1128,4 +1136,4 @@ class TestValkeyMainInitFiles:
         assert AgentCoreMemorySaver is not None
 
         # Test class names
-        assert AgentCoreMemorySaver.__name__ == 'AgentCoreMemorySaver'
+        assert AgentCoreMemorySaver.__name__ == "AgentCoreMemorySaver"

@@ -422,7 +422,6 @@ class TestValkeyStoreBatchOperations:
             store.batch(ops)
 
 
-
 class TestValkeyStoreSearch:
     """Test search operations."""
 

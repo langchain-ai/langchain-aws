@@ -675,16 +675,17 @@ class TestSearchStrategyManager:
                 value={"title": "test"},
                 score=0.9,
                 created_at=datetime.now(),
-                updated_at=datetime.now()
+                updated_at=datetime.now(),
             )
         ]
 
         manager = SearchStrategyManager(mock_client, mock_store)
 
         # Mock the first strategy (VectorSearchStrategy)
-        with patch.object(manager.strategies[0], 'is_available', return_value=True), \
-             patch.object(manager.strategies[0], 'search', return_value=mock_results):
-
+        with (
+            patch.object(manager.strategies[0], "is_available", return_value=True),
+            patch.object(manager.strategies[0], "search", return_value=mock_results),
+        ):
             op = SearchOp(namespace_prefix=("test",), query="test query")
             results = manager.search(op)
 
@@ -697,27 +698,25 @@ class TestSearchStrategyManager:
 
         # Mock all strategies failing
         with (
+            patch.object(manager.strategies[0], "is_available", return_value=True),
             patch.object(
-                manager.strategies[0], 'is_available', return_value=True
+                manager.strategies[0],
+                "search",
+                side_effect=Exception("Vector search failed"),
             ),
+            patch.object(manager.strategies[1], "is_available", return_value=True),
             patch.object(
-                manager.strategies[0], 'search',
-                side_effect=Exception("Vector search failed")
+                manager.strategies[1],
+                "search",
+                side_effect=Exception("Hash search failed"),
             ),
+            patch.object(manager.strategies[2], "is_available", return_value=True),
             patch.object(
-                manager.strategies[1], 'is_available', return_value=True
-            ),
-            patch.object(
-                manager.strategies[1], 'search',
-                side_effect=Exception("Hash search failed")
-            ),
-            patch.object(manager.strategies[2], 'is_available', return_value=True),
-            patch.object(
-                manager.strategies[2], 'search',
-                side_effect=Exception("Pattern search failed")
+                manager.strategies[2],
+                "search",
+                side_effect=Exception("Pattern search failed"),
             ),
         ):
-
             op = SearchOp(namespace_prefix=("test",), query="test")
             results = manager.search(op)
 
@@ -750,7 +749,7 @@ class TestVectorSearchStrategy:
         strategy = VectorSearchStrategy(mock_client, mock_store)
 
         # Mock is_available to return False
-        with patch.object(strategy, 'is_available', return_value=False):
+        with patch.object(strategy, "is_available", return_value=False):
             op = SearchOp(namespace_prefix=("test",), query="test")
             results = strategy.search(op)
 
@@ -807,7 +806,7 @@ class TestKeyPatternSearchStrategy:
         """Test basic key pattern search."""
         # Mock the dependencies properly
         with patch(
-            'langgraph_checkpoint_aws.store.valkey.search_strategies.FilterProcessor'
+            "langgraph_checkpoint_aws.store.valkey.search_strategies.FilterProcessor"
         ) as mock_filter:
             mock_filter.build_namespace_pattern.return_value = "langgraph:test/*"
 
@@ -818,7 +817,7 @@ class TestKeyPatternSearchStrategy:
 
             # Mock document processing
             with patch.object(
-                KeyPatternSearchStrategy, '_process_key_for_search'
+                KeyPatternSearchStrategy, "_process_key_for_search"
             ) as mock_process:
                 mock_process.return_value = SearchItem(
                     key="key1",
@@ -826,7 +825,7 @@ class TestKeyPatternSearchStrategy:
                     value={"title": "test"},
                     score=0.8,
                     created_at=datetime.now(),
-                    updated_at=datetime.now()
+                    updated_at=datetime.now(),
                 )
 
                 strategy = KeyPatternSearchStrategy(mock_client, mock_store)
@@ -869,9 +868,10 @@ class TestHashSearchStrategy:
         strategy = HashSearchStrategy(mock_client, mock_store)
 
         # Mock the internal search method
-        with patch.object(strategy, '_search_with_hash', return_value=[]), \
-             patch.object(strategy, '_convert_to_search_items', return_value=[]):
-
+        with (
+            patch.object(strategy, "_search_with_hash", return_value=[]),
+            patch.object(strategy, "_convert_to_search_items", return_value=[]),
+        ):
             op = SearchOp(namespace_prefix=("test",), query="test")
             results = strategy.search(op)
 
@@ -888,18 +888,15 @@ class TestHashSearchStrategy:
                 value={"title": "test"},
                 score=0.8,
                 created_at=datetime.now(),
-                updated_at=datetime.now()
+                updated_at=datetime.now(),
             )
         ]
 
         with (
-            patch.object(strategy, '_search_with_hash', return_value=[]),
-            patch.object(
-                strategy, '_convert_to_search_items', return_value=mock_items
-            ),
-            patch.object(strategy, '_refresh_ttl_for_items') as mock_refresh,
+            patch.object(strategy, "_search_with_hash", return_value=[]),
+            patch.object(strategy, "_convert_to_search_items", return_value=mock_items),
+            patch.object(strategy, "_refresh_ttl_for_items") as mock_refresh,
         ):
-
             op = SearchOp(namespace_prefix=("test",), query="test", refresh_ttl=True)
             results = strategy.search(op)
 
@@ -911,7 +908,7 @@ class TestHashSearchStrategy:
         strategy = HashSearchStrategy(mock_client, mock_store)
 
         with patch.object(
-            strategy, '_search_with_hash', side_effect=Exception("Search failed")
+            strategy, "_search_with_hash", side_effect=Exception("Search failed")
         ):
             op = SearchOp(namespace_prefix=("test",))
             results = strategy.search(op)

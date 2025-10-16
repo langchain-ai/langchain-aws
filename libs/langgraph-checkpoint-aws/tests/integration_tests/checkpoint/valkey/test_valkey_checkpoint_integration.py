@@ -21,6 +21,7 @@ from langgraph_checkpoint_aws.checkpoint.valkey import (
 try:
     from valkey import Valkey
     from valkey.connection import ConnectionPool
+
     VALKEY_AVAILABLE = True
 except ImportError:
     Valkey = None  # type: ignore[assignment, misc]
@@ -32,7 +33,7 @@ def _is_valkey_server_available() -> bool:
     """Check if a Valkey server is available for testing."""
     if not VALKEY_AVAILABLE or Valkey is None:
         return False
-    
+
     try:
         valkey_url = os.getenv("VALKEY_URL", "valkey://localhost:6379")
         client = Valkey.from_url(valkey_url)
@@ -44,7 +45,6 @@ def _is_valkey_server_available() -> bool:
 
 
 VALKEY_SERVER_AVAILABLE = _is_valkey_server_available()
-
 
 
 @pytest.fixture
@@ -104,9 +104,7 @@ def test_sync_operations(valkey_url: str) -> None:
 
         # Store checkpoint
         result = saver.put(config, checkpoint, metadata, new_versions)  # type: ignore[arg-type]
-        assert (
-            result["configurable"]["checkpoint_id"] == checkpoint["id"]
-        )  # type: ignore
+        assert result["configurable"]["checkpoint_id"] == checkpoint["id"]  # type: ignore
 
         # Get checkpoint
         checkpoint_tuple = saver.get_tuple(
@@ -421,9 +419,7 @@ def test_delete_thread(saver: ValkeyCheckpointSaver) -> None:
                     "checkpoint_id": f"checkpoint-{i}",
                 }
             }
-            saver.put_writes(
-                writes_config, [("channel", "value")], "task"
-            )
+            saver.put_writes(writes_config, [("channel", "value")], "task")
 
     # Verify data exists
     result = saver.get_tuple(
@@ -578,7 +574,7 @@ def test_initialization_with_different_parameters() -> None:
     """Test ValkeyCheckpointSaver initialization with different parameters."""
     if not VALKEY_AVAILABLE or Valkey is None:
         pytest.skip("Valkey not available")
-    
+
     valkey_url = os.getenv("VALKEY_URL", "valkey://localhost:6379")
     client = Valkey.from_url(valkey_url)
 

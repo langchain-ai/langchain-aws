@@ -44,7 +44,7 @@ class TestValkeyCacheUnit:
         """Sample data for testing."""
         return {"key": "value", "number": 42, "list": [1, 2, 3]}
 
-    @patch('langgraph_checkpoint_aws.cache.valkey.cache.set_client_info')
+    @patch("langgraph_checkpoint_aws.cache.valkey.cache.set_client_info")
     def test_init_calls_set_client_info(self, mock_set_client_info, mock_valkey_client):
         """Test that set_client_info is called during initialization."""
         ValkeyCache(mock_valkey_client)
@@ -101,8 +101,8 @@ class TestValkeyCacheUnit:
         cache = ValkeyCache(mock_valkey_client, prefix="test_prefix/")
         assert cache.prefix == "test_prefix/"
 
-    @patch('valkey.ConnectionPool.from_url')
-    @patch('valkey.Valkey.from_pool')
+    @patch("valkey.ConnectionPool.from_url")
+    @patch("valkey.Valkey.from_pool")
     def test_from_conn_string_with_pool_size(self, mock_from_pool, mock_pool_from_url):
         """Test from_conn_string with pool_size parameter."""
         mock_pool = Mock(spec=ConnectionPool)
@@ -111,19 +111,15 @@ class TestValkeyCacheUnit:
         mock_from_pool.return_value = mock_client
 
         with ValkeyCache.from_conn_string(
-            "valkey://localhost:6379",
-            pool_size=10,
-            pool_timeout=60.0
+            "valkey://localhost:6379", pool_size=10, pool_timeout=60.0
         ) as cache:
             assert isinstance(cache, ValkeyCache)
             mock_pool_from_url.assert_called_once_with(
-                url="valkey://localhost:6379",
-                max_connections=10,
-                timeout=60.0
+                url="valkey://localhost:6379", max_connections=10, timeout=60.0
             )
             mock_from_pool.assert_called_once_with(connection_pool=mock_pool)
 
-    @patch('valkey.Valkey.from_url')
+    @patch("valkey.Valkey.from_url")
     def test_from_conn_string_without_pool_size(self, mock_from_url):
         """Test from_conn_string without pool_size parameter."""
         mock_client = Mock(spec=Valkey)
@@ -149,28 +145,30 @@ class TestValkeyCacheUnit:
     def test_from_pool_success_path_exists(self):
         """Test that from_pool success path exists."""
         # Test that the method exists and has the right signature
-        assert hasattr(ValkeyCache, 'from_pool')
+        assert hasattr(ValkeyCache, "from_pool")
         import inspect
+
         sig = inspect.signature(ValkeyCache.from_pool)
-        assert 'pool' in sig.parameters
-        assert 'ssl' in sig.parameters
+        assert "pool" in sig.parameters
+        assert "ssl" in sig.parameters
 
     def test_class_methods_coverage(self):
         """Test class methods for coverage."""
         # Test that class methods exist
-        assert hasattr(ValkeyCache, 'from_conn_string')
-        assert hasattr(ValkeyCache, 'from_pool')
-        
+        assert hasattr(ValkeyCache, "from_conn_string")
+        assert hasattr(ValkeyCache, "from_pool")
+
         # Test method signatures
         import inspect
+
         sig = inspect.signature(ValkeyCache.from_pool)
-        assert 'pool' in sig.parameters
-        assert 'ssl' in sig.parameters
+        assert "pool" in sig.parameters
+        assert "ssl" in sig.parameters
 
     def test_parse_key_invalid_prefix(self, mock_valkey_client):
         """Test _parse_key with invalid prefix raises ValueError."""
         cache = ValkeyCache(mock_valkey_client, prefix="test:")
-        
+
         with pytest.raises(
             ValueError, match="Key invalid_key does not start with prefix test:"
         ):
@@ -179,7 +177,7 @@ class TestValkeyCacheUnit:
     def test_parse_key_no_namespace(self, mock_valkey_client):
         """Test _parse_key with no namespace."""
         cache = ValkeyCache(mock_valkey_client, prefix="test:")
-        
+
         namespace, key = cache._parse_key("test:simple_key")
         assert namespace == ()
         assert key == "simple_key"
@@ -187,7 +185,7 @@ class TestValkeyCacheUnit:
     def test_parse_key_with_namespace(self, mock_valkey_client):
         """Test _parse_key with namespace."""
         cache = ValkeyCache(mock_valkey_client, prefix="test:")
-        
+
         namespace, key = cache._parse_key("test:ns1/ns2/my_key")
         assert namespace == ("ns1", "ns2")
         assert key == "my_key"
@@ -213,14 +211,14 @@ class TestValkeyCacheUnit:
     def test_make_key_with_empty_namespace(self, mock_valkey_client):
         """Test _make_key with empty namespace."""
         cache = ValkeyCache(mock_valkey_client, prefix="test:")
-        
+
         result = cache._make_key((), "key")
         assert result == "test:key"
 
     def test_make_key_with_namespace(self, mock_valkey_client):
         """Test _make_key with namespace."""
         cache = ValkeyCache(mock_valkey_client, prefix="test:")
-        
+
         result = cache._make_key(("ns1", "ns2"), "key")
         assert result == "test:ns1/ns2/key"
 
@@ -285,7 +283,7 @@ class TestValkeyCacheUnit:
     async def test_aget_empty_keys(self, mock_valkey_client):
         """Test aget with empty keys list."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         result = await cache.aget([])
         assert result == {}
 
@@ -293,11 +291,11 @@ class TestValkeyCacheUnit:
     async def test_aget_invalid_key_validation(self, mock_valkey_client):
         """Test aget with invalid key validation."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         # Mock _make_key to raise ValueError for invalid keys
-        with patch.object(cache, '_make_key', side_effect=ValueError("Invalid key")):
+        with patch.object(cache, "_make_key", side_effect=ValueError("Invalid key")):
             with patch(
-                'langgraph_checkpoint_aws.cache.valkey.cache.logger'
+                "langgraph_checkpoint_aws.cache.valkey.cache.logger"
             ) as mock_logger:
                 result = await cache.aget([(("ns",), "invalid_key")])
                 assert result == {}
@@ -307,13 +305,13 @@ class TestValkeyCacheUnit:
     async def test_aget_connection_error(self, mock_valkey_client):
         """Test aget with ConnectionError."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         async def mock_to_thread(func, *args, **kwargs):
             raise ConnectionError("Connection failed")
-        
-        with patch('asyncio.to_thread', side_effect=mock_to_thread):
+
+        with patch("asyncio.to_thread", side_effect=mock_to_thread):
             with patch(
-                'langgraph_checkpoint_aws.cache.valkey.cache.logger'
+                "langgraph_checkpoint_aws.cache.valkey.cache.logger"
             ) as mock_logger:
                 with pytest.raises(ConnectionError):
                     await cache.aget([(("ns",), "key")])
@@ -323,13 +321,13 @@ class TestValkeyCacheUnit:
     async def test_aget_timeout_error(self, mock_valkey_client):
         """Test aget with TimeoutError."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         async def mock_to_thread(func, *args, **kwargs):
             raise TimeoutError("Operation timed out")
-        
-        with patch('asyncio.to_thread', side_effect=mock_to_thread):
+
+        with patch("asyncio.to_thread", side_effect=mock_to_thread):
             with patch(
-                'langgraph_checkpoint_aws.cache.valkey.cache.logger'
+                "langgraph_checkpoint_aws.cache.valkey.cache.logger"
             ) as mock_logger:
                 with pytest.raises(TimeoutError):
                     await cache.aget([(("ns",), "key")])
@@ -339,13 +337,13 @@ class TestValkeyCacheUnit:
     async def test_aget_general_exception(self, mock_valkey_client):
         """Test aget with general exception."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         async def mock_to_thread(func, *args, **kwargs):
             raise Exception("General error")
-        
-        with patch('asyncio.to_thread', side_effect=mock_to_thread):
+
+        with patch("asyncio.to_thread", side_effect=mock_to_thread):
             with patch(
-                'langgraph_checkpoint_aws.cache.valkey.cache.logger'
+                "langgraph_checkpoint_aws.cache.valkey.cache.logger"
             ) as mock_logger:
                 result = await cache.aget([(("ns",), "key")])
                 assert result == {}
@@ -355,13 +353,13 @@ class TestValkeyCacheUnit:
     async def test_aget_none_response(self, mock_valkey_client):
         """Test aget with None response from mget."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         async def mock_to_thread(func, *args, **kwargs):
             return None
-        
-        with patch('asyncio.to_thread', side_effect=mock_to_thread):
+
+        with patch("asyncio.to_thread", side_effect=mock_to_thread):
             with patch(
-                'langgraph_checkpoint_aws.cache.valkey.cache.logger'
+                "langgraph_checkpoint_aws.cache.valkey.cache.logger"
             ) as mock_logger:
                 result = await cache.aget([(("ns",), "key")])
                 assert result == {}
@@ -373,13 +371,13 @@ class TestValkeyCacheUnit:
     async def test_aget_malformed_cached_value(self, mock_valkey_client):
         """Test aget with malformed cached value (line 409->exit, 411)."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         async def mock_to_thread(func, *args, **kwargs):
             return [b"malformed_data_without_separator"]
-        
-        with patch('asyncio.to_thread', side_effect=mock_to_thread):
+
+        with patch("asyncio.to_thread", side_effect=mock_to_thread):
             with patch(
-                'langgraph_checkpoint_aws.cache.valkey.cache.logger'
+                "langgraph_checkpoint_aws.cache.valkey.cache.logger"
             ) as mock_logger:
                 result = await cache.aget([(("ns",), "key")])
                 assert result == {}
@@ -389,18 +387,18 @@ class TestValkeyCacheUnit:
     async def test_aget_deserialization_error(self, mock_valkey_client):
         """Test aget with deserialization error."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         async def mock_to_thread(func, *args, **kwargs):
             return [b"json:invalid_json_data"]
-        
-        with patch('asyncio.to_thread', side_effect=mock_to_thread):
+
+        with patch("asyncio.to_thread", side_effect=mock_to_thread):
             with patch.object(
                 cache.serde,
-                'loads_typed',
+                "loads_typed",
                 side_effect=Exception("Deserialization failed"),
             ):
                 with patch(
-                    'langgraph_checkpoint_aws.cache.valkey.cache.logger'
+                    "langgraph_checkpoint_aws.cache.valkey.cache.logger"
                 ) as mock_logger:
                     result = await cache.aget([(("ns",), "key")])
                     assert result == {}
@@ -434,10 +432,10 @@ class TestValkeyCacheUnit:
     async def test_aset_empty_pairs(self, mock_valkey_client):
         """Test aset with empty pairs."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         # Should return early without doing anything
         await cache.aset({})
-        
+
         # Verify no pipeline operations were called
         mock_valkey_client.pipeline.assert_not_called()
 
@@ -445,21 +443,21 @@ class TestValkeyCacheUnit:
     async def test_aset_batch_processing(self, mock_valkey_client):
         """Test aset batch processing with large dataset."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         # Create more pairs than MAX_SET_BATCH_SIZE to trigger batching
         pairs = {}
         for i in range(MAX_SET_BATCH_SIZE + 10):
             pairs[(("ns",), f"key_{i}")] = (f"value_{i}", None)
-        
+
         pipeline_mock = Mock()
         pipeline_mock.execute.return_value = [True] * len(pairs)
         mock_valkey_client.pipeline.return_value = pipeline_mock
-        
+
         with patch.object(
-            cache, '_set_batch', new_callable=AsyncMock
+            cache, "_set_batch", new_callable=AsyncMock
         ) as mock_set_batch:
             await cache.aset(pairs)
-            
+
             # Should be called twice due to batching
             assert mock_set_batch.call_count == 2
 
@@ -467,16 +465,16 @@ class TestValkeyCacheUnit:
     async def test_set_batch_invalid_ttl(self, mock_valkey_client):
         """Test _set_batch with invalid TTL."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         pipeline_mock = Mock()
         pipeline_mock.execute.return_value = [True]
         mock_valkey_client.pipeline.return_value = pipeline_mock
-        
+
         batch: list = [
             ((("ns",), "key"), ({"data": "test"}, -1))
         ]  # Invalid negative TTL
-        
-        with patch('langgraph_checkpoint_aws.cache.valkey.cache.logger') as mock_logger:
+
+        with patch("langgraph_checkpoint_aws.cache.valkey.cache.logger") as mock_logger:
             await cache._set_batch(batch)
             mock_logger.error.assert_called_once()
 
@@ -484,17 +482,17 @@ class TestValkeyCacheUnit:
     async def test_set_batch_serialization_error(self, mock_valkey_client):
         """Test _set_batch with serialization error."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         pipeline_mock = Mock()
         pipeline_mock.execute.return_value = [True]
         mock_valkey_client.pipeline.return_value = pipeline_mock
-        
+
         # Mock serde to raise exception
         with patch.object(
-            cache.serde, 'dumps_typed', side_effect=Exception("Serialization failed")
+            cache.serde, "dumps_typed", side_effect=Exception("Serialization failed")
         ):
             with patch(
-                'langgraph_checkpoint_aws.cache.valkey.cache.logger'
+                "langgraph_checkpoint_aws.cache.valkey.cache.logger"
             ) as mock_logger:
                 batch: list = [((("ns",), "key"), ({"data": "test"}, None))]
                 await cache._set_batch(batch)
@@ -504,17 +502,17 @@ class TestValkeyCacheUnit:
     async def test_set_batch_no_valid_operations(self, mock_valkey_client):
         """Test _set_batch with no valid operations (warning case)."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         pipeline_mock = Mock()
         mock_valkey_client.pipeline.return_value = pipeline_mock
-        
+
         # All operations will be invalid due to negative TTL
         batch: list = [
             ((("ns",), "key1"), ({"data": "test1"}, -1)),
-            ((("ns",), "key2"), ({"data": "test2"}, -2))
+            ((("ns",), "key2"), ({"data": "test2"}, -2)),
         ]
-        
-        with patch('langgraph_checkpoint_aws.cache.valkey.cache.logger') as mock_logger:
+
+        with patch("langgraph_checkpoint_aws.cache.valkey.cache.logger") as mock_logger:
             await cache._set_batch(batch)
             mock_logger.warning.assert_called_once_with(
                 "No valid cache operations to execute in batch"
@@ -525,16 +523,16 @@ class TestValkeyCacheUnit:
     async def test_set_batch_pipeline_connection_error(self, mock_valkey_client):
         """Test _set_batch with pipeline ConnectionError."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         pipeline_mock = Mock()
         pipeline_mock.execute.side_effect = ConnectionError(
             "Pipeline connection failed"
         )
         mock_valkey_client.pipeline.return_value = pipeline_mock
-        
+
         batch: list = [((("ns",), "key"), ({"data": "test"}, None))]
-        
-        with patch('langgraph_checkpoint_aws.cache.valkey.cache.logger') as mock_logger:
+
+        with patch("langgraph_checkpoint_aws.cache.valkey.cache.logger") as mock_logger:
             with pytest.raises(ConnectionError):
                 await cache._set_batch(batch)
             mock_logger.error.assert_called()
@@ -543,14 +541,14 @@ class TestValkeyCacheUnit:
     async def test_set_batch_pipeline_timeout_error(self, mock_valkey_client):
         """Test _set_batch with pipeline TimeoutError."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         pipeline_mock = Mock()
         pipeline_mock.execute.side_effect = TimeoutError("Pipeline timeout")
         mock_valkey_client.pipeline.return_value = pipeline_mock
-        
+
         batch: list = [((("ns",), "key"), ({"data": "test"}, None))]
-        
-        with patch('langgraph_checkpoint_aws.cache.valkey.cache.logger') as mock_logger:
+
+        with patch("langgraph_checkpoint_aws.cache.valkey.cache.logger") as mock_logger:
             with pytest.raises(TimeoutError):
                 await cache._set_batch(batch)
             mock_logger.error.assert_called()
@@ -559,14 +557,14 @@ class TestValkeyCacheUnit:
     async def test_set_batch_pipeline_general_error(self, mock_valkey_client):
         """Test _set_batch with pipeline general error."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         pipeline_mock = Mock()
         pipeline_mock.execute.side_effect = Exception("Pipeline general error")
         mock_valkey_client.pipeline.return_value = pipeline_mock
-        
+
         batch: list = [((("ns",), "key"), ({"data": "test"}, None))]
-        
-        with patch('langgraph_checkpoint_aws.cache.valkey.cache.logger') as mock_logger:
+
+        with patch("langgraph_checkpoint_aws.cache.valkey.cache.logger") as mock_logger:
             with pytest.raises((ValueError, ConnectionError, RuntimeError, Exception)):
                 await cache._set_batch(batch)
             mock_logger.error.assert_called()
@@ -575,15 +573,15 @@ class TestValkeyCacheUnit:
     async def test_set_batch_with_ttl_setex(self, mock_valkey_client):
         """Test _set_batch using setex for TTL."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         pipeline_mock = Mock()
         pipeline_mock.execute.return_value = [True]
         mock_valkey_client.pipeline.return_value = pipeline_mock
-        
+
         batch: list = [((("ns",), "key"), ({"data": "test"}, 3600))]  # With TTL
-        
+
         await cache._set_batch(batch)
-        
+
         # Should call setex instead of set
         pipeline_mock.setex.assert_called_once()
         pipeline_mock.set.assert_not_called()
@@ -592,15 +590,15 @@ class TestValkeyCacheUnit:
     async def test_set_batch_without_ttl_set(self, mock_valkey_client):
         """Test _set_batch using set without TTL."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         pipeline_mock = Mock()
         pipeline_mock.execute.return_value = [True]
         mock_valkey_client.pipeline.return_value = pipeline_mock
-        
+
         batch: list = [((("ns",), "key"), ({"data": "test"}, None))]  # No TTL
-        
+
         await cache._set_batch(batch)
-        
+
         # Should call set instead of setex
         pipeline_mock.set.assert_called_once()
         pipeline_mock.setex.assert_not_called()
@@ -637,30 +635,30 @@ class TestValkeyCacheUnit:
     async def test_aclear_with_namespaces_duplicate_keys(self, mock_valkey_client):
         """Test aclear with namespaces that have duplicate keys."""
         cache = ValkeyCache(mock_valkey_client, prefix="test:")
-        
+
         # Mock keys method to return overlapping keys for different namespaces
         def keys_side_effect(pattern):
             if "ns1" in pattern:
                 return ["test:ns1/key1", "test:ns1/key2", "test:shared_key"]
             elif "ns2" in pattern:
                 return [
-                    "test:ns2/key3", 
-                    "test:shared_key"
+                    "test:ns2/key3",
+                    "test:shared_key",
                 ]  # shared_key appears in both
             return []
-        
+
         async def mock_to_thread(func, *args, **kwargs):
             return func(*args, **kwargs)
-        
+
         mock_valkey_client.keys.side_effect = keys_side_effect
         mock_valkey_client.delete.return_value = 3  # Number of keys deleted
-        
-        with patch('asyncio.to_thread', side_effect=mock_to_thread):
+
+        with patch("asyncio.to_thread", side_effect=mock_to_thread):
             with patch(
-                'langgraph_checkpoint_aws.cache.valkey.cache.logger'
+                "langgraph_checkpoint_aws.cache.valkey.cache.logger"
             ) as mock_logger:
                 await cache.aclear([("ns1",), ("ns2",)])
-                
+
                 # Should log the number of keys cleared
                 mock_logger.debug.assert_called()
 
@@ -668,13 +666,13 @@ class TestValkeyCacheUnit:
     async def test_aclear_exception_handling(self, mock_valkey_client):
         """Test aclear exception handling."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         async def mock_to_thread(func, *args, **kwargs):
             raise Exception("Clear operation failed")
-        
-        with patch('asyncio.to_thread', side_effect=mock_to_thread):
+
+        with patch("asyncio.to_thread", side_effect=mock_to_thread):
             with patch(
-                'langgraph_checkpoint_aws.cache.valkey.cache.logger'
+                "langgraph_checkpoint_aws.cache.valkey.cache.logger"
             ) as mock_logger:
                 with pytest.raises(
                     (ValueError, ConnectionError, RuntimeError, Exception)
@@ -686,7 +684,7 @@ class TestValkeyCacheUnit:
     async def test_delete_keys_in_batches_empty_keys(self, mock_valkey_client):
         """Test _delete_keys_in_batches with empty keys list."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         result = await cache._delete_keys_in_batches([], 1000)
         assert result == 0
 
@@ -694,20 +692,20 @@ class TestValkeyCacheUnit:
     async def test_delete_keys_in_batches_with_error(self, mock_valkey_client):
         """Test _delete_keys_in_batches with error in batch."""
         cache = ValkeyCache(mock_valkey_client)
-        
+
         keys = ["key1", "key2", "key3"]
-        
+
         async def mock_to_thread(func, *args, **kwargs):
             if args[0] == "key1":
                 raise Exception("Delete failed for key1")
             return 1  # Successful deletion
-        
-        with patch('asyncio.to_thread', side_effect=mock_to_thread):
+
+        with patch("asyncio.to_thread", side_effect=mock_to_thread):
             with patch(
-                'langgraph_checkpoint_aws.cache.valkey.cache.logger'
+                "langgraph_checkpoint_aws.cache.valkey.cache.logger"
             ) as mock_logger:
                 result = await cache._delete_keys_in_batches(keys, 1)  # Batch size 1
-                
+
                 # Should continue with other batches despite error
                 mock_logger.error.assert_called()
                 # Result should be less than total keys due to error
@@ -880,21 +878,21 @@ class TestValkeyCacheUnit:
         """Test synchronous wrapper methods."""
         mock_client = Mock(spec=Valkey)
         cache = ValkeyCache(mock_client, prefix="test:")
-        
+
         # Test get wrapper
-        with patch.object(cache, 'aget', new_callable=AsyncMock) as mock_aget:
+        with patch.object(cache, "aget", new_callable=AsyncMock) as mock_aget:
             mock_aget.return_value = {}
             result = cache.get([])
             assert result == {}
             mock_aget.assert_called_once()
-        
+
         # Test set wrapper
-        with patch.object(cache, 'aset', new_callable=AsyncMock) as mock_aset:
+        with patch.object(cache, "aset", new_callable=AsyncMock) as mock_aset:
             cache.set({})
             mock_aset.assert_called_once()
-        
+
         # Test clear wrapper
-        with patch.object(cache, 'aclear', new_callable=AsyncMock) as mock_aclear:
+        with patch.object(cache, "aclear", new_callable=AsyncMock) as mock_aclear:
             cache.clear()
             mock_aclear.assert_called_once()
 
@@ -907,20 +905,20 @@ class TestValkeyCacheUnit:
         mock_client.mget.return_value = [None]
         mock_client.keys.return_value = []
         mock_client.delete.return_value = 0
-        
+
         # Test basic initialization
         cache = ValkeyCache(mock_client, prefix="test:")
         assert cache.prefix == "test:"
         assert cache.client == mock_client
-        
+
         # Test TTL validation
         with pytest.raises(ValueError, match="TTL must be positive"):
             ValkeyCache(mock_client, ttl=-1)
-            
+
         # Test empty prefix validation
         with pytest.raises(ValueError, match="Prefix cannot be empty"):
             ValkeyCache(mock_client, prefix="")
-            
+
         # Test prefix normalization
         cache2 = ValkeyCache(mock_client, prefix="test")
         assert cache2.prefix == "test:"
@@ -930,15 +928,15 @@ class TestValkeyCacheUnit:
         """Test async operations with comprehensive scenarios."""
         mock_client = Mock(spec=Valkey)
         cache = ValkeyCache(mock_client, prefix="test:")
-        
+
         # Test empty keys
         result = await cache.aget([])
         assert result == {}
-        
+
         # Test aset empty pairs
         await cache.aset({})
         mock_client.pipeline.assert_not_called()
-        
+
         # Test delete_keys_in_batches with empty keys
         result = await cache._delete_keys_in_batches([], 100)
         assert result == 0
@@ -948,14 +946,14 @@ class TestValkeyCacheUnit:
         """Test batch processing with large dataset."""
         mock_client = Mock(spec=Valkey)
         cache = ValkeyCache(mock_client, prefix="test:")
-        
+
         # Create large dataset to trigger batching
         pairs = {}
         for i in range(MAX_SET_BATCH_SIZE + 10):
             pairs[(("ns",), f"key_{i}")] = (f"value_{i}", None)
-        
+
         with patch.object(
-            cache, '_set_batch', new_callable=AsyncMock
+            cache, "_set_batch", new_callable=AsyncMock
         ) as mock_set_batch:
             await cache.aset(pairs)
             # Should be called multiple times due to batching

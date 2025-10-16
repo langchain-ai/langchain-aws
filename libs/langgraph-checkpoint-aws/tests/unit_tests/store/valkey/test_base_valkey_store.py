@@ -204,8 +204,6 @@ class TestBaseValkeyStoreValidation:
         store._validate_put_operation(("namespace",), None)
 
 
-
-
 class TestBaseValkeyStoreKeyParsing:
     """Test key parsing functionality."""
 
@@ -297,8 +295,6 @@ class TestBaseValkeyStoreScoring:
         score = store._calculate_simple_score("machine tutorial", test_value)
 
         assert score >= 0.6  # Some exact word matches
-
-
 
 
 class TestBaseValkeyStoreNamespaceExtraction:

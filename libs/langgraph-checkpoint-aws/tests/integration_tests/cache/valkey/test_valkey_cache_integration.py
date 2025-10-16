@@ -25,7 +25,7 @@ def _is_valkey_server_available() -> bool:
     """Check if a Valkey server is available for testing."""
     if not VALKEY_AVAILABLE:
         return False
-    
+
     try:
         from valkey import Valkey
 
