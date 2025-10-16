@@ -587,9 +587,9 @@ class ChatBedrockConverse(BaseChatModel):
                 and any(
                     x in model_id_lower
                     for x in [
-                        "claude-3", 
-                        "claude-sonnet-4", 
-                        "claude-opus-4", 
+                        "claude-3",
+                        "claude-sonnet-4",
+                        "claude-opus-4",
                         "claude-haiku-4",
                     ]
                 )
