@@ -2,10 +2,11 @@
 
 import json
 from datetime import datetime
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import orjson
 import pytest
+from langgraph.store.base import SearchItem, SearchOp
 from valkey import Valkey
 
 from langgraph_checkpoint_aws.store.valkey import (
@@ -13,12 +14,11 @@ from langgraph_checkpoint_aws.store.valkey import (
     ValkeyStore,
 )
 from langgraph_checkpoint_aws.store.valkey.search_strategies import (
+    HashSearchStrategy,
+    KeyPatternSearchStrategy,
     SearchStrategyManager,
     VectorSearchStrategy,
-    KeyPatternSearchStrategy,
-    HashSearchStrategy,
 )
-from langgraph.store.base import SearchOp, SearchItem
 
 
 def mock_embed_fn(texts):
@@ -538,17 +538,19 @@ class TestSearchFunctionality:
             },
         )
 
-        # Mock vector search as unavailable - this should be a regular Mock since execute_command
-        # is called via run_in_executor, not directly awaited
+        # Mock vector search as unavailable - this should be a regular Mock
+        # since execute_command is called via run_in_executor
         mock_valkey_client.execute_command = Mock(return_value=[])
 
-        # Mock ft methods - ft() itself returns synchronously, but the methods on it can be async
+        # Mock ft methods - ft() itself returns synchronously, but the
+        # methods on it can be async
         mock_ft = Mock()
         mock_ft.info = Mock(side_effect=Exception("Not available"))
         mock_ft.search = Mock(side_effect=Exception("Not available"))
         mock_valkey_client.ft = Mock(return_value=mock_ft)
 
-        # Mock SCAN results - scan is called via run_in_executor, so it should return sync results
+        # Mock SCAN results - scan is called via run_in_executor,
+        # so it should return sync results
         mock_valkey_client.scan = Mock(return_value=(0, [b"langgraph:test/doc1"]))
 
         # Mock document retrieval - hgetall is used by async store, not get
@@ -694,12 +696,27 @@ class TestSearchStrategyManager:
         manager = SearchStrategyManager(mock_client, mock_store)
 
         # Mock all strategies failing
-        with patch.object(manager.strategies[0], 'is_available', return_value=True), \
-             patch.object(manager.strategies[0], 'search', side_effect=Exception("Vector search failed")), \
-             patch.object(manager.strategies[1], 'is_available', return_value=True), \
-             patch.object(manager.strategies[1], 'search', side_effect=Exception("Hash search failed")), \
-             patch.object(manager.strategies[2], 'is_available', return_value=True), \
-             patch.object(manager.strategies[2], 'search', side_effect=Exception("Pattern search failed")):
+        with (
+            patch.object(
+                manager.strategies[0], 'is_available', return_value=True
+            ),
+            patch.object(
+                manager.strategies[0], 'search',
+                side_effect=Exception("Vector search failed")
+            ),
+            patch.object(
+                manager.strategies[1], 'is_available', return_value=True
+            ),
+            patch.object(
+                manager.strategies[1], 'search',
+                side_effect=Exception("Hash search failed")
+            ),
+            patch.object(manager.strategies[2], 'is_available', return_value=True),
+            patch.object(
+                manager.strategies[2], 'search',
+                side_effect=Exception("Pattern search failed")
+            ),
+        ):
 
             op = SearchOp(namespace_prefix=("test",), query="test")
             results = manager.search(op)
@@ -789,7 +806,9 @@ class TestKeyPatternSearchStrategy:
     def test_search_basic(self, mock_client, mock_store):
         """Test basic key pattern search."""
         # Mock the dependencies properly
-        with patch('langgraph_checkpoint_aws.store.valkey.search_strategies.FilterProcessor') as mock_filter:
+        with patch(
+            'langgraph_checkpoint_aws.store.valkey.search_strategies.FilterProcessor'
+        ) as mock_filter:
             mock_filter.build_namespace_pattern.return_value = "langgraph:test/*"
 
             # Mock scan results
@@ -798,7 +817,9 @@ class TestKeyPatternSearchStrategy:
             mock_store._safe_parse_keys.return_value = ["langgraph:test/key1"]
 
             # Mock document processing
-            with patch.object(KeyPatternSearchStrategy, '_process_key_for_search') as mock_process:
+            with patch.object(
+                KeyPatternSearchStrategy, '_process_key_for_search'
+            ) as mock_process:
                 mock_process.return_value = SearchItem(
                     key="key1",
                     namespace=("test",),
@@ -871,9 +892,13 @@ class TestHashSearchStrategy:
             )
         ]
 
-        with patch.object(strategy, '_search_with_hash', return_value=[]), \
-             patch.object(strategy, '_convert_to_search_items', return_value=mock_items), \
-             patch.object(strategy, '_refresh_ttl_for_items') as mock_refresh:
+        with (
+            patch.object(strategy, '_search_with_hash', return_value=[]),
+            patch.object(
+                strategy, '_convert_to_search_items', return_value=mock_items
+            ),
+            patch.object(strategy, '_refresh_ttl_for_items') as mock_refresh,
+        ):
 
             op = SearchOp(namespace_prefix=("test",), query="test", refresh_ttl=True)
             results = strategy.search(op)
@@ -885,7 +910,9 @@ class TestHashSearchStrategy:
         """Test hash search error handling."""
         strategy = HashSearchStrategy(mock_client, mock_store)
 
-        with patch.object(strategy, '_search_with_hash', side_effect=Exception("Search failed")):
+        with patch.object(
+            strategy, '_search_with_hash', side_effect=Exception("Search failed")
+        ):
             op = SearchOp(namespace_prefix=("test",))
             results = strategy.search(op)
 

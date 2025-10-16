@@ -1,9 +1,9 @@
 """Tests for ValkeyIndexConfig functionality."""
 
-import pytest
-import fakeredis
-from typing import Any
 from unittest.mock import MagicMock, Mock, patch
+
+import fakeredis
+import pytest
 
 from langgraph_checkpoint_aws.store.valkey import (
     AsyncValkeyStore,
@@ -82,7 +82,9 @@ class TestCollectionNameConfiguration:
     """Test suite for collection_name configuration in ValkeyStore."""
 
     def test_uses_configured_collection_name_in_vector_search(self, fake_valkey_client):
-        """Test that vector search uses the configured collection_name instead of hardcoded value."""
+        """Test that vector search uses the configured collection_name
+        instead of hardcoded value.
+        """
         # Create store with custom collection name
         custom_collection_name = "enterprise_memory_vectors"
         store = ValkeyStore(
@@ -689,7 +691,8 @@ class TestCollectionNameConfigurationExtended:
             val_str = v.decode('utf-8') if isinstance(v, bytes) else v
             hash_fields_str[key_str] = val_str
 
-        # Verify that searchable fields are included in hash fields (without value_ prefix)
+        # Verify that searchable fields are included in hash fields
+        # (without value_ prefix)
         assert "user_id" in hash_fields_str
         assert "memory_type" in hash_fields_str
         assert "content" in hash_fields_str
@@ -699,13 +702,16 @@ class TestCollectionNameConfigurationExtended:
         assert hash_fields_str["user_id"] == "user123"
         assert hash_fields_str["memory_type"] == "fact"
         assert hash_fields_str["content"] == "Test memory content"
-        assert hash_fields_str["tags"] == "important,work"  # List should be comma-separated
+        # List should be comma-separated
+        assert hash_fields_str["tags"] == "important,work"
 
         # Verify non-indexed fields are not included as separate hash fields
         assert "other_field" not in hash_fields_str
 
     def test_list_fields_handled_correctly(self, fake_valkey_client):
-        """Test that list fields are properly converted to comma-separated strings for TAG indexing."""
+        """Test that list fields are properly converted to comma-separated
+        strings for TAG indexing.
+        """
         # Create store with fields that might contain lists
         store = ValkeyStore(
             fake_valkey_client,

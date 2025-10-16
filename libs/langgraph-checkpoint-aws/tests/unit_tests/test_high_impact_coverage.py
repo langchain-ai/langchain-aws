@@ -1,8 +1,8 @@
 """High-impact tests targeting modules with many untested statements."""
 
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
-from datetime import datetime
 
 
 class TestModelsModule:
@@ -17,7 +17,7 @@ class TestModelsModule:
 
         for model_name in model_classes:
             model_class = getattr(models, model_name)
-            if hasattr(model_class, '__call__'):
+            if callable(model_class):
                 try:
                     # Try to instantiate with minimal args
                     instance = model_class()
@@ -75,7 +75,10 @@ class TestUtilsModule:
             assert utils is not None
 
             # Test utility functions if they exist
-            util_functions = [attr for attr in dir(utils) if not attr.startswith('_') and callable(getattr(utils, attr))]
+            util_functions = [
+                attr for attr in dir(utils)
+                if not attr.startswith('_') and callable(getattr(utils, attr))
+            ]
 
             for func_name in util_functions:
                 func = getattr(utils, func_name)
@@ -148,7 +151,10 @@ class TestAgentcoreHelpersModule:
             from langgraph_checkpoint_aws.agentcore import helpers
 
             # Test helper functions with safe defaults
-            helper_functions = [attr for attr in dir(helpers) if not attr.startswith('_') and callable(getattr(helpers, attr))]
+            helper_functions = [
+                attr for attr in dir(helpers)
+                if not attr.startswith('_') and callable(getattr(helpers, attr))
+            ]
 
             for func_name in helper_functions[:5]:  # Test first 5 functions
                 func = getattr(helpers, func_name)
@@ -177,7 +183,10 @@ class TestAgentcoreModelsModule:
         from langgraph_checkpoint_aws.agentcore import models
 
         # Test model classes
-        model_classes = [attr for attr in dir(models) if not attr.startswith('_') and hasattr(getattr(models, attr), '__call__')]
+        model_classes = [
+            attr for attr in dir(models)
+            if not attr.startswith('_') and callable(getattr(models, attr))
+        ]
 
         for model_name in model_classes[:3]:  # Test first 3 models
             model_class = getattr(models, model_name)
@@ -205,7 +214,10 @@ class TestAgentcoreStoreModule:
             assert store is not None
 
             # Test any store classes
-            store_classes = [attr for attr in dir(store) if not attr.startswith('_') and 'Store' in attr]
+            store_classes = [
+                attr for attr in dir(store)
+                if not attr.startswith('_') and 'Store' in attr
+            ]
 
             for store_name in store_classes:
                 store_class = getattr(store, store_name)
@@ -225,7 +237,10 @@ class TestAgentcoreSaverModule:
             assert saver is not None
 
             # Test any saver classes
-            saver_classes = [attr for attr in dir(saver) if not attr.startswith('_') and 'Saver' in attr]
+            saver_classes = [
+                attr for attr in dir(saver)
+                if not attr.startswith('_') and 'Saver' in attr
+            ]
 
             for saver_name in saver_classes:
                 saver_class = getattr(saver, saver_name)
@@ -278,7 +293,9 @@ class TestCheckpointSaverModules:
 
                     # Test key building methods
                     if hasattr(instance, '_make_checkpoint_key'):
-                        key = instance._make_checkpoint_key("thread", "ns", "checkpoint")
+                        key = instance._make_checkpoint_key(
+                            "thread", "ns", "checkpoint"
+                        )
                         assert isinstance(key, str)
 
                 except Exception:
@@ -296,7 +313,10 @@ class TestMainPackageInit:
         import langgraph_checkpoint_aws
 
         # Test that package has version or other attributes
-        assert hasattr(langgraph_checkpoint_aws, '__version__') or hasattr(langgraph_checkpoint_aws, '__name__')
+        assert (
+            hasattr(langgraph_checkpoint_aws, '__version__')
+            or hasattr(langgraph_checkpoint_aws, '__name__')
+        )
 
         # Test submodule imports
         submodules = ['store', 'checkpoint', 'agentcore']

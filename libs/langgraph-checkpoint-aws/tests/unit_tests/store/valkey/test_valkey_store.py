@@ -93,7 +93,8 @@ class TestValkeyStoreSetupAndConfig:
 
             store = ValkeyStore(mock_valkey_client, index=index_config)
 
-            # Call setup - should trigger index setup since we have index, dims, and embeddings
+            # Call setup - should trigger index setup since we have index, dims,
+            # and embeddings
             store.setup()
 
             # Verify setup was called
@@ -128,7 +129,8 @@ class TestValkeyStoreGet:
 
     def test_get_existing_item(self, mock_valkey_client):
         """Test getting existing item."""
-        # The value should be JSON-encoded as a string, as it would be stored in the hash
+        # The value should be JSON-encoded as a string, as it would be stored
+        # in the hash
         test_value = {"data": "test_value", "number": 42}
         stored_data = {
             b"value": orjson.dumps(test_value).decode("utf-8"),
@@ -241,7 +243,8 @@ class TestValkeyStoreGet:
 
         result = store.get(("test",), "doc1")
 
-        # When value is empty string, DocumentProcessor.parse_document_value returns None
+        # When value is empty string, DocumentProcessor.parse_document_value
+        # returns None
         # and the _handle_get method returns None for the entire result
         assert result is None
 
@@ -526,7 +529,8 @@ class TestValkeyStoreSearch:
 
         # Should only return the valid items, gracefully handling errors
         assert len(items) >= 1  # At least the "valid" item should be processed
-        # The exact count depends on error handling - some errors might still produce items
+        # The exact count depends on error handling - some errors might still
+        # produce items
 
     def test_convert_to_search_items_bytes_handling(self, mock_valkey_client):
         """Test _convert_to_search_items with bytes data."""
@@ -848,7 +852,8 @@ class TestValkeyStoreErrorHandling:
 
         store = ValkeyStore(client=mock_valkey_client)
 
-        # The implementation catches exceptions and returns None, so no exception is raised
+        # The implementation catches exceptions and returns None, so no exception
+        # is raised
         result = store.get(("namespace",), "key")
         assert result is None
 
@@ -1044,7 +1049,9 @@ class TestValkeyStoreAsyncMethodStubs:
         """Test that async get method raises NotImplementedError."""
         store = ValkeyStore(client=mock_valkey_client)
 
-        with pytest.raises(NotImplementedError, match="The ValkeyStore does not support async methods"):
+        with pytest.raises(
+            NotImplementedError, match="The ValkeyStore does not support async methods"
+        ):
             await store.aget(("test",), "key1")
 
     @pytest.mark.asyncio
@@ -1052,7 +1059,9 @@ class TestValkeyStoreAsyncMethodStubs:
         """Test that async put method raises NotImplementedError."""
         store = ValkeyStore(client=mock_valkey_client)
 
-        with pytest.raises(NotImplementedError, match="The ValkeyStore does not support async methods"):
+        with pytest.raises(
+            NotImplementedError, match="The ValkeyStore does not support async methods"
+        ):
             await store.aput(("test",), "key1", {"data": "value"})
 
     @pytest.mark.asyncio
@@ -1060,7 +1069,9 @@ class TestValkeyStoreAsyncMethodStubs:
         """Test that async delete method raises NotImplementedError."""
         store = ValkeyStore(client=mock_valkey_client)
 
-        with pytest.raises(NotImplementedError, match="The ValkeyStore does not support async methods"):
+        with pytest.raises(
+            NotImplementedError, match="The ValkeyStore does not support async methods"
+        ):
             await store.adelete(("test",), "key1")
 
     @pytest.mark.asyncio
@@ -1068,15 +1079,21 @@ class TestValkeyStoreAsyncMethodStubs:
         """Test that async search method raises NotImplementedError."""
         store = ValkeyStore(client=mock_valkey_client)
 
-        with pytest.raises(NotImplementedError, match="The ValkeyStore does not support async methods"):
+        with pytest.raises(
+            NotImplementedError, match="The ValkeyStore does not support async methods"
+        ):
             await store.asearch(("test",), query="search")
 
     @pytest.mark.asyncio
-    async def test_async_list_namespaces_raises_not_implemented(self, mock_valkey_client):
+    async def test_async_list_namespaces_raises_not_implemented(
+        self, mock_valkey_client
+    ):
         """Test that async list_namespaces method raises NotImplementedError."""
         store = ValkeyStore(client=mock_valkey_client)
 
-        with pytest.raises(NotImplementedError, match="The ValkeyStore does not support async methods"):
+        with pytest.raises(
+            NotImplementedError, match="The ValkeyStore does not support async methods"
+        ):
             await store.alist_namespaces()
 
     @pytest.mark.asyncio
@@ -1086,7 +1103,9 @@ class TestValkeyStoreAsyncMethodStubs:
 
         ops = [GetOp(namespace=("test",), key="key1")]
 
-        with pytest.raises(NotImplementedError, match="The ValkeyStore does not support async methods"):
+        with pytest.raises(
+            NotImplementedError, match="The ValkeyStore does not support async methods"
+        ):
             await store.abatch(ops)
 
 

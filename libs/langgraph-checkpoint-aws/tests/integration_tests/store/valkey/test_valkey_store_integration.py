@@ -17,9 +17,9 @@ try:
     from valkey import Valkey
     from valkey.connection import ConnectionPool as _ConnectionPool
     VALKEY_AVAILABLE = True
-    ConnectionPool = _ConnectionPool
+    ConnectionPool = _ConnectionPool  # type: ignore[misc]
 except ImportError:
-    Valkey = None
+    Valkey = None  # type: ignore[assignment, misc]
     VALKEY_AVAILABLE = False
 
 from langgraph_checkpoint_aws.store.valkey import ValkeyIndexConfig, ValkeyStore
@@ -358,8 +358,9 @@ def test_valkey_index_config_hnsw_search(
             namespace_prefix=("test", "hnsw"), query="artificial intelligence"
         )
 
-        # If vector search is not available (e.g., Valkey server not running or no search module),
-        # the search should fall back to key pattern matching and still return results
+        # If vector search is not available (e.g., Valkey server not running
+        # or no search module), the search should fall back to key pattern
+        # matching and still return results
         assert (
             len(results) >= 0
         )  # Allow 0 results if search infrastructure is not available
@@ -370,7 +371,8 @@ def test_valkey_index_config_hnsw_search(
 
             # AI-related documents should have higher scores if vector search is working
             ai_results = [r for r in results if r.value.get("category") == "AI"]
-            # Only assert if we have results - this allows the test to pass even if search is not available
+            # Only assert if we have results - this allows the test to pass
+            # even if search is not available
             if len(results) >= 2:
                 assert (
                     len(ai_results) >= 0
@@ -378,7 +380,8 @@ def test_valkey_index_config_hnsw_search(
         else:
             # If no results, skip the test as search infrastructure may not be available
             pytest.skip(
-                "Vector search returned no results - search infrastructure may not be available"
+                "Vector search returned no results - "
+                "search infrastructure may not be available"
             )
 
     except Exception as e:

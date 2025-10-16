@@ -138,7 +138,9 @@ class TestAsyncValkeyCheckpointSaverInit:
     @pytest.mark.timeout(10)
     async def test_from_conn_string_with_ttl(self):
         """Test creating saver from connection string with TTL."""
-        with patch("langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey") as mock_valkey_class:
+        with patch(
+            "langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey"
+        ) as mock_valkey_class:
             mock_client = AsyncMock()
             mock_client.aclose = AsyncMock()
             mock_valkey_class.from_url.return_value = mock_client
@@ -152,7 +154,9 @@ class TestAsyncValkeyCheckpointSaverInit:
     @pytest.mark.timeout(10)
     async def test_from_pool_basic(self):
         """Test creating saver from connection pool."""
-        with patch("langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey") as mock_valkey_class:
+        with patch(
+            "langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey"
+        ) as mock_valkey_class:
             mock_client = AsyncMock()
             mock_client.aclose = AsyncMock()
             mock_valkey_class.return_value = mock_client
@@ -170,7 +174,9 @@ class TestAsyncValkeyCheckpointSaverInit:
     @pytest.mark.timeout(10)
     async def test_from_pool_no_ttl(self):
         """Test creating saver from connection pool without TTL."""
-        with patch("langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey") as mock_valkey_class:
+        with patch(
+            "langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey"
+        ) as mock_valkey_class:
             mock_client = AsyncMock()
             mock_client.aclose = AsyncMock()
             mock_valkey_class.return_value = mock_client
@@ -354,7 +360,9 @@ class TestAsyncValkeyCheckpointSaverGetCheckpointDataErrorHandling:
         # Mock pipeline returning wrong number of results
         pipeline_mock = Mock()
         pipeline_mock.get = Mock(return_value=None)
-        pipeline_mock.execute = AsyncMock(return_value=[True])  # Only 1 result instead of 2
+        pipeline_mock.execute = AsyncMock(
+            return_value=[True]
+        )  # Only 1 result instead of 2
         mock_valkey_client.pipeline.return_value = pipeline_mock
 
         saver = AsyncValkeyCheckpointSaver(
@@ -390,7 +398,9 @@ class TestAsyncValkeyCheckpointSaverGetCheckpointDataErrorHandling:
         # Mock pipeline returning None for checkpoint data
         pipeline_mock = Mock()
         pipeline_mock.get = Mock(return_value=None)
-        pipeline_mock.execute = AsyncMock(return_value=[None, b'[]'])  # No checkpoint data
+        pipeline_mock.execute = AsyncMock(
+            return_value=[None, b'[]']
+        )  # No checkpoint data
         mock_valkey_client.pipeline.return_value = pipeline_mock
 
         saver = AsyncValkeyCheckpointSaver(
@@ -613,7 +623,9 @@ class TestAsyncValkeyCheckpointSaverErrorHandling:
         # Mock pipeline execution to raise ConnectionError
         pipeline_mock = Mock()
         pipeline_mock.get = Mock(return_value=None)
-        pipeline_mock.execute = AsyncMock(side_effect=ConnectionError("Connection lost"))
+        pipeline_mock.execute = AsyncMock(
+            side_effect=ConnectionError("Connection lost")
+        )
         mock_valkey_client.pipeline.return_value = pipeline_mock
 
         saver = AsyncValkeyCheckpointSaver(
@@ -650,7 +662,9 @@ class TestAsyncValkeyCheckpointSaverErrorHandling:
         # Mock pipeline execution to raise TimeoutError
         pipeline_mock = Mock()
         pipeline_mock.get = Mock(return_value=None)
-        pipeline_mock.execute = AsyncMock(side_effect=asyncio.TimeoutError("Operation timeout"))
+        pipeline_mock.execute = AsyncMock(
+            side_effect=asyncio.TimeoutError("Operation timeout")
+        )
         mock_valkey_client.pipeline.return_value = pipeline_mock
 
         saver = AsyncValkeyCheckpointSaver(
@@ -905,34 +919,54 @@ class TestAsyncValkeyCheckpointSaverAdeleteThread:
 class TestAsyncValkeyCheckpointSaverSyncMethods:
     """Test sync methods that should raise NotImplementedError."""
 
-    def test_get_tuple_not_implemented(self, mock_valkey_client, mock_serializer, sample_config):
+    def test_get_tuple_not_implemented(
+        self, mock_valkey_client, mock_serializer, sample_config
+    ):
         """Test that get_tuple raises NotImplementedError."""
         saver = AsyncValkeyCheckpointSaver(
             client=mock_valkey_client, serde=mock_serializer
         )
 
-        with pytest.raises(NotImplementedError, match="The AsyncValkeyCheckpointSaver does not support sync methods"):
+        with pytest.raises(
+            NotImplementedError,
+            match="The AsyncValkeyCheckpointSaver does not support sync methods"
+        ):
             saver.get_tuple(sample_config)
 
-    def test_list_not_implemented(self, mock_valkey_client, mock_serializer, sample_config):
+    def test_list_not_implemented(
+        self, mock_valkey_client, mock_serializer, sample_config
+    ):
         """Test that list raises NotImplementedError."""
         saver = AsyncValkeyCheckpointSaver(
             client=mock_valkey_client, serde=mock_serializer
         )
 
-        with pytest.raises(NotImplementedError, match="The AsyncValkeyCheckpointSaver does not support sync methods"):
+        with pytest.raises(
+            NotImplementedError,
+            match="The AsyncValkeyCheckpointSaver does not support sync methods"
+        ):
             list(saver.list(sample_config))
 
     def test_put_not_implemented(
-        self, mock_valkey_client, mock_serializer, sample_config, sample_checkpoint, sample_metadata
+        self,
+        mock_valkey_client,
+        mock_serializer,
+        sample_config,
+        sample_checkpoint,
+        sample_metadata,
     ):
         """Test that put raises NotImplementedError."""
         saver = AsyncValkeyCheckpointSaver(
             client=mock_valkey_client, serde=mock_serializer
         )
 
-        with pytest.raises(NotImplementedError, match="The AsyncValkeyCheckpointSaver does not support sync methods"):
-            saver.put(sample_config, sample_checkpoint, sample_metadata, {"test_channel": 1})
+        with pytest.raises(
+            NotImplementedError,
+            match="The AsyncValkeyCheckpointSaver does not support sync methods"
+        ):
+            saver.put(
+                sample_config, sample_checkpoint, sample_metadata, {"test_channel": 1}
+            )
 
     def test_put_writes_not_implemented(
         self, mock_valkey_client, mock_serializer, sample_config
@@ -945,7 +979,10 @@ class TestAsyncValkeyCheckpointSaverSyncMethods:
         writes = [("channel", "value")]
         task_id = "test-task"
 
-        with pytest.raises(NotImplementedError, match="The AsyncValkeyCheckpointSaver does not support sync methods"):
+        with pytest.raises(
+            NotImplementedError,
+            match="The AsyncValkeyCheckpointSaver does not support sync methods"
+        ):
             saver.put_writes(sample_config, writes, task_id)
 
     def test_delete_thread_not_implemented(self, mock_valkey_client, mock_serializer):
@@ -954,7 +991,10 @@ class TestAsyncValkeyCheckpointSaverSyncMethods:
             client=mock_valkey_client, serde=mock_serializer
         )
 
-        with pytest.raises(NotImplementedError, match="The AsyncValkeyCheckpointSaver does not support sync methods"):
+        with pytest.raises(
+            NotImplementedError,
+            match="The AsyncValkeyCheckpointSaver does not support sync methods"
+        ):
             saver.delete_thread("test-thread")
 
 
@@ -963,7 +1003,12 @@ class TestAsyncValkeyCheckpointSaverAputErrorHandling:
 
     @pytest.mark.asyncio
     async def test_aput_valkey_error(
-        self, mock_valkey_client, mock_serializer, sample_config, sample_checkpoint, sample_metadata
+        self,
+        mock_valkey_client,
+        mock_serializer,
+        sample_config,
+        sample_checkpoint,
+        sample_metadata,
     ):
         """Test aput with ValkeyError."""
         # Mock pipeline execution to raise ValkeyError
@@ -978,7 +1023,9 @@ class TestAsyncValkeyCheckpointSaverAputErrorHandling:
         )
 
         with pytest.raises(ValkeyError):
-            await saver.aput(sample_config, sample_checkpoint, sample_metadata, {"test_channel": 1})
+            await saver.aput(
+                sample_config, sample_checkpoint, sample_metadata, {"test_channel": 1}
+            )
 
 
 class TestAsyncValkeyCheckpointSaverContextManagement:
@@ -988,7 +1035,9 @@ class TestAsyncValkeyCheckpointSaverContextManagement:
     @pytest.mark.timeout(10)
     async def test_from_conn_string_context_manager(self):
         """Test from_conn_string context manager functionality."""
-        with patch("langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey") as mock_valkey_class:
+        with patch(
+            "langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey"
+        ) as mock_valkey_class:
             mock_client = AsyncMock()
             mock_client.aclose = AsyncMock()
             mock_valkey_class.from_url.return_value = mock_client
@@ -1005,7 +1054,9 @@ class TestAsyncValkeyCheckpointSaverContextManagement:
     @pytest.mark.timeout(10)
     async def test_from_conn_string_context_manager_exception_handling(self):
         """Test from_conn_string context manager handles exceptions properly."""
-        with patch("langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey") as mock_valkey_class:
+        with patch(
+            "langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey"
+        ) as mock_valkey_class:
             mock_client = AsyncMock()
             mock_client.aclose = AsyncMock()
             mock_valkey_class.from_url.return_value = mock_client
@@ -1013,7 +1064,7 @@ class TestAsyncValkeyCheckpointSaverContextManagement:
             try:
                 async with AsyncValkeyCheckpointSaver.from_conn_string(
                     "valkey://localhost:6379"
-                ) as saver:
+                ):
                     raise ValueError("Test exception")
             except ValueError:
                 pass  # Expected
@@ -1025,7 +1076,9 @@ class TestAsyncValkeyCheckpointSaverContextManagement:
     @pytest.mark.timeout(10)
     async def test_from_pool_context_manager(self):
         """Test from_pool context manager functionality."""
-        with patch("langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey") as mock_valkey_class:
+        with patch(
+            "langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey"
+        ) as mock_valkey_class:
             mock_client = AsyncMock()
             mock_client.aclose = AsyncMock()
             mock_valkey_class.return_value = mock_client
@@ -1138,7 +1191,9 @@ class TestAsyncValkeyCheckpointSaverComprehensiveCoverage:
         )
 
         # Should handle large checkpoint without issues
-        await saver.aput(config, large_checkpoint, {}, {f"channel_{i}": i for i in range(100)})
+        await saver.aput(
+            config, large_checkpoint, {}, {f"channel_{i}": i for i in range(100)}
+        )
         mock_valkey_client.pipeline.assert_called()
 
 

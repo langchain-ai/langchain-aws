@@ -1,13 +1,22 @@
-"""Comprehensive unit tests for AsyncValkeyStore - async version of ValkeyStore tests."""
+"""Comprehensive unit tests for AsyncValkeyStore - async version of 
+ValkeyStore tests."""
 
-import json
-import pytest
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
 from datetime import datetime
 from typing import cast
+from unittest.mock import AsyncMock, Mock, patch
 
-from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore, ValkeyIndexConfig
-from langgraph.store.base import GetOp, PutOp, SearchOp, ListNamespacesOp, TTLConfig
+import pytest
+from langgraph.store.base import (
+    GetOp,
+    ListNamespacesOp,
+    PutOp,
+    SearchOp,
+    TTLConfig,
+)
+
+from langgraph_checkpoint_aws.store.valkey import (
+    AsyncValkeyStore,
+)
 
 
 @pytest.fixture
@@ -68,16 +77,21 @@ class TestAsyncValkeyStoreInit:
 
     async def test_init_with_ttl_config(self, mock_valkey_client):
         """Test initialization with TTL configuration."""
-        ttl_config = cast(TTLConfig, {
-            "refresh_on_read": True,
-            "default_ttl": 3600.0,
-            "sweep_interval_minutes": 60
-        })
+        ttl_config = cast(
+            TTLConfig,
+            {
+                "refresh_on_read": True,
+                "default_ttl": 3600.0,
+                "sweep_interval_minutes": 60,
+            },
+        )
         store = AsyncValkeyStore(client=mock_valkey_client, ttl=ttl_config)
         assert store.client == mock_valkey_client
         assert store.ttl_config == ttl_config
 
-    async def test_init_with_index_config(self, mock_valkey_client, basic_index_config):
+    async def test_init_with_index_config(
+        self, mock_valkey_client, basic_index_config
+    ):
         """Test initialization with index configuration."""
         store = AsyncValkeyStore(client=mock_valkey_client)
         assert store.client == mock_valkey_client
@@ -87,9 +101,13 @@ class TestAsyncValkeyStoreInit:
         with patch('valkey.from_url') as mock_from_url:
             mock_client = AsyncMock()
             mock_from_url.return_value = mock_client
-            with patch('langgraph_checkpoint_aws.store.valkey.async_store.aset_client_info'):
+            with patch(
+                "langgraph_checkpoint_aws.store.valkey.async_store.aset_client_info"
+            ):
                 # Test that async context manager works correctly
-                async with AsyncValkeyStore.from_conn_string("valkey://localhost:6379") as store:
+                async with AsyncValkeyStore.from_conn_string(
+                    "valkey://localhost:6379"
+                ) as store:
                     assert isinstance(store, AsyncValkeyStore)
                     assert store.client is not None  # Client exists
 
@@ -97,13 +115,17 @@ class TestAsyncValkeyStoreInit:
 class TestAsyncValkeyStoreSetupAndConfig:
     """Test AsyncValkeyStore setup and configuration."""
 
-    async def test_setup_with_index_and_embeddings(self, mock_valkey_client, basic_index_config, sample_embed_fn):
+    async def test_setup_with_index_and_embeddings(
+        self, mock_valkey_client, basic_index_config, sample_embed_fn
+    ):
         """Test setup with search index and embeddings."""
         basic_index_config["embed"] = sample_embed_fn
 
         mock_valkey_client.execute_command.return_value = "OK"
 
-        store = AsyncValkeyStore(client=mock_valkey_client, index=basic_index_config)
+        store = AsyncValkeyStore(
+            client=mock_valkey_client, index=basic_index_config
+        )
         await store.setup()
 
         # Should call setup methods
@@ -117,11 +139,15 @@ class TestAsyncValkeyStoreSetupAndConfig:
         # Should not raise any errors
         assert True
 
-    async def test_setup_search_index_method(self, mock_valkey_client, basic_index_config):
+    async def test_setup_search_index_method(
+        self, mock_valkey_client, basic_index_config
+    ):
         """Test search index setup method."""
         mock_valkey_client.execute_command.return_value = "OK"
 
-        store = AsyncValkeyStore(client=mock_valkey_client, index=basic_index_config)
+        store = AsyncValkeyStore(
+            client=mock_valkey_client, index=basic_index_config
+        )
         await store._setup_search_index_async()
 
         mock_valkey_client.execute_command.assert_called()
@@ -173,7 +199,9 @@ class TestAsyncValkeyStoreGet:
         # Implementation handles this gracefully and returns the data as string
         assert result is not None and result.value == "invalid json"
 
-    async def test_handle_get_malformed_timestamps(self, mock_valkey_client):
+    async def test_handle_get_malformed_timestamps(
+        self, mock_valkey_client
+    ):
         """Test handling malformed timestamps in get operation."""
         mock_data = {
             b"value": b'{"test": "data"}',
@@ -207,7 +235,9 @@ class TestAsyncValkeyStoreGet:
         assert result is not None
         assert result.value == {"test": "data"}
 
-    async def test_handle_get_malformed_json_value(self, mock_valkey_client):
+    async def test_handle_get_malformed_json_value(
+        self, mock_valkey_client
+    ):
         """Test handling malformed JSON value."""
         mock_data = {
             b"value": b"{invalid json}",
@@ -261,12 +291,17 @@ class TestAsyncValkeyStorePut:
 
     async def test_put_with_ttl(self, mock_valkey_client):
         """Test putting item with TTL."""
-        ttl_config = cast(TTLConfig, {
-            "refresh_on_read": True,
-            "default_ttl": 3600.0,
-            "sweep_interval_minutes": 60
-        })
-        store = AsyncValkeyStore(client=mock_valkey_client, ttl=ttl_config)
+        ttl_config = cast(
+            TTLConfig,
+            {
+                "refresh_on_read": True,
+                "default_ttl": 3600.0,
+                "sweep_interval_minutes": 60,
+            },
+        )
+        store = AsyncValkeyStore(
+            client=mock_valkey_client, ttl=ttl_config
+        )
         test_value = {"test": "data"}
 
         await store.aput(("test",), "key1", test_value, ttl=1800.0)
@@ -355,7 +390,9 @@ class TestAsyncValkeyStoreBatchOperations:
         assert all(result is None for result in results)  # Put returns None
         assert mock_valkey_client.hset.call_count >= 2
 
-    async def test_batch_search_operations(self, mock_valkey_client):
+    async def test_batch_search_operations(
+        self, mock_valkey_client
+    ):
         """Test batch search operations."""
         mock_valkey_client.keys.return_value = []
 
@@ -371,7 +408,9 @@ class TestAsyncValkeyStoreBatchOperations:
         assert len(results) == 2
         assert all(isinstance(result, list) for result in results)
 
-    async def test_batch_list_namespaces_operations(self, mock_valkey_client):
+    async def test_batch_list_namespaces_operations(
+        self, mock_valkey_client
+    ):
         """Test batch list namespaces operations."""
         mock_valkey_client.keys.return_value = []
 
@@ -387,7 +426,9 @@ class TestAsyncValkeyStoreBatchOperations:
         assert len(results) == 2
         assert all(isinstance(result, list) for result in results)
 
-    async def test_batch_unknown_operation_type(self, mock_valkey_client):
+    async def test_batch_unknown_operation_type(
+        self, mock_valkey_client
+    ):
         """Test batch with unknown operation type."""
         store = AsyncValkeyStore(client=mock_valkey_client)
 
@@ -415,7 +456,7 @@ class TestAsyncValkeyStoreSearch:
         mock_data = {
             b"value": b'{"title": "test item", "content": "searchable content"}',
             b"created_at": b"2023-01-01T00:00:00",
-            b"updated_at": b"2023-01-01T00:00:00"
+            b"updated_at": b"2023-01-01T00:00:00",
         }
         mock_valkey_client.hgetall.return_value = mock_data
 
@@ -423,7 +464,8 @@ class TestAsyncValkeyStoreSearch:
         results = await store.asearch(("test",), query="searchable")
 
         assert isinstance(results, list)
-        # Search implementation doesn't call keys for simple queries - uses pattern matching
+        # Search implementation doesn't call keys for simple queries - uses 
+        # pattern matching
         # The search returns empty list due to unpacking error in pattern search
 
     async def test_search_with_filter(self, mock_valkey_client):
@@ -446,7 +488,9 @@ class TestAsyncValkeyStoreSearch:
 
         assert results == []
 
-    async def test_convert_to_search_items_parsing_errors(self, mock_valkey_client):
+    async def test_convert_to_search_items_parsing_errors(
+        self, mock_valkey_client
+    ):
         """Test converting to search items with parsing errors."""
         store = AsyncValkeyStore(client=mock_valkey_client)
 
@@ -461,13 +505,13 @@ class TestAsyncValkeyStoreSearch:
                 return {
                     b"value": b"invalid json",
                     b"created_at": b"2023-01-01T00:00:00",
-                    b"updated_at": b"2023-01-01T00:00:00"
+                    b"updated_at": b"2023-01-01T00:00:00",
                 }
             elif key == b"test:item3":
                 return {
                     b"value": b'{"valid": "json"}',
                     b"created_at": b"invalid-date",
-                    b"updated_at": b"2023-01-01T00:00:00"
+                    b"updated_at": b"2023-01-01T00:00:00",
                 }
             else:
                 return {}
@@ -482,12 +526,16 @@ class TestAsyncValkeyStoreSearch:
             (("test",), "item4", 0.4)   # Will return empty dict
         ]
 
-        search_items = await store._convert_to_search_items_async(results)
+        search_items = await store._convert_to_search_items_async(
+            results
+        )
 
         # Should only return valid items (item1)
         assert len(search_items) <= len(results)
 
-    async def test_convert_to_search_items_bytes_handling(self, mock_valkey_client):
+    async def test_convert_to_search_items_bytes_handling(
+        self, mock_valkey_client
+    ):
         """Test converting search items with bytes key handling."""
         store = AsyncValkeyStore(client=mock_valkey_client)
 
@@ -499,18 +547,24 @@ class TestAsyncValkeyStoreSearch:
         mock_valkey_client.hgetall.return_value = mock_data
 
         results = [(("test",), "item1", 1.0)]
-        search_items = await store._convert_to_search_items_async(results)
+        search_items = await store._convert_to_search_items_async(
+            results
+        )
 
         assert len(search_items) <= 1
 
-    async def test_convert_to_search_items_none_value(self, mock_valkey_client):
+    async def test_convert_to_search_items_none_value(
+        self, mock_valkey_client
+    ):
         """Test converting search items when value is None."""
         store = AsyncValkeyStore(client=mock_valkey_client)
 
         mock_valkey_client.hgetall.return_value = {}
 
         results = [(("test",), "item1", 1.0)]
-        search_items = await store._convert_to_search_items_async(results)
+        search_items = await store._convert_to_search_items_async(
+            results
+        )
 
         assert isinstance(search_items, list)
 
@@ -518,10 +572,14 @@ class TestAsyncValkeyStoreSearch:
 class TestAsyncValkeyStoreVectorSearchEdgeCases:
     """Test AsyncValkeyStore vector search edge cases."""
 
-    async def test_vector_search_with_namespace_filter(self, mock_valkey_client, basic_index_config, sample_embed_fn):
+    async def test_vector_search_with_namespace_filter(
+        self, mock_valkey_client, basic_index_config, sample_embed_fn
+    ):
         """Test vector search with namespace filter."""
         basic_index_config["embed"] = sample_embed_fn
-        store = AsyncValkeyStore(client=mock_valkey_client, index=basic_index_config)
+        store = AsyncValkeyStore(
+            client=mock_valkey_client, index=basic_index_config
+        )
 
         # Mock search response
         mock_response = Mock()
@@ -540,10 +598,14 @@ class TestAsyncValkeyStoreVectorSearchEdgeCases:
         # Vector search fails due to coroutine attribute access issue
         # The implementation logs error and returns empty list
 
-    async def test_vector_search_with_filters(self, mock_valkey_client, basic_index_config, sample_embed_fn):
+    async def test_vector_search_with_filters(
+        self, mock_valkey_client, basic_index_config, sample_embed_fn
+    ):
         """Test vector search with additional filters."""
         basic_index_config["embed"] = sample_embed_fn
-        store = AsyncValkeyStore(client=mock_valkey_client, index=basic_index_config)
+        store = AsyncValkeyStore(
+            client=mock_valkey_client, index=basic_index_config
+        )
 
         mock_response = Mock()
         mock_response.docs = []
@@ -560,10 +622,14 @@ class TestAsyncValkeyStoreVectorSearchEdgeCases:
 
         assert isinstance(results, list)
 
-    async def test_vector_search_doc_processing_edge_cases(self, mock_valkey_client, basic_index_config, sample_embed_fn):
+    async def test_vector_search_doc_processing_edge_cases(
+        self, mock_valkey_client, basic_index_config, sample_embed_fn
+    ):
         """Test vector search document processing edge cases."""
         basic_index_config["embed"] = sample_embed_fn
-        store = AsyncValkeyStore(client=mock_valkey_client, index=basic_index_config)
+        store = AsyncValkeyStore(
+            client=mock_valkey_client, index=basic_index_config
+        )
 
         # Mock documents with various edge cases
         mock_doc1 = Mock()
@@ -585,28 +651,36 @@ class TestAsyncValkeyStoreVectorSearchEdgeCases:
                 return {
                     b"value": b'{"content": "test"}',
                     b"created_at": b"2023-01-01T00:00:00",
-                    b"updated_at": b"2023-01-01T00:00:00"
+                    b"updated_at": b"2023-01-01T00:00:00",
                 }
             return {}
 
         mock_valkey_client.hgetall.side_effect = mock_hgetall
 
-        search_op = SearchOp(namespace_prefix=("test",), query="search")
+        search_op = SearchOp(
+            namespace_prefix=("test",), query="search"
+        )
         results = await store._vector_search(search_op)
 
         assert isinstance(results, list)
 
-    async def test_vector_search_no_docs_attribute(self, mock_valkey_client, basic_index_config, sample_embed_fn):
+    async def test_vector_search_no_docs_attribute(
+        self, mock_valkey_client, basic_index_config, sample_embed_fn
+    ):
         """Test vector search when response has no docs attribute."""
         basic_index_config["embed"] = sample_embed_fn
-        store = AsyncValkeyStore(client=mock_valkey_client, index=basic_index_config)
+        store = AsyncValkeyStore(
+            client=mock_valkey_client, index=basic_index_config
+        )
 
         # Mock response without docs attribute
         mock_response = Mock()
         del mock_response.docs  # Remove docs attribute to simulate error
         mock_valkey_client.execute_command.return_value = mock_response
 
-        search_op = SearchOp(namespace_prefix=("test",), query="search")
+        search_op = SearchOp(
+            namespace_prefix=("test",), query="search"
+        )
 
         # Should handle gracefully and return empty list
         results = await store._vector_search(search_op)
@@ -618,12 +692,17 @@ class TestAsyncValkeyStoreTTLFunctionality:
 
     async def test_get_with_ttl_refresh(self, mock_valkey_client):
         """Test get operation with TTL refresh."""
-        ttl_config = cast(TTLConfig, {
-            "refresh_on_read": True,
-            "default_ttl": 3600.0,
-            "sweep_interval_minutes": 60
-        })
-        store = AsyncValkeyStore(client=mock_valkey_client, ttl=ttl_config)
+        ttl_config = cast(
+            TTLConfig,
+            {
+                "refresh_on_read": True,
+                "default_ttl": 3600.0,
+                "sweep_interval_minutes": 60,
+            },
+        )
+        store = AsyncValkeyStore(
+            client=mock_valkey_client, ttl=ttl_config
+        )
 
         # Mock successful get
         mock_data = {
@@ -633,12 +712,16 @@ class TestAsyncValkeyStoreTTLFunctionality:
         }
         mock_valkey_client.hgetall.return_value = mock_data
 
-        result = await store.aget(("test",), "key1", refresh_ttl=True)
+        result = await store.aget(
+            ("test",), "key1", refresh_ttl=True
+        )
 
         # TTL refresh functionality should work with correct config key
         assert result is not None
 
-    async def test_get_with_ttl_refresh_no_ttl_config(self, mock_valkey_client):
+    async def test_get_with_ttl_refresh_no_ttl_config(
+        self, mock_valkey_client
+    ):
         """Test get with TTL refresh when no TTL config is set."""
         store = AsyncValkeyStore(client=mock_valkey_client)  # No TTL config
 
@@ -649,19 +732,26 @@ class TestAsyncValkeyStoreTTLFunctionality:
         }
         mock_valkey_client.hgetall.return_value = mock_data
 
-        result = await store.aget(("test",), "key1", refresh_ttl=True)
+        await store.aget(
+            ("test",), "key1", refresh_ttl=True
+        )
 
         # Should not call expire since no TTL config
         mock_valkey_client.expire.assert_not_called()
 
     async def test_refresh_ttl_for_items(self, mock_valkey_client):
         """Test refreshing TTL for search items."""
-        ttl_config = cast(TTLConfig, {
-            "refresh_on_read": True,
-            "default_ttl": 3600.0,
-            "sweep_interval_minutes": 60
-        })
-        store = AsyncValkeyStore(client=mock_valkey_client, ttl=ttl_config)
+        ttl_config = cast(
+            TTLConfig,
+            {
+                "refresh_on_read": True,
+                "default_ttl": 3600.0,
+                "sweep_interval_minutes": 60,
+            },
+        )
+        store = AsyncValkeyStore(
+            client=mock_valkey_client, ttl=ttl_config
+        )
 
         # Create mock search items
         from langgraph.store.base import SearchItem
@@ -689,9 +779,13 @@ class TestAsyncValkeyStoreTTLFunctionality:
 
         # TTL refresh should work with correct config key format
 
-    async def test_refresh_ttl_for_items_no_ttl_config(self, mock_valkey_client):
+    async def test_refresh_ttl_for_items_no_ttl_config(
+        self, mock_valkey_client
+    ):
         """Test refreshing TTL when no TTL config is set."""
-        store = AsyncValkeyStore(client=mock_valkey_client)  # No TTL config
+        store = AsyncValkeyStore(
+            client=mock_valkey_client
+        )  # No TTL config
 
         from langgraph.store.base import SearchItem
 
@@ -743,9 +837,13 @@ class TestAsyncValkeyStoreListNamespaces:
 class TestAsyncValkeyStoreErrorHandling:
     """Test AsyncValkeyStore error handling."""
 
-    async def test_connection_error_during_get(self, mock_valkey_client):
+    async def test_connection_error_during_get(
+        self, mock_valkey_client
+    ):
         """Test connection error during get operation."""
-        mock_valkey_client.hgetall.side_effect = ConnectionError("Connection failed")
+        mock_valkey_client.hgetall.side_effect = ConnectionError(
+            "Connection failed"
+        )
 
         store = AsyncValkeyStore(client=mock_valkey_client)
 
@@ -753,7 +851,9 @@ class TestAsyncValkeyStoreErrorHandling:
         result = await store.aget(("test",), "key1")
         assert result is None
 
-    async def test_serialization_error_during_put(self, mock_valkey_client):
+    async def test_serialization_error_during_put(
+        self, mock_valkey_client
+    ):
         """Test serialization error during put operation."""
         store = AsyncValkeyStore(client=mock_valkey_client)
 
@@ -766,7 +866,9 @@ class TestAsyncValkeyStoreErrorHandling:
         with pytest.raises((TypeError, ValueError)):
             await store.aput(("test",), "key1", unserializable_value)
 
-    async def test_deserialization_error_during_get(self, mock_valkey_client):
+    async def test_deserialization_error_during_get(
+        self, mock_valkey_client
+    ):
         """Test deserialization error during get operation."""
         # Mock corrupted data
         mock_data = {
@@ -806,7 +908,9 @@ class TestAsyncValkeyStoreInternalMethods:
         # Test execute command
         mock_valkey_client.execute_command.return_value = "OK"
         result = await store._execute_client_method("ping")
-        assert result == True  # _execute_client_method with "ping" returns True, not "OK"
+        assert (
+            result
+        )  # _execute_client_method with "ping" returns True, not "OK"
 
     async def test_unicode_handling(self, mock_valkey_client):
         """Test handling of unicode characters."""
@@ -841,7 +945,11 @@ class TestAsyncValkeyStoreInternalMethods:
         store = AsyncValkeyStore(client=mock_valkey_client)
 
         # Test with special characters in namespace and key
-        special_namespace = ("test:with:colons", "space namespace", "unicode_文字")
+        special_namespace = (
+            "test:with:colons",
+            "space namespace",
+            "unicode_文字",
+        )
         special_key = "key:with:special:chars!@#$%"
 
         test_value = {"data": "test"}
@@ -879,14 +987,20 @@ class TestAsyncValkeyStoreInternalMethods:
         # Should not raise any serialization errors
         assert mock_valkey_client.hset.call_count == len(edge_cases)
 
-    async def test_context_manager_functionality(self, mock_valkey_client):
+    async def test_context_manager_functionality(
+        self, mock_valkey_client
+    ):
         """Test context manager functionality."""
         with patch('valkey.from_url') as mock_from_url:
             mock_from_url.return_value = mock_valkey_client
 
-            with patch('langgraph_checkpoint_aws.store.valkey.async_store.aset_client_info'):
+            with patch(
+                "langgraph_checkpoint_aws.store.valkey.async_store.aset_client_info"
+            ):
                 # Context managers are async, not sync
-                async with AsyncValkeyStore.from_conn_string("valkey://localhost:6379") as store:
+                async with AsyncValkeyStore.from_conn_string(
+                    "valkey://localhost:6379"
+                ) as store:
                     assert isinstance(store, AsyncValkeyStore)
                     # The store creates its own client, not the mock we injected
 
@@ -903,11 +1017,12 @@ class TestAsyncValkeyStoreInternalMethods:
             {
                 b"value": b'{"recovered": "data"}',
                 b"created_at": b"2023-01-01T00:00:00",
-                b"updated_at": b"2023-01-01T00:00:00"
-            }
+                b"updated_at": b"2023-01-01T00:00:00",
+            },
         ]
 
-        # First call should raise error, but we're testing that it doesn't crash the system
+        # First call should raise error, but we're testing that it doesn't 
+        # crash the system
         # Implementation catches all exceptions and returns None
         result = await store.aget(("test",), "key1")
         assert result is None
@@ -926,9 +1041,13 @@ class TestAsyncValkeyStoreContextManagers:
 
         conn_string = "valkey://localhost:6379/0"
 
-        with patch('langgraph_checkpoint_aws.store.valkey.async_store.aset_client_info'):
+        with patch(
+            "langgraph_checkpoint_aws.store.valkey.async_store.aset_client_info"
+        ):
             # Context managers are async, not sync
-            async with AsyncValkeyStore.from_conn_string(conn_string) as store:
+            async with AsyncValkeyStore.from_conn_string(
+                conn_string
+            ) as store:
                 assert isinstance(store, AsyncValkeyStore)
                 # Store creates its own client using from_url, not the mock we injected
 
@@ -948,58 +1067,93 @@ class TestAsyncValkeyStoreContextManagers:
             with patch('valkey.Valkey.from_pool') as mock_from_pool:
                 mock_from_pool.return_value = mock_client
 
-                with patch('langgraph_checkpoint_aws.store.valkey.async_store.aset_client_info'):
+                with patch(
+                    "langgraph_checkpoint_aws.store.valkey.async_store.aset_client_info"
+                ):
                     # Context managers are async, not sync
-                    async with AsyncValkeyStore.from_pool(mock_pool) as store:
+                    async with AsyncValkeyStore.from_pool(
+                        mock_pool
+                    ) as store:
                         assert isinstance(store, AsyncValkeyStore)
-                        # Store creates its own client through the pool, connection may vary
+                        # Store creates its own client through the pool, 
+                        # connection may vary
                         assert store.client is not None
 
 class TestAsyncValkeyStoreSyncMethodStubs:
     """Test AsyncValkeyStore sync method stubs that should raise NotImplementedError."""
 
-    async def test_sync_get_raises_not_implemented(self, mock_valkey_client):
+    async def test_sync_get_raises_not_implemented(
+        self, mock_valkey_client
+    ):
         """Test that sync get method raises NotImplementedError."""
         store = AsyncValkeyStore(client=mock_valkey_client)
 
-        with pytest.raises(NotImplementedError, match="The AsyncValkeyStore does not support sync methods"):
+        with pytest.raises(
+            NotImplementedError,
+            match="The AsyncValkeyStore does not support sync methods",
+        ):
             store.get(("test",), "key1")
 
-    async def test_sync_put_raises_not_implemented(self, mock_valkey_client):
+    async def test_sync_put_raises_not_implemented(
+        self, mock_valkey_client
+    ):
         """Test that sync put method raises NotImplementedError."""
         store = AsyncValkeyStore(client=mock_valkey_client)
 
-        with pytest.raises(NotImplementedError, match="The AsyncValkeyStore does not support sync methods"):
+        with pytest.raises(
+            NotImplementedError,
+            match="The AsyncValkeyStore does not support sync methods",
+        ):
             store.put(("test",), "key1", {"data": "value"})
 
-    async def test_sync_delete_raises_not_implemented(self, mock_valkey_client):
+    async def test_sync_delete_raises_not_implemented(
+        self, mock_valkey_client
+    ):
         """Test that sync delete method raises NotImplementedError."""
         store = AsyncValkeyStore(client=mock_valkey_client)
 
-        with pytest.raises(NotImplementedError, match="The AsyncValkeyStore does not support sync methods"):
+        with pytest.raises(
+            NotImplementedError,
+            match="The AsyncValkeyStore does not support sync methods",
+        ):
             store.delete(("test",), "key1")
 
-    async def test_sync_search_raises_not_implemented(self, mock_valkey_client):
+    async def test_sync_search_raises_not_implemented(
+        self, mock_valkey_client
+    ):
         """Test that sync search method raises NotImplementedError."""
         store = AsyncValkeyStore(client=mock_valkey_client)
 
-        with pytest.raises(NotImplementedError, match="The AsyncValkeyStore does not support sync methods"):
+        with pytest.raises(
+            NotImplementedError,
+            match="The AsyncValkeyStore does not support sync methods",
+        ):
             store.search(("test",), query="search")
 
-    async def test_sync_list_namespaces_raises_not_implemented(self, mock_valkey_client):
+    async def test_sync_list_namespaces_raises_not_implemented(
+        self, mock_valkey_client
+    ):
         """Test that sync list_namespaces method raises NotImplementedError."""
         store = AsyncValkeyStore(client=mock_valkey_client)
 
-        with pytest.raises(NotImplementedError, match="The AsyncValkeyStore does not support sync methods"):
+        with pytest.raises(
+            NotImplementedError,
+            match="The AsyncValkeyStore does not support sync methods",
+        ):
             store.list_namespaces()
 
-    async def test_sync_batch_raises_not_implemented(self, mock_valkey_client):
+    async def test_sync_batch_raises_not_implemented(
+        self, mock_valkey_client
+    ):
         """Test that sync batch method raises NotImplementedError."""
         store = AsyncValkeyStore(client=mock_valkey_client)
 
         ops = [GetOp(namespace=("test",), key="key1")]
 
-        with pytest.raises(NotImplementedError, match="The AsyncValkeyStore does not support sync methods"):
+        with pytest.raises(
+            NotImplementedError,
+            match="The AsyncValkeyStore does not support sync methods",
+        ):
             store.batch(ops)
 
 
@@ -1026,7 +1180,9 @@ class TestAsyncValkeyStoreAdvancedOperations:
         # Should have called hset for each operation
         assert mock_valkey_client.hset.call_count >= 10
 
-    async def test_batch_operations_with_mixed_types(self, mock_valkey_client):
+    async def test_batch_operations_with_mixed_types(
+        self, mock_valkey_client
+    ):
         """Test batch operations with mixed operation types."""
         # Mock responses for different operation types
         mock_valkey_client.hgetall.return_value = {
@@ -1040,21 +1196,26 @@ class TestAsyncValkeyStoreAdvancedOperations:
 
         mixed_ops = [
             GetOp(namespace=("test",), key="key1"),
-            PutOp(namespace=("test",), key="key2", value={"data": "value2"}),
+            PutOp(
+                namespace=("test",), key="key2", value={"data": "value2"}
+            ),
             SearchOp(namespace_prefix=("test",), query="search"),
-            ListNamespacesOp()
+            ListNamespacesOp(),
         ]
 
         results = await store.abatch(mixed_ops)
 
         assert len(results) == 4
-        # Get should return data, Put should return None, Search/List should return lists
+        # Get should return data, Put should return None, Search/List should 
+        # return lists
         assert results[0] is not None  # Get result
-        assert results[1] is None       # Put result
+        assert results[1] is None  # Put result
         assert isinstance(results[2], list)  # Search result
         assert isinstance(results[3], list)  # List result
 
-    async def test_namespace_operations_edge_cases(self, mock_valkey_client):
+    async def test_namespace_operations_edge_cases(
+        self, mock_valkey_client
+    ):
         """Test namespace operations with edge cases."""
         store = AsyncValkeyStore(client=mock_valkey_client)
 
@@ -1062,16 +1223,27 @@ class TestAsyncValkeyStoreAdvancedOperations:
 
         # Test deeply nested namespace
         deep_namespace = tuple(f"level_{i}" for i in range(20))
-        await store.aput(deep_namespace, "deep_key", {"data": "deep_value"})
+        await store.aput(
+            deep_namespace, "deep_key", {"data": "deep_value"}
+        )
 
         # Test namespace with special characters
-        special_namespace = ("test/path", "with spaces", "and:colons", "unicode_文字")
-        await store.aput(special_namespace, "special_key", {"data": "special_value"})
+        special_namespace = (
+            "test/path",
+            "with spaces",
+            "and:colons",
+            "unicode_文字",
+        )
+        await store.aput(
+            special_namespace, "special_key", {"data": "special_value"}
+        )
 
         # Should handle all cases without errors
         assert mock_valkey_client.hset.call_count == 2
 
-    async def test_search_operations_comprehensive(self, mock_valkey_client):
+    async def test_search_operations_comprehensive(
+        self, mock_valkey_client
+    ):
         """Test comprehensive search operations."""
         store = AsyncValkeyStore(client=mock_valkey_client)
 
@@ -1083,19 +1255,28 @@ class TestAsyncValkeyStoreAdvancedOperations:
         def mock_hgetall_varying(key):
             if key == b"test:item1":
                 return {
-                    b"value": b'{"title": "First item", "content": "searchable content", "score": 0.9}',
+                    b"value": (
+                        b'{"title": "First item", "content": "searchable content", '
+                        b'"score": 0.9}'
+                    ),
                     b"created_at": b"2023-01-01T00:00:00",
                     b"updated_at": b"2023-01-01T00:00:00"
                 }
             elif key == b"test:item2":
                 return {
-                    b"value": b'{"title": "Second item", "content": "different content", "score": 0.7}',
+                    b"value": (
+                        b'{"title": "Second item", "content": "different content", '
+                        b'"score": 0.7}'
+                    ),
                     b"created_at": b"2023-01-02T00:00:00",
                     b"updated_at": b"2023-01-02T00:00:00"
                 }
             elif key == b"test:item3":
                 return {
-                    b"value": b'{"title": "Third item", "content": "more searchable text", "score": 0.8}',
+                    b"value": (
+                        b'{"title": "Third item", "content": "more searchable text", '
+                        b'"score": 0.8}'
+                    ),
                     b"created_at": b"2023-01-03T00:00:00",
                     b"updated_at": b"2023-01-03T00:00:00"
                 }
@@ -1126,7 +1307,8 @@ class TestAsyncValkeyStoreAdvancedOperations:
 
         # Test put with different TTL values
         await store.aput(("test",), "key1", {"data": "value1"})  # Default TTL
-        await store.aput(("test",), "key2", {"data": "value2"}, ttl=1800.0)  # Custom TTL
+        await store.aput(("test",), "key2", {"data": "value2"}, 
+                         ttl=1800.0)  # Custom TTL
         await store.aput(("test",), "key3", {"data": "value3"}, ttl=None)  # No TTL
 
         # Should call expire for items with TTL
@@ -1229,7 +1411,9 @@ class TestAsyncValkeyStoreAdvancedOperations:
         result = await store._execute_client_method("ping")
         assert result is not None
 
-    async def test_index_operations_comprehensive(self, mock_valkey_client, basic_index_config, sample_embed_fn):
+    async def test_index_operations_comprehensive(
+        self, mock_valkey_client, basic_index_config, sample_embed_fn
+    ):
         """Test comprehensive index operations."""
         basic_index_config["embed"] = sample_embed_fn
         store = AsyncValkeyStore(client=mock_valkey_client, index=basic_index_config)

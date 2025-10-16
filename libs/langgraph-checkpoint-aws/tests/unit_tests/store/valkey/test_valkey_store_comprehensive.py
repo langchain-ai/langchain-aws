@@ -1,12 +1,10 @@
 """Comprehensive tests for ValkeyStore to improve code coverage."""
 
-import asyncio
 import json
-import orjson
 from datetime import datetime
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
-from contextlib import contextmanager
+from unittest.mock import MagicMock, Mock, patch
 
+import orjson
 import pytest
 from langgraph.store.base import (
     GetOp,
@@ -18,14 +16,11 @@ from langgraph.store.base import (
     SearchOp,
     TTLConfig,
 )
-from valkey import ConnectionPool
 
 from langgraph_checkpoint_aws.store.valkey import ValkeyIndexConfig, ValkeyStore
 from langgraph_checkpoint_aws.store.valkey.exceptions import (
-    ValkeyConnectionError,
-    DocumentParsingError,
-    ValidationError,
     EmbeddingGenerationError,
+    ValidationError,
 )
 
 
@@ -69,9 +64,13 @@ def basic_index_config():
 class TestValkeyStoreInitialization:
     """Test ValkeyStore initialization and configuration."""
 
-    def test_init_with_index_config(self, mock_valkey_client, basic_index_config):
+    def test_init_with_index_config(
+        self, mock_valkey_client, basic_index_config
+    ):
         """Test initialization with index configuration."""
-        with patch('langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings') as mock_ensure:
+        with patch(
+            "langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings"
+        ) as mock_ensure:
             mock_embeddings = MagicMock()
             mock_ensure.return_value = mock_embeddings
 
@@ -92,18 +91,27 @@ class TestValkeyStoreInitialization:
         assert store.index is None
         assert store.embeddings is None
         assert store.index_fields is None
-        assert store.collection_name == "langgraph_store_idx"  # Default value
+        assert (
+            store.collection_name == "langgraph_store_idx"
+        )  # Default value
 
     def test_init_with_ttl_config(self, mock_valkey_client):
         """Test initialization with TTL configuration."""
-        ttl_config = TTLConfig(default_ttl=3600, refresh_on_read=True)
+        ttl_config = TTLConfig(
+            default_ttl=3600, refresh_on_read=True
+        )
         store = ValkeyStore(mock_valkey_client, ttl=ttl_config)
 
         assert store.ttl_config == ttl_config
 
-    def test_init_with_invalid_embeddings(self, mock_valkey_client, basic_index_config):
+    def test_init_with_invalid_embeddings(
+        self, mock_valkey_client, basic_index_config
+    ):
         """Test initialization with invalid embeddings configuration."""
-        with patch('langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings', side_effect=Exception("Invalid embeddings")):
+        with patch(
+            "langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings",
+            side_effect=Exception("Invalid embeddings"),
+        ):
             with pytest.raises(EmbeddingGenerationError):
                 ValkeyStore(mock_valkey_client, index=basic_index_config)
 
@@ -116,11 +124,18 @@ class TestValkeyStoreSetup:
         store = ValkeyStore(mock_valkey_client)
         store.setup()  # Should not raise any errors
 
-    def test_setup_with_index_search_unavailable(self, mock_valkey_client, basic_index_config):
+    def test_setup_with_index_search_unavailable(
+        self, mock_valkey_client, basic_index_config
+    ):
         """Test setup when search module is unavailable."""
-        mock_valkey_client.execute_command.side_effect = Exception("Search not available")
+        mock_valkey_client.execute_command.side_effect = Exception(
+            "Search not available"
+        )
 
-        with patch('langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings', return_value=MagicMock()):
+        with patch(
+            "langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings",
+            return_value=MagicMock(),
+        ):
             store = ValkeyStore(mock_valkey_client, index=basic_index_config)
             # Should not raise, just log warning
             store.setup()
@@ -128,9 +143,14 @@ class TestValkeyStoreSetup:
     def test_setup_with_existing_index(self, mock_valkey_client, basic_index_config):
         """Test setup when index already exists."""
         # First call succeeds (index exists), second call should not be made
-        mock_valkey_client.execute_command.return_value = {"index_name": "test_collection"}
+        mock_valkey_client.execute_command.return_value = {
+            "index_name": "test_collection"
+        }
 
-        with patch('langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings', return_value=MagicMock()):
+        with patch(
+            'langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings',
+            return_value=MagicMock()
+        ):
             store = ValkeyStore(mock_valkey_client, index=basic_index_config)
             store.setup()
 
@@ -145,7 +165,10 @@ class TestValkeyStoreSetup:
             "OK"  # FT.CREATE succeeds
         ]
 
-        with patch('langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings', return_value=MagicMock()):
+        with patch(
+            'langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings',
+            return_value=MagicMock()
+        ):
             store = ValkeyStore(mock_valkey_client, index=basic_index_config)
             store.setup()
 
@@ -260,7 +283,11 @@ class TestValkeyStoreBatchOperations:
         """Test batch with SearchOp."""
         # Mock search results
         mock_valkey_client.scan.return_value = (0, ["langgraph:test/key1"])
-        mock_valkey_client.get.return_value = '{"value": {"title": "test"}, "created_at": "2023-01-01T00:00:00.000000", "updated_at": "2023-01-01T00:00:00.000000"}'
+        mock_valkey_client.get.return_value = (
+            '{"value": {"title": "test"}, '
+            '"created_at": "2023-01-01T00:00:00.000000", '
+            '"updated_at": "2023-01-01T00:00:00.000000"}'
+        )
 
         store = ValkeyStore(mock_valkey_client)
         ops = [SearchOp(namespace_prefix=("test",), query="test")]
@@ -272,7 +299,9 @@ class TestValkeyStoreBatchOperations:
 
     def test_batch_list_namespaces_operation(self, mock_valkey_client):
         """Test batch with ListNamespacesOp."""
-        mock_valkey_client.keys.return_value = ["langgraph:test/key1", "langgraph:test/key2"]
+        mock_valkey_client.keys.return_value = [
+            "langgraph:test/key1", "langgraph:test/key2"
+        ]
 
         store = ValkeyStore(mock_valkey_client)
         ops = [ListNamespacesOp()]
@@ -383,7 +412,9 @@ class TestValkeyStoreGetOperations:
         mock_valkey_client.hgetall.return_value = {"value": "test"}
         
         # Mock DocumentProcessor methods to return None - fix import path to base module
-        with patch('langgraph_checkpoint_aws.store.valkey.base.DocumentProcessor') as mock_dp:
+        with patch(
+            'langgraph_checkpoint_aws.store.valkey.base.DocumentProcessor'
+        ) as mock_dp:
             mock_dp.convert_hash_to_document.return_value = None
             
             op = GetOp(namespace=("test",), key="key1")
@@ -555,7 +586,11 @@ class TestValkeyStorePutOperations:
         store.index_fields = ["tags"]
 
         # Value with list field
-        op = PutOp(namespace=("test",), key="key1", value={"tags": ["tag1", "tag2", "tag3"]})
+        op = PutOp(
+            namespace=("test",),
+            key="key1",
+            value={"tags": ["tag1", "tag2", "tag3"]}
+        )
         
         store._handle_put(op)
         
@@ -632,7 +667,11 @@ class TestValkeyStoreSearchOperations:
         """Test search operation using key pattern strategy."""
         # Mock scan results
         mock_valkey_client.scan.return_value = (0, ["langgraph:test/key1"])
-        mock_valkey_client.get.return_value = '{"value": {"title": "test"}, "created_at": "2023-01-01T00:00:00.000000", "updated_at": "2023-01-01T00:00:00.000000"}'
+        mock_valkey_client.get.return_value = (
+            '{"value": {"title": "test"}, '
+            '"created_at": "2023-01-01T00:00:00.000000", '
+            '"updated_at": "2023-01-01T00:00:00.000000"}'
+        )
 
         store = ValkeyStore(mock_valkey_client)
         op = SearchOp(namespace_prefix=("test",), query="test")
@@ -653,7 +692,10 @@ class TestValkeyStoreSearchOperations:
             fields=["title"]
         )
 
-        with patch('langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings', return_value=mock_embeddings):
+        with patch(
+            'langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings',
+            return_value=mock_embeddings
+        ):
             # Mock search being available
             mock_valkey_client.execute_command.return_value = [
                 1,  # Total results
@@ -749,7 +791,9 @@ class TestValkeyStoreSearchOperations:
         store.embeddings = mock_embeddings
 
         # Mock search to raise exception
-        mock_valkey_client.ft.return_value.search.side_effect = Exception("Search failed")
+        mock_valkey_client.ft.return_value.search.side_effect = Exception(
+            "Search failed"
+        )
 
         op = SearchOp(
             namespace_prefix=("test",),
@@ -858,13 +902,17 @@ class TestValkeyStoreSearchOperations:
         store = ValkeyStore(mock_valkey_client)
 
         # Mock scan to return keys
-        mock_valkey_client.scan.return_value = (0, ["langgraph:test/doc1", "langgraph:test/doc2"])
+        mock_valkey_client.scan.return_value = (
+            0, ["langgraph:test/doc1", "langgraph:test/doc2"]
+        )
 
         # Mock hgetall with complex data
         def mock_hgetall(key):
             if "doc1" in key:
                 return {
-                    b"value": orjson.dumps({"title": "Test Doc 1", "content": "Complex content"}).decode(),
+                    b"value": orjson.dumps({
+                        "title": "Test Doc 1", "content": "Complex content"
+                    }).decode(),
                     b"created_at": b"2024-01-01T00:00:00",
                     b"updated_at": b"2024-01-01T00:00:00",
                     b"vector": orjson.dumps([0.1, 0.2, 0.3]).decode(),
@@ -930,7 +978,8 @@ class TestValkeyStoreSearchOperations:
 
         op = SearchOp(
             namespace_prefix=("test",),
-            query="very specific query that won't match",  # This should result in low score
+            # This should result in low score
+            query="very specific query that won't match",
             limit=10,
             offset=0
         )
@@ -1321,9 +1370,14 @@ class TestValkeyStoreErrorHandling:
 
     def test_search_index_error_in_setup(self, mock_valkey_client, basic_index_config):
         """Test search index error during setup."""
-        mock_valkey_client.execute_command.side_effect = Exception("Index creation failed")
+        mock_valkey_client.execute_command.side_effect = Exception(
+            "Index creation failed"
+        )
 
-        with patch('langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings', return_value=MagicMock()):
+        with patch(
+            'langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings',
+            return_value=MagicMock()
+        ):
             store = ValkeyStore(mock_valkey_client, index=basic_index_config)
 
             # Should not raise, just log the error
@@ -1341,7 +1395,10 @@ class TestValkeyStoreErrorHandling:
             fields=["title"]
         )
 
-        with patch('langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings', return_value=mock_embeddings):
+        with patch(
+            'langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings',
+            return_value=mock_embeddings
+        ):
             store = ValkeyStore(mock_valkey_client, index=index_config)
             mock_valkey_client.hset.return_value = 1
 

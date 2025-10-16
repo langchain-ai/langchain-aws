@@ -1,10 +1,8 @@
 """Tests for AgentCore Valkey checkpoint saver."""
 
-import asyncio
 import base64
 import json
 import time
-from typing import Dict, Union
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -217,8 +215,11 @@ class TestAgentCoreValkeySaver:
 
     def test_from_conn_string(self):
         """Test creating saver from connection string."""
-        with patch('langgraph_checkpoint_aws.agentcore.valkey.saver.ConnectionPool.from_url') as mock_pool_from_url, \
-             patch('langgraph_checkpoint_aws.agentcore.valkey.saver.Valkey') as mock_valkey:
+        with patch(
+            'langgraph_checkpoint_aws.agentcore.valkey.saver.ConnectionPool.from_url'
+        ) as mock_pool_from_url, patch(
+            'langgraph_checkpoint_aws.agentcore.valkey.saver.Valkey'
+        ) as mock_valkey:
             
             mock_pool = MagicMock()
             mock_pool_from_url.return_value = mock_pool
@@ -242,7 +243,9 @@ class TestAgentCoreValkeySaver:
 
     def test_from_pool(self):
         """Test creating saver from connection pool."""
-        with patch('langgraph_checkpoint_aws.agentcore.valkey.saver.Valkey') as mock_valkey:
+        with patch(
+            'langgraph_checkpoint_aws.agentcore.valkey.saver.Valkey'
+        ) as mock_valkey:
             mock_pool = MagicMock()
             mock_client = MagicMock()
             mock_valkey.return_value = mock_client
@@ -385,9 +388,14 @@ class TestAgentCoreValkeySaver:
         result = saver._deserialize_checkpoint(stored_checkpoint, writes, {})
 
         assert isinstance(result, CheckpointTuple)
-        assert result.config.get("configurable", {}).get("checkpoint_id") == "checkpoint-1"
+        assert (
+            result.config.get("configurable", {}).get("checkpoint_id") == "checkpoint-1"
+        )
         assert result.parent_config is not None
-        assert result.parent_config.get("configurable", {}).get("checkpoint_id") == "parent-1"
+        assert (
+            result.parent_config.get("configurable", {}).get("checkpoint_id")
+            == "parent-1"
+        )
         assert result.pending_writes is not None and len(result.pending_writes) == 1
 
     def test_deserialize_checkpoint_with_config(self, saver):
@@ -416,8 +424,13 @@ class TestAgentCoreValkeySaver:
 
         result = saver._deserialize_checkpoint(stored_checkpoint, [], {}, config)
 
-        assert result.config.get("configurable", {}).get("thread_id") == "custom-thread"
-        assert result.config.get("configurable", {}).get("checkpoint_id") == "custom-checkpoint"
+        assert (
+            result.config.get("configurable", {}).get("thread_id") == "custom-thread"
+        )
+        assert (
+            result.config.get("configurable", {}).get("checkpoint_id")
+            == "custom-checkpoint"
+        )
         assert result.parent_config is None
 
     def test_get_tuple_specific_checkpoint(
@@ -447,16 +460,22 @@ class TestAgentCoreValkeySaver:
         result = saver.get_tuple(sample_config)
 
         assert isinstance(result, CheckpointTuple)
-        assert result.config["configurable"]["checkpoint_id"] == "checkpoint-1" # pyright: ignore[reportTypedDictNotRequiredAccess]
+        assert (
+            result.config["configurable"]["checkpoint_id"] == "checkpoint-1"
+        )  # pyright: ignore[reportTypedDictNotRequiredAccess]
 
-    def test_get_tuple_corrupted_checkpoint_data(self, saver, mock_valkey_client, sample_config):
+    def test_get_tuple_corrupted_checkpoint_data(
+        self, saver, mock_valkey_client, sample_config
+    ):
         """Test getting a checkpoint with corrupted data."""
         mock_valkey_client.get.return_value = "invalid json"
 
         with pytest.raises(ValueError, match="Failed to parse checkpoint data"):
             saver.get_tuple(sample_config)
 
-    def test_get_tuple_corrupted_writes_data(self, saver, mock_valkey_client, sample_config):
+    def test_get_tuple_corrupted_writes_data(
+        self, saver, mock_valkey_client, sample_config
+    ):
         """Test getting a checkpoint with corrupted writes data."""
         empty_dict_json = json.dumps({})
         empty_dict_b64 = base64.b64encode(empty_dict_json.encode()).decode()
@@ -515,7 +534,9 @@ class TestAgentCoreValkeySaver:
         result = saver.get_tuple(config)
 
         assert isinstance(result, CheckpointTuple)
-        assert result.config["configurable"]["checkpoint_id"] == "checkpoint-2" # pyright: ignore[reportTypedDictNotRequiredAccess]
+        assert (
+            result.config["configurable"]["checkpoint_id"] == "checkpoint-2"
+        )  # pyright: ignore[reportTypedDictNotRequiredAccess]
 
     def test_get_tuple_latest_checkpoint_corrupted(self, saver, mock_valkey_client):
         """Test getting latest checkpoint with corrupted data."""
@@ -611,7 +632,10 @@ class TestAgentCoreValkeySaver:
         result = list(saver.list(config, before=before_config))
 
         assert len(result) == 1
-        assert result[0].config.get("configurable", {}).get("checkpoint_id") == "checkpoint-1"
+        assert (
+            result[0].config.get("configurable", {}).get("checkpoint_id")
+            == "checkpoint-1"
+        )
 
     def test_list_with_limit(self, saver, mock_valkey_client):
         """Test list with limit."""
@@ -783,7 +807,7 @@ class TestAgentCoreValkeySaver:
     ):
         """Test storing a checkpoint."""
         metadata = {"user": "test"}
-        new_versions: Dict[str, Union[str, int, float]] = {"messages": 1.0}
+        new_versions: dict[str, str | int | float] = {"messages": 1.0}
 
         result_config = saver.put(
             sample_config, sample_checkpoint, metadata, new_versions
@@ -804,9 +828,11 @@ class TestAgentCoreValkeySaver:
         """Test storing a checkpoint without TTL."""
         saver = AgentCoreValkeySaver(mock_valkey_client)  # No TTL
         metadata = {"user": "test"}
-        new_versions: Dict[str, Union[str, int, float]] = {"messages": 1.0}
+        new_versions: dict[str, str | int | float] = {"messages": 1.0}
 
-        saver.put(sample_config, sample_checkpoint, metadata, new_versions) # pyright: ignore[reportArgumentType]
+        saver.put(
+            sample_config, sample_checkpoint, metadata, new_versions
+        )  # pyright: ignore[reportArgumentType]
 
         # Verify set was called instead of setex
         mock_valkey_client.set.assert_called()
@@ -821,7 +847,7 @@ class TestAgentCoreValkeySaver:
             "channel_values": {"messages": [{"role": "user", "content": "Hello"}]},
         }
         metadata = {"user": "test"}
-        new_versions: Dict[str, Union[str, int, float]] = {"messages": 1.0}
+        new_versions: dict[str, str | int | float] = {"messages": 1.0}
 
         saver.put(sample_config, checkpoint, metadata, new_versions)
 
@@ -838,7 +864,7 @@ class TestAgentCoreValkeySaver:
             "channel_values": "not_a_dict",
         }
         metadata = {"user": "test"}
-        new_versions: Dict[str, Union[str, int, float]] = {"messages": 1.0}
+        new_versions: dict[str, str | int | float] = {"messages": 1.0}
 
         saver.put(sample_config, checkpoint, metadata, new_versions)
 
@@ -896,7 +922,9 @@ class TestAgentCoreValkeySaver:
         # Verify delete was called
         mock_valkey_client.delete.assert_called()
 
-    def test_delete_thread_async_client_warning(self, async_saver, mock_async_valkey_client):
+    def test_delete_thread_async_client_warning(
+        self, async_saver, mock_async_valkey_client
+    ):
         """Test delete_thread with async client logs warning."""
         thread_id = "session-1"
         actor_id = "agent-1"
@@ -906,7 +934,9 @@ class TestAgentCoreValkeySaver:
         mock_async_valkey_client.keys = MagicMock(return_value=[])
         mock_async_valkey_client.delete = MagicMock(return_value=1)
 
-        with patch('langgraph_checkpoint_aws.agentcore.valkey.saver.logger') as mock_logger:
+        with patch(
+            'langgraph_checkpoint_aws.agentcore.valkey.saver.logger'
+        ) as mock_logger:
             async_saver.delete_thread(thread_id, actor_id)
             mock_logger.warning.assert_called_with(
                 "Sync delete_thread called on async client, operation may block"
@@ -954,7 +984,7 @@ class TestAgentCoreValkeySaver:
     async def test_aput(self, saver, sample_config, sample_checkpoint):
         """Test async put."""
         metadata = {"user": "test"}
-        new_versions: Dict[str, Union[str, int, float]] = {"messages": 1.0}
+        new_versions: dict[str, str | int | float] = {"messages": 1.0}
 
         result_config = await saver.aput(
             sample_config, sample_checkpoint, metadata, new_versions
@@ -1030,7 +1060,7 @@ class TestAgentCoreValkeySaver:
         actual_delays = [call[0][0] for call in mock_sleep.call_args_list]
         # Use approximate comparison due to floating point precision
         assert len(actual_delays) == len(expected_delays)
-        for actual, expected in zip(actual_delays, expected_delays):
+        for actual, expected in zip(actual_delays, expected_delays, strict=False):
             assert abs(actual - expected) < 0.001
 
     @pytest.mark.asyncio
@@ -1053,7 +1083,7 @@ class TestAgentCoreValkeySaver:
         actual_delays = [call[0][0] for call in mock_sleep.call_args_list]
         # Use approximate comparison due to floating point precision
         assert len(actual_delays) == len(expected_delays)
-        for actual, expected in zip(actual_delays, expected_delays):
+        for actual, expected in zip(actual_delays, expected_delays, strict=False):
             assert abs(actual - expected) < 0.001
 
 
@@ -1158,7 +1188,7 @@ class TestAgentCoreValkeySaverIntegration:
         }
 
         metadata = {"user": "test_user"}
-        new_versions: Dict[str, Union[str, int, float]] = {"messages": 1.0}
+        new_versions: dict[str, str | int | float] = {"messages": 1.0}
 
         # Put checkpoint
         result_config = integration_saver.put(
@@ -1194,7 +1224,9 @@ class TestAgentCoreValkeySaverIntegration:
             checkpoint = {
                 "id": f"checkpoint-{i+1}",
                 "ts": f"2024-01-0{i+1}T00:00:00Z",
-                "channel_values": {"messages": [{"role": "user", "content": f"Hello {i+1}"}]},
+                "channel_values": {
+                    "messages": [{"role": "user", "content": f"Hello {i+1}"}]
+                },
             }
             metadata = {"user": f"test_user_{i+1}"}
             new_versions = {"messages": f"{i+1}.0"}

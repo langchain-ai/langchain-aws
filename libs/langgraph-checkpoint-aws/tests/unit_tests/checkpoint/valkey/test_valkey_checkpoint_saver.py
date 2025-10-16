@@ -3,8 +3,8 @@
 import json
 from unittest.mock import patch
 
-import pytest
 import fakeredis
+import pytest
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata, CheckpointTuple
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
@@ -42,13 +42,13 @@ class TestValkeyCheckpointSaverUnit:
             "channel_values": {"key": "value"},
             "channel_versions": {"key": 1},
             "versions_seen": {"key": {"key": 1}},
-            "pending_sends": [],
+            "updated_channels": ["key"],
         }
 
     @pytest.fixture
     def sample_metadata(self) -> CheckpointMetadata:
         """Sample metadata for testing."""
-        return {"source": "input", "step": 1, "writes": {"key": "value"}}
+        return {"source": "input", "step": 1}
 
     def test_init_with_ttl(self, fake_valkey_client):
         """Test saver initialization with TTL."""
@@ -124,7 +124,9 @@ class TestValkeyCheckpointSaverUnit:
         assert result["configurable"]["thread_id"] == "test-thread"
 
         # Verify data was stored
-        checkpoint_key = saver._make_checkpoint_key("test-thread", "", sample_checkpoint["id"])
+        checkpoint_key = saver._make_checkpoint_key(
+            "test-thread", "", sample_checkpoint["id"]
+        )
         thread_key = saver._make_thread_key("test-thread", "")
         
         assert fake_valkey_client.exists(checkpoint_key)
@@ -140,7 +142,9 @@ class TestValkeyCheckpointSaverUnit:
         saver.put(sample_config, sample_checkpoint, sample_metadata, new_versions)
 
         # Verify TTL was set
-        checkpoint_key = saver._make_checkpoint_key("test-thread", "test-ns", sample_checkpoint["id"])
+        checkpoint_key = saver._make_checkpoint_key(
+            "test-thread", "test-ns", sample_checkpoint["id"]
+        )
         thread_key = saver._make_thread_key("test-thread", "test-ns")
         
         assert fake_valkey_client.ttl(checkpoint_key) > 0
@@ -242,8 +246,12 @@ class TestValkeyCheckpointSaverUnit:
             "pending_sends": [],
         }
 
-        saver.put(sample_config, checkpoint1, {"source": "input", "step": 1}, {"key": 1})
-        saver.put(sample_config, checkpoint2, {"source": "output", "step": 2}, {"key": 2})
+        saver.put(
+            sample_config, checkpoint1, {"source": "input", "step": 1}, {"key": 1}
+        )
+        saver.put(
+            sample_config, checkpoint2, {"source": "output", "step": 2}, {"key": 2}
+        )
 
         # Filter by source
         filter_config = {"source": "input"}
@@ -289,7 +297,9 @@ class TestValkeyCheckpointSaverUnit:
         saver.put_writes(config_with_checkpoint, writes, task_id)
 
         # Verify writes were stored
-        writes_key = saver._make_writes_key("test-thread", "test-ns", "test-checkpoint-id")
+        writes_key = saver._make_writes_key(
+            "test-thread", "test-ns", "test-checkpoint-id"
+        )
         assert fake_valkey_client.exists(writes_key)
 
     def test_serialization_roundtrip(self, saver, sample_checkpoint):
@@ -306,7 +316,9 @@ class TestValkeyCheckpointSaverUnit:
         saver = ValkeyCheckpointSaver(fake_valkey_client)
         
         # Patch the client's get method to raise an exception
-        with patch.object(fake_valkey_client, 'get', side_effect=Exception("Connection error")):
+        with patch.object(
+            fake_valkey_client, 'get', side_effect=Exception("Connection error")
+        ):
             config = {
                 "configurable": {"thread_id": "test-thread", "checkpoint_id": "test-id"}
             }
@@ -426,7 +438,9 @@ class TestValkeyCheckpointSaverUnit:
         saver.put_writes(config_with_checkpoint, writes_batch2, "task2")
 
         # Verify both batches were stored
-        writes_key = saver._make_writes_key("test-thread", "test-ns", "test-checkpoint-id")
+        writes_key = saver._make_writes_key(
+            "test-thread", "test-ns", "test-checkpoint-id"
+        )
         assert fake_valkey_client.exists(writes_key)
         
         # Verify the writes contain both batches
@@ -755,7 +769,7 @@ class TestPipelineOperations:
 
         # Test error handling
         pipe = client.pipeline()
-        with pytest.raises(Exception):
+        with pytest.raises((ValueError, ConnectionError, RuntimeError, Exception)):
             pipe.execute()
 
 
@@ -805,7 +819,7 @@ def test_coverage_improvement_patterns():
     except ValueError as e:
         assert str(e) == "Test error"
     except Exception:
-        raise AssertionError("Should not reach this branch")
+        raise AssertionError("Should not reach this branch") from None
 
     # Test loop patterns
     items = ["a", "b", "c"]

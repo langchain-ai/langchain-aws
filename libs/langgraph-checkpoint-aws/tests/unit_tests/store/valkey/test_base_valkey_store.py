@@ -1,6 +1,5 @@
-"""Tests to improve coverage of langgraph_checkpoint_aws/store/valkey/base.py to 80%+."""
+"""Tests for langgraph_checkpoint_aws/store/valkey/base.py."""
 
-from datetime import datetime
 from unittest.mock import Mock, patch
 
 import orjson
@@ -89,7 +88,7 @@ class TestBaseValkeyStoreSearchAvailability:
         mock_valkey_client.execute_command.assert_called_once_with("FT._LIST")
 
     def test_is_search_available_exception_handling(self, mock_valkey_client):
-        """Test _is_search_available when command raises exception (COVERS lines 119-122)."""
+        """Test _is_search_available when command raises exception."""
         store = ConcreteValkeyStore(mock_valkey_client)
         store._search_available = None  # Not cached
 
@@ -127,7 +126,7 @@ class TestBaseValkeyStoreIndexCreation:
         assert "VECTOR" in cmd
 
     def test_create_index_command_with_vector_config(self, mock_valkey_client):
-        """Test _create_index_command with vector configuration (COVERS lines 312, 316-320)."""
+        """Test _create_index_command with vector configuration."""
         store = ConcreteValkeyStore(
             mock_valkey_client,
             index={"dims": 256, "algorithm": "HNSW", "fields": ["title", "content"]},
@@ -138,10 +137,10 @@ class TestBaseValkeyStoreIndexCreation:
         assert "FT.CREATE" in cmd
         assert "vector_idx" in cmd
         assert "256" in str(cmd)  # dimensions
-        # The fields are used in schema construction but may not be literally in the command
+        # Fields are used in schema construction
 
     def test_setup_search_index_sync_not_available(self, mock_valkey_client):
-        """Test _setup_search_index_sync when search not available (COVERS lines 208-210)."""
+        """Test _setup_search_index_sync when search not available."""
         store = ConcreteValkeyStore(mock_valkey_client)
 
         with patch.object(store, "_is_search_available", return_value=False):
@@ -152,7 +151,7 @@ class TestBaseValkeyStoreIndexCreation:
             mock_valkey_client.execute_command.assert_not_called()
 
     def test_setup_search_index_sync_index_exists(self, mock_valkey_client):
-        """Test _setup_search_index_sync when index already exists (COVERS lines 218-220)."""
+        """Test _setup_search_index_sync when index already exists."""
         store = ConcreteValkeyStore(
             mock_valkey_client, index={"dims": 128, "fields": ["title"]}
         )
@@ -241,7 +240,7 @@ class TestBaseValkeyStoreScoring:
         assert score == 1.0
 
     def test_calculate_simple_score_with_hash_fields(self, mock_valkey_client):
-        """Test _calculate_simple_score with _hash_fields structure (COVERS lines 380-381)."""
+        """Test _calculate_simple_score with _hash_fields structure."""
         store = ConcreteValkeyStore(mock_valkey_client)
 
         # Test with _hash_fields structure
@@ -318,7 +317,7 @@ class TestBaseValkeyStoreNamespaceExtraction:
         assert namespaces == expected_namespaces
 
     def test_extract_namespaces_from_keys_other_types(self, mock_valkey_client):
-        """Test _extract_namespaces_from_keys with other key types (COVERS lines 525)."""
+        """Test _extract_namespaces_from_keys with other key types."""
         store = ConcreteValkeyStore(mock_valkey_client)
 
         # Test with mixed types (int, None, etc.)
@@ -334,7 +333,7 @@ class TestBaseValkeyStoreNamespaceExtraction:
         assert namespaces == expected_namespaces
 
     def test_extract_namespaces_single_level_keys(self, mock_valkey_client):
-        """Test _extract_namespaces_from_keys with single level keys (COVERS lines 538-540)."""
+        """Test _extract_namespaces_from_keys with single level keys."""
         store = ConcreteValkeyStore(mock_valkey_client)
 
         # Test with single level keys (no namespace)

@@ -7,10 +7,10 @@ This file combines tests from:
 - test_valkey_utils_final.py
 """
 
-import pytest
 import asyncio
-from unittest.mock import MagicMock, patch, AsyncMock, call
-from typing import Any, Dict, List, Optional, Iterable
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 class TestValkeyCheckpointBase:
@@ -18,7 +18,9 @@ class TestValkeyCheckpointBase:
 
     def test_base_checkpoint_saver_key_methods(self):
         """Test key generation methods with mock client."""
-        from langgraph_checkpoint_aws.checkpoint.valkey.base import BaseValkeyCheckpointSaver
+        from langgraph_checkpoint_aws.checkpoint.valkey.base import (
+            BaseValkeyCheckpointSaver,
+        )
 
         # Create a mock client to instantiate the base class
         mock_client = MagicMock()
@@ -28,11 +30,15 @@ class TestValkeyCheckpointBase:
             saver = BaseValkeyCheckpointSaver(mock_client)
 
             # Test key generation methods
-            checkpoint_key = saver._make_checkpoint_key("thread123", "namespace", "checkpoint456")
+            checkpoint_key = saver._make_checkpoint_key(
+                "thread123", "namespace", "checkpoint456"
+            )
             assert isinstance(checkpoint_key, str)
             assert "thread123" in checkpoint_key
 
-            writes_key = saver._make_writes_key("thread123", "namespace", "checkpoint456")
+            writes_key = saver._make_writes_key(
+                "thread123", "namespace", "checkpoint456"
+            )
             assert isinstance(writes_key, str)
             assert "thread123" in writes_key
 
@@ -48,7 +54,9 @@ class TestValkeyCheckpointBase:
 
     def test_get_next_version_method(self):
         """Test get_next_version method."""
-        from langgraph_checkpoint_aws.checkpoint.valkey.base import BaseValkeyCheckpointSaver
+        from langgraph_checkpoint_aws.checkpoint.valkey.base import (
+            BaseValkeyCheckpointSaver,
+        )
 
         mock_client = MagicMock()
 
@@ -68,7 +76,9 @@ class TestValkeyCheckpointBase:
 
     def test_base_checkpoint_saver_methods(self):
         """Test BaseValkeyCheckpointSaver has expected methods."""
-        from langgraph_checkpoint_aws.checkpoint.valkey.base import BaseValkeyCheckpointSaver
+        from langgraph_checkpoint_aws.checkpoint.valkey.base import (
+            BaseValkeyCheckpointSaver,
+        )
 
         # Test class methods exist
         expected_methods = [
@@ -219,7 +229,7 @@ class TestValkeySearchStrategiesAdvanced:
             assert isinstance(strategies, list)
 
             # Test individual strategies if they exist
-            for i, strategy in enumerate(strategies[:3]):  # Test first 3 strategies
+            for _i, strategy in enumerate(strategies[:3]):  # Test first 3 strategies
                 assert strategy is not None
 
                 # Test if strategy has expected methods
@@ -262,7 +272,9 @@ class TestValkeySearchStrategiesAdvanced:
         assert search_strategies is not None
 
         # Test module attributes
-        module_attrs = [attr for attr in dir(search_strategies) if not attr.startswith('_')]
+        module_attrs = [
+            attr for attr in dir(search_strategies) if not attr.startswith('_')
+        ]
 
         for attr_name in module_attrs:
             attr = getattr(search_strategies, attr_name)
@@ -291,12 +303,18 @@ class TestValkeyStoreExceptionsAdvanced:
         for attr_name in dir(exceptions):
             if not attr_name.startswith('_'):
                 attr = getattr(exceptions, attr_name)
-                if (hasattr(attr, '__bases__') and
-                    any(issubclass(base, Exception) for base in attr.__mro__ if base != attr)):
+                if (
+                    hasattr(attr, '__bases__') and
+                    any(
+                        issubclass(base, Exception)
+                        for base in attr.__mro__
+                        if base != attr
+                    )
+                ):
                     exception_classes.append((attr_name, attr))
 
         # Test each exception class
-        for exc_name, exc_class in exception_classes:
+        for _exc_name, exc_class in exception_classes:
             # Test basic instantiation
             try:
                 exc1 = exc_class("test message")
@@ -346,8 +364,14 @@ class TestValkeyStoreExceptionsAdvanced:
                 attr = getattr(exceptions, attr_name)
 
                 # Check if it's an exception class
-                if (hasattr(attr, '__bases__') and
-                    any(issubclass(base, Exception) for base in attr.__mro__ if base != attr)):
+                if (
+                    hasattr(attr, '__bases__') and
+                    any(
+                        issubclass(base, Exception)
+                        for base in attr.__mro__
+                        if base != attr
+                    )
+                ):
 
                     # Test basic instantiation
                     try:
@@ -422,7 +446,9 @@ class TestValkeyConstantsAdvanced:
             # Test string constants are strings, numbers are numbers
             if 'PREFIX' in const_name or 'SEPARATOR' in const_name:
                 assert isinstance(const_value, str)
-            elif 'SIZE' in const_name or 'LIMIT' in const_name or 'TIMEOUT' in const_name:
+            elif (
+                'SIZE' in const_name or 'LIMIT' in const_name or 'TIMEOUT' in const_name
+            ):
                 assert isinstance(const_value, (int, float))
 
     def test_cache_configuration_constants(self):
@@ -505,7 +531,10 @@ class TestValkeyUtilsAdvanced:
         from langgraph_checkpoint_aws.checkpoint.valkey import utils
 
         # Test any functions that exist in utils
-        utils_functions = [attr for attr in dir(utils) if not attr.startswith('_') and callable(getattr(utils, attr))]
+        utils_functions = [
+            attr for attr in dir(utils)
+            if not attr.startswith('_') and callable(getattr(utils, attr))
+        ]
 
         for func_name in utils_functions:
             func = getattr(utils, func_name)
@@ -536,7 +565,10 @@ class TestValkeyUtilsAdvanced:
         from langgraph_checkpoint_aws.checkpoint.valkey import utils
 
         # Test utility functions
-        util_functions = [attr for attr in dir(utils) if not attr.startswith('_') and callable(getattr(utils, attr))]
+        util_functions = [
+            attr for attr in dir(utils)
+            if not attr.startswith('_') and callable(getattr(utils, attr))
+        ]
 
         # Just verify functions exist - don't call them
         for func_name in util_functions:
@@ -548,7 +580,10 @@ class TestValkeyUtilsAdvanced:
         from langgraph_checkpoint_aws.store.valkey import document_utils
 
         # Test utility functions
-        util_functions = [attr for attr in dir(document_utils) if not attr.startswith('_') and callable(getattr(document_utils, attr))]
+        util_functions = [
+            attr for attr in dir(document_utils)
+            if not attr.startswith('_') and callable(getattr(document_utils, attr))
+        ]
 
         # Just verify functions exist - don't call them
         for func_name in util_functions:
@@ -564,7 +599,7 @@ class TestAsyncValkeyStoreTargetedCoverage:
         """Test search availability detection with different scenarios."""
         from langgraph_checkpoint_aws.store.valkey.async_store import AsyncValkeyStore
 
-        # Test 1: Search available (lines 214-216)
+        # Test 1: Search available
         store = AsyncValkeyStore.__new__(AsyncValkeyStore)
         store._search_available = None
         store._execute_command = AsyncMock(return_value=True)
@@ -577,20 +612,24 @@ class TestAsyncValkeyStoreTargetedCoverage:
 
         asyncio.run(test_search_available())
 
-        # Test 2: Search not available with exception (lines 217-220)
+        # Test 2: Search not available with exception
         store2 = AsyncValkeyStore.__new__(AsyncValkeyStore)
         store2._search_available = None
-        store2._execute_command = AsyncMock(side_effect=Exception("FT.INFO command failed"))
+        store2._execute_command = AsyncMock(
+            side_effect=Exception("FT.INFO command failed")
+        )
 
         async def test_search_unavailable():
             result = await store2._is_search_available_async()
             assert result is False
             assert store2._search_available is False
-            mock_logger.debug.assert_called_with("Valkey Search not available: FT.INFO command failed")
+            mock_logger.debug.assert_called_with(
+                "Valkey Search not available: FT.INFO command failed"
+            )
 
         asyncio.run(test_search_unavailable())
 
-        # Test 3: Cached result (lines 209-210)
+        # Test 3: Cached result
         store3 = AsyncValkeyStore.__new__(AsyncValkeyStore)
         store3._search_available = True
         store3._execute_command = AsyncMock()
@@ -604,7 +643,7 @@ class TestAsyncValkeyStoreTargetedCoverage:
 
     @patch('langgraph_checkpoint_aws.store.valkey.async_store.logger')
     def test_setup_search_index_async_paths(self, mock_logger):
-        """Test search index setup paths (lines 222-228)."""
+        """Test search index setup paths."""
         from langgraph_checkpoint_aws.store.valkey.async_store import AsyncValkeyStore
 
         # Test: Search not available, warning logged and early return
@@ -621,14 +660,14 @@ class TestAsyncValkeyStoreTargetedCoverage:
 
     @patch('langgraph_checkpoint_aws.store.valkey.async_store.Valkey')
     def test_from_pool_context_manager(self, mock_valkey):
-        """Test from_pool context manager paths (lines 295-303)."""
+        """Test from_pool context manager paths."""
         # Test that from_pool method exists
         from langgraph_checkpoint_aws.store.valkey.async_store import AsyncValkeyStore
         assert hasattr(AsyncValkeyStore, 'from_pool')
 
 
     def test_embedding_query_vector_generation_paths(self):
-        """Test different embedding query vector generation paths (lines 507-530)."""
+        """Test different embedding query vector generation paths."""
         from langgraph_checkpoint_aws.store.valkey.async_store import AsyncValkeyStore
 
         store = AsyncValkeyStore.__new__(AsyncValkeyStore)
@@ -653,14 +692,13 @@ class TestBaseValkeyStoreTargetedCoverage:
 
     @patch('langgraph_checkpoint_aws.store.valkey.base.ValkeyConnectionError')
     def test_client_info_exception_handling(self, mock_error_class):
-        """Test client info exception handling (lines 171-172)."""
-        from langgraph_checkpoint_aws.store.valkey.base import BaseValkeyStore
+        """Test client info exception handling."""
 
         # Just test that the ValkeyConnectionError class exists and can be imported
         assert mock_error_class is not None
 
     def test_search_availability_caching(self):
-        """Test search availability caching (lines 174-177)."""
+        """Test search availability caching."""
         # Test that the method exists in BaseValkeyStore
         from langgraph_checkpoint_aws.store.valkey.base import BaseValkeyStore
         assert hasattr(BaseValkeyStore, '_is_search_available')
@@ -732,7 +770,9 @@ class TestValkeyConnectionManagement:
         from langgraph_checkpoint_aws.store.valkey.async_store import AsyncValkeyStore
 
         # Test different pool configuration scenarios
-        with patch('langgraph_checkpoint_aws.store.valkey.async_store.ConnectionPool') as mock_pool_class:
+        with patch(
+            'langgraph_checkpoint_aws.store.valkey.async_store.ConnectionPool'
+        ) as mock_pool_class:
             mock_pool = MagicMock()
             mock_pool_class.return_value = mock_pool
 
@@ -786,28 +826,27 @@ class TestValkeyModuleImports:
     def test_valkey_checkpoint_init_imports(self):
         """Test Valkey checkpoint __init__ imports."""
         from langgraph_checkpoint_aws.checkpoint.valkey import (
+            AsyncValkeyCheckpointSaver,
             ValkeyCheckpointSaver,
-            AsyncValkeyCheckpointSaver
         )
         assert ValkeyCheckpointSaver is not None
         assert AsyncValkeyCheckpointSaver is not None
 
         # Test base class exists in its module
-        from langgraph_checkpoint_aws.checkpoint.valkey.base import BaseValkeyCheckpointSaver
+        from langgraph_checkpoint_aws.checkpoint.valkey.base import (
+            BaseValkeyCheckpointSaver,
+        )
         assert BaseValkeyCheckpointSaver is not None
 
     def test_valkey_store_init_imports(self):
         """Test Valkey store __init__ imports."""
-        from langgraph_checkpoint_aws.store.valkey import (
-            ValkeyStore,
-            AsyncValkeyStore
-        )
+        from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore, ValkeyStore
         assert ValkeyStore is not None
         assert AsyncValkeyStore is not None
 
     def test_store_valkey_init_coverage(self):
         """Test store valkey __init__ coverage."""
-        from langgraph_checkpoint_aws.store.valkey import ValkeyStore, AsyncValkeyStore
+        from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore, ValkeyStore
 
         # These imports should be covered
         assert ValkeyStore is not None
@@ -819,7 +858,10 @@ class TestValkeyModuleImports:
 
     def test_checkpoint_valkey_init_coverage(self):
         """Test checkpoint valkey __init__ coverage."""
-        from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver, AsyncValkeyCheckpointSaver
+        from langgraph_checkpoint_aws.checkpoint.valkey import (
+            AsyncValkeyCheckpointSaver,
+            ValkeyCheckpointSaver,
+        )
 
         # These imports should be covered
         assert ValkeyCheckpointSaver is not None
@@ -845,10 +887,9 @@ class TestValkeyModuleIntegration:
         """Test checkpoint and store module integration."""
         # Test that checkpoint modules can import store utilities
         try:
-            from langgraph_checkpoint_aws.checkpoint.valkey.base import BaseValkeyCheckpointSaver
-            from langgraph_checkpoint_aws.store.valkey import constants
-
-            # If both imports work, they can integrate
+            from langgraph_checkpoint_aws.checkpoint.valkey.base import (
+                BaseValkeyCheckpointSaver,
+            )
             assert BaseValkeyCheckpointSaver is not None
 
         except ImportError:
@@ -875,7 +916,9 @@ class TestValkeyErrorHandling:
 
     def test_base_class_error_handling(self):
         """Test base class error handling."""
-        from langgraph_checkpoint_aws.checkpoint.valkey.base import BaseValkeyCheckpointSaver
+        from langgraph_checkpoint_aws.checkpoint.valkey.base import (
+            BaseValkeyCheckpointSaver,
+        )
 
         # Test error handling with invalid inputs
         try:
@@ -899,8 +942,10 @@ class TestValkeyErrorHandling:
         from langgraph_checkpoint_aws.store.valkey import document_utils
 
         # Test functions with invalid inputs
-        functions = [attr for attr in dir(document_utils)
-                    if not attr.startswith('_') and callable(getattr(document_utils, attr))]
+        functions = [
+            attr for attr in dir(document_utils)
+            if not attr.startswith('_') and callable(getattr(document_utils, attr))
+        ]
 
         for func_name in functions[:3]:  # Test first 3 functions
             func = getattr(document_utils, func_name)
@@ -927,7 +972,9 @@ class TestValkeyKeyManagement:
 
     def test_checkpoint_key_methods_exist(self):
         """Test checkpoint key methods exist."""
-        from langgraph_checkpoint_aws.checkpoint.valkey.base import BaseValkeyCheckpointSaver
+        from langgraph_checkpoint_aws.checkpoint.valkey.base import (
+            BaseValkeyCheckpointSaver,
+        )
 
         # Test key-related methods exist
         key_methods = ['_make_checkpoint_key', '_make_writes_key', '_make_thread_key']
@@ -989,7 +1036,10 @@ class TestValkeyAgentcoreIntegration:
 
             # Test saver classes exist
             saver_attrs = dir(saver)
-            saver_classes = [attr for attr in saver_attrs if 'Saver' in attr and not attr.startswith('_')]
+            saver_classes = [
+                attr for attr in saver_attrs
+                if 'Saver' in attr and not attr.startswith('_')
+            ]
 
             for saver_name in saver_classes:
                 saver_class = getattr(saver, saver_name)
@@ -1040,14 +1090,20 @@ class TestValkeyModuleStructure:
         """Test checkpoint module has expected structure."""
         from langgraph_checkpoint_aws.checkpoint import valkey
 
-        # Test main classes are accessible (BaseValkeyCheckpointSaver is not exposed in __init__)
-        expected_classes = ['ValkeyCheckpointSaver', 'AsyncValkeyCheckpointSaver']
+        # Test main classes are accessible
+        # (BaseValkeyCheckpointSaver is not exposed in __init__)
+        expected_classes = [
+            'ValkeyCheckpointSaver',
+            'AsyncValkeyCheckpointSaver'
+        ]
 
         for class_name in expected_classes:
             assert hasattr(valkey, class_name)
 
         # Test that BaseValkeyCheckpointSaver exists in its own module
-        from langgraph_checkpoint_aws.checkpoint.valkey.base import BaseValkeyCheckpointSaver
+        from langgraph_checkpoint_aws.checkpoint.valkey.base import (
+            BaseValkeyCheckpointSaver,
+        )
         assert BaseValkeyCheckpointSaver is not None
 
     def test_store_module_structure(self):

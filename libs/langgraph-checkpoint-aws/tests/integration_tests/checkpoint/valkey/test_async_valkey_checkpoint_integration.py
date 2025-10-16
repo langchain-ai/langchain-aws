@@ -9,13 +9,17 @@ from typing import Any
 import pytest
 import pytest_asyncio
 
+from langgraph_checkpoint_aws.checkpoint.valkey import (
+    AsyncValkeyCheckpointSaver,
+)
+
 try:
     from valkey.asyncio import Valkey as AsyncValkey
     from valkey.asyncio.connection import ConnectionPool as AsyncConnectionPool
     VALKEY_AVAILABLE = True
 except ImportError:
-    AsyncValkey = None
-    AsyncConnectionPool = None
+    AsyncValkey = None  # type: ignore[assignment, misc]
+    AsyncConnectionPool = None  # type: ignore[assignment, misc]
     VALKEY_AVAILABLE = False
 
 
@@ -44,8 +48,6 @@ def _is_valkey_server_available() -> bool:
 
 
 VALKEY_SERVER_AVAILABLE = _is_valkey_server_available()
-
-from langgraph_checkpoint_aws.checkpoint.valkey import AsyncValkeyCheckpointSaver
 
 
 @pytest.fixture
@@ -109,14 +111,18 @@ async def test_async_operations(valkey_url: str) -> None:
         config = {"configurable": {"thread_id": "test-thread", "checkpoint_ns": "test"}}
         checkpoint = {"id": "test-1", "state": {"value": 1}, "versions": {}}
         metadata = {"timestamp": datetime.now().isoformat(), "user": "test"}
-        new_versions = {}
+        new_versions: dict[str, int] = {}
 
         # Store checkpoint
-        result = await saver.aput(config, checkpoint, metadata, new_versions)  # type: ignore
-        assert result["configurable"]["checkpoint_id"] == checkpoint["id"]  # type: ignore
+        result = await saver.aput(
+            config, checkpoint, metadata, new_versions  # type: ignore[arg-type]
+        )
+        assert (
+            result["configurable"]["checkpoint_id"] == checkpoint["id"]
+        )  # type: ignore
 
         # Get checkpoint
-        result = await saver.aget_tuple(
+        checkpoint_tuple = await saver.aget_tuple(
             {
                 "configurable": {
                     "thread_id": "test-thread",
@@ -125,10 +131,10 @@ async def test_async_operations(valkey_url: str) -> None:
                 }
             }
         )
-        assert result is not None
-        assert result.checkpoint["id"] == checkpoint["id"]  # type: ignore
-        assert result.checkpoint["state"] == checkpoint["state"]  # type: ignore
-        assert result.metadata["user"] == metadata["user"]  # type: ignore
+        assert checkpoint_tuple is not None
+        assert checkpoint_tuple.checkpoint["id"] == checkpoint["id"]  # type: ignore
+        assert checkpoint_tuple.checkpoint["state"] == checkpoint["state"]  # type: ignore
+        assert checkpoint_tuple.metadata["user"] == metadata["user"]  # type: ignore
 
 
 @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
@@ -148,11 +154,11 @@ async def test_async_shared_pool(async_valkey_pool: Any) -> None:
         checkpoint1 = {"id": "test-1", "state": {"value": 1}, "versions": {}}
         checkpoint2 = {"id": "test-2", "state": {"value": 2}, "versions": {}}
         metadata = {"timestamp": datetime.now().isoformat(), "user": "test"}
-        new_versions = {}
+        new_versions: dict[str, int] = {}
 
         # Store checkpoints in both savers
-        await saver1.aput(config, checkpoint1, metadata, new_versions)  # type: ignore
-        await saver2.aput(config, checkpoint2, metadata, new_versions)  # type: ignore
+        await saver1.aput(config, checkpoint1, metadata, new_versions)  # type: ignore[arg-type]
+        await saver2.aput(config, checkpoint2, metadata, new_versions)  # type: ignore[arg-type]
 
         # Get checkpoints from both savers
         result1 = await saver1.aget_tuple(
@@ -182,7 +188,9 @@ async def test_async_shared_pool(async_valkey_pool: Any) -> None:
 
 @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
-async def test_alist_checkpoints_before_nonexistent(async_saver: AsyncValkeyCheckpointSaver) -> None:
+async def test_alist_checkpoints_before_nonexistent(
+    async_saver: AsyncValkeyCheckpointSaver,
+) -> None:
     """Test listing checkpoints with before filter for nonexistent checkpoint."""
     thread_id = f"test-thread-before-nonexistent-{uuid.uuid4()}"
     checkpoint_ns = "test"

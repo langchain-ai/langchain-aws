@@ -13,7 +13,7 @@ try:
     from valkey import Valkey
     VALKEY_AVAILABLE = True
 except ImportError:
-    Valkey = None
+    Valkey = None  # type: ignore[assignment, misc]
     VALKEY_AVAILABLE = False
 
 from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore, ValkeyIndexConfig

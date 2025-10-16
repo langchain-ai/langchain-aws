@@ -11,7 +11,7 @@ try:
     from valkey import Valkey
     VALKEY_AVAILABLE = True
 except ImportError:
-    Valkey = None
+    Valkey = None  # type: ignore[assignment, misc]
     VALKEY_AVAILABLE = False
 
 from langgraph_checkpoint_aws.store.valkey import AsyncValkeyStore, ValkeyStore
@@ -189,7 +189,9 @@ def test_sync_vector_search_with_embeddings(
 
     # Store documents
     for doc in test_docs:
-        store_with_vector_search.put(doc["namespace"], doc["key"], doc["value"])
+        store_with_vector_search.put(  # type: ignore[arg-type]
+            doc["namespace"], doc["key"], doc["value"]  # type: ignore[arg-type]
+        )
 
     # Test vector search with query
     results = store_with_vector_search.search(
@@ -233,7 +235,9 @@ def test_sync_vector_search_with_filters(store_with_vector_search: ValkeyStore) 
     ]
 
     for doc in test_docs:
-        store_with_vector_search.put(doc["namespace"], doc["key"], doc["value"])
+        store_with_vector_search.put(  # type: ignore[arg-type]
+            doc["namespace"], doc["key"], doc["value"]  # type: ignore[arg-type]
+        )
 
     # Search with filter
     results = store_with_vector_search.search(
@@ -267,7 +271,9 @@ def test_sync_fallback_to_key_search(store_without_vector_search: ValkeyStore) -
     ]
 
     for doc in test_docs:
-        store_without_vector_search.put(doc["namespace"], doc["key"], doc["value"])
+        store_without_vector_search.put(  # type: ignore[arg-type]
+            doc["namespace"], doc["key"], doc["value"]  # type: ignore[arg-type]
+        )
 
     # Search should fall back to key pattern matching
     results = store_without_vector_search.search(
@@ -352,8 +358,8 @@ async def test_async_vector_search_with_embeddings(
 
     # Store documents
     for doc in test_docs:
-        await async_store_with_vector_search.aput(
-            doc["namespace"], doc["key"], doc["value"]
+        await async_store_with_vector_search.aput(  # type: ignore[arg-type]
+            doc["namespace"], doc["key"], doc["value"]  # type: ignore[arg-type]
         )
 
     # Test vector search with query
@@ -397,8 +403,8 @@ async def test_async_vector_search_with_filters(
     ]
 
     for doc in test_docs:
-        await async_store_with_vector_search.aput(
-            doc["namespace"], doc["key"], doc["value"]
+        await async_store_with_vector_search.aput(  # type: ignore[arg-type]
+            doc["namespace"], doc["key"], doc["value"]  # type: ignore[arg-type]
         )
 
     # Search with filter
@@ -436,8 +442,8 @@ async def test_async_fallback_to_key_search(
     ]
 
     for doc in test_docs:
-        await async_store_without_vector_search.aput(
-            doc["namespace"], doc["key"], doc["value"]
+        await async_store_without_vector_search.aput(  # type: ignore[arg-type]
+            doc["namespace"], doc["key"], doc["value"]  # type: ignore[arg-type]
         )
 
     # Search should fall back to key pattern matching

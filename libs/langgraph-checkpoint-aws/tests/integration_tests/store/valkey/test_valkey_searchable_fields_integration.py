@@ -9,7 +9,7 @@ try:
     from valkey import Valkey
     VALKEY_AVAILABLE = True
 except ImportError:
-    Valkey = None
+    Valkey = None  # type: ignore[assignment, misc]
     VALKEY_AVAILABLE = False
 
 from langgraph_checkpoint_aws.store.valkey import ValkeyStore
@@ -97,8 +97,11 @@ def store_with_searchable_fields(valkey_url: str) -> Generator[ValkeyStore, None
 
 
 @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
-def test_searchable_fields_are_indexed(store_with_searchable_fields: ValkeyStore) -> None:
-    """Test that searchable fields are properly indexed and can be used for filtering."""
+def test_searchable_fields_are_indexed(
+    store_with_searchable_fields: ValkeyStore,
+) -> None:
+    """Test that searchable fields are properly indexed
+    and can be used for filtering."""
     
     # Add test documents with various searchable fields
     test_docs = [
@@ -109,7 +112,10 @@ def test_searchable_fields_are_indexed(store_with_searchable_fields: ValkeyStore
                 "user_id": "enterprise_user_001",
                 "memory_type": "fact",
                 "importance": "0.9",
-                "content": "Alice Johnson is a Senior Software Engineer specializing in machine learning.",
+                "content": (
+                    "Alice Johnson is a Senior Software Engineer specializing in "
+                    "machine learning."
+                ),
                 "tags": ["professional", "role", "expertise"],
                 "version": "1",
                 "created_at": "2024-01-15T10:00:00",
@@ -123,7 +129,10 @@ def test_searchable_fields_are_indexed(store_with_searchable_fields: ValkeyStore
                 "user_id": "enterprise_user_001",
                 "memory_type": "preference",
                 "importance": "0.8",
-                "content": "Alice prefers Python for data analysis and has experience with TensorFlow.",
+                "content": (
+                    "Alice prefers Python for data analysis and has experience "
+                    "with TensorFlow."
+                ),
                 "tags": ["programming", "tools", "preference"],
                 "version": "1",
                 "created_at": "2024-01-15T11:00:00",
@@ -137,7 +146,10 @@ def test_searchable_fields_are_indexed(store_with_searchable_fields: ValkeyStore
                 "user_id": "enterprise_user_002",
                 "memory_type": "fact",
                 "importance": "0.9",
-                "content": "Bob Smith is a DevOps Engineer with expertise in Kubernetes and AWS.",
+                "content": (
+                    "Bob Smith is a DevOps Engineer with expertise in Kubernetes "
+                    "and AWS."
+                ),
                 "tags": ["professional", "devops", "cloud"],
                 "version": "1",
                 "created_at": "2024-01-15T12:00:00",
@@ -148,7 +160,9 @@ def test_searchable_fields_are_indexed(store_with_searchable_fields: ValkeyStore
     
     # Store all documents
     for doc in test_docs:
-        store_with_searchable_fields.put(doc["namespace"], doc["key"], doc["value"])
+        store_with_searchable_fields.put(  # type: ignore[arg-type]
+            doc["namespace"], doc["key"], doc["value"]  # type: ignore[arg-type]
+        )
     
     # Test 1: Search with user_id filter
     results = store_with_searchable_fields.search(
@@ -227,9 +241,12 @@ def test_list_fields_searchable(store_with_searchable_fields: ValkeyStore) -> No
     
     # Store documents
     for doc in test_docs:
-        store_with_searchable_fields.put(doc["namespace"], doc["key"], doc["value"])
+        store_with_searchable_fields.put(  # type: ignore[arg-type]
+            doc["namespace"], doc["key"], doc["value"]  # type: ignore[arg-type]
+        )
     
-    # Test filtering by tags (note: exact tag matching depends on Valkey Search implementation)
+    # Test filtering by tags (note: exact tag matching depends on
+    # Valkey Search implementation)
     # For now, we test that documents with tags are stored and retrievable
     results = store_with_searchable_fields.search(
         namespace_prefix=("test_tags",),
@@ -239,13 +256,17 @@ def test_list_fields_searchable(store_with_searchable_fields: ValkeyStore) -> No
     
     # Should find the machine learning document
     assert len(results) >= 1
-    ml_doc = next((r for r in results if "machine learning" in r.value.get("content", "")), None)
+    ml_doc = next(
+        (r for r in results if "machine learning" in r.value.get("content", "")), None
+    )
     assert ml_doc is not None
     assert "machine-learning" in ml_doc.value.get("tags", [])
 
 
 @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
-def test_configured_collection_name_used(store_with_searchable_fields: ValkeyStore) -> None:
+def test_configured_collection_name_used(
+    store_with_searchable_fields: ValkeyStore,
+) -> None:
     """Test that the configured collection name is actually used."""
     
     # Verify the store is using the configured collection name
@@ -265,7 +286,9 @@ def test_configured_collection_name_used(store_with_searchable_fields: ValkeySto
     # Verify the document was stored correctly
     stored_item = store_with_searchable_fields.get(("test_collection",), "test_doc")
     assert stored_item is not None, "Document was not stored properly"
-    assert "Test document for collection name verification" in stored_item.value.get("content", "")
+    assert "Test document for collection name verification" in stored_item.value.get(
+        "content", ""
+    )
     
     # Search should work (implicitly testing that the correct index is being used)
     results = store_with_searchable_fields.search(
@@ -275,11 +298,16 @@ def test_configured_collection_name_used(store_with_searchable_fields: ValkeySto
     )
     
     # Should find the test document
-    assert len(results) >= 1, f"No search results found. Expected at least 1 result."
+    assert len(results) >= 1, "No search results found. Expected at least 1 result."
     
     # Check if any result contains the expected content (case-insensitive)
-    matching_results = [r for r in results if "test document" in r.value.get("content", "").lower()]
-    assert len(matching_results) >= 1, f"No results contain 'test document' in content. Results: {[r.value for r in results]}"
+    matching_results = [
+        r for r in results if "test document" in r.value.get("content", "").lower()
+    ]
+    assert len(matching_results) >= 1, (
+        f"No results contain 'test document' in content. "
+        f"Results: {[r.value for r in results]}"
+    )
 
 
 @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
@@ -325,7 +353,9 @@ def test_multiple_field_filters(store_with_searchable_fields: ValkeyStore) -> No
     
     # Store documents
     for doc in test_docs:
-        store_with_searchable_fields.put(doc["namespace"], doc["key"], doc["value"])
+        store_with_searchable_fields.put(  # type: ignore[arg-type]
+            doc["namespace"], doc["key"], doc["value"]  # type: ignore[arg-type]
+        )
     
     # Test filtering by user_id AND memory_type
     results = store_with_searchable_fields.search(
@@ -343,7 +373,9 @@ def test_multiple_field_filters(store_with_searchable_fields: ValkeyStore) -> No
 
 
 @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
-def test_search_performance_with_fields(store_with_searchable_fields: ValkeyStore) -> None:
+def test_search_performance_with_fields(
+    store_with_searchable_fields: ValkeyStore,
+) -> None:
     """Test that search performance is reasonable with many indexed fields."""
     
     # Add multiple documents to test performance
@@ -358,7 +390,9 @@ def test_search_performance_with_fields(store_with_searchable_fields: ValkeyStor
                 "user_id": f"user_{i % 5}",  # 5 different users
                 "memory_type": "fact" if i % 2 == 0 else "preference",
                 "importance": str(0.5 + (i % 5) * 0.1),
-                "content": f"This is test document number {i} with various content",
+                "content": (
+                    f"This is test document number {i} with various content"
+                ),
                 "tags": [f"tag_{i % 3}", f"category_{i % 4}"],
                 "version": "1",
                 "created_at": f"2024-01-{15 + (i % 10):02d}T10:00:00"
@@ -379,7 +413,9 @@ def test_search_performance_with_fields(store_with_searchable_fields: ValkeyStor
     search_duration = end_time - start_time
     
     # Should complete search reasonably quickly (under 1 second for this small dataset)
-    assert search_duration < 1.0, f"Search took too long: {search_duration:.2f} seconds"
+    assert search_duration < 1.0, (
+        f"Search took too long: {search_duration:.2f} seconds"
+    )
     
     # Should return some results
     assert len(results) > 0

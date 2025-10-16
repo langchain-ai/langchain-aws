@@ -1,5 +1,6 @@
 """Integration tests for AgentCore Valkey checkpoint saver."""
 
+import importlib.util
 import time
 from contextlib import contextmanager
 from typing import Any
@@ -8,9 +9,7 @@ import pytest
 from langchain_core.runnables import RunnableConfig
 
 try:
-    import valkey
-
-    VALKEY_AVAILABLE = True
+    VALKEY_AVAILABLE = importlib.util.find_spec("valkey") is not None
 except ImportError:
     VALKEY_AVAILABLE = False
 
@@ -37,10 +36,10 @@ class TestAgentCoreValkeySaverIntegration:
                 channel_keys = saver.client.keys("agentcore:channel:test-*")
 
                 all_keys = (
-                    list(session_keys)
-                    + list(checkpoint_keys)
-                    + list(writes_keys)
-                    + list(channel_keys)
+                    list(session_keys)  # type: ignore[arg-type]
+                    + list(checkpoint_keys)  # type: ignore[arg-type]
+                    + list(writes_keys)  # type: ignore[arg-type]
+                    + list(channel_keys)  # type: ignore[arg-type]
                 )
                 if all_keys:
                     saver.client.delete(*all_keys)
@@ -54,10 +53,10 @@ class TestAgentCoreValkeySaverIntegration:
                 channel_keys = saver.client.keys("agentcore:channel:test-*")
 
                 all_keys = (
-                    list(session_keys)
-                    + list(checkpoint_keys)
-                    + list(writes_keys)
-                    + list(channel_keys)
+                    list(session_keys)  # type: ignore[arg-type]
+                    + list(checkpoint_keys)  # type: ignore[arg-type]
+                    + list(writes_keys)  # type: ignore[arg-type]
+                    + list(channel_keys)  # type: ignore[arg-type]
                 )
                 if all_keys:
                     saver.client.delete(*all_keys)
@@ -439,7 +438,9 @@ class TestAgentCoreValkeySaverErrorHandling:
 
     def test_invalid_connection_string(self):
         """Test handling of invalid connection strings."""
-        with pytest.raises(Exception):  # Should raise connection error
+        with pytest.raises(
+            (ValueError, ConnectionError)
+        ):  # Should raise connection error
             with AgentCoreValkeySaver.from_conn_string("invalid://connection:string"):
                 pass
 
@@ -454,7 +455,9 @@ class TestAgentCoreValkeySaverErrorHandling:
                     "configurable": {"thread_id": "test"}
                 }  # Missing actor_id
 
-                with pytest.raises(Exception):  # Should raise validation error
+                with pytest.raises(
+                    (KeyError, ValueError)
+                ):  # Should raise validation error
                     saver.get_tuple(invalid_config)
 
         except Exception:
@@ -467,7 +470,8 @@ class TestAgentCoreValkeySaverErrorHandling:
                 "valkey://localhost:6379/1"
             ) as saver:
                 # Manually insert corrupted data with correct key format
-                # session_id = thread_id + "_" + checkpoint_ns when checkpoint_ns is not empty
+                # session_id = thread_id + "_" + checkpoint_ns when
+                # checkpoint_ns is not empty
                 corrupt_key = (
                     "agentcore:checkpoint:test-corrupt_ns:agent:ns:corrupt-checkpoint"
                 )
@@ -483,7 +487,9 @@ class TestAgentCoreValkeySaverErrorHandling:
                 }
 
                 # Should handle corrupted data gracefully
-                with pytest.raises(Exception):  # Should raise parsing error
+                with pytest.raises(
+                    (ValueError, TypeError)
+                ):  # Should raise parsing error
                     saver.get_tuple(config)
 
                 # Cleanup
