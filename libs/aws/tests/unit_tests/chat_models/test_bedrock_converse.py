@@ -120,6 +120,7 @@ def test_anthropic_bind_tools_tool_choice() -> None:
         "anthropic.claude-3-7-sonnet-20250219-v1:0",
         "anthropic.claude-sonnet-4-20250514-v1:0",
         "anthropic.claude-opus-4-20250514-v1:0",
+        "anthropic.claude-haiku-4-5-20251001-v1:0"
     ],
 )
 def test_anthropic_thinking_bind_tools_tool_choice(thinking_model: str) -> None:

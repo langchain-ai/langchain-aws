@@ -759,6 +759,7 @@ class ChatBedrockConverse(BaseChatModel):
                     "claude-3-7-sonnet",
                     "claude-sonnet-4",
                     "claude-opus-4",
+                    "claude-haiku-4",
                 )
                 thinking_params = (self.additional_model_request_fields or {}).get(
                     "thinking", {}
@@ -971,20 +972,29 @@ class ChatBedrockConverse(BaseChatModel):
         self,
         schema: Union[Dict, type],
     ) -> Runnable[LanguageModelInput, BaseMessage]:
+        print("In _get_llm_for_structured_output_no_tool_choice")
         admonition = (
             "ChatBedrockConverse structured output relies on forced tool calling, "
             "which is not supported for this model. This method will raise "
             "langchain_core.exceptions.OutputParserException if tool calls are not "
             "generated. Consider adjusting your prompt to ensure the tool is called."
         )
-        if "claude-3-7-sonnet" in self._get_base_model():
+        thinking_claude_models = (
+            "claude-3-7-sonnet",
+            "claude-sonnet-4",
+            "claude-opus-4",
+            "claude-haiku-4",
+        )
+        if any(model in self._get_base_model() for model in thinking_claude_models):
             additional_context = (
-                "For Claude 3.7 Sonnet models, you can also support forced tool use "
+                "For Claude 3/4 models, you can also support forced tool use "
                 "by disabling `thinking`."
             )
             admonition = f"{admonition} {additional_context}"
+            print("Returning warning for thinking claude model")
         warnings.warn(admonition)
         try:
+            print("Attempting bind_tools with structured output")
             llm = self.bind_tools(
                 [schema],
                 ls_structured_output_format={
@@ -993,11 +1003,14 @@ class ChatBedrockConverse(BaseChatModel):
                 },
             )
         except Exception:
+            print("Failed, using regular bind_tools")
             llm = self.bind_tools([schema])
 
         def _raise_if_no_tool_calls(message: AIMessage) -> AIMessage:
             if not message.tool_calls:
+                print("No tool calls found, raising OutputParserException")
                 raise OutputParserException(admonition)
+            print("Tool calls found, returning normally")
             return message
 
         return llm | _raise_if_no_tool_calls
@@ -1066,6 +1079,7 @@ class ChatBedrockConverse(BaseChatModel):
             "claude-3-7-sonnet",
             "claude-sonnet-4",
             "claude-opus-4",
+            "claude-haiku-4",
         )
         if tool_choice is None and any(
             model in self._get_base_model() for model in thinking_claude_models

@@ -431,6 +431,10 @@ def test_guardrails() -> None:
         "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         "us.anthropic.claude-sonnet-4-20250514-v1:0",
         "us.anthropic.claude-opus-4-20250514-v1:0",
+        "us.anthropic.claude-opus-4-1-20250805-v1:0",
+        "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        #
+        #"us.anthropic.claude-haiku-4-5-20251001-v1:0",
     ],
 )
 def test_structured_output_tool_choice_not_supported(thinking_model: str) -> None:
@@ -450,11 +454,14 @@ def test_structured_output_tool_choice_not_supported(thinking_model: str) -> Non
             "thinking": {"type": "enabled", "budget_tokens": 2000}
         },
     )
+    print("Generating structured llm with thinking...")
     with pytest.warns(match="structured output"):
         structured_llm = llm.with_structured_output(ClassifyQuery)
+    print("Invoking on structured llm with thinking and related query...")
     response = structured_llm.invoke("How big are cats?")
     assert isinstance(response, ClassifyQuery)
 
+    print("Invoking on structured llm with thinking and generic query...")
     with pytest.raises(OutputParserException):
         structured_llm.invoke("Hello!")
 
