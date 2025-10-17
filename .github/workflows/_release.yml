@@ -132,11 +132,13 @@ jobs:
         #   sometimes a delay in availability on test pypi
         run: |
           uv pip install \
+            --index-strategy unsafe-best-match \
             --extra-index-url https://test.pypi.org/simple/ \
             "$PKG_NAME==$VERSION" || \
           ( \
             sleep 5 && \
             uv pip install \
+              --index-strategy unsafe-best-match \
               --extra-index-url https://test.pypi.org/simple/ \
               "$PKG_NAME==$VERSION" \
           )
@@ -160,6 +162,7 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           uv pip install \
+            --index-strategy unsafe-best-match \
             --extra-index-url https://test.pypi.org/simple/ \
             "$PKG_NAME==$VERSION"
 
