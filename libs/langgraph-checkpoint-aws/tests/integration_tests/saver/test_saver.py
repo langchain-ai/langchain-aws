@@ -117,6 +117,13 @@ class TestBedrockMemorySaver:
             assert isinstance(checkpoint_tuples, list), (
                 "Checkpoint tuples should be a list"
             )
+        except Exception as e:
+            if "AccessDeniedException" in str(
+                e
+            ) or "You don't have access to the model" in str(e):
+                pytest.skip(f"Skipping test due to Bedrock model access issue: {e}")
+            else:
+                raise
         finally:
             boto_session_client.end_session(sessionIdentifier=session_id)
             boto_session_client.delete_session(sessionIdentifier=session_id)
