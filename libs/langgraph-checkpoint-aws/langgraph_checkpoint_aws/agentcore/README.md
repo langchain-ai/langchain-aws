@@ -1,25 +1,26 @@
 # LangGraph Checkpoint AWS
+
 A custom LangChain checkpointer implementation that uses Bedrock AgentCore Memory to enable stateful and resumable LangGraph agents through efficient state persistence and retrieval.
 
 ## Overview
+
 This package provides a custom checkpointing solution for LangGraph agents using AWS Bedrock Session Management Service. It enables:
+
 1. Stateful conversations and interactions
 2. Resumable agent sessions
 3. Efficient state persistence and retrieval
 4. Seamless integration with AWS Bedrock
 
 ## Installation
+
 You can install the package using pip:
 
 ```bash
 pip install langgraph-checkpoint-aws
 ```
-Or with Poetry:
-```bash
-poetry add langgraph-checkpoint-aws
-```
 
 ## Requirements
+
 ```text
 Python >=3.9
 langgraph >=0.2.55
@@ -138,18 +139,24 @@ response = graph.invoke(
 ```
 
 ## Development
+
 Setting Up Development Environment
 
 * Clone the repository:
+
 ```bash
 git clone <repository-url>
 cd libs/aws/langgraph-checkpoint-aws
 ```
+
 * Install development dependencies:
+
 ```bash
 make install_all
 ```
+
 * Or install specific components:
+
 ```bash
 make install_dev        # Basic development tools
 make install_test       # Testing tools
@@ -159,6 +166,7 @@ make install_codespell  # Spell checking tools
 ```
 
 ## Running Tests
+
 ```bash
 make tests         # Run all tests
 make test_watch   # Run tests in watch mode
@@ -166,6 +174,7 @@ make test_watch   # Run tests in watch mode
 ```
 
 ## Code Quality
+
 ```bash
 make lint           # Run linter
 make format         # Format code
@@ -173,6 +182,7 @@ make spell_check    # Check spelling
 ```
 
 ## Clean Up
+
 ```bash
 make clean          # Remove all generated files
 ```
@@ -180,12 +190,13 @@ make clean          # Remove all generated files
 ## AWS Configuration
 
 Ensure you have AWS credentials configured using one of these methods:
+
 1. Environment variables
 2. AWS credentials file (~/.aws/credentials)
 3. IAM roles
 4. Direct credential injection via constructor parameters
 
-## Required AWS permissions:
+## Required AWS permissions
 
 ```json
 {
@@ -208,6 +219,7 @@ Ensure you have AWS credentials configured using one of these methods:
 ```
 
 ## Security Considerations
+
 * Never commit AWS credentials
 * Use environment variables or AWS IAM roles for authentication
 * Follow AWS security best practices
@@ -215,6 +227,7 @@ Ensure you have AWS credentials configured using one of these methods:
 * Implement proper access controls for session management
 
 ## Contributing
+
 * Fork the repository
 * Create a feature branch
 * Make your changes
@@ -222,8 +235,10 @@ Ensure you have AWS credentials configured using one of these methods:
 * Submit a pull request
 
 ## License
+
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
+
 * LangChain team for the base LangGraph framework
 * AWS Bedrock AgentCore team for the memory management service

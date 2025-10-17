@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: write  # Needed for actions/cache used by poetry_setup action (and directly in this job)
+      actions: write
     strategy:
       matrix:
         # Only lint on the min and max supported Python versions.
@@ -57,10 +57,6 @@ jobs:
         # type hints for as many of our libraries as possible.
         # This helps catch errors that require dependencies to be spotted, for example:
         # https://github.com/langchain-ai/langchain/pull/10249/files#diff-935185cd488d015f026dcd9e19616ff62863e8cde8c0bee70318d3ccbca98341
-        #
-        # If you change this configuration, make sure to change the `cache-key`
-        # in the `poetry_setup` action above to stop using the old cache.
-        # It doesn't matter how you change it, any change will cause a cache-bust.
         working-directory: ${{ inputs.working-directory }}
         run: |
           uv sync --group lint --group typing
@@ -72,8 +68,7 @@ jobs:
         with:
           path: |
             ${{ env.WORKDIR }}/.mypy_cache
-          key: mypy-lint-${{ runner.os }}-${{ runner.arch }}-py${{ matrix.python-version }}-${{ inputs.working-directory }}-${{ hashFiles(format('{0}/poetry.lock', inputs.working-directory)) }}
-
+          key: mypy-lint-${{ runner.os }}-${{ runner.arch }}-py${{ matrix.python-version }}-${{ inputs.working-directory }}-${{ hashFiles(format('{0}/uv.lock', inputs.working-directory)) }}
 
       - name: Analysing the code with our lint
         working-directory: ${{ inputs.working-directory }}
@@ -92,7 +87,7 @@ jobs:
         with:
           path: |
             ${{ env.WORKDIR }}/.mypy_cache_test
-          key: mypy-test-${{ runner.os }}-${{ runner.arch }}-py${{ matrix.python-version }}-${{ inputs.working-directory }}-${{ hashFiles(format('{0}/poetry.lock', inputs.working-directory)) }}
+          key: mypy-test-${{ runner.os }}-${{ runner.arch }}-py${{ matrix.python-version }}-${{ inputs.working-directory }}-${{ hashFiles(format('{0}/uv.lock', inputs.working-directory)) }}
 
       - name: Analysing the code with our lint
         working-directory: ${{ inputs.working-directory }}
