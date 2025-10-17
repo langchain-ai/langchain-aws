@@ -11,25 +11,41 @@ This package provides multiple persistence solutions for LangGraph agents:
 4. Seamless integration with AWS Bedrock
 
 ### Valkey Storage Solutions
-1. **High-performance checkpoint storage** with Valkey (Redis-compatible)
+1. **Checkpoint storage** with Valkey (Redis-compatible)
 
 ## Installation
 
 You can install the package using pip:
 
 ```bash
+# Base package (includes Bedrock AgentCore Memory components)
 pip install langgraph-checkpoint-aws
+
+# With Valkey support
+pip install 'langgraph-checkpoint-aws[valkey]'
+
+# For development with testing support
+pip install 'langgraph-checkpoint-aws[valkey,valkey-test]'
 ```
 
 ## Requirements
 
+### Base Requirements
 ```text
-Python >=3.9
-langgraph-checkpoint >=2.1.0
-langgraph >=0.2.55
-boto3 >=1.39.7
+Python >=3.10
+langgraph-checkpoint >=2.1.1
+langgraph >=1.0.0.a4
+boto3 >=1.40.19
+```
+
+### Optional Dependencies
+```text
+# For Valkey checkpoint storage (install with [valkey])
 valkey >=6.1.1
-orjson >=3.9.0
+orjson >=3.11.3
+
+# For Valkey testing (install with [valkey-test])
+fakeredis >=2.25.1
 ```
 
 ## Components
@@ -37,7 +53,7 @@ orjson >=3.9.0
 This package provides three main components:
 
 1. **AgentCoreMemorySaver** - AWS Bedrock-based checkpoint storage
-2. **ValkeyCheckpointSaver** - High-performance Valkey checkpoint storage
+2. **ValkeySaver** - Valkey checkpoint storage
 3. **AgentCoreMemoryStore** - AWS Bedrock-based document store
 
 
@@ -156,14 +172,12 @@ response = graph.invoke(
 
 ### 3. Valkey Checkpoint Storage
 
-High-performance checkpoint storage using Valkey (Redis-compatible):
-
 ```python
 from langgraph.graph import StateGraph
-from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver
+from langgraph_checkpoint_aws.checkpoint.valkey import ValkeySaver
 
 # Using connection string
-with ValkeyCheckpointSaver.from_conn_string(
+with ValkeySaver.from_conn_string(
     "valkey://localhost:6379",
     ttl_seconds=3600,  # 1 hour TTL
     pool_size=10
@@ -185,14 +199,14 @@ All components support async operations:
 
 ```python
 from langgraph_checkpoint_aws.async_saver import AsyncBedrockSessionSaver
-from langgraph_checkpoint_aws.checkpoint.valkey import AsyncValkeyCheckpointSaver
+from langgraph_checkpoint_aws.checkpoint.valkey import AsyncValkeySaver
 
 # Async Bedrock usage
 session_saver = AsyncBedrockSessionSaver(region_name="us-west-2")
 session_id = (await session_saver.session_client.create_session()).session_id
 
 # Async Valkey usage
-async with AsyncValkeyCheckpointSaver.from_conn_string("valkey://localhost:6379") as checkpointer:
+async with AsyncValkeySaver.from_conn_string("valkey://localhost:6379") as checkpointer:
     graph = builder.compile(checkpointer=checkpointer)
     result = await graph.ainvoke(1, {"configurable": {"thread_id": "session-1"}})
 ```
@@ -222,7 +236,7 @@ def __init__(
 Valkey components support these common configuration options:
 
 #### Connection Options
-- **Connection String**: `valkey://localhost:6379` or `valkeys://localhost:6380` (SSL)
+- **Connection String**: `valkey://localhost:6379` or `valkeys://localhost:6380` (SSL). Refer [connection examples](https://valkey-py.readthedocs.io/en/latest/examples/connection_examples.html).
 - **Connection Pool**: Reusable connection pools for better performance
 - **Pool Size**: Maximum number of connections (default: 10)
 - **SSL Support**: Secure connections with certificate validation
@@ -232,10 +246,11 @@ Valkey components support these common configuration options:
 - **Batch Operations**: Efficient bulk operations for better throughput
 - **Async Support**: Non-blocking operations for high concurrency
 
-#### ValkeyCheckpointSaver Options
+#### ValkeySaver Options
 ```python
-ValkeyCheckpointSaver(
-    client: Valkey,
+valkey_client = Valkey.from_url("valkey://localhost:6379")
+ValkeySaver(
+    client: valkey_client,
     ttl: float | None = None,  # TTL in seconds
     serde: SerializerProtocol | None = None  # Custom serialization
 )
@@ -452,12 +467,13 @@ def __init__(
 #### Using AWS ElastiCache for Valkey (Recommended)
 ```python
 # Connect to AWS ElastiCache from host running inside VPC with access to cache
-from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver
+from langgraph_checkpoint_aws.checkpoint.valkey import ValkeySaver
 
-checkpointer = ValkeyCheckpointSaver.from_conn_string(
+with ValkeySaver.from_conn_string(
     "valkeys://your-elasticache-cluster.amazonaws.com:6379",
     pool_size=20
-)
+) as checkpointer:
+    pass
 ```
 If you want to connect to cache from a host outside of VPC, use ElastiCache console to setup a jump host so you could create SSH tunnel to access cache locally. 
 
@@ -488,7 +504,7 @@ pool = ConnectionPool.from_url(
     retry_on_timeout=True
 )
 
-with ValkeyCheckpointSaver.from_pool(pool) as checkpointer:
+with ValkeySaver.from_pool(pool) as checkpointer:
     # Reuse connections across operations
     pass
 ```
@@ -496,10 +512,11 @@ with ValkeyCheckpointSaver.from_pool(pool) as checkpointer:
 #### TTL Strategy
 ```python
 # Configure appropriate TTL values
-checkpointer = ValkeyCheckpointSaver.from_conn_string(
+with ValkeySaver.from_conn_string(
     "valkey://localhost:6379",
     ttl_seconds=3600  # 1 hour for active sessions
-)
+) as checkpointer:
+    pass
 ```
 
 ## Security Considerations
@@ -512,7 +529,7 @@ checkpointer = ValkeyCheckpointSaver.from_conn_string(
 * Implement proper access controls for session management
 
 ### Valkey Security
-* Use SSL/TLS for production deployments (`valkeys://` protocol)
+* Use SSL/TLS for production deployments (`valkeys://` protocol), refer [SSL connection examples](https://valkey-py.readthedocs.io/en/latest/examples/ssl_connection_examples.html#Connect-to-a-Valkey-instance-via-SSL,-and-validate-OCSP-stapled-certificates)
 * Configure authentication with strong passwords
 * Implement network security (VPC, security groups)
 * Regular security updates and monitoring
@@ -520,11 +537,22 @@ checkpointer = ValkeyCheckpointSaver.from_conn_string(
 
 ```python
 # Secure connection example
-checkpointer = ValkeyCheckpointSaver.from_conn_string(
-    "valkeys://username:password@your-secure-host:6380",
+import os
+import valkey
+
+pki_dir = os.path.join("..", "..", "dockers", "stunnel", "keys")
+
+valkey_client = valkey.Valkey(
+    host="localhost",
+    port=6666,
+    ssl=True,
+    ssl_certfile=os.path.join(pki_dir, "client-cert.pem"),
+    ssl_keyfile=os.path.join(pki_dir, "client-key.pem"),
     ssl_cert_reqs="required",
-    ssl_ca_certs="/path/to/ca.pem"
+    ssl_ca_certs=os.path.join(pki_dir, "ca-cert.pem"),
 )
+
+checkpointer = ValkeySaver(valkey_client)
 ```
 
 ## Examples and Samples
@@ -546,7 +574,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Acknowledgments
 
-- LangChain team for the base LangGraph framework
-- AWS Bedrock team for the session management service
-- Valkey team for the high-performance Redis-compatible storage
-
+* LangChain team for the base LangGraph framework
+* AWS Bedrock team for the session management service
+* Valkey team for the high-performance Redis-compatible storage

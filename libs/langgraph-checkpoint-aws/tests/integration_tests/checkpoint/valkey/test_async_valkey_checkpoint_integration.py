@@ -10,18 +10,31 @@ import pytest
 import pytest_asyncio
 
 from langgraph_checkpoint_aws.checkpoint.valkey import (
-    AsyncValkeyCheckpointSaver,
+    AsyncValkeySaver,
 )
 
+# Check for optional dependencies
 try:
-    from valkey.asyncio import Valkey as AsyncValkey
+    import orjson  # noqa: F401
+    import valkey  # noqa: F401
+    from valkey.asyncio import Valkey as AsyncValkey  # noqa: F401
     from valkey.asyncio.connection import ConnectionPool as AsyncConnectionPool
+    from valkey.exceptions import ValkeyError  # noqa: F401
 
     VALKEY_AVAILABLE = True
 except ImportError:
     AsyncValkey = None  # type: ignore[assignment, misc]
     AsyncConnectionPool = None  # type: ignore[assignment, misc]
     VALKEY_AVAILABLE = False
+
+# Skip all tests if valkey dependencies are not available
+pytestmark = pytest.mark.skipif(
+    not VALKEY_AVAILABLE,
+    reason=(
+        "valkey and orjson dependencies not available. "
+        "Install with: pip install 'langgraph-checkpoint-aws[valkey]'"
+    ),
+)
 
 
 def _is_valkey_server_available() -> bool:
@@ -72,12 +85,12 @@ async def async_valkey_pool(valkey_url: str) -> Any:
 @pytest_asyncio.fixture
 async def async_saver(
     valkey_url: str,
-) -> AsyncGenerator[AsyncValkeyCheckpointSaver, None]:
-    """Create an AsyncValkeyCheckpointSaver instance."""
+) -> AsyncGenerator[AsyncValkeySaver, None]:
+    """Create an AsyncValkeySaver instance."""
     if not VALKEY_AVAILABLE or AsyncValkey is None:
         pytest.skip("Valkey not available")
     client = AsyncValkey.from_url(valkey_url)
-    saver = AsyncValkeyCheckpointSaver(client, ttl=60.0)
+    saver = AsyncValkeySaver(client, ttl=60.0)
     yield saver
     await client.aclose()
 
@@ -86,7 +99,7 @@ async def async_saver(
 @pytest.mark.asyncio
 async def test_async_from_conn_string(valkey_url: str) -> None:
     """Test creating async saver from connection string."""
-    async with AsyncValkeyCheckpointSaver.from_conn_string(
+    async with AsyncValkeySaver.from_conn_string(
         valkey_url, ttl_seconds=3600.0, pool_size=5
     ) as saver:
         assert saver.ttl == 3600  # 3600 seconds
@@ -96,7 +109,7 @@ async def test_async_from_conn_string(valkey_url: str) -> None:
 @pytest.mark.asyncio
 async def test_async_from_pool(async_valkey_pool: Any) -> None:
     """Test creating async saver from existing pool."""
-    async with AsyncValkeyCheckpointSaver.from_pool(
+    async with AsyncValkeySaver.from_pool(
         async_valkey_pool, ttl_seconds=3600.0
     ) as saver:
         assert saver.ttl == 3600
@@ -106,7 +119,7 @@ async def test_async_from_pool(async_valkey_pool: Any) -> None:
 @pytest.mark.asyncio
 async def test_async_operations(valkey_url: str) -> None:
     """Test async operations using connection pool."""
-    async with AsyncValkeyCheckpointSaver.from_conn_string(
+    async with AsyncValkeySaver.from_conn_string(
         valkey_url, ttl_seconds=3600.0, pool_size=5
     ) as saver:
         # Test data
@@ -145,12 +158,8 @@ async def test_async_operations(valkey_url: str) -> None:
 async def test_async_shared_pool(async_valkey_pool: Any) -> None:
     """Test sharing connection pool between async savers."""
     async with (
-        AsyncValkeyCheckpointSaver.from_pool(
-            async_valkey_pool, ttl_seconds=3600.0
-        ) as saver1,
-        AsyncValkeyCheckpointSaver.from_pool(
-            async_valkey_pool, ttl_seconds=3600.0
-        ) as saver2,
+        AsyncValkeySaver.from_pool(async_valkey_pool, ttl_seconds=3600.0) as saver1,
+        AsyncValkeySaver.from_pool(async_valkey_pool, ttl_seconds=3600.0) as saver2,
     ):
         # Test data
         config = {"configurable": {"thread_id": "test-thread", "checkpoint_ns": "test"}}
@@ -192,7 +201,7 @@ async def test_async_shared_pool(async_valkey_pool: Any) -> None:
 @pytest.mark.skipif(not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available")
 @pytest.mark.asyncio
 async def test_alist_checkpoints_before_nonexistent(
-    async_saver: AsyncValkeyCheckpointSaver,
+    async_saver: AsyncValkeySaver,
 ) -> None:
     """Test listing checkpoints with before filter for nonexistent checkpoint."""
     thread_id = f"test-thread-before-nonexistent-{uuid.uuid4()}"

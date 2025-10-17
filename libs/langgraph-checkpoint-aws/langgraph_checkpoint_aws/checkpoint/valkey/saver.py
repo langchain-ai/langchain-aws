@@ -8,7 +8,6 @@ from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
-import orjson
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
     ChannelVersions,
@@ -18,17 +17,33 @@ from langgraph.checkpoint.base import (
     get_checkpoint_id,
 )
 from langgraph.checkpoint.serde.base import SerializerProtocol
-from valkey import Valkey
-from valkey.asyncio import Valkey as AsyncValkey
-from valkey.connection import ConnectionPool
-from valkey.exceptions import ValkeyError
 
-from .base import BaseValkeyCheckpointSaver
+from .base import BaseValkeySaver
+
+# Conditional imports for optional dependencies
+try:
+    import orjson
+except ImportError as e:
+    raise ImportError(
+        "The 'orjson' package is required to use ValkeySaver. "
+        "Install it with: pip install 'langgraph-checkpoint-aws[valkey]'"
+    ) from e
+
+try:
+    from valkey import Valkey
+    from valkey.asyncio import Valkey as AsyncValkey
+    from valkey.connection import ConnectionPool
+    from valkey.exceptions import ValkeyError
+except ImportError as e:
+    raise ImportError(
+        "The 'valkey' package is required to use ValkeySaver. "
+        "Install it with: pip install 'langgraph-checkpoint-aws[valkey]'"
+    ) from e
 
 logger = logging.getLogger(__name__)
 
 
-class ValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
+class ValkeySaver(BaseValkeySaver):
     """A checkpoint saver that stores checkpoints in Valkey (Redis-compatible).
 
     This class provides both synchronous and asynchronous methods for storing
@@ -43,16 +58,16 @@ class ValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
     Examples:
 
         >>> from valkey import Valkey
-        >>> from langgraph.checkpoint.valkey import ValkeyCheckpointSaver
+        >>> from langgraph.checkpoint.valkey import ValkeySaver
         >>> from langgraph.graph import StateGraph
         >>>
         >>> builder = StateGraph(int)
         >>> builder.add_node("add_one", lambda x: x + 1)
         >>> builder.set_entry_point("add_one")
         >>> builder.set_finish_point("add_one")
-        >>> # Create a new ValkeyCheckpointSaver instance
+        >>> # Create a new ValkeySaver instance
         >>> client = Valkey.from_url("valkey://localhost:6379")
-        >>> memory = ValkeyCheckpointSaver(client)
+        >>> memory = ValkeySaver(client)
         >>> graph = builder.compile(checkpointer=memory)
         >>> config = {"configurable": {"thread_id": "1"}}
         >>> graph.get_state(config)
@@ -82,8 +97,8 @@ class ValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         ttl_seconds: float | None = None,
         pool_size: int = 10,
         **kwargs: Any,
-    ) -> Iterator[ValkeyCheckpointSaver]:
-        """Create a new ValkeyCheckpointSaver instance from a connection string.
+    ) -> Iterator[ValkeySaver]:
+        """Create a new ValkeySaver instance from a connection string.
 
         Args:
             conn_string: The Valkey connection string.
@@ -92,11 +107,11 @@ class ValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
             **kwargs: Additional arguments passed to Valkey client.
 
         Yields:
-            ValkeyCheckpointSaver: A new ValkeyCheckpointSaver instance.
+            ValkeySaver: A new ValkeySaver instance.
 
         Examples:
 
-            >>> with ValkeyCheckpointSaver.from_conn_string(
+            >>> with ValkeySaver.from_conn_string(
             ...     "valkey://localhost:6379"
             ... ) as memory:
             ...     # Use the memory instance
@@ -117,21 +132,21 @@ class ValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         pool: ConnectionPool,
         *,
         ttl_seconds: float | None = None,
-    ) -> Iterator[ValkeyCheckpointSaver]:
-        """Create a new ValkeyCheckpointSaver instance from a connection pool.
+    ) -> Iterator[ValkeySaver]:
+        """Create a new ValkeySaver instance from a connection pool.
 
         Args:
             pool: The Valkey connection pool.
             ttl_seconds: Time-to-live for stored checkpoints in seconds.
 
         Yields:
-            ValkeyCheckpointSaver: A new ValkeyCheckpointSaver instance.
+            ValkeySaver: A new ValkeySaver instance.
 
         Examples:
 
             >>> from valkey.connection import ConnectionPool
             >>> pool = ConnectionPool.from_url("valkey://localhost:6379")
-            >>> with ValkeyCheckpointSaver.from_pool(pool) as memory:
+            >>> with ValkeySaver.from_pool(pool) as memory:
             ...     # Use the memory instance
             ...     pass
         """
@@ -561,17 +576,17 @@ class ValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         """Get a checkpoint tuple from the database asynchronously.
 
         Note:
-            This async method is not supported by the ValkeyCheckpointSaver class.
-            Use get_tuple() instead, or consider using AsyncValkeyCheckpointSaver.
+            This async method is not supported by the ValkeySaver class.
+            Use get_tuple() instead, or consider using AsyncValkeySaver.
 
         Raises:
             NotImplementedError: Always, as this class doesn't support async operations.
         """
         raise NotImplementedError(
-            "The ValkeyCheckpointSaver does not support async methods. "
-            "Consider using AsyncValkeyCheckpointSaver instead.\n"
+            "The ValkeySaver does not support async methods. "
+            "Consider using AsyncValkeySaver instead.\n"
             "from langgraph_checkpoint_aws.checkpoint.valkey import "
-            "AsyncValkeyCheckpointSaver\n"
+            "AsyncValkeySaver\n"
             "See the documentation for more information."
         )
 
@@ -586,17 +601,17 @@ class ValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         """List checkpoints from the database asynchronously.
 
         Note:
-            This async method is not supported by the ValkeyCheckpointSaver class.
-            Use list() instead, or consider using AsyncValkeyCheckpointSaver.
+            This async method is not supported by the ValkeySaver class.
+            Use list() instead, or consider using AsyncValkeySaver.
 
         Raises:
             NotImplementedError: Always, as this class doesn't support async operations.
         """
         raise NotImplementedError(
-            "The ValkeyCheckpointSaver does not support async methods. "
-            "Consider using AsyncValkeyCheckpointSaver instead.\n"
+            "The ValkeySaver does not support async methods. "
+            "Consider using AsyncValkeySaver instead.\n"
             "from langgraph_checkpoint_aws.checkpoint.valkey import "
-            "AsyncValkeyCheckpointSaver\n"
+            "AsyncValkeySaver\n"
             "See the documentation for more information."
         )
         yield  # This line is needed to make this an async generator
@@ -611,16 +626,16 @@ class ValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         """Save a checkpoint to the database asynchronously.
 
         Note:
-            This async method is not supported by the ValkeyCheckpointSaver class.
-            Use put() instead, or consider using AsyncValkeyCheckpointSaver.
+            This async method is not supported by the ValkeySaver class.
+            Use put() instead, or consider using AsyncValkeySaver.
 
         Raises:
             NotImplementedError: Always, as this class doesn't support async operations.
         """
         raise NotImplementedError(
-            "The ValkeyCheckpointSaver does not support async methods. "
-            "Consider using AsyncValkeyCheckpointSaver instead.\n"
+            "The ValkeySaver does not support async methods. "
+            "Consider using AsyncValkeySaver instead.\n"
             "from langgraph_checkpoint_aws.checkpoint.valkey import "
-            "AsyncValkeyCheckpointSaver\n"
+            "AsyncValkeySaver\n"
             "See the documentation for more information."
         )

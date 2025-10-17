@@ -1,19 +1,38 @@
-"""Unit tests for ValkeyCheckpointSaver using fakeredis."""
+"""Unit tests for ValkeySaver using fakeredis."""
 
 import json
 from unittest.mock import patch
 
-import fakeredis
 import pytest
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata, CheckpointTuple
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
-from langgraph_checkpoint_aws.checkpoint.valkey import ValkeyCheckpointSaver
+# Check for optional dependencies
+try:
+    import fakeredis  # noqa: F401
+    import orjson  # noqa: F401
+    import valkey  # noqa: F401
+
+    from langgraph_checkpoint_aws.checkpoint.valkey import ValkeySaver
+
+    VALKEY_AVAILABLE = True
+except ImportError:
+    ValkeySaver = None  # type: ignore[assignment, misc]
+    VALKEY_AVAILABLE = False
+
+# Skip all tests if valkey dependencies are not available
+pytestmark = pytest.mark.skipif(
+    not VALKEY_AVAILABLE,
+    reason=(
+        "valkey, orjson, and fakeredis dependencies not available. "
+        "Install with: pip install 'langgraph-checkpoint-aws[valkey,valkey-test]'"
+    ),
+)
 
 
-class TestValkeyCheckpointSaverUnit:
-    """Unit tests for ValkeyCheckpointSaver that don't require external dependencies."""
+class TestValkeySaverUnit:
+    """Unit tests for ValkeySaver that don't require external dependencies."""
 
     @pytest.fixture
     def fake_valkey_client(self):
@@ -22,8 +41,8 @@ class TestValkeyCheckpointSaverUnit:
 
     @pytest.fixture
     def saver(self, fake_valkey_client):
-        """Create a ValkeyCheckpointSaver with fake client."""
-        return ValkeyCheckpointSaver(fake_valkey_client, ttl=3600.0)
+        """Create a ValkeySaver with fake client."""
+        return ValkeySaver(fake_valkey_client, ttl=3600.0)
 
     @pytest.fixture
     def sample_config(self) -> RunnableConfig:
@@ -52,7 +71,7 @@ class TestValkeyCheckpointSaverUnit:
 
     def test_init_with_ttl(self, fake_valkey_client):
         """Test saver initialization with TTL."""
-        saver = ValkeyCheckpointSaver(fake_valkey_client, ttl=3600.0)
+        saver = ValkeySaver(fake_valkey_client, ttl=3600.0)
 
         assert saver.client == fake_valkey_client
         assert saver.ttl == 3600.0
@@ -60,7 +79,7 @@ class TestValkeyCheckpointSaverUnit:
 
     def test_init_without_ttl(self, fake_valkey_client):
         """Test saver initialization without TTL."""
-        saver = ValkeyCheckpointSaver(fake_valkey_client)
+        saver = ValkeySaver(fake_valkey_client)
 
         assert saver.client == fake_valkey_client
         assert saver.ttl is None
@@ -136,7 +155,7 @@ class TestValkeyCheckpointSaverUnit:
         self, fake_valkey_client, sample_config, sample_checkpoint, sample_metadata
     ):
         """Test checkpoint storage with TTL."""
-        saver = ValkeyCheckpointSaver(fake_valkey_client, ttl=3600.0)
+        saver = ValkeySaver(fake_valkey_client, ttl=3600.0)
         new_versions = {"key": 2}
 
         saver.put(sample_config, sample_checkpoint, sample_metadata, new_versions)
@@ -160,7 +179,6 @@ class TestValkeyCheckpointSaverUnit:
             "channel_values": {"key": "value"},
             "channel_versions": {"key": 1},
             "versions_seen": {"key": {"key": 1}},
-            "pending_sends": [],
         }
 
         config = {
@@ -198,7 +216,6 @@ class TestValkeyCheckpointSaverUnit:
             "channel_values": {"key": "value1"},
             "channel_versions": {"key": 1},
             "versions_seen": {"key": {"key": 1}},
-            "pending_sends": [],
         }
 
         checkpoint2 = {
@@ -208,7 +225,6 @@ class TestValkeyCheckpointSaverUnit:
             "channel_values": {"key": "value2"},
             "channel_versions": {"key": 2},
             "versions_seen": {"key": {"key": 2}},
-            "pending_sends": [],
         }
 
         saver.put(sample_config, checkpoint1, {"step": 1}, {"key": 1})
@@ -233,7 +249,6 @@ class TestValkeyCheckpointSaverUnit:
             "channel_values": {"key": "value1"},
             "channel_versions": {"key": 1},
             "versions_seen": {"key": {"key": 1}},
-            "pending_sends": [],
         }
 
         checkpoint2 = {
@@ -243,7 +258,6 @@ class TestValkeyCheckpointSaverUnit:
             "channel_values": {"key": "value2"},
             "channel_versions": {"key": 2},
             "versions_seen": {"key": {"key": 2}},
-            "pending_sends": [],
         }
 
         saver.put(
@@ -273,7 +287,6 @@ class TestValkeyCheckpointSaverUnit:
                 "channel_values": {"key": f"value{i}"},
                 "channel_versions": {"key": i},
                 "versions_seen": {"key": {"key": i}},
-                "pending_sends": [],
             }
             saver.put(sample_config, checkpoint, {"step": i}, {"key": i})
 
@@ -313,7 +326,7 @@ class TestValkeyCheckpointSaverUnit:
     def test_error_handling_valkey_connection_error(self, fake_valkey_client):
         """Test error handling when Valkey connection fails."""
         # Create a saver with a client that will raise errors
-        saver = ValkeyCheckpointSaver(fake_valkey_client)
+        saver = ValkeySaver(fake_valkey_client)
 
         # Patch the client's get method to raise an exception
         with patch.object(
@@ -329,9 +342,9 @@ class TestValkeyCheckpointSaverUnit:
 
     def test_context_manager_not_supported(self, fake_valkey_client):
         """Test that saver doesn't support context manager by default."""
-        saver = ValkeyCheckpointSaver(fake_valkey_client)
+        saver = ValkeySaver(fake_valkey_client)
 
-        # ValkeyCheckpointSaver doesn't implement context manager protocol directly
+        # ValkeySaver doesn't implement context manager protocol directly
         # It's used through factory methods that provide context managers
         assert not hasattr(saver, "__enter__")
         assert not hasattr(saver, "__exit__")
@@ -339,13 +352,13 @@ class TestValkeyCheckpointSaverUnit:
     @patch("langgraph_checkpoint_aws.checkpoint.valkey.base.set_client_info")
     def test_client_info_setting(self, mock_set_client_info, fake_valkey_client):
         """Test that client info is set during initialization."""
-        ValkeyCheckpointSaver(fake_valkey_client)
+        ValkeySaver(fake_valkey_client)
 
         mock_set_client_info.assert_called_once_with(fake_valkey_client)
 
     def test_namespace_handling(self, fake_valkey_client):
         """Test namespace handling in key generation."""
-        saver = ValkeyCheckpointSaver(fake_valkey_client)
+        saver = ValkeySaver(fake_valkey_client)
 
         # Test with namespace
         key_with_ns = saver._make_checkpoint_key("test", "ns1", "id1")
@@ -371,7 +384,6 @@ class TestValkeyCheckpointSaverUnit:
             "channel_values": {"key": "value"},
             "channel_versions": {"key": 1},
             "versions_seen": {"key": {"key": 1}},
-            "pending_sends": [],
         }
 
         config = {"configurable": {"thread_id": "test-thread", "checkpoint_ns": "ns1"}}
@@ -399,7 +411,6 @@ class TestValkeyCheckpointSaverUnit:
             },
             "channel_versions": {"messages": 5, "context": 2},
             "versions_seen": {"messages": {"messages": 5}, "context": {"context": 2}},
-            "pending_sends": [("output", {"result": "processed"})],
         }
 
         metadata = {
@@ -472,7 +483,6 @@ class TestValkeyCheckpointSaverUnit:
                 "channel_values": {"key": "value"},
                 "channel_versions": {"key": 1},
                 "versions_seen": {"key": {"key": 1}},
-                "pending_sends": [],
             }
         )
 
@@ -569,7 +579,6 @@ class TestMockConfiguration:
             "channel_values": {"test_channel": "test_value"},
             "channel_versions": {"test_channel": 1},
             "versions_seen": {"test_channel": {"__start__": 1}},
-            "pending_sends": [],
         }
 
         # Test structure
@@ -578,7 +587,6 @@ class TestMockConfiguration:
         assert "channel_values" in checkpoint_data
         assert "channel_versions" in checkpoint_data
         assert "versions_seen" in checkpoint_data
-        assert "pending_sends" in checkpoint_data
 
     def test_metadata_structure(self):
         """Test metadata structure creation."""

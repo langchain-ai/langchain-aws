@@ -8,7 +8,6 @@ from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
-import orjson
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
     ChannelVersions,
@@ -18,17 +17,33 @@ from langgraph.checkpoint.base import (
     get_checkpoint_id,
 )
 from langgraph.checkpoint.serde.base import SerializerProtocol
-from valkey.asyncio import Valkey as AsyncValkey
-from valkey.asyncio.connection import ConnectionPool as AsyncConnectionPool
-from valkey.exceptions import ValkeyError
 
-from .base import BaseValkeyCheckpointSaver
+from .base import BaseValkeySaver
 from .utils import aset_client_info
+
+# Conditional imports for optional dependencies
+try:
+    import orjson
+except ImportError as e:
+    raise ImportError(
+        "The 'orjson' package is required to use AsyncValkeySaver. "
+        "Install it with: pip install 'langgraph-checkpoint-aws[valkey]'"
+    ) from e
+
+try:
+    from valkey.asyncio import Valkey as AsyncValkey
+    from valkey.asyncio.connection import ConnectionPool as AsyncConnectionPool
+    from valkey.exceptions import ValkeyError
+except ImportError as e:
+    raise ImportError(
+        "The 'valkey' package is required to use AsyncValkeySaver. "
+        "Install it with: pip install 'langgraph-checkpoint-aws[valkey]'"
+    ) from e
 
 logger = logging.getLogger(__name__)
 
 
-class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
+class AsyncValkeySaver(BaseValkeySaver):
     """An async checkpoint saver that stores checkpoints in Valkey (Redis-compatible).
 
     This class provides asynchronous methods for storing and retrieving checkpoints
@@ -43,7 +58,7 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
     Examples:
 
         >>> from langgraph_checkpoint_aws.checkpoint.valkey import (
-        ...     AsyncValkeyCheckpointSaver,
+        ...     AsyncValkeySaver,
         ... )
         >>> from langgraph.graph import StateGraph
         >>>
@@ -51,8 +66,8 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         >>> builder.add_node("add_one", lambda x: x + 1)
         >>> builder.set_entry_point("add_one")
         >>> builder.set_finish_point("add_one")
-        >>> # Create a new AsyncValkeyCheckpointSaver instance using context manager
-        >>> async with AsyncValkeyCheckpointSaver.from_conn_string(
+        >>> # Create a new AsyncValkeySaver instance using context manager
+        >>> async with AsyncValkeySaver.from_conn_string(
         ...     "valkey://localhost:6379"
         ... ) as memory:
         >>>     graph = builder.compile(checkpointer=memory)
@@ -91,8 +106,8 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         serde: SerializerProtocol | None = None,
         pool_size: int = 10,
         **kwargs: Any,
-    ) -> AsyncIterator[AsyncValkeyCheckpointSaver]:
-        """Create a new AsyncValkeyCheckpointSaver instance from a connection string.
+    ) -> AsyncIterator[AsyncValkeySaver]:
+        """Create a new AsyncValkeySaver instance from a connection string.
 
         Args:
             conn_string: The Valkey connection string.
@@ -102,11 +117,11 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
             **kwargs: Additional arguments passed to AsyncValkey client.
 
         Yields:
-            AsyncValkeyCheckpointSaver: A new AsyncValkeyCheckpointSaver instance.
+            AsyncValkeySaver: A new AsyncValkeySaver instance.
 
         Examples:
 
-            >>> async with AsyncValkeyCheckpointSaver.from_conn_string(
+            >>> async with AsyncValkeySaver.from_conn_string(
             ...     "valkey://localhost:6379"
             ... ) as memory:
             ...     # Use the memory instance
@@ -127,15 +142,15 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         pool: AsyncConnectionPool,
         *,
         ttl_seconds: float | None = None,
-    ) -> AsyncIterator[AsyncValkeyCheckpointSaver]:
-        """Create a new AsyncValkeyCheckpointSaver instance from a connection pool.
+    ) -> AsyncIterator[AsyncValkeySaver]:
+        """Create a new AsyncValkeySaver instance from a connection pool.
 
         Args:
             pool: The Valkey async connection pool.
             ttl_seconds: Time-to-live for stored checkpoints in seconds.
 
         Yields:
-            AsyncValkeyCheckpointSaver: A new AsyncValkeyCheckpointSaver instance.
+            AsyncValkeySaver: A new AsyncValkeySaver instance.
 
         Examples:
 
@@ -143,7 +158,7 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
             ...     ConnectionPool as AsyncConnectionPool,
             ... )
             >>> pool = AsyncConnectionPool.from_url("valkey://localhost:6379")
-            >>> async with AsyncValkeyCheckpointSaver.from_pool(pool) as memory:
+            >>> async with AsyncValkeySaver.from_pool(pool) as memory:
             ...     # Use the memory instance
             ...     pass
         """
@@ -604,17 +619,17 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         """Get a checkpoint tuple from the database synchronously.
 
         Note:
-            This sync method is not supported by the AsyncValkeyCheckpointSaver class.
-            Use aget_tuple() instead, or consider using ValkeyCheckpointSaver.
+            This sync method is not supported by the AsyncValkeySaver class.
+            Use aget_tuple() instead, or consider using ValkeySaver.
 
         Raises:
             NotImplementedError: Always, as this class doesn't support sync operations.
         """
         raise NotImplementedError(
-            "The AsyncValkeyCheckpointSaver does not support sync methods. "
-            "Consider using ValkeyCheckpointSaver instead.\n"
+            "The AsyncValkeySaver does not support sync methods. "
+            "Consider using ValkeySaver instead.\n"
             "from langgraph_checkpoint_aws.checkpoint.valkey import "
-            "ValkeyCheckpointSaver\n"
+            "ValkeySaver\n"
             "See the documentation for more information."
         )
 
@@ -629,17 +644,17 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         """List checkpoints from the database synchronously.
 
         Note:
-            This sync method is not supported by the AsyncValkeyCheckpointSaver class.
-            Use alist() instead, or consider using ValkeyCheckpointSaver.
+            This sync method is not supported by the AsyncValkeySaver class.
+            Use alist() instead, or consider using ValkeySaver.
 
         Raises:
             NotImplementedError: Always, as this class doesn't support sync operations.
         """
         raise NotImplementedError(
-            "The AsyncValkeyCheckpointSaver does not support sync methods. "
-            "Consider using ValkeyCheckpointSaver instead.\n"
+            "The AsyncValkeySaver does not support sync methods. "
+            "Consider using ValkeySaver instead.\n"
             "from langgraph_checkpoint_aws.checkpoint.valkey import "
-            "ValkeyCheckpointSaver\n"
+            "ValkeySaver\n"
             "See the documentation for more information."
         )
 
@@ -653,17 +668,17 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         """Save a checkpoint to the database synchronously.
 
         Note:
-            This sync method is not supported by the AsyncValkeyCheckpointSaver class.
-            Use aput() instead, or consider using ValkeyCheckpointSaver.
+            This sync method is not supported by the AsyncValkeySaver class.
+            Use aput() instead, or consider using ValkeySaver.
 
         Raises:
             NotImplementedError: Always, as this class doesn't support sync operations.
         """
         raise NotImplementedError(
-            "The AsyncValkeyCheckpointSaver does not support sync methods. "
-            "Consider using ValkeyCheckpointSaver instead.\n"
+            "The AsyncValkeySaver does not support sync methods. "
+            "Consider using ValkeySaver instead.\n"
             "from langgraph_checkpoint_aws.checkpoint.valkey import "
-            "ValkeyCheckpointSaver\n"
+            "ValkeySaver\n"
             "See the documentation for more information."
         )
 
@@ -677,17 +692,17 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         """Store intermediate writes linked to a checkpoint synchronously.
 
         Note:
-            This sync method is not supported by the AsyncValkeyCheckpointSaver class.
-            Use aput_writes() instead, or consider using ValkeyCheckpointSaver.
+            This sync method is not supported by the AsyncValkeySaver class.
+            Use aput_writes() instead, or consider using ValkeySaver.
 
         Raises:
             NotImplementedError: Always, as this class doesn't support sync operations.
         """
         raise NotImplementedError(
-            "The AsyncValkeyCheckpointSaver does not support sync methods. "
-            "Consider using ValkeyCheckpointSaver instead.\n"
+            "The AsyncValkeySaver does not support sync methods. "
+            "Consider using ValkeySaver instead.\n"
             "from langgraph_checkpoint_aws.checkpoint.valkey import "
-            "ValkeyCheckpointSaver\n"
+            "ValkeySaver\n"
             "See the documentation for more information."
         )
 
@@ -695,19 +710,19 @@ class AsyncValkeyCheckpointSaver(BaseValkeyCheckpointSaver):
         """Delete all checkpoints and writes associated with a thread ID synchronously.
 
         Note:
-            This sync method is not supported by the AsyncValkeyCheckpointSaver class.
-            Use adelete_thread() instead, or consider using ValkeyCheckpointSaver.
+            This sync method is not supported by the AsyncValkeySaver class.
+            Use adelete_thread() instead, or consider using ValkeySaver.
 
         Raises:
             NotImplementedError: Always, as this class doesn't support sync operations.
         """
         raise NotImplementedError(
-            "The AsyncValkeyCheckpointSaver does not support sync methods. "
-            "Consider using ValkeyCheckpointSaver instead.\n"
+            "The AsyncValkeySaver does not support sync methods. "
+            "Consider using ValkeySaver instead.\n"
             "from langgraph_checkpoint_aws.checkpoint.valkey import "
-            "ValkeyCheckpointSaver\n"
+            "ValkeySaver\n"
             "See the documentation for more information."
         )
 
 
-__all__ = ["AsyncValkeyCheckpointSaver"]
+__all__ = ["AsyncValkeySaver"]

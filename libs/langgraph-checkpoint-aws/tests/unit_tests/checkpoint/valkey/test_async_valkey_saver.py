@@ -5,13 +5,42 @@ import base64
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
-import orjson
 import pytest
 from langchain_core.runnables import RunnableConfig
-from valkey.exceptions import ValkeyError
 
-from langgraph_checkpoint_aws.checkpoint.valkey.async_saver import (
-    AsyncValkeyCheckpointSaver,
+# Check for optional dependencies
+try:
+    import fakeredis  # noqa: F401
+    import orjson
+    import valkey  # noqa: F401
+    from valkey.exceptions import ValkeyError
+
+    from langgraph_checkpoint_aws.checkpoint.valkey.async_saver import (
+        AsyncValkeySaver,
+    )
+
+    VALKEY_AVAILABLE = True
+except ImportError:
+    # Create dummy objects for type checking when dependencies are not available
+    class MockOrjson:
+        @staticmethod
+        def dumps(obj):  # type: ignore[misc]
+            import json
+
+            return json.dumps(obj).encode("utf-8")
+
+    orjson = MockOrjson()  # type: ignore[assignment]
+    ValkeyError = Exception  # type: ignore[assignment, misc]
+    AsyncValkeySaver = None  # type: ignore[assignment, misc]
+    VALKEY_AVAILABLE = False
+
+# Skip all tests if valkey dependencies are not available
+pytestmark = pytest.mark.skipif(
+    not VALKEY_AVAILABLE,
+    reason=(
+        "valkey, orjson, and fakeredis dependencies not available. "
+        "Install with: pip install 'langgraph-checkpoint-aws[valkey,valkey-test]'"
+    ),
 )
 
 
@@ -105,15 +134,13 @@ def sample_config():
     )
 
 
-class TestAsyncValkeyCheckpointSaverInit:
-    """Test AsyncValkeyCheckpointSaver initialization."""
+class TestAsyncValkeySaverInit:
+    """Test AsyncValkeySaver initialization."""
 
     @pytest.mark.asyncio
     async def test_init_with_client(self, mock_valkey_client, mock_serializer):
         """Test initialization with client."""
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
         assert saver.client == mock_valkey_client
         assert saver.serde is not None
 
@@ -128,7 +155,7 @@ class TestAsyncValkeyCheckpointSaverInit:
             mock_client.aclose = AsyncMock()
             mock_valkey_class.from_url.return_value = mock_client
 
-            async with AsyncValkeyCheckpointSaver.from_conn_string(
+            async with AsyncValkeySaver.from_conn_string(
                 "valkey://localhost:6379"
             ) as saver:
                 assert saver.client == mock_client
@@ -145,7 +172,7 @@ class TestAsyncValkeyCheckpointSaverInit:
             mock_client.aclose = AsyncMock()
             mock_valkey_class.from_url.return_value = mock_client
 
-            async with AsyncValkeyCheckpointSaver.from_conn_string(
+            async with AsyncValkeySaver.from_conn_string(
                 "valkey://localhost:6379", ttl_seconds=7200
             ) as saver:
                 assert saver.ttl == 7200.0
@@ -163,9 +190,7 @@ class TestAsyncValkeyCheckpointSaverInit:
 
             mock_pool = Mock()
 
-            async with AsyncValkeyCheckpointSaver.from_pool(
-                mock_pool, ttl_seconds=3600
-            ) as saver:
+            async with AsyncValkeySaver.from_pool(mock_pool, ttl_seconds=3600) as saver:
                 assert saver.client == mock_client
                 assert saver.ttl == 3600.0
                 mock_valkey_class.assert_called_once_with(connection_pool=mock_pool)
@@ -183,12 +208,12 @@ class TestAsyncValkeyCheckpointSaverInit:
 
             mock_pool = Mock()
 
-            async with AsyncValkeyCheckpointSaver.from_pool(mock_pool) as saver:
+            async with AsyncValkeySaver.from_pool(mock_pool) as saver:
                 assert saver.client == mock_client
                 assert saver.ttl is None
 
 
-class TestAsyncValkeyCheckpointSaverGetTuple:
+class TestAsyncValkeySaverGetTuple:
     """Test aget_tuple method."""
 
     @pytest.mark.asyncio
@@ -226,9 +251,7 @@ class TestAsyncValkeyCheckpointSaverGetTuple:
         )
         mock_valkey_client.pipeline.return_value = pipeline_mock
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         result = await saver.aget_tuple(sample_config)
 
@@ -284,9 +307,7 @@ class TestAsyncValkeyCheckpointSaverGetTuple:
         )
         mock_valkey_client.pipeline.return_value = pipeline_mock
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         result = await saver.aget_tuple(sample_config)
 
@@ -299,9 +320,7 @@ class TestAsyncValkeyCheckpointSaverGetTuple:
         """Test aget_tuple with ValkeyError."""
         mock_valkey_client.lrange.side_effect = ValkeyError("Valkey error")
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         # Remove checkpoint_id to trigger latest checkpoint path
         config_without_id = RunnableConfig(
@@ -320,9 +339,7 @@ class TestAsyncValkeyCheckpointSaverGetTuple:
         # Config missing thread_id
         bad_config = RunnableConfig(configurable={})
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         result = await saver.aget_tuple(bad_config)
         assert result is None
@@ -334,9 +351,7 @@ class TestAsyncValkeyCheckpointSaverGetTuple:
         """Test aget_tuple when no checkpoint IDs exist."""
         mock_valkey_client.lrange.return_value = []  # No checkpoint IDs
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         config_without_id = RunnableConfig(
             configurable={
@@ -349,7 +364,7 @@ class TestAsyncValkeyCheckpointSaverGetTuple:
         assert result is None
 
 
-class TestAsyncValkeyCheckpointSaverGetCheckpointDataErrorHandling:
+class TestAsyncValkeySaverGetCheckpointDataErrorHandling:
     """Test _get_checkpoint_data method error handling."""
 
     @pytest.mark.asyncio
@@ -365,9 +380,7 @@ class TestAsyncValkeyCheckpointSaverGetCheckpointDataErrorHandling:
         )  # Only 1 result instead of 2
         mock_valkey_client.pipeline.return_value = pipeline_mock
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         result = await saver._get_checkpoint_data("thread", "ns", "checkpoint")
         assert result == (None, [])
@@ -383,9 +396,7 @@ class TestAsyncValkeyCheckpointSaverGetCheckpointDataErrorHandling:
         pipeline_mock.execute = AsyncMock(return_value=[])  # Empty results
         mock_valkey_client.pipeline.return_value = pipeline_mock
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         result = await saver._get_checkpoint_data("thread", "ns", "checkpoint")
         assert result == (None, [])
@@ -403,9 +414,7 @@ class TestAsyncValkeyCheckpointSaverGetCheckpointDataErrorHandling:
         )  # No checkpoint data
         mock_valkey_client.pipeline.return_value = pipeline_mock
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         result = await saver._get_checkpoint_data("thread", "ns", "checkpoint")
         assert result == (None, [])
@@ -428,9 +437,7 @@ class TestAsyncValkeyCheckpointSaverGetCheckpointDataErrorHandling:
         )
         mock_valkey_client.pipeline.return_value = pipeline_mock
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         result = await saver._get_checkpoint_data("thread", "ns", "checkpoint")
         assert result == (checkpoint_info, [])
@@ -445,9 +452,7 @@ class TestAsyncValkeyCheckpointSaverGetCheckpointDataErrorHandling:
         pipeline_mock.execute = AsyncMock(side_effect=ValkeyError("Valkey error"))
         mock_valkey_client.pipeline.return_value = pipeline_mock
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         result = await saver._get_checkpoint_data("thread", "ns", "checkpoint")
         assert result == (None, [])
@@ -467,23 +472,19 @@ class TestAsyncValkeyCheckpointSaverGetCheckpointDataErrorHandling:
         )
         mock_valkey_client.pipeline.return_value = pipeline_mock
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         result = await saver._get_checkpoint_data("thread", "ns", "checkpoint")
         assert result == (None, [])
 
 
-class TestAsyncValkeyCheckpointSaverAlist:
+class TestAsyncValkeySaverAlist:
     """Test alist method."""
 
     @pytest.mark.asyncio
     async def test_alist_no_config(self, mock_valkey_client, mock_serializer):
         """Test alist with no config."""
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         result = []
         async for item in saver.alist(None):
@@ -499,9 +500,7 @@ class TestAsyncValkeyCheckpointSaverAlist:
         """Test alist with ValkeyError."""
         mock_valkey_client.lrange.side_effect = ValkeyError("Valkey error")
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         result = []
         async for item in saver.alist(sample_config):
@@ -510,7 +509,7 @@ class TestAsyncValkeyCheckpointSaverAlist:
         assert result == []
 
 
-class TestAsyncValkeyCheckpointSaverPut:
+class TestAsyncValkeySaverPut:
     """Test aput method."""
 
     @pytest.mark.asyncio
@@ -524,9 +523,7 @@ class TestAsyncValkeyCheckpointSaverPut:
     ):
         """Test putting new checkpoint."""
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         result = await saver.aput(
             sample_config, sample_checkpoint, sample_metadata, {"test_channel": 1}
@@ -546,7 +543,7 @@ class TestAsyncValkeyCheckpointSaverPut:
     ):
         """Test putting checkpoint with TTL."""
 
-        saver = AsyncValkeyCheckpointSaver(
+        saver = AsyncValkeySaver(
             client=mock_valkey_client, serde=mock_serializer, ttl=3600.0
         )
 
@@ -558,7 +555,7 @@ class TestAsyncValkeyCheckpointSaverPut:
         # Pipeline expire should have been called (via the pipeline mock)
 
 
-class TestAsyncValkeyCheckpointSaverPutWrites:
+class TestAsyncValkeySaverPutWrites:
     """Test aput_writes method."""
 
     @pytest.mark.asyncio
@@ -571,9 +568,7 @@ class TestAsyncValkeyCheckpointSaverPutWrites:
 
         mock_valkey_client.get.return_value = orjson.dumps([])  # existing writes
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         await saver.aput_writes(sample_config, writes, task_id)
 
@@ -590,9 +585,7 @@ class TestAsyncValkeyCheckpointSaverPutWrites:
 
         mock_valkey_client.get.return_value = orjson.dumps([])  # existing writes
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         await saver.aput_writes(sample_config, writes, task_id, task_path)
 
@@ -608,16 +601,14 @@ class TestAsyncValkeyCheckpointSaverPutWrites:
 
         mock_valkey_client.get.return_value = orjson.dumps([])  # existing writes
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         await saver.aput_writes(sample_config, writes, task_id)
 
         mock_valkey_client.get.assert_called()
 
 
-class TestAsyncValkeyCheckpointSaverErrorHandling:
+class TestAsyncValkeySaverErrorHandling:
     """Test error handling scenarios."""
 
     @pytest.mark.asyncio
@@ -633,9 +624,7 @@ class TestAsyncValkeyCheckpointSaverErrorHandling:
         )
         mock_valkey_client.pipeline.return_value = pipeline_mock
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         # Should return None instead of raising exception due to error handling
         result = await saver.aget_tuple(sample_config)
@@ -650,9 +639,7 @@ class TestAsyncValkeyCheckpointSaverErrorHandling:
         bad_serializer = Mock()
         bad_serializer.dumps_typed.side_effect = ValueError("Serialization error")
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=bad_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=bad_serializer)
 
         with pytest.raises(ValueError):
             await saver.aput(
@@ -672,16 +659,14 @@ class TestAsyncValkeyCheckpointSaverErrorHandling:
         )
         mock_valkey_client.pipeline.return_value = pipeline_mock
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         # Should return None instead of raising exception due to error handling
         result = await saver.aget_tuple(sample_config)
         assert result is None
 
 
-class TestAsyncValkeyCheckpointSaverKeyGeneration:
+class TestAsyncValkeySaverKeyGeneration:
     """Test key generation methods."""
 
     @pytest.mark.asyncio
@@ -689,14 +674,12 @@ class TestAsyncValkeyCheckpointSaverKeyGeneration:
         self, mock_valkey_client, mock_serializer, sample_config
     ):
         """Test checkpoint key generation."""
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         key = saver._make_checkpoint_key(
-            sample_config["configurable"]["thread_id"],
-            sample_config["configurable"]["checkpoint_ns"],
-            sample_config["configurable"]["checkpoint_id"],
+            sample_config.get("configurable", {}).get("thread_id", ""),
+            sample_config.get("configurable", {}).get("checkpoint_ns", ""),
+            sample_config.get("configurable", {}).get("checkpoint_id", ""),
         )
 
         assert "checkpoint" in key
@@ -708,9 +691,7 @@ class TestAsyncValkeyCheckpointSaverKeyGeneration:
         self, mock_valkey_client, mock_serializer, sample_config
     ):
         """Test writes key generation."""
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         key = saver._make_writes_key(
             sample_config["configurable"]["thread_id"],
@@ -723,7 +704,7 @@ class TestAsyncValkeyCheckpointSaverKeyGeneration:
         assert "test-checkpoint-id" in key
 
 
-class TestAsyncValkeyCheckpointSaverAputWritesErrorHandling:
+class TestAsyncValkeySaverAputWritesErrorHandling:
     """Test aput_writes method error handling."""
 
     @pytest.mark.asyncio
@@ -737,9 +718,7 @@ class TestAsyncValkeyCheckpointSaverAputWritesErrorHandling:
         # Mock existing writes as string
         mock_valkey_client.get.return_value = "[]"  # String instead of bytes
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         await saver.aput_writes(sample_config, writes, task_id)
         mock_valkey_client.get.assert_called()
@@ -756,9 +735,7 @@ class TestAsyncValkeyCheckpointSaverAputWritesErrorHandling:
         mock_data = Mock()
         mock_valkey_client.get.return_value = mock_data
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         await saver.aput_writes(sample_config, writes, task_id)
         mock_valkey_client.get.assert_called()
@@ -774,9 +751,7 @@ class TestAsyncValkeyCheckpointSaverAputWritesErrorHandling:
         # Mock existing writes as invalid JSON
         mock_valkey_client.get.return_value = b"invalid json"
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         await saver.aput_writes(sample_config, writes, task_id)
         mock_valkey_client.get.assert_called()
@@ -792,9 +767,7 @@ class TestAsyncValkeyCheckpointSaverAputWritesErrorHandling:
         # Mock existing writes as dict instead of list
         mock_valkey_client.get.return_value = orjson.dumps({"not": "a list"})
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         await saver.aput_writes(sample_config, writes, task_id)
         mock_valkey_client.get.assert_called()
@@ -809,9 +782,7 @@ class TestAsyncValkeyCheckpointSaverAputWritesErrorHandling:
 
         mock_valkey_client.get.side_effect = ValkeyError("Valkey error")
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         with pytest.raises(ValkeyError):
             await saver.aput_writes(sample_config, writes, task_id)
@@ -827,15 +798,13 @@ class TestAsyncValkeyCheckpointSaverAputWritesErrorHandling:
 
         mock_valkey_client.get.return_value = orjson.dumps([])
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         with pytest.raises(KeyError):
             await saver.aput_writes(bad_config, writes, task_id)
 
 
-class TestAsyncValkeyCheckpointSaverAdeleteThread:
+class TestAsyncValkeySaverAdeleteThread:
     """Test adelete_thread method."""
 
     @pytest.mark.asyncio
@@ -843,9 +812,7 @@ class TestAsyncValkeyCheckpointSaverAdeleteThread:
         """Test adelete_thread when no keys exist."""
         mock_valkey_client.keys.return_value = []
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         await saver.adelete_thread("test-thread")
         mock_valkey_client.keys.assert_called_once()
@@ -856,51 +823,18 @@ class TestAsyncValkeyCheckpointSaverAdeleteThread:
     async def test_adelete_thread_basic_functionality(
         self, mock_valkey_client, mock_serializer
     ):
-        """Test basic adelete_thread functionality."""
-        # Mock thread keys
-        thread_keys = [b"thread:test-thread:ns1", b"thread:test-thread:ns2"]
-        mock_valkey_client.keys.return_value = thread_keys
+        """Test adelete_thread basic functionality."""
+        mock_valkey_client.keys.return_value = [
+            "checkpoint:test-thread::",
+            "writes:test-thread::",
+        ]
+        mock_valkey_client.delete.return_value = 2
 
-        # Mock checkpoint IDs for each thread key
-        checkpoint_ids = [b"checkpoint-1", b"checkpoint-2"]
-        mock_valkey_client.lrange.return_value = checkpoint_ids
-
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         await saver.adelete_thread("test-thread")
-
-        # Verify keys() was called
-        mock_valkey_client.keys.assert_called_once_with("thread:test-thread:*")
-
-        # Verify lrange was called for each thread key
-        assert mock_valkey_client.lrange.call_count == len(thread_keys)
-
-        # Verify delete was called
-        mock_valkey_client.delete.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_adelete_thread_string_thread_key(
-        self, mock_valkey_client, mock_serializer
-    ):
-        """Test adelete_thread with string thread key."""
-        # Mock thread keys as strings instead of bytes
-        thread_keys = ["thread:test-thread:ns1"]
-        mock_valkey_client.keys.return_value = thread_keys
-
-        # Mock checkpoint IDs
-        checkpoint_ids = [b"checkpoint-1"]
-        mock_valkey_client.lrange.return_value = checkpoint_ids
-
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
-
-        await saver.adelete_thread("test-thread")
-
         mock_valkey_client.keys.assert_called_once()
-        mock_valkey_client.delete.assert_called()
+        mock_valkey_client.delete.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_adelete_thread_valkey_error(
@@ -909,293 +843,10 @@ class TestAsyncValkeyCheckpointSaverAdeleteThread:
         """Test adelete_thread with ValkeyError."""
         mock_valkey_client.keys.side_effect = ValkeyError("Valkey error")
 
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
+        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         with pytest.raises(ValkeyError):
             await saver.adelete_thread("test-thread")
-
-
-class TestAsyncValkeyCheckpointSaverSyncMethods:
-    """Test sync methods that should raise NotImplementedError."""
-
-    def test_get_tuple_not_implemented(
-        self, mock_valkey_client, mock_serializer, sample_config
-    ):
-        """Test that get_tuple raises NotImplementedError."""
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
-
-        with pytest.raises(
-            NotImplementedError,
-            match="The AsyncValkeyCheckpointSaver does not support sync methods",
-        ):
-            saver.get_tuple(sample_config)
-
-    def test_list_not_implemented(
-        self, mock_valkey_client, mock_serializer, sample_config
-    ):
-        """Test that list raises NotImplementedError."""
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
-
-        with pytest.raises(
-            NotImplementedError,
-            match="The AsyncValkeyCheckpointSaver does not support sync methods",
-        ):
-            list(saver.list(sample_config))
-
-    def test_put_not_implemented(
-        self,
-        mock_valkey_client,
-        mock_serializer,
-        sample_config,
-        sample_checkpoint,
-        sample_metadata,
-    ):
-        """Test that put raises NotImplementedError."""
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
-
-        with pytest.raises(
-            NotImplementedError,
-            match="The AsyncValkeyCheckpointSaver does not support sync methods",
-        ):
-            saver.put(
-                sample_config, sample_checkpoint, sample_metadata, {"test_channel": 1}
-            )
-
-    def test_put_writes_not_implemented(
-        self, mock_valkey_client, mock_serializer, sample_config
-    ):
-        """Test that put_writes raises NotImplementedError."""
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
-
-        writes = [("channel", "value")]
-        task_id = "test-task"
-
-        with pytest.raises(
-            NotImplementedError,
-            match="The AsyncValkeyCheckpointSaver does not support sync methods",
-        ):
-            saver.put_writes(sample_config, writes, task_id)
-
-    def test_delete_thread_not_implemented(self, mock_valkey_client, mock_serializer):
-        """Test that delete_thread raises NotImplementedError."""
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
-
-        with pytest.raises(
-            NotImplementedError,
-            match="The AsyncValkeyCheckpointSaver does not support sync methods",
-        ):
-            saver.delete_thread("test-thread")
-
-
-class TestAsyncValkeyCheckpointSaverAputErrorHandling:
-    """Test aput method error handling."""
-
-    @pytest.mark.asyncio
-    async def test_aput_valkey_error(
-        self,
-        mock_valkey_client,
-        mock_serializer,
-        sample_config,
-        sample_checkpoint,
-        sample_metadata,
-    ):
-        """Test aput with ValkeyError."""
-        # Mock pipeline execution to raise ValkeyError
-        pipeline_mock = Mock()
-        pipeline_mock.set = Mock(return_value=None)
-        pipeline_mock.lpush = Mock(return_value=None)
-        pipeline_mock.execute = AsyncMock(side_effect=ValkeyError("Valkey error"))
-        mock_valkey_client.pipeline.return_value = pipeline_mock
-
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
-
-        with pytest.raises(ValkeyError):
-            await saver.aput(
-                sample_config, sample_checkpoint, sample_metadata, {"test_channel": 1}
-            )
-
-
-class TestAsyncValkeyCheckpointSaverContextManagement:
-    """Test context manager functionality and cleanup."""
-
-    @pytest.mark.asyncio
-    @pytest.mark.timeout(10)
-    async def test_from_conn_string_context_manager(self):
-        """Test from_conn_string context manager functionality."""
-        with patch(
-            "langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey"
-        ) as mock_valkey_class:
-            mock_client = AsyncMock()
-            mock_client.aclose = AsyncMock()
-            mock_valkey_class.from_url.return_value = mock_client
-
-            async with AsyncValkeyCheckpointSaver.from_conn_string(
-                "valkey://localhost:6379"
-            ) as saver:
-                assert saver.client == mock_client
-
-            # Client should be closed after context
-            mock_client.aclose.assert_called_once()
-
-    @pytest.mark.asyncio
-    @pytest.mark.timeout(10)
-    async def test_from_conn_string_context_manager_exception_handling(self):
-        """Test from_conn_string context manager handles exceptions properly."""
-        with patch(
-            "langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey"
-        ) as mock_valkey_class:
-            mock_client = AsyncMock()
-            mock_client.aclose = AsyncMock()
-            mock_valkey_class.from_url.return_value = mock_client
-
-            try:
-                async with AsyncValkeyCheckpointSaver.from_conn_string(
-                    "valkey://localhost:6379"
-                ):
-                    raise ValueError("Test exception")
-            except ValueError:
-                pass  # Expected
-
-            # Client should still be closed even after exception
-            mock_client.aclose.assert_called_once()
-
-    @pytest.mark.asyncio
-    @pytest.mark.timeout(10)
-    async def test_from_pool_context_manager(self):
-        """Test from_pool context manager functionality."""
-        with patch(
-            "langgraph_checkpoint_aws.checkpoint.valkey.async_saver.AsyncValkey"
-        ) as mock_valkey_class:
-            mock_client = AsyncMock()
-            mock_client.aclose = AsyncMock()
-            mock_valkey_class.return_value = mock_client
-            mock_pool = Mock()
-
-            async with AsyncValkeyCheckpointSaver.from_pool(mock_pool) as saver:
-                assert saver.client == mock_client
-
-            # Client should be closed after context
-            mock_client.aclose.assert_called_once()
-
-
-class TestAsyncValkeyCheckpointSaverComprehensiveCoverage:
-    """Additional tests for comprehensive coverage of edge cases."""
-
-    @pytest.mark.asyncio
-    async def test_aget_tuple_with_empty_namespace(
-        self, mock_valkey_client, mock_serializer, sample_checkpoint
-    ):
-        """Test aget_tuple with empty namespace string."""
-        config = RunnableConfig(
-            configurable={
-                "thread_id": "test-thread-123",
-                "checkpoint_ns": "",  # Empty namespace
-                "checkpoint_id": "test-checkpoint-id",
-            }
-        )
-
-        checkpoint_info = {
-            "thread_id": "test-thread-123",
-            "checkpoint_id": "test-checkpoint-id",
-            "parent_checkpoint_id": None,
-            "type": "json",
-            "checkpoint": base64.b64encode(
-                MockSerializer().dumps(sample_checkpoint)
-            ).decode("utf-8"),
-            "metadata": base64.b64encode(MockSerializer().dumps({})).decode("utf-8"),
-        }
-
-        pipeline_mock = Mock()
-        pipeline_mock.get = Mock(return_value=None)
-        pipeline_mock.execute = AsyncMock(
-            return_value=[
-                orjson.dumps(checkpoint_info),
-                orjson.dumps([]),
-            ]
-        )
-        mock_valkey_client.pipeline.return_value = pipeline_mock
-
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
-
-        result = await saver.aget_tuple(config)
-        assert result is not None
-        assert result.checkpoint["id"] == "test-checkpoint-id"
-
-    @pytest.mark.asyncio
-    async def test_namespace_handling_with_special_chars(
-        self, mock_valkey_client, mock_serializer
-    ):
-        """Test namespace handling with special characters."""
-        config = RunnableConfig(
-            configurable={
-                "thread_id": "test-thread-123",
-                "checkpoint_ns": "ns:with:colons",
-                "checkpoint_id": "test-checkpoint-id",
-            }
-        )
-
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
-
-        # Test that keys are generated properly with special namespace
-        checkpoint_key = saver._make_checkpoint_key(
-            config["configurable"]["thread_id"],
-            config["configurable"]["checkpoint_ns"],
-            config["configurable"]["checkpoint_id"],
-        )
-
-        assert "ns:with:colons" in checkpoint_key
-        assert "test-thread-123" in checkpoint_key
-        assert "test-checkpoint-id" in checkpoint_key
-
-    @pytest.mark.asyncio
-    async def test_large_checkpoint_handling(self, mock_valkey_client, mock_serializer):
-        """Test handling of large checkpoint data."""
-        # Create a large checkpoint
-        large_checkpoint = {
-            "v": 1,
-            "id": "large-checkpoint",
-            "ts": "2024-01-01T00:00:00.000000+00:00",
-            "channel_values": {f"channel_{i}": f"value_{i}" for i in range(1000)},
-            "channel_versions": {f"channel_{i}": i for i in range(1000)},
-            "versions_seen": {f"channel_{i}": {"__start__": i} for i in range(1000)},
-            "pending_sends": [],
-        }
-
-        config = RunnableConfig(
-            configurable={
-                "thread_id": "test-thread-123",
-                "checkpoint_ns": "",
-                "checkpoint_id": "large-checkpoint",
-            }
-        )
-
-        saver = AsyncValkeyCheckpointSaver(
-            client=mock_valkey_client, serde=mock_serializer
-        )
-
-        # Should handle large checkpoint without issues
-        await saver.aput(
-            config, large_checkpoint, {}, {f"channel_{i}": i for i in range(100)}
-        )
-        mock_valkey_client.pipeline.assert_called()
 
 
 # Additional async tests migrated from test_valkey_simple.py

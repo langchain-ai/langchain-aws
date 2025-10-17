@@ -22,7 +22,7 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from .utils import set_client_info
 
 
-class BaseValkeyCheckpointSaver(BaseCheckpointSaver[str]):
+class BaseValkeySaver(BaseCheckpointSaver[str]):
     """Base class for Valkey checkpoint savers.
 
     This class contains common functionality shared between synchronous and
