@@ -546,7 +546,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Acknowledgments
 
-- LangChain team for the base LangGraph framework
-- AWS Bedrock team for the session management service
-- Valkey team for the high-performance Redis-compatible storage
+* LangChain team for the base LangGraph framework
+* AWS Bedrock team for the session management service
+* Valkey team for the high-performance Redis-compatible storage
 
