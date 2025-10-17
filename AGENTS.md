@@ -14,12 +14,14 @@ This is a monorepo containing LangChain and LangGraph integrations for AWS servi
 ### For langchain-aws (libs/aws/)
 
 **Setup:**
+
 ```bash
 cd libs/aws
 make install_dev
 ```
 
 **Testing:**
+
 ```bash
 make tests                    # Run all unit tests
 make test TEST_FILE=path      # Run specific test file
@@ -28,6 +30,7 @@ make test_watch              # Interactive test watching
 ```
 
 **Code Quality:**
+
 ```bash
 make lint                    # Check code with ruff
 make format                  # Format code with ruff
@@ -36,6 +39,7 @@ make check_imports          # Validate imports
 ```
 
 **Coverage:**
+
 ```bash
 make coverage_tests                    # Unit test coverage
 make coverage_integration_tests        # Integration test coverage
@@ -44,12 +48,14 @@ make coverage_integration_tests        # Integration test coverage
 ### For langgraph-checkpoint-aws (libs/langgraph-checkpoint-aws/)
 
 **Setup:**
+
 ```bash
 cd libs/langgraph-checkpoint-aws
 make install_all
 ```
 
 **Testing and Linting:**
+
 ```bash
 make tests                   # Unit tests
 make integration_tests       # Integration tests
@@ -94,7 +100,7 @@ The package is organized by AWS service integration type:
 
 ## Important Notes
 
-- Both packages use Poetry for dependency management
+- Both packages use uv for dependency management
 - Code style enforced by ruff (formatting and linting)
 - MyPy used for type checking with strict configuration
 - Import validation ensures proper module organization
