@@ -22,7 +22,7 @@ on:
         description: "Release from a non-master branch (danger!)"
 
 env:
-  PYTHON_VERSION: "3.11"
+  PYTHON_VERSION: "3.13"
 
 permissions:
   contents: read
@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: write  # Needed for actions/upload-artifact
+      actions: write # Needed for actions/upload-artifact
 
     outputs:
       pkg-name: ${{ steps.check-version.outputs.pkg-name }}
@@ -73,14 +73,13 @@ jobs:
         shell: bash
         working-directory: ${{ inputs.working-directory }}
         run: |
-          echo pkg-name="$(python -c \"import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['name'])\")" >> $GITHUB_OUTPUT
-          echo version="$(python -c \"import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])\")" >> $GITHUB_OUTPUT
+          echo pkg-name="$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['name'])")" >> $GITHUB_OUTPUT
+          echo version="$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")" >> $GITHUB_OUTPUT
 
   test-pypi-publish:
     needs:
       - build
-    uses:
-      ./.github/workflows/_test_release.yml
+    uses: ./.github/workflows/_test_release.yml
     permissions: write-all
     with:
       working-directory: ${{ inputs.working-directory }}
@@ -94,7 +93,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # Needed for aws-actions/configure-aws-credentials
+      id-token: write # Needed for aws-actions/configure-aws-credentials
     steps:
       - uses: actions/checkout@v5
 
@@ -111,12 +110,10 @@ jobs:
       # - The package is published, and it breaks on the missing dependency when
       #   used in the real world.
 
-      - name: Set up Python + Poetry ${{ env.POETRY_VERSION }}
-        uses: "./.github/actions/poetry_setup"
+      - name: Set up Python + uv
+        uses: "./.github/actions/uv_setup"
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          poetry-version: ${{ env.POETRY_VERSION }}
-          working-directory: ${{ inputs.working-directory }}
 
       - name: Import published package
         shell: bash
@@ -125,7 +122,7 @@ jobs:
           PKG_NAME: ${{ needs.build.outputs.pkg-name }}
           VERSION: ${{ needs.build.outputs.version }}
         # Here we use:
-        # - The default regular PyPI index as the *primary* index, meaning 
+        # - The default regular PyPI index as the *primary* index, meaning
         #   that it takes priority (https://pypi.org/simple)
         # - The test PyPI index as an extra index, so that any dependencies that
         #   are not found on test PyPI can be resolved and installed anyway.
@@ -206,7 +203,7 @@ jobs:
           if [ -z "$AWS_ACCESS_KEY_ID" ]; then echo "AWS_ACCESS_KEY_ID is unset"; else echo "AWS_ACCESS_KEY_ID is still set"; fi
           if [ -z "$AWS_REGION" ]; then echo "AWS_REGION is unset"; else echo "AWS_REGION is still set"; fi
           if [ -z "$AWS_DEFAULT_REGION" ]; then echo "AWS_DEFAULT_REGION is unset"; else echo "AWS_DEFAULT_REGION is still set"; fi
-          
+
           make tests
         working-directory: ${{ inputs.working-directory }}
 
@@ -224,7 +221,7 @@ jobs:
       # https://docs.pypi.org/trusted-publishers/adding-a-publisher/
       id-token: write
       contents: read
-      actions: read  # Needed for actions/download-artifact
+      actions: read # Needed for actions/download-artifact
 
     defaults:
       run:
@@ -262,7 +259,7 @@ jobs:
       # This permission is needed by `ncipollo/release-action` to
       # create the GitHub release.
       contents: write
-      actions: read  # Needed for actions/download-artifact
+      actions: read # Needed for actions/download-artifact
 
     defaults:
       run:

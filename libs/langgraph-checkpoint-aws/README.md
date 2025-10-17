@@ -21,12 +21,6 @@ You can install the package using pip:
 pip install langgraph-checkpoint-aws
 ```
 
-Or with Poetry:
-
-```bash
-poetry add langgraph-checkpoint-aws
-```
-
 ## Requirements
 
 ```text
@@ -248,18 +242,24 @@ ValkeyCheckpointSaver(
 ```
 
 ## Development
+
 Setting Up Development Environment
 
 * Clone the repository:
+
 ```bash
 git clone <repository-url>
 cd libs/aws/langgraph-checkpoint-aws
 ```
+
 * Install development dependencies:
+
 ```bash
 make install_all
 ```
+
 * Or install specific components:
+
 ```bash
 make install_dev        # Basic development tools
 make install_test       # Testing tools
@@ -269,6 +269,7 @@ make install_codespell  # Spell checking tools
 ```
 
 ## Running Tests
+
 ```bash
 make tests         # Run all tests
 make test_watch   # Run tests in watch mode
@@ -276,6 +277,7 @@ make test_watch   # Run tests in watch mode
 ```
 
 ## Code Quality
+
 ```bash
 make lint           # Run linter
 make format         # Format code
@@ -283,6 +285,7 @@ make spell_check    # Check spelling
 ```
 
 ## Clean Up
+
 ```bash
 make clean          # Remove all generated files
 ```
@@ -292,6 +295,7 @@ make clean          # Remove all generated files
 ### AWS Configuration (for Bedrock components)
 
 Ensure you have AWS credentials configured using one of these methods:
+
 1. Environment variables
 2. AWS credentials file (~/.aws/credentials)
 3. IAM roles
@@ -394,17 +398,17 @@ def __init__(
 )
 ```
 
-- `client`: boto3 Bedrock runtime client (e.g. boto3.client("bedrock-agent-runtime"))
-- `session`: boto3.Session for custom credentials
-- `region_name`: AWS region where Bedrock is available
-- `credentials_profile_name`: Name of AWS credentials profile to use
-- `aws_access_key_id`: AWS access key ID for authentication
-- `aws_secret_access_key`: AWS secret access key for authentication
-- `aws_session_token`: AWS session token for temporary credentials
-- `endpoint_url`: Custom endpoint URL for the Bedrock service
-- `config`: Botocore configuration object
+* `client`: boto3 Bedrock runtime client (e.g. boto3.client("bedrock-agent-runtime"))
+* `session`: boto3.Session for custom credentials
+* `region_name`: AWS region where Bedrock is available
+* `credentials_profile_name`: Name of AWS credentials profile to use
+* `aws_access_key_id`: AWS access key ID for authentication
+* `aws_secret_access_key`: AWS secret access key for authentication
+* `aws_session_token`: AWS session token for temporary credentials
+* `endpoint_url`: Custom endpoint URL for the Bedrock service
+* `config`: Botocore configuration object
 
-### Additional AWS permissions for Session Saver:
+### Additional AWS permissions for Session Saver
 
 ```json
 {
@@ -500,11 +504,12 @@ checkpointer = ValkeyCheckpointSaver.from_conn_string(
 
 ## Security Considerations
 
-- Never commit AWS credentials
-- Use environment variables or AWS IAM roles for authentication
-- Follow AWS security best practices
-- Use IAM roles and temporary credentials when possible
-- Implement proper access controls for session management
+* Never commit AWS credentials
+
+* Use environment variables or AWS IAM roles for authentication
+* Follow AWS security best practices
+* Use IAM roles and temporary credentials when possible
+* Implement proper access controls for session management
 
 ### Valkey Security
 * Use SSL/TLS for production deployments (`valkeys://` protocol)
@@ -528,11 +533,12 @@ Comprehensive examples are available in the `samples/memory/` directory:
 
 ## Contributing
 
-- Fork the repository
-- Create a feature branch
-- Make your changes
-- Run tests and linting
-- Submit a pull request
+* Fork the repository
+
+* Create a feature branch
+* Make your changes
+* Run tests and linting
+* Submit a pull request
 
 ## License
 
