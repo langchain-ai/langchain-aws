@@ -434,7 +434,7 @@ def test_guardrails() -> None:
         "us.anthropic.claude-opus-4-1-20250805-v1:0",
         "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         #
-        #"us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        # "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     ],
 )
 def test_structured_output_tool_choice_not_supported(thinking_model: str) -> None:
