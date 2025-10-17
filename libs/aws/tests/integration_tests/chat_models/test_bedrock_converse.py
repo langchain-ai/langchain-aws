@@ -454,14 +454,11 @@ def test_structured_output_tool_choice_not_supported(thinking_model: str) -> Non
             "thinking": {"type": "enabled", "budget_tokens": 2000}
         },
     )
-    print("Generating structured llm with thinking...")
     with pytest.warns(match="structured output"):
         structured_llm = llm.with_structured_output(ClassifyQuery)
-    print("Invoking on structured llm with thinking and related query...")
     response = structured_llm.invoke("How big are cats?")
     assert isinstance(response, ClassifyQuery)
 
-    print("Invoking on structured llm with thinking and generic query...")
     with pytest.raises(OutputParserException):
         structured_llm.invoke("Hello!")
 

@@ -972,7 +972,6 @@ class ChatBedrockConverse(BaseChatModel):
         self,
         schema: Union[Dict, type],
     ) -> Runnable[LanguageModelInput, BaseMessage]:
-        print("In _get_llm_for_structured_output_no_tool_choice")
         admonition = (
             "ChatBedrockConverse structured output relies on forced tool calling, "
             "which is not supported for this model. This method will raise "
@@ -991,10 +990,8 @@ class ChatBedrockConverse(BaseChatModel):
                 "by disabling `thinking`."
             )
             admonition = f"{admonition} {additional_context}"
-            print("Returning warning for thinking claude model")
         warnings.warn(admonition)
         try:
-            print("Attempting bind_tools with structured output")
             llm = self.bind_tools(
                 [schema],
                 ls_structured_output_format={
@@ -1003,14 +1000,11 @@ class ChatBedrockConverse(BaseChatModel):
                 },
             )
         except Exception:
-            print("Failed, using regular bind_tools")
             llm = self.bind_tools([schema])
 
         def _raise_if_no_tool_calls(message: AIMessage) -> AIMessage:
             if not message.tool_calls:
-                print("No tool calls found, raising OutputParserException")
                 raise OutputParserException(admonition)
-            print("Tool calls found, returning normally")
             return message
 
         return llm | _raise_if_no_tool_calls
