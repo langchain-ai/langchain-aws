@@ -12,12 +12,12 @@ on:
       fork:
         required: true
         type: string
-        default: 'langchain-ai'
+        default: "langchain-ai"
         description: "Which fork to run this test against"
       branch:
         required: true
         type: string
-        default: 'main'
+        default: "main"
         description: "Which branch to run this test against"
       test-file:
         required: true
@@ -26,7 +26,7 @@ on:
         description: "Which test file to run"
 
 env:
-  PYTHON_VERSION: "3.11"
+  PYTHON_VERSION: "3.13"
 
 jobs:
   build:
@@ -37,7 +37,7 @@ jobs:
     permissions:
       contents: read
       id-token: write # Needed for aws-actions/configure-aws-credentials
-      actions: write  # Needed for actions/cache used by poetry_setup action
+      actions: write
     name: "make integration_test"
     steps:
       - uses: actions/checkout@v5
