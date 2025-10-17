@@ -73,8 +73,8 @@ jobs:
         shell: bash
         working-directory: ${{ inputs.working-directory }}
         run: |
-          echo pkg-name="$(python -c \"import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['name'])\")" >> $GITHUB_OUTPUT
-          echo version="$(python -c \"import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])\")" >> $GITHUB_OUTPUT
+          echo "pkg-name=$(python -c 'import tomllib; d=tomllib.load(open("pyproject.toml","rb")); print(d["project"]["name"], end="")')" >> "$GITHUB_OUTPUT"
+          echo "version=$(python -c 'import tomllib; d=tomllib.load(open("pyproject.toml","rb")); print(d["project"]["version"], end="")')" >> "$GITHUB_OUTPUT"
 
   test-pypi-publish:
     needs:
