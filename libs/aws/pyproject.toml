@@ -7,14 +7,14 @@ authors = []
 license = {text = "MIT"}
 requires-python = ">=3.10"
 dependencies = [
-    "langchain-core>=1.0.0a4",
+    "langchain-core>=1.0.0",
     "boto3>=1.40.19",
     "pydantic>=2.10.6,<3",
     "numpy>=2.3.2,<3; python_version>='3.12'",
     "numpy>=1.0.0,<3; python_version<'3.12'",
 ]
 name = "langchain-aws"
-version = "1.0.0a1"
+version = "1.0.0"
 description = "An integration package connecting AWS and LangChain"
 readme = "README.md"
 
@@ -32,8 +32,8 @@ test = [
     "syrupy>=4.9.1",
     "pytest-asyncio>=0.20,<1",
     "pytest-watcher>=0.4.3",
-    "langchain-tests>=0.3.20",
-    "langchain>=1.0.0a10",
+    "langchain-tests>=1.0.0",
+    "langchain>=1.0.0rc2",
 ]
 test_integration = []
 lint = ["ruff>=0.13.0"]
