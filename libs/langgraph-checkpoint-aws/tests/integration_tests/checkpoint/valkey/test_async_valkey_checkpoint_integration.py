@@ -9,9 +9,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 
-from langgraph_checkpoint_aws.checkpoint.valkey import (
-    AsyncValkeySaver,
-)
+from langgraph_checkpoint_aws import AsyncValkeySaver
 
 # Check for optional dependencies
 try:

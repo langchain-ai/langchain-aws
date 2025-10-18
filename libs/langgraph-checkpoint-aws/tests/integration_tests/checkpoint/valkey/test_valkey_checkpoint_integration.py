@@ -10,9 +10,7 @@ from typing import Any
 import pytest
 from langchain_core.runnables import RunnableConfig
 
-from langgraph_checkpoint_aws.checkpoint.valkey import (
-    ValkeySaver,
-)
+from langgraph_checkpoint_aws import ValkeySaver
 
 # Check for optional dependencies
 try:

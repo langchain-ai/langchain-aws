@@ -15,9 +15,7 @@ try:
     import valkey  # noqa: F401
     from valkey.exceptions import ValkeyError
 
-    from langgraph_checkpoint_aws.checkpoint.valkey.async_saver import (
-        AsyncValkeySaver,
-    )
+    from langgraph_checkpoint_aws import AsyncValkeySaver
 
     VALKEY_AVAILABLE = True
 except ImportError:

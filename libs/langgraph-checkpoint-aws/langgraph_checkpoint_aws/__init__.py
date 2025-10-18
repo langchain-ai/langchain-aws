@@ -12,6 +12,26 @@ from langgraph_checkpoint_aws.agentcore.store import (
     AgentCoreMemoryStore,
 )
 
+# Conditional imports for checkpoint functionality
+try:
+    from langgraph_checkpoint_aws.checkpoint import AsyncValkeySaver, ValkeySaver
+
+    valkey_available = True
+except ImportError:
+    # If checkpoint dependencies are not available, create placeholder classes
+    from typing import Any
+
+    def _missing_checkpoint_dependencies_error(*args: Any, **kwargs: Any) -> Any:
+        raise ImportError(
+            "Valkey checkpoint functionality requires optional dependencies. "
+            "Install them with: pip install 'langgraph-checkpoint-aws[valkey]'"
+        )
+
+    # Create placeholder classes that raise helpful errors
+    AsyncValkeySaver: type[Any] = _missing_checkpoint_dependencies_error  # type: ignore[assignment,no-redef]
+    ValkeySaver: type[Any] = _missing_checkpoint_dependencies_error  # type: ignore[assignment,no-redef]
+    valkey_available = False
+
 try:
     __version__ = version("langgraph-checkpoint-aws")
 except Exception:
@@ -23,5 +43,7 @@ SDK_USER_AGENT = f"LangGraphCheckpointAWS#{__version__}"
 __all__ = [
     "AgentCoreMemorySaver",
     "AgentCoreMemoryStore",
+    "AsyncValkeySaver",
+    "ValkeySaver",
     "SDK_USER_AGENT",
 ]

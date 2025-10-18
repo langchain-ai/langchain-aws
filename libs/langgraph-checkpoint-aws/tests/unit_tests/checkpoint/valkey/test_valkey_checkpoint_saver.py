@@ -14,7 +14,7 @@ try:
     import orjson  # noqa: F401
     import valkey  # noqa: F401
 
-    from langgraph_checkpoint_aws.checkpoint.valkey import ValkeySaver
+    from langgraph_checkpoint_aws import ValkeySaver
 
     VALKEY_AVAILABLE = True
 except ImportError:

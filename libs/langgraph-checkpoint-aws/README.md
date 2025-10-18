@@ -174,7 +174,7 @@ response = graph.invoke(
 
 ```python
 from langgraph.graph import StateGraph
-from langgraph_checkpoint_aws.checkpoint.valkey import ValkeySaver
+from langgraph_checkpoint_aws import ValkeySaver
 
 # Using connection string
 with ValkeySaver.from_conn_string(
@@ -462,7 +462,7 @@ def __init__(
 }
 ```
 
-### Valkey Setup (for Valkey components)
+### Valkey Setup
 
 #### Using AWS ElastiCache for Valkey (Recommended)
 ```python
@@ -576,4 +576,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 * LangChain team for the base LangGraph framework
 * AWS Bedrock team for the session management service
-* Valkey team for the high-performance Redis-compatible storage
+* Valkey team for the Redis-compatible storage
