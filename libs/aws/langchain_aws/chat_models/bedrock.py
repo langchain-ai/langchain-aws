@@ -1231,7 +1231,12 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             base_model = self._get_base_model()
             if any(
                 x in base_model
-                for x in ("claude-3-7-", "claude-opus-4-", "claude-sonnet-4-")
+                for x in (
+                    "claude-3-7-",
+                    "claude-opus-4-",
+                    "claude-sonnet-4-",
+                    "claude-haiku-4-",
+                )
             ) and thinking_in_params(self.model_kwargs or {}):
                 forced = False
                 if isinstance(tool_choice, bool):
