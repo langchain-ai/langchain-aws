@@ -10,7 +10,7 @@ from langgraph_checkpoint_aws.agentcore.store import (
     AgentCoreMemoryStore,
 )
 
-__version__ = "0.2.0"
+__version__ = "1.0.0"
 SDK_USER_AGENT = f"LangGraphCheckpointAWS#{__version__}"
 
 # Expose the saver class at the package level
