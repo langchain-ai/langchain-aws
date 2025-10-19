@@ -71,6 +71,9 @@ class NeptuneQueryException(Exception):
 
 
 class BaseNeptuneGraph(ABC):
+    def __init__(self, property_descriptions: Optional[Dict[Tuple[str, str], str]] = None):
+        self.property_descriptions = property_descriptions or {}
+
     @property
     def get_schema(self) -> str:
         """Returns the schema of the Neptune database"""
@@ -170,6 +173,19 @@ class BaseNeptuneGraph(ABC):
 
         return edge_properties
 
+    def _inject_property_descriptions(self, properties_list: List) -> List:
+        """Inject property descriptions into node and edge properties."""
+        if not self.property_descriptions:
+            return properties_list
+        
+        for item in properties_list:
+            for prop in item['properties']:
+                key_field = 'labels' if 'labels' in item else 'type'
+                key = (item[key_field], prop['property'])
+                if key in self.property_descriptions:
+                    prop['description'] = self.property_descriptions[key]
+        return properties_list
+
     def _refresh_schema(self) -> None:
         """Refreshes the Neptune graph schema information."""
 
@@ -183,8 +199,8 @@ class BaseNeptuneGraph(ABC):
         }
         n_labels, e_labels = self._get_labels()
         triple_schema = self._get_triples(e_labels)
-        node_properties = self._get_node_properties(n_labels, types)
-        edge_properties = self._get_edge_properties(e_labels, types)
+        node_properties = self._inject_property_descriptions(self._get_node_properties(n_labels, types))
+        edge_properties = self._inject_property_descriptions(self._get_edge_properties(e_labels, types))
 
         self.schema = f"""
         Node properties are the following:
@@ -236,9 +252,10 @@ class NeptuneAnalyticsGraph(BaseNeptuneGraph):
         aws_session_token: Optional[SecretStr] = None,
         endpoint_url: Optional[str] = None,
         config: Optional["Config"] = None,
+        property_descriptions: Optional[Dict[Tuple[str, str], str]] = None,
     ) -> None:
         """Create a new Neptune Analytics graph wrapper instance."""
-
+        super().__init__(property_descriptions)
         self.graph_identifier = graph_identifier
 
         if client is not None:
@@ -319,8 +336,8 @@ class NeptuneAnalyticsGraph(BaseNeptuneGraph):
         data = self.query(pg_schema_query)
         raw_schema = data[0]["schema"]
         triple_schema = _format_triples(raw_schema["labelTriples"])
-        node_properties = _format_node_properties(raw_schema["nodeLabelDetails"])
-        edge_properties = _format_edge_properties(raw_schema["edgeLabelDetails"])
+        node_properties = self._inject_property_descriptions(_format_node_properties(raw_schema["nodeLabelDetails"]))
+        edge_properties = self._inject_property_descriptions(_format_edge_properties(raw_schema["edgeLabelDetails"]))
 
         self.schema = f"""
         Node properties are the following:
@@ -384,8 +401,10 @@ class NeptuneGraph(BaseNeptuneGraph):
         aws_session_token: Optional[SecretStr] = None,
         endpoint_url: Optional[str] = None,
         config: Optional["Config"] = None,
+        property_descriptions: Optional[Dict[Tuple[str, str], str]] = None,
     ) -> None:
         """Create a new Neptune graph wrapper instance."""
+        super().__init__(property_descriptions)
 
         try:
             if client is not None:
