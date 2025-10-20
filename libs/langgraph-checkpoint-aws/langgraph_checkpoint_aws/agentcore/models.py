@@ -20,7 +20,8 @@ class CheckpointerConfig(BaseModel):
         """Generate session ID from thread_id and checkpoint_ns."""
         if self.checkpoint_ns:
             # Use underscore separator to ensure valid session ID pattern
-            return f"{self.thread_id}_{self.checkpoint_ns}"
+            checkpoint = self.checkpoint_ns.replace(":", "_")
+            return f"{self.thread_id}_{checkpoint}"
         return self.thread_id
 
     @classmethod
