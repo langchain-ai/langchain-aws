@@ -26,7 +26,14 @@ except ImportError:
     ConnectionError = Exception  # type: ignore[assignment, misc]
     TimeoutError = Exception  # type: ignore[assignment, misc]
 
-
+# Skip all tests if valkey dependencies are not available
+pytestmark = pytest.mark.skipif(
+    not VALKEY_AVAILABLE,
+    reason=(
+        "valkey dependency not available. "
+        "Install with: pip install 'langgraph-checkpoint-aws[valkey]'"
+    ),
+)
 class TestValkeyCacheUnit:
     """Comprehensive unit tests for ValkeyCache."""
 
