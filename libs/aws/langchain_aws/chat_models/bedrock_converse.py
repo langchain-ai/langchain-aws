@@ -1,5 +1,4 @@
 import base64
-import copy
 import functools
 import json
 import logging
@@ -540,13 +539,17 @@ class ChatBedrockConverse(BaseChatModel):
     def build_extra(cls, values: dict[str, Any]) -> Any:
         """Build extra kwargs from additional params that were passed in."""
         model_kwargs = values.pop("model_kwargs", {})
-        additional_model_request_fields = values.pop("additional_model_request_fields", {})
+        additional_model_request_fields = values.pop(
+            "additional_model_request_fields", {}
+        )
         if model_kwargs:
-            model_kwargs_msg = "Please use additional_model_request_fields instead of " \
-            "model_kwargs for any extra inference parameters."
+            model_kwargs_msg = (
+                "Please use additional_model_request_fields instead of "
+                "model_kwargs for any extra inference parameters."
+            )
             logger.warning(model_kwargs_msg)
             warnings.warn(model_kwargs_msg)
-        
+
         all_required_field_names = get_pydantic_field_names(cls)
         values = _build_model_kwargs(values, all_required_field_names)
         base_model_kwargs = values.pop("model_kwargs", {})
