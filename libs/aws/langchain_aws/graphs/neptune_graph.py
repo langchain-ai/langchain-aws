@@ -71,7 +71,9 @@ class NeptuneQueryException(Exception):
 
 
 class BaseNeptuneGraph(ABC):
-    def __init__(self, property_descriptions: Optional[Dict[Tuple[str, str], str]] = None):
+    def __init__(
+        self, property_descriptions: Optional[Dict[Tuple[str, str], str]] = None
+    ):
         self.property_descriptions = property_descriptions or {}
 
     @property
@@ -199,8 +201,12 @@ class BaseNeptuneGraph(ABC):
         }
         n_labels, e_labels = self._get_labels()
         triple_schema = self._get_triples(e_labels)
-        node_properties = self._inject_property_descriptions(self._get_node_properties(n_labels, types))
-        edge_properties = self._inject_property_descriptions(self._get_edge_properties(e_labels, types))
+        node_properties = self._inject_property_descriptions(
+            self._get_node_properties(n_labels, types)
+        )
+        edge_properties = self._inject_property_descriptions(
+            self._get_edge_properties(e_labels, types)
+        )
 
         self.schema = f"""
         Node properties are the following:
@@ -336,8 +342,12 @@ class NeptuneAnalyticsGraph(BaseNeptuneGraph):
         data = self.query(pg_schema_query)
         raw_schema = data[0]["schema"]
         triple_schema = _format_triples(raw_schema["labelTriples"])
-        node_properties = self._inject_property_descriptions(_format_node_properties(raw_schema["nodeLabelDetails"]))
-        edge_properties = self._inject_property_descriptions(_format_edge_properties(raw_schema["edgeLabelDetails"]))
+        node_properties = self._inject_property_descriptions(
+            _format_node_properties(raw_schema["nodeLabelDetails"])
+        )
+        edge_properties = self._inject_property_descriptions(
+            _format_edge_properties(raw_schema["edgeLabelDetails"])
+        )
 
         self.schema = f"""
         Node properties are the following:
