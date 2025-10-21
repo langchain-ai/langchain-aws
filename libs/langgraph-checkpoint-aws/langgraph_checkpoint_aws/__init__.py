@@ -29,7 +29,7 @@ except ImportError:
     ValkeyCache: type[Any] = _missing_valkey_dependencies_error  # type: ignore[assignment,no-redef]
     valkey_available = False
 
-__version__ = "0.2.0"
+__version__ = "1.0.0"
 SDK_USER_AGENT = f"LangGraphCheckpointAWS#{__version__}"
 
 # Expose the saver class at the package level
