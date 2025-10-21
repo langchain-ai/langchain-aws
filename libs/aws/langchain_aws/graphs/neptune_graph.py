@@ -179,13 +179,13 @@ class BaseNeptuneGraph(ABC):
         """Inject property descriptions into node and edge properties."""
         if not self.property_descriptions:
             return properties_list
-        
+
         for item in properties_list:
-            for prop in item['properties']:
-                key_field = 'labels' if 'labels' in item else 'type'
-                key = (item[key_field], prop['property'])
+            for prop in item["properties"]:
+                key_field = "labels" if "labels" in item else "type"
+                key = (item[key_field], prop["property"])
                 if key in self.property_descriptions:
-                    prop['description'] = self.property_descriptions[key]
+                    prop["description"] = self.property_descriptions[key]
         return properties_list
 
     def _refresh_schema(self) -> None:
