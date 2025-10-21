@@ -554,7 +554,7 @@ class ChatBedrockConverse(BaseChatModel):
         values = _build_model_kwargs(values, all_required_field_names)
         base_model_kwargs = values.pop("model_kwargs", {})
 
-        if additional_model_request_fields or model_kwargs:
+        if additional_model_request_fields or model_kwargs or base_model_kwargs:
             values["additional_model_request_fields"] = {
                 **base_model_kwargs,
                 **model_kwargs,
