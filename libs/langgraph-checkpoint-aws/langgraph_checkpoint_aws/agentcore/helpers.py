@@ -82,11 +82,13 @@ class EventSerializer:
                 event_dict["value"] = self.serialize_value(event.value)
 
         elif isinstance(event, WritesEvent):
-            # The writes field is already properly serialized by model_dump()
-            # We just need to serialize the value field in each write
-            for write in event_dict["writes"]:
-                val = write.get("value", EMPTY_CHANNEL_VALUE)
-                write["value"] = self.serialize_value(val)
+            event_dict["writes"] = [
+                {
+                    **write.model_dump(exclude_none=True),
+                    "value": self.serialize_value(write.value),
+                }
+                for write in event.writes
+            ]
 
         return json.dumps(event_dict, default=custom_serializer)
 
