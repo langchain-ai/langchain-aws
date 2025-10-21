@@ -43,7 +43,7 @@ pip install langgraph-checkpoint-aws
 
 ## Usage
 
-### `langchain-aws``
+### `langchain-aws`
 
 Here's a simple example of how to use the `langchain-aws` package.
 
