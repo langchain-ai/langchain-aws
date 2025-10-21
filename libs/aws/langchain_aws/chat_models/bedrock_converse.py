@@ -543,12 +543,14 @@ class ChatBedrockConverse(BaseChatModel):
             "additional_model_request_fields", {}
         )
         if model_kwargs:
-            model_kwargs_msg = (
-                "Please use additional_model_request_fields instead of "
-                "model_kwargs for any extra inference parameters."
-            )
-            logger.warning(model_kwargs_msg)
-            warnings.warn(model_kwargs_msg)
+            if model_kwargs:
+                warnings.warn(
+                    "ChatBedrockConverse uses 'additional_model_request_fields' "
+                    "instead of 'model_kwargs'. Your parameters have been automatically"
+                    " converted.",
+                    UserWarning,
+                    stacklevel=2,
+                )
 
         all_required_field_names = get_pydantic_field_names(cls)
         values = _build_model_kwargs(values, all_required_field_names)

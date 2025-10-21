@@ -1627,7 +1627,10 @@ def test_model_kwargs() -> None:
     assert llm.region_name == "us-west-2"
     assert llm.additional_model_request_fields == {"foo": "bar"}
 
-    with pytest.warns(match="additional_model_request_fields instead of model_kwargs"):
+    with pytest.warns(
+        UserWarning,
+        match="uses 'additional_model_request_fields' instead of 'model_kwargs'",
+    ):
         llm = ChatBedrockConverse(
             model="my-model",
             region_name="us-west-2",
