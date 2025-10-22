@@ -279,7 +279,7 @@ def convert_messages_to_prompt_writer(messages: List[BaseMessage]) -> str:
     """Convert a list of messages to a prompt for Writer."""
 
     return "\n".join(
-        [_convert_one_message_to_text_llama(message) for message in messages]
+        [_convert_one_message_to_text_writer(message) for message in messages]
     )
 
 
@@ -741,7 +741,7 @@ class ChatPromptAdapter:
     ]:
         if provider == "anthropic":
             return _format_anthropic_messages(messages)
-        elif provider == "openai":
+        elif provider in ("openai", "qwen"):
             return cast(List[Dict[str, Any]], convert_to_openai_messages(messages))
         raise NotImplementedError(
             f"Provider {provider} not supported for format_messages"
@@ -914,7 +914,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     system = self.system_prompt_with_tools
             else:
                 system = system_str
-        elif provider == "openai":
+        elif provider in ("openai", "qwen"):
             formatted_messages = cast(
                 List[Dict[str, Any]],
                 ChatPromptAdapter.format_messages(provider, messages),
@@ -1060,7 +1060,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 else:
                     system = system_str
                 citations_enabled = _citations_enabled(formatted_messages)
-            elif provider == "openai":
+            elif provider in ("openai", "qwen"):
                 formatted_messages = cast(
                     List[Dict[str, Any]],
                     ChatPromptAdapter.format_messages(provider, messages),
@@ -1231,7 +1231,12 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             base_model = self._get_base_model()
             if any(
                 x in base_model
-                for x in ("claude-3-7-", "claude-opus-4-", "claude-sonnet-4-")
+                for x in (
+                    "claude-3-7-",
+                    "claude-opus-4-",
+                    "claude-sonnet-4-",
+                    "claude-haiku-4-",
+                )
             ) and thinking_in_params(self.model_kwargs or {}):
                 forced = False
                 if isinstance(tool_choice, bool):

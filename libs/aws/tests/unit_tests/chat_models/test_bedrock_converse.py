@@ -120,6 +120,7 @@ def test_anthropic_bind_tools_tool_choice() -> None:
         "anthropic.claude-3-7-sonnet-20250219-v1:0",
         "anthropic.claude-sonnet-4-20250514-v1:0",
         "anthropic.claude-opus-4-20250514-v1:0",
+        "anthropic.claude-haiku-4-5-20251001-v1:0",
     ],
 )
 def test_anthropic_thinking_bind_tools_tool_choice(thinking_model: str) -> None:
@@ -1623,6 +1624,19 @@ def test_model_kwargs() -> None:
         region_name="us-west-2",
         additional_model_request_fields={"foo": "bar"},
     )
+    assert llm.model_id == "my-model"
+    assert llm.region_name == "us-west-2"
+    assert llm.additional_model_request_fields == {"foo": "bar"}
+
+    with pytest.warns(
+        UserWarning,
+        match="uses 'additional_model_request_fields' instead of 'model_kwargs'",
+    ):
+        llm = ChatBedrockConverse(
+            model="my-model",
+            region_name="us-west-2",
+            model_kwargs={"foo": "bar"},  # type: ignore[call-arg]
+        )
     assert llm.model_id == "my-model"
     assert llm.region_name == "us-west-2"
     assert llm.additional_model_request_fields == {"foo": "bar"}

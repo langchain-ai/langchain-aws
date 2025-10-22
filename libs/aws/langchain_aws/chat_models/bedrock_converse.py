@@ -538,17 +538,27 @@ class ChatBedrockConverse(BaseChatModel):
     @classmethod
     def build_extra(cls, values: dict[str, Any]) -> Any:
         """Build extra kwargs from additional params that were passed in."""
-        all_required_field_names = get_pydantic_field_names(cls)
-        values = _build_model_kwargs(values, all_required_field_names)
-
-        # Merge model_kwargs (name assumed in langchain-core) and
-        # additional_model_request_fields (name used in ChatBedrockConverse)
         model_kwargs = values.pop("model_kwargs", {})
         additional_model_request_fields = values.pop(
             "additional_model_request_fields", {}
         )
-        if additional_model_request_fields or model_kwargs:
+        if model_kwargs:
+            if model_kwargs:
+                warnings.warn(
+                    "ChatBedrockConverse uses 'additional_model_request_fields' "
+                    "instead of 'model_kwargs'. Your parameters have been automatically"
+                    " converted.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+        all_required_field_names = get_pydantic_field_names(cls)
+        values = _build_model_kwargs(values, all_required_field_names)
+        base_model_kwargs = values.pop("model_kwargs", {})
+
+        if additional_model_request_fields or model_kwargs or base_model_kwargs:
             values["additional_model_request_fields"] = {
+                **base_model_kwargs,
                 **model_kwargs,
                 **additional_model_request_fields,
             }
@@ -759,6 +769,7 @@ class ChatBedrockConverse(BaseChatModel):
                     "claude-3-7-sonnet",
                     "claude-sonnet-4",
                     "claude-opus-4",
+                    "claude-haiku-4",
                 )
                 thinking_params = (self.additional_model_request_fields or {}).get(
                     "thinking", {}
@@ -977,9 +988,15 @@ class ChatBedrockConverse(BaseChatModel):
             "langchain_core.exceptions.OutputParserException if tool calls are not "
             "generated. Consider adjusting your prompt to ensure the tool is called."
         )
-        if "claude-3-7-sonnet" in self._get_base_model():
+        thinking_claude_models = (
+            "claude-3-7-sonnet",
+            "claude-sonnet-4",
+            "claude-opus-4",
+            "claude-haiku-4",
+        )
+        if any(model in self._get_base_model() for model in thinking_claude_models):
             additional_context = (
-                "For Claude 3.7 Sonnet models, you can also support forced tool use "
+                "For Claude 3/4 models, you can also support forced tool use "
                 "by disabling `thinking`."
             )
             admonition = f"{admonition} {additional_context}"
@@ -1066,6 +1083,7 @@ class ChatBedrockConverse(BaseChatModel):
             "claude-3-7-sonnet",
             "claude-sonnet-4",
             "claude-opus-4",
+            "claude-haiku-4",
         )
         if tool_choice is None and any(
             model in self._get_base_model() for model in thinking_claude_models
