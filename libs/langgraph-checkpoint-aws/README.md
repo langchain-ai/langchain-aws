@@ -24,28 +24,6 @@ pip install langgraph-checkpoint-aws
 # With Valkey support
 pip install 'langgraph-checkpoint-aws[valkey]'
 
-# For development with testing support
-pip install 'langgraph-checkpoint-aws[valkey,valkey-test]'
-```
-
-## Requirements
-
-### Base Requirements
-```text
-Python >=3.10
-langgraph-checkpoint >=2.1.1
-langgraph >=1.0.0.a4
-boto3 >=1.40.19
-```
-
-### Optional Dependencies
-```text
-# For Valkey checkpoint storage (install with [valkey])
-valkey >=6.1.1
-orjson >=3.11.3
-
-# For Valkey testing (install with [valkey-test])
-fakeredis >=2.25.1
 ```
 
 ## Components

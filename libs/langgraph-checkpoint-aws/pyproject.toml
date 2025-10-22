@@ -21,24 +21,24 @@ keywords = ["aws", "bedrock", "langchain", "langgraph", "checkpointer", "elastic
 "Source Code" = "https://github.com/langchain-ai/langchain-aws/tree/main/libs/langgraph-checkpoint-aws"
 repository = "https://github.com/langchain-ai/langchain-aws"
 
-[dependency-groups]
-dev = [
-    "ruff>=0.13.0",
-    "mypy>=1.17.1",
-]
+[project.optional-dependencies]
 valkey = [
     "valkey>=6.1.1",
     "orjson>=3.11.3"
 ]
-valkey-test = [
-    "fakeredis>=2.25.1"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.13.0",
+    "mypy>=1.17.1",
 ]
 test = [
     "pytest>=8.4.1",
     "pytest-cov>=6.2.1",
     "pytest-socket>=0.7.0",
     "pytest-asyncio>=0.26.0",
-    "pytest-mock>=3.15.1"
+    "pytest-mock>=3.15.1",
+    "fakeredis>=2.25.1"
 ]
 test_integration = [
     "langchain>=1.0.0",
