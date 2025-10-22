@@ -538,17 +538,27 @@ class ChatBedrockConverse(BaseChatModel):
     @classmethod
     def build_extra(cls, values: dict[str, Any]) -> Any:
         """Build extra kwargs from additional params that were passed in."""
-        all_required_field_names = get_pydantic_field_names(cls)
-        values = _build_model_kwargs(values, all_required_field_names)
-
-        # Merge model_kwargs (name assumed in langchain-core) and
-        # additional_model_request_fields (name used in ChatBedrockConverse)
         model_kwargs = values.pop("model_kwargs", {})
         additional_model_request_fields = values.pop(
             "additional_model_request_fields", {}
         )
-        if additional_model_request_fields or model_kwargs:
+        if model_kwargs:
+            if model_kwargs:
+                warnings.warn(
+                    "ChatBedrockConverse uses 'additional_model_request_fields' "
+                    "instead of 'model_kwargs'. Your parameters have been automatically"
+                    " converted.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+        all_required_field_names = get_pydantic_field_names(cls)
+        values = _build_model_kwargs(values, all_required_field_names)
+        base_model_kwargs = values.pop("model_kwargs", {})
+
+        if additional_model_request_fields or model_kwargs or base_model_kwargs:
             values["additional_model_request_fields"] = {
+                **base_model_kwargs,
                 **model_kwargs,
                 **additional_model_request_fields,
             }
