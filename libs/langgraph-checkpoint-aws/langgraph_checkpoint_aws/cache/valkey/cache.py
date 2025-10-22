@@ -10,9 +10,16 @@ from typing import TYPE_CHECKING, cast
 
 from langgraph.cache.base import BaseCache, FullKey, Namespace, ValueT
 from langgraph.checkpoint.serde.base import SerializerProtocol
-from valkey import Valkey
-from valkey.connection import ConnectionPool
-from valkey.exceptions import ConnectionError, TimeoutError
+
+try:
+    from valkey import Valkey
+    from valkey.connection import ConnectionPool
+    from valkey.exceptions import ConnectionError, TimeoutError
+except ImportError as e:
+    raise ImportError(
+        "The 'valkey' package is required to use ValkeyCache. "
+        "Install it with: pip install 'langgraph-checkpoint-aws[valkey]'"
+    ) from e
 
 from ...checkpoint.valkey.utils import set_client_info
 
