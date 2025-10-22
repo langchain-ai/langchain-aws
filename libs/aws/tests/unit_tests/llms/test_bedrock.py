@@ -304,6 +304,63 @@ MOCK_STREAMING_RESPONSE_WRITER = [
     {"chunk": {"bytes": b'"[DONE]"'}},
 ]
 
+MOCK_STREAMING_RESPONSE_QWEN = [
+    {
+        "chunk": {
+            "bytes": b'{"choices": [{"delta": {"content": "", "role": "assistant"}, '
+            b'"finish_reason": null, "index": 0}], '
+            b'"created": 1759875373, '
+            b'"id": "chatcmpl-a069cbda08ce4599afae798c4d2de095", '
+            b'"model": "qwen.qwen3-32b-v1:0", '
+            b'"object": "chat.completion.chunk", '
+            b'"service_tier": "auto"}'
+        }
+    },
+    {
+        "chunk": {
+            "bytes": b'{"choices": [{"delta": {"content": "Hello.  \\nGoodbye."}, '
+            b'"finish_reason": "stop", "index": 0}], '
+            b'"created": 1759875373, '
+            b'"id": "chatcmpl-a069cbda08ce4599afae798c4d2de095", '
+            b'"model": "qwen.qwen3-32b-v1:0", '
+            b'"object": "chat.completion.chunk", '
+            b'"service_tier": "auto", '
+            b'"amazon-bedrock-invocationMetrics": {'
+            b'"inputTokenCount": 35, "outputTokenCount": 7, '
+            b'"invocationLatency": 225, "firstByteLatency": 191}}'
+        }
+    },
+]
+
+MOCK_STREAMING_RESPONSE_OPENAI = [
+    {
+        "chunk": {
+            "bytes": b'{"choices": [{"delta": {"content": "Hello."}, '
+            b'"finish_reason": null, "index": 0}], '
+            b'"created": 1759813667, '
+            b'"id": "chatcmpl-fa6fb768b71046eeb3880cbb4a1b07c1", '
+            b'"model": "openai.gpt-oss-20b-1:0", '
+            b'"object": "chat.completion.chunk", "service_tier": "auto"}'
+        }
+    },
+    {
+        "chunk": {
+            "bytes": b'{"choices": [{"delta": {}, '
+            b'"finish_reason": "stop", "index": 0}],'
+            b' "created": 1759813667, '
+            b'"id": "chatcmpl-fa6fb768b71046eeb3880cbb4a1b07c1", '
+            b'"model": "openai.gpt-oss-20b-1:0", '
+            b'"object": "chat.completion.chunk", '
+            b'"service_tier": "auto", '
+            b'"amazon-bedrock-invocationMetrics": {'
+            b'"inputTokenCount": 84, '
+            b'"outputTokenCount": 87, '
+            b'"invocationLatency": 3981, '
+            b'"firstByteLatency": 3615}}'
+        }
+    },
+]
+
 
 async def async_gen_mock_streaming_response() -> AsyncGenerator[Dict, None]:
     for item in MOCK_STREAMING_RESPONSE:
@@ -418,6 +475,56 @@ def writer_response():
 @pytest.fixture
 def writer_streaming_response():
     response = dict(body=MOCK_STREAMING_RESPONSE_WRITER)
+    return response
+
+
+@pytest.fixture
+def qwen_response():
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {"choices": [{"message": {"content": "This is the Qwen output text."}}]}
+    ).encode()
+    response = dict(
+        body=body,
+        ResponseMetadata={
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "35",
+                "x-amzn-bedrock-output-token-count": "42",
+            }
+        },
+    )
+
+    return response
+
+
+@pytest.fixture
+def qwen_streaming_response():
+    response = dict(body=MOCK_STREAMING_RESPONSE_QWEN)
+    return response
+
+
+@pytest.fixture
+def openai_response():
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {"choices": [{"message": {"content": "This is the OpenAI output text."}}]}
+    ).encode()
+    response = dict(
+        body=body,
+        ResponseMetadata={
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "85",
+                "x-amzn-bedrock-output-token-count": "80",
+            }
+        },
+    )
+
+    return response
+
+
+@pytest.fixture
+def openai_streaming_response():
+    response = dict(body=MOCK_STREAMING_RESPONSE_OPENAI)
     return response
 
 
@@ -554,6 +661,48 @@ def test_prepare_output_stream_for_writer(writer_streaming_response) -> None:
 
     assert results[0] == "Hel"
     assert results[1] == "lo."
+
+
+def test_prepare_output_for_qwen(qwen_response):
+    result = LLMInputOutputAdapter.prepare_output("qwen", qwen_response)
+    assert result["text"] == "This is the Qwen output text."
+    assert result["usage"]["prompt_tokens"] == 35
+    assert result["usage"]["completion_tokens"] == 42
+    assert result["usage"]["total_tokens"] == 77
+    assert result["stop_reason"] is None
+
+
+def test_prepare_output_stream_for_qwen(qwen_streaming_response) -> None:
+    results = [
+        chunk.text
+        for chunk in LLMInputOutputAdapter.prepare_output_stream(
+            "qwen", qwen_streaming_response
+        )
+    ]
+
+    assert results[0] == ""
+    assert results[1] == "Hello.  \nGoodbye."
+
+
+def test_prepare_output_for_openai(openai_response):
+    result = LLMInputOutputAdapter.prepare_output("openai", openai_response)
+    assert result["text"] == "This is the OpenAI output text."
+    assert result["usage"]["prompt_tokens"] == 85
+    assert result["usage"]["completion_tokens"] == 80
+    assert result["usage"]["total_tokens"] == 165
+    assert result["stop_reason"] is None
+
+
+def test_prepare_output_stream_for_openai(openai_streaming_response) -> None:
+    results = [
+        chunk.text
+        for chunk in LLMInputOutputAdapter.prepare_output_stream(
+            "openai", openai_streaming_response
+        )
+    ]
+
+    assert results[0] == "Hello."
+    assert results[1] == ""
 
 
 def test_prepare_output_for_cohere(cohere_response):
