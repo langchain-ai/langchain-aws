@@ -769,6 +769,7 @@ class ChatBedrockConverse(BaseChatModel):
                     "claude-3-7-sonnet",
                     "claude-sonnet-4",
                     "claude-opus-4",
+                    "claude-haiku-4",
                 )
                 thinking_params = (self.additional_model_request_fields or {}).get(
                     "thinking", {}
@@ -987,9 +988,15 @@ class ChatBedrockConverse(BaseChatModel):
             "langchain_core.exceptions.OutputParserException if tool calls are not "
             "generated. Consider adjusting your prompt to ensure the tool is called."
         )
-        if "claude-3-7-sonnet" in self._get_base_model():
+        thinking_claude_models = (
+            "claude-3-7-sonnet",
+            "claude-sonnet-4",
+            "claude-opus-4",
+            "claude-haiku-4",
+        )
+        if any(model in self._get_base_model() for model in thinking_claude_models):
             additional_context = (
-                "For Claude 3.7 Sonnet models, you can also support forced tool use "
+                "For Claude 3/4 models, you can also support forced tool use "
                 "by disabling `thinking`."
             )
             admonition = f"{admonition} {additional_context}"
@@ -1076,6 +1083,7 @@ class ChatBedrockConverse(BaseChatModel):
             "claude-3-7-sonnet",
             "claude-sonnet-4",
             "claude-opus-4",
+            "claude-haiku-4",
         )
         if tool_choice is None and any(
             model in self._get_base_model() for model in thinking_claude_models
