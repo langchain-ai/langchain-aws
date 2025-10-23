@@ -642,43 +642,42 @@ def test_standard_tracing_params() -> None:
 
 
 def test_check_unsupported_model() -> None:
+    with pytest.raises(ValidationError):
+        ChatBedrock(model="amazon.nova.foo", region_name="us-west-2")  # type: ignore[call-arg]
 
     with pytest.raises(ValidationError):
-        ChatBedrock(model="amazon.nova.foo",
-                    region_name="us-west-2")  # type: ignore[call-arg]
-
-    with pytest.raises(ValidationError):
-        ChatBedrock(model="foobar",
-                    base_model="amazon.nova.foo",
-                    region_name="us-west-2")  # type: ignore[call-arg]
+        ChatBedrock(
+            model="foobar", base_model="amazon.nova.foo", region_name="us-west-2"
+        )  # type: ignore[call-arg]
 
     try:
-        ChatBedrock(model="foobar",
-                    base_model="anthropic.claude-3-7",
-                    region_name="us-west-2")  # type: ignore[call-arg]
+        ChatBedrock(
+            model="foobar", base_model="anthropic.claude-3-7", region_name="us-west-2"
+        )  # type: ignore[call-arg]
 
-        ChatBedrock(model="anthropic.claude-3-7",
-                    region_name="us-west-2")  # type: ignore[call-arg]
+        ChatBedrock(model="anthropic.claude-3-7", region_name="us-west-2")  # type: ignore[call-arg]
     except Exception as e:
         pytest.fail(e)
 
 
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
-def test_check_unsupported_model_with_inference_profile_valid_model(mock_create_aws_client):
+def test_check_unsupported_model_with_inference_profile_valid_model(
+    mock_create_aws_client,
+):
     mock_bedrock_client = mock.MagicMock()
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-7-sonnet-20250219-v1:0" # noqa: E501
+                "modelArn": "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-7-sonnet-20250219-v1:0"  # noqa: E501
             }
         ]
     }
     mock_create_aws_client.return_value = mock_bedrock_client
 
     aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"  # noqa: E501
-    chat = ChatBedrock(
-        model_id=aip_model_id,
-        region_name="us-west-2",
+    ChatBedrock(
+        model=aip_model_id,
+        region="us-west-2",
         bedrock_client=mock_bedrock_client,
     )  # type: ignore[call-arg]
 
@@ -688,7 +687,9 @@ def test_check_unsupported_model_with_inference_profile_valid_model(mock_create_
 
 
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
-def test_check_unsupported_model_with_inference_profile_invalid_model(mock_create_aws_client):
+def test_check_unsupported_model_with_inference_profile_invalid_model(
+    mock_create_aws_client,
+):
     mock_bedrock_client = mock.MagicMock()
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
@@ -700,22 +701,16 @@ def test_check_unsupported_model_with_inference_profile_invalid_model(mock_creat
     mock_create_aws_client.return_value = mock_bedrock_client
 
     aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"  # noqa: E501
-    chat = ChatBedrock(
-        model_id=aip_model_id,
-        region_name="us-west-2",
-        bedrock_client=mock_bedrock_client,
-    )  # type: ignore[call-arg]
-
-    mock_bedrock_client.get_inference_profile.assert_called_with(
-        inferenceProfileIdentifier=aip_model_id
-    )
-
     with pytest.raises(ValidationError):
         ChatBedrock(
             model=aip_model_id,
             region="us-west-2",
             bedrock_client=mock_bedrock_client,
         )  # type: ignore[call-arg]
+
+    mock_bedrock_client.get_inference_profile.assert_called_with(
+        inferenceProfileIdentifier=aip_model_id
+    )
 
 
 @pytest.mark.parametrize(
@@ -783,7 +778,7 @@ def test_check_unsupported_model_with_inference_profile_invalid_model(mock_creat
 def test__get_provider(
     model_id, provider, expected_provider, expectation, region_name
 ) -> None:
-    llm = ChatBedrock(model_id=model_id, provider=provider, region_name=region_name)
+    llm = ChatBedrock(model=model_id, provider=provider, region=region_name)
     with expectation:
         assert llm._get_provider() == expected_provider
 
@@ -791,9 +786,7 @@ def test__get_provider(
 @mock.patch.dict(os.environ, {"AWS_REGION": "us-west-1"})
 def test_chat_bedrock_different_regions() -> None:
     region = "ap-south-2"
-    llm = ChatBedrock(
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0", region_name=region
-    )
+    llm = ChatBedrock(model="anthropic.claude-3-sonnet-20240229-v1:0", region=region)
     assert llm.region_name == region
 
 
@@ -1188,10 +1181,10 @@ def test_chat_prompt_adapter_with_model_detection(
     ]
 
     chat = ChatBedrock(
-        model_id=model_id,
-        base_model_id=base_model_id,
+        model=model_id,
+        base_model=base_model_id,
         provider=provider,
-        region_name="us-west-2",
+        region="us-west-2",
     )
 
     model_name = chat._get_base_model()
@@ -1320,8 +1313,8 @@ def test__format_anthropic_messages_mixed_type_blocks_and_empty_content() -> Non
 def test_model_kwargs() -> None:
     """Test we can transfer unknown params to model_kwargs."""
     llm = ChatBedrock(
-        model_id="my-model",
-        region_name="us-west-2",
+        model="my-model",
+        region="us-west-2",
         model_kwargs={"foo": "bar"},
     )
     assert llm.model_id == "my-model"
@@ -1330,9 +1323,9 @@ def test_model_kwargs() -> None:
 
     with pytest.warns(match="transferred to model_kwargs"):
         llm = ChatBedrock(
-            model_id="my-model",
-            region_name="us-west-2",
-            foo="bar",
+            model="my-model",
+            region="us-west-2",
+            foo="bar",  # type: ignore[call-arg]
         )
     assert llm.model_id == "my-model"
     assert llm.region_name == "us-west-2"
@@ -1340,9 +1333,9 @@ def test_model_kwargs() -> None:
 
     with pytest.warns(match="transferred to model_kwargs"):
         llm = ChatBedrock(
-            model_id="my-model",
-            region_name="us-west-2",
-            foo="bar",
+            model="my-model",
+            region="us-west-2",
+            foo="bar",  # type: ignore[call-arg]
             model_kwargs={"baz": "qux"},
         )
     assert llm.model_id == "my-model"
@@ -1352,8 +1345,8 @@ def test_model_kwargs() -> None:
     # For backward compatibility, test that we don't transfer known parameters out
     # of model_kwargs
     llm = ChatBedrock(
-        model_id="my-model",
-        region_name="us-west-2",
+        model="my-model",
+        region="us-west-2",
         model_kwargs={"stop_sequences": ["test"]},
     )
     assert llm.model_kwargs == {"stop_sequences": ["test"]}

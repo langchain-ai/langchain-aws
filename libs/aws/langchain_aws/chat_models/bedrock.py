@@ -795,9 +795,13 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         # Add new Bedrock models here as needed
         unsupported_models = ["amazon.nova"]
 
-        bad_model_err = ("Provided model is unsupported on ChatBedrock with langchain-aws>=1.0.0."
-                         " Please use ChatBedrockConverse instead.")
-        if any(model in model_id or model in base_model_id for model in unsupported_models):
+        bad_model_err = (
+            "Provided model is unsupported on ChatBedrock with langchain-aws>=1.0.0."
+            " Please use ChatBedrockConverse instead."
+        )
+        if any(
+            model in model_id or model in base_model_id for model in unsupported_models
+        ):
             raise ValueError(bad_model_err)
         elif not base_model_id and "application-inference-profile" in model_id:
             bedrock_client = values.get("bedrock_client")
