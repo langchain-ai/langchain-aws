@@ -57,17 +57,17 @@ def get_client(redis_url: str, **kwargs: Any) -> RedisType:
     Before creating a connection the existence of the database driver is checked
     and ValueError raised otherwise.
 
-    To use, you should have the ``redis`` python package installed.
+    To use, you should have the `redis` python package installed.
 
     Example:
-        .. code-block:: python
-
-            from langchain_community.utilities.redis import get_client
-            redis_client = get_client(
-                redis_url="redis://username:password@localhost:6379"
-                index_name="my-index",
-                embedding_function=embeddings.embed_query,
-            )
+        ```python
+        from langchain_community.utilities.redis import get_client
+        redis_client = get_client(
+            redis_url="redis://username:password@localhost:6379"
+            index_name="my-index",
+            embedding_function=embeddings.embed_query,
+        )
+        ```
 
     """
 

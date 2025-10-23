@@ -2,7 +2,7 @@
 
 import base64
 import os
-from typing import Any, Dict, List, Tuple, Type, Union, cast
+from typing import Any, Dict, List, Literal, Tuple, Type, Union, cast
 from unittest import mock
 
 import pytest
@@ -120,6 +120,7 @@ def test_anthropic_bind_tools_tool_choice() -> None:
         "anthropic.claude-3-7-sonnet-20250219-v1:0",
         "anthropic.claude-sonnet-4-20250514-v1:0",
         "anthropic.claude-opus-4-20250514-v1:0",
+        "anthropic.claude-haiku-4-5-20251001-v1:0",
     ],
 )
 def test_anthropic_thinking_bind_tools_tool_choice(thinking_model: str) -> None:
@@ -196,6 +197,71 @@ def test_llama_bind_tools_tool_choice_variants(
             chat_model.bind_tools([GetWeather], tool_choice="any")
         with pytest.raises(ValueError):
             chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+
+
+@pytest.mark.parametrize(
+    "model,expected_values",
+    [
+        ("us.deepseek.r1-v1:0", ()),
+        ("deepseek.v3-v1:0", ("any",)),
+        (
+            "deepseek.v3-x:0",
+            (
+                "any",
+                "tool",
+            ),
+        ),
+    ],
+)
+def test_deepseek_supports_tool_choice_values(
+    model: str, expected_values: tuple[Literal["auto", "any", "tool"], ...]
+) -> None:
+    chat_model = ChatBedrockConverse(model=model, region_name="us-east-1")
+    assert chat_model.supports_tool_choice_values == expected_values
+
+
+def test_deepseek_r1_no_tool_choice_support() -> None:
+    chat_model = ChatBedrockConverse(model="deepseek.r1-v1:0", region_name="us-east-1")  # type: ignore[call-arg]
+
+    assert chat_model.supports_tool_choice_values == ()
+
+    with pytest.raises(ValueError):
+        chat_model.bind_tools([GetWeather], tool_choice="auto")
+
+    with pytest.raises(ValueError):
+        chat_model.bind_tools([GetWeather], tool_choice="any")
+
+    with pytest.raises(ValueError):
+        chat_model.bind_tools(
+            [GetWeather], tool_choice={"tool": {"name": "GetWeather"}}
+        )
+
+    with pytest.raises(ValueError):
+        chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+
+
+def test_deepseek_v3_bind_tools_tool_choice_variants() -> None:
+    chat_model = ChatBedrockConverse(model="deepseek.v3-v1:0", region_name="us-east-1")  # type: ignore[call-arg]
+
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="any")
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "any": {}
+    }
+
+    with pytest.raises(ValueError):
+        chat_model.bind_tools([GetWeather], tool_choice="auto")
+
+    with pytest.raises(ValueError):
+        chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+
+
+def test_deepseek_v3_bind_tools_default_tool_choice() -> None:
+    chat_model = ChatBedrockConverse(model="deepseek.v3-v1:0", region_name="us-east-1")  # type: ignore[call-arg]
+
+    chat_model_with_tools = chat_model.bind_tools([GetWeather])
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "any": {}
+    }
 
 
 def test__messages_to_bedrock() -> None:
@@ -598,6 +664,7 @@ def test_standard_tracing_params() -> None:
 @pytest.mark.parametrize(
     "model_id, disable_streaming",
     [
+        ("us.anthropic.claude-haiku-4-5-20251001-v1:0", False),
         ("us.anthropic.claude-sonnet-4-20250514-v1:0", False),
         ("us.anthropic.claude-opus-4-20250514-v1:0", False),
         ("us.anthropic.claude-3-7-sonnet-20250219-v1:0", False),
@@ -608,8 +675,10 @@ def test_standard_tracing_params() -> None:
         ("us.amazon.nova-lite-v1:0", False),
         ("us.amazon.nonstreaming-model-v1:0", True),
         ("us.deepseek.r1-v1:0", "tool_calling"),
+        ("deepseek.v3-v1:0", False),
         ("openai.gpt-oss-120b-1:0", False),
         ("openai.gpt-oss-20b-1:0", False),
+        ("qwen.qwen3-32b-v1:0", False),
     ],
 )
 def test_set_disable_streaming(
@@ -1559,11 +1628,14 @@ def test_model_kwargs() -> None:
     assert llm.region_name == "us-west-2"
     assert llm.additional_model_request_fields == {"foo": "bar"}
 
-    with pytest.warns(match="transferred to model_kwargs"):
-        llm = ChatBedrockConverse(  # type: ignore[call-arg]
+    with pytest.warns(
+        UserWarning,
+        match="uses 'additional_model_request_fields' instead of 'model_kwargs'",
+    ):
+        llm = ChatBedrockConverse(
             model="my-model",
             region_name="us-west-2",
-            foo="bar",
+            model_kwargs={"foo": "bar"},  # type: ignore[call-arg]
         )
     assert llm.model_id == "my-model"
     assert llm.region_name == "us-west-2"
@@ -1573,7 +1645,17 @@ def test_model_kwargs() -> None:
         llm = ChatBedrockConverse(  # type: ignore[call-arg]
             model="my-model",
             region_name="us-west-2",
-            foo="bar",
+            foo="bar",  # type: ignore[call-arg]
+        )
+    assert llm.model_id == "my-model"
+    assert llm.region_name == "us-west-2"
+    assert llm.additional_model_request_fields == {"foo": "bar"}
+
+    with pytest.warns(match="transferred to model_kwargs"):
+        llm = ChatBedrockConverse(  # type: ignore[call-arg]
+            model="my-model",
+            region_name="us-west-2",
+            foo="bar",  # type: ignore[call-arg]
             additional_model_request_fields={"baz": "qux"},
         )
     assert llm.model_id == "my-model"
@@ -1607,10 +1689,8 @@ def _create_mock_llm_guard_last_turn_only() -> Tuple[
 
 
 def test_guard_last_turn_only_no_guardrail_config() -> None:
-    """
-    Test that an error is raised if guard_last_turn_only is True but no
-    guardrail_config is provided.
-    """
+    """Test that an error is raised if guard_last_turn_only is True but no
+    guardrail_config is provided."""
     with pytest.raises(ValueError):
         ChatBedrockConverse(
             client=mock.MagicMock(),
@@ -1706,7 +1786,10 @@ def test_get_base_model_with_application_inference_profile(
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "anthropic.claude-3-sonnet-20240229-v1:0"
+                )
             }
         ]
     }
@@ -1771,7 +1854,10 @@ def test_configure_streaming_for_resolved_model(mock_create_client: mock.Mock) -
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0"
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "anthropic.claude-3-sonnet-20240229-v1:0"
+                )
             }
         ]
     }
@@ -1803,11 +1889,15 @@ def test_configure_streaming_for_resolved_model_no_tools(
     mock_bedrock_client = mock.Mock()
     mock_runtime_client = mock.Mock()
 
-    # Mock the get_inference_profile response for a model with no-tools streaming support
+    # Mock the get_inference_profile response for a model with no-tools streaming
+    # support
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-text-express-v1"
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "amazon.titan-text-express-v1"
+                )
             }
         ]
     }
@@ -1843,7 +1933,10 @@ def test_configure_streaming_for_resolved_model_no_streaming(
     mock_bedrock_client.get_inference_profile.return_value = {
         "models": [
             {
-                "modelArn": "arn:aws:bedrock:us-east-1::foundation-model/stability.stable-image-core-v1:0"
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "stability.stable-image-core-v1:0"
+                )
             }
         ]
     }
@@ -1868,7 +1961,8 @@ def test_configure_streaming_for_resolved_model_no_streaming(
 
 
 def test_nova_provider_extraction() -> None:
-    """Test that provider is correctly extracted from Nova model ID when not provided."""
+    """Test that provider is correctly extracted from Nova model ID when not
+    provided."""
     model = ChatBedrockConverse(
         client=mock.MagicMock(),
         model="us.amazon.nova-pro-v1:0",
@@ -1981,7 +2075,7 @@ def test_bedrock_client_inherits_from_runtime_client(
     mock_bedrock_client = mock.Mock()
 
     mock_runtime_client.meta.region_name = "us-west-2"
-    mock_client_config = mock.Mock()
+    mock.Mock()
 
     def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
@@ -1992,7 +2086,7 @@ def test_bedrock_client_inherits_from_runtime_client(
 
     mock_create_client.side_effect = side_effect
 
-    chat_model = ChatBedrockConverse(
+    ChatBedrockConverse(
         model="us.meta.llama3-3-70b-instruct-v1:0", client=mock_runtime_client
     )
 
@@ -2017,9 +2111,8 @@ def test_bedrock_client_uses_explicit_values_over_runtime_client(
     mock_bedrock_client = mock.Mock()
 
     mock_runtime_client.meta.region_name = "us-west-2"
-    mock_runtime_config = mock.Mock()
-
-    explicit_config = mock.Mock()
+    mock.Mock()
+    mock.Mock()
 
     def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
         if service_name == "bedrock":
@@ -2030,7 +2123,7 @@ def test_bedrock_client_uses_explicit_values_over_runtime_client(
 
     mock_create_client.side_effect = side_effect
 
-    chat_model = ChatBedrockConverse(
+    ChatBedrockConverse(
         model="us.meta.llama3-3-70b-instruct-v1:0",
         client=mock_runtime_client,
         region_name="us-east-1",
@@ -2117,3 +2210,71 @@ def test_tool_conversion_warning_integration() -> None:
     # Verify conversion happened
     call_args = mocked_client.converse.call_args[1]["messages"]
     assert any("Called calc" in str(block) for block in call_args[0]["content"])
+
+
+def test_get_num_tokens_from_messages_supported_model() -> None:
+    """Test get_num_tokens_from_messages for models that support count_tokens API."""
+    mocked_client = mock.MagicMock()
+    mocked_client.count_tokens.return_value = {"inputTokens": 42}
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-5-haiku-20241022-v1:0",
+        region_name="us-east-1",
+    )
+
+    messages: List[BaseMessage] = [
+        HumanMessage(content="What is the capital of France?")
+    ]
+    token_count = llm.get_num_tokens_from_messages(messages)
+
+    assert token_count == 42
+    mocked_client.count_tokens.assert_called_once()
+
+    # Verify API call format
+    call_args = mocked_client.count_tokens.call_args
+    assert call_args[1]["modelId"] == "anthropic.claude-3-5-haiku-20241022-v1:0"
+    assert "converse" in call_args[1]["input"]
+
+
+def test_get_num_tokens_from_messages_unsupported_model_fallback() -> None:
+    """Test fallback behavior for unsupported models."""
+    mocked_client = mock.MagicMock()
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="amazon.titan-text-express-v1",
+        region_name="us-west-2",
+    )
+
+    messages: List[BaseMessage] = [HumanMessage(content="Hello")]
+
+    with mock.patch.object(
+        BaseChatModel, "get_num_tokens_from_messages", return_value=10
+    ) as mock_base:
+        token_count = llm.get_num_tokens_from_messages(messages)
+        assert token_count == 10
+        mock_base.assert_called_once()
+
+    mocked_client.count_tokens.assert_not_called()
+
+
+def test_get_num_tokens_from_messages_api_error_fallback() -> None:
+    """Test fallback when count_tokens API fails."""
+    mocked_client = mock.MagicMock()
+    mocked_client.count_tokens.side_effect = Exception("API Error")
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-5-haiku-20241022-v1:0",
+        region_name="us-west-2",
+    )
+
+    messages: List[BaseMessage] = [HumanMessage(content="Hello")]
+
+    with mock.patch.object(
+        BaseChatModel, "get_num_tokens_from_messages", return_value=5
+    ) as mock_base:
+        token_count = llm.get_num_tokens_from_messages(messages)
+        assert token_count == 5
+        mock_base.assert_called_once()

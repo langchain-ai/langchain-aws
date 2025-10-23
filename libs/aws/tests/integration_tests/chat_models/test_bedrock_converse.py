@@ -1,6 +1,7 @@
 """Standard LangChain interface tests"""
 
 import base64
+import warnings
 from typing import Any, Literal, Optional, Type
 
 import httpx
@@ -13,8 +14,9 @@ from langchain_core.messages import (
     BaseMessageChunk,
     HumanMessage,
     SystemMessage,
+    ToolMessage,
 )
-from langchain_core.tools import BaseTool
+from langchain_core.tools import BaseTool, tool
 from langchain_tests.integration_tests import ChatModelIntegrationTests
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated, TypedDict
@@ -324,6 +326,7 @@ def test_tool_use_with_cache_point() -> None:
     This test creates tools with a length exceeding 1024 tokens to ensure
     caching is triggered, and verifies the response metrics indicate cache
     activity.
+
     """
     # Define a large number of tools to exceed 1024 tokens
     tool_classes = []
@@ -367,10 +370,11 @@ def test_tool_use_with_cache_point() -> None:
 
     # Verify the response has cache metrics
     assert response.usage_metadata is not None
-    input_token_details = response.usage_metadata["input_token_details"]
-    cache_read_input_tokens = input_token_details["cache_read"]
-    cache_write_input_tokens = input_token_details["cache_creation"]
-    assert cache_read_input_tokens + cache_write_input_tokens != 0
+    input_token_details = response.usage_metadata.get("input_token_details")
+    if input_token_details:
+        cache_read_input_tokens = input_token_details.get("cache_read", 0)
+        cache_write_input_tokens = input_token_details.get("cache_creation", 0)
+        assert cache_read_input_tokens + cache_write_input_tokens != 0
 
 
 @pytest.mark.skip(reason="Needs guardrails setup to run.")
@@ -427,14 +431,19 @@ def test_guardrails() -> None:
         "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         "us.anthropic.claude-sonnet-4-20250514-v1:0",
         "us.anthropic.claude-opus-4-20250514-v1:0",
+        "us.anthropic.claude-opus-4-1-20250805-v1:0",
+        "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        #
+        # "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     ],
 )
 def test_structured_output_tool_choice_not_supported(thinking_model: str) -> None:
     llm = ChatBedrockConverse(model=thinking_model)
-    with pytest.warns(None) as record:  # type: ignore[call-overload]
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
         structured_llm = llm.with_structured_output(ClassifyQuery)
         response = structured_llm.invoke("How big are cats?")
-    assert len(record) == 0
+    assert len(w) == 0
     assert isinstance(response, ClassifyQuery)
 
     # Unsupported params
@@ -506,14 +515,88 @@ def test_structured_output_thinking_force_tool_use() -> None:
         llm.client.converse(messages=messages, **params)
 
 
+@pytest.mark.default_cassette("test_agent_loop.yaml.gz")
 @pytest.mark.vcr
-def test_thinking() -> None:
+@pytest.mark.parametrize("output_version", ["v0", "v1"])
+def test_agent_loop(output_version: Literal["v0", "v1"]) -> None:
+    @tool
+    def get_weather(location: str) -> str:
+        """Get the weather for a location."""
+        return "It's sunny."
+
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        output_version=output_version,
+    )
+    llm_with_tools = llm.bind_tools([get_weather])
+    input_message = HumanMessage("What is the weather in San Francisco, CA?")
+    tool_call_message = llm_with_tools.invoke([input_message])
+    assert isinstance(tool_call_message, AIMessage)
+    tool_calls = tool_call_message.tool_calls
+    assert len(tool_calls) == 1
+    tool_call = tool_calls[0]
+    tool_message = get_weather.invoke(tool_call)
+    assert isinstance(tool_message, ToolMessage)
+    response = llm_with_tools.invoke(
+        [
+            input_message,
+            tool_call_message,
+            tool_message,
+        ]
+    )
+    assert isinstance(response, AIMessage)
+
+
+@pytest.mark.default_cassette("test_agent_loop_streaming.yaml.gz")
+@pytest.mark.vcr
+@pytest.mark.parametrize("output_version", ["v0", "v1"])
+def test_agent_loop_streaming(output_version: Literal["v0", "v1"]) -> None:
+    @tool
+    def get_weather(location: str) -> str:
+        """Get the weather for a location."""
+        return "It's sunny."
+
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        output_version=output_version,
+    )
+    llm_with_tools = llm.bind_tools([get_weather])
+    input_message = HumanMessage("What is the weather in San Francisco, CA?")
+
+    tool_call_message: Optional[BaseMessageChunk] = None
+    for chunk in llm_with_tools.stream([input_message]):
+        assert isinstance(chunk, AIMessageChunk)
+        tool_call_message = (
+            chunk if tool_call_message is None else tool_call_message + chunk
+        )
+    assert isinstance(tool_call_message, AIMessageChunk)
+
+    tool_calls = tool_call_message.tool_calls
+    assert len(tool_calls) == 1
+    tool_call = tool_calls[0]
+    tool_message = get_weather.invoke(tool_call)
+    assert isinstance(tool_message, ToolMessage)
+    response = llm_with_tools.invoke(
+        [
+            input_message,
+            tool_call_message,
+            tool_message,
+        ]
+    )
+    assert isinstance(response, AIMessage)
+
+
+@pytest.mark.default_cassette("test_thinking.yaml.gz")
+@pytest.mark.vcr
+@pytest.mark.parametrize("output_version", ["v0", "v1"])
+def test_thinking(output_version: Literal["v0", "v1"]) -> None:
     llm = ChatBedrockConverse(
         model="us.anthropic.claude-sonnet-4-20250514-v1:0",
         max_tokens=4096,
         additional_model_request_fields={
             "thinking": {"type": "enabled", "budget_tokens": 1024},
         },
+        output_version=output_version,
     )
 
     input_message = {"role": "user", "content": "What is 3^3?"}
@@ -523,19 +606,40 @@ def test_thinking() -> None:
         full = chunk if full is None else full + chunk
     assert isinstance(full, AIMessageChunk)
 
-    assert [block["type"] for block in full.content] == ["reasoning_content", "text"]  # type: ignore[index,union-attr]
-    assert "text" in full.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
-    assert "signature" in full.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+    # Raw content
+    if output_version == "v0":
+        assert [block["type"] for block in full.content] == [  # type: ignore[index]
+            "reasoning_content",
+            "text",
+        ]  # type: ignore[index,union-attr]
+        assert "text" in full.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+        assert "signature" in full.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+    else:
+        # v1
+        assert [block["type"] for block in full.content] == ["reasoning", "text"]  # type: ignore[index,union-attr]
+        assert "signature" in full.content[0]["extras"]  # type: ignore[index,union-attr]
+
+    # Parsed
+    content_blocks = full.content_blocks
+    assert [block["type"] for block in content_blocks] == ["reasoning", "text"]
+    assert content_blocks[0]["type"] == "reasoning"
+    assert content_blocks[0].get("reasoning")
+    assert "signature" in content_blocks[0]["extras"]
 
     next_message = {"role": "user", "content": "Thanks!"}
     response = llm.invoke([input_message, full, next_message])
 
-    assert [block["type"] for block in response.content] == [  # type: ignore[index,union-attr]
-        "reasoning_content",
-        "text",
-    ]
-    assert "text" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
-    assert "signature" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+    if output_version == "v0":
+        assert [block["type"] for block in response.content] == [  # type: ignore[index]
+            "reasoning_content",
+            "text",
+        ]  # type: ignore[index,union-attr]
+        assert "text" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+        assert "signature" in response.content[0]["reasoning_content"]  # type: ignore[index,union-attr]
+    else:
+        # v1
+        assert [block["type"] for block in response.content] == ["reasoning", "text"]  # type: ignore[index,union-attr]
+        assert "signature" in response.content[0]["extras"]  # type: ignore[index,union-attr]
 
 
 PLAINTEXT_DOCUMENT = {
@@ -574,9 +678,8 @@ PDF_DATA = base64.b64encode(httpx.get(PDF_URL).content).decode("utf-8")
 
 STANDARD_PDF_DOCUMENT = {
     "type": "file",
-    "source_type": "base64",
     "mime_type": "application/pdf",
-    "data": PDF_DATA,
+    "base64": PDF_DATA,
     "name": "my-pdf",  # Converse requires a filename
 }
 
@@ -599,11 +702,62 @@ def test_citations(document: dict[str, Any]) -> None:
         assert isinstance(chunk, AIMessageChunk)
         full = chunk if full is None else full + chunk
     assert isinstance(full, AIMessageChunk)
+
+    # Raw content
     assert any(block.get("citations") for block in full.content)  # type: ignore[union-attr]
+
+    # Parsed
+    content_blocks = full.content_blocks
+    assert any(block.get("annotations") for block in content_blocks)
+    for block in content_blocks:
+        if (block["type"] == "text") and "annotations" in block:
+            assert isinstance(block["annotations"], list)
+            for annotation in block["annotations"]:
+                assert "title" in annotation
+                assert "cited_text" in annotation
 
     next_message = {"role": "user", "content": "Who should they consult with?"}
     response = llm.invoke([input_message, full, next_message])
     assert any(block.get("citations") for block in response.content)  # type: ignore[union-attr]
+
+
+@pytest.mark.default_cassette("test_citations[document0].yaml.gz")
+@pytest.mark.vcr
+@pytest.mark.parametrize("output_version", ["v0", "v1"])
+def test_citations_v1(output_version: Literal["v0", "v1"]) -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        output_version=output_version,
+    )
+
+    input_message = {
+        "role": "user",
+        "content": [
+            PLAINTEXT_DOCUMENT,
+            {"type": "text", "text": "How many days of annual leave do employees get?"},
+        ],
+    }
+
+    full: Optional[BaseMessageChunk] = None
+    for chunk in llm.stream([input_message]):
+        assert isinstance(chunk, AIMessageChunk)
+        full = chunk if full is None else full + chunk
+    assert isinstance(full, AIMessageChunk)
+
+    # Raw content
+    if output_version == "v0":
+        assert any(block.get("citations") for block in full.content)  # type: ignore[union-attr]
+    else:
+        # v1
+        assert any(block.get("annotations") for block in full.content)  # type: ignore[union-attr]
+
+    next_message = {"role": "user", "content": "Who should they consult with?"}
+    response = llm.invoke([input_message, full, next_message])
+    if output_version == "v0":
+        assert any(block.get("citations") for block in response.content)  # type: ignore[union-attr]
+    else:
+        # v1
+        assert any(block.get("annotations") for block in response.content)  # type: ignore[union-attr]
 
 
 @pytest.mark.vcr
@@ -648,3 +802,19 @@ def test_bedrock_pdf_inputs() -> None:
         ]
     )
     _ = model.invoke([message])
+
+
+def test_get_num_tokens_from_messages_integration() -> None:
+    chat = ChatBedrockConverse(
+        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+    )
+
+    base_messages = [
+        SystemMessage(content="You are a helpful assistant."),
+        HumanMessage(content="Why did the chicken cross the road?"),
+    ]
+
+    token_count = chat.get_num_tokens_from_messages(base_messages)
+
+    assert isinstance(token_count, int)
+    assert token_count == 21

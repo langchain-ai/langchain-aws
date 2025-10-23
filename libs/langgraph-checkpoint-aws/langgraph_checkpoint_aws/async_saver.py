@@ -1,8 +1,9 @@
 import datetime
 import json
 from collections.abc import AsyncIterator, Sequence
-from typing import Any, Optional
+from typing import Any
 
+import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from langchain_core.runnables import RunnableConfig
@@ -48,6 +49,8 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
     It handles creating invocations, managing checkpoint data, and tracking pending writes.
 
     Args:
+        client: Pre-configured bedrock-agent-runtime client instance
+        session: Pre-configured boto3 session instance for custom credential
         region_name: AWS region name
         credentials_profile_name: AWS credentials profile name
         aws_access_key_id: AWS access key ID
@@ -55,20 +58,24 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
         aws_session_token: AWS session token
         endpoint_url: Custom endpoint URL for the Bedrock service
         config: Botocore config object
-    """
+    """  # noqa: E501
 
     def __init__(
         self,
-        region_name: Optional[str] = None,
-        credentials_profile_name: Optional[str] = None,
-        aws_access_key_id: Optional[SecretStr] = None,
-        aws_secret_access_key: Optional[SecretStr] = None,
-        aws_session_token: Optional[SecretStr] = None,
-        endpoint_url: Optional[str] = None,
-        config: Optional[Config] = None,
+        client: Any | None = None,
+        session: boto3.Session | None = None,
+        region_name: str | None = None,
+        credentials_profile_name: str | None = None,
+        aws_access_key_id: SecretStr | None = None,
+        aws_secret_access_key: SecretStr | None = None,
+        aws_session_token: SecretStr | None = None,
+        endpoint_url: str | None = None,
+        config: Config | None = None,
     ) -> None:
         super().__init__()
         self.session_client = AsyncBedrockAgentRuntimeSessionClient(
+            client=client,
+            session=session,
             region_name=region_name,
             credentials_profile_name=credentials_profile_name,
             aws_access_key_id=aws_access_key_id,
@@ -87,7 +94,7 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
 
         Raises:
             ClientError: If creation fails for reasons other than the invocation already existing
-        """
+        """  # noqa: E501
         try:
             await self.session_client.create_invocation(
                 CreateInvocationRequest(
@@ -116,7 +123,7 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
         Returns:
             List of PendingWrite objects containing task_id, channel, value, task_path and write_idx.
             Returns empty list if no pending writes are found.
-        """
+        """  # noqa: E501
         # Generate unique ID for the write operation
         writes_id = generate_write_id(checkpoint_ns, checkpoint_id)
 
@@ -144,9 +151,10 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
                 )
             )
 
-            return process_writes_invocation_content_blocks(
-                invocation_step.invocation_step.payload.content_blocks, self.serde
-            )
+            content_blocks = invocation_step.invocation_step.payload.content_blocks
+            if not content_blocks:
+                return []
+            return process_writes_invocation_content_blocks(content_blocks, self.serde)
 
         except ClientError as e:
             # Return empty list if resource not found, otherwise re-raise error
@@ -158,7 +166,7 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
         self,
         thread_id: str,
         invocation_identifier: str,
-        invocation_step_id: Optional[str],
+        invocation_step_id: str | None,
         payload: InvocationStepPayload,
     ) -> None:
         """Asynchronously persist an invocation step and its payload to the Bedrock session store.
@@ -174,7 +182,7 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
 
         Returns:
             None
-        """
+        """  # noqa: E501
         await self.session_client.put_invocation_step(
             PutInvocationStepRequest(
                 session_identifier=thread_id,
@@ -187,7 +195,7 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
 
     async def _find_most_recent_checkpoint_step(
         self, thread_id: str, invocation_id: str
-    ) -> Optional[InvocationStep]:
+    ) -> InvocationStep | None:
         """Asynchronously retrieve the most recent checkpoint step from a session's invocation history.
 
         Iterates through all invocation steps in reverse chronological order until it finds
@@ -199,7 +207,7 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
 
         Returns:
             InvocationStep object if a checkpoint is found, None otherwise
-        """
+        """  # noqa: E501
         next_token = None
         while True:
             # Get batch of invocation steps using pagination token if available
@@ -226,10 +234,14 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
                 )
 
                 # Parse the step payload and check if it's a checkpoint
-                step_payload = json.loads(
-                    invocation_step.invocation_step.payload.content_blocks[0].text
-                )
-                if step_payload["step_type"] == CHECKPOINT_PREFIX:
+                content_blocks = invocation_step.invocation_step.payload.content_blocks
+                if not content_blocks:
+                    continue
+                text = content_blocks[0].text
+                if text is None:
+                    continue
+                step_payload = json.loads(str(text))
+                if step_payload.get("step_type") == CHECKPOINT_PREFIX:
                     return invocation_step.invocation_step
 
             # Get token for next batch of results
@@ -238,8 +250,8 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
                 return None
 
     async def _get_checkpoint_step(
-        self, thread_id: str, invocation_id: str, checkpoint_id: Optional[str] = None
-    ) -> Optional[InvocationStep]:
+        self, thread_id: str, invocation_id: str, checkpoint_id: str | None = None
+    ) -> InvocationStep | None:
         """Asynchronously retrieve checkpoint step data.
 
         Args:
@@ -268,7 +280,7 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
         return response.invocation_step
 
     async def _get_task_sends(
-        self, thread_id: str, checkpoint_ns: str, parent_checkpoint_id: Optional[str]
+        self, thread_id: str, checkpoint_ns: str, parent_checkpoint_id: str | None
     ) -> list:
         """Asynchronously get sorted task sends for parent checkpoint.
 
@@ -288,7 +300,7 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
         )
         return transform_pending_task_writes(pending_writes)
 
-    async def aget_tuple(self, config: RunnableConfig) -> Optional[CheckpointTuple]:
+    async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         """Asynchronously retrieve a checkpoint tuple from the Bedrock session.
 
         This function retrieves checkpoint data from the session, processes it and returns
@@ -299,7 +311,7 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
 
         Returns:
             Optional[CheckpointTuple]: Structured checkpoint data if found, None otherwise.
-        """
+        """  # noqa: E501
         session_thread_id = config["configurable"]["thread_id"]
         checkpoint_namespace = config["configurable"].get("checkpoint_ns", "")
         checkpoint_identifier = get_checkpoint_id(config)
@@ -313,9 +325,14 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
             if invocation_step is None:
                 return None
 
-            session_checkpoint = SessionCheckpoint(
-                **json.loads(invocation_step.payload.content_blocks[0].text)
-            )
+            content_blocks = invocation_step.payload.content_blocks
+            if not content_blocks:
+                return None
+            text = content_blocks[0].text
+            if text is None:
+                return None
+
+            session_checkpoint = SessionCheckpoint(**json.loads(str(text)))
 
             pending_write_ops = await self._get_checkpoint_pending_writes(
                 session_thread_id,
@@ -364,7 +381,7 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
 
         Returns:
             RunnableConfig: Updated configuration with thread_id, checkpoint_ns and checkpoint_id
-        """
+        """  # noqa: E501
         session_checkpoint = create_session_checkpoint(
             checkpoint, config, metadata, self.serde, new_versions
         )
@@ -421,7 +438,7 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
 
         Returns:
             None
-        """
+        """  # noqa: E501
         thread_id = config["configurable"]["thread_id"]
         checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
         checkpoint_id = config["configurable"]["checkpoint_id"]
@@ -459,11 +476,11 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
 
     async def alist(
         self,
-        config: Optional[RunnableConfig],
+        config: RunnableConfig | None,
         *,
-        filter: Optional[dict[str, Any]] = None,
-        before: Optional[RunnableConfig] = None,
-        limit: Optional[int] = None,
+        filter: dict[str, Any] | None = None,
+        before: RunnableConfig | None = None,
+        limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
         """Asynchronously list checkpoints matching the given criteria.
 
@@ -476,10 +493,17 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
         Returns:
             AsyncIterator of matching CheckpointTuple objects
         """
+        if config is None:
+            return
+        configurable = config.get("configurable")
+        if configurable is None:
+            return
         thread_id = config["configurable"]["thread_id"]
         checkpoint_ns = config["configurable"].get("checkpoint_ns")
 
-        invocation_identifier = None
+        invocation_identifier = (
+            generate_checkpoint_id(checkpoint_ns) if checkpoint_ns is not None else None
+        )
 
         # Get invocation ID only if checkpoint_ns is provided
         if checkpoint_ns is not None:
@@ -509,8 +533,10 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
 
             # Process current page
             for step in response.invocation_step_summaries:
-                if before and step.invocation_step_id >= get_checkpoint_id(before):
-                    continue
+                if before:
+                    before_id = get_checkpoint_id(before)
+                    if before_id and step.invocation_step_id >= before_id:
+                        continue
 
                 # Get full step details to access metadata
                 step_detail = await self.session_client.get_invocation_step(
@@ -521,12 +547,16 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
                     )
                 )
 
-                payload = json.loads(
-                    step_detail.invocation_step.payload.content_blocks[0].text
-                )
+                content_blocks = step_detail.invocation_step.payload.content_blocks
+                if not content_blocks:
+                    continue
+                text = content_blocks[0].text
+                if text is None:
+                    continue
+                payload = json.loads(str(text))
 
                 # Append checkpoints and ignore writes
-                if payload["step_type"] != CHECKPOINT_PREFIX:
+                if payload.get("step_type") != CHECKPOINT_PREFIX:
                     continue
 
                 session_checkpoint = SessionCheckpoint(**payload)

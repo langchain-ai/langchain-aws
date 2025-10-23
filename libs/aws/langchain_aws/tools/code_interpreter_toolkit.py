@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 from langchain_core.runnables.config import RunnableConfig
@@ -29,9 +29,8 @@ class CodeInterpreterToolkit:
 
     Example:
         ```python
-
         import asyncio
-        from langgraph.prebuilt import create_react_agent
+        from langchain.agents import create_agent
         from langchain_aws.tools import create_code_interpreter_toolkit
 
         async def main():
@@ -39,8 +38,8 @@ class CodeInterpreterToolkit:
             toolkit, code_tools = await create_code_interpreter_toolkit(region="us-west-2")
 
             # Create a ReAct agent using the code interpreter tools
-            agent = create_react_agent(
-                model="bedrock_converse:us.anthropic.claude-3-5-haiku-20241022-v1:0",
+            agent = create_agent(
+                "bedrock_converse:us.anthropic.claude-3-5-haiku-20241022-v1:0",
                 tools=code_tools
             )
 
@@ -65,6 +64,7 @@ class CodeInterpreterToolkit:
         # Run the example
         asyncio.run(main())
         ```
+
     """  # noqa: E501
 
     def __init__(self, region: str = "us-west-2"):
@@ -73,6 +73,7 @@ class CodeInterpreterToolkit:
 
         Args:
             region: AWS region for the code interpreter
+
         """
         self.region = region
         self._code_interpreters: Dict[str, CodeInterpreter] = {}
@@ -84,6 +85,7 @@ class CodeInterpreterToolkit:
 
         Returns:
             List of LangChain tools
+
         """
         return self.tools
 
@@ -93,6 +95,7 @@ class CodeInterpreterToolkit:
 
         Returns:
             Dictionary of {tool_name: tool}
+
         """
         return {tool.name: tool for tool in self.tools}
 
@@ -109,6 +112,7 @@ class CodeInterpreterToolkit:
 
         Returns:
             CodeInterpreter instance for the specified thread
+
         """
         # Extract thread ID from config if available
         thread_id = _get_thread_id(config)
@@ -133,11 +137,13 @@ class CodeInterpreterToolkit:
 
         Returns:
             List of LangChain tools for code execution
+
         """
         if self.tools:
             return self.tools
 
-        # Create the basic tools for code execution - this doesn't initialize any code interpreter yet
+        # Create the basic tools for code execution - this doesn't initialize any
+        # code interpreter yet
         self.tools = self._create_tools()
 
         # Return the list of tools
@@ -149,8 +155,9 @@ class CodeInterpreterToolkit:
 
         Returns:
             List of code execution tools
+
         """
-        tools = []
+        tools: List[BaseTool] = []
 
         # Execute code tool
         execute_code_tool = StructuredTool.from_function(
@@ -239,6 +246,7 @@ class CodeInterpreterToolkit:
 
         Returns:
             String containing execution results
+
         """
         # Get or create code interpreter for this thread using the config
         code_interpreter = self._get_or_create_interpreter(config=config)
@@ -260,6 +268,7 @@ class CodeInterpreterToolkit:
 
         Returns:
             String containing execution results
+
         """
         # Get or create code interpreter for this thread using the config
         code_interpreter = self._get_or_create_interpreter(config=config)
@@ -280,6 +289,7 @@ class CodeInterpreterToolkit:
 
         Returns:
             String containing file contents
+
         """
         # Get or create code interpreter for this thread using the config
         code_interpreter = self._get_or_create_interpreter(config=config)
@@ -298,6 +308,7 @@ class CodeInterpreterToolkit:
 
         Returns:
             String containing list of files
+
         """
         # Get or create code interpreter for this thread using the config
         code_interpreter = self._get_or_create_interpreter(config=config)
@@ -318,6 +329,7 @@ class CodeInterpreterToolkit:
 
         Returns:
             String containing removal result
+
         """
         # Get or create code interpreter for this thread using the config
         code_interpreter = self._get_or_create_interpreter(config=config)
@@ -344,6 +356,7 @@ class CodeInterpreterToolkit:
 
         Returns:
             String containing write results
+
         """
         # Get or create code interpreter for this thread using the config
         code_interpreter = self._get_or_create_interpreter(config=config)
@@ -364,6 +377,7 @@ class CodeInterpreterToolkit:
 
         Returns:
             String containing task ID and status
+
         """
         # Get or create code interpreter for this thread using the config
         code_interpreter = self._get_or_create_interpreter(config=config)
@@ -384,6 +398,7 @@ class CodeInterpreterToolkit:
 
         Returns:
             String containing task status
+
         """
         # Get or create code interpreter for this thread using the config
         code_interpreter = self._get_or_create_interpreter(config=config)
@@ -402,6 +417,7 @@ class CodeInterpreterToolkit:
 
         Returns:
             String containing stop result
+
         """
         # Get or create code interpreter for this thread using the config
         code_interpreter = self._get_or_create_interpreter(config=config)
@@ -412,11 +428,12 @@ class CodeInterpreterToolkit:
 
         return _extract_output_from_stream(response)
 
-    async def cleanup(self, thread_id: str = None) -> None:
+    async def cleanup(self, thread_id: Optional[str] = None) -> None:
         """Clean up resources
 
         Args:
             thread_id: Optional thread ID to clean up. If None, cleans up all sessions.
+
         """
         if thread_id:
             # Clean up a specific thread's session
@@ -457,6 +474,7 @@ async def create_code_interpreter_toolkit(
 
     Returns:
         Tuple of (toolkit, tools)
+
     """
     toolkit = CodeInterpreterToolkit(region=region)
     # Create tools without immediately initializing the code interpreter
@@ -465,16 +483,16 @@ async def create_code_interpreter_toolkit(
     return toolkit, tools
 
 
-def _get_thread_id(config: Optional[RunnableConfig] = None):
+def _get_thread_id(config: Optional[RunnableConfig] = None) -> str:
     thread_id = "default"
 
     if config and isinstance(config, dict):
-        thread_id = config["configurable"]["thread_id"]
+        thread_id = config.get("configurable", {})["thread_id"]
 
     return thread_id
 
 
-def _extract_output_from_stream(response):
+def _extract_output_from_stream(response: Any) -> str:
     """
     Extract output from code interpreter response stream
 
@@ -483,6 +501,7 @@ def _extract_output_from_stream(response):
 
     Returns:
         Extracted output as string
+
     """
     output = []
     for event in response["stream"]:

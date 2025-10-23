@@ -176,6 +176,7 @@ class ToolsOutputParser(BaseGenerationOutputParser):
 
         Returns:
             Structured output.
+
         """
         if (
             not result

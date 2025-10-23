@@ -80,13 +80,14 @@ def create_neptune_sparql_qa_chain(
         See https://python.langchain.com/docs/security for more information.
 
     Example:
-        .. code-block:: python
-
+        ```python
         chain = create_neptune_sparql_qa_chain(
             llm=llm,
             graph=graph
         )
         response = chain.invoke({"query": "your_query_here"})
+        ```
+
     """
     if allow_dangerous_requests is not True:
         raise ValueError(
@@ -103,7 +104,7 @@ def create_neptune_sparql_qa_chain(
 
     qa_chain = qa_prompt | llm
 
-    _sparql_prompt = sparql_prompt or get_prompt(examples)
+    _sparql_prompt = sparql_prompt or get_prompt(examples or "")
     sparql_generation_chain = _sparql_prompt | llm
 
     def normalize_input(raw_input: Union[str, dict]) -> dict:

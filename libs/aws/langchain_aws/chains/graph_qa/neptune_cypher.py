@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from langchain_core.language_models import BaseLanguageModel
 from langchain_core.prompts.base import BasePromptTemplate
@@ -106,13 +106,14 @@ def create_neptune_opencypher_qa_chain(
         See https://python.langchain.com/docs/security for more information.
 
     Example:
-        .. code-block:: python
-
+        ```python
         chain = create_neptune_opencypher_qa_chain(
             llm=llm,
             graph=graph
         )
         response = chain.invoke({"query": "your_query_here"})
+        ```
+
     """
 
     if allow_dangerous_requests is not True:
@@ -138,7 +139,7 @@ def create_neptune_opencypher_qa_chain(
             return {"query": raw_input}
         return raw_input
 
-    def execute_graph_query(cypher_query: str) -> dict:
+    def execute_graph_query(cypher_query: str) -> List[Dict[str, Any]]:
         return graph.query(cypher_query)
 
     def get_cypher_inputs(inputs: dict) -> dict:

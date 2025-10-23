@@ -1,0 +1,16 @@
+name: uv-install
+description: Set up Python and uv
+
+inputs:
+  python-version:
+    description: Python version, supporting MAJOR.MINOR only
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install uv and set the python version
+      uses: astral-sh/setup-uv@v5
+      with:
+        version: "0.5.25"
+        python-version: ${{ inputs.python-version }}

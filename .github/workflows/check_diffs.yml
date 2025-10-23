@@ -16,20 +16,17 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  POETRY_VERSION: "1.7.1"
-
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: read  # Needed for Ana06/get-changed-files
+      actions: read # Needed for Ana06/get-changed-files
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.10'
+          python-version: "3.13"
       - id: files
         uses: Ana06/get-changed-files@v2.3.0
       - id: set-matrix
@@ -40,11 +37,11 @@ jobs:
       dirs-to-test: ${{ steps.set-matrix.outputs.dirs-to-test }}
   lint:
     name: cd ${{ matrix.working-directory }}
-    needs: [ build ]
+    needs: [build]
     if: ${{ needs.build.outputs.dirs-to-lint != '[]' }}
     permissions:
       contents: read
-      actions: write  # Needed for actions/cache used by poetry_setup action in _lint.yml
+      actions: write
     strategy:
       matrix:
         working-directory: ${{ fromJson(needs.build.outputs.dirs-to-lint) }}
@@ -55,11 +52,11 @@ jobs:
 
   test:
     name: cd ${{ matrix.working-directory }}
-    needs: [ build ]
+    needs: [build]
     if: ${{ needs.build.outputs.dirs-to-test != '[]' }}
     permissions:
       contents: read
-      actions: write  # Needed for actions/cache used by poetry_setup action inside _test.yml
+      actions: write
     strategy:
       matrix:
         working-directory: ${{ fromJson(needs.build.outputs.dirs-to-test) }}
@@ -70,11 +67,11 @@ jobs:
 
   compile-integration-tests:
     name: cd ${{ matrix.working-directory }}
-    needs: [ build ]
+    needs: [build]
     if: ${{ needs.build.outputs.dirs-to-test != '[]' }}
     permissions:
       contents: read
-      actions: write  # Needed for actions/cache used by poetry_setup action inside _compile_integration_test.yml
+      actions: write
     strategy:
       matrix:
         working-directory: ${{ fromJson(needs.build.outputs.dirs-to-test) }}

@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import warnings
@@ -13,6 +14,7 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
+    Type,
     Union,
     cast,
 )
@@ -33,9 +35,12 @@ from langchain_core.messages import (
     SystemMessage,
     is_data_content_block,
 )
+from langchain_core.messages import content as types
 from langchain_core.messages.ai import UsageMetadata
 from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.messages.utils import convert_to_openai_messages
+from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
+from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
@@ -45,7 +50,9 @@ from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 from langchain_core.utils.utils import _build_model_kwargs
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from langchain_aws.chat_models._compat import _convert_from_v1_to_anthropic
 from langchain_aws.function_calling import (
+    AnthropicTool,
     ToolsOutputParser,
     _lc_tool_calls_to_anthropic_tool_use_blocks,
     convert_to_anthropic_tool,
@@ -53,10 +60,12 @@ from langchain_aws.function_calling import (
 )
 from langchain_aws.llms.bedrock import (
     BedrockBase,
+    _citations_enabled,
     _combine_generation_info_for_llm_result,
 )
 from langchain_aws.utils import (
     anthropic_tokens_supported,
+    count_tokens_api_supported_for_model,
     create_aws_client,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
@@ -269,7 +278,7 @@ def convert_messages_to_prompt_writer(messages: List[BaseMessage]) -> str:
     """Convert a list of messages to a prompt for Writer."""
 
     return "\n".join(
-        [_convert_one_message_to_text_llama(message) for message in messages]
+        [_convert_one_message_to_text_writer(message) for message in messages]
     )
 
 
@@ -286,11 +295,13 @@ def _convert_one_message_to_text_openai(message: BaseMessage) -> str:
             f"<|start|>assistant<|channel|>final<|message|>{message.content}<|end|>"
         )
     elif isinstance(message, ToolMessage):
-        # TODO: Tool messages in the OpenAI format should use "<|start|>{toolname} to=assistant<|message|>"
+        # TODO: Tool messages in the OpenAI format should use
+        # "<|start|>{toolname} to=assistant<|message|>"
         # Need to extract the tool name from the ToolMessage content or tool_call_id
-        # For now using generic "to=assistant" format as placeholder until we implement tool calling
+        # For now using generic "to=assistant" format as placeholder until we implement
+        # tool calling
         # Will be resolved in follow-up PR with full tool support
-        message_text = f"<|start|>to=assistant<|channel|>commentary<|message|>{message.content}<|end|>"
+        message_text = f"<|start|>to=assistant<|channel|>commentary<|message|>{message.content}<|end|>"  # noqa: E501
     else:
         raise ValueError(f"Got unknown type {message}")
 
@@ -298,7 +309,7 @@ def _convert_one_message_to_text_openai(message: BaseMessage) -> str:
 
 
 def convert_messages_to_prompt_openai(messages: List[BaseMessage]) -> str:
-    """Convert a list of messages to a Harmony format prompt for OpenAI Responses API."""
+    """Convert a list of messages to a Harmony format prompt for OpenAI API."""
 
     prompt = "\n"
     for message in messages:
@@ -310,8 +321,7 @@ def convert_messages_to_prompt_openai(messages: List[BaseMessage]) -> str:
 
 
 def _format_image(image_url: str) -> Dict:
-    """
-    Formats an image of format data:image/jpeg;base64,{b64_string}
+    """Formats an image of format data:image/jpeg;base64,{b64_string}
     to a dict for anthropic api
 
     {
@@ -321,6 +331,7 @@ def _format_image(image_url: str) -> Dict:
     }
 
     And throws an error if it's not a b64 image
+
     """
     regex = r"^data:(?P<media_type>image/.+);base64,(?P<data>.+)$"
     match = re.match(regex, image_url)
@@ -339,7 +350,7 @@ def _format_image(image_url: str) -> Dict:
 def _format_data_content_block(block: dict) -> dict:
     """Format standard data content block to format expected by Bedrock."""
     if block["type"] == "image":
-        if block["source_type"] == "base64":
+        if "base64" in block or block.get("source_type") == "base64":
             if "mime_type" not in block:
                 error_message = "mime_type key is required for base64 data."
                 raise ValueError(error_message)
@@ -348,7 +359,7 @@ def _format_data_content_block(block: dict) -> dict:
                 "source": {
                     "type": "base64",
                     "media_type": block["mime_type"],
-                    "data": block["data"],
+                    "data": block.get("base64") or block.get("data", ""),
                 },
             }
         else:
@@ -386,7 +397,7 @@ def _merge_messages(
                     ]
                 )
         last = merged[-1] if merged else None
-        if any(
+        if last is not None and any(
             all(isinstance(m, c) for m in (curr, last))
             for c in (SystemMessage, HumanMessage)
         ):
@@ -406,10 +417,24 @@ def _merge_messages(
 
 def _format_anthropic_messages(
     messages: List[BaseMessage],
-) -> Tuple[Optional[Union[str, List[Dict]]], List[Dict]]:
+) -> Tuple[Optional[Union[str, List[Dict[str, Any]]]], List[Dict[str, Any]]]:
     """Format messages for anthropic."""
-    system: Optional[Union[str, List[Dict]]] = None
-    formatted_messages: List[Dict] = []
+    for idx, message in enumerate(messages):
+        # Translate v1 content
+        if (
+            isinstance(message, AIMessage)
+            and message.response_metadata.get("output_version") == "v1"
+        ):
+            messages[idx] = message.model_copy(
+                update={
+                    "content": _convert_from_v1_to_anthropic(
+                        cast(list[types.ContentBlock], message.content),
+                        message.response_metadata.get("model_provider"),
+                    )
+                }
+            )
+    system: Optional[Union[str, List[Dict[str, Any]]]] = None
+    formatted_messages: List[Dict[str, Any]] = []
 
     trimmed_messages = trim_message_whitespace(messages)
     merged_messages = _merge_messages(trimmed_messages)
@@ -452,7 +477,7 @@ def _format_anthropic_messages(
             continue
 
         role = _message_type_lookups[message.type]
-        content: Union[str, List]
+        final_content: Union[str, List[Dict[str, Any]]]
 
         if not isinstance(message.content, str):
             # parse as dict
@@ -461,10 +486,9 @@ def _format_anthropic_messages(
             )
 
             # populate content
-            content = []
-            thinking_blocks = []
-            native_blocks = []
-            tool_blocks = []
+            thinking_blocks: List[Dict[str, Any]] = []
+            native_blocks: List[Dict[str, Any]] = []
+            tool_blocks: List[Dict[str, Any]] = []
 
             # First collect all blocks by type
             for item in message.content:
@@ -478,7 +502,7 @@ def _format_anthropic_messages(
                     elif item["type"] == "image_url":
                         # convert format
                         source = _format_image(item["image_url"]["url"])
-                        native_blocks.append({"type": "image", "source": source})
+                        native_blocks.append({"type": "image", "source": source})  # type: ignore
                     elif item["type"] == "image":
                         native_blocks.append(item)
                     elif item["type"] == "tool_result":
@@ -525,7 +549,12 @@ def _format_anthropic_messages(
                                 if tc["id"] == item["id"]
                             ]
                             tool_blocks.extend(
-                                _lc_tool_calls_to_anthropic_tool_use_blocks(overlapping)
+                                cast(
+                                    List[Dict[str, Any]],
+                                    _lc_tool_calls_to_anthropic_tool_use_blocks(
+                                        overlapping
+                                    ),
+                                )
                             )
                         else:
                             item.pop("text", None)
@@ -545,6 +574,8 @@ def _format_anthropic_messages(
                             content_item = {"type": "text", "text": text}
                             if item.get("cache_control"):
                                 content_item["cache_control"] = {"type": "ephemeral"}
+                            if item.get("citations"):
+                                content_item["citations"] = item["citations"]
                             native_blocks.append(content_item)
                     else:
                         tool_blocks.append(item)
@@ -569,24 +600,29 @@ def _format_anthropic_messages(
                 ]
                 if new_tool_calls:
                     tool_blocks.extend(
-                        _lc_tool_calls_to_anthropic_tool_use_blocks(new_tool_calls)
+                        cast(
+                            List[Dict[str, Any]],
+                            _lc_tool_calls_to_anthropic_tool_use_blocks(new_tool_calls),
+                        )
                     )
 
             # For assistant messages, when thinking blocks exist, ensure they come first
             if role == "assistant":
-                content = native_blocks + tool_blocks
+                final_content = native_blocks + tool_blocks
                 if thinking_blocks:
-                    content = thinking_blocks + content
+                    final_content = thinking_blocks + final_content
             elif role == "user" and tool_blocks and native_blocks:
-                content = tool_blocks + native_blocks  # tool result must precede text
+                final_content = (
+                    tool_blocks + native_blocks
+                )  # tool result must precede text
                 if thinking_blocks:
-                    content = thinking_blocks + content
+                    final_content = thinking_blocks + final_content
             else:
                 # combine all blocks in standard order
-                content = native_blocks + tool_blocks
+                final_content = native_blocks + tool_blocks
                 # Only include thinking blocks if they exist
                 if thinking_blocks:
-                    content = thinking_blocks + content
+                    final_content = thinking_blocks + final_content
 
         elif isinstance(message, AIMessage):
             # For string content, create appropriate structure
@@ -612,7 +648,10 @@ def _format_anthropic_messages(
             # Add tool calls if present
             if message.tool_calls:
                 content_list.extend(
-                    _lc_tool_calls_to_anthropic_tool_use_blocks(message.tool_calls)
+                    cast(
+                        List[Dict[str, Any]],
+                        _lc_tool_calls_to_anthropic_tool_use_blocks(message.tool_calls),
+                    )
                 )
 
             # For assistant messages with thinking blocks, ensure they come first
@@ -637,25 +676,26 @@ def _format_anthropic_messages(
                     )
                 ]
                 # Combine with thinking first
-                content = thinking_blocks + other_blocks
+                final_content = thinking_blocks + other_blocks
             else:
                 # No thinking blocks or not an assistant message
-                content = content_list
+                final_content = content_list
         else:
             # Simple string content
-            content = message.content
+            final_content = message.content
 
         # AWS Bedrock requires content arrays to have at least 1 item
-        if isinstance(content, list) and len(content) == 0:
-            content = [{"type": "text", "text": "."}]
+        if isinstance(final_content, list) and len(final_content) == 0:
+            final_content = [{"type": "text", "text": "."}]
 
-        formatted_messages.append({"role": role, "content": content})
+        formatted_messages.append({"role": role, "content": final_content})
     return system, formatted_messages
 
 
 class ChatPromptAdapter:
-    """Adapter class to prepare the inputs from Langchain to prompt format
-    that Chat model expects.
+    """Adapter class to prepare the inputs from Langchain to prompt format that Chat
+    model expects.
+
     """
 
     @classmethod
@@ -694,11 +734,14 @@ class ChatPromptAdapter:
     @classmethod
     def format_messages(
         cls, provider: str, messages: List[BaseMessage]
-    ) -> Union[Tuple[Optional[str], List[Dict]], List[Dict]]:
+    ) -> Union[
+        Tuple[Optional[Union[str, List[Dict[str, Any]]]], List[Dict[str, Any]]],
+        List[Dict[str, Any]],
+    ]:
         if provider == "anthropic":
             return _format_anthropic_messages(messages)
-        elif provider == "openai":
-            return convert_to_openai_messages(messages)
+        elif provider in ("openai", "qwen"):
+            return cast(List[Dict[str, Any]], convert_to_openai_messages(messages))
         raise NotImplementedError(
             f"Provider {provider} not supported for format_messages"
         )
@@ -718,10 +761,12 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     system_prompt_with_tools: str = ""
 
     stop_sequences: Optional[List[str]] = Field(default=None, alias="stop")
-    """Stop sequence inference parameter providing a sequence of 
-    characters that causes a model to stop generating a response. See
+    """Stop sequence inference parameter from new Bedrock `converse` API providing
+    a sequence of characters that causes a model to stop generating a response. See
     https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_InferenceConfiguration.html
-    for more."""
+    for more.
+    
+    """
 
     @property
     def _llm_type(self) -> str:
@@ -835,19 +880,40 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
         provider = self._get_provider()
-        prompt, system, formatted_messages = None, None, None
+        prompt: Optional[str] = None
+        system: Optional[str] = None
+        formatted_messages: Optional[List[Dict[str, Any]]] = None
 
         if provider == "anthropic":
-            system, formatted_messages = ChatPromptAdapter.format_messages(
-                provider, messages
+            result = ChatPromptAdapter.format_messages(provider, messages)
+            system_raw, formatted_messages = (
+                result[0],
+                cast(List[Dict[str, Any]], result[1]),
             )
+            # Convert system to string if it's a list
+            system_str: Optional[str] = None
+            if system_raw:
+                if isinstance(system_raw, str):
+                    system_str = system_raw
+                elif isinstance(system_raw, list):
+                    # Convert list of dicts to string representation
+                    system_str = "\n".join(
+                        item.get("text", "") if isinstance(item, dict) else str(item)
+                        for item in system_raw
+                    )
+
             if self.system_prompt_with_tools:
-                if system:
-                    system = self.system_prompt_with_tools + f"\n{system}"
+                if system_str:
+                    system = self.system_prompt_with_tools + f"\n{system_str}"
                 else:
                     system = self.system_prompt_with_tools
-        elif provider == "openai":
-            formatted_messages = ChatPromptAdapter.format_messages(provider, messages)
+            else:
+                system = system_str
+        elif provider in ("openai", "qwen"):
+            formatted_messages = cast(
+                List[Dict[str, Any]],
+                ChatPromptAdapter.format_messages(provider, messages),
+            )
         else:
             prompt = ChatPromptAdapter.convert_messages_to_prompt(
                 provider=provider, messages=messages, model=self._get_base_model()
@@ -866,6 +932,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             **kwargs,
         ):
             if isinstance(chunk, AIMessageChunk):
+                chunk.response_metadata["model_provider"] = "bedrock"
                 generation_chunk = ChatGenerationChunk(message=chunk)
                 if run_manager:
                     run_manager.on_llm_new_token(
@@ -898,6 +965,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     if response_metadata is not None
                     else AIMessageChunk(content=delta)
                 )
+                generation_chunk.message.response_metadata["model_provider"] = "bedrock"
                 if run_manager:
                     run_manager.on_llm_new_token(
                         generation_chunk.text, chunk=generation_chunk
@@ -908,7 +976,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         if guardrails_trace_info and run_manager:
             run_manager.on_llm_error(
                 Exception(
-                    f"Error raised by bedrock service: {guardrails_trace_info.get('reason')}"
+                    f"Error raised by bedrock service: "
+                    f"{guardrails_trace_info.get('reason')}"
                 ),
                 **guardrails_trace_info,
             )
@@ -923,6 +992,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         completion = ""
         llm_output: Dict[str, Any] = {}
         tool_calls: List[ToolCall] = []
+        citations_enabled: Optional[bool] = None
         provider_stop_reason_code = self.provider_stop_reason_key_map.get(
             self._get_provider(), "stop_reason"
         )
@@ -942,22 +1012,43 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 response_metadata, provider_stop_reason_code
             )
         else:
-            prompt, system, formatted_messages = None, None, None
+            prompt: Optional[str] = None
+            system: Optional[str] = None
+            formatted_messages: Optional[List[Dict[str, Any]]] = None
             params: Dict[str, Any] = {**kwargs}
 
             if provider == "anthropic":
-                system, formatted_messages = ChatPromptAdapter.format_messages(
-                    provider, messages
+                result = ChatPromptAdapter.format_messages(provider, messages)
+                system_raw, formatted_messages = (
+                    result[0],
+                    cast(List[Dict[str, Any]], result[1]),
                 )
+                # Convert system to string if it's a list
+                system_str: Optional[str] = None
+                if system_raw:
+                    if isinstance(system_raw, str):
+                        system_str = system_raw
+                    elif isinstance(system_raw, list):
+                        # Convert list of dicts to string representation
+                        system_str = "\n".join(
+                            item.get("text", "")
+                            if isinstance(item, dict)
+                            else str(item)
+                            for item in system_raw
+                        )
                 # use tools the new way with claude 3
                 if self.system_prompt_with_tools:
-                    if system:
-                        system = self.system_prompt_with_tools + f"\n{system}"
+                    if system_str:
+                        system = self.system_prompt_with_tools + f"\n{system_str}"
                     else:
                         system = self.system_prompt_with_tools
-            elif provider == "openai":
-                formatted_messages = ChatPromptAdapter.format_messages(
-                    provider, messages
+                else:
+                    system = system_str
+                citations_enabled = _citations_enabled(formatted_messages)
+            elif provider in ("openai", "qwen"):
+                formatted_messages = cast(
+                    List[Dict[str, Any]],
+                    ChatPromptAdapter.format_messages(provider, messages),
                 )
             else:
                 prompt = ChatPromptAdapter.convert_messages_to_prompt(
@@ -967,7 +1058,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             if stop:
                 params["stop_sequences"] = stop
 
-            completion, tool_calls, llm_output = self._prepare_input_and_invoke(
+            completion, tool_calls, llm_output, body = self._prepare_input_and_invoke(
                 prompt=prompt,
                 stop=stop,
                 run_manager=run_manager,
@@ -994,12 +1085,24 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             usage_metadata = None
         logger.debug(f"The message received from Bedrock: {completion}")
         llm_output["model_id"] = self.model_id  # backward-compatibility
-        llm_output["model_name"] = self.model_id
+
+        # Use raw response content in some cases, so that thinking and citations
+        # are properly stored in content array
+        content = completion
+        if (response_content := body.get("content")) and (
+            (_ := llm_output.pop("thinking", None)) or citations_enabled
+        ):
+            content = response_content
+
         msg = AIMessage(
-            content=completion,
+            content=content,
             additional_kwargs=llm_output,
             tool_calls=cast(List[ToolCall], tool_calls),
             usage_metadata=usage_metadata,
+            response_metadata={
+                "model_provider": "bedrock",
+                "model_name": self.model_id,
+            },
         )
         return ChatResult(
             generations=[
@@ -1021,6 +1124,30 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             final_output.update(output)
         final_output["usage"] = final_usage
         return final_output
+
+    def get_num_tokens_from_messages(
+        self, messages: list[BaseMessage], tools: Optional[Sequence] = None
+    ) -> int:
+        model_id = self._get_base_model()
+        if self._model_is_anthropic and count_tokens_api_supported_for_model(model_id):
+            system, formatted_messages = ChatPromptAdapter.format_messages(
+                "anthropic", messages
+            )
+            input_to_count_tmpl = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": self.max_tokens if self.max_tokens else 8192,
+                "messages": formatted_messages,
+            }
+            if system:
+                input_to_count_tmpl["system"] = system
+            input_to_count = json.dumps(input_to_count_tmpl)
+
+            response = self.client.count_tokens(
+                modelId=model_id, input={"invokeModel": {"body": input_to_count}}
+            )
+            return response["inputTokens"]
+
+        return super().get_num_tokens_from_messages(messages, tools)
 
     def get_num_tokens(self, text: str) -> int:
         if (
@@ -1058,7 +1185,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         *,
         tool_choice: Optional[Union[dict, str, Literal["auto", "none"], bool]] = None,
         **kwargs: Any,
-    ) -> Runnable[LanguageModelInput, BaseMessage]:
+    ) -> Runnable[LanguageModelInput, AIMessage]:
         """Bind tool-like objects to this chat model.
 
         Assumes model has a tool calling API.
@@ -1074,16 +1201,21 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 (if any), or a dict of the form:
                 {"type": "function", "function": {"name": <<tool_name>>}}.
             **kwargs: Any additional parameters to pass to the
-                :class:`~langchain.runnable.Runnable` constructor.
+                [Runnable][langchain_core.runnables.Runnable] constructor.
+
         """
         if self._get_provider() == "anthropic":
             formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
 
-            # Disallow forced tool use when thinking is enabled on specific Claude models
             base_model = self._get_base_model()
             if any(
                 x in base_model
-                for x in ("claude-3-7-", "claude-opus-4-", "claude-sonnet-4-")
+                for x in (
+                    "claude-3-7-",
+                    "claude-opus-4-",
+                    "claude-sonnet-4-",
+                    "claude-haiku-4-",
+                )
             ) and thinking_in_params(self.model_kwargs or {}):
                 forced = False
                 if isinstance(tool_choice, bool):
@@ -1102,9 +1234,10 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                         forced = True
                 if forced:
                     raise ValueError(
-                        "Anthropic Claude (3.7/4/4.1) with thinking enabled does not support forced tool use. "
-                        "Remove forced tool_choice (e.g. 'any' or a specific tool), or set "
-                        "tool_choice='auto', or disable thinking."
+                        "Anthropic Claude (3.7/4/4.1) with thinking enabled does not "
+                        "support forced tool use. Remove forced tool_choice (e.g. "
+                        "'any' or a specific tool), or set tool_choice='auto', or "
+                        "disable thinking."
                     )
 
             # true if the model is a claude 3 model
@@ -1125,13 +1258,15 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 return self.bind(tools=formatted_tools, **kwargs)
             else:
                 # add tools to the system prompt, the old way
-                system_formatted_tools = get_system_message(formatted_tools)
+                system_formatted_tools = get_system_message(
+                    cast(List[AnthropicTool], formatted_tools)
+                )
                 self.set_system_prompt_with_tools(system_formatted_tools)
         return self
 
     def with_structured_output(
         self,
-        schema: Union[Dict, TypeBaseModel],
+        schema: Union[Dict[str, Any], TypeBaseModel, Type],
         *,
         include_raw: bool = False,
         **kwargs: Any,
@@ -1164,81 +1299,81 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             outputs a BaseModel.
 
         Example: Pydantic schema (include_raw=False):
-            .. code-block:: python
+            ```python
+            from langchain_aws.chat_models.bedrock import ChatBedrock
+            from pydantic import BaseModel
 
-                from langchain_aws.chat_models.bedrock import ChatBedrock
-                from pydantic import BaseModel
+            class AnswerWithJustification(BaseModel):
+                '''An answer to the user question along with justification for the answer.'''
+                answer: str
+                justification: str
 
-                class AnswerWithJustification(BaseModel):
-                    '''An answer to the user question along with justification for the answer.'''
-                    answer: str
-                    justification: str
+            llm = ChatBedrock(
+                model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+                model_kwargs={"temperature": 0.001},
+            )  # type: ignore[call-arg]
+            structured_model = model.with_structured_output(AnswerWithJustification)
 
-                llm =ChatBedrock(
-                    model_id="anthropic.claude-3-sonnet-20240229-v1:0",
-                    model_kwargs={"temperature": 0.001},
-                )  # type: ignore[call-arg]
-                structured_llm = llm.with_structured_output(AnswerWithJustification)
+            structured_model.invoke("What weighs more a pound of bricks or a pound of feathers")
 
-                structured_llm.invoke("What weighs more a pound of bricks or a pound of feathers")
-
-                # -> AnswerWithJustification(
-                #     answer='They weigh the same',
-                #     justification='Both a pound of bricks and a pound of feathers weigh one pound. The weight is the same, but the volume or density of the objects may differ.'
-                # )
+            # -> AnswerWithJustification(
+            #     answer='They weigh the same',
+            #     justification='Both a pound of bricks and a pound of feathers weigh one pound. The weight is the same, but the volume or density of the objects may differ.'
+            # )
+            ```
 
         Example:  Pydantic schema (include_raw=True):
-            .. code-block:: python
+            ```python
+            from langchain_aws.chat_models.bedrock import ChatBedrock
+            from pydantic import BaseModel
 
-                from langchain_aws.chat_models.bedrock import ChatBedrock
-                from pydantic import BaseModel
+            class AnswerWithJustification(BaseModel):
+                '''An answer to the user question along with justification for the answer.'''
+                answer: str
+                justification: str
 
-                class AnswerWithJustification(BaseModel):
-                    '''An answer to the user question along with justification for the answer.'''
-                    answer: str
-                    justification: str
+            model = ChatBedrock(
+                model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+                model_kwargs={"temperature": 0.001},
+            )  # type: ignore[call-arg]
+            structured_model = model.with_structured_output(AnswerWithJustification, include_raw=True)
 
-                llm =ChatBedrock(
-                    model_id="anthropic.claude-3-sonnet-20240229-v1:0",
-                    model_kwargs={"temperature": 0.001},
-                )  # type: ignore[call-arg]
-                structured_llm = llm.with_structured_output(AnswerWithJustification, include_raw=True)
-
-                structured_llm.invoke("What weighs more a pound of bricks or a pound of feathers")
-                # -> {
-                #     'raw': AIMessage(content='', additional_kwargs={'tool_calls': [{'id': 'call_Ao02pnFYXD6GN1yzc0uXPsvF', 'function': {'arguments': '{"answer":"They weigh the same.","justification":"Both a pound of bricks and a pound of feathers weigh one pound. The weight is the same, but the volume or density of the objects may differ."}', 'name': 'AnswerWithJustification'}, 'type': 'function'}]}),
-                #     'parsed': AnswerWithJustification(answer='They weigh the same.', justification='Both a pound of bricks and a pound of feathers weigh one pound. The weight is the same, but the volume or density of the objects may differ.'),
-                #     'parsing_error': None
-                # }
+            structured_model.invoke("What weighs more a pound of bricks or a pound of feathers")
+            # -> {
+            #     'raw': AIMessage(content='', additional_kwargs={'tool_calls': [{'id': 'call_Ao02pnFYXD6GN1yzc0uXPsvF', 'function': {'arguments': '{"answer":"They weigh the same.","justification":"Both a pound of bricks and a pound of feathers weigh one pound. The weight is the same, but the volume or density of the objects may differ."}', 'name': 'AnswerWithJustification'}, 'type': 'function'}]}),
+            #     'parsed': AnswerWithJustification(answer='They weigh the same.', justification='Both a pound of bricks and a pound of feathers weigh one pound. The weight is the same, but the volume or density of the objects may differ.'),
+            #     'parsing_error': None
+            # }
+            ```
 
         Example: Dict schema (include_raw=False):
-            .. code-block:: python
+            ```python
+            from langchain_aws.chat_models.bedrock import ChatBedrock
 
-                from langchain_aws.chat_models.bedrock import ChatBedrock
-
-                schema = {
-                    "name": "AnswerWithJustification",
-                    "description": "An answer to the user question along with justification for the answer.",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "answer": {"type": "string"},
-                            "justification": {"type": "string"},
-                        },
-                        "required": ["answer", "justification"]
-                    }
+            schema = {
+                "name": "AnswerWithJustification",
+                "description": "An answer to the user question along with justification for the answer.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "answer": {"type": "string"},
+                        "justification": {"type": "string"},
+                    },
+                    "required": ["answer", "justification"]
                 }
-                llm =ChatBedrock(
-                    model_id="anthropic.claude-3-sonnet-20240229-v1:0",
-                    model_kwargs={"temperature": 0.001},
-                )  # type: ignore[call-arg]
-                structured_llm = llm.with_structured_output(schema)
+            }
+            model = ChatBedrock(
+                model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+                model_kwargs={"temperature": 0.001},
+            )  # type: ignore[call-arg]
+            structured_model = model.with_structured_output(schema)
 
-                structured_llm.invoke("What weighs more a pound of bricks or a pound of feathers")
-                # -> {
-                #     'answer': 'They weigh the same',
-                #     'justification': 'Both a pound of bricks and a pound of feathers weigh one pound. The weight is the same, but the volume and density of the two substances differ.'
-                # }
+            structured_model.invoke("What weighs more a pound of bricks or a pound of feathers")
+            # -> {
+            #     'answer': 'They weigh the same',
+            #     'justification': 'Both a pound of bricks and a pound of feathers weigh one pound. The weight is the same, but the volume and density of the two substances differ.'
+            # }
+            ```
 
         """  # noqa: E501
         if "claude-" not in self._get_base_model():
@@ -1256,11 +1391,21 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             },
         )
         if isinstance(schema, type) and is_basemodel_subclass(schema):
-            output_parser = ToolsOutputParser(
-                first_tool_only=True, pydantic_schemas=[schema]
-            )
+            if self.streaming:
+                output_parser: OutputParserLike = PydanticToolsParser(
+                    first_tool_only=True, tools=[schema]
+                )
+            else:
+                output_parser = ToolsOutputParser(
+                    first_tool_only=True, pydantic_schemas=[schema]
+                )
         else:
-            output_parser = ToolsOutputParser(first_tool_only=True, args_only=True)
+            if self.streaming:
+                output_parser = JsonOutputKeyToolsParser(
+                    first_tool_only=True, key_name=tool_name
+                )
+            else:
+                output_parser = ToolsOutputParser(first_tool_only=True, args_only=True)
 
         if include_raw:
             parser_assign = RunnablePassthrough.assign(
