@@ -13,7 +13,7 @@ from typing import Any, cast
 
 import boto3
 from botocore.config import Config
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langgraph.checkpoint.base import (
     Checkpoint,
     CheckpointMetadata,
@@ -319,6 +319,13 @@ class EventProcessor:
             if (channel, version) in channel_data:
                 channel_values[channel] = channel_data[(channel, version)]
 
+        # Clean orphan tool_calls from messages channel if present
+        # This ensures messages loaded from checkpoints are valid for LLM providers
+        if "messages" in channel_values:
+            channel_values["messages"] = clean_orphan_tool_calls(
+                channel_values["messages"]
+            )
+
         checkpoint["channel_values"] = channel_values
 
         return CheckpointTuple(
@@ -337,6 +344,55 @@ class EventProcessor:
             else None,
             pending_writes=pending_writes,
         )
+
+
+def clean_orphan_tool_calls(messages: list[Any]) -> list[Any]:
+    """Remove tool_calls from AIMessages that don't have corresponding ToolMessages.
+
+    This ensures messages loaded from checkpoints are valid for LLM providers
+    like Bedrock that require tool_use blocks to be immediately followed by
+    tool_result blocks.
+
+    When a checkpoint is saved during tool execution (between AIMessage with
+    tool_calls and the corresponding ToolMessage), the state becomes "incomplete"
+    from the LLM provider's perspective. This function cleans up such orphaned
+    tool_calls to make the message history valid.
+
+    Args:
+        messages: List of messages from checkpoint channel_values
+
+    Returns:
+        List of messages with orphaned tool_calls removed from AIMessages
+    """
+    if not messages:
+        return messages
+
+    # Build a set of all tool_call_ids that have corresponding ToolMessages
+    resolved_tool_call_ids = set()
+    for msg in messages:
+        if isinstance(msg, ToolMessage) and hasattr(msg, "tool_call_id"):
+            resolved_tool_call_ids.add(msg.tool_call_id)
+
+    # Clean up AIMessages with orphaned tool_calls
+    cleaned_messages = []
+    for msg in messages:
+        if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
+            # Filter out tool_calls that don't have corresponding ToolMessages
+            valid_tool_calls = [
+                tc for tc in msg.tool_calls if tc.get("id") in resolved_tool_call_ids
+            ]
+
+            # If we removed some tool_calls, create a new message with cleaned
+            # tool_calls
+            if len(valid_tool_calls) != len(msg.tool_calls):
+                cleaned_msg = msg.model_copy(update={"tool_calls": valid_tool_calls})
+                cleaned_messages.append(cleaned_msg)
+            else:
+                cleaned_messages.append(msg)
+        else:
+            cleaned_messages.append(msg)
+
+    return cleaned_messages
 
 
 def convert_langchain_messages_to_event_messages(
