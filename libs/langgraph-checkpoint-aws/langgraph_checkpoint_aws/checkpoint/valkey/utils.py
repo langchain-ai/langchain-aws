@@ -14,7 +14,7 @@ try:
     LIBRARY_VERSION = version("langgraph-checkpoint-aws")
 except Exception:
     # Fallback version if package is not installed
-    LIBRARY_VERSION = "1.0.0a1"
+    LIBRARY_VERSION = "1.0.0"
 
 
 def set_client_info(client: Any) -> None:
