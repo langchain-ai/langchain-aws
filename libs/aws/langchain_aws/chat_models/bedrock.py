@@ -19,6 +19,7 @@ from typing import (
     cast,
 )
 
+from langchain_core._api import LangChainDeprecationWarning
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import (
     BaseChatModel,
@@ -721,8 +722,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     """A chat model that uses the Bedrock API."""
 
     system_prompt_with_tools: str = ""
+
     beta_use_converse_api: bool = False
-    """Use the new Bedrock ``converse`` API which provides a standardized interface to
+    """Note: this parameter is deprecated. Please use ChatBedrockConverse directly.
+    
+    Use the new Bedrock ``converse`` API which provides a standardized interface to
     all Bedrock models. Support still in beta. See ChatBedrockConverse docs for more."""
 
     stop_sequences: Optional[List[str]] = Field(default=None, alias="stop")
@@ -749,6 +753,17 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     @model_validator(mode="before")
     @classmethod
     def set_beta_use_converse_api(cls, values: Dict) -> Any:
+        if "beta_use_converse_api" in values:
+            warnings.warn(
+                (
+                    "`beta_use_converse_api` is deprecated and will be removed in "
+                    "langchain-aws 1.0. Please use the purpose-built "
+                    "ChatBedrockConverse class instead."
+                ),
+                LangChainDeprecationWarning,
+                stacklevel=2,
+            )
+
         model_id = values.get("model_id", values.get("model"))
         base_model_id = values.get("base_model_id", values.get("base_model", ""))
 
