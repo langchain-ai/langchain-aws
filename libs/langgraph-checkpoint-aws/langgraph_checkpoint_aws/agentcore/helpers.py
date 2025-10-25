@@ -8,6 +8,7 @@ import base64
 import datetime
 import json
 import logging
+import warnings
 from collections import defaultdict
 from typing import Any, cast
 
@@ -238,10 +239,12 @@ class AgentCoreEventClient:
             next_token = response.get("nextToken")
 
             if limit_reached and next_token:
-                logger.warning(
+                warnings.warn(
                     f"Stopped retrieving events at limit of {limit}. "
                     f"There may be additional checkpoints that were not retrieved. "
-                    f"Consider increasing the limit parameter (defaults to 100). "
+                    f"Consider increasing the limit parameter (defaults to 100). ",
+                    UserWarning,
+                    stacklevel=2,
                 )
 
             if limit_reached or not next_token:
