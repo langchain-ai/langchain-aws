@@ -67,8 +67,21 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         )
         self.processor = EventProcessor()
 
-    def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
-        """Get a checkpoint tuple from Bedrock AgentCore Memory."""
+    def get_tuple(
+        self,
+        config: RunnableConfig,
+        *,
+        limit: int | None = None,
+    ) -> CheckpointTuple | None:
+        """Get a checkpoint tuple from Bedrock AgentCore Memory.
+
+        Args:
+            config: The runnable config containing checkpoint information
+            limit: Maximum number of events to retrieve. If None, defaults to 100.
+
+        Returns:
+            CheckpointTuple if found, None otherwise
+        """
 
         # TODO: There is room for caching here on the client side
 
@@ -77,7 +90,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         )
 
         events = self.checkpoint_event_client.get_events(
-            checkpoint_config.session_id, checkpoint_config.actor_id
+            checkpoint_config.session_id,
+            checkpoint_config.actor_id,
+            100 if limit is None else limit,
         )
 
         checkpoints, writes_by_checkpoint, channel_data = self.processor.process_events(
@@ -253,8 +268,10 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         self.checkpoint_event_client.delete_events(thread_id, actor_id)
 
     # ===== Async methods ( TODO: NOT IMPLEMENTED YET ) =====
-    async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
-        return self.get_tuple(config)
+    async def aget_tuple(
+        self, config: RunnableConfig, *, limit: int | None = None
+    ) -> CheckpointTuple | None:
+        return self.get_tuple(config, limit=limit)
 
     async def alist(
         self,

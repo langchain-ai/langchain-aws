@@ -184,15 +184,25 @@ class AgentCoreEventClient:
         )
 
     def get_events(
-        self, session_id: str, actor_id: str, limit: int = 100
+        self, session_id: str, actor_id: str, limit: int | None = 100
     ) -> list[EventType]:
-        """Retrieve events from AgentCore Memory."""
+        """Retrieve events from AgentCore Memory.
+
+        Args:
+            session_id: The session ID to retrieve events for
+            actor_id: The actor ID to retrieve events for
+            limit: Maximum number of events to retrieve. Defaults to 100.
+
+        Returns:
+            List of retrieved events
+        """
 
         if limit is not None and limit <= 0:
             return []
 
         all_events = []
         next_token = None
+        limit_reached = False
 
         while True:
             params = {
@@ -218,8 +228,23 @@ class AgentCoreEventClient:
                         except EventDecodingError as e:
                             logger.warning(f"Failed to decode event: {e}")
 
+                        if limit is not None and len(all_events) >= limit:
+                            limit_reached = True
+                            break
+
+                if limit_reached:
+                    break
+
             next_token = response.get("nextToken")
-            if not next_token or (limit is not None and len(all_events) >= limit):
+
+            if limit_reached and next_token:
+                logger.warning(
+                    f"Stopped retrieving events at limit of {limit}. "
+                    f"There may be additional checkpoints that were not retrieved. "
+                    f"Consider increasing the limit parameter (defaults to 100). "
+                )
+
+            if limit_reached or not next_token:
                 break
 
         return all_events
