@@ -210,7 +210,7 @@ class AgentCoreEventClient:
                 "memoryId": self.memory_id,
                 "actorId": actor_id,
                 "sessionId": session_id,
-                "maxResults": 100,
+                "maxResults": max_results,
                 "includePayloads": True,
             }
 
