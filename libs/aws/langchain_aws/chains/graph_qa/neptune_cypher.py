@@ -103,7 +103,7 @@ def create_neptune_opencypher_qa_chain(
         The best way to guard against such negative outcomes is to (as appropriate)
         limit the permissions granted to the credentials used with this tool.
 
-        See https://python.langchain.com/docs/security for more information.
+        See https://docs.langchain.com/oss/python/security-policy for more information.
 
     Example:
         ```python
@@ -126,7 +126,7 @@ def create_neptune_opencypher_qa_chain(
             "present in the database. "
             "Only use this chain if you understand the risks and have taken the "
             "necessary precautions. "
-            "See https://python.langchain.com/docs/security for more information."
+            "See https://docs.langchain.com/oss/python/security-policy for more information."
         )
 
     qa_chain = qa_prompt | llm
