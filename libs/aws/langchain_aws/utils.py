@@ -39,7 +39,7 @@ class ContentHandlerBase(Generic[INPUT_TYPE, OUTPUT_TYPE]):
             def transform_input(self, prompt: str, model_kwargs: Dict) -> bytes:
                 input_str = json.dumps({prompt: prompt, **model_kwargs})
                 return input_str.encode('utf-8')
-            
+
             def transform_output(self, output: bytes) -> str:
                 response_json = json.loads(output.read().decode("utf-8"))
                 return response_json[0]["generated_text"]
@@ -119,7 +119,7 @@ def get_num_tokens_anthropic(text: str) -> int:
 
 
 def get_token_ids_anthropic(text: str) -> List[int]:
-    """Get the token ids for a string of text."""
+    """Get the token IDs for a string of text."""
     client = _get_anthropic_client()
     tokenizer = client.get_tokenizer()
     encoded_text = tokenizer.encode(text)

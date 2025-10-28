@@ -301,9 +301,9 @@ class InMemoryVectorStore(VectorStore):
             ```
 
         Args:
-            texts: List of texts to add to the vectorstore.
-            embedding: Embeddings to use for the vectorstore.
-            metadatas: Optional list of metadata dicts to add to the vectorstore.
+            texts: List of texts to add to the `VectorStore`.
+            embedding: Embeddings to use for the `VectorStore`.
+            metadatas: Optional list of metadata dicts to add to the `VectorStore`.
             index_name: Optional name of the index to create or add to.
             index_schema: Optional fields to index within the metadata. Overrides
                 generated schema.
@@ -433,10 +433,10 @@ class InMemoryVectorStore(VectorStore):
             ```
 
         Args:
-            texts: List of texts to add to the vectorstore.
+            texts: List of texts to add to the `VectorStore`.
             embedding: Embedding model class (i.e. OpenAIEmbeddings) for
                 embedding queries.
-            metadatas: Optional list of metadata dicts to add to the vectorstore.
+            metadatas: Optional list of metadata dicts to add to the `VectorStore`.
             index_name: Optional name of the index to create or add to.
             index_schema: Optional fields to index within the metadata. Overrides
                 generated schema.
@@ -563,7 +563,7 @@ class InMemoryVectorStore(VectorStore):
         """Delete a InMemoryVectorStore entry.
 
         Args:
-            ids: List of ids (keys in redis) to delete.
+            ids: List of IDs (keys in redis) to delete.
             **kwargs: Additional keyword arguments. Supports `redis_url` for Redis
                 connection url (can also be set as an environment variable: REDIS_URL).
 
@@ -572,7 +572,7 @@ class InMemoryVectorStore(VectorStore):
 
         Raises:
             ValueError: If the redis python package is not installed.
-            ValueError: If the ids (keys in redis) are not provided.
+            ValueError: If the IDs (keys in redis) are not provided.
 
         """
         redis_url = kwargs.get("redis_url", os.getenv("REDIS_URL"))
@@ -668,19 +668,18 @@ class InMemoryVectorStore(VectorStore):
         clean_metadata: bool = True,
         **kwargs: Any,
     ) -> List[str]:
-        """Add more texts to the vectorstore.
+        """Add more texts to the `VectorStore`.
 
         Args:
-            texts (Iterable[str]): Iterable of strings/text to add to the vectorstore.
-            metadatas (Optional[List[dict]], optional): Optional list of metadatas.
-            embeddings (Optional[List[List[float]]], optional): Optional pre-generated
-                embeddings.
-            batch_size (int, optional): Batch size to use for writes. Defaults to 1000.
+            texts: Iterable of strings/text to add to the `VectorStore`.
+            metadatas: Optional list of metadatas.
+            embeddings: Optional pre-generated embeddings.
+            batch_size: Batch size to use for writes.
             **kwargs: Additional keyword arguments. Supports `keys` or `ids` for
                 identifiers of entries.
 
         Returns:
-            List[str]: List of ids added to the vectorstore.
+            List of IDs added to the `VectorStore`.
 
         """
         ids = []
@@ -930,10 +929,11 @@ class InMemoryVectorStore(VectorStore):
         Args:
             query (str): Text to look up documents similar to.
             k (int): Number of Documents to return. Defaults to 4.
-            fetch_k (int): Number of Documents to fetch to pass to MMR algorithm.
-            lambda_mult (float): Number between 0 and 1 that determines the degree
+            fetch_k (int): Number of `Document` objects to fetch to pass to MMR
+                algorithm.
+            lambda_mult (float): Number between `0` and `1` that determines the degree
                 of diversity among the results with 0 corresponding
-                to maximum diversity and 1 to minimum diversity.
+                to maximum diversity and `1` to minimum diversity.
                 Defaults to 0.5.
             filter (InMemoryDBFilterExpression, optional): Optional metadata filter.
             return_metadata (bool, optional): Whether to return metadata.

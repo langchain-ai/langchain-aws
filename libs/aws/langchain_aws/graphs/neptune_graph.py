@@ -243,7 +243,7 @@ class NeptuneAnalyticsGraph(BaseNeptuneGraph):
         The best way to guard against such negative outcomes is to (as appropriate)
         limit the permissions granted to the credentials used with this tool.
 
-        See https://python.langchain.com/docs/security for more information.
+        See https://docs.langchain.com/oss/python/security-policy for more information.
 
     """
 
@@ -334,7 +334,7 @@ class NeptuneAnalyticsGraph(BaseNeptuneGraph):
     def _refresh_schema(self) -> None:
         """Refreshes the Neptune graph schema information."""
         pg_schema_query = """
-        CALL neptune.graph.pg_schema() 
+        CALL neptune.graph.pg_schema()
         YIELD schema
         RETURN schema
         """
@@ -393,7 +393,7 @@ class NeptuneGraph(BaseNeptuneGraph):
         The best way to guard against such negative outcomes is to (as appropriate)
         limit the permissions granted to the credentials used with this tool.
 
-        See https://python.langchain.com/docs/security for more information.
+        See https://docs.langchain.com/oss/python/security-policy for more information.
 
     """
 
