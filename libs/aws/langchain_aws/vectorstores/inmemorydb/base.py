@@ -929,7 +929,8 @@ class InMemoryVectorStore(VectorStore):
         Args:
             query (str): Text to look up documents similar to.
             k (int): Number of Documents to return. Defaults to 4.
-            fetch_k (int): Number of `Document` objects to fetch to pass to MMR algorithm.
+            fetch_k (int): Number of `Document` objects to fetch to pass to MMR
+                algorithm.
             lambda_mult (float): Number between `0` and `1` that determines the degree
                 of diversity among the results with 0 corresponding
                 to maximum diversity and `1` to minimum diversity.

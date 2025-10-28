@@ -99,7 +99,8 @@ def create_neptune_sparql_qa_chain(
             "present in the database. "
             "Only use this chain if you understand the risks and have taken the "
             "necessary precautions. "
-            "See https://docs.langchain.com/oss/python/security-policy for more information."
+            "See https://docs.langchain.com/oss/python/security-policy for more "
+            "information."
         )
 
     qa_chain = qa_prompt | llm
