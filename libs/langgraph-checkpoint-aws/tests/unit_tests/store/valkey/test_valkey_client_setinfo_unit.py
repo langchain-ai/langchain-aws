@@ -1,6 +1,12 @@
 """Comprehensive tests to verify CLIENT SETINFO is called when clients are created."""
 
+import asyncio
+import os
 import pytest
+from unittest.mock import AsyncMock, Mock, call, patch
+
+# Skip entire module if valkey not available
+pytest.importorskip("valkey")
 
 from langgraph_checkpoint_aws import (
     AsyncValkeySaver,
@@ -8,46 +14,17 @@ from langgraph_checkpoint_aws import (
     ValkeySaver,
     ValkeyStore,
 )
+from valkey import Valkey
+from valkey.asyncio import Valkey as AsyncValkey
+from valkey.asyncio.connection import ConnectionPool as AsyncConnectionPool
+from valkey.connection import ConnectionPool
 
-# Check for optional dependencies
-try:
-    import valkey  # noqa: F401
-    from valkey import Valkey
-    from valkey.asyncio import Valkey as AsyncValkey
-    from valkey.asyncio.connection import ConnectionPool as AsyncConnectionPool
-    from valkey.connection import ConnectionPool
-    from valkey.exceptions import ValkeyError  # noqa: F401
-
-    VALKEY_AVAILABLE = True
-except ImportError:
-    Valkey = None  # type: ignore[assignment, misc]
-    AsyncValkey = None  # type: ignore[assignment, misc]
-    AsyncConnectionPool = None  # type: ignore[assignment, misc]
-    ConnectionPool = None  # type: ignore[assignment, misc]
-    ValkeyError = Exception  # type: ignore[assignment, misc]
-    VALKEY_AVAILABLE = False
-
-# Skip all tests if valkey dependencies are not available
-pytestmark = pytest.mark.skipif(
-    not VALKEY_AVAILABLE,
-    reason=(
-        "valkey dependencies not available. "
-        "Install with: pip install 'langgraph-checkpoint-aws[valkey]'"
-    ),
+from langgraph_checkpoint_aws.checkpoint.valkey.utils import (
+    LIBRARY_NAME,
+    LIBRARY_VERSION,
+    aset_client_info,
+    set_client_info,
 )
-
-# Import after optional dependency check
-if VALKEY_AVAILABLE:
-    import asyncio
-    import os
-    from unittest.mock import AsyncMock, Mock, call, patch
-
-    from langgraph_checkpoint_aws.checkpoint.valkey.utils import (
-        LIBRARY_NAME,
-        LIBRARY_VERSION,
-        aset_client_info,
-        set_client_info,
-    )
 
 
 @pytest.fixture

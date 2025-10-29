@@ -2,48 +2,16 @@
 
 import pytest
 
+# Skip entire module if valkey not available
+pytest.importorskip("valkey")
+pytest.importorskip("orjson")
+
 from langgraph_checkpoint_aws import ValkeyValidationError
 
-# Check for optional dependencies
-try:
-    import orjson  # noqa: F401
-    import valkey  # noqa: F401
-    from valkey.exceptions import ValkeyError  # noqa: F401
-
-    VALKEY_AVAILABLE = True
-except ImportError:
-    # Create dummy objects for type checking when dependencies not available
-    class MockOrjson:
-        @staticmethod
-        def dumps(obj):  # type: ignore[misc]
-            import json
-
-            return json.dumps(obj).encode("utf-8")
-
-        @staticmethod
-        def loads(data):  # type: ignore[misc]
-            import json
-
-            return json.loads(data)
-
-    orjson = MockOrjson()  # type: ignore[assignment]
-    ValkeyError = Exception  # type: ignore[assignment, misc]
-    VALKEY_AVAILABLE = False
-
-# Skip all tests if valkey dependencies are not available
-pytestmark = pytest.mark.skipif(
-    not VALKEY_AVAILABLE,
-    reason=(
-        "valkey dependencies not available. "
-        "Install with: pip install 'langgraph-checkpoint-aws[valkey]'"
-    ),
-)
-
-# Import after optional dependency check
-if VALKEY_AVAILABLE:
-    from unittest.mock import Mock, patch
-
-    from langgraph_checkpoint_aws.store.valkey.base import BaseValkeyStore
+# Now safe to import these
+from unittest.mock import Mock, patch
+import orjson
+from langgraph_checkpoint_aws.store.valkey.base import BaseValkeyStore
 
 
 class ConcreteValkeyStore(BaseValkeyStore):

@@ -2,50 +2,26 @@
 
 import pytest
 
-from langgraph_checkpoint_aws import ValkeyIndexConfig
+# Skip entire module if valkey not available
+pytest.importorskip("valkey")
+pytest.importorskip("fakeredis")
 
-# Check for optional dependencies
-try:
-    import fakeredis  # noqa: F401
-    import valkey  # noqa: F401
-    from valkey.exceptions import ValkeyError  # noqa: F401
+from langgraph_checkpoint_aws import ValkeyIndexConfig, AsyncValkeyStore, ValkeyStore
 
-    from langgraph_checkpoint_aws import AsyncValkeyStore, ValkeyStore
-
-    VALKEY_AVAILABLE = True
-except ImportError:
-    fakeredis = None  # type: ignore[assignment, misc]
-    ValkeyError = Exception  # type: ignore[assignment, misc]
-    ValkeyStore = None  # type: ignore[assignment, misc]
-    AsyncValkeyStore = None  # type: ignore[assignment, misc]
-    VALKEY_AVAILABLE = False
-
-# Skip all tests if valkey dependencies are not available
-pytestmark = pytest.mark.skipif(
-    not VALKEY_AVAILABLE,
-    reason=(
-        "valkey dependencies not available. "
-        "Install with: pip install 'langgraph-checkpoint-aws[valkey]'"
-    ),
-)
-
-# Import after optional dependency check
-if VALKEY_AVAILABLE:
-    from unittest.mock import MagicMock, Mock, patch
-
+# Now safe to import these
+from unittest.mock import MagicMock, Mock, patch
+import fakeredis
 
 def mock_embed_fn(texts):
     """Mock embedding function that returns fixed vectors."""
-    return [[0.1, 0.2] * 64 for _ in texts]  # 128-dim vectors
+    return [[0.1] * 128 for _ in texts]
+
 
 
 @pytest.fixture
 def fake_valkey_client():
     """Create a fake Valkey client using fakeredis."""
-    if not VALKEY_AVAILABLE or fakeredis is None:
-        pytest.skip("fakeredis not available")
     return fakeredis.FakeStrictRedis(decode_responses=False)
-
 
 class TestValkeyIndexConfig:
     """Test suite for ValkeyIndexConfig TypedDict."""
