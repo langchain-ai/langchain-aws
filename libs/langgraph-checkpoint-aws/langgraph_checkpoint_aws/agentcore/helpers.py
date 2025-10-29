@@ -377,7 +377,7 @@ def clean_orphan_tool_calls(messages: list[Any]) -> list[Any]:
     # Clean up AIMessages with orphaned tool_calls
     cleaned_messages = []
     for msg in messages:
-        if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
+        if isinstance(msg, AIMessage) and msg.tool_calls:
             # Filter out tool_calls that don't have corresponding ToolMessages
             valid_tool_calls = [
                 tc for tc in msg.tool_calls if tc.get("id") in resolved_tool_call_ids
