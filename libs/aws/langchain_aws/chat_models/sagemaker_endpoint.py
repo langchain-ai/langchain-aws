@@ -189,15 +189,15 @@ class ChatSagemakerEndpoint(BaseChatModel):
 
     endpoint_name: str = ""
     """The name of the endpoint from the deployed Sagemaker model.
-    
+
     Must be unique within an AWS Region.
-    
+
     """
 
     inference_component_name: Optional[str] = None
-    """Optional name of the inference component to invoke 
+    """Optional name of the inference component to invoke
     if specified with endpoint name.
-    
+
     """
 
     region_name: Optional[str] = ""
@@ -212,8 +212,8 @@ class ChatSagemakerEndpoint(BaseChatModel):
 
     Profile should either have access keys or role information specified.
     If not specified, the default credential profile or, if on an EC2 instance,
-    credentials from IMDS will be used. 
-    
+    credentials from IMDS will be used.
+
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
     """
@@ -344,7 +344,11 @@ class ChatSagemakerEndpoint(BaseChatModel):
 
     @classmethod
     def get_lc_namespace(cls) -> List[str]:
-        """Get the namespace of the langchain object."""
+        """Get the namespace of the langchain object.
+
+        Returns:
+            `["langchain", "chat_models", "sagemaker"]`
+        """
         return ["langchain", "chat_models", "sagemaker"]
 
     @property
