@@ -11,6 +11,11 @@ pytest.importorskip("orjson")
 
 from langchain_core.runnables import RunnableConfig
 
+try:
+    from valkey import Valkey  # noqa: F401
+except (ImportError, AttributeError):
+    pytest.skip("Valkey class not available", allow_module_level=True)
+
 from langgraph_checkpoint_aws.agentcore.valkey import AgentCoreValkeySaver
 
 
