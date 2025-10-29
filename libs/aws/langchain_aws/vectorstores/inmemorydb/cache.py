@@ -47,7 +47,7 @@ def _load_generations_from_json(generations_json: str) -> RETURN_VAL_TYPE:
     """Load generations from json.
 
     Args:
-        generations_json (str): A string of json representing a list of generations.
+        generations_json: A string of json representing a list of generations.
 
     Raises:
         ValueError: Could not decode json string to list of generations.
@@ -94,7 +94,7 @@ def _loads_generations(generations_str: str) -> Union[RETURN_VAL_TYPE, None]:
     See `_dumps_generations`, the inverse of this function.
 
     Args:
-        generations_str (str): A string representing a list of generations.
+        generations_str: A string representing a list of generations.
 
     Compatible with the legacy cache-blob format
     Does not raise exceptions for malformed entries, just logs a warning
@@ -146,7 +146,7 @@ class InMemorySemanticCache(BaseCache):
         """Initialize by passing in the `init` GPTCache func
 
         Args:
-            redis_url (str): URL to connect to MemoryDB.
+            redis_url: URL to connect to MemoryDB.
             embedding (Embedding): Embedding provider for semantic encoding and search.
             score_threshold (float, 0.2):
         Example:            ```python
