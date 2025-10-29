@@ -448,7 +448,7 @@ def get_latest_agent_version(agent_id: str) -> str:
     Gets the latest version of a Bedrock Agent by creation date.
 
     Args:
-        agent_id (str): The ID of the Bedrock Agent
+        agent_id: The ID of the Bedrock Agent
 
     Returns:
         dict: The latest agent version information

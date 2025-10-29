@@ -356,11 +356,11 @@ class ChatBedrockConverse(BaseChatModel):
 
     model_id: str = Field(alias="model")
     """ID of the model to call.
-    
-    e.g., `"anthropic.claude-3-sonnet-20240229-v1:0"`. This is equivalent to the 
-    modelID property in the list-foundation-models api. For custom and provisioned 
-    models, an ARN value is expected. See 
-    https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html#model-ids-arns 
+
+    e.g., `"anthropic.claude-3-sonnet-20240229-v1:0"`. This is equivalent to the
+    modelID property in the list-foundation-models api. For custom and provisioned
+    models, an ARN value is expected. See
+    https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html#model-ids-arns
     for a list of all supported built-in models.
 
     """
@@ -384,11 +384,11 @@ class ChatBedrockConverse(BaseChatModel):
     """The percentage of most-likely candidates that are considered for the next token.
 
     Must be 0 to 1.
-    
-    For example, if you choose a value of 0.8 for topP, the model selects from 
-    the top 80% of the probability distribution of tokens that could be next in the 
+
+    For example, if you choose a value of 0.8 for topP, the model selects from
+    the top 80% of the probability distribution of tokens that could be next in the
     sequence.
-    
+
     """
 
     region_name: Optional[str] = None
@@ -452,7 +452,7 @@ class ChatBedrockConverse(BaseChatModel):
 
     When not supplied, provider is extracted from the first part of the model_id, e.g.
     'amazon' in 'amazon.titan-text-express-v1'. This value should be provided for model
-    ids that do not have the provider in them, like custom and provisioned models that
+    IDs that do not have the provider in them, like custom and provisioned models that
     have an ARN associated with them.
 
     """
@@ -512,7 +512,7 @@ class ChatBedrockConverse(BaseChatModel):
 
     raw_blocks: Optional[List[Dict[str, Any]]] = None
     """Raw Bedrock message blocks that can be passed in.
-    
+
     LangChain will relay them unchanged, enabling any combination of content
     block types. This is useful for custom guardrail wrapping.
 

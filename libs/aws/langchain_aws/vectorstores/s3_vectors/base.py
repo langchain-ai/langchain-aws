@@ -108,8 +108,8 @@ class AmazonS3Vectors(VectorStore):
         """Create a AmazonS3Vectors.
 
         Args:
-            vector_bucket_name (str): The name of an existing S3 vector bucket
-            index_name (str): The name of the S3 vector index. The index names must be
+            vector_bucket_name: The name of an existing S3 vector bucket
+            index_name: The name of the S3 vector index. The index names must be
                 3 to 63 characters long, start and end with a letter or number,
                 and contain only lowercase letters, numbers, hyphens and dots.
             data_type (Literal["float32"]): The data type of the vectors to be inserted
@@ -121,7 +121,7 @@ class AmazonS3Vectors(VectorStore):
             page_content_metadata_key (Optional[str]): Key of metadata to store
                 page_content in Document. If None, embedding page_content
                 but stored as an empty string. Default is `_page_content`.
-            create_index_if_not_exist (bool): Automatically create vector index if it
+            create_index_if_not_exist: Automatically create vector index if it
                 does not exist. Default is True.
             relevance_score_fn (Optional[Callable[[float], float]]): The 'correct'
                 relevance function.
@@ -157,10 +157,10 @@ class AmazonS3Vectors(VectorStore):
                 environment variable.
             endpoint_url (Optional[str]): Needed if you don't want to default to
                 us-east-1 endpoint
-            config (Any): An optional `botocore.config.Config` instance to pass to
+            config: An optional `botocore.config.Config` instance to pass to
                 the client.
-            client (Any): Boto3 client for s3vectors
-            kwargs (Any): Additional keyword arguments.
+            client: Boto3 client for s3vectors
+            kwargs: Additional keyword arguments.
 
         """
         self.vector_bucket_name = vector_bucket_name
@@ -210,19 +210,17 @@ class AmazonS3Vectors(VectorStore):
         batch_size: int = 200,
         **kwargs: Any,
     ) -> List[str]:
-        """Add more texts to the vectorstore.
+        """Add more texts to the `VectorStore`.
 
         Args:
-            texts (Iterable[str]): Iterable of strings/text to add to the vectorstore.
-            metadatas (Optional[List[dict]], optional): Optional list of metadatas.
-                Defaults to None.
-            ids (Optional[list[str | None]]): Optional list of IDs associated
-                with the texts.
-            batch_size (int): Batch size for put_vectors.
-            kwargs (Any): Additional keyword arguments.
+            texts: Iterable of strings/text to add to the `VectorStore`.
+            metadatas: Optional list of metadatas.
+            ids: Optional list of IDs associated with the texts.
+            batch_size: Batch size for `put_vectors`.
+            kwargs: Additional keyword arguments.
 
         Returns:
-            List[str]: List of ids added to the vectorstore.
+            List of IDs added to the `VectorStore`.
 
         """
         # Convert iterable to list to allow indexing and len operations
@@ -236,7 +234,7 @@ class AmazonS3Vectors(VectorStore):
                 raise ValueError("Metadatas must be a list of dicts")
         # check for ids
         if isinstance(ids, list) and len(ids) != len(texts_list):
-            raise ValueError("Number of ids must match number of texts")
+            raise ValueError("Number of IDs must match number of texts")
 
         result_ids = []
         for i in range(0, len(texts_list), batch_size):
@@ -285,14 +283,13 @@ class AmazonS3Vectors(VectorStore):
         """Delete by vector ID or delete index.
 
         Args:
-            ids: List of ids to delete vectors. If None, delete index with all vectors.
-                Default is None.
-            batch_size: Batch size for delete_vectors.
+            ids: List of IDs to delete vectors. If `None`, delete index with all
+                vectors.
+            batch_size: Batch size for `delete_vectors`.
             **kwargs: Additional keyword arguments.
 
         Returns:
-            Optional[bool]: Always True.
-
+            Always `True`.
         """
 
         if ids is None:
@@ -319,7 +316,7 @@ class AmazonS3Vectors(VectorStore):
             batch_size: Batch size for get_vectors.
 
         Returns:
-            List of Documents.
+            List of `Document` objects.
 
         """
 
@@ -376,7 +373,7 @@ class AmazonS3Vectors(VectorStore):
             **kwargs: Arguments to pass to the search method.
 
         Returns:
-            List of Documents most similar to the query.
+            List of `Document` objects most similar to the query.
 
         """
         if self.embeddings is None:
@@ -439,7 +436,7 @@ class AmazonS3Vectors(VectorStore):
             **kwargs: Additional keyword arguments.
 
         Returns:
-            List of Documents most similar to the query vector.
+            List of `Document` objects most similar to the query vector.
 
         """
         response = self.client.query_vectors(
@@ -489,13 +486,13 @@ class AmazonS3Vectors(VectorStore):
         """Return AmazonS3Vectors initialized from texts and embeddings.
 
         Args:
-            texts: Texts to add to the vectorstore.
+            texts: Texts to add to the `VectorStore`.
             embedding: Embedding function to use.
             metadatas: Optional list of metadatas associated with the texts.
                 Default is None.
             ids: Optional list of IDs associated with the texts.
-            vector_bucket_name (str): The name of an existing S3 vector bucket
-            index_name (str): The name of the S3 vector index. The index names must be
+            vector_bucket_name: The name of an existing S3 vector bucket
+            index_name: The name of the S3 vector index. The index names must be
                 3 to 63 characters long, start and end with a letter or number,
                 and contain only lowercase letters, numbers, hyphens and dots.
             data_type (Literal["float32"]): The data type of the vectors to be inserted
@@ -507,7 +504,7 @@ class AmazonS3Vectors(VectorStore):
             page_content_metadata_key (Optional[str]): Key of metadata to store
                 page_content in Document. If None, embedding page_content
                 but stored as an empty string. Default is "_page_content".
-            create_index_if_not_exist (bool): Automatically create vector index if it
+            create_index_if_not_exist: Automatically create vector index if it
                 does not exist. Default is True.
             relevance_score_fn (Optional[Callable[[float], float]]): The 'correct'
                 relevance function.
@@ -542,9 +539,9 @@ class AmazonS3Vectors(VectorStore):
                 environment variable.
             endpoint_url (Optional[str]): Needed if you don't want to default to
                 us-east-1 endpoint
-            config (Any): An optional `botocore.config.Config` instance to pass to
+            config: An optional `botocore.config.Config` instance to pass to
                 the client.
-            client (Any): Boto3 client for s3vectors
+            client: Boto3 client for s3vectors
             kwargs: Arguments to pass to AmazonS3Vectors.
 
         Returns:

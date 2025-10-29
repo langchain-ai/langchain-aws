@@ -769,7 +769,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     a sequence of characters that causes a model to stop generating a response. See
     https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_InferenceConfiguration.html
     for more.
-    
+
     """
 
     @property
@@ -784,7 +784,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
     @classmethod
     def get_lc_namespace(cls) -> List[str]:
-        """Get the namespace of the langchain object."""
+        """Get the namespace of the langchain object.
+
+        Returns:
+            `["langchain", "chat_models", "bedrock"]`
+        """
         return ["langchain", "chat_models", "bedrock"]
 
     @model_validator(mode="before")
