@@ -268,35 +268,6 @@ class TestStoreClientSetInfo:
             assert store is not None
 
 
-# class TestCacheClientSetInfo:
-#     """Test CLIENT SETINFO is called in cache implementations."""
-#
-#     @patch("langgraph_checkpoint_aws.cache.valkey.cache.set_client_info")
-#     def test_cache_direct_init(
-#         self, mock_set_client_info: Mock, mock_valkey_client: Mock
-#     ):
-#         """Test CLIENT SETINFO is called when directly initializing ValkeyCache."""
-#         ValkeyCache(mock_valkey_client)
-#         mock_set_client_info.assert_called_once_with(mock_valkey_client)
-#
-#     @patch("valkey.Valkey.from_url")
-#     @patch("langgraph_checkpoint_aws.cache.valkey.cache.set_client_info")
-#     def test_cache_from_conn_string(
-#         self, mock_set_client_info: Mock, mock_from_url: Mock, valkey_url: str
-#     ):
-#         """Test CLIENT SETINFO is called when using cache from_conn_string."""
-#         mock_client = Mock(spec=Valkey)
-#         mock_client.__enter__ = Mock(return_value=mock_client)
-#         mock_client.__exit__ = Mock(return_value=None)
-#         mock_from_url.return_value = mock_client
-#
-#         cache: ValkeyCache
-#         with ValkeyCache.from_conn_string(valkey_url) as cache:
-#             # Should be called once: only in __init__ (cache class)
-#             mock_set_client_info.assert_called_once_with(mock_client)
-#             assert cache is not None
-
-
 class TestConnectionPoolClientSetInfo:
     """Test CLIENT SETINFO behavior with connection pools."""
 
