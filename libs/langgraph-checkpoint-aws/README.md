@@ -28,11 +28,12 @@ pip install 'langgraph-checkpoint-aws[valkey]'
 
 ## Components
 
-This package provides three main components:
+This package provides four main components:
 
 1. **AgentCoreMemorySaver** - AWS Bedrock-based checkpoint storage
 2. **ValkeySaver** - Valkey checkpoint storage
-3. **AgentCoreMemoryStore** - AWS Bedrock-based document store
+3. **AgentCoreValkeySaver** - AgentCore-compatible Valkey checkpoint storage
+4. **AgentCoreMemoryStore** - AWS Bedrock-based document store
 
 
 ## Usage
@@ -170,6 +171,46 @@ with ValkeySaver.from_conn_string(
     config = {"configurable": {"thread_id": "session-1"}}
     result = graph.invoke(1, config)
 ```
+
+### 4. AgentCore Valkey Storage
+
+For AWS Bedrock AgentCore-compatible applications that want to use Valkey instead of managed Memory:
+
+```python
+from langgraph.prebuilt import create_react_agent
+from langgraph_checkpoint_aws import AgentCoreValkeySaver
+
+# Using connection string
+with AgentCoreValkeySaver.from_conn_string(
+    "valkey://localhost:6379",
+    ttl_seconds=3600,  # 1 hour TTL
+    pool_size=10
+) as checkpointer:
+    # Create your agent
+    graph = create_react_agent(
+        model=model,
+        tools=tools,
+        checkpointer=checkpointer
+    )
+
+    # AgentCore-style configuration (requires actor_id)
+    config = {
+        "configurable": {
+            "thread_id": "session-123",
+            "actor_id": "agent-456",  # Required for AgentCore compatibility
+            "checkpoint_ns": "production"
+        }
+    }
+
+    result = graph.invoke({"messages": [...]}, config)
+```
+
+**Key Differences from ValkeySaver:**
+- ✅ Requires `actor_id` in configuration (AgentCore requirement)
+- ✅ Uses AgentCore-compatible key structure (`agentcore:*` prefix)
+- ✅ Built-in retry logic with exponential backoff
+- ✅ Pydantic validation for data integrity
+- ⚠️ **Data is NOT compatible with ValkeySaver** - choose one at project start
 
 ## Async Usage
 
