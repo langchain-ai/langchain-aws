@@ -368,10 +368,11 @@ def clean_orphan_tool_calls(messages: list[Any]) -> list[Any]:
         return messages
 
     # Build a set of all tool_call_ids that have corresponding ToolMessages
-    resolved_tool_call_ids = set()
-    for msg in messages:
-        if isinstance(msg, ToolMessage) and hasattr(msg, "tool_call_id"):
-            resolved_tool_call_ids.add(msg.tool_call_id)
+    resolved_tool_call_ids = {
+        msg.tool_call_id
+        for msg in messages
+        if isinstance(msg, ToolMessage) and hasattr(msg, "tool_call_id")
+    }
 
     # Clean up AIMessages with orphaned tool_calls
     cleaned_messages = []
