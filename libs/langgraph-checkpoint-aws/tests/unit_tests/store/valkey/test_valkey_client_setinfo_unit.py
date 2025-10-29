@@ -2,11 +2,17 @@
 
 import asyncio
 import os
-import pytest
 from unittest.mock import AsyncMock, Mock, call, patch
+
+import pytest
 
 # Skip entire module if valkey not available
 pytest.importorskip("valkey")
+
+from valkey import Valkey
+from valkey.asyncio import Valkey as AsyncValkey
+from valkey.asyncio.connection import ConnectionPool as AsyncConnectionPool
+from valkey.connection import ConnectionPool
 
 from langgraph_checkpoint_aws import (
     AsyncValkeySaver,
@@ -14,11 +20,6 @@ from langgraph_checkpoint_aws import (
     ValkeySaver,
     ValkeyStore,
 )
-from valkey import Valkey
-from valkey.asyncio import Valkey as AsyncValkey
-from valkey.asyncio.connection import ConnectionPool as AsyncConnectionPool
-from valkey.connection import ConnectionPool
-
 from langgraph_checkpoint_aws.checkpoint.valkey.utils import (
     LIBRARY_NAME,
     LIBRARY_VERSION,

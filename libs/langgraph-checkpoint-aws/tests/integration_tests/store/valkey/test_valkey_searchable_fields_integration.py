@@ -1,5 +1,7 @@
 """Integration tests for ValkeyStore searchable fields functionality."""
 
+from collections.abc import Generator
+
 import pytest
 
 from langgraph_checkpoint_aws import ValkeyIndexConfig, ValkeyStore
@@ -25,7 +27,6 @@ pytestmark = pytest.mark.skipif(
 # Import after optional dependency check
 if VALKEY_AVAILABLE:
     import os
-    from collections.abc import Generator
 
 
 def _is_valkey_server_available() -> bool:

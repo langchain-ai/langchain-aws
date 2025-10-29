@@ -6,11 +6,12 @@ import pytest
 pytest.importorskip("valkey")
 pytest.importorskip("orjson")
 
-from langgraph_checkpoint_aws import ValkeyValidationError
-
 # Now safe to import these
 from unittest.mock import Mock, patch
+
 import orjson
+
+from langgraph_checkpoint_aws import ValkeyValidationError
 from langgraph_checkpoint_aws.store.valkey.base import BaseValkeyStore
 
 

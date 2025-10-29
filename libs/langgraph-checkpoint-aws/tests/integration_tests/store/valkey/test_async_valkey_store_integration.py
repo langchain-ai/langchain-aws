@@ -1,5 +1,7 @@
 """Async tests for the Valkey store implementation."""
 
+from collections.abc import AsyncGenerator
+
 import pytest
 import pytest_asyncio
 
@@ -31,7 +33,6 @@ pytestmark = pytest.mark.skipif(
 if VALKEY_AVAILABLE:
     import asyncio
     import os
-    from collections.abc import AsyncGenerator
     from datetime import datetime
 
     from langgraph.store.base import Item, SearchItem

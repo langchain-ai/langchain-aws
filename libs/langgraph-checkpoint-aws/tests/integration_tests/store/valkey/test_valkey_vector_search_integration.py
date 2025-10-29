@@ -1,5 +1,7 @@
 """Tests for vector search functionality in ValkeyStore implementations."""
 
+from collections.abc import AsyncGenerator, Generator
+
 import pytest
 import pytest_asyncio
 
@@ -26,7 +28,6 @@ pytestmark = pytest.mark.skipif(
 # Import after optional dependency check
 if VALKEY_AVAILABLE:
     import os
-    from collections.abc import AsyncGenerator, Generator
 
     from langgraph.store.base import SearchItem
 

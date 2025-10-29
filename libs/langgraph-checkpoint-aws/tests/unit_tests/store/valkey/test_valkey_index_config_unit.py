@@ -6,22 +6,24 @@ import pytest
 pytest.importorskip("valkey")
 pytest.importorskip("fakeredis")
 
-from langgraph_checkpoint_aws import ValkeyIndexConfig, AsyncValkeyStore, ValkeyStore
-
 # Now safe to import these
 from unittest.mock import MagicMock, Mock, patch
+
 import fakeredis
+
+from langgraph_checkpoint_aws import AsyncValkeyStore, ValkeyIndexConfig, ValkeyStore
+
 
 def mock_embed_fn(texts):
     """Mock embedding function that returns fixed vectors."""
     return [[0.1] * 128 for _ in texts]
 
 
-
 @pytest.fixture
 def fake_valkey_client():
     """Create a fake Valkey client using fakeredis."""
     return fakeredis.FakeStrictRedis(decode_responses=False)
+
 
 class TestValkeyIndexConfig:
     """Test suite for ValkeyIndexConfig TypedDict."""

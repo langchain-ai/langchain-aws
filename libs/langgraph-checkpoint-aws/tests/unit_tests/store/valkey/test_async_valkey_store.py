@@ -7,6 +7,11 @@ import pytest
 pytest.importorskip("valkey")
 pytest.importorskip("orjson")
 
+# Now safe to import these
+from datetime import datetime
+from typing import cast
+from unittest.mock import AsyncMock, Mock, patch
+
 from langgraph.store.base import (
     GetOp,
     ListNamespacesOp,
@@ -16,13 +21,6 @@ from langgraph.store.base import (
 )
 
 from langgraph_checkpoint_aws import AsyncValkeyStore
-
-# Now safe to import these
-from datetime import datetime
-from typing import cast
-from unittest.mock import AsyncMock, Mock, patch
-from valkey.exceptions import ValkeyError
-import orjson
 
 
 @pytest.fixture

@@ -1,5 +1,7 @@
 """Tests for the ValkeyStore implementation."""
 
+from collections.abc import Generator
+
 import pytest
 
 from langgraph_checkpoint_aws import (
@@ -31,7 +33,6 @@ pytestmark = pytest.mark.skipif(
 # Import after optional dependency check
 if VALKEY_AVAILABLE:
     import os
-    from collections.abc import Generator  # noqa: F401
     from datetime import datetime
 
     from langgraph.store.base import Item, SearchItem

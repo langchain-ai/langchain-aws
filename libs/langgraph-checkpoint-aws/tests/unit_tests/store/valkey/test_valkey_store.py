@@ -6,6 +6,12 @@ import pytest
 pytest.importorskip("valkey")
 pytest.importorskip("orjson")
 
+# Now safe to import these
+import json
+from datetime import datetime
+from unittest.mock import Mock, patch
+
+import orjson
 from langgraph.store.base import (
     GetOp,
     Item,
@@ -16,13 +22,6 @@ from langgraph.store.base import (
 )
 
 from langgraph_checkpoint_aws import ValkeyStore
-
-# Now safe to import these
-import json
-from datetime import datetime
-from unittest.mock import Mock, patch
-from valkey.exceptions import ValkeyError
-import orjson
 from langgraph_checkpoint_aws.store.valkey import ValkeyIndexConfig
 from langgraph_checkpoint_aws.store.valkey.base import TTLConfig
 
