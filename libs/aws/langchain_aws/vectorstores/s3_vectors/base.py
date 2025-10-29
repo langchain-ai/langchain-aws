@@ -108,8 +108,8 @@ class AmazonS3Vectors(VectorStore):
         """Create a AmazonS3Vectors.
 
         Args:
-            vector_bucket_name (str): The name of an existing S3 vector bucket
-            index_name (str): The name of the S3 vector index. The index names must be
+            vector_bucket_name: The name of an existing S3 vector bucket
+            index_name: The name of the S3 vector index. The index names must be
                 3 to 63 characters long, start and end with a letter or number,
                 and contain only lowercase letters, numbers, hyphens and dots.
             data_type (Literal["float32"]): The data type of the vectors to be inserted
@@ -121,7 +121,7 @@ class AmazonS3Vectors(VectorStore):
             page_content_metadata_key (Optional[str]): Key of metadata to store
                 page_content in Document. If None, embedding page_content
                 but stored as an empty string. Default is `_page_content`.
-            create_index_if_not_exist (bool): Automatically create vector index if it
+            create_index_if_not_exist: Automatically create vector index if it
                 does not exist. Default is True.
             relevance_score_fn (Optional[Callable[[float], float]]): The 'correct'
                 relevance function.
@@ -157,10 +157,10 @@ class AmazonS3Vectors(VectorStore):
                 environment variable.
             endpoint_url (Optional[str]): Needed if you don't want to default to
                 us-east-1 endpoint
-            config (Any): An optional `botocore.config.Config` instance to pass to
+            config: An optional `botocore.config.Config` instance to pass to
                 the client.
-            client (Any): Boto3 client for s3vectors
-            kwargs (Any): Additional keyword arguments.
+            client: Boto3 client for s3vectors
+            kwargs: Additional keyword arguments.
 
         """
         self.vector_bucket_name = vector_bucket_name
@@ -216,7 +216,7 @@ class AmazonS3Vectors(VectorStore):
             texts: Iterable of strings/text to add to the `VectorStore`.
             metadatas: Optional list of metadatas.
             ids: Optional list of IDs associated with the texts.
-            batch_size: Batch size for put_vectors.
+            batch_size: Batch size for `put_vectors`.
             kwargs: Additional keyword arguments.
 
         Returns:
@@ -491,8 +491,8 @@ class AmazonS3Vectors(VectorStore):
             metadatas: Optional list of metadatas associated with the texts.
                 Default is None.
             ids: Optional list of IDs associated with the texts.
-            vector_bucket_name (str): The name of an existing S3 vector bucket
-            index_name (str): The name of the S3 vector index. The index names must be
+            vector_bucket_name: The name of an existing S3 vector bucket
+            index_name: The name of the S3 vector index. The index names must be
                 3 to 63 characters long, start and end with a letter or number,
                 and contain only lowercase letters, numbers, hyphens and dots.
             data_type (Literal["float32"]): The data type of the vectors to be inserted
@@ -504,7 +504,7 @@ class AmazonS3Vectors(VectorStore):
             page_content_metadata_key (Optional[str]): Key of metadata to store
                 page_content in Document. If None, embedding page_content
                 but stored as an empty string. Default is "_page_content".
-            create_index_if_not_exist (bool): Automatically create vector index if it
+            create_index_if_not_exist: Automatically create vector index if it
                 does not exist. Default is True.
             relevance_score_fn (Optional[Callable[[float], float]]): The 'correct'
                 relevance function.
@@ -539,9 +539,9 @@ class AmazonS3Vectors(VectorStore):
                 environment variable.
             endpoint_url (Optional[str]): Needed if you don't want to default to
                 us-east-1 endpoint
-            config (Any): An optional `botocore.config.Config` instance to pass to
+            config: An optional `botocore.config.Config` instance to pass to
                 the client.
-            client (Any): Boto3 client for s3vectors
+            client: Boto3 client for s3vectors
             kwargs: Arguments to pass to AmazonS3Vectors.
 
         Returns:
