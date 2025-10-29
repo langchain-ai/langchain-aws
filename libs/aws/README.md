@@ -22,7 +22,9 @@ Alternatively, set the `AWS_BEARER_TOKEN_BEDROCK` environment variable locally f
 ```python
 from langchain_aws import ChatBedrockConverse
 
-model = ChatBedrockConverse()
+model = ChatBedrockConverse(
+    model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+)
 model.invoke("Sing a ballad of LangChain.")
 ```
 
