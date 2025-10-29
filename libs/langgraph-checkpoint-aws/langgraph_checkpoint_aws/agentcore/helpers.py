@@ -379,18 +379,18 @@ def clean_orphan_tool_calls(messages: list[Any]) -> list[Any]:
     for msg in messages:
         if isinstance(msg, AIMessage) and msg.tool_calls:
             # Filter out tool_calls that don't have corresponding ToolMessages
-            valid_tool_calls = [
-                tc for tc in msg.tool_calls if tc.get("id") in resolved_tool_call_ids
-            ]
+            valid_tool_calls, removed_tool_calls = [], []
+
+            for tc in msg.tool_calls:
+                tc_id = tc.get("id")
+                if tc_id in resolved_tool_call_ids:
+                    valid_tool_calls.append(tc)
+                else:
+                    removed_tool_calls.append(tc_id)
 
             # If we removed some tool_calls, create a new message with cleaned
             # tool_calls
-            if len(valid_tool_calls) != len(msg.tool_calls):
-                removed_tool_calls = [
-                    tc.get("id")
-                    for tc in msg.tool_calls
-                    if tc.get("id") not in resolved_tool_call_ids
-                ]
+            if removed_tool_calls:
                 logger.warning(
                     f"Removed {len(removed_tool_calls)} orphaned tool_call(s) "
                     f"from AIMessage during checkpoint load: {removed_tool_calls}"
