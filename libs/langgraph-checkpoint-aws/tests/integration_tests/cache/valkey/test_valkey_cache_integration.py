@@ -6,30 +6,16 @@ from collections.abc import Generator
 from typing import Any
 
 import pytest
+
+pytest.importorskip("valkey")
+
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from valkey import Valkey
+from valkey.connection import ConnectionPool
 
-# Test conditional import behavior
-try:
-    from valkey import Valkey
-    from valkey.connection import ConnectionPool
+from langgraph_checkpoint_aws import ValkeyCache, valkey_available
 
-    from langgraph_checkpoint_aws import ValkeyCache, valkey_available
-
-    VALKEY_AVAILABLE = valkey_available
-except ImportError:
-    Valkey = None  # type: ignore[assignment, misc]
-    ConnectionPool = None  # type: ignore[assignment, misc]
-    ValkeyCache = None  # type: ignore[assignment, misc]
-    VALKEY_AVAILABLE = False
-
-# Skip all tests if valkey dependencies are not available
-pytestmark = pytest.mark.skipif(
-    not VALKEY_AVAILABLE,
-    reason=(
-        "valkey dependency not available. "
-        "Install with: pip install 'langgraph-checkpoint-aws[valkey]'"
-    ),
-)
+VALKEY_AVAILABLE = valkey_available
 
 
 def _is_valkey_server_available() -> bool:

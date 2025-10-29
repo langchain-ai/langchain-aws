@@ -4,36 +4,19 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-# Test conditional import behavior
-try:
-    from valkey import Valkey
-    from valkey.connection import ConnectionPool
-    from valkey.exceptions import ConnectionError, TimeoutError
+pytest.importorskip("valkey")
 
-    from langgraph_checkpoint_aws import valkey_available
-    from langgraph_checkpoint_aws.cache.valkey.cache import (
-        MAX_SET_BATCH_SIZE,
-        ValkeyCache,
-    )
+from valkey import Valkey
+from valkey.connection import ConnectionPool
+from valkey.exceptions import ConnectionError, TimeoutError
 
-    VALKEY_AVAILABLE = valkey_available
-except ImportError:
-    ValkeyCache = None  # type: ignore[assignment, misc]
-    MAX_SET_BATCH_SIZE = 100  # Default fallback
-    VALKEY_AVAILABLE = False
-    Valkey = None  # type: ignore[assignment, misc]
-    ConnectionPool = None  # type: ignore[assignment, misc]
-    ConnectionError = Exception  # type: ignore[assignment, misc]
-    TimeoutError = Exception  # type: ignore[assignment, misc]
-
-# Skip all tests if valkey dependencies are not available
-pytestmark = pytest.mark.skipif(
-    not VALKEY_AVAILABLE,
-    reason=(
-        "valkey dependency not available. "
-        "Install with: pip install 'langgraph-checkpoint-aws[valkey]'"
-    ),
+from langgraph_checkpoint_aws import valkey_available
+from langgraph_checkpoint_aws.cache.valkey.cache import (
+    MAX_SET_BATCH_SIZE,
+    ValkeyCache,
 )
+
+VALKEY_AVAILABLE = valkey_available
 
 
 class TestValkeyCacheUnit:
