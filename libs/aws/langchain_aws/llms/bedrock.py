@@ -798,23 +798,27 @@ class BedrockBase(BaseLanguageModel, ABC):
         'guardrailVersion' keys.
 
     Example:
-    llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
-                  model_kwargs={},
-                  guardrails={
-                        "guardrailId": "<guardrail_id>",
-                        "guardrailVersion": "<guardrail_version>"})
+        ```python
+        llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
+            model_kwargs={},
+            guardrails={
+                    "guardrailId": "<guardrail_id>",
+                    "guardrailVersion": "<guardrail_version>"})
+        ```
 
     To enable tracing for guardrails, set the 'trace' key to True and pass a callback handler to the
     'run_manager' parameter of the 'generate', '_call' methods.
 
     Example:
-    llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
-                  model_kwargs={},
-                  guardrails={
-                        "guardrailId": "<guardrail_id>",
-                        "guardrailVersion": "<guardrail_version>",
-                        "trace": True},
-                callbacks=[BedrockAsyncCallbackHandler()])
+        ```python
+        llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
+            model_kwargs={},
+            guardrails={
+                    "guardrailId": "<guardrail_id>",
+                    "guardrailVersion": "<guardrail_version>",
+                    "trace": True},
+            callbacks=[BedrockAsyncCallbackHandler()])
+        ```
 
     https://python.langchain.com/docs/concepts/callbacks/ for more information on callback handlers.
 
@@ -1366,7 +1370,11 @@ class BedrockLLM(LLM, BedrockBase):
 
     @classmethod
     def get_lc_namespace(cls) -> List[str]:
-        """Get the namespace of the langchain object."""
+        """Get the namespace of the langchain object.
+
+        Returns:
+            `["langchain", "llms", "bedrock"]`
+        """
         return ["langchain", "llms", "bedrock"]
 
     @property
@@ -1402,7 +1410,7 @@ class BedrockLLM(LLM, BedrockBase):
         """Call out to Bedrock service with streaming.
 
         Args:
-            prompt (str): The prompt to pass into the model
+            prompt: The prompt to pass into the model
             stop (Optional[List[str]], optional): Stop sequences. These will
                 override any stop sequences in the `model_kwargs` attribute.
                 Defaults to None.
@@ -1496,7 +1504,7 @@ class BedrockLLM(LLM, BedrockBase):
         """Call out to Bedrock service with streaming.
 
         Args:
-            prompt (str): The prompt to pass into the model
+            prompt: The prompt to pass into the model
             stop (Optional[List[str]], optional): Stop sequences. These will
                 override any stop sequences in the `model_kwargs` attribute.
                 Defaults to None.
