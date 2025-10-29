@@ -95,33 +95,37 @@ def generate_write_id(namespace: str, checkpoint_id: str) -> str:
     )
 
 
-def deserialize_data(serializer: SerializerProtocol, data: str) -> Any:
-    """Deserialize string data into Python objects.
+def serialize_metadata(metadata: CheckpointMetadata) -> tuple[str, str]:
+    """Serialize checkpoint metadata to base64 encoded JSON.
+
+    Metadata is serialized as plain JSON rather than msgpack since it only
+    contains simple types (strings, numbers, booleans, dicts, lists).
 
     Args:
-        serializer: SerializerProtocol instance
-        data: JSON-formatted string data
+        metadata: Checkpoint metadata to serialize
 
     Returns:
-        Any: Deserialized Python object
+        Tuple[str, str]: Tuple of ("json", base64 encoded JSON string)
 
     """
-    return serializer.loads(data.encode())
+    json_bytes = json.dumps(metadata, ensure_ascii=False).encode("utf-8", "ignore")
+    encoded = base64.b64encode(json_bytes).decode("utf-8")
+    return "json", encoded
 
 
-def serialize_data(serializer: SerializerProtocol, data: Any) -> str:
-    """Serialize Python objects to string format.
+def deserialize_metadata(data_type: str, encoded_data: str) -> CheckpointMetadata:
+    """Deserialize checkpoint metadata from base64 encoded JSON.
 
     Args:
-        serializer: SerializerProtocol instance
-        data: Python object to serialize
+        data_type: Type identifier (should be "json")
+        encoded_data: Base64 encoded JSON string
 
     Returns:
-        str: Serialized string data with null characters handled
+        CheckpointMetadata: Deserialized metadata
 
     """
-    serialized = serializer.dumps(data)
-    return serialized.decode().replace("\\u0000", "")
+    decoded = base64.b64decode(encoded_data.encode("utf-8"))
+    return cast(CheckpointMetadata, json.loads(decoded))
 
 
 def serialize_to_base64(serializer: SerializerProtocol, data: Any) -> tuple[str, str]:
@@ -198,7 +202,7 @@ def construct_checkpoint_tuple(
                 ),
             },
         ),
-        deserialize_data(serde, session_checkpoint.metadata),
+        deserialize_metadata(*session_checkpoint.metadata),
         (
             {
                 "configurable": {
@@ -294,7 +298,7 @@ def create_session_checkpoint(
         checkpoint_ns=checkpoint_ns,
         checkpoint_id=checkpoint_id,
         checkpoint=serialize_to_base64(serializer, checkpoint_copy),
-        metadata=serialize_data(serializer, metadata),
+        metadata=serialize_metadata(metadata),
         # Extract and serialize channel values separately
         channel_values=serialize_to_base64(
             serializer, checkpoint_copy.get("channel_values", {})

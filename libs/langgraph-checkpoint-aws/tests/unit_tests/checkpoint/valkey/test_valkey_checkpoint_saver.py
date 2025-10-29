@@ -1,5 +1,6 @@
 """Unit tests for ValkeySaver using fakeredis."""
 
+import base64
 import json
 from unittest.mock import patch
 
@@ -475,7 +476,10 @@ class TestValkeySaverUnit:
         checkpoint_info = {
             "checkpoint": typed_data[1],  # Get the serialized bytes
             "type": typed_data[0],  # Get the type
-            "metadata": saver.jsonplus_serde.dumps({"step": 1}),
+            # Use plain JSON for metadata (matching base.py implementation)
+            "metadata": base64.b64encode(
+                json.dumps({"step": 1}, ensure_ascii=False).encode("utf-8", "ignore")
+            ).decode("utf-8"),
             "parent_checkpoint_id": None,
         }
 
