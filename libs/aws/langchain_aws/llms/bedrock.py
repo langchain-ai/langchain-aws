@@ -674,10 +674,10 @@ class BedrockBase(BaseLanguageModel, ABC):
     credentials_profile_name: Optional[str] = Field(default=None, exclude=True)
     """The name of the profile in the `~/.aws/credentials` or `~/.aws/config files`,
     which has either access keys or role information specified.
-    
+
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
-    
+
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
     """
@@ -707,7 +707,7 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
-    
+
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
     If not provided, will be read from `AWS_SECRET_ACCESS_KEY` environment variable.
@@ -721,9 +721,9 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     If provided, `aws_access_key_id` and `aws_secret_access_key` must also be
     provided.
-    
+
     Not required unless using temporary credentials.
-    
+
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
     If not provided, will be read from `AWS_SESSION_TOKEN` environment variable.
@@ -737,22 +737,22 @@ class BedrockBase(BaseLanguageModel, ABC):
     """The model provider, e.g., `'amazon'`, `'cohere'`, `'ai21'`, etc. When not
     supplied, provider is extracted from the first part of the model_id e.g.
     `'amazon'` in `'amazon.titan-text-express-v1'`. This value should be provided
-    for model ids that do not have the provider in them, e.g., custom and provisioned
+    for model IDs that do not have the provider in them, e.g., custom and provisioned
     models that have an ARN associated with them.
-    
+
     """
 
     model_id: str = Field(alias="model")
     """Id of the model to call, e.g., `'amazon.titan-text-express-v1'`, this is
     equivalent to the `modelId` property in the list-foundation-models api. For custom
     and provisioned models, an ARN value is expected.
-    
+
     """
 
     base_model_id: Optional[str] = Field(default=None, alias="base_model")
-    """An optional field to pass the base model id. If provided, this will be used over 
+    """An optional field to pass the base model id. If provided, this will be used over
     the value of `model_id` to identify the base model.
-    
+
     """
 
     model_kwargs: Optional[Dict[str, Any]] = None
@@ -790,7 +790,7 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     This field `guardrails` consists of two keys: `'guardrailId'` and
     `'guardrailVersion'`, which should be strings, but are initialized to None.
-    
+
     It's used to determine if specific guardrails are enabled and properly set.
 
     Type:
@@ -798,25 +798,29 @@ class BedrockBase(BaseLanguageModel, ABC):
         'guardrailVersion' keys.
 
     Example:
-    llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
-                  model_kwargs={},
-                  guardrails={
-                        "guardrailId": "<guardrail_id>",
-                        "guardrailVersion": "<guardrail_version>"})
+        ```python
+        llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
+            model_kwargs={},
+            guardrails={
+                    "guardrailId": "<guardrail_id>",
+                    "guardrailVersion": "<guardrail_version>"})
+        ```
 
     To enable tracing for guardrails, set the 'trace' key to True and pass a callback handler to the
     'run_manager' parameter of the 'generate', '_call' methods.
 
     Example:
-    llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
-                  model_kwargs={},
-                  guardrails={
-                        "guardrailId": "<guardrail_id>",
-                        "guardrailVersion": "<guardrail_version>",
-                        "trace": True},
-                callbacks=[BedrockAsyncCallbackHandler()])
+        ```python
+        llm = BedrockLLM(model_id="<model_id>", client=<bedrock_client>,
+            model_kwargs={},
+            guardrails={
+                    "guardrailId": "<guardrail_id>",
+                    "guardrailVersion": "<guardrail_version>",
+                    "trace": True},
+            callbacks=[BedrockAsyncCallbackHandler()])
+        ```
 
-    [https://python.langchain.com/docs/modules/callbacks/] for more information on callback handlers.
+    https://python.langchain.com/docs/concepts/callbacks/ for more information on callback handlers.
 
     class BedrockAsyncCallbackHandler(AsyncCallbackHandler):
         async def on_llm_error(
@@ -1366,7 +1370,11 @@ class BedrockLLM(LLM, BedrockBase):
 
     @classmethod
     def get_lc_namespace(cls) -> List[str]:
-        """Get the namespace of the langchain object."""
+        """Get the namespace of the langchain object.
+
+        Returns:
+            `["langchain", "llms", "bedrock"]`
+        """
         return ["langchain", "llms", "bedrock"]
 
     @property
@@ -1402,7 +1410,7 @@ class BedrockLLM(LLM, BedrockBase):
         """Call out to Bedrock service with streaming.
 
         Args:
-            prompt (str): The prompt to pass into the model
+            prompt: The prompt to pass into the model
             stop (Optional[List[str]], optional): Stop sequences. These will
                 override any stop sequences in the `model_kwargs` attribute.
                 Defaults to None.
@@ -1496,7 +1504,7 @@ class BedrockLLM(LLM, BedrockBase):
         """Call out to Bedrock service with streaming.
 
         Args:
-            prompt (str): The prompt to pass into the model
+            prompt: The prompt to pass into the model
             stop (Optional[List[str]], optional): Stop sequences. These will
                 override any stop sequences in the `model_kwargs` attribute.
                 Defaults to None.
