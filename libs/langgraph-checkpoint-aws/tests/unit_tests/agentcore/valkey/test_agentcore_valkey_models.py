@@ -2,6 +2,7 @@
 
 import pytest
 
+pytest.importorskip("valkey")
 pytest.importorskip("pydantic")
 
 from pydantic import ValidationError
