@@ -493,13 +493,13 @@ class InMemoryVectorStore(VectorStore):
         Args:
             embedding (Embeddings): Embedding model class (i.e. OpenAIEmbeddings)
                 for embedding queries.
-            index_name (str): Name of the index to connect to.
+            index_name: Name of the index to connect to.
             schema (Union[Dict[str, str], str, os.PathLike, Dict[str, ListOfDict]]):
                 Schema of the index and the vector schema. Can be a dict, or path to
                 yaml file.
             key_prefix (Optional[str]): Prefix to use for all keys in
                 InMemoryVectorStore associated with this index.
-            **kwargs (Any): Additional keyword arguments to pass to the Redis client.
+            **kwargs: Additional keyword arguments to pass to the Redis client.
 
         Returns:
             InMemoryVectorStore: InMemoryVectorStore VectorStore instance.
@@ -620,8 +620,8 @@ class InMemoryVectorStore(VectorStore):
         Drop a InMemoryVectorStore search index.
 
         Args:
-            index_name (str): Name of the index to drop.
-            delete_documents (bool): Whether to drop the associated documents.
+            index_name: Name of the index to drop.
+            delete_documents: Whether to drop the associated documents.
 
         Returns:
             bool: Whether or not the drop was successful.
@@ -747,8 +747,8 @@ class InMemoryVectorStore(VectorStore):
         `similarity_search_with_relevance_scores`.
 
         Args:
-            query (str): The query text for which to find similar documents.
-            k (int): The number of documents to return. Default is 4.
+            query: The query text for which to find similar documents.
+            k: The number of documents to return. Default is 4.
             filter (InMemoryDBFilterExpression, optional): Optional metadata filter.
             return_metadata (bool, optional): Whether to return metadata.
 
@@ -817,8 +817,8 @@ class InMemoryVectorStore(VectorStore):
         """Run similarity search
 
         Args:
-            query (str): The query text for which to find similar documents.
-            k (int): The number of documents to return. Default is 4.
+            query: The query text for which to find similar documents.
+            k: The number of documents to return. Default is 4.
             filter (InMemoryDBFilterExpression, optional): Optional metadata filter.
             return_metadata (bool, optional): Whether to return metadata.
             distance_threshold (Optional[float], optional): Maximum vector distance
@@ -853,7 +853,7 @@ class InMemoryVectorStore(VectorStore):
         Args:
             embedding (List[float]): The query vector for which to find similar
                 documents.
-            k (int): The number of documents to return. Default is 4.
+            k: The number of documents to return. Default is 4.
             filter (InMemoryDBFilterExpression, optional): Optional metadata filter.
             return_metadata (bool, optional): Whether to return metadata.
             distance_threshold (Optional[float], optional): Maximum vector distance
@@ -927,11 +927,11 @@ class InMemoryVectorStore(VectorStore):
             among selected documents.
 
         Args:
-            query (str): Text to look up documents similar to.
-            k (int): Number of Documents to return. Defaults to 4.
-            fetch_k (int): Number of `Document` objects to fetch to pass to MMR
+            query: Text to look up documents similar to.
+            k: Number of Documents to return. Defaults to 4.
+            fetch_k: Number of `Document` objects to fetch to pass to MMR
                 algorithm.
-            lambda_mult (float): Number between `0` and `1` that determines the degree
+            lambda_mult: Number between `0` and `1` that determines the degree
                 of diversity among the results with 0 corresponding
                 to maximum diversity and `1` to minimum diversity.
                 Defaults to 0.5.
