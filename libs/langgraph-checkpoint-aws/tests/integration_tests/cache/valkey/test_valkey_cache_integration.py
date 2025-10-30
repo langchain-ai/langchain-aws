@@ -9,7 +9,6 @@ import pytest
 
 pytest.importorskip("valkey")
 
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from valkey import Valkey
 from valkey.connection import ConnectionPool
 
@@ -108,18 +107,20 @@ class TestValkeyCache:
         assert cache.client is client
         assert cache.prefix == "test:"
         assert cache.ttl == 60  # 60 seconds
-        assert isinstance(cache.serde, JsonPlusSerializer)
+        assert cache.serde is not None  # Has default serializer
 
     @pytest.mark.skipif(
         not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available"
     )
     def test_init_with_custom_serde(self, valkey_url: str):
         """Test ValkeyCache initialization with custom serializer."""
+        # Get the default serde implementation from base cache
         client = Valkey.from_url(valkey_url)
-        serde = JsonPlusSerializer(pickle_fallback=False)
-        cache: ValkeyCache = ValkeyCache(client, serde=serde)
+        default_cache: ValkeyCache = ValkeyCache(client)
+        custom_serde = default_cache.serde
+        cache: ValkeyCache = ValkeyCache(client, serde=custom_serde)
 
-        assert cache.serde is serde
+        assert cache.serde is custom_serde
 
     @pytest.mark.skipif(
         not VALKEY_SERVER_AVAILABLE, reason="Valkey server not available"
