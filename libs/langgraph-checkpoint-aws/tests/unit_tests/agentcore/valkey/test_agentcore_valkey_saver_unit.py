@@ -11,7 +11,6 @@ pytest.importorskip("valkey")
 pytest.importorskip("orjson")
 
 from langgraph.checkpoint.base import CheckpointTuple
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from valkey.exceptions import ConnectionError, TimeoutError, ValkeyError
 
 from langgraph_checkpoint_aws.agentcore.constants import InvalidConfigError
@@ -106,7 +105,6 @@ class TestAgentCoreValkeySaver:
 
         assert saver.client == mock_valkey_client
         assert saver.ttl is None
-        assert isinstance(saver.jsonplus_serde, JsonPlusSerializer)
         assert saver.event_serializer is not None
         assert saver.max_retries == 3
         assert saver.retry_delay == 0.1

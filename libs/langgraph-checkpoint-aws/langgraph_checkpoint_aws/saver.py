@@ -33,7 +33,7 @@ from langgraph_checkpoint_aws.session import BedrockAgentRuntimeSessionClient
 from langgraph_checkpoint_aws.utils import (
     construct_checkpoint_tuple,
     create_session_checkpoint,
-    deserialize_data,
+    deserialize_metadata,
     generate_checkpoint_id,
     generate_write_id,
     process_write_operations,
@@ -589,7 +589,7 @@ class BedrockSessionSaver(BaseCheckpointSaver):
                 # Apply metadata filter
                 if filter:
                     metadata = (
-                        deserialize_data(self.serde, session_checkpoint.metadata)
+                        deserialize_metadata(*session_checkpoint.metadata)
                         if session_checkpoint.metadata
                         else {}
                     )

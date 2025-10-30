@@ -420,8 +420,10 @@ class TestValkeyCacheUnit:
         async def mock_to_thread(func, *args, **kwargs):
             return func(*args, **kwargs)
 
+        # Use dumps_typed which returns (encoding, data) tuple
+        encoding, data = cache.serde.dumps_typed({"test": "data"})
         mock_valkey_client.mget.return_value = [
-            b"json:" + cache.serde.dumps({"test": "data"})
+            encoding.encode() + b":" + data
         ]
 
         namespace_key = (("user", "123"), "test_key")
@@ -721,9 +723,10 @@ class TestValkeyCacheUnit:
 
     def test_get_operation(self, cache, mock_valkey_client):
         """Test getting data from cache."""
-        # Mock the mget response - ValkeyCache uses the serde to serialize/deserialize
+        # Mock the mget response - ValkeyCache expects format: "encoding:data"
         # ValkeyCache expects format: "encoding:data" where data is bytes
-        serialized_data = b"json:" + cache.serde.dumps({"test": "data"})
+        encoding, data = cache.serde.dumps_typed({"test": "data"})
+        serialized_data = encoding.encode() + b":" + data
         mock_valkey_client.mget.return_value = [serialized_data]
 
         namespace_key = (("user", "123"), "test_key")
@@ -828,9 +831,11 @@ class TestValkeyCacheUnit:
             "nested": {"key": "value"},
         }
 
-        # Test that data can be serialized and deserialized
-        serialized = cache.serde.dumps(complex_data)
-        deserialized = cache.serde.loads(serialized)
+        # Test that data can be serialized and deserialized using dumps_typed/loads_typed
+        encoding, data = cache.serde.dumps_typed(complex_data)
+        # Reconstruct the full serialized data
+        serialized = (encoding, data)
+        deserialized = cache.serde.loads_typed(serialized)
 
         assert deserialized == complex_data
 
@@ -860,9 +865,11 @@ class TestValkeyCacheUnit:
 
         # Setup mock returns
         # ValkeyCache expects format: "encoding:data" where data is bytes
+        encoding, data = cache.serde.dumps_typed({"test": "data"})
         mock_valkey_client.mget.return_value = [
-            b"json:" + cache.serde.dumps({"test": "data"})
+            encoding.encode() + b":" + data
         ]
+
         pipeline_mock = Mock()
         mock_valkey_client.pipeline.return_value.__enter__ = Mock(
             return_value=pipeline_mock

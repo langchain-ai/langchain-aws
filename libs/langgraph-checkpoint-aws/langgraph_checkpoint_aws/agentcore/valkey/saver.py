@@ -26,7 +26,6 @@ from langgraph.checkpoint.base import (
     get_checkpoint_id,
     get_checkpoint_metadata,
 )
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from valkey import Valkey
 from valkey.asyncio import Valkey as AsyncValkey
 from valkey.connection import ConnectionPool
@@ -95,7 +94,6 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         self.ttl = ttl
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        self.jsonplus_serde = JsonPlusSerializer()
         self.event_serializer = EventSerializer(self.serde)
         self.lock = threading.Lock()
         self.is_async: bool = hasattr(client, "aclose") or hasattr(client, "__aenter__")

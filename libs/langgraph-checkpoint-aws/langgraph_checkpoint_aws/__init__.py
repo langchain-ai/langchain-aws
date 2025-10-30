@@ -18,6 +18,8 @@ try:
     from langgraph_checkpoint_aws.agentcore import AgentCoreValkeySaver
     from langgraph_checkpoint_aws.cache import ValkeyCache
     from langgraph_checkpoint_aws.checkpoint import AsyncValkeySaver, ValkeySaver
+
+    valkey_available = True
 except ImportError as e:
     # Store the import error for better debugging
     _import_error = e
@@ -33,6 +35,8 @@ except ImportError as e:
     AsyncValkeySaver: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
     ValkeyCache: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
     ValkeySaver: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
+
+    valkey_available = False
 
 try:
     __version__ = version("langgraph-checkpoint-aws")
@@ -50,4 +54,5 @@ __all__ = [
     "ValkeyCache",
     "ValkeySaver",
     "SDK_USER_AGENT",
+    "valkey_available",
 ]
