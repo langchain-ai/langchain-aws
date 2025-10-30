@@ -117,6 +117,7 @@ def test_anthropic_bind_tools_tool_choice() -> None:
 @pytest.mark.parametrize(
     "thinking_model",
     [
+        "anthropic.claude-sonnet-4-5-20250929-v1:0",
         "anthropic.claude-3-7-sonnet-20250219-v1:0",
         "anthropic.claude-sonnet-4-20250514-v1:0",
         "anthropic.claude-opus-4-20250514-v1:0",
@@ -668,6 +669,7 @@ def test_standard_tracing_params() -> None:
         ("us.anthropic.claude-sonnet-4-20250514-v1:0", False),
         ("us.anthropic.claude-opus-4-20250514-v1:0", False),
         ("us.anthropic.claude-3-7-sonnet-20250219-v1:0", False),
+        ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", False),
         ("us.anthropic.claude-3-haiku-20240307-v1:0", False),
         ("cohere.command-r-v1:0", False),
         ("meta.llama3-1-405b-instruct-v1:0", "tool_calling"),
@@ -1601,7 +1603,7 @@ def test_anthropic_tool_with_cache_point() -> None:
 
     # Test bind_tools with cache point
     chat_model = ChatBedrockConverse(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", region_name="us-east-1"
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
     )
     chat_model_with_tools = chat_model.bind_tools([tool_dict, cache_point])
 
