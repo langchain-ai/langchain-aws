@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 
 # Constants for better maintainability
 DEFAULT_PREFIX = "langgraph:cache:"
-MAX_DELETE_BATCH_SIZE = 1000
 MAX_SET_BATCH_SIZE = 100
 DEFAULT_POOL_TIMEOUT = 30.0
 ENCODING_SEPARATOR = b":"
@@ -426,7 +425,7 @@ class ValkeyCache(BaseCache[ValueT]):
         # Maximum number of keys to delete in a single command
         # Valkey/Redis typically supports up to ~1M arguments, but we use a
         # conservative limit
-        MAX_DELETE_BATCH_SIZE = 1000
+        max_delete_batch_size = 1000
 
         try:
             if namespaces is None:
@@ -437,7 +436,7 @@ class ValkeyCache(BaseCache[ValueT]):
                 )
                 if keys:
                     deleted_count = await self._delete_keys_in_batches(
-                        keys, MAX_DELETE_BATCH_SIZE
+                        keys, max_delete_batch_size
                     )
                     logger.debug(
                         "Cleared %d keys with pattern '%s'", deleted_count, pattern
@@ -459,7 +458,7 @@ class ValkeyCache(BaseCache[ValueT]):
                     # Remove duplicates while preserving order
                     unique_keys = list(dict.fromkeys(keys_to_delete))
                     deleted_count = await self._delete_keys_in_batches(
-                        unique_keys, MAX_DELETE_BATCH_SIZE
+                        unique_keys, max_delete_batch_size
                     )
                     logger.debug(
                         "Cleared %d keys from %d namespace(s)",
