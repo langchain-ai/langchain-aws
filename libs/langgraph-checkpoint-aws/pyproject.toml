@@ -14,7 +14,7 @@ dependencies = [
 ]
 name = "langgraph-checkpoint-aws"
 version = "1.0.0"
-description = "A LangChain checkpointer implementation that uses Bedrock Session Management Service to enable stateful and resumable LangGraph agents."
+description = "A LangChain checkpointer implementation that uses Bedrock Session Management Service and ElastiCache Valkey to enable stateful and resumable LangGraph agents."
 readme = "README.md"
 keywords = ["aws", "bedrock", "langchain", "langgraph", "checkpointer", "elasticache", "valkey"]
 
