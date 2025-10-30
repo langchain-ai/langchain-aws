@@ -120,7 +120,7 @@ def serialize_data(serializer: SerializerProtocol, data: Any) -> str:
         str: Serialized string data with null characters handled
 
     """
-    serialized = serializer.dumps(data)
+    serialized = json.dumps(data, ensure_ascii=False).encode("utf-8", "ignore")
     return serialized.decode().replace("\\u0000", "")
 
 
