@@ -41,8 +41,9 @@ try:
         ValkeyStoreError,
     )
 
+    valkey_available = True
 except ImportError:
-    # If checkpoint dependencies are not available, create placeholder classes
+    # If dependencies are not available, create placeholder classes
     from typing import Any
 
     def _missing_dependencies_error(*args: Any, **kwargs: Any) -> Any:
@@ -52,20 +53,21 @@ except ImportError:
         )
 
     # Create placeholder classes that raise helpful errors
-    AsyncValkeySaver: type[Any] = _missing_checkpoint_dependencies_error  # type: ignore[assignment,no-redef]
-    AsyncValkeyStore: type[Any] = _missing_checkpoint_dependencies_error  # type: ignore[assignment,no-redef]
+    AsyncValkeySaver: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
+    AsyncValkeyStore: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
     ValkeyCache: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
-    ValkeySaver: type[Any] = _missing_checkpoint_dependencies_error  # type: ignore[assignment,no-redef]
-    ValkeyStore: type[Any] = _missing_checkpoint_dependencies_error  # type: ignore[assignment,no-redef]
-    ValkeyIndexConfig: type[Any] = _missing_checkpoint_dependencies_error  # type: ignore[assignment,no-redef]
-    ValkeyConnectionError: type[Any] = _missing_checkpoint_dependencies_error  # type: ignore[assignment,no-redef]
-    ValkeyDocumentParsingError: type[Any] = _missing_checkpoint_dependencies_error  # type: ignore[assignment,no-redef]
-    ValkeyEmbeddingGenerationError: type[Any] = _missing_checkpoint_dependencies_error  # type: ignore[assignment,no-redef]
-    ValkeySearchIndexError: type[Any] = _missing_checkpoint_dependencies_error  # type: ignore[assignment,no-redef]
-    ValkeyStoreError: type[Any] = _missing_checkpoint_dependencies_error  # type: ignore[assignment,no-redef]
-    ValkeyTTLConfigurationError: type[Any] = _missing_checkpoint_dependencies_error  # type: ignore[assignment,no-redef]
-    ValkeyValidationError: type[Any] = _missing_checkpoint_dependencies_error  # type: ignore[assignment,no-redef]
+    ValkeySaver: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
+    ValkeyStore: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
+    ValkeyIndexConfig: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
+    ValkeyConnectionError: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
+    ValkeyDocumentParsingError: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
+    ValkeyEmbeddingGenerationError: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
+    ValkeySearchIndexError: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
+    ValkeyStoreError: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
+    ValkeyTTLConfigurationError: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
+    ValkeyValidationError: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
 
+    valkey_available = False
 try:
     __version__ = version("langgraph-checkpoint-aws")
 except Exception:
@@ -79,7 +81,6 @@ __all__ = [
     "AgentCoreMemoryStore",
     "AsyncValkeySaver",
     "AsyncValkeyStore",
-    "SDK_USER_AGENT",
     "ValkeyConnectionError",
     "ValkeyDocumentParsingError",
     "ValkeyEmbeddingGenerationError",
@@ -92,4 +93,5 @@ __all__ = [
     "ValkeySaver",
     "ValkeyCache",
     "SDK_USER_AGENT",
+    "valkey_available",
 ]
