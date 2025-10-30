@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import random
 from collections.abc import Sequence
 from typing import Any, cast
@@ -96,9 +97,9 @@ class BaseValkeySaver(BaseCheckpointSaver[str]):
 
         # Serialize checkpoint and metadata
         type_, serialized_checkpoint = self.serde.dumps_typed(checkpoint)
-        serialized_metadata = self.jsonplus_serde.dumps(
-            get_checkpoint_metadata(config, metadata)
-        )
+        serialized_metadata = json.dumps(
+            get_checkpoint_metadata(config, metadata), ensure_ascii=False
+        ).encode("utf-8", "ignore")
 
         # Prepare checkpoint data - encode bytes as base64 for JSON serialization
         return {
@@ -147,9 +148,7 @@ class BaseValkeySaver(BaseCheckpointSaver[str]):
             metadata_data = base64.b64decode(metadata_data.encode("utf-8"))
         metadata = cast(
             CheckpointMetadata,
-            self.jsonplus_serde.loads(metadata_data)
-            if metadata_data is not None
-            else {},
+            (json.loads(metadata_data) if metadata_data is not None else {}),
         )
 
         # Create parent config if exists
@@ -244,11 +243,7 @@ class BaseValkeySaver(BaseCheckpointSaver[str]):
         metadata_data = checkpoint_info["metadata"]
         if isinstance(metadata_data, str):
             metadata_data = base64.b64decode(metadata_data.encode("utf-8"))
-        metadata = (
-            self.jsonplus_serde.loads(metadata_data)
-            if metadata_data is not None
-            else {}
-        )
+        metadata = json.loads(metadata_data) if metadata_data is not None else {}
 
         return all(
             key in metadata and metadata[key] == value for key, value in filter.items()
