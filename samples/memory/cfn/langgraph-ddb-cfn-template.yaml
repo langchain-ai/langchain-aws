@@ -1,0 +1,129 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for LangGraph DynamoDB Checkpoint Storage with optional S3 offloading'
+
+Parameters:
+  CheckpointTableName:
+    Type: String
+    Description: Name of the DynamoDB table for checkpoint storage
+    Default: langgraph-checkpoints-dynamodb
+    AllowedPattern: '[a-zA-Z0-9_.-]+'
+    MinLength: 3
+    MaxLength: 255
+    ConstraintDescription: Must contain only alphanumeric characters, underscores, hyphens, and periods
+
+  EnableTTL:
+    Type: String
+    Description: Enable Time-To-Live (TTL) for automatic data expiration
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+
+  CreateS3Bucket:
+    Type: String
+    Description: Create S3 bucket for checkpoint offloading (required for checkpoints >350KB)
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+
+  S3BucketName:
+    Type: String
+    Description: Name of the S3 bucket for checkpoint offloading (leave empty for auto-generated random name)
+    Default: 'bucket-name'
+    AllowedPattern: '^$|^[a-z0-9][a-z0-9.-]*[a-z0-9]$'
+    ConstraintDescription: Must be empty or 3-63 characters, lowercase letters, numbers, hyphens, and periods only
+
+Conditions:
+  EnableTTLCondition: !Equals [!Ref EnableTTL, 'true']
+  CreateS3BucketCondition: !Equals [!Ref CreateS3Bucket, 'true']
+  HasCustomBucketName: !Not [!Equals [!Ref S3BucketName, 'bucket-name']]
+
+Resources:
+  # DynamoDB Table - Unified storage with composite key (PK, SK)
+  CheckpointTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Ref CheckpointTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        Enabled: !If [EnableTTLCondition, true, false]
+        AttributeName: !If [EnableTTLCondition, 'ttl', !Ref 'AWS::NoValue']
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Purpose
+          Value: LangGraph Checkpoint Storage
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  # S3 Bucket for Checkpoint Offloading (Optional)
+  CheckpointBucket:
+    Type: AWS::S3::Bucket
+    Condition: CreateS3BucketCondition
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !If
+        - HasCustomBucketName
+        - !Ref S3BucketName
+        - !Ref AWS::NoValue # Let AWS auto-generate
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Purpose
+          Value: LangGraph Checkpoint Offloading
+
+Outputs:
+  CheckpointTableName:
+    Description: Name of the DynamoDB table
+    Value: !Ref CheckpointTable
+    Export:
+      Name: !Sub '${AWS::StackName}-CheckpointTableName'
+
+  CheckpointTableArn:
+    Description: ARN of the DynamoDB table
+    Value: !GetAtt CheckpointTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-CheckpointTableArn'
+
+  S3BucketName:
+    Condition: CreateS3BucketCondition
+    Description: Name of the S3 bucket for checkpoint offloading
+    Value: !Ref CheckpointBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketName'
+
+  S3BucketArn:
+    Condition: CreateS3BucketCondition
+    Description: ARN of the S3 bucket
+    Value: !GetAtt CheckpointBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-S3BucketArn'
+
+  TTLEnabled:
+    Description: Whether TTL is enabled on the table
+    Value: !Ref EnableTTL
+
+  Region:
+    Description: AWS Region where resources are deployed
+    Value: !Ref 'AWS::Region'
