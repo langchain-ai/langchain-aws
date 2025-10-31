@@ -831,7 +831,8 @@ class TestValkeyCacheUnit:
             "nested": {"key": "value"},
         }
 
-        # Test that data can be serialized and deserialized using dumps_typed/loads_typed
+        # Test that data can be serialized and deserialized
+        # using dumps_typed/loads_typed
         encoding, data = cache.serde.dumps_typed(complex_data)
         # Reconstruct the full serialized data
         serialized = (encoding, data)
