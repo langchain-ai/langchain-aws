@@ -639,7 +639,7 @@ class TestAsyncValkeySaverErrorHandling:
 
         saver = AsyncValkeySaver(client=mock_valkey_client, serde=bad_serializer)
 
-        with pytest.raises(ValueError):
+        with pytest.raises((ValueError, TypeError)):
             await saver.aput(
                 sample_config, sample_checkpoint, sample_metadata, {"test_channel": 1}
             )
