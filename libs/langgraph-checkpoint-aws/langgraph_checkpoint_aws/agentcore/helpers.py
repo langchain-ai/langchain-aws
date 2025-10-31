@@ -137,9 +137,9 @@ class AgentCoreEventClient:
         self.memory_id = memory_id
         # mypy: need to set actual serializer if None
         if serializer is None:
-            from langgraph.checkpoint.serde.base import SerializerProtocol
+            from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
-            self.serializer = EventSerializer(SerializerProtocol())
+            self.serializer = EventSerializer(JsonPlusSerializer())
         else:
             self.serializer = serializer
 
