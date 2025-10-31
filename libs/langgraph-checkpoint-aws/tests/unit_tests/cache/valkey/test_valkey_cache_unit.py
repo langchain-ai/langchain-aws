@@ -422,9 +422,7 @@ class TestValkeyCacheUnit:
 
         # Use dumps_typed which returns (encoding, data) tuple
         encoding, data = cache.serde.dumps_typed({"test": "data"})
-        mock_valkey_client.mget.return_value = [
-            encoding.encode() + b":" + data
-        ]
+        mock_valkey_client.mget.return_value = [encoding.encode() + b":" + data]
 
         namespace_key = (("user", "123"), "test_key")
 
@@ -867,9 +865,7 @@ class TestValkeyCacheUnit:
         # Setup mock returns
         # ValkeyCache expects format: "encoding:data" where data is bytes
         encoding, data = cache.serde.dumps_typed({"test": "data"})
-        mock_valkey_client.mget.return_value = [
-            encoding.encode() + b":" + data
-        ]
+        mock_valkey_client.mget.return_value = [encoding.encode() + b":" + data]
 
         pipeline_mock = Mock()
         mock_valkey_client.pipeline.return_value.__enter__ = Mock(
