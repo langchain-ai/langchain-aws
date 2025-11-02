@@ -2066,6 +2066,26 @@ def test__messages_to_bedrock_preserves_whitespace_non_last_aimessage_blocks() -
     )
 
 
+@pytest.mark.parametrize(
+    "system_prompt_parameter, expected_system",
+    [
+        (None, [{"text": "System message"}]),  # from messages list
+        ("System message from param", [{"text": "System message from param"}]),
+    ],
+)
+def test__messages_to_bedrock_prefers_parameter_over_system_message(
+    system_prompt_parameter, expected_system
+) -> None:
+    messages = [
+        SystemMessage(content="System message"),
+        HumanMessage(content="First human message"),
+    ]
+
+    _, actual_system = _messages_to_bedrock(messages, system_prompt_parameter)
+
+    assert actual_system == expected_system
+
+
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
 def test_bedrock_client_inherits_from_runtime_client(
     mock_create_client: mock.Mock,

@@ -1274,6 +1274,7 @@ class ChatBedrockConverse(BaseChatModel):
 
 def _messages_to_bedrock(
     messages: List[BaseMessage],
+    system_prompt: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Handle Bedrock converse and Anthropic style content blocks"""
     for idx, message in enumerate(messages):
@@ -1345,6 +1346,9 @@ def _messages_to_bedrock(
 
     if not bedrock_messages:
         bedrock_messages.append({"role": "user", "content": [{"text": EMPTY_CONTENT}]})
+
+    if system_prompt:
+        bedrock_system = [{"text": system_prompt}]
 
     return bedrock_messages, bedrock_system
 
