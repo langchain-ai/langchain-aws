@@ -371,6 +371,13 @@ class ChatBedrockConverse(BaseChatModel):
 
     """
 
+    system_prompt: Optional[str] = None
+    """An optional system prompt for the LLM.
+    If provided, this prompt will always be used as the system message.
+    If not provided, the system message will be inferred from the messages list.
+
+    """
+
     max_tokens: Optional[int] = None
     """Max tokens to generate."""
 
@@ -872,7 +879,9 @@ class ChatBedrockConverse(BaseChatModel):
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
         else:
-            bedrock_messages, system = _messages_to_bedrock(messages)
+            bedrock_messages, system = _messages_to_bedrock(
+                messages, self.system_prompt
+            )
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
                 self._apply_guard_last_turn_only(bedrock_messages)
@@ -926,7 +935,9 @@ class ChatBedrockConverse(BaseChatModel):
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
         else:
-            bedrock_messages, system = _messages_to_bedrock(messages)
+            bedrock_messages, system = _messages_to_bedrock(
+                messages, self.system_prompt
+            )
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
                 self._apply_guard_last_turn_only(bedrock_messages)
@@ -1257,7 +1268,7 @@ class ChatBedrockConverse(BaseChatModel):
             bedrock_messages, system = (
                 (self.raw_blocks, [])
                 if self.raw_blocks
-                else _messages_to_bedrock(messages)
+                else _messages_to_bedrock(messages, self.system_prompt)
             )
 
             input_data = {"converse": {"messages": bedrock_messages}}
