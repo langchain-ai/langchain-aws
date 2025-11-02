@@ -2076,7 +2076,7 @@ def test__messages_to_bedrock_preserves_whitespace_non_last_aimessage_blocks() -
     ],
 )
 def test__messages_to_bedrock_prefers_parameter_over_system_message(
-    system_prompt_parameter, expected_system
+    system_prompt_parameter: str | None, expected_system: List[Dict[str, str]]
 ) -> None:
     messages = [
         SystemMessage(content="System message"),
