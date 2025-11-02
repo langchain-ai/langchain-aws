@@ -372,9 +372,9 @@ class ChatBedrockConverse(BaseChatModel):
     """
 
     system: Optional[List[str]] = None
-    """An optional system prompt for the LLM.
-    If provided, this prompt will always be used as the system message.
-    If not provided, the system message will be inferred from the messages list.
+    """Optional system prompts for the LLM.
+    If provided, these prompts will be added as system messages,
+    and can be used with or without system prompts in the messages list.
 
     """
 
