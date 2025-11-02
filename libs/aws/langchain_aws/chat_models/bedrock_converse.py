@@ -371,7 +371,7 @@ class ChatBedrockConverse(BaseChatModel):
 
     """
 
-    system_prompt: Optional[str] = None
+    system: Optional[List[str]] = None
     """An optional system prompt for the LLM.
     If provided, this prompt will always be used as the system message.
     If not provided, the system message will be inferred from the messages list.
@@ -879,9 +879,7 @@ class ChatBedrockConverse(BaseChatModel):
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
         else:
-            bedrock_messages, system = _messages_to_bedrock(
-                messages, self.system_prompt
-            )
+            bedrock_messages, system = _messages_to_bedrock(messages, self.system)
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
                 self._apply_guard_last_turn_only(bedrock_messages)
@@ -935,9 +933,7 @@ class ChatBedrockConverse(BaseChatModel):
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
         else:
-            bedrock_messages, system = _messages_to_bedrock(
-                messages, self.system_prompt
-            )
+            bedrock_messages, system = _messages_to_bedrock(messages, self.system)
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
                 self._apply_guard_last_turn_only(bedrock_messages)
@@ -1268,7 +1264,7 @@ class ChatBedrockConverse(BaseChatModel):
             bedrock_messages, system = (
                 (self.raw_blocks, [])
                 if self.raw_blocks
-                else _messages_to_bedrock(messages, self.system_prompt)
+                else _messages_to_bedrock(messages, self.system)
             )
 
             input_data = {"converse": {"messages": bedrock_messages}}
@@ -1285,7 +1281,7 @@ class ChatBedrockConverse(BaseChatModel):
 
 def _messages_to_bedrock(
     messages: List[BaseMessage],
-    system_prompt: Optional[str] = None,
+    system: Optional[List[str]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Handle Bedrock converse and Anthropic style content blocks"""
     for idx, message in enumerate(messages):
@@ -1307,6 +1303,9 @@ def _messages_to_bedrock(
     bedrock_system: List[Dict[str, Any]] = []
     trimmed_messages = trim_message_whitespace(messages)
     messages = merge_message_runs(trimmed_messages)
+
+    if system:
+        bedrock_system.extend([{"text": s} for s in system])
 
     for msg in messages:
         content = _lc_content_to_bedrock(msg.content)
@@ -1357,9 +1356,6 @@ def _messages_to_bedrock(
 
     if not bedrock_messages:
         bedrock_messages.append({"role": "user", "content": [{"text": EMPTY_CONTENT}]})
-
-    if system_prompt:
-        bedrock_system = [{"text": system_prompt}]
 
     return bedrock_messages, bedrock_system
 

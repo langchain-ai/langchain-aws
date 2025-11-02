@@ -1622,12 +1622,12 @@ def test_model_kwargs() -> None:
     llm = ChatBedrockConverse(
         model="my-model",
         region_name="us-west-2",
-        system_prompt="System message",
+        system=["System message"],
         additional_model_request_fields={"foo": "bar"},
     )
     assert llm.model_id == "my-model"
     assert llm.region_name == "us-west-2"
-    assert llm.system_prompt == "System message"
+    assert llm.system == ["System message"]
     assert llm.additional_model_request_fields == {"foo": "bar"}
 
     with pytest.warns(
@@ -2072,11 +2072,14 @@ def test__messages_to_bedrock_preserves_whitespace_non_last_aimessage_blocks() -
     "system_prompt_parameter, expected_system",
     [
         (None, [{"text": "System message"}]),  # from messages list
-        ("System message from param", [{"text": "System message from param"}]),
+        (
+            ["System message from param"],
+            [{"text": "System message from param"}, {"text": "System message"}],
+        ),
     ],
 )
-def test__messages_to_bedrock_prefers_parameter_over_system_message(
-    system_prompt_parameter: str | None, expected_system: List[Dict[str, str]]
+def test__messages_to_bedrock_appends_system_prompt_from_parameter(
+    system_prompt_parameter: List[str] | None, expected_system: List[Dict[str, str]]
 ) -> None:
     messages = [
         SystemMessage(content="System message"),
