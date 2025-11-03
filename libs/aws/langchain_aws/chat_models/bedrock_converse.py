@@ -371,6 +371,29 @@ class ChatBedrockConverse(BaseChatModel):
 
     """
 
+    system: Optional[List[Union[str, Dict[str, Any]]]] = None
+    """Optional list of system prompts for the LLM.
+
+    Each entry can be either:
+      - a simple string (for straightforward text-based system prompts), or
+      - a dictionary matching the Converse API system message schema, allowing
+        inclusion of additional fields like `guardContent`, `cachePoint`, etc.
+
+    Example:
+        system = [
+            "a simple system prompt",
+            {
+                "text": "another system prompt",
+                "guardContent": {"text": {"text": "string"}},
+                "cachePoint": {"type": "default"}
+            },
+        ]
+
+    String inputs will be internally converted to the appropriate message format,
+    while dict entries will be passed through as-is. Any invalid formats will be
+    rejected by the Converse API.
+    """
+
     max_tokens: Optional[int] = None
     """Max tokens to generate."""
 
@@ -872,7 +895,7 @@ class ChatBedrockConverse(BaseChatModel):
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
         else:
-            bedrock_messages, system = _messages_to_bedrock(messages)
+            bedrock_messages, system = _messages_to_bedrock(messages, self.system)
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
                 self._apply_guard_last_turn_only(bedrock_messages)
@@ -926,7 +949,7 @@ class ChatBedrockConverse(BaseChatModel):
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
         else:
-            bedrock_messages, system = _messages_to_bedrock(messages)
+            bedrock_messages, system = _messages_to_bedrock(messages, self.system)
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
                 self._apply_guard_last_turn_only(bedrock_messages)
@@ -1257,7 +1280,7 @@ class ChatBedrockConverse(BaseChatModel):
             bedrock_messages, system = (
                 (self.raw_blocks, [])
                 if self.raw_blocks
-                else _messages_to_bedrock(messages)
+                else _messages_to_bedrock(messages, self.system)
             )
 
             input_data = {"converse": {"messages": bedrock_messages}}
@@ -1274,6 +1297,7 @@ class ChatBedrockConverse(BaseChatModel):
 
 def _messages_to_bedrock(
     messages: List[BaseMessage],
+    system: Optional[List[Union[str, Dict[str, Any]]]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Handle Bedrock converse and Anthropic style content blocks"""
     for idx, message in enumerate(messages):
@@ -1295,6 +1319,15 @@ def _messages_to_bedrock(
     bedrock_system: List[Dict[str, Any]] = []
     trimmed_messages = trim_message_whitespace(messages)
     messages = merge_message_runs(trimmed_messages)
+
+    if system:
+        sys_param_to_bedrock = []
+        for s in system:
+            if isinstance(s, str):
+                sys_param_to_bedrock.append({"text": s})
+            else:
+                sys_param_to_bedrock.append(s)
+        bedrock_system.extend(sys_param_to_bedrock)
 
     for msg in messages:
         content = _lc_content_to_bedrock(msg.content)
