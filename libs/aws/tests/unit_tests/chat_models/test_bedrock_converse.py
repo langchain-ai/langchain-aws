@@ -2071,15 +2071,49 @@ def test__messages_to_bedrock_preserves_whitespace_non_last_aimessage_blocks() -
 @pytest.mark.parametrize(
     "system_prompt_parameter, expected_system",
     [
-        (None, [{"text": "System message"}]),  # from messages list
+        # No system parameter → use only the system message from messages
+        (None, [{"text": "System message"}]),
+        # Simple string input → converted into a dict with text
         (
             ["System message from param"],
-            [{"text": "System message from param"}, {"text": "System message"}],
+            [
+                {"text": "System message from param"},
+                {"text": "System message"},
+            ],
+        ),
+        # Dict input → passed through as-is
+        (
+            [
+                {
+                    "text": "Structured system message",
+                    "guardContent": {"text": {"text": "guarded"}},
+                }
+            ],
+            [
+                {
+                    "text": "Structured system message",
+                    "guardContent": {"text": {"text": "guarded"}},
+                },
+                {"text": "System message"},
+            ],
+        ),
+        # Mixed string and dict → both should be handled correctly
+        (
+            [
+                "Simple system prompt",
+                {"text": "Advanced system prompt", "cachePoint": {"type": "default"}},
+            ],
+            [
+                {"text": "Simple system prompt"},
+                {"text": "Advanced system prompt", "cachePoint": {"type": "default"}},
+                {"text": "System message"},
+            ],
         ),
     ],
 )
 def test__messages_to_bedrock_appends_system_prompt_from_parameter(
-    system_prompt_parameter: List[str] | None, expected_system: List[Dict[str, str]]
+    system_prompt_parameter: List[str | Dict[str, Any]] | None,
+    expected_system: List[Dict[str, Any]],
 ) -> None:
     messages = [
         SystemMessage(content="System message"),
