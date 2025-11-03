@@ -15,7 +15,7 @@ name = "langgraph-checkpoint-aws"
 version = "1.0.0"
 description = "A LangChain checkpointer implementation that uses Bedrock Session Management Service and ElastiCache Valkey to enable stateful and resumable LangGraph agents."
 readme = "README.md"
-keywords = ["aws", "bedrock", "langchain", "langgraph", "checkpointer", "elasticache", "valkey"]
+keywords = ["aws", "bedrock", "langchain", "langgraph", "checkpointer","dynamodb", "elasticache", "valkey"]
 
 [project.urls]
 "Source Code" = "https://github.com/langchain-ai/langchain-aws/tree/main/libs/langgraph-checkpoint-aws"
@@ -48,7 +48,7 @@ lint = [
     "ruff>=0.12.10",
 ]
 typing = [
-    "boto3-stubs>=1.40.19",
+    "boto3-stubs[dynamodb,s3]>=1.40.19",
     "mypy>=1.17.1",
 ]
 

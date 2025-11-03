@@ -1,5 +1,5 @@
 # LangGraph Checkpoint AWS
-A custom AWS-based persistence solution for LangGraph agents that provides multiple storage backends including Bedrock AgentCore Memory and high-performance Valkey (Redis-compatible) storage.
+A custom AWS-based persistence solution for LangGraph agents that provides multiple storage backends including Bedrock AgentCore Memory, DynamoDB with S3 offloading, and high-performance Valkey (Redis-compatible) storage.
 
 ## Overview
 This package provides multiple persistence solutions for LangGraph agents:
@@ -9,6 +9,11 @@ This package provides multiple persistence solutions for LangGraph agents:
 2. Resumable agent sessions
 3. Efficient state persistence and retrieval
 4. Seamless integration with AWS Bedrock
+
+### DynamoDB Storage
+1. **Checkpoint storage** with DynamoDB and automatic S3 offloading
+2. Unified table design with TTL support
+3. Intelligent compression for optimal storage
 
 ### Valkey Storage Solutions
 1. **Checkpoint storage** with Valkey (Redis-compatible)
@@ -31,9 +36,10 @@ pip install 'langgraph-checkpoint-aws[valkey]'
 This package provides four main components:
 
 1. **AgentCoreMemorySaver** - AWS Bedrock-based checkpoint storage
-2. **ValkeySaver** - Valkey checkpoint storage
-3. **AgentCoreValkeySaver** - AgentCore-compatible Valkey checkpoint storage
-4. **AgentCoreMemoryStore** - AWS Bedrock-based document store
+2. **AgentCoreValkeySaver** - AgentCore-compatible Valkey checkpoint storage
+3. **DynamoDBSaver** - DynamoDB-based checkpoint storage with S3 offloading
+4. **ValkeySaver** - Valkey checkpoint storage
+5. **AgentCoreMemoryStore** - AWS Bedrock-based document store
 
 
 ## Usage
@@ -149,7 +155,46 @@ response = graph.invoke(
 )
 ```
 
-### 3. Valkey Checkpoint Storage
+### 3. DynamoDB Checkpoint Storage
+
+```python
+from langgraph.graph import StateGraph
+from langgraph_checkpoint_aws.checkpoint.dynamodb import DynamoDBSaver
+
+# Basic usage with DynamoDB only
+checkpointer = DynamoDBSaver(
+    table_name="my-checkpoints",
+    region_name="us-west-2"
+)
+
+# With S3 offloading for large checkpoints (>350KB)
+checkpointer = DynamoDBSaver(
+    table_name="my-checkpoints",
+    region_name="us-west-2",
+    s3_offload_config={"bucket_name": "my-checkpoint-bucket"}
+)
+
+# Production configuration with TTL and compression
+checkpointer = DynamoDBSaver(
+    table_name="my-checkpoints",
+    region_name="us-west-2",
+    ttl_seconds=86400 * 7,  # 7 days
+    enable_checkpoint_compression=True,
+    s3_offload_config={"bucket_name": "my-checkpoint-bucket"}
+)
+
+# Create your graph
+builder = StateGraph(int)
+builder.add_node("add_one", lambda x: x + 1)
+builder.set_entry_point("add_one")
+builder.set_finish_point("add_one")
+
+graph = builder.compile(checkpointer=checkpointer)
+config = {"configurable": {"thread_id": "session-1"}}
+result = graph.invoke(1, config)
+```
+
+### 4. Valkey Checkpoint Storage
 
 ```python
 from langgraph.graph import StateGraph
@@ -219,10 +264,15 @@ All components support async operations:
 ```python
 from langgraph_checkpoint_aws.async_saver import AsyncBedrockSessionSaver
 from langgraph_checkpoint_aws.checkpoint.valkey import AsyncValkeySaver
+from langgraph_checkpoint_aws.checkpoint.dynamodb import DynamoDBSaver
 
 # Async Bedrock usage
 session_saver = AsyncBedrockSessionSaver(region_name="us-west-2")
 session_id = (await session_saver.session_client.create_session()).session_id
+
+# Async DynamoDB usage
+checkpointer = DynamoDBSaver(table_name="my-checkpoints", region_name="us-west-2")
+result = await graph.ainvoke(1, {"configurable": {"thread_id": "session-1"}})
 
 # Async Valkey usage
 async with AsyncValkeySaver.from_conn_string("valkey://localhost:6379") as checkpointer:
@@ -248,6 +298,37 @@ def __init__(
     endpoint_url: Optional[str] = None,
     config: Optional[Config] = None,
 )
+```
+
+### DynamoDB Saver
+
+`DynamoDBSaver` provides persistent checkpoint storage with these options:
+
+```python
+DynamoDBSaver(
+    table_name: str,  # Required: DynamoDB table name
+    session: Optional[boto3.Session] = None,  # Custom boto3 session
+    region_name: Optional[str] = None,  # AWS region
+    endpoint_url: Optional[str] = None,  # Custom dynamodb endpoint url
+    boto_config: Optional[Config] = None,  # Botocore config
+    ttl_seconds: Optional[int] = None,  # Auto-cleanup after N seconds
+    enable_checkpoint_compression: bool = False,  # Enable gzip compression
+    s3_offload_config: Optional[dict] = None  # S3 config for large checkpoints
+)
+```
+
+**Key Features:**
+- Unified table design for checkpoints and writes
+- Automatic S3 offloading for payloads >350KB (when configured)
+- Optional gzip compression with intelligent thresholds
+- TTL support with automatic DynamoDB and S3 lifecycle management
+
+**S3 Offload Configuration:**
+```python
+s3_offload_config = {
+    "bucket_name": "my-checkpoint-bucket",  # Required
+    "endpoint_url": "http://localhost:4566"  # Optional: Custom s3 endpoint url
+}
 ```
 
 ### Valkey Components
@@ -354,6 +435,79 @@ Required AWS permissions for Bedrock Session Management:
             ]
         }
     ]
+}
+```
+
+### DynamoDB Setup
+
+#### CloudFormation Template
+A sample CloudFormation template is available at [`langgraph-ddb-cfn-template.yaml`](../../samples/memory/cfn/langgraph-ddb-cfn-template.yaml) for quick setup:
+
+```bash
+aws cloudformation create-stack \
+  --stack-name langgraph-checkpoints \
+  --template-body file://langgraph-ddb-cfn-template.yaml \
+  --parameters \
+    ParameterKey=CheckpointTableName,ParameterValue=my-checkpoints \
+    ParameterKey=CreateS3Bucket,ParameterValue=true \
+    ParameterKey=EnableTTL,ParameterValue=true
+```
+
+#### Required IAM Permissions
+
+**DynamoDB Only:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:Query",
+      "dynamodb:BatchGetItem",
+      "dynamodb:BatchWriteItem"
+    ],
+    "Resource": "arn:aws:dynamodb:REGION:ACCOUNT:table/TABLE_NAME"
+  }]
+}
+```
+
+**With S3 Offloading:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem"
+      ],
+      "Resource": "arn:aws:dynamodb:REGION:ACCOUNT:table/TABLE_NAME"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:PutObjectTagging"
+      ],
+      "Resource": "arn:aws:s3:::BUCKET_NAME/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketLifecycleConfiguration",
+        "s3:PutBucketLifecycleConfiguration"
+      ],
+      "Resource": "arn:aws:s3:::BUCKET_NAME"
+    }
+  ]
 }
 ```
 
