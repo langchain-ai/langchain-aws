@@ -19,7 +19,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.types import Command
 
-from langgraph_checkpoint_aws.checkpoint.dynamodb import DynamoDBSaver
+from langgraph_checkpoint_aws import DynamoDBSaver
 
 logger = logging.getLogger(__name__)
 

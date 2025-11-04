@@ -12,6 +12,9 @@ from langgraph_checkpoint_aws.agentcore.saver import (
 from langgraph_checkpoint_aws.agentcore.store import (
     AgentCoreMemoryStore,
 )
+from langgraph_checkpoint_aws.checkpoint.dynamodb import (
+    DynamoDBSaver,
+)
 
 # Conditional imports for Valkey functionality
 try:
@@ -98,6 +101,7 @@ __all__ = [
     "ValkeyValidationError",
     "ValkeySaver",
     "ValkeyCache",
+    "DynamoDBSaver",
     "SDK_USER_AGENT",
     "valkey_available",
 ]

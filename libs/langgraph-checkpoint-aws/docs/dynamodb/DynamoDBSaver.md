@@ -43,7 +43,7 @@ pip install langgraph-checkpoint-aws
 ## Quick Start
 
 ```python
-from langgraph_checkpoint_aws.checkpoint.dynamodb import DynamoDBSaver
+from langgraph_checkpoint_aws import DynamoDBSaver
 from langgraph.graph import StateGraph
 
 # Initialize checkpointer
