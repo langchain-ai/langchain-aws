@@ -7,12 +7,18 @@ from typing import Any
 
 import pytest
 
-pytest.importorskip("valkey")
+# Skip all tests in this module if valkey is not available or cannot be imported
+valkey = pytest.importorskip("valkey")
 
-from valkey import Valkey
-from valkey.connection import ConnectionPool
+try:
+    from valkey import Valkey
+    from valkey.connection import ConnectionPool
+except ImportError:
+    pytest.skip("valkey package not properly installed", allow_module_level=True)
 
-from langgraph_checkpoint_aws import ValkeyCache, valkey_available
+# Only import ValkeyCache after verifying valkey is available
+# This prevents import errors when valkey is not installed
+from langgraph_checkpoint_aws import ValkeyCache, valkey_available  # noqa: E402
 
 VALKEY_AVAILABLE = valkey_available
 
