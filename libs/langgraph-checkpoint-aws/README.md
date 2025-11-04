@@ -190,7 +190,7 @@ with ValkeyCache.from_conn_string(
 
 ```python
 from langgraph.graph import StateGraph
-from langgraph_checkpoint_aws.checkpoint.dynamodb import DynamoDBSaver
+from langgraph_checkpoint_aws import DynamoDBSaver
 
 # Basic usage with DynamoDB only
 checkpointer = DynamoDBSaver(
@@ -376,7 +376,7 @@ All components support async operations:
 ```python
 from langgraph_checkpoint_aws.async_saver import AsyncBedrockSessionSaver
 from langgraph_checkpoint_aws import AsyncValkeySaver
-from langgraph_checkpoint_aws.checkpoint.dynamodb import DynamoDBSaver
+from langgraph_checkpoint_aws import DynamoDBSaver
 
 # Async Bedrock usage
 session_saver = AsyncBedrockSessionSaver(region_name="us-west-2")

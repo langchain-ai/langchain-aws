@@ -15,7 +15,7 @@ from conftest import (
     TEST_TTL_SECONDS,
 )
 
-from langgraph_checkpoint_aws.checkpoint.dynamodb.saver import DynamoDBSaver
+from langgraph_checkpoint_aws import DynamoDBSaver
 
 
 class TestDynamoDBSaverInitialization:
