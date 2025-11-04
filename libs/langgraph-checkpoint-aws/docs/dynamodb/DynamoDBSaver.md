@@ -10,6 +10,30 @@ A LangGraph checkpointer that persists agent state to Amazon DynamoDB with autom
 - **Smart Compression** - Optional gzip compression with intelligent thresholds
 - **Flexible Configuration** - Custom AWS clients, sessions, and endpoints
 
+## Understanding Automatic Cleanup
+
+### DynamoDB Time To Live (TTL)
+
+[DynamoDB TTL](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/TTL.html) is a cost-effective mechanism for automatically deleting items that are no longer needed. When you enable TTL on the checkpoint table:
+
+- DynamoDB automatically deletes expired items **within a few days** of expiration (not immediately)
+- **Zero write throughput is consumed** for TTL deletions
+
+When you set `ttl_seconds` in DynamoDBSaver, each checkpoint is automatically tagged with an expiration time. For example, `ttl_seconds=86400 * 7` means checkpoints expire 7 days after creation (86400 seconds = 1 day).
+
+### S3 Lifecycle Policies
+
+[S3 Lifecycle](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html) manages object storage throughout their lifecycle. When using S3 offloading with TTL:
+
+- **Expiration actions** queue objects for deletion and remove them asynchronously
+- The library automatically configures lifecycle rules when you set `ttl_seconds`
+- Lifecycle rules apply to both existing objects and new objects added later
+- Billing stops as soon as objects become eligible for expiration (even if not yet deleted)
+
+**Important:** S3 Lifecycle uses day-level precision for expiration rules. When DynamoDBSaver configures S3 lifecycle policies, it converts `ttl_seconds` to days. Objects expire after the specified number of days from creation.
+
+DynamoDBSaver synchronizes TTL settings between DynamoDB and S3, ensuring consistent cleanup across both storage layers. You don't need to manually configure S3 lifecycle policies - just set `ttl_seconds` and both services handle cleanup automatically.
+
 ## Installation
 
 ```bash
