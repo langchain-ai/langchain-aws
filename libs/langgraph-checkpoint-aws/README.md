@@ -185,6 +185,7 @@ with ValkeyCache.from_conn_string(
         prompt: str = "Your expensive prompt"
         response = model.invoke([HumanMessage(content=prompt)])
         cache.set({cache_key: (response.content, 3600)})  # Cache for 1 hour
+```
 ### 4. DynamoDB Checkpoint Storage
 
 ```python
