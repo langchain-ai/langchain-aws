@@ -20,7 +20,7 @@ The following packages are hosted in this repository:
 
 ### LangGraph
 
-- **Checkpointers**: Provides a custom checkpointing solution for LangGraph agents using the [AgentCore Memory Service](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html), the [AWS Bedrock Session Management Service](https://docs.aws.amazon.com/bedrock/latest/userguide/sessions.html), the [AWS DynamoDB Service](https://aws.amazon.com/dynamodb/) or the [ElastiCache Valkey Service](https://aws.amazon.com/elasticache/).
+- **Checkpointers**: Provides custom checkpointing solutions for LangGraph agents using several AWS services, including [Bedrock AgentCore Memory](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html), [Bedrock Session Management](https://docs.aws.amazon.com/bedrock/latest/userguide/sessions.html), [DynamoDB](https://aws.amazon.com/dynamodb/), and [ElastiCache Valkey](https://aws.amazon.com/elasticache/)
 - **Memory Stores** - Provides a memory store solution for saving, processing, and retrieving intelligent long term memories using the [AgentCore Memory Service](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html).
 
 ...and more to come. This repository will continue to expand and offer additional components for various AWS services as development progresses.
