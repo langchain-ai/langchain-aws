@@ -17,6 +17,8 @@ This package provides multiple persistence solutions for LangGraph agents:
 
 ### Valkey Storage Solutions
 1. **Checkpoint storage** with Valkey (Redis-compatible)
+2. **Intelligent caching** for LLM responses and computation results
+3. **Document storage** with vector search capabilities
 
 ## Installation
 
@@ -26,19 +28,21 @@ You can install the package using pip:
 # Base package (includes Bedrock AgentCore Memory components)
 pip install langgraph-checkpoint-aws
 
-# With Valkey support
+# Optional Valkey support
 pip install 'langgraph-checkpoint-aws[valkey]'
 
 ```
 
 ## Components
 
-This package provides four main components:
+This package provides following main components:
 
 1. **AgentCoreMemorySaver** - AWS Bedrock-based checkpoint storage
-2. **DynamoDBSaver** - DynamoDB-based checkpoint storage with S3 offloading
-3. **ValkeySaver** - Valkey checkpoint storage
-4. **AgentCoreMemoryStore** - AWS Bedrock-based document store
+2. **AgentCoreMemoryStore** - AWS Bedrock-based document store
+3. **ValkeyCache** - Valkey LLM response cache
+4. **ValkeySaver** - Valkey checkpoint storage
+5. **ValkeyStore** - Valkey document store
+6. **DynamoDBSaver** - DynamoDB-based checkpoint storage with S3 offloading
 
 
 ## Usage
@@ -153,8 +157,36 @@ response = graph.invoke(
     config=config
 )
 ```
+### 3. Valkey Cache - LLM Response caching
+Intelligent caching to improve performance and reduce costs:
 
-### 3. DynamoDB Checkpoint Storage
+```python
+from langgraph_checkpoint_aws import ValkeyCache
+from langchain_aws import ChatBedrockConverse
+
+# Initialize cache
+with ValkeyCache.from_conn_string(
+    "valkey://localhost:6379",
+    ttl_seconds=3600,  # 1 hour TTL
+    pool_size=10
+) as cache:
+    
+    # Use cache with your LLM calls
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    )   
+    
+    # Cache expensive prompts/computations
+    cache_key = "expensive_computation_key"
+    result = cache.get([cache_key])
+    
+    if not result:
+        # Compute and cache result
+        prompt: str = "Your expensive prompt"
+        response = model.invoke([HumanMessage(content=prompt)])
+        cache.set({cache_key: (response.content, 3600)})  # Cache for 1 hour
+```
+### 4. DynamoDB Checkpoint Storage
 
 ```python
 from langgraph.graph import StateGraph
@@ -193,7 +225,7 @@ config = {"configurable": {"thread_id": "session-1"}}
 result = graph.invoke(1, config)
 ```
 
-### 4. Valkey Checkpoint Storage
+### 5. Valkey Checkpoint Storage
 
 ```python
 from langgraph.graph import StateGraph
@@ -216,13 +248,94 @@ with ValkeySaver.from_conn_string(
     result = graph.invoke(1, config)
 ```
 
+### 6. Valkey Store for Document Storage
+
+Document storage with vector search capabilities using ValkeyIndexConfig:
+
+```python
+from langchain_aws import BedrockEmbeddings
+from langgraph_checkpoint_aws import ValkeyStore
+# Initialize Bedrock embeddings
+embeddings = BedrockEmbeddings(
+    model_id="amazon.titan-embed-text-v1",
+    region_name=AWS_REGION
+)
+# Basic usage with ValkeyIndexConfig
+with ValkeyStore.from_conn_string(
+    "valkey://localhost:6379",
+    index={
+        "collection_name": "my_documents",
+        "dims": 1536,
+        "embed": embeddings,
+        "fields": ["text", "author"],
+        "timezone": "UTC",
+        "index_type": "hnsw"
+    },
+    ttl={"default_ttl": 60.0}  # 1 hour TTL
+) as store:
+    
+    # Setup vector search index
+    store.setup()
+    
+    # Store documents
+    store.put(
+        ("documents", "user123"),
+        "report_1",
+        {
+            "text": "Machine learning report on customer behavior analysis...",
+            "tags": ["ml", "analytics", "report"],
+            "author": "data_scientist"
+        }
+    )
+    
+    # Search documents
+    results = store.search(
+        ("documents",),
+        query="machine learning customer analysis",
+        filter={"author": "data_scientist"},
+        limit=10
+    )
+
+# Advanced HNSW configuration for performance tuning
+with ValkeyStore.from_conn_string(
+    "valkey://localhost:6379",
+    index={
+        "collection_name": "high_performance_docs",
+        "dims": 768,
+        "embed": embeddings,
+        "fields": ["text", "title", "summary"],
+        "timezone": "America/New_York",
+        "index_type": "hnsw",
+        "hnsw_m": 32,  # More connections for better recall
+        "hnsw_ef_construction": 400,  # Higher construction quality
+        "hnsw_ef_runtime": 20,  # Better search accuracy
+    }
+) as store:
+    # Optimized for high-accuracy vector search
+    pass
+
+# FLAT index for exact search (smaller datasets)
+with ValkeyStore.from_conn_string(
+    "valkey://localhost:6379",
+    index={
+        "collection_name": "exact_search_docs",
+        "dims": 384,
+        "embed": embeddings,
+        "fields": ["text"],
+        "index_type": "flat"  # Exact search, no approximation
+    }
+) as store:
+    # Exact vector search for smaller datasets
+    pass
+```
+
 ## Async Usage
 
 All components support async operations:
 
 ```python
 from langgraph_checkpoint_aws.async_saver import AsyncBedrockSessionSaver
-from langgraph_checkpoint_aws.checkpoint.valkey import AsyncValkeySaver
+from langgraph_checkpoint_aws import AsyncValkeySaver
 from langgraph_checkpoint_aws.checkpoint.dynamodb import DynamoDBSaver
 
 # Async Bedrock usage
@@ -233,10 +346,23 @@ session_id = (await session_saver.session_client.create_session()).session_id
 checkpointer = DynamoDBSaver(table_name="my-checkpoints", region_name="us-west-2")
 result = await graph.ainvoke(1, {"configurable": {"thread_id": "session-1"}})
 
-# Async Valkey usage
+# Async ValkeySaver usage
 async with AsyncValkeySaver.from_conn_string("valkey://localhost:6379") as checkpointer:
     graph = builder.compile(checkpointer=checkpointer)
     result = await graph.ainvoke(1, {"configurable": {"thread_id": "session-1"}})
+
+# Async ValkeyStore usage
+async with AsyncValkeyStore.from_conn_string("valkey://localhost:6379") as store:
+    namespace = ("example",)
+    key = "key"
+    data = {
+        "message": "Sample message",
+        "timestamp": datetime.now().isoformat(),
+        "status": "success"
+    }
+    await store.setup()
+    await store.aput(namespace, key, data)
+    result = await store.aget(namespace, key)
 ```
 
 ## Configuration Options
@@ -305,6 +431,16 @@ Valkey components support these common configuration options:
 - **Batch Operations**: Efficient bulk operations for better throughput
 - **Async Support**: Non-blocking operations for high concurrency
 
+#### ValkeyCache Options
+```python
+ValkeyCache(
+    client: Valkey,
+    prefix: str = "langgraph:cache:",  # Key prefix
+    ttl: float | None = None,  # Default TTL in seconds
+    serde: SerializerProtocol | None = None
+)
+```
+
 #### ValkeySaver Options
 ```python
 valkey_client = Valkey.from_url("valkey://localhost:6379")
@@ -313,6 +449,107 @@ ValkeySaver(
     ttl: float | None = None,  # TTL in seconds
     serde: SerializerProtocol | None = None  # Custom serialization
 )
+```
+#### ValkeyStore Options
+```python
+ValkeyStore(
+    client: Valkey,
+    index: ValkeyIndexConfig | None = None,  # Valkey-specific vector search configuration
+    ttl: TTLConfig | None = None  # TTL configuration
+)
+
+# ValkeyIndexConfig - Enhanced vector search configuration
+from langgraph_checkpoint_aws.store.valkey import ValkeyIndexConfig
+
+index_config = {
+    # Basic configuration
+    "collection_name": "my_documents",  # Index collection name
+    "dims": 1536,  # Vector dimensions
+    "embed": embeddings,  # Embedding model
+    "fields": ["text", "content"],  # Fields to index
+    
+    # Valkey-specific configuration
+    "timezone": "UTC",  # Timezone for operations (default: "UTC")
+    "index_type": "hnsw",  # Algorithm: "hnsw" or "flat" (default: "hnsw")
+    
+    # HNSW performance tuning parameters
+    "hnsw_m": 16,  # Connections per layer (default: 16)
+    "hnsw_ef_construction": 200,  # Construction search width (default: 200)
+    "hnsw_ef_runtime": 10,  # Runtime search width (default: 10)
+}
+
+# TTL Configuration
+ttl_config = {
+    "default_ttl": 60.0  # Default TTL in minutes
+}
+```
+##### Algorithm Selection Guide
+
+**HNSW (Hierarchical Navigable Small World)**
+- **Best for**: Large datasets (>10K vectors), fast approximate search
+- **Trade-off**: Speed vs accuracy - configurable via parameters
+- **Use cases**: Real-time search, large document collections, production systems
+
+**FLAT (Brute Force)**
+- **Best for**: Small datasets (<10K vectors), exact search requirements
+- **Trade-off**: Perfect accuracy but slower on large datasets
+- **Use cases**: High-precision requirements, smaller collections, research
+
+#### Performance Tuning Parameters
+
+**hnsw_m (Connections per layer)**
+- **Range**: 4-64 (default: 16)
+- **Higher values**: Better recall, more memory usage
+- **Lower values**: Faster search, less memory, lower recall
+- **Recommendation**: 16-32 for most use cases
+
+**hnsw_ef_construction (Construction search width)**
+- **Range**: 100-800 (default: 200)
+- **Higher values**: Better index quality, slower construction
+- **Lower values**: Faster construction, potentially lower quality
+- **Recommendation**: 200-400 for production systems
+
+**hnsw_ef_runtime (Query search width)**
+- **Range**: 10-500 (default: 10)
+- **Higher values**: Better recall, slower queries
+- **Lower values**: Faster queries, potentially lower recall
+- **Recommendation**: 10-50 depending on speed/accuracy requirements
+
+##### Configuration Examples
+
+```python
+# High-speed configuration (prioritize speed)
+speed_config = {
+    "collection_name": "fast_search",
+    "index_type": "hnsw",
+    "hnsw_m": 8,  # Fewer connections
+    "hnsw_ef_construction": 100,  # Faster construction
+    "hnsw_ef_runtime": 10,  # Fast queries
+}
+
+# High-accuracy configuration (prioritize recall)
+accuracy_config = {
+    "collection_name": "precise_search", 
+    "index_type": "hnsw",
+    "hnsw_m": 32,  # More connections
+    "hnsw_ef_construction": 400,  # Better construction
+    "hnsw_ef_runtime": 50,  # More thorough search
+}
+
+# Balanced configuration (good speed/accuracy trade-off)
+balanced_config = {
+    "collection_name": "balanced_search",
+    "index_type": "hnsw", 
+    "hnsw_m": 16,  # Default connections
+    "hnsw_ef_construction": 200,  # Default construction
+    "hnsw_ef_runtime": 20,  # Moderate search width
+}
+
+# Exact search configuration (perfect accuracy)
+exact_config = {
+    "collection_name": "exact_search",
+    "index_type": "flat",  # No HNSW parameters needed
+}
 ```
 
 ## Development
@@ -649,6 +886,17 @@ with ValkeySaver.from_conn_string(
     ttl_seconds=3600  # 1 hour for active sessions
 ) as checkpointer:
     pass
+```
+#### Batch Operations
+```python
+# Use batch operations for better throughput
+cache.set({
+    "key1": (value1, 3600),
+    "key2": (value2, 1800),
+    "key3": (value3, 7200)
+})
+
+results = cache.get(["key1", "key2", "key3"])
 ```
 
 ## Security Considerations

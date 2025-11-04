@@ -1,4 +1,4 @@
-"""Valkey checkpoint implementation for LangGraph checkpoint AWS."""
+"""Store implementations for LangGraph checkpoint AWS."""
 
 from typing import Any
 
@@ -7,10 +7,9 @@ _import_error: ImportError | None = None
 
 # Conditional imports for optional dependencies
 try:
-    from .async_saver import AsyncValkeySaver
-    from .saver import ValkeySaver
+    from .valkey import AsyncValkeyStore, ValkeyIndexConfig, ValkeyStore
 
-    __all__ = ["ValkeySaver", "AsyncValkeySaver"]
+    __all__ = ["AsyncValkeyStore", "ValkeyStore", "ValkeyIndexConfig"]
 except ImportError as e:
     # Store the error for later use
     _import_error = e
@@ -24,7 +23,8 @@ except ImportError as e:
 
     # Create placeholder classes that raise helpful errors
     # Use type: ignore to suppress mypy errors for this intentional pattern
-    ValkeySaver: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
-    AsyncValkeySaver: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
+    AsyncValkeyStore: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
+    ValkeyIndexConfig: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
+    ValkeyStore: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
 
-    __all__ = ["ValkeySaver", "AsyncValkeySaver"]
+    __all__ = ["AsyncValkeyStore", "ValkeyStore", "ValkeyIndexConfig"]

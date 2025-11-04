@@ -14,13 +14,11 @@ from langgraph_checkpoint_aws.models import (
 )
 from langgraph_checkpoint_aws.utils import (
     construct_checkpoint_tuple,
-    deserialize_data,
     deserialize_from_base64,
     generate_checkpoint_id,
     generate_deterministic_uuid,
     generate_write_id,
     process_aws_client_args,
-    serialize_data,
     serialize_to_base64,
     to_boto_params,
 )
@@ -83,12 +81,6 @@ class TestUtils:
         result = generate_write_id(checkpoint_ns, checkpoint_id)
         assert result == "f75c463a-a608-0629-401e-f4d270073c0c"
 
-    def test_serialize_deserialize_success(self, json_serializer):
-        sample_dict = {"key": "value"}
-        serialized = serialize_data(json_serializer, sample_dict)
-        deserialized = deserialize_data(json_serializer, serialized)
-        assert deserialized == sample_dict
-
     def test_serialize_deserialize_base64_success(self, json_serializer):
         sample_dict = {"key": "value"}
         serialized = serialize_to_base64(json_serializer, sample_dict)
@@ -96,10 +88,8 @@ class TestUtils:
         assert deserialized == sample_dict
 
     @patch("langgraph_checkpoint_aws.utils.deserialize_from_base64")
-    @patch("langgraph_checkpoint_aws.utils.deserialize_data")
     def test__construct_checkpoint_tuple(
         self,
-        mock_deserialize_data,
         mock_deserialize_from_base64,
         sample_session_checkpoint,
         sample_session_pending_write,
@@ -109,7 +99,6 @@ class TestUtils:
         checkpoint_ns = "test_namespace"
 
         serde = Mock(spec=SerializerProtocol)
-        mock_deserialize_data.return_value = {}
         mock_deserialize_from_base64.return_value = {}
 
         # Act
@@ -142,7 +131,7 @@ def test_process_aws_client_args_user_agent(mock_make_request, mock_client):
     # Create session
     session = boto3.Session(**session_kwargs)
 
-    # Mock client creation to avoid network calls
+    # Mock client instance to avoid network calls
     mock_client_instance = Mock()
     mock_client.return_value = mock_client_instance
 

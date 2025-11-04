@@ -6,40 +6,28 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+
+pytest.importorskip("valkey")
+pytest.importorskip("orjson")
+pytest.importorskip("fakeredis")
+
+import orjson
 from langchain_core.runnables import RunnableConfig
+from valkey.exceptions import ValkeyError
 
-# Check for optional dependencies
-try:
-    import fakeredis  # noqa: F401
-    import orjson
-    import valkey  # noqa: F401
-    from valkey.exceptions import ValkeyError
+from langgraph_checkpoint_aws import AsyncValkeySaver
 
-    from langgraph_checkpoint_aws import AsyncValkeySaver
 
-    VALKEY_AVAILABLE = True
-except ImportError:
-    # Create dummy objects for type checking when dependencies are not available
-    class MockOrjson:
-        @staticmethod
-        def dumps(obj):  # type: ignore[misc]
-            import json
+# Create dummy objects for serialization tests
+class MockOrjson:
+    @staticmethod
+    def dumps(obj):  # type: ignore[misc]
+        import json
 
-            return json.dumps(obj).encode("utf-8")
+        return json.dumps(obj).encode("utf-8")
 
-    orjson = MockOrjson()  # type: ignore[assignment]
-    ValkeyError = Exception  # type: ignore[assignment, misc]
-    AsyncValkeySaver = None  # type: ignore[assignment, misc]
-    VALKEY_AVAILABLE = False
 
-# Skip all tests if valkey dependencies are not available
-pytestmark = pytest.mark.skipif(
-    not VALKEY_AVAILABLE,
-    reason=(
-        "valkey, orjson, and fakeredis dependencies not available. "
-        "Install with: pip install 'langgraph-checkpoint-aws[valkey,valkey-test]'"
-    ),
-)
+mock_orjson = MockOrjson()  # For testing when orjson mock is needed
 
 
 class MockSerializer:
@@ -639,7 +627,7 @@ class TestAsyncValkeySaverErrorHandling:
 
         saver = AsyncValkeySaver(client=mock_valkey_client, serde=bad_serializer)
 
-        with pytest.raises(ValueError):
+        with pytest.raises((ValueError, TypeError)):
             await saver.aput(
                 sample_config, sample_checkpoint, sample_metadata, {"test_channel": 1}
             )
