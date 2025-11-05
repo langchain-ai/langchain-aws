@@ -119,7 +119,7 @@ class InMemoryDBTag(InMemoryDBFilterField):
         """Create a InMemoryDBTag FilterField.
 
         Args:
-            field (str): The name of the InMemoryDBTag field in the index to be queried
+            field: The name of the `InMemoryDBTag` field in the index to be queried
                 against.
         """
         super().__init__(field)
@@ -353,7 +353,7 @@ class InMemoryDBText(InMemoryDBFilterField):
         """Create a InMemoryDBText equality (exact match) filter expression.
 
         Args:
-            other (str): The text value to filter on.
+            other: The text value to filter on.
 
         Example:
             ```python
@@ -370,7 +370,7 @@ class InMemoryDBText(InMemoryDBFilterField):
         """Create a InMemoryDBText inequality filter expression.
 
         Args:
-            other (str): The text value to filter on.
+            other: The text value to filter on.
 
         Example:
             ```python
@@ -385,7 +385,7 @@ class InMemoryDBText(InMemoryDBFilterField):
         """Create a InMemoryDBText "LIKE" filter expression.
 
         Args:
-            other (str): The text value to filter on.
+            other: The text value to filter on.
 
         Example:
             ```python

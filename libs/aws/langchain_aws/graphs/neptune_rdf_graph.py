@@ -6,17 +6,17 @@ import requests
 
 # Query to find OWL datatype properties
 DTPROP_QUERY = """
-SELECT DISTINCT ?elem 
-WHERE { 
- ?elem a owl:DatatypeProperty . 
+SELECT DISTINCT ?elem
+WHERE {
+ ?elem a owl:DatatypeProperty .
 }
 """
 
 # Query to find OWL object properties
 OPROP_QUERY = """
-SELECT DISTINCT ?elem 
-WHERE { 
- ?elem a owl:ObjectProperty . 
+SELECT DISTINCT ?elem
+WHERE {
+ ?elem a owl:ObjectProperty .
 }
 """
 
@@ -69,7 +69,7 @@ class NeptuneRdfGraph:
         The best way to guard against such negative outcomes is to (as appropriate)
         limit the permissions granted to the credentials used with this tool.
 
-        See https://python.langchain.com/docs/security for more information.
+        See https://docs.langchain.com/oss/python/security-policy for more information.
 
     """
 

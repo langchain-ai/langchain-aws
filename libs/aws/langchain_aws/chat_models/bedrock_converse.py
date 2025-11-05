@@ -356,11 +356,11 @@ class ChatBedrockConverse(BaseChatModel):
 
     model_id: str = Field(alias="model")
     """ID of the model to call.
-    
-    e.g., `"anthropic.claude-3-sonnet-20240229-v1:0"`. This is equivalent to the 
-    modelID property in the list-foundation-models api. For custom and provisioned 
-    models, an ARN value is expected. See 
-    https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html#model-ids-arns 
+
+    e.g., `"anthropic.claude-3-sonnet-20240229-v1:0"`. This is equivalent to the
+    modelID property in the list-foundation-models api. For custom and provisioned
+    models, an ARN value is expected. See
+    https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html#model-ids-arns
     for a list of all supported built-in models.
 
     """
@@ -369,6 +369,29 @@ class ChatBedrockConverse(BaseChatModel):
     """An optional field to pass the base model id. If provided, this will be used over
     the value of model_id to identify the base model.
 
+    """
+
+    system: Optional[List[Union[str, Dict[str, Any]]]] = None
+    """Optional list of system prompts for the LLM.
+
+    Each entry can be either:
+      - a simple string (for straightforward text-based system prompts), or
+      - a dictionary matching the Converse API system message schema, allowing
+        inclusion of additional fields like `guardContent`, `cachePoint`, etc.
+
+    Example:
+        system = [
+            "a simple system prompt",
+            {
+                "text": "another system prompt",
+                "guardContent": {"text": {"text": "string"}},
+                "cachePoint": {"type": "default"}
+            },
+        ]
+
+    String inputs will be internally converted to the appropriate message format,
+    while dict entries will be passed through as-is. Any invalid formats will be
+    rejected by the Converse API.
     """
 
     max_tokens: Optional[int] = None
@@ -384,11 +407,11 @@ class ChatBedrockConverse(BaseChatModel):
     """The percentage of most-likely candidates that are considered for the next token.
 
     Must be 0 to 1.
-    
-    For example, if you choose a value of 0.8 for topP, the model selects from 
-    the top 80% of the probability distribution of tokens that could be next in the 
+
+    For example, if you choose a value of 0.8 for topP, the model selects from
+    the top 80% of the probability distribution of tokens that could be next in the
     sequence.
-    
+
     """
 
     region_name: Optional[str] = None
@@ -452,7 +475,7 @@ class ChatBedrockConverse(BaseChatModel):
 
     When not supplied, provider is extracted from the first part of the model_id, e.g.
     'amazon' in 'amazon.titan-text-express-v1'. This value should be provided for model
-    ids that do not have the provider in them, like custom and provisioned models that
+    IDs that do not have the provider in them, like custom and provisioned models that
     have an ARN associated with them.
 
     """
@@ -512,7 +535,7 @@ class ChatBedrockConverse(BaseChatModel):
 
     raw_blocks: Optional[List[Dict[str, Any]]] = None
     """Raw Bedrock message blocks that can be passed in.
-    
+
     LangChain will relay them unchanged, enabling any combination of content
     block types. This is useful for custom guardrail wrapping.
 
@@ -872,7 +895,7 @@ class ChatBedrockConverse(BaseChatModel):
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
         else:
-            bedrock_messages, system = _messages_to_bedrock(messages)
+            bedrock_messages, system = _messages_to_bedrock(messages, self.system)
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
                 self._apply_guard_last_turn_only(bedrock_messages)
@@ -926,7 +949,7 @@ class ChatBedrockConverse(BaseChatModel):
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
         else:
-            bedrock_messages, system = _messages_to_bedrock(messages)
+            bedrock_messages, system = _messages_to_bedrock(messages, self.system)
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
                 self._apply_guard_last_turn_only(bedrock_messages)
@@ -1257,7 +1280,7 @@ class ChatBedrockConverse(BaseChatModel):
             bedrock_messages, system = (
                 (self.raw_blocks, [])
                 if self.raw_blocks
-                else _messages_to_bedrock(messages)
+                else _messages_to_bedrock(messages, self.system)
             )
 
             input_data = {"converse": {"messages": bedrock_messages}}
@@ -1274,6 +1297,7 @@ class ChatBedrockConverse(BaseChatModel):
 
 def _messages_to_bedrock(
     messages: List[BaseMessage],
+    system: Optional[List[Union[str, Dict[str, Any]]]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Handle Bedrock converse and Anthropic style content blocks"""
     for idx, message in enumerate(messages):
@@ -1295,6 +1319,15 @@ def _messages_to_bedrock(
     bedrock_system: List[Dict[str, Any]] = []
     trimmed_messages = trim_message_whitespace(messages)
     messages = merge_message_runs(trimmed_messages)
+
+    if system:
+        sys_param_to_bedrock = []
+        for s in system:
+            if isinstance(s, str):
+                sys_param_to_bedrock.append({"text": s})
+            else:
+                sys_param_to_bedrock.append(s)
+        bedrock_system.extend(sys_param_to_bedrock)
 
     for msg in messages:
         content = _lc_content_to_bedrock(msg.content)
