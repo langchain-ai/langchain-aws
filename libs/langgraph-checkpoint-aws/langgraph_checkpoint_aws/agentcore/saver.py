@@ -49,8 +49,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
     Args:
         memory_id: the ID of the memory resource created in AgentCore Memory
         serde: serialization protocol to be used. Defaults to JSONPlusSerializer
-        max_results: maximum number of events to retrieve from AgentCore Memory.
-                     Set to None for no limit. Defaults to 100
+        limit: maximum number of events to parse from ListEvents.
+        max_results: maximum number of results to retrieve from AgentCore Memory.
+                    Defaults to 100
     """
 
     def __init__(
@@ -58,12 +59,14 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         memory_id: str,
         *,
         serde: SerializerProtocol | None = None,
+        limit: int | None = None,
         max_results: int | None = 100,
         **boto3_kwargs: Any,
     ) -> None:
         super().__init__(serde=serde)
 
         self.memory_id = memory_id
+        self.limit = limit
         self.max_results = max_results
         self.serializer = EventSerializer(self.serde)
         self.checkpoint_event_client = AgentCoreEventClient(
@@ -93,6 +96,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         events = self.checkpoint_event_client.get_events(
             checkpoint_config.session_id,
             checkpoint_config.actor_id,
+            self.limit,
             self.max_results,
         )
 
@@ -138,6 +142,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         events = self.checkpoint_event_client.get_events(
             checkpoint_config.session_id,
             checkpoint_config.actor_id,
+            limit,
             self.max_results,
         )
 
