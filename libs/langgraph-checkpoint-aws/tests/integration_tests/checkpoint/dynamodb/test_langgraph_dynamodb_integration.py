@@ -23,16 +23,20 @@ from langgraph_checkpoint_aws import DynamoDBSaver
 
 logger = logging.getLogger(__name__)
 
+
 def skip_on_aws_403(call_fn, action_description: str):
     try:
         return call_fn()
     except ClientError as e:
         code = e.response["Error"]["Code"]
         if code in ("AccessDenied", "AccessDeniedException", "403"):
-            pytest.skip(f"Insufficient permissions to execute "
-                        f"{action_description}, skipping test.")
+            pytest.skip(
+                f"Insufficient permissions to execute "
+                f"{action_description}, skipping test."
+            )
         else:
             raise
+
 
 # Configuration
 AWS_REGION = os.getenv("AWS_REGION", "eu-west-1")
@@ -93,12 +97,11 @@ def aws_resources():
                     ],
                     BillingMode="PAY_PER_REQUEST",
                 ),
-                f"DynamoDB CreateTable"
+                "DynamoDB CreateTable",
             )
             waiter = dynamodb.get_waiter("table_exists")
             skip_on_aws_403(
-                lambda: waiter.wait(TableName=DYNAMODB_TABLE),
-                f"DynamoDB GetWaiter"
+                lambda: waiter.wait(TableName=DYNAMODB_TABLE), "DynamoDB GetWaiter"
             )
             logger.info(f"DynamoDB table '{DYNAMODB_TABLE}' created successfully")
         else:
@@ -106,15 +109,13 @@ def aws_resources():
 
     # Create S3 bucket if not exists
     try:
-        skip_on_aws_403(
-            lambda: s3.head_bucket(Bucket=S3_BUCKET),
-            f"S3 HeadBucket"
-        )
+        skip_on_aws_403(lambda: s3.head_bucket(Bucket=S3_BUCKET), "S3 HeadBucket")
         logger.info(f"S3 bucket '{S3_BUCKET}' already exists")
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         if error_code == "404":
             logger.info(f"Creating S3 bucket '{S3_BUCKET}'...")
+
             def create_bucket():
                 if AWS_REGION == "us-east-1":
                     s3.create_bucket(Bucket=S3_BUCKET)
@@ -123,7 +124,8 @@ def aws_resources():
                         Bucket=S3_BUCKET,
                         CreateBucketConfiguration={"LocationConstraint": AWS_REGION},
                     )
-            skip_on_aws_403(create_bucket, f"S3 CreateBucket")
+
+            skip_on_aws_403(create_bucket, "S3 CreateBucket")
             logger.info(f"S3 bucket '{S3_BUCKET}' created successfully")
         else:
             raise
