@@ -49,6 +49,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
     Args:
         memory_id: the ID of the memory resource created in AgentCore Memory
         serde: serialization protocol to be used. Defaults to JSONPlusSerializer
+        limit: maximum number of events to parse from ListEvents.
+        max_results: maximum number of results to retrieve from AgentCore Memory.
+                    Defaults to 100
     """
 
     def __init__(
@@ -56,19 +59,33 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         memory_id: str,
         *,
         serde: SerializerProtocol | None = None,
+        limit: int | None = None,
+        max_results: int | None = 100,
         **boto3_kwargs: Any,
     ) -> None:
         super().__init__(serde=serde)
 
         self.memory_id = memory_id
+        self.limit = limit
+        self.max_results = max_results
         self.serializer = EventSerializer(self.serde)
         self.checkpoint_event_client = AgentCoreEventClient(
             memory_id, self.serializer, **boto3_kwargs
         )
         self.processor = EventProcessor()
 
-    def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
-        """Get a checkpoint tuple from Bedrock AgentCore Memory."""
+    def get_tuple(
+        self,
+        config: RunnableConfig,
+    ) -> CheckpointTuple | None:
+        """Get a checkpoint tuple from Bedrock AgentCore Memory.
+
+        Args:
+            config: The runnable config containing checkpoint information
+
+        Returns:
+            CheckpointTuple if found, None otherwise
+        """
 
         # TODO: There is room for caching here on the client side
 
@@ -77,7 +94,10 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         )
 
         events = self.checkpoint_event_client.get_events(
-            checkpoint_config.session_id, checkpoint_config.actor_id
+            checkpoint_config.session_id,
+            checkpoint_config.actor_id,
+            self.limit,
+            self.max_results,
         )
 
         checkpoints, writes_by_checkpoint, channel_data = self.processor.process_events(
@@ -122,7 +142,8 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         events = self.checkpoint_event_client.get_events(
             checkpoint_config.session_id,
             checkpoint_config.actor_id,
-            100 if limit is None else limit,
+            limit,
+            self.max_results,
         )
 
         checkpoints, writes_by_checkpoint, channel_data = self.processor.process_events(
