@@ -1446,7 +1446,7 @@ class BedrockLLM(LLM, BedrockBase):
 
         Example:
             ```python
-                response = llm("Tell me a joke.")
+            response = llm("Tell me a joke.")
             ```
 
         """
