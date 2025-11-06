@@ -51,7 +51,6 @@ from langchain_core.utils.utils import _build_model_kwargs
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from langchain_aws.chat_models._compat import _convert_from_v1_to_anthropic
-from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 from langchain_aws.function_calling import (
     AnthropicTool,
     ToolsOutputParser,
@@ -349,7 +348,7 @@ def _format_image(image_url: str) -> Dict:
 
 
 def _format_data_content_block(block: dict) -> dict:
-    """Format standard data content block to format expected by Converse API."""
+    """Format standard data content block to format expected by Bedrock."""
     if block["type"] == "image":
         if "base64" in block or block.get("source_type") == "base64":
             if "mime_type" not in block:
@@ -760,9 +759,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     """A chat model that uses the Bedrock API."""
 
     system_prompt_with_tools: str = ""
-    beta_use_converse_api: bool = False
-    """Use the new Bedrock `converse` API which provides a standardized interface to
-    all Bedrock models. Support still in beta. See ChatBedrockConverse docs for more."""
 
     stop_sequences: Optional[List[str]] = Field(default=None, alias="stop")
     """Stop sequence inference parameter from new Bedrock `converse` API providing
@@ -793,18 +789,24 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
     @model_validator(mode="before")
     @classmethod
-    def set_beta_use_converse_api(cls, values: Dict) -> Any:
+    def check_unsupported_model(cls, values: Dict) -> Any:
         model_id = values.get("model_id", values.get("model"))
         base_model_id = values.get("base_model_id", values.get("base_model", ""))
 
-        if not model_id or "beta_use_converse_api" in values:
+        if not model_id:
             return values
 
-        nova_id = "amazon.nova"
-        values["beta_use_converse_api"] = False
+        # Add new Bedrock models here as needed
+        unsupported_models = ["amazon.nova"]
 
-        if nova_id in model_id or nova_id in base_model_id:
-            values["beta_use_converse_api"] = True
+        bad_model_err = (
+            "Provided model is unsupported on ChatBedrock with langchain-aws>=1.0.0."
+            " Please use ChatBedrockConverse instead."
+        )
+        if any(
+            model in model_id or model in base_model_id for model in unsupported_models
+        ):
+            raise ValueError(bad_model_err)
         elif not base_model_id and "application-inference-profile" in model_id:
             bedrock_client = values.get("bedrock_client")
             if not bedrock_client:
@@ -824,7 +826,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             if "models" in response and len(response["models"]) > 0:
                 model_arn = response["models"][0]["modelArn"]
                 resolved_base_model = model_arn.split("/")[-1]
-                values["beta_use_converse_api"] = "nova" in resolved_base_model
+                values["base_model_id"] = resolved_base_model
+                if any(model in resolved_base_model for model in unsupported_models):
+                    raise ValueError(bad_model_err)
         return values
 
     @model_validator(mode="before")
@@ -883,11 +887,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
-        if self.beta_use_converse_api:
-            yield from self._as_converse._stream(
-                messages, stop=stop, run_manager=run_manager, **kwargs
-            )
-            return
         provider = self._get_provider()
         prompt: Optional[str] = None
         system: Optional[str] = None
@@ -998,16 +997,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        if self.beta_use_converse_api:
-            if not self.streaming:
-                return self._as_converse._generate(
-                    messages, stop=stop, run_manager=run_manager, **kwargs
-                )
-            else:
-                stream_iter = self._as_converse._stream(
-                    messages, stop=stop, run_manager=run_manager, **kwargs
-                )
-                return generate_from_stream(stream_iter)
         completion = ""
         llm_output: Dict[str, Any] = {}
         tool_calls: List[ToolCall] = []
@@ -1223,12 +1212,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 [Runnable][langchain_core.runnables.Runnable] constructor.
 
         """
-        if self.beta_use_converse_api:
-            if isinstance(tool_choice, bool):
-                tool_choice = "any" if tool_choice else None
-            return self._as_converse.bind_tools(
-                tools, tool_choice=tool_choice, **kwargs
-            )
         if self._get_provider() == "anthropic":
             formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
 
@@ -1401,10 +1384,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             ```
 
         """  # noqa: E501
-        if self.beta_use_converse_api:
-            return self._as_converse.with_structured_output(
-                schema, include_raw=include_raw, **kwargs
-            )
         if "claude-" not in self._get_base_model():
             raise ValueError(
                 f"Structured output is not supported for model {self._get_base_model()}"
@@ -1447,43 +1426,3 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             return RunnableMap(raw=llm) | parser_with_fallback
         else:
             return llm | output_parser
-
-    @property
-    def _as_converse(self) -> ChatBedrockConverse:
-        kwargs = {
-            k: v
-            for k, v in (self.model_kwargs or {}).items()
-            if k
-            in (
-                "stop",
-                "stop_sequences",
-                "max_tokens",
-                "temperature",
-                "top_p",
-                "additional_model_request_fields",
-                "additional_model_response_field_paths",
-                "performance_config",
-                "request_metadata",
-            )
-        }
-        if self.max_tokens:
-            kwargs["max_tokens"] = self.max_tokens
-        if self.temperature is not None:
-            kwargs["temperature"] = self.temperature
-        if self.stop_sequences:
-            kwargs["stop_sequences"] = self.stop_sequences
-
-        return ChatBedrockConverse(
-            client=self.client,
-            model=self.model_id,
-            region_name=self.region_name,
-            credentials_profile_name=self.credentials_profile_name,
-            aws_access_key_id=self.aws_access_key_id,
-            aws_secret_access_key=self.aws_secret_access_key,
-            aws_session_token=self.aws_session_token,
-            config=self.config,
-            provider=self.provider or "",
-            base_url=self.endpoint_url,
-            guardrail_config=(self.guardrails if self._guardrails_enabled else None),  # type: ignore[call-arg]
-            **kwargs,
-        )
