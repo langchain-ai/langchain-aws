@@ -1,6 +1,6 @@
 # type: ignore
 from typing import Any, List
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from langchain_core.documents import Document
@@ -649,3 +649,46 @@ def test_guardrail_config_with_retrieval_config(mock_client, mock_retriever_conf
             }
         },
     )
+
+
+@patch("langchain_aws.retrievers.bedrock.create_aws_client")
+def test_user_agent_extra_in_config(mock_create_client):
+    """Test that user_agent_extra is properly set in the Config when creating client."""
+    mock_client = MagicMock()
+    mock_create_client.return_value = mock_client
+
+    AmazonKnowledgeBasesRetriever(
+        knowledge_base_id="test_kb_id",
+    )
+
+    # Verify create_aws_client was called
+    mock_create_client.assert_called_once()
+    call_args = mock_create_client.call_args
+
+    # Check that config parameter contains user_agent_extra
+    config = call_args.kwargs["config"]
+    assert hasattr(config, "user_agent_extra")
+    assert config.user_agent_extra.startswith("langchain/")
+
+
+@patch("langchain_aws.retrievers.bedrock.create_aws_client")
+def test_custom_config_preserves_user_agent_extra(mock_create_client):
+    """Test that custom config doesn't override user_agent_extra."""
+    from botocore.client import Config
+
+    mock_client = MagicMock()
+    mock_create_client.return_value = mock_client
+
+    custom_config = Config(region_name="us-west-2")
+
+    AmazonKnowledgeBasesRetriever(
+        knowledge_base_id="test_kb_id",
+        config=custom_config,
+    )
+
+    # Verify create_aws_client was called with the custom config
+    mock_create_client.assert_called_once()
+    call_args = mock_create_client.call_args
+
+    # The custom config should be passed through
+    assert call_args.kwargs["config"] == custom_config

@@ -1,6 +1,7 @@
 import json
 from typing import Any, Dict, List, Literal, Optional, Union
 
+import langchain_core
 from botocore.client import Config
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
@@ -147,7 +148,10 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
                 endpoint_url=values.get("endpoint_url"),
                 config=values.get("config")
                 or Config(
-                    connect_timeout=120, read_timeout=120, retries={"max_attempts": 0}
+                    connect_timeout=120,
+                    read_timeout=120,
+                    retries={"max_attempts": 0},
+                    user_agent_extra=f"langchain/{langchain_core.__version__}",
                 ),
                 service_name="bedrock-agent-runtime",
             )
