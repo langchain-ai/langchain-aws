@@ -348,10 +348,10 @@ class ChatBedrockConverse(BaseChatModel):
 
     """  # noqa: E501
 
-    client: Any = Field(default=None, exclude=True)  #: :meta private:
+    client: Any = Field(default=None, exclude=True)
     """The bedrock runtime client for making data plane API calls"""
 
-    bedrock_client: Any = Field(default=None, exclude=True)  #: :meta private:
+    bedrock_client: Any = Field(default=None, exclude=True)
     """The bedrock client for making control plane API calls"""
 
     model_id: str = Field(alias="model")

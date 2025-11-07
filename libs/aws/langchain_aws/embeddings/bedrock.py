@@ -46,30 +46,29 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         ```
     """
 
-    client: Any = Field(default=None, exclude=True)  #: :meta private:
+    client: Any = Field(default=None, exclude=True)
     """Bedrock client."""
+
     region_name: Optional[str] = None
-    """The aws region e.g., `us-west-2`. 
-    
+    """The aws region e.g., `us-west-2`.
+
     Falls back to `AWS_REGION`/`AWS_DEFAULT_REGION` env variable or region
     specified in `~/.aws/config` in case it is not provided here.
-
     """
 
     credentials_profile_name: Optional[str] = None
-    """The name of the profile in the `~/.aws/credentials` or `~/.aws/config` files, 
+    """The name of the profile in the `~/.aws/credentials` or `~/.aws/config` files,
     which has either access keys or role information specified.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
 
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
-
     """
 
     aws_access_key_id: Optional[SecretStr] = Field(
         default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
     )
-    """AWS access key id. 
+    """AWS access key id.
 
     If provided, aws_secret_access_key must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
@@ -78,18 +77,17 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
     If not provided, will be read from `AWS_ACCESS_KEY_ID` environment variable.
-
     """
 
     aws_secret_access_key: Optional[SecretStr] = Field(
         default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
     )
-    """AWS secret_access_key. 
+    """AWS secret_access_key.
 
     If provided, aws_access_key_id must also be provided.
     If not specified, the default credential profile or, if on an EC2 instance,
     credentials from IMDS will be used.
-    
+
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
     If not provided, will be read from `AWS_SECRET_ACCESS_KEY` environment variable.
@@ -99,13 +97,13 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     aws_session_token: Optional[SecretStr] = Field(
         default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
     )
-    """AWS session token. 
+    """AWS session token.
 
     If provided, `aws_access_key_id` and `aws_secret_access_key` must also be
     provided.
-    
+
     Not required unless using temporary credentials.
-    
+
     See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
 
     If not provided, will be read from `AWS_SESSION_TOKEN` environment variable.
@@ -115,7 +113,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     model_id: str = "amazon.titan-embed-text-v1"
     """Id of the model to call, e.g., `'amazon.titan-embed-text-v1'`, this is
     equivalent to the `modelId` property in the list-foundation-models api
-    
+
     """
 
     model_kwargs: Optional[Dict] = None
@@ -124,7 +122,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     provider: Optional[str] = None
     """Name of the provider, e.g., amazon, cohere, etc..
     If not specified, the provider will be inferred from the ``model_id``.
-    
+
     """
 
     endpoint_url: Optional[str] = None
