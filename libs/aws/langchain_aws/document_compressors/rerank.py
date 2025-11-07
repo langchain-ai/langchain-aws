@@ -14,7 +14,7 @@ class BedrockRerank(BaseDocumentCompressor):
     model_arn: str
     """The ARN of the reranker model."""
 
-    client: Any = Field(default=None, exclude=True)  #: :meta private:
+    client: Any = Field(default=None, exclude=True)
     """Bedrock client to use for compressing documents."""
 
     top_n: Optional[int] = 3
