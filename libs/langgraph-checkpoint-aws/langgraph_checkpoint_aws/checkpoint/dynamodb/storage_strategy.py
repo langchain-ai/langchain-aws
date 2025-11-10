@@ -279,6 +279,7 @@ class StorageStrategy:
             TableName=self.table_name,
             Key={"PK": {"S": chunk_key}, "SK": {"S": "CHUNK"}},
             ProjectionExpression="payload",
+            ConsistentRead=True,
         )
 
         if "Item" not in response:

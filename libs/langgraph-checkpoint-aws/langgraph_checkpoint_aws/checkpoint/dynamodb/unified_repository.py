@@ -216,6 +216,7 @@ class UnifiedRepository:
                     Key={"PK": {"S": pk}, "SK": {"S": sk}},
                     ProjectionExpression=projection,
                     ExpressionAttributeNames=expr_attr_names,
+                    ConsistentRead=True,
                 )
                 if "Item" not in response:
                     return None
@@ -246,6 +247,7 @@ class UnifiedRepository:
                     "ProjectionExpression": projection,
                     "ExpressionAttributeNames": expr_attr_names,
                     "ScanIndexForward": False,
+                    "ConsistentRead": True,
                 }
 
                 # Get first result from generator
@@ -413,6 +415,7 @@ class UnifiedRepository:
                 ),
                 "ExpressionAttributeNames": {"#t": "type"},
                 "ScanIndexForward": False,
+                "ConsistentRead": True,
             }
 
             # Key condition and attribute values based on checkpoint_ns presence
@@ -516,6 +519,7 @@ class UnifiedRepository:
                     "task_id, channel, ref_key, ref_loc, #t, compression"
                 ),
                 "ExpressionAttributeNames": {"#t": "type"},  # 'type' is reserved
+                "ConsistentRead": True,
             }
 
             # Paginated query
@@ -769,6 +773,7 @@ class UnifiedRepository:
                 "KeyConditionExpression": "PK = :pk",
                 "ExpressionAttributeValues": {":pk": {"S": pk}},
                 "ProjectionExpression": "SK",
+                "ConsistentRead": True,
             }
 
             # Paginated query
@@ -849,6 +854,7 @@ class UnifiedRepository:
                     "KeyConditionExpression": "PK = :pk",
                     "ExpressionAttributeValues": {":pk": {"S": pk}},
                     "ProjectionExpression": "PK, SK, ref_key, ref_loc",
+                    "ConsistentRead": True,
                 }
 
                 # Paginated query
