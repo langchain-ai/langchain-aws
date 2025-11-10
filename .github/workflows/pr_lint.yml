@@ -26,7 +26,7 @@
 #   • release    — prepare a new release
 #
 # Allowed Scope(s) (optional):
-#   aws, langgraph-checkpoint-aws
+#   aws, langgraph-checkpoint-aws, infra
 #
 # Multiple scopes can be used by separating them with a comma.
 #
