@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+ - name: 📚 LangChain Documentation
+   url: https://docs.langchain.com/oss/python/integrations/providers/aws
+   about: View documentation for AWS integrations with LangChain
+ - name: 📚 API Reference Documentation
+   url: https://reference.langchain.com/python/integrations/langchain_aws/
+   about: View API reference documentation for AWS integrations with LangChain
+ - name: 💬 LangChain Forum
+   url: https://forum.langchain.com/
+   about: Ask questions and get help from the community
