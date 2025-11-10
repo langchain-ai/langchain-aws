@@ -547,6 +547,15 @@ def test_anthropic_bind_tools_tool_choice() -> None:
 
 
 @pytest.mark.parametrize(
+    "model_id",
+    [
+        "anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "anthropic.claude-sonnet-4-20250514-v1:0",
+        "anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "anthropic.claude-haiku-4-5-20251001-v1:0",
+    ],
+)
+@pytest.mark.parametrize(
     "tool_choice",
     [
         True,
@@ -556,12 +565,12 @@ def test_anthropic_bind_tools_tool_choice() -> None:
     ],
 )
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
-def test_claude37_thinking_forced_tool_raises(
-    mock_create_aws_client, tool_choice
+def test_claude_thinking_forced_tool_raises(
+    mock_create_aws_client, model_id, tool_choice
 ) -> None:
     mock_create_aws_client.return_value = MagicMock()
     chat = ChatBedrock(
-        model_id="anthropic.claude-3-7-sonnet-20250219-v1:0",
+        model_id=model_id,
         region_name="us-west-2",
         model_kwargs={
             "thinking": {"type": "enabled", "budget_tokens": 2048},
@@ -587,11 +596,21 @@ def test_claude37_thinking_tool_choice_auto_ok(mock_create_aws_client) -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "anthropic.claude-haiku-4-5-20251001-v1:0",
+    ],
+)
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
-def test_claude37_no_thinking_forced_tool_ok(mock_create_aws_client) -> None:
+def test_claude_models_no_thinking_forced_tool_ok(
+    mock_create_aws_client, model_id
+) -> None:
     mock_create_aws_client.return_value = MagicMock()
     chat = ChatBedrock(
-        model_id="anthropic.claude-3-7-sonnet-20250219-v1:0",
+        model_id=model_id,
         region_name="us-west-2",
     )
     chat_with_tools = chat.bind_tools([GetWeather], tool_choice="any")
