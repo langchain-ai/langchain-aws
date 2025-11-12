@@ -1,0 +1,88 @@
+name: "✨ Feature Request"
+description: Request a new feature or enhancement for `langchain-aws` packages
+labels: ["enhancement"]
+type: feature
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this feature request!
+
+        ## Important Links
+        - [Documentation](https://docs.langchain.com/oss/python/integrations/providers/aws)
+        - [API Reference](https://reference.langchain.com/python/integrations/langchain_aws/)
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      description: Which langchain-aws package should this feature be added to?
+      options:
+        - langchain-aws
+        - langgraph-checkpoint-aws
+        - Not sure / General
+      default: 0
+    validations:
+      required: true
+
+  - type: checkboxes
+    attributes:
+      label: Checked other resources
+      description: Please confirm you have done the following before submitting
+      options:
+        - label: I added a descriptive title to this issue
+          required: true
+        - label: I searched the LangChain documentation with the integrated search
+          required: true
+        - label: I used the GitHub search to find a similar issue and didn't find it
+          required: true
+        - label: I am sure this is a feature request and not a bug report or question
+          required: true
+
+  - type: textarea
+    attributes:
+      label: Feature Description
+      description: |
+        Provide a detailed description of the feature you'd like to see implemented.
+        Be specific about what functionality you want and how it should work.
+      placeholder: |
+        I would like to see...
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Use Case
+      description: |
+        Describe the use case or problem this feature would solve.
+        What specific AWS service integration would this relate to?
+      placeholder: |
+        This feature would help with...
+        It would integrate with AWS service...
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Proposed Implementation (optional)
+      description: |
+        If you have ideas about how this feature could be implemented, please share them.
+        This could include code snippets, API design suggestions, or architectural considerations.
+      render: python
+      placeholder: |
+        # Example of how the feature might work
+        from langchain_aws import SomeNewAWSIntegration
+        
+        integration = SomeNewAWSIntegration(...)
+        result = integration.invoke(...)
+
+  - type: textarea
+    attributes:
+      label: Additional Context
+      description: |
+        Add any other context, screenshots, or examples that would help explain the feature request.
+      placeholder: |
+        Related AWS documentation:
+        Similar implementations in other libraries:
+        Any other relevant information...

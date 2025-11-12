@@ -1,0 +1,72 @@
+name: "🐛 Bug Report"
+description: Report a bug in a `langchain-aws` package
+labels: ["bug"]
+type: bug
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+
+        ## Important Links
+        - [Documentation](https://docs.langchain.com/oss/python/integrations/providers/aws)
+        - [API Reference](https://reference.langchain.com/python/integrations/langchain_aws/)
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      description: Which `langchain-aws` package is this bug related to?
+      options:
+        - langchain-aws
+        - langgraph-checkpoint-aws
+      default: 0
+    validations:
+      required: true
+
+  - type: checkboxes
+    attributes:
+      label: Checked other resources
+      description: Please confirm you have done the following before submitting
+      options:
+        - label: I added a descriptive title to this issue
+          required: true
+        - label: I searched the LangChain documentation with the integrated search
+          required: true
+        - label: I used the GitHub search to find a similar issue and didn't find it
+          required: true
+        - label: I am sure this is a bug and not a question or request for help
+          required: true
+
+  - type: textarea
+    attributes:
+      label: Example Code
+      description: |
+        Please provide a minimal, reproducible code example that demonstrates the bug.
+        Without this, it will be very difficult to help you!
+      render: python
+      placeholder: |
+        # Example:
+        from langchain_aws import ChatBedrock
+
+        # Your Minimal Reproducible Example (MRE) here
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Error Message and Stack Trace (if applicable)
+      description: |
+        If you are reporting an error, please include the full error message and stack trace.
+      render: shell
+      placeholder: |
+        # Include the full error message and stack trace here
+
+  - type: textarea
+    attributes:
+      label: Description
+      description: |
+        What is the bug? A clear and concise description of what the bug is.
+    validations:
+      required: true
