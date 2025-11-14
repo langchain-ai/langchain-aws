@@ -8,8 +8,9 @@ _import_error: ImportError | None = None
 # Conditional imports for optional dependencies
 try:
     from .valkey import AsyncValkeyStore, ValkeyIndexConfig, ValkeyStore
+    from .dynamodb import DynamoDBStore
 
-    __all__ = ["AsyncValkeyStore", "ValkeyStore", "ValkeyIndexConfig"]
+    __all__ = ["AsyncValkeyStore", "ValkeyStore", "ValkeyIndexConfig", "DynamoDBStore"]
 except ImportError as e:
     # Store the error for later use
     _import_error = e
@@ -26,5 +27,6 @@ except ImportError as e:
     AsyncValkeyStore: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
     ValkeyIndexConfig: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
     ValkeyStore: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
+    DynamoDBStore: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
 
-    __all__ = ["AsyncValkeyStore", "ValkeyStore", "ValkeyIndexConfig"]
+    __all__ = ["AsyncValkeyStore", "ValkeyStore", "ValkeyIndexConfig", "DynamoDBStore"]
