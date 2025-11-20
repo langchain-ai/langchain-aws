@@ -37,9 +37,6 @@ def test_profile() -> None:
     model = ChatBedrock(
         model_id="anthropic.claude-sonnet-4-20250514-v1:0",
         region_name="us-west-2",
-        model_kwargs={
-            "thinking": {"type": "enabled", "budget_tokens": 2048},
-        },
     )
     assert model.profile
     assert model.profile["reasoning_output"]

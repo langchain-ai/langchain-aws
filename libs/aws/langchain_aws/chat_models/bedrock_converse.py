@@ -5,6 +5,7 @@ import logging
 import re
 import warnings
 from operator import itemgetter
+from pathlib import Path
 from typing import (
     Any,
     Callable,
@@ -26,6 +27,10 @@ from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.language_models.base import LangSmithParams
+from langchain_core.language_models.profile import ModelProfile, ModelProfileRegistry
+from langchain_core.language_models.profile._loader_utils import (
+    load_profiles_from_data_dir,
+)
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -66,6 +71,21 @@ from langchain_aws.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+_MODEL_PROFILES = cast(
+    "ModelProfileRegistry",
+    load_profiles_from_data_dir(
+        Path(__file__).parent.parent / "data", "amazon-bedrock"
+    ),
+)
+
+
+def _get_default_model_profile(model_name: str) -> ModelProfile:
+    default = _MODEL_PROFILES.get(model_name) or {}
+    return default.copy()
+
+
 _BM = TypeVar("_BM", bound=BaseModel)
 
 EMPTY_CONTENT = "."
@@ -835,6 +855,14 @@ class ChatBedrockConverse(BaseChatModel):
                 "disable `guard_last_turn_only`."
             )
 
+        return self
+
+    @model_validator(mode="after")
+    def _set_model_profile(self) -> Self:
+        """Set model profile if not overridden."""
+        if self.profile is None:
+            model_id = re.sub(r"^[A-Za-z]{2}\.", "", self.model_id)
+            self.profile = _get_default_model_profile(model_id)
         return self
 
     def _get_base_model(self) -> str:
