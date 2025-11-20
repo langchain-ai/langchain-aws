@@ -26,6 +26,28 @@ from langchain_aws.chat_models.bedrock import (
 from langchain_aws.function_calling import convert_to_anthropic_tool
 
 
+def test_profile() -> None:
+    model = ChatBedrock(
+        model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
+        region_name="us-west-2",
+    )
+    assert model.profile
+    assert not model.profile["reasoning_output"]
+
+    model = ChatBedrock(
+        model_id="anthropic.claude-sonnet-4-20250514-v1:0",
+        region_name="us-west-2",
+        model_kwargs={
+            "thinking": {"type": "enabled", "budget_tokens": 2048},
+        },
+    )
+    assert model.profile
+    assert model.profile["reasoning_output"]
+
+    model = ChatBedrock(model_id="foo")
+    assert model.profile == {}
+
+
 def test__merge_messages() -> None:
     messages = [
         SystemMessage("foo"),  # type: ignore[misc]

@@ -4,6 +4,7 @@ import re
 import warnings
 from collections import defaultdict
 from operator import itemgetter
+from pathlib import Path
 from typing import (
     Any,
     Callable,
@@ -26,6 +27,10 @@ from langchain_core.language_models import (
     LanguageModelInput,
 )
 from langchain_core.language_models.chat_models import generate_from_stream
+from langchain_core.language_models.profile import ModelProfile, ModelProfileRegistry
+from langchain_core.language_models.profile._loader_utils import (
+    load_profiles_from_data_dir,
+)
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -49,6 +54,7 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 from langchain_core.utils.utils import _build_model_kwargs
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing_extensions import Self
 
 from langchain_aws.chat_models._compat import _convert_from_v1_to_anthropic
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
@@ -75,6 +81,19 @@ from langchain_aws.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+_MODEL_PROFILES = cast(
+    "ModelProfileRegistry",
+    load_profiles_from_data_dir(
+        Path(__file__).parent.parent / "data", "amazon-bedrock"
+    ),
+)
+
+
+def _get_default_model_profile(model_name: str) -> ModelProfile:
+    default = _MODEL_PROFILES.get(model_name) or {}
+    return default.copy()
 
 
 def _convert_one_message_to_text_llama(message: BaseMessage) -> str:
@@ -843,6 +862,14 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 **model_kwargs,
             }
         return values
+
+    @model_validator(mode="after")
+    def _set_model_profile(self) -> Self:
+        """Set model profile if not overridden."""
+        if self.profile is None:
+            model_id = re.sub(r"^[A-Za-z]{2}\.", "", self.model_id)
+            self.profile = _get_default_model_profile(model_id)
+        return self
 
     @property
     def lc_attributes(self) -> Dict[str, Any]:
