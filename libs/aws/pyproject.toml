@@ -34,7 +34,7 @@ test = [
     "pytest-asyncio>=0.20,<1",
     "pytest-watcher>=0.4.3",
     "langchain-classic>=1.0.0",
-    "langchain-tests>=1.0.0",
+    "langchain-tests>=1.0.1",
     "langchain>=1.0.0rc2",
 ]
 test_integration = []
