@@ -49,6 +49,9 @@ dev = [
     "botocore-stubs>=1.38.46",
 ]
 
+[tool.uv.sources]
+langchain-core = { git = "https://github.com/langchain-ai/langchain", subdirectory = "libs/core", branch = "cc/model_profiles_distributed" }
+
 [tool.uv]
 prerelease = "allow"
 
