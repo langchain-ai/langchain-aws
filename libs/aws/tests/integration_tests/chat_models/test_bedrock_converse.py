@@ -431,9 +431,9 @@ def test_guardrails() -> None:
         "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         "us.anthropic.claude-sonnet-4-20250514-v1:0",
         "us.anthropic.claude-opus-4-20250514-v1:0",
-        "us.anthropic.claude-opus-4-1-20250805-v1:0",
-        "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-        #
+        # infra issues with the following models
+        # "us.anthropic.claude-opus-4-1-20250805-v1:0",
+        # "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         # "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     ],
 )
