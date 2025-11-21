@@ -671,7 +671,7 @@ requires-dist = [
     { name = "beautifulsoup4", marker = "extra == 'tools'", specifier = ">=4.13.4" },
     { name = "bedrock-agentcore", marker = "python_full_version >= '3.10' and extra == 'tools'", specifier = ">=0.1.0" },
     { name = "boto3", specifier = ">=1.40.19" },
-    { name = "langchain-core", git = "https://github.com/langchain-ai/langchain?subdirectory=libs%2Fcore&branch=cc%2Fmodel_profiles_distributed" },
+    { name = "langchain-core", specifier = ">=1.1.0" },
     { name = "numpy", marker = "python_full_version < '3.12'", specifier = ">=1.0.0,<3" },
     { name = "numpy", marker = "python_full_version >= '3.12'", specifier = ">=2.3.2,<3" },
     { name = "playwright", marker = "extra == 'tools'", specifier = ">=1.53.0" },
@@ -723,8 +723,8 @@ wheels = [
 
 [[package]]
 name = "langchain-core"
-version = "1.0.7"
-source = { git = "https://github.com/langchain-ai/langchain?subdirectory=libs%2Fcore&branch=cc%2Fmodel_profiles_distributed#b7ec8735b2589fe1815ce3c58e41410824bf67b7" }
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jsonpatch" },
     { name = "langsmith" },
@@ -733,6 +733,10 @@ dependencies = [
     { name = "pyyaml" },
     { name = "tenacity" },
     { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1e/17/67c1cc2ace919e2b02dd9d783154d7fb3f1495a4ef835d9cd163b7855ac2/langchain_core-1.1.0.tar.gz", hash = "sha256:2b76a82d427922c8bc51c08404af4fc2a29e9f161dfe2297cb05091e810201e7", size = 781995, upload-time = "2025-11-21T21:01:26.958Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/71/1e/e129fc471a2d2a7b3804480a937b5ab9319cab9f4142624fcb115f925501/langchain_core-1.1.0-py3-none-any.whl", hash = "sha256:2c9f27dadc6d21ed4aa46506a37a56e6a7e2d2f9141922dc5c251ba921822ee6", size = 473752, upload-time = "2025-11-21T21:01:25.841Z" },
 ]
 
 [[package]]
