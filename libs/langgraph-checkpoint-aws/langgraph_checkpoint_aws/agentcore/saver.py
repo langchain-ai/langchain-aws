@@ -8,7 +8,7 @@ import random
 from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any, TypeAlias, cast
 
-from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import RunnableConfig, run_in_executor
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
     ChannelVersions,
@@ -273,9 +273,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         """Delete all checkpoints and writes associated with a thread."""
         self.checkpoint_event_client.delete_events(thread_id, actor_id)
 
-    # ===== Async methods ( TODO: NOT IMPLEMENTED YET ) =====
+    # ===== Async methods ( TODO: Check running sync methods inside executor ) =====
     async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
-        return self.get_tuple(config)
+        return await run_in_executor(None, self.get_tuple, config)
 
     async def alist(
         self,
@@ -285,7 +285,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         before: RunnableConfig | None = None,
         limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
-        for item in self.list(config, filter=filter, before=before, limit=limit):
+        for item in await run_in_executor(None, self.list, config, filter=filter, before=before, limit=limit):
             yield item
 
     async def aput(
@@ -295,7 +295,10 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         metadata: CheckpointMetadata,
         new_versions: ChannelVersions,
     ) -> RunnableConfig:
-        return self.put(config, checkpoint, metadata, new_versions)
+        # return self.put(config, checkpoint, metadata, new_versions)
+        return await run_in_executor(
+            None, self.put, config, checkpoint, metadata, new_versions
+        )
 
     async def aput_writes(
         self,
@@ -304,7 +307,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         task_id: str,
         task_path: str = "",
     ) -> None:
-        return self.put_writes(config, writes, task_id, task_path)
+        return await run_in_executor(
+            None, self.put_writes, config, writes, task_id, task_path
+        )
 
     async def adelete_thread(self, thread_id: str, actor_id: str = "") -> None:
         self.delete_thread(thread_id, actor_id)
