@@ -55,7 +55,7 @@ from typing_extensions import Self
 
 from langchain_aws.chat_models._compat import _convert_from_v1_to_anthropic
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
-from langchain_aws.data.profiles import _PROFILES
+from langchain_aws.data._profiles import _PROFILES
 from langchain_aws.function_calling import (
     AnthropicTool,
     ToolsOutputParser,

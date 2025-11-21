@@ -63,7 +63,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.chat_models._compat import _convert_from_v1_to_converse
-from langchain_aws.data.profiles import _PROFILES
+from langchain_aws.data._profiles import _PROFILES
 from langchain_aws.function_calling import ToolsOutputParser
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
