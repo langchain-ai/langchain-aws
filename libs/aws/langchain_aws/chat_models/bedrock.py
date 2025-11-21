@@ -4,7 +4,6 @@ import re
 import warnings
 from collections import defaultdict
 from operator import itemgetter
-from pathlib import Path
 from typing import (
     Any,
     Callable,
@@ -25,12 +24,10 @@ from langchain_core.language_models import (
     BaseChatModel,
     LangSmithParams,
     LanguageModelInput,
+    ModelProfile,
+    ModelProfileRegistry,
 )
 from langchain_core.language_models.chat_models import generate_from_stream
-from langchain_core.language_models.profile import ModelProfile, ModelProfileRegistry
-from langchain_core.language_models.profile._loader_utils import (
-    load_profiles_from_data_dir,
-)
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -58,6 +55,7 @@ from typing_extensions import Self
 
 from langchain_aws.chat_models._compat import _convert_from_v1_to_anthropic
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
+from langchain_aws.data.profiles import _PROFILES
 from langchain_aws.function_calling import (
     AnthropicTool,
     ToolsOutputParser,
@@ -83,12 +81,7 @@ from langchain_aws.utils import (
 logger = logging.getLogger(__name__)
 
 
-_MODEL_PROFILES = cast(
-    "ModelProfileRegistry",
-    load_profiles_from_data_dir(
-        Path(__file__).parent.parent / "data", "amazon-bedrock"
-    ),
-)
+_MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
 
 
 def _get_default_model_profile(model_name: str) -> ModelProfile:
