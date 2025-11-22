@@ -851,7 +851,7 @@ class ChatBedrockConverse(BaseChatModel):
                 "disable `guard_last_turn_only`."
             )
 
-# Validate reasoning effort for Nova 2.0 Lite model
+        # Validate reasoning effort for Nova 2.0 Lite model
         base_model = self._get_base_model().lower()
         if "nova-2-lite" in base_model:
             additional_fields = self.additional_model_request_fields or {}
