@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import struct
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Protocol
@@ -142,11 +144,30 @@ class VectorSearchStrategy(SearchStrategy):
             .dialect(2)
         )
 
-        # For the test, we don't actually need to generate embeddings
-        # The test mocks the FT.search call directly
-        query_params: dict[str, str | int | float | bytes] = {
-            "vec": b"dummy_vector"
-        }  # Placeholder for mock
+        # Generate query embedding for vector search
+        try:
+            if not self.store.embeddings:
+                raise SearchIndexError(
+                    "Embeddings not configured for vector search",
+                    index_name=index_name,
+                    index_operation="embedding_generation",
+                )
+
+            # Generate embedding for the query
+            if hasattr(self.store.embeddings, "embed_query"):
+                query_vector = self.store.embeddings.embed_query(op.query)
+            else:
+                # Fallback to async if only async method available
+                query_vector = asyncio.run(
+                    self.store.embeddings.aembed_query(op.query)
+                )
+
+            # Pack vector to binary bytes for FT.SEARCH
+            vec_bytes = struct.pack(f"{len(query_vector)}f", *query_vector)
+            query_params: dict[str, str | int | float | bytes] = {"vec": vec_bytes}
+        except Exception as e:
+            logger.error(f"Error generating query embedding: {e}")
+            raise
 
         try:
             results = self.client.ft(index_name).search(query, query_params)

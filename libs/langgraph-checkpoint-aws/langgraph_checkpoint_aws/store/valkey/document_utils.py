@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import struct
 from datetime import datetime
 from typing import Any
 
@@ -59,8 +60,10 @@ class DocumentProcessor:
             }
 
             # Handle bytes keys/values
+            # IMPORTANT: Skip vector field - it's binary data, not UTF-8 text
             for key_name, value in document.items():
-                if isinstance(value, bytes):
+                if isinstance(value, bytes) and key_name != HASH_FIELD_VECTOR:
+                    # Decode text fields, but leave vector as binary bytes
                     document[key_name] = value.decode("utf-8")
 
             return document
@@ -142,7 +145,13 @@ class DocumentProcessor:
         }
 
         if vector is not None:
-            hash_fields[HASH_FIELD_VECTOR] = orjson.dumps(vector).decode("utf-8")
+            # Store vector as binary packed bytes for FT index compatibility
+            # FT expects VECTOR fields to be binary, not JSON text
+            try:
+                vec_bytes = struct.pack(f'{len(vector)}f', *vector)
+                hash_fields[HASH_FIELD_VECTOR] = vec_bytes
+            except Exception as e:
+                logger.error(f"Error packing vector to bytes: {e}")
 
         # Add searchable fields based on index configuration
         if index_fields:

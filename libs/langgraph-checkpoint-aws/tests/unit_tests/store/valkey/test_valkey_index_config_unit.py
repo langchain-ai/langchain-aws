@@ -685,7 +685,11 @@ class TestCollectionNameConfigurationExtended:
         hash_fields_str = {}
         for k, v in hash_fields.items():
             key_str = k.decode("utf-8") if isinstance(k, bytes) else k
-            val_str = v.decode("utf-8") if isinstance(v, bytes) else v
+            # Skip binary vector field - it's not UTF-8 text
+            if key_str == "vector" and isinstance(v, bytes):
+                val_str = v  # Keep as bytes
+            else:
+                val_str = v.decode("utf-8") if isinstance(v, bytes) else v
             hash_fields_str[key_str] = val_str
 
         # Verify that searchable fields are included in hash fields
@@ -743,7 +747,11 @@ class TestCollectionNameConfigurationExtended:
         hash_fields_str = {}
         for k, v in hash_fields.items():
             key_str = k.decode("utf-8") if isinstance(k, bytes) else k
-            val_str = v.decode("utf-8") if isinstance(v, bytes) else v
+            # Skip binary vector field - it's not UTF-8 text
+            if key_str == "vector" and isinstance(v, bytes):
+                val_str = v  # Keep as bytes
+            else:
+                val_str = v.decode("utf-8") if isinstance(v, bytes) else v
             hash_fields_str[key_str] = val_str
 
         # Verify that list fields are converted to comma-separated strings
