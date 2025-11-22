@@ -851,6 +851,18 @@ class ChatBedrockConverse(BaseChatModel):
                 "disable `guard_last_turn_only`."
             )
 
+# Validate reasoning effort for Nova 2.0 Lite model
+        base_model = self._get_base_model().lower()
+        if "nova-2-lite" in base_model:
+            additional_fields = self.additional_model_request_fields or {}
+            reasoning_config = additional_fields.get("reasoningConfig", {})
+            if reasoning_config.get("type") == "enabled":
+                max_effort = reasoning_config.get("maxReasoningEffort")
+                if max_effort not in ["low", "medium", "high"]:
+                    raise ValueError(
+                        "For Nova 2.0 Lite model, 'maxReasoningEffort' must be set to "
+                        "'low', 'medium', or 'high' when reasoning is enabled."
+                    )
         return self
 
     @model_validator(mode="after")
