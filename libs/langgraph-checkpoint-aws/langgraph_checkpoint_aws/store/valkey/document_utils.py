@@ -126,7 +126,7 @@ class DocumentProcessor:
         value: dict[str, Any],
         vector: list[float] | None = None,
         index_fields: list[str] | None = None,
-    ) -> dict[str, str]:
+    ) -> dict[str, str | bytes]:
         """Create hash fields for storage.
 
         Args:
@@ -138,7 +138,7 @@ class DocumentProcessor:
             Dictionary of hash fields ready for storage
         """
         now = datetime.now()
-        hash_fields = {
+        hash_fields: dict[str, str | bytes] = {
             HASH_FIELD_VALUE: orjson.dumps(value).decode("utf-8"),
             HASH_FIELD_CREATED_AT: now.isoformat(),
             HASH_FIELD_UPDATED_AT: now.isoformat(),
@@ -148,7 +148,7 @@ class DocumentProcessor:
             # Store vector as binary packed bytes for FT index compatibility
             # FT expects VECTOR fields to be binary, not JSON text
             try:
-                vec_bytes = struct.pack(f'{len(vector)}f', *vector)
+                vec_bytes = struct.pack(f"{len(vector)}f", *vector)
                 hash_fields[HASH_FIELD_VECTOR] = vec_bytes
             except Exception as e:
                 logger.error(f"Error packing vector to bytes: {e}")

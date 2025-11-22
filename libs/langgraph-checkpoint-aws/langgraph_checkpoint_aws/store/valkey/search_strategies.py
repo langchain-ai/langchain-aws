@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import struct
 import logging
+import struct
 from abc import ABC, abstractmethod
 from typing import Any, Protocol
 
@@ -158,9 +158,7 @@ class VectorSearchStrategy(SearchStrategy):
                 query_vector = self.store.embeddings.embed_query(op.query)
             else:
                 # Fallback to async if only async method available
-                query_vector = asyncio.run(
-                    self.store.embeddings.aembed_query(op.query)
-                )
+                query_vector = asyncio.run(self.store.embeddings.aembed_query(op.query))
 
             # Pack vector to binary bytes for FT.SEARCH
             vec_bytes = struct.pack(f"{len(query_vector)}f", *query_vector)

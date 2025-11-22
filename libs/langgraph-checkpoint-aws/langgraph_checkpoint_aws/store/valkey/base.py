@@ -436,7 +436,7 @@ class BaseValkeyStore(BaseStore):
             updated_at=updated_at,
         )
 
-    def _handle_put_core(self, op: PutOp) -> tuple[str, dict[str, str] | None]:
+    def _handle_put_core(self, op: PutOp) -> tuple[str, dict[str, str | bytes] | None]:
         """Core put operation logic shared between sync and async implementations.
 
         Returns:
