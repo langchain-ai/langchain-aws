@@ -297,7 +297,6 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         metadata: CheckpointMetadata,
         new_versions: ChannelVersions,
     ) -> RunnableConfig:
-        # return self.put(config, checkpoint, metadata, new_versions)
         return await run_in_executor(
             None, self.put, config, checkpoint, metadata, new_versions
         )

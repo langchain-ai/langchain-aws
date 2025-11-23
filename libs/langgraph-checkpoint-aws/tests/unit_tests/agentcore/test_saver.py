@@ -41,53 +41,26 @@ MOCK_SLEEP_DURATION = 0.5 / N_ASYNC_CALLS
 OVERHEAD_RUNNER_TIME = 0.05
 TOTAL_EXPECTED_TIME = MOCK_SLEEP_DURATION + OVERHEAD_RUNNER_TIME
 
-
-# Mock helper functions for async testing
-def _create_mock_checkpoint_tuple(
-    thread_id="test-thread", checkpoint_id="test-checkpoint"
-):
+@pytest.fixture
+def sample_checkpoint_tuple():
     """Helper to create a mock checkpoint tuple with configurable IDs."""
-    mock_tuple = MagicMock()
-    mock_tuple.config = {
+    config = {
         "configurable": {
-            "thread_id": thread_id,
-            "actor_id": "test-actor",
-            "checkpoint_id": checkpoint_id,
+            "thread_id": "test_thread_id",
+            "actor_id": "test_actor",
+            "checkpoint_id": "test_checkpoint_id",
         }
     }
-    mock_tuple.checkpoint = {"id": checkpoint_id}
-    mock_tuple.metadata = {"source": "input", "step": 0}
-    return mock_tuple
+    checkpoint = {"id": "test_checkpoint_id"}
+    metadata = {"source": "input", "step": 0}
+    return CheckpointTuple(
+        config=config,
+        checkpoint=checkpoint,
+        metadata=metadata,
+    )
 
 
-def slow_get_tuple(config):  # noqa: ARG001
-    """Mock get_tuple with artificial delay for testing async concurrency."""
-    time.sleep(MOCK_SLEEP_DURATION)
-    return _create_mock_checkpoint_tuple()
 
-
-def slow_list(config, *, filter=None, before=None, limit=None):  # noqa: ARG001 A002
-    """Mock list with artificial delay for testing async concurrency."""
-    time.sleep(MOCK_SLEEP_DURATION)
-    return [_create_mock_checkpoint_tuple()]
-
-
-def slow_put(config, checkpoint, metadata, new_versions):  # noqa: ARG001
-    """Mock put with artificial delay for testing async concurrency."""
-    time.sleep(MOCK_SLEEP_DURATION)
-    return config
-
-
-def slow_put_writes(config, writes, task_id, task_path=""):  # noqa: ARG001
-    """Mock put_writes with artificial delay for testing async concurrency."""
-    time.sleep(MOCK_SLEEP_DURATION)
-    return
-
-
-def slow_delete_thread(thread_id, actor_id=""):  # noqa: ARG001
-    """Mock delete_thread with artificial delay for testing async concurrency."""
-    time.sleep(MOCK_SLEEP_DURATION)
-    return
 
 
 @pytest.fixture
@@ -203,6 +176,46 @@ class TestAgentCoreMemorySaver:
                 "namespace2": "parent_checkpoint_2",
             },
         )
+    
+    @pytest.fixture
+    def slow_get_tuple(self, sample_checkpoint_tuple):
+        """Mock get_tuple with artificial delay for testing async concurrency."""
+        def _slow_get_tuple(config):  # noqa: ARG001
+            time.sleep(MOCK_SLEEP_DURATION)
+            return sample_checkpoint_tuple
+        return _slow_get_tuple
+
+    @pytest.fixture
+    def slow_list(self, sample_checkpoint_tuple):
+        """Mock list with artificial delay for testing async concurrency."""
+        def _slow_list(config, *, filter=None, before=None, limit=None):  # noqa: ARG001 A002
+            time.sleep(MOCK_SLEEP_DURATION)
+            return [sample_checkpoint_tuple]
+        return _slow_list
+
+    @pytest.fixture
+    def slow_put(self):
+        """Mock put with artificial delay for testing async concurrency."""
+        def _slow_put(config, checkpoint, metadata, new_versions):  # noqa: ARG001
+            time.sleep(MOCK_SLEEP_DURATION)
+            return config
+        return _slow_put
+
+    @pytest.fixture
+    def slow_put_writes(self):
+        """Mock put_writes with artificial delay for testing async concurrency."""
+        def _slow_put_writes(config, writes, task_id, task_path=""):  # noqa: ARG001
+            time.sleep(MOCK_SLEEP_DURATION)
+            return
+        return _slow_put_writes
+
+    @pytest.fixture
+    def slow_delete_thread(self):
+        """Mock delete_thread with artificial delay for testing async concurrency."""
+        def _slow_delete_thread(thread_id, actor_id=""):  # noqa: ARG001
+            time.sleep(MOCK_SLEEP_DURATION)
+            return
+        return _slow_delete_thread
 
     def test_init_with_default_client(self, memory_id):
         with patch("boto3.client") as mock_boto3_client:
@@ -647,7 +660,7 @@ class TestAgentCoreMemorySaver:
         assert version.startswith("00000000000000000000000000000011.")
 
     async def test_aget_tuple_calls_sync_method_with_correct_args(
-        self, saver, runnable_config
+        self, saver, runnable_config, slow_get_tuple
     ):
         """
         Test that aget_tuple calls the sync get_tuple method with correct arguments.
@@ -659,11 +672,10 @@ class TestAgentCoreMemorySaver:
             # Verify sync method was called with correct arguments
             mock_get.assert_called_once_with(runnable_config)
 
-            # Verify result is returned correctly
             assert result is not None
 
     async def test_alist_calls_sync_method_with_correct_args(
-        self, saver, runnable_config
+        self, saver, runnable_config, slow_list
     ):
         """Test that alist calls the sync list method with correct arguments."""
 
@@ -689,9 +701,11 @@ class TestAgentCoreMemorySaver:
                 before=before_config,
                 limit=limit_value,
             )
+            assert len(items) == 1
+            assert isinstance(items[0], CheckpointTuple)
 
     async def test_aput_calls_sync_method_with_correct_args(
-        self, saver, runnable_config, sample_checkpoint, sample_checkpoint_metadata
+        self, saver, runnable_config, sample_checkpoint, sample_checkpoint_metadata, slow_put
     ):
         """Test that aput calls the sync put method with correct arguments."""
 
@@ -713,11 +727,10 @@ class TestAgentCoreMemorySaver:
                 new_versions,
             )
 
-            # Verify result is returned correctly
             assert result == runnable_config
 
     async def test_aput_writes_calls_sync_method_with_correct_args(
-        self, saver, runnable_config
+        self, saver, runnable_config, slow_put_writes
     ):
         """
         Test that aput_writes calls the sync put_writes method with correct arguments.
@@ -738,12 +751,10 @@ class TestAgentCoreMemorySaver:
             mock_put_writes.assert_called_once_with(
                 runnable_config, writes, task_id, task_path
             )
-
-            # Verify result (should be None for put_writes)
             assert result is None
 
     async def test_adelete_thread_calls_sync_method_with_correct_args(
-        self, saver, runnable_config
+        self, saver, runnable_config, slow_delete_thread
     ):
         """
         Test that adelete_thread calls the sync delete_thread method
@@ -760,18 +771,16 @@ class TestAgentCoreMemorySaver:
 
             # Verify sync method was called with correct arguments
             mock_delete.assert_called_once_with(thread_id, actor_id)
-
-            # Verify result (should be None for delete_thread)
             assert result is None
 
-    async def test_concurrent_calls_aget_tuple(self, saver, runnable_config):
+    async def test_concurrent_calls_aget_tuple(self, saver, runnable_config, slow_get_tuple):
         """Test that concurrent calls are faster than sequential calls."""
         with patch.object(saver, "get_tuple", side_effect=slow_get_tuple):
             await self.assert_concurrent_calls_are_faster_than_sequential(
                 N_ASYNC_CALLS, saver.aget_tuple, runnable_config
             )
 
-    async def test_concurrent_calls_adelete_thread(self, saver, runnable_config):
+    async def test_concurrent_calls_adelete_thread(self, saver, runnable_config, slow_delete_thread):
         """Test that concurrent calls are faster than sequential calls."""
         thread_id = runnable_config["configurable"]["thread_id"]
         actor_id = runnable_config["configurable"]["actor_id"]
@@ -781,7 +790,7 @@ class TestAgentCoreMemorySaver:
                 N_ASYNC_CALLS, saver.adelete_thread, thread_id, actor_id
             )
 
-    async def test_concurrent_calls_aput_writes(self, saver, runnable_config):
+    async def test_concurrent_calls_aput_writes(self, saver, runnable_config, slow_put_writes):
         """Test that concurrent calls are faster than sequential calls."""
         writes = [("channel", "value")]
         task_id = "test-task"
@@ -798,12 +807,12 @@ class TestAgentCoreMemorySaver:
             )
 
     async def test_concurrent_calls_aput(
-        self, saver, runnable_config, sample_checkpoint, sample_checkpoint_metadata
+        self, saver, runnable_config, sample_checkpoint, sample_checkpoint_metadata, slow_put
     ):
         """Test that concurrent calls are faster than sequential calls."""
         new_versions = {"default": "v2"}
 
-        with patch.object(saver, "put", side_effect=slow_put_writes):
+        with patch.object(saver, "put", side_effect=slow_put):
             await self.assert_concurrent_calls_are_faster_than_sequential(
                 N_ASYNC_CALLS,
                 saver.aput,
@@ -813,7 +822,7 @@ class TestAgentCoreMemorySaver:
                 new_versions,
             )
 
-    async def test_concurrent_calls_alist(self, saver, runnable_config):
+    async def test_concurrent_calls_alist(self, saver, runnable_config, slow_list):
         """Test that concurrent calls are faster than sequential calls."""
         filter_dict = {"test": "filter"}
         before_config = {"before": "config"}
