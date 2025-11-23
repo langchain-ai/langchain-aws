@@ -32,14 +32,14 @@ from langgraph_checkpoint_aws.agentcore.models import (
 )
 from langgraph_checkpoint_aws.agentcore.saver import AgentCoreMemorySaver
 
-# Configure pytest to use anyio for async tests (asyncio backend only)
+# Configure pytest to use anyio for async tests
 pytestmark = pytest.mark.anyio
 
 # Test constants for async testing
-N_ASYNC_CALLS = 10
-MOCK_SLEEP_DURATION = 0.5 / N_ASYNC_CALLS
-OVERHEAD_RUNNER_TIME = 0.05
-TOTAL_EXPECTED_TIME = MOCK_SLEEP_DURATION + OVERHEAD_RUNNER_TIME
+N_ASYNC_CALLS = 5
+MOCK_SLEEP_DURATION = 0.1 / N_ASYNC_CALLS
+OVERHEAD_DURATION = 0.01
+TOTAL_EXPECTED_TIME = MOCK_SLEEP_DURATION + OVERHEAD_DURATION
 
 
 @pytest.fixture
