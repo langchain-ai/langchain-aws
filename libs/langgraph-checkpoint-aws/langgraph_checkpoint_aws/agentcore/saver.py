@@ -273,7 +273,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         """Delete all checkpoints and writes associated with a thread."""
         self.checkpoint_event_client.delete_events(thread_id, actor_id)
 
-    # ===== Async methods ( TODO: Check running sync methods inside executor ) =====
+    # ===== Async methods ( Running sync methods inside executor ) =====
     async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         return await run_in_executor(None, self.get_tuple, config)
 
@@ -285,7 +285,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         before: RunnableConfig | None = None,
         limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
-        for item in await run_in_executor(None, self.list, config, filter=filter, before=before, limit=limit):
+        for item in await run_in_executor(
+            None, self.list, config, filter=filter, before=before, limit=limit
+        ):
             yield item
 
     async def aput(
@@ -312,7 +314,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         )
 
     async def adelete_thread(self, thread_id: str, actor_id: str = "") -> None:
-        self.delete_thread(thread_id, actor_id)
+        await run_in_executor(None, self.delete_thread, thread_id, actor_id)
         return None
 
     def get_next_version(

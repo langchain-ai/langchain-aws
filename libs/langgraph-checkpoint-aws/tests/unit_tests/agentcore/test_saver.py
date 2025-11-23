@@ -2,7 +2,9 @@
 Unit tests for AgentCore Memory Checkpoint Saver.
 """
 
+import asyncio
 import json
+import time
 from unittest.mock import ANY, MagicMock, Mock, patch
 
 import pytest
@@ -29,6 +31,63 @@ from langgraph_checkpoint_aws.agentcore.models import (
     WritesEvent,
 )
 from langgraph_checkpoint_aws.agentcore.saver import AgentCoreMemorySaver
+
+# Configure pytest to use anyio for async tests (asyncio backend only)
+pytestmark = pytest.mark.anyio
+
+# Test constants for async testing
+N_ASYNC_CALLS = 10
+MOCK_SLEEP_DURATION = 0.5 / N_ASYNC_CALLS
+OVERHEAD_RUNNER_TIME = 0.05
+TOTAL_EXPECTED_TIME = MOCK_SLEEP_DURATION + OVERHEAD_RUNNER_TIME
+
+
+# Mock helper functions for async testing
+def _create_mock_checkpoint_tuple(
+    thread_id="test-thread", checkpoint_id="test-checkpoint"
+):
+    """Helper to create a mock checkpoint tuple with configurable IDs."""
+    mock_tuple = MagicMock()
+    mock_tuple.config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "actor_id": "test-actor",
+            "checkpoint_id": checkpoint_id,
+        }
+    }
+    mock_tuple.checkpoint = {"id": checkpoint_id}
+    mock_tuple.metadata = {"source": "input", "step": 0}
+    return mock_tuple
+
+
+def slow_get_tuple(config):  # noqa: ARG001
+    """Mock get_tuple with artificial delay for testing async concurrency."""
+    time.sleep(MOCK_SLEEP_DURATION)
+    return _create_mock_checkpoint_tuple()
+
+
+def slow_list(config, *, filter=None, before=None, limit=None):  # noqa: ARG001 A002
+    """Mock list with artificial delay for testing async concurrency."""
+    time.sleep(MOCK_SLEEP_DURATION)
+    return [_create_mock_checkpoint_tuple()]
+
+
+def slow_put(config, checkpoint, metadata, new_versions):  # noqa: ARG001
+    """Mock put with artificial delay for testing async concurrency."""
+    time.sleep(MOCK_SLEEP_DURATION)
+    return config
+
+
+def slow_put_writes(config, writes, task_id, task_path=""):  # noqa: ARG001
+    """Mock put_writes with artificial delay for testing async concurrency."""
+    time.sleep(MOCK_SLEEP_DURATION)
+    return
+
+
+def slow_delete_thread(thread_id, actor_id=""):  # noqa: ARG001
+    """Mock delete_thread with artificial delay for testing async concurrency."""
+    time.sleep(MOCK_SLEEP_DURATION)
+    return
 
 
 @pytest.fixture
@@ -586,6 +645,210 @@ class TestAgentCoreMemorySaver:
             "00000000000000000000000000000010.123456", None
         )
         assert version.startswith("00000000000000000000000000000011.")
+
+    async def test_aget_tuple_calls_sync_method_with_correct_args(
+        self, saver, runnable_config
+    ):
+        """
+        Test that aget_tuple calls the sync get_tuple method with correct arguments.
+        """
+
+        with patch.object(saver, "get_tuple", side_effect=slow_get_tuple) as mock_get:
+            result = await saver.aget_tuple(runnable_config)
+
+            # Verify sync method was called with correct arguments
+            mock_get.assert_called_once_with(runnable_config)
+
+            # Verify result is returned correctly
+            assert result is not None
+
+    async def test_alist_calls_sync_method_with_correct_args(
+        self, saver, runnable_config
+    ):
+        """Test that alist calls the sync list method with correct arguments."""
+
+        filter_dict = {"test": "filter"}
+        before_config = {"before": "config"}
+        limit_value = 10
+
+        with patch.object(saver, "list", side_effect=slow_list) as mock_list:
+            # Collect all items from async iterator
+            items = []
+            async for item in saver.alist(
+                runnable_config,
+                filter=filter_dict,
+                before=before_config,
+                limit=limit_value,
+            ):
+                items.append(item)
+
+            # Verify sync method was called with correct arguments
+            mock_list.assert_called_once_with(
+                runnable_config,
+                filter=filter_dict,
+                before=before_config,
+                limit=limit_value,
+            )
+
+    async def test_aput_calls_sync_method_with_correct_args(
+        self, saver, runnable_config, sample_checkpoint, sample_checkpoint_metadata
+    ):
+        """Test that aput calls the sync put method with correct arguments."""
+
+        new_versions = {"default": "v2"}
+
+        with patch.object(saver, "put", side_effect=slow_put) as mock_put:
+            result = await saver.aput(
+                runnable_config,
+                sample_checkpoint,
+                sample_checkpoint_metadata,
+                new_versions,
+            )
+
+            # Verify sync method was called with correct arguments
+            mock_put.assert_called_once_with(
+                runnable_config,
+                sample_checkpoint,
+                sample_checkpoint_metadata,
+                new_versions,
+            )
+
+            # Verify result is returned correctly
+            assert result == runnable_config
+
+    async def test_aput_writes_calls_sync_method_with_correct_args(
+        self, saver, runnable_config
+    ):
+        """
+        Test that aput_writes calls the sync put_writes method with correct arguments.
+        """
+
+        writes = [("channel", "value")]
+        task_id = "test-task"
+        task_path = "test-path"
+
+        with patch.object(
+            saver, "put_writes", side_effect=slow_put_writes
+        ) as mock_put_writes:
+            result = await saver.aput_writes(
+                runnable_config, writes, task_id, task_path
+            )
+
+            # Verify sync method was called with correct arguments
+            mock_put_writes.assert_called_once_with(
+                runnable_config, writes, task_id, task_path
+            )
+
+            # Verify result (should be None for put_writes)
+            assert result is None
+
+    async def test_adelete_thread_calls_sync_method_with_correct_args(
+        self, saver, runnable_config
+    ):
+        """
+        Test that adelete_thread calls the sync delete_thread method
+        with correct arguments
+        """
+
+        thread_id = runnable_config["configurable"]["thread_id"]
+        actor_id = runnable_config["configurable"]["actor_id"]
+
+        with patch.object(
+            saver, "delete_thread", side_effect=slow_delete_thread
+        ) as mock_delete:
+            result = await saver.adelete_thread(thread_id, actor_id)
+
+            # Verify sync method was called with correct arguments
+            mock_delete.assert_called_once_with(thread_id, actor_id)
+
+            # Verify result (should be None for delete_thread)
+            assert result is None
+
+    async def test_concurrent_calls_aget_tuple(self, saver, runnable_config):
+        """Test that concurrent calls are faster than sequential calls."""
+        with patch.object(saver, "get_tuple", side_effect=slow_get_tuple):
+            await self.assert_concurrent_calls_are_faster_than_sequential(
+                N_ASYNC_CALLS, saver.aget_tuple, runnable_config
+            )
+
+    async def test_concurrent_calls_adelete_thread(self, saver, runnable_config):
+        """Test that concurrent calls are faster than sequential calls."""
+        thread_id = runnable_config["configurable"]["thread_id"]
+        actor_id = runnable_config["configurable"]["actor_id"]
+
+        with patch.object(saver, "delete_thread", side_effect=slow_delete_thread):
+            await self.assert_concurrent_calls_are_faster_than_sequential(
+                N_ASYNC_CALLS, saver.adelete_thread, thread_id, actor_id
+            )
+
+    async def test_concurrent_calls_aput_writes(self, saver, runnable_config):
+        """Test that concurrent calls are faster than sequential calls."""
+        writes = [("channel", "value")]
+        task_id = "test-task"
+        task_path = "test-path"
+
+        with patch.object(saver, "put_writes", side_effect=slow_put_writes):
+            await self.assert_concurrent_calls_are_faster_than_sequential(
+                N_ASYNC_CALLS,
+                saver.aput_writes,
+                runnable_config,
+                writes,
+                task_id,
+                task_path,
+            )
+
+    async def test_concurrent_calls_aput(
+        self, saver, runnable_config, sample_checkpoint, sample_checkpoint_metadata
+    ):
+        """Test that concurrent calls are faster than sequential calls."""
+        new_versions = {"default": "v2"}
+
+        with patch.object(saver, "put", side_effect=slow_put_writes):
+            await self.assert_concurrent_calls_are_faster_than_sequential(
+                N_ASYNC_CALLS,
+                saver.aput,
+                runnable_config,
+                sample_checkpoint,
+                sample_checkpoint_metadata,
+                new_versions,
+            )
+
+    async def test_concurrent_calls_alist(self, saver, runnable_config):
+        """Test that concurrent calls are faster than sequential calls."""
+        filter_dict = {"test": "filter"}
+        before_config = {"before": "config"}
+        limit_value = 10
+
+        with patch.object(saver, "list", side_effect=slow_list):
+
+            async def consume_alist() -> list:
+                """Helper coroutine to consume the async iterator."""
+                items = []
+                async for item in saver.alist(
+                    runnable_config,
+                    filter=filter_dict,
+                    before=before_config,
+                    limit=limit_value,
+                ):
+                    items.append(item)
+                return items
+
+            await self.assert_concurrent_calls_are_faster_than_sequential(
+                N_ASYNC_CALLS, consume_alist
+            )
+
+    async def assert_concurrent_calls_are_faster_than_sequential(
+        self, n_async_calls: int, func, *args, **kwargs
+    ) -> None:
+        """Helper to run n async tasks concurrently."""
+        tasks = [func(*args, **kwargs) for _ in range(n_async_calls)]
+        start_time = time.time()
+        await asyncio.gather(*tasks)
+        concurrent_time = time.time() - start_time
+        assert concurrent_time < TOTAL_EXPECTED_TIME, (
+            f"Concurrent execution took {concurrent_time:.2f}s, "
+            f"expected < {TOTAL_EXPECTED_TIME}s"
+        )
 
 
 class TestCheckpointerConfig:
