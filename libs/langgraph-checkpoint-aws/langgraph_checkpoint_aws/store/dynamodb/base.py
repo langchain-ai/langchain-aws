@@ -53,7 +53,7 @@ class DynamoDBStore(BaseStore):
     Examples:
         Basic usage:
         ```python
-        from langgraph_checkpoint_aws.store.dynamodb import DynamoDBStore
+        from langgraph_checkpoint_aws import DynamoDBStore
 
         store = DynamoDBStore(table_name="my-store-table")
         store.setup()  # Create table if it doesn't exist
@@ -66,7 +66,7 @@ class DynamoDBStore(BaseStore):
 
         Using context manager:
         ```python
-        from langgraph_checkpoint_aws.store.dynamodb import DynamoDBStore
+        from langgraph_checkpoint_aws import DynamoDBStore
 
         with DynamoDBStore.from_conn_string("my-store-table") as store:
             store.setup()
