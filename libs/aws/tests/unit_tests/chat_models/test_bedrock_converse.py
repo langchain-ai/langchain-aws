@@ -82,6 +82,25 @@ class TestBedrockStandard(ChatModelUnitTests):
         super().test_init_streaming()
 
 
+def test_profile() -> None:
+    model = ChatBedrockConverse(
+        model="anthropic.claude-3-5-sonnet-20241022-v2:0",
+        region_name="us-west-2",
+    )
+    assert model.profile
+    assert not model.profile["reasoning_output"]
+
+    model = ChatBedrockConverse(
+        model="anthropic.claude-sonnet-4-20250514-v1:0",
+        region_name="us-west-2",
+    )
+    assert model.profile
+    assert model.profile["reasoning_output"]
+
+    model = ChatBedrockConverse(model="foo")
+    assert model.profile == {}
+
+
 class GetWeather(BaseModel):
     """Get the current weather in a given location"""
 
