@@ -222,22 +222,16 @@ Required IAM permissions:
 | Feature | DynamoDB Store | Valkey Store |
 |---------|---------------|--------------|
 | Vector Search | ❌ No | ✅ Yes |
-| High Performance | ✅ Good | ✅ Excellent |
-| TTL Support | ✅ Yes | ✅ Yes |
-| Cost | Pay-per-request | Infrastructure cost |
-| Best For | Simple storage, managed infra | Vector search, high performance |
+| Performance | ✅ Good | ✅ Excellent |
+| Best For | cost-effective | Vector search, ultra-high performance |
 
 Use **DynamoDB Store** when:
-- You need a fully managed solution
 - You don't require vector search capabilities
-- You want pay-per-request pricing
-- Your workload is unpredictable
+- You require cost-effective
 
 Use **Valkey Store** when:
 - You need vector search capabilities
 - You require ultra-low latency
-- You can manage your own infrastructure
-- You have consistent, predictable workloads
 
 ## Limitations
 
