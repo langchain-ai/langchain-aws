@@ -14,7 +14,7 @@ from langgraph.store.base import (
     TTLConfig,
 )
 
-from langgraph_checkpoint_aws.store.dynamodb import DynamoDBStore
+from langgraph_checkpoint_aws.store import DynamoDBStore
 from langgraph_checkpoint_aws.store.dynamodb.exceptions import (
     DynamoDBConnectionError,
     TableCreationError,
