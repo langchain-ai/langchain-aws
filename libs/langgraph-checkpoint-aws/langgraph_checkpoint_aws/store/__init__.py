@@ -10,7 +10,7 @@ try:
     from .valkey import AsyncValkeyStore, ValkeyIndexConfig, ValkeyStore
     from .dynamodb import DynamoDBStore
 
-    __all__ = ["AsyncValkeyStore", "ValkeyStore", "ValkeyIndexConfig", "DynamoDBStore"]
+    __all__ = ["AsyncValkeyStore", "DynamoDBStore", "ValkeyStore", "ValkeyIndexConfig"]
 except ImportError as e:
     # Store the error for later use
     _import_error = e
@@ -29,4 +29,4 @@ except ImportError as e:
     ValkeyStore: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
     DynamoDBStore: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
 
-    __all__ = ["AsyncValkeyStore", "ValkeyStore", "ValkeyIndexConfig", "DynamoDBStore"]
+    __all__ = ["AsyncValkeyStore", "DynamoDBStore", "ValkeyStore", "ValkeyIndexConfig"]
