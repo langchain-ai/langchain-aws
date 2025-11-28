@@ -25,6 +25,25 @@ def fake_valkey_client():
     return fakeredis.FakeStrictRedis(decode_responses=False)
 
 
+def convert_hash_fields_to_str(hash_fields: dict) -> dict:
+    """Helper to convert hash field bytes to strings for test assertions.
+
+    Args:
+        hash_fields: Raw hash fields from Valkey (may contain bytes)
+
+    Returns:
+        Dictionary with bytes converted to strings (except binary vector field)
+    """
+    result = {}
+    for k, v in hash_fields.items():
+        key_str = k.decode("utf-8") if isinstance(k, bytes) else k
+        # Skip binary vector field - it's not UTF-8 text
+        if key_str == "vector" and isinstance(v, bytes):
+            result[key_str] = v  # Keep as bytes
+        else:
+            result[key_str] = v.decode("utf-8") if isinstance(v, bytes) else v
+    return result
+
 class TestValkeyIndexConfig:
     """Test suite for ValkeyIndexConfig TypedDict."""
 
@@ -682,16 +701,7 @@ class TestCollectionNameConfigurationExtended:
         hash_fields = fake_valkey_client.hgetall(key)
 
         # Convert bytes keys/values to strings for easier checking
-        hash_fields_str = {}
-        for k, v in hash_fields.items():
-            key_str = k.decode("utf-8") if isinstance(k, bytes) else k
-            # Skip binary vector field - it's not UTF-8 text
-            if key_str == "vector" and isinstance(v, bytes):
-                val_str = v  # Keep as bytes
-            else:
-                val_str = v.decode("utf-8") if isinstance(v, bytes) else v
-            hash_fields_str[key_str] = val_str
-
+        hash_fields_str = convert_hash_fields_to_str(hash_fields)
         # Verify that searchable fields are included in hash fields
         # (without value_ prefix)
         assert "user_id" in hash_fields_str
@@ -744,16 +754,7 @@ class TestCollectionNameConfigurationExtended:
         hash_fields = fake_valkey_client.hgetall(key)
 
         # Convert bytes keys/values to strings for easier checking
-        hash_fields_str = {}
-        for k, v in hash_fields.items():
-            key_str = k.decode("utf-8") if isinstance(k, bytes) else k
-            # Skip binary vector field - it's not UTF-8 text
-            if key_str == "vector" and isinstance(v, bytes):
-                val_str = v  # Keep as bytes
-            else:
-                val_str = v.decode("utf-8") if isinstance(v, bytes) else v
-            hash_fields_str[key_str] = val_str
-
+        hash_fields_str = convert_hash_fields_to_str(hash_fields)
         # Verify that list fields are converted to comma-separated strings
         assert hash_fields_str["tags"] == "machine-learning,ai,python"
         assert hash_fields_str["categories"] == "tech,tutorial"

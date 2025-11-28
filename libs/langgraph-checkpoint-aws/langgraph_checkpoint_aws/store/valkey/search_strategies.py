@@ -154,11 +154,31 @@ class VectorSearchStrategy(SearchStrategy):
                 )
 
             # Generate embedding for the query
+            # Try sync method first, fall back to async only if no event loop exists
             if hasattr(self.store.embeddings, "embed_query"):
                 query_vector = self.store.embeddings.embed_query(op.query)
+            elif hasattr(self.store.embeddings, "aembed_query"):
+                # Check if we're in an async context
+                try:
+                    asyncio.get_running_loop()
+                    # We're in an async context - cannot use asyncio.run()
+                    raise SearchIndexError(
+                        "Cannot generate embeddings: sync method not available "
+                        "and already in async context. Use AsyncValkeyStore instead.",
+                        index_name=index_name,
+                        index_operation="embedding_generation",
+                    )
+                except RuntimeError:
+                    # No running event loop, safe to create one
+                    query_vector = asyncio.run(
+                        self.store.embeddings.aembed_query(op.query)
+                    )
             else:
-                # Fallback to async if only async method available
-                query_vector = asyncio.run(self.store.embeddings.aembed_query(op.query))
+                raise SearchIndexError(
+                    "No embedding method available (embed_query or aembed_query)",
+                    index_name=index_name,
+                    index_operation="embedding_generation",
+                )
 
             # Pack vector to binary bytes for FT.SEARCH
             vec_bytes = struct.pack(f"{len(query_vector)}f", *query_vector)
