@@ -25,7 +25,7 @@ def fake_valkey_client():
     return fakeredis.FakeStrictRedis(decode_responses=False)
 
 
-def convert_hash_fields_to_str(hash_fields: dict) -> dict:
+def convert_hash_fields_to_str(hash_fields: dict) -> dict[str, str | bytes]:
     """Helper to convert hash field bytes to strings for test assertions.
 
     Args:
@@ -34,7 +34,7 @@ def convert_hash_fields_to_str(hash_fields: dict) -> dict:
     Returns:
         Dictionary with bytes converted to strings (except binary vector field)
     """
-    result = {}
+    result: dict[str, str | bytes] = {}
     for k, v in hash_fields.items():
         key_str = k.decode("utf-8") if isinstance(k, bytes) else k
         # Skip binary vector field - it's not UTF-8 text
@@ -43,6 +43,7 @@ def convert_hash_fields_to_str(hash_fields: dict) -> dict:
         else:
             result[key_str] = v.decode("utf-8") if isinstance(v, bytes) else v
     return result
+
 
 class TestValkeyIndexConfig:
     """Test suite for ValkeyIndexConfig TypedDict."""
