@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import struct
 from abc import ABC, abstractmethod
 from typing import Any, Protocol
 
@@ -142,11 +144,48 @@ class VectorSearchStrategy(SearchStrategy):
             .dialect(2)
         )
 
-        # For the test, we don't actually need to generate embeddings
-        # The test mocks the FT.search call directly
-        query_params: dict[str, str | int | float | bytes] = {
-            "vec": b"dummy_vector"
-        }  # Placeholder for mock
+        # Generate query embedding for vector search
+        try:
+            if not self.store.embeddings:
+                raise SearchIndexError(
+                    "Embeddings not configured for vector search",
+                    index_name=index_name,
+                    index_operation="embedding_generation",
+                )
+
+            # Generate embedding for the query
+            # Try sync method first, fall back to async only if no event loop exists
+            if hasattr(self.store.embeddings, "embed_query"):
+                query_vector = self.store.embeddings.embed_query(op.query)
+            elif hasattr(self.store.embeddings, "aembed_query"):
+                # Check if we're in an async context
+                try:
+                    asyncio.get_running_loop()
+                    # We're in an async context - cannot use asyncio.run()
+                    raise SearchIndexError(
+                        "Cannot generate embeddings: sync method not available "
+                        "and already in async context. Use AsyncValkeyStore instead.",
+                        index_name=index_name,
+                        index_operation="embedding_generation",
+                    )
+                except RuntimeError:
+                    # No running event loop, safe to create one
+                    query_vector = asyncio.run(
+                        self.store.embeddings.aembed_query(op.query)
+                    )
+            else:
+                raise SearchIndexError(
+                    "No embedding method available (embed_query or aembed_query)",
+                    index_name=index_name,
+                    index_operation="embedding_generation",
+                )
+
+            # Pack vector to binary bytes for FT.SEARCH
+            vec_bytes = struct.pack(f"{len(query_vector)}f", *query_vector)
+            query_params: dict[str, str | int | float | bytes] = {"vec": vec_bytes}
+        except Exception as e:
+            logger.error(f"Error generating query embedding: {e}")
+            raise
 
         try:
             results = self.client.ft(index_name).search(query, query_params)

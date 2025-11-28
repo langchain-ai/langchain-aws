@@ -436,7 +436,7 @@ class BaseValkeyStore(BaseStore):
             updated_at=updated_at,
         )
 
-    def _handle_put_core(self, op: PutOp) -> tuple[str, dict[str, str] | None]:
+    def _handle_put_core(self, op: PutOp) -> tuple[str, dict[str, str | bytes] | None]:
         """Core put operation logic shared between sync and async implementations.
 
         Returns:
@@ -475,6 +475,12 @@ class BaseValkeyStore(BaseStore):
         hash_fields = DocumentProcessor.create_hash_fields(
             op.value, vector, self.index_fields
         )
+
+        # Add namespace and key fields for FT index filtering
+        # These are used by the search index for namespace-based filtering
+        namespace_str = "/".join(op.namespace)
+        hash_fields["namespace"] = namespace_str
+        hash_fields["key"] = op.key
 
         return key, hash_fields
 

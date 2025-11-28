@@ -516,10 +516,8 @@ class ValkeyStore(BaseValkeyStore):
 
     def _handle_put(self, op: PutOp) -> None:
         """Handle put operation."""
-        # Use base class validation
-        self._validate_put_operation(op.namespace, op.value)
-
-        key = self._build_key(op.namespace, op.key)
+        # Use shared core logic from base class
+        key, hash_fields = self._handle_put_core(op)
 
         if op.value is None:
             # Handle deletion
@@ -529,55 +527,17 @@ class ValkeyStore(BaseValkeyStore):
                 logger.error(f"Error deleting key {key}: {e}")
             return
 
-        # Generate embeddings if indexing is enabled
-        vector = None
-        if self.embeddings and op.index is not False:
-            try:
-                fields = op.index or self.index_fields
-                if fields:
-                    texts: list[str] = []
-                    for field in fields:
-                        field_value = get_text_at_path(op.value, field)
-                        if isinstance(field_value, list):
-                            texts.extend(str(v) for v in field_value)
-                        elif field_value:
-                            texts.append(str(field_value))
+        # Generate embeddings synchronously if needed
+        # Note: base class _handle_put_core doesn't generate embeddings,
+        # so we need to do that here and update hash_fields
+        if hash_fields and self.embeddings and op.index is not False:
+            vector = self._generate_embeddings_sync(op)
+            if vector:
+                # Update hash_fields with vector
+                import struct
 
-                    if texts:
-                        # For sync version, try to use sync embeddings if available
-                        try:
-                            # Check if embeddings has sync methods
-                            if hasattr(self.embeddings, "embed_documents"):
-                                # Use sync embedding method
-                                vectors = self.embeddings.embed_documents(texts)
-                                vector = vectors[0] if vectors else None
-                            else:
-                                # Fallback: try async embeddings only if not in async
-                                # context
-                                try:
-                                    asyncio.get_running_loop()
-                                    # If we're already in an async context, skip
-                                    # embeddings
-                                    logger.warning(
-                                        "Cannot generate embeddings in sync context"
-                                    )
-                                    vector = None
-                                except RuntimeError:
-                                    # No running event loop, safe to create one
-                                    vectors = asyncio.run(
-                                        self.embeddings.aembed_documents(texts)
-                                    )
-                                    vector = vectors[0] if vectors else None
-                        except Exception as e:
-                            logger.error(f"Error generating embeddings: {e}")
-                            vector = None
-            except Exception as e:
-                logger.error(f"Error generating embeddings: {e}")
-
-        # Use DocumentProcessor to create hash fields for storage
-        hash_fields = DocumentProcessor.create_hash_fields(
-            op.value, vector, self.index_fields
-        )
+                vector_bytes = struct.pack(f"{len(vector)}f", *vector)
+                hash_fields["vector"] = vector_bytes
 
         try:
             # Use HSET to store as hash fields for vector search compatibility
@@ -590,6 +550,42 @@ class ValkeyStore(BaseValkeyStore):
         except Exception as e:
             logger.error(f"Error in put operation: {e}")
             raise
+
+    def _generate_embeddings_sync(self, op: PutOp) -> list[float] | None:
+        """Generate embeddings synchronously."""
+        try:
+            fields = op.index or self.index_fields
+            if not fields:
+                return None
+
+            texts: list[str] = []
+            for field in fields:
+                field_value = get_text_at_path(op.value, field)
+                if isinstance(field_value, list):
+                    texts.extend(str(v) for v in field_value)
+                elif field_value:
+                    texts.append(str(field_value))
+
+            if not texts:
+                return None
+
+            # Try sync embeddings first
+            if hasattr(self.embeddings, "embed_documents"):
+                vectors = self.embeddings.embed_documents(texts)
+                return vectors[0] if vectors else None
+            else:
+                # Fallback to async embeddings if not in async context
+                try:
+                    asyncio.get_running_loop()
+                    logger.warning("Cannot generate embeddings in sync context")
+                    return None
+                except RuntimeError:
+                    # No running event loop, safe to create one
+                    vectors = asyncio.run(self.embeddings.aembed_documents(texts))
+                    return vectors[0] if vectors else None
+        except Exception as e:
+            logger.error(f"Error generating embeddings: {e}")
+            return None
 
     def _handle_search(self, op: SearchOp) -> list[SearchItem]:
         """Handle search operation using search strategy pattern."""
