@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Generator, Iterable
 from contextlib import contextmanager
@@ -32,6 +31,7 @@ from valkey.connection import ConnectionPool  # type: ignore[import-untyped]
 from .async_store import AsyncValkeyStore
 from .base import BaseValkeyStore, ValkeyIndexConfig
 from .document_utils import DocumentProcessor, FilterProcessor, ScoreCalculator
+from .exceptions import EmbeddingGenerationError
 from .search_strategies import SearchStrategyManager
 
 logger = logging.getLogger(__name__)
@@ -569,23 +569,23 @@ class ValkeyStore(BaseValkeyStore):
             if not texts:
                 return None
 
-            # Try sync embeddings first
+            # Use sync embeddings method
             if hasattr(self.embeddings, "embed_documents"):
                 vectors = self.embeddings.embed_documents(texts)
                 return vectors[0] if vectors else None
             else:
-                # Fallback to async embeddings if not in async context
-                try:
-                    asyncio.get_running_loop()
-                    logger.warning("Cannot generate embeddings in sync context")
-                    return None
-                except RuntimeError:
-                    # No running event loop, safe to create one
-                    vectors = asyncio.run(self.embeddings.aembed_documents(texts))
-                    return vectors[0] if vectors else None
+                raise EmbeddingGenerationError(
+                    "Cannot generate embeddings: embeddings object only has "
+                    "async methods (aembed_documents). "
+                    "Use AsyncValkeyStore for async embedding generation.",
+                    text_content=" ".join(texts[:3]) if texts else None,
+                )
+        except EmbeddingGenerationError:
+            # Re-raise EmbeddingGenerationError
+            raise
         except Exception as e:
             logger.error(f"Error generating embeddings: {e}")
-            return None
+            raise
 
     def _handle_search(self, op: SearchOp) -> list[SearchItem]:
         """Handle search operation using search strategy pattern."""

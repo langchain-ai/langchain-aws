@@ -21,6 +21,9 @@ try:
     from valkey.exceptions import ValkeyError
 
     from langgraph_checkpoint_aws import AsyncValkeyStore, ValkeyStore
+    from langgraph_checkpoint_aws.store.valkey.exceptions import (
+        EmbeddingGenerationError,
+    )
 
     VALKEY_AVAILABLE = True
 except ImportError:
@@ -619,15 +622,18 @@ class TestAsyncValkeyStoreVectorSearch:
 class TestAsyncValkeyStoreHandlePutAsync:
     """Test async put operation edge cases."""
 
-    async def test_handle_put_with_embedding_generation_error(self, mock_valkey_client):
-        """Test put operation with embedding generation error."""
+    async def test_handle_put_with_sync_only_embeddings_raises_error(
+        self, mock_valkey_client
+    ):
+        """Test put operation raises error with sync-only embeddings."""
         store = AsyncValkeyStore(mock_valkey_client)
 
-        # Mock embeddings that raise an error
+        # Mock embeddings with only sync method (no async method)
         mock_embeddings = Mock()
-        mock_embeddings.embed_documents = Mock(
-            side_effect=Exception("Embedding failed")
-        )
+        mock_embeddings.embed_documents = Mock(return_value=[[0.1, 0.2, 0.3]])
+        # Ensure no async method exists
+        del mock_embeddings.aembed_documents
+
         store.embeddings = mock_embeddings
         store.index_fields = ["text"]
 
@@ -638,9 +644,13 @@ class TestAsyncValkeyStoreHandlePutAsync:
             index=["text"],
         )
 
-        # Should not raise error, just log it
-        await store._handle_put_async(op)
-        mock_valkey_client.hset.assert_called_once()
+        # Should raise EmbeddingGenerationError when only sync method available
+        with pytest.raises(EmbeddingGenerationError) as exc_info:
+            await store._handle_put_async(op)
+
+        # Verify error message directs user to ValkeyStore
+        assert "Use ValkeyStore" in str(exc_info.value)
+        assert "embed_documents" in str(exc_info.value)
 
     async def test_handle_put_with_async_embeddings(self, mock_valkey_client):
         """Test put operation with async embeddings."""
@@ -660,31 +670,6 @@ class TestAsyncValkeyStoreHandlePutAsync:
 
         await store._handle_put_async(op)
         mock_valkey_client.hset.assert_called_once()
-
-    async def test_handle_put_with_sync_embeddings_in_executor(
-        self, mock_valkey_client
-    ):
-        """Test put operation with sync embeddings using executor."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        mock_embeddings = Mock()
-        mock_embeddings.embed_documents = Mock(return_value=[[0.1, 0.2, 0.3]])
-        store.embeddings = mock_embeddings
-        store.index_fields = ["text"]
-
-        op = PutOp(
-            namespace=("test",),
-            key="key1",
-            value={"text": "test content"},
-            index=["text"],
-        )
-
-        with patch("asyncio.get_running_loop") as mock_loop:
-            mock_executor = AsyncMock(return_value=[[0.1, 0.2, 0.3]])
-            mock_loop.return_value.run_in_executor = mock_executor
-
-            await store._handle_put_async(op)
-            mock_valkey_client.hset.assert_called_once()
 
     async def test_handle_put_hset_error(self, mock_valkey_client):
         """Test put operation with hset error."""
@@ -1416,40 +1401,6 @@ class TestAsyncValkeyStoreAdditionalCoverage:
             # Verify the result is not None
             assert result is not None
             assert result.value == {"data": "test"}
-
-    async def test_handle_put_async_list_field_values(self, mock_valkey_client):
-        """Test handle put async with list field values."""
-        store = AsyncValkeyStore(mock_valkey_client)
-        store._is_async_client = False  # Force sync client path
-
-        mock_embeddings = Mock()
-        mock_embeddings.embed_documents = Mock(return_value=[[0.1, 0.2, 0.3]])
-        store.embeddings = mock_embeddings
-        store.index_fields = ["tags"]
-
-        # Value with list field that should be processed
-        op = PutOp(
-            namespace=("test",),
-            key="key1",
-            value={"tags": ["tag1", "tag2", "tag3"]},  # List field
-            index=["tags"],
-        )
-
-        # Mock the executor for sync embeddings - need to ensure it's called
-        with patch("asyncio.get_running_loop") as mock_loop:
-            mock_executor = AsyncMock(return_value=[[0.1, 0.2, 0.3]])
-            mock_loop.return_value.run_in_executor = mock_executor
-
-            # Also need to ensure the sync client path is taken for embeddings
-            # The issue is that the code checks for aembed_documents first
-            # So we need to make sure it doesn't have that method
-            if hasattr(mock_embeddings, "aembed_documents"):
-                delattr(mock_embeddings, "aembed_documents")
-
-            await store._handle_put_async(op)
-
-            # Should process list values and generate embeddings through executor
-            mock_executor.assert_called_once()
 
     async def test_handle_put_async_ttl_setting(self, mock_valkey_client):
         """Test handle put async TTL setting."""

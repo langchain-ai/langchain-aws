@@ -32,6 +32,7 @@ from valkey.connection import ConnectionPool
 from ...checkpoint.valkey.utils import aset_client_info
 from .base import BaseValkeyStore, ValkeyIndexConfig
 from .document_utils import DocumentProcessor, FilterProcessor, ScoreCalculator
+from .exceptions import EmbeddingGenerationError
 from .search_strategies import SearchStrategyManager
 
 logger = logging.getLogger(__name__)
@@ -441,26 +442,23 @@ class AsyncValkeyStore(BaseValkeyStore):
             if not texts:
                 return None
 
-            # Use async embedding method if available
-            try:
-                if hasattr(self.embeddings, "aembed_documents"):
-                    vectors = await self.embeddings.aembed_documents(texts)
-                    return vectors[0] if vectors else None
-                elif hasattr(self.embeddings, "embed_documents"):
-                    # Run sync embeddings in executor
-                    loop = asyncio.get_running_loop()
-                    vectors = await loop.run_in_executor(
-                        None, self.embeddings.embed_documents, texts
-                    )
-                    return vectors[0] if vectors else None
-                else:
-                    return None
-            except Exception as e:
-                logger.error(f"Error generating embeddings: {e}")
-                return None
+            # Use async embeddings method
+            if hasattr(self.embeddings, "aembed_documents"):
+                vectors = await self.embeddings.aembed_documents(texts)
+                return vectors[0] if vectors else None
+            else:
+                raise EmbeddingGenerationError(
+                    "Cannot generate embeddings: embeddings object only has "
+                    "sync methods (embed_documents). "
+                    "Use ValkeyStore for sync embedding generation.",
+                    text_content=" ".join(texts[:3]) if texts else None,
+                )
+        except EmbeddingGenerationError:
+            # Re-raise EmbeddingGenerationError
+            raise
         except Exception as e:
-            logger.error(f"Error in embedding generation: {e}")
-            return None
+            logger.error(f"Error generating embeddings: {e}")
+            raise
 
     async def _handle_search_async(self, op: SearchOp) -> list[SearchItem]:
         """Handle search operation using search strategy pattern asynchronously."""
@@ -533,17 +531,14 @@ class AsyncValkeyStore(BaseValkeyStore):
                         # simple callables)
                         vectors = self.embeddings([op.query])
                         query_vector = vectors[0] if vectors else None
-                    elif hasattr(self.embeddings, "embed_documents"):
-                        # This is a real embedding function, use sync method
-                        vectors = self.embeddings.embed_documents([op.query])
-                        query_vector = vectors[0] if vectors else None
                     elif hasattr(self.embeddings, "aembed_documents"):
-                        # This is a real embedding function, use async method
+                        # Use async embedding method
                         vectors = await self.embeddings.aembed_documents([op.query])
                         query_vector = vectors[0] if vectors else None
                     else:
                         logger.warning(
-                            "Embeddings is not callable, skipping vector search"
+                            "Embeddings object does not have aembed_documents method. "
+                            "Use ValkeyStore for sync embeddings."
                         )
                         return []
                 except Exception as e:

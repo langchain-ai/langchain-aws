@@ -505,11 +505,13 @@ class TestValkeyStorePutOperations:
         mock_embeddings.embed_documents.assert_called_once()
         mock_valkey_client.hset.assert_called_once()
 
-    def test_handle_put_with_embeddings_async_method_no_loop(self, mock_valkey_client):
-        """Test _handle_put with async embeddings when no event loop is running."""
-        # Create mock embeddings with only async method
+    def test_handle_put_embedding_generation_error(self, mock_valkey_client):
+        """Test _handle_put when embedding generation fails.
+
+        Tests async-only embeddings raising EmbeddingGenerationError."""
         mock_embeddings = Mock()
-        del mock_embeddings.embed_documents  # Remove sync method
+        # Remove sync method - only async method available
+        del mock_embeddings.embed_documents
 
         async def mock_aembed_documents(texts):
             return [[0.1, 0.2, 0.3]]
@@ -526,58 +528,16 @@ class TestValkeyStorePutOperations:
 
         op = PutOp(namespace=("test",), key="key1", value={"title": "test content"})
 
-        # Mock asyncio.run to simulate successful async embedding
-        with patch("asyncio.run") as mock_run:
-            mock_run.return_value = [[0.1, 0.2, 0.3]]
-
+        # Should raise EmbeddingGenerationError when only async method available
+        with pytest.raises(ValkeyEmbeddingGenerationError) as exc_info:
             store._handle_put(op)
 
-            mock_run.assert_called_once()
-            mock_valkey_client.hset.assert_called_once()
+        # Verify error message directs user to AsyncValkeyStore
+        assert "Use AsyncValkeyStore" in str(exc_info.value)
+        assert "aembed_documents" in str(exc_info.value)
 
-    def test_handle_put_with_embeddings_in_async_context(self, mock_valkey_client):
-        """Test _handle_put with embeddings when already in async context."""
-        mock_embeddings = Mock()
-        del mock_embeddings.embed_documents  # Remove sync method
-
-        index_config = ValkeyIndexConfig(
-            collection_name="test", dims=3, embed=mock_embeddings, fields=["title"]
-        )
-
-        store = ValkeyStore(mock_valkey_client, index=index_config)
-        store.embeddings = mock_embeddings
-        store.index_fields = ["title"]
-
-        op = PutOp(namespace=("test",), key="key1", value={"title": "test content"})
-
-        # Mock asyncio.get_running_loop to simulate being in async context
-        with patch("asyncio.get_running_loop") as mock_get_loop:
-            mock_get_loop.return_value = Mock()  # Simulate running loop
-
-            store._handle_put(op)
-
-            # Should skip embeddings and log warning
-            mock_valkey_client.hset.assert_called_once()
-
-    def test_handle_put_embedding_generation_error(self, mock_valkey_client):
-        """Test _handle_put when embedding generation fails."""
-        mock_embeddings = Mock()
-        mock_embeddings.embed_documents.side_effect = Exception("Embedding failed")
-
-        index_config = ValkeyIndexConfig(
-            collection_name="test", dims=3, embed=mock_embeddings, fields=["title"]
-        )
-
-        store = ValkeyStore(mock_valkey_client, index=index_config)
-        store.embeddings = mock_embeddings
-        store.index_fields = ["title"]
-
-        op = PutOp(namespace=("test",), key="key1", value={"title": "test content"})
-
-        # Should handle embedding error gracefully
-        store._handle_put(op)
-
-        mock_valkey_client.hset.assert_called_once()
+        # hset should NOT be called since error is raised during embedding generation
+        mock_valkey_client.hset.assert_not_called()
 
     def test_handle_put_with_list_field_values(self, mock_valkey_client):
         """Test _handle_put with list values in indexed fields."""
@@ -1358,7 +1318,7 @@ class TestValkeyStoreErrorHandling:
             store.setup()
 
     def test_embedding_generation_error(self, mock_valkey_client):
-        """Test embedding generation error."""
+        """Test embedding generation error is re-raised."""
         mock_embeddings = MagicMock()
         mock_embeddings.embed_documents.side_effect = Exception("Embedding failed")
 
@@ -1375,10 +1335,13 @@ class TestValkeyStoreErrorHandling:
 
             op = PutOp(namespace=("test",), key="key1", value={"title": "test"})
 
-            # Should handle embedding error gracefully
-            store._handle_put(op)
+            # Updated behavior: embedding errors are now re-raised
+            with pytest.raises(Exception, match="Embedding failed"):
+                store._handle_put(op)
 
-            mock_valkey_client.hset.assert_called_once()
+            # hset should NOT be called since error is raised
+            # during embedding generation
+            mock_valkey_client.hset.assert_not_called()
 
     def test_document_creation_error(self, mock_valkey_client):
         """Test document creation error handling."""
