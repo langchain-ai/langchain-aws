@@ -7,7 +7,6 @@ from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from typing import Any, Literal
 
-import orjson
 from langgraph.store.base import (
     NOT_PROVIDED,
     GetOp,
@@ -30,9 +29,9 @@ from valkey.connection import ConnectionPool  # type: ignore[import-untyped]
 # Import AsyncValkeyStore for convenience
 from .async_store import AsyncValkeyStore
 from .base import BaseValkeyStore, ValkeyIndexConfig
-from .document_utils import DocumentProcessor, FilterProcessor, ScoreCalculator
+from .document_utils import DocumentProcessor
 from .exceptions import EmbeddingGenerationError
-from .search_strategies import SearchStrategyManager
+from .search import SearchStrategyManager
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +40,11 @@ class ValkeyStore(BaseValkeyStore):
     """Synchronous Valkey store implementation for LangGraph.
 
     Features:
-    - Vector similarity search with configurable embeddings
-    - JSON document storage with TTL support
-    - Connection pool support for better performance
-    - Namespace organization
-    - Batch operations
+        - Vector similarity search with configurable embeddings
+        - JSON document storage with TTL support
+        - Connection pool support for better performance
+        - Namespace organization
+        - Batch operations
 
     Examples:
         Basic usage with BedrockEmbeddings:
@@ -134,6 +133,25 @@ class ValkeyStore(BaseValkeyStore):
             }
         )
         ```
+
+    Thread Safety:
+        The store is thread-safe for concurrent operations. Multiple threads can
+        safely share a single store instance. The underlying Valkey client uses
+        connection pooling to handle concurrent requests efficiently.
+
+        For high-concurrency applications, configure appropriate pool size:
+
+        ```python
+        store = ValkeyStore.from_conn_string(
+            "valkey://localhost:6379",
+            pool_size=20,  # Size based on expected concurrent threads
+            ...
+        )
+        ```
+
+        Note: If providing custom embeddings, ensure your embeddings object is
+        thread-safe. Standard embedding providers (BedrockEmbeddings, OpenAI,
+        Cohere) are thread-safe by default.
 
     Note:
         Semantic search is disabled by default. You can enable it by providing an
@@ -638,338 +656,6 @@ class ValkeyStore(BaseValkeyStore):
             except Exception as e:
                 logger.debug(f"Error converting result {namespace}/{key}: {e}")
                 continue
-        return items
-
-    def _vector_search(self, op: SearchOp) -> list[SearchItem]:
-        """Perform vector similarity search using Valkey Search."""
-        try:
-            # Build search query using Valkey vector search syntax
-            index_name = self.collection_name
-
-            # Create namespace filter for hybrid queries
-            filter_parts = []
-            if op.namespace_prefix:
-                namespace_prefix = "/".join(op.namespace_prefix)
-                filter_parts.append(f"@namespace:{{{namespace_prefix}*}}")
-
-            if op.filter:
-                for key, value in op.filter.items():
-                    # Escape special characters in filter values
-                    escaped_value = str(value).replace(":", "\\:")
-                    filter_parts.append(f"@{key}:{{{escaped_value}}}")
-
-            # Build the vector search query using proper Valkey syntax
-            if filter_parts:
-                # Hybrid query: combine filters with vector search
-                filter_expr = " ".join(filter_parts)
-                vector_query = (
-                    f"({filter_expr})=>[KNN {op.limit + op.offset} "
-                    f"@vector $vec AS score]"
-                )
-            else:
-                # Pure vector search
-                vector_query = f"*=>[KNN {op.limit + op.offset} @vector $vec AS score]"
-
-            # Create the query object with proper dialect - don't use sort_by
-            from valkey.commands.search.query import Query
-
-            query = (
-                Query(vector_query)
-                .return_fields("id", "score")
-                .paging(0, op.limit + op.offset)
-                .dialect(2)
-            )
-
-            # For the test, we don't actually need to generate embeddings
-            # The test mocks the FT.search call directly
-            query_params: dict[str, str | int | float | bytes] = {
-                "vec": b"dummy_vector"
-            }  # Placeholder for mock
-
-            try:
-                results = self.client.ft(index_name).search(query, query_params)
-                items = self._process_vector_search_results(results, op)
-
-                # Refresh TTL if configured
-                if op.refresh_ttl and self.ttl_config:
-                    self._refresh_ttl_for_items(items)
-
-                return items
-
-            except Exception as e:
-                logger.error(f"Vector search failed: {e}")
-                return []
-
-        except Exception as e:
-            logger.error(f"Error in vector search: {e}")
-            return []
-
-    def _process_vector_search_results(
-        self, results: Any, op: SearchOp
-    ) -> list[SearchItem]:
-        """Process vector search results into SearchItem objects."""
-        items: list[SearchItem] = []
-
-        # Check if results has docs attribute and process results
-        docs = getattr(results, "docs", None)
-        if not docs:
-            return items
-
-        # Skip offset items and process results
-        for _i, doc in enumerate(docs[op.offset :]):
-            try:
-                # Extract document metadata
-                doc_id, score = self._extract_doc_metadata(doc)
-                if not doc_id:
-                    continue
-
-                # Parse document ID to get namespace and key
-                if doc_id.startswith("langgraph:"):
-                    key_path = doc_id[10:]  # Remove 'langgraph:' prefix
-                    namespace, item_key = self._parse_key(key_path)
-                else:
-                    continue
-
-                # Get and process document content
-                search_item = self._create_search_item_from_key(
-                    namespace, item_key, score
-                )
-                if search_item:
-                    items.append(search_item)
-
-            except Exception as e:
-                logger.error(f"Error processing search result: {e}")
-                continue
-
-        return items
-
-    def _extract_doc_metadata(self, doc: Any) -> tuple[str, float]:
-        """Extract document ID and score from search result."""
-        try:
-            # For mock docs, handle both dict-like and object-like access
-            if hasattr(doc, "__dict__"):
-                doc_data = doc.__dict__
-            else:
-                doc_data = doc
-
-            # Extract document ID - handle both 'id' attribute and direct access
-            doc_id = getattr(doc, "id", None) or doc_data.get("id", "")
-
-            # Get similarity score from search results - handle both types
-            score = getattr(doc, "score", None) or doc_data.get("score", 0.0)
-            score = float(score)
-
-            return doc_id, score
-        except Exception as e:
-            logger.error(f"Error extracting document metadata: {e}")
-            return "", 0.0
-
-    def _create_search_item_from_key(
-        self, namespace: tuple[str, ...], key: str, score: float
-    ) -> SearchItem | None:
-        """Create SearchItem from namespace, key, and score."""
-        try:
-            # Get the actual document content using HGETALL since data is stored
-            full_key = self._build_key(namespace, key)
-            hash_data = self.client.hgetall(full_key)
-            if not hash_data:
-                return None
-
-            hash_data = self._handle_response_t(hash_data)
-            if hash_data is None or not isinstance(hash_data, dict):
-                return None
-
-            # Use DocumentProcessor to convert hash fields back to document
-            document = DocumentProcessor.convert_hash_to_document(hash_data)
-            if document is None:
-                return None
-
-            # Parse the JSON-encoded value using DocumentProcessor
-            parsed_value = DocumentProcessor.parse_document_value(document)
-            if parsed_value is None:
-                return None
-
-            # Parse timestamps using DocumentProcessor
-            created_at, updated_at = DocumentProcessor.parse_timestamps(document)
-
-            return SearchItem(
-                namespace=namespace,
-                key=key,
-                value=parsed_value,
-                created_at=created_at,
-                updated_at=updated_at,
-                score=score,
-            )
-
-        except Exception as e:
-            logger.error(f"Error creating search item for {namespace}/{key}: {e}")
-            return None
-
-    def _key_pattern_search(self, op: SearchOp) -> list[SearchItem]:
-        """Fallback search using key pattern matching."""
-        items = []
-
-        try:
-            # Use FilterProcessor to build namespace pattern
-            pattern = FilterProcessor.build_namespace_pattern(op.namespace_prefix)
-
-            # Use SCAN for better performance with large datasets
-            cursor = 0
-            all_keys = []
-
-            while True:
-                scan_result = self.client.scan(cursor, match=pattern, count=1000)
-                # Handle ResponseT type for scan result
-                scan_result = self._handle_response_t(scan_result)
-                if scan_result is None:
-                    break
-
-                cursor, keys = scan_result
-                keys = self._safe_parse_keys(keys)
-                all_keys.extend(keys)
-                if cursor == 0:
-                    break
-
-            # Sort keys for consistent ordering
-            all_keys.sort()
-
-            # Process all keys first to calculate scores, then apply pagination
-            scored_items = []
-
-            for key in all_keys:
-                try:
-                    # Use HGETALL since data is stored as hash fields
-                    hash_data = self.client.hgetall(key)
-                    if hash_data:
-                        # Handle ResponseT type for hash_data
-                        hash_data = self._handle_response_t(hash_data)
-                        if hash_data is None or not isinstance(hash_data, dict):
-                            continue
-
-                        # Convert hash fields back to document format
-                        document = {
-                            "value": hash_data.get(b"value", hash_data.get("value")),
-                            "created_at": hash_data.get(
-                                b"created_at", hash_data.get("created_at")
-                            ),
-                            "updated_at": hash_data.get(
-                                b"updated_at", hash_data.get("updated_at")
-                            ),
-                            "vector": hash_data.get(b"vector", hash_data.get("vector")),
-                        }
-
-                        # Handle bytes keys/values
-                        for key_name, doc_value in document.items():
-                            if isinstance(doc_value, bytes):
-                                document[key_name] = doc_value.decode("utf-8")
-
-                        # Parse the JSON-encoded value back to dictionary
-                        try:
-                            if document["value"]:
-                                # Safely parse vector field
-                                vector_data = None
-                                if document.get("vector"):
-                                    try:
-                                        vector_data = orjson.loads(document["vector"])
-                                    except (orjson.JSONDecodeError, TypeError):
-                                        vector_data = None
-
-                                # Parse the main value field
-                                if document["value"] is not None:
-                                    parsed_value = orjson.loads(str(document["value"]))
-                                else:
-                                    continue
-
-                                value_data = orjson.dumps(
-                                    {
-                                        "value": parsed_value,
-                                        "created_at": document["created_at"],
-                                        "updated_at": document["updated_at"],
-                                        "vector": vector_data,
-                                    }
-                                ).decode("utf-8")
-                            else:
-                                continue
-                        except (orjson.JSONDecodeError, TypeError):
-                            continue
-
-                        # Parse key - remove langgraph: prefix
-                        if key.startswith("langgraph:"):
-                            key_path = key[10:]  # Remove "langgraph:" prefix
-                        else:
-                            key_path = key
-
-                        # Parse namespace and key
-                        namespace, item_key = self._parse_key(key_path)
-
-                        # Use FilterProcessor to check namespace prefix filtering
-                        if (
-                            op.namespace_prefix
-                            and not FilterProcessor.matches_namespace_prefix(
-                                namespace, op.namespace_prefix
-                            )
-                        ):
-                            continue
-
-                        # Parse document using DocumentProcessor
-                        try:
-                            doc_dict = orjson.loads(value_data)
-                            value = doc_dict.get("value", {})
-                            # Create a document-like structure for parse_timestamps
-                            temp_doc = {
-                                "created_at": doc_dict.get("created_at"),
-                                "updated_at": doc_dict.get("updated_at"),
-                            }
-                            created_at, updated_at = DocumentProcessor.parse_timestamps(
-                                temp_doc
-                            )
-                        except (orjson.JSONDecodeError, TypeError):
-                            continue
-
-                        # Use FilterProcessor to apply filters
-                        if not FilterProcessor.apply_filters(value, op.filter):
-                            continue
-
-                        # Use ScoreCalculator to calculate text similarity score
-                        score = ScoreCalculator.calculate_text_similarity_score(
-                            op.query, value
-                        )
-
-                        # Filter out very low scores for better relevance
-                        from .constants import MIN_SEARCH_SCORE
-
-                        if op.query and score <= MIN_SEARCH_SCORE:
-                            continue
-
-                        item = SearchItem(
-                            namespace=namespace,
-                            key=item_key,
-                            value=value,
-                            created_at=created_at,
-                            updated_at=updated_at,
-                            score=score,
-                        )
-                        scored_items.append(item)
-
-                except Exception as e:
-                    logger.error(f"Error processing key {key}: {e}")
-                    continue
-
-            # Sort by score descending
-            scored_items.sort(key=lambda x: x.score or 0.0, reverse=True)
-
-            # Apply offset and limit after scoring and sorting
-            start_idx = op.offset or 0
-            end_idx = start_idx + (op.limit or 10)
-            items = scored_items[start_idx:end_idx]
-
-            # Refresh TTL if configured
-            if op.refresh_ttl and self.ttl_config:
-                self._refresh_ttl_for_items(items)
-
-        except Exception as e:
-            logger.error(f"Error in key pattern search: {e}")
-
         return items
 
     def _refresh_ttl_for_items(self, items: list[SearchItem]) -> None:

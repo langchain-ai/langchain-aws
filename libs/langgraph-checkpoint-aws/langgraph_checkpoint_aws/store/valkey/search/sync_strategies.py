@@ -1,33 +1,33 @@
-"""Search strategy implementations for Valkey store."""
+"""Synchronous search strategies for ValkeyStore.
+
+This module contains all synchronous search strategy implementations.
+"""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import struct
 from abc import ABC, abstractmethod
-from typing import Any, Protocol
+from typing import Any
 
 from langgraph.store.base import SearchItem, SearchOp
+from valkey.commands.search.query import Query  # type: ignore[import-untyped]
 
-from .constants import MIN_SEARCH_SCORE
-from .document_utils import DocumentProcessor, FilterProcessor, ScoreCalculator
-from .exceptions import SearchIndexError
+from ..constants import LANGGRAPH_KEY_PREFIX, MIN_SEARCH_SCORE
+from ..document_utils import DocumentProcessor, FilterProcessor, ScoreCalculator
+from ..exceptions import SearchIndexError
+from .adapters import (
+    EmbeddingAdapter,
+)
+from .helpers import BaseSearchHelper
+from .protocols import ValkeyClientProtocol
 
 logger = logging.getLogger(__name__)
 
 
-class ValkeyClientProtocol(Protocol):
-    """Protocol for Valkey client interface."""
-
-    def hgetall(self, name: str) -> Any: ...
-    def scan(
-        self, cursor: int, match: str | None = None, count: int | None = None
-    ) -> Any: ...
-    def keys(self, pattern: str) -> Any: ...
-    def get(self, name: Any) -> Any: ...
-    def ft(self, index_name: str) -> Any: ...
-    def expire(self, name: str, time: int) -> Any: ...
+# ============================================================================
+# Base Search Strategy (Sync)
+# ============================================================================
 
 
 class SearchStrategy(ABC):
@@ -79,6 +79,11 @@ class SearchStrategy(ABC):
                     logger.error(f"Error refreshing TTL for {item_key}: {e}")
 
 
+# ============================================================================
+# Vector Search Strategy
+# ============================================================================
+
+
 class VectorSearchStrategy(SearchStrategy):
     """Vector similarity search strategy using Valkey Search."""
 
@@ -111,31 +116,15 @@ class VectorSearchStrategy(SearchStrategy):
         # Build search query using Valkey vector search syntax
         index_name = self.store.collection_name
 
-        # Create namespace filter for hybrid queries
-        filter_parts = []
-        if op.namespace_prefix:
-            namespace_prefix = "/".join(op.namespace_prefix)
-            filter_parts.append(f"@namespace:{{{namespace_prefix}*}}")
-
-        if op.filter:
-            for key, value in op.filter.items():
-                # Escape special characters in filter values
-                escaped_value = str(value).replace(":", "\\:")
-                filter_parts.append(f"@{key}:{{{escaped_value}}}")
-
-        # Build the vector search query using proper Valkey syntax
-        if filter_parts:
-            # Hybrid query: combine filters with vector search
-            filter_expr = " ".join(filter_parts)
-            vector_query = (
-                f"({filter_expr})=>[KNN {op.limit + op.offset} @vector $vec AS score]"
-            )
-        else:
-            # Pure vector search
-            vector_query = f"*=>[KNN {op.limit + op.offset} @vector $vec AS score]"
+        # Use BaseSearchHelper to build query and filters
+        vector_query, _ = BaseSearchHelper.build_vector_query(
+            namespace_prefix=op.namespace_prefix,
+            filter_dict=op.filter,
+            limit=op.limit,
+            offset=op.offset,
+        )
 
         # Create the query object with proper dialect
-        from valkey.commands.search.query import Query
 
         query = (
             Query(vector_query)
@@ -153,32 +142,16 @@ class VectorSearchStrategy(SearchStrategy):
                     index_operation="embedding_generation",
                 )
 
-            # Generate embedding for the query
-            # Try sync method first, fall back to async only if no event loop exists
-            if hasattr(self.store.embeddings, "embed_query"):
-                query_vector = self.store.embeddings.embed_query(op.query)
-            elif hasattr(self.store.embeddings, "aembed_query"):
-                # Check if we're in an async context
-                try:
-                    asyncio.get_running_loop()
-                    # We're in an async context - cannot use asyncio.run()
-                    raise SearchIndexError(
-                        "Cannot generate embeddings: sync method not available "
-                        "and already in async context. Use AsyncValkeyStore instead.",
-                        index_name=index_name,
-                        index_operation="embedding_generation",
-                    )
-                except RuntimeError:
-                    # No running event loop, safe to create one
-                    query_vector = asyncio.run(
-                        self.store.embeddings.aembed_query(op.query)
-                    )
-            else:
+            if not op.query:
                 raise SearchIndexError(
-                    "No embedding method available (embed_query or aembed_query)",
+                    "Query is required for vector search",
                     index_name=index_name,
                     index_operation="embedding_generation",
                 )
+
+            # Use EmbeddingAdapter for unified embedding generation
+            adapter = EmbeddingAdapter(self.store.embeddings)
+            query_vector = adapter.embed_query_sync(op.query, index_name=index_name)
 
             # Pack vector to binary bytes for FT.SEARCH
             vec_bytes = struct.pack(f"{len(query_vector)}f", *query_vector)
@@ -225,8 +198,9 @@ class VectorSearchStrategy(SearchStrategy):
                     continue
 
                 # Parse document ID to get namespace and key
-                if doc_id.startswith("langgraph:"):
-                    key_path = doc_id[10:]  # Remove 'langgraph:' prefix
+                prefix_with_colon = f"{LANGGRAPH_KEY_PREFIX}:"
+                if doc_id.startswith(prefix_with_colon):
+                    key_path = doc_id[len(prefix_with_colon) :]
                     namespace, item_key = self.store._parse_key(key_path)
                 else:
                     continue
@@ -307,6 +281,11 @@ class VectorSearchStrategy(SearchStrategy):
             return None
 
 
+# ============================================================================
+# Hash Search Strategy
+# ============================================================================
+
+
 class HashSearchStrategy(SearchStrategy):
     """Hash-based search strategy for when vector search is unavailable."""
 
@@ -348,7 +327,10 @@ class HashSearchStrategy(SearchStrategy):
     ) -> list[tuple[tuple[str, ...], str, float]]:
         """Efficient search using hash fields when vector search is unavailable."""
         # Build scan pattern for namespace
-        pattern = f"langgraph:{'/'.join(namespace)}/*" if namespace else "langgraph:*"
+        if namespace:
+            pattern = f"{LANGGRAPH_KEY_PREFIX}:{'/'.join(namespace)}/*"
+        else:
+            pattern = f"{LANGGRAPH_KEY_PREFIX}:*"
 
         # Use SCAN for efficient iteration
         cursor = 0
@@ -373,7 +355,7 @@ class HashSearchStrategy(SearchStrategy):
                 try:
                     # Parse key to get namespace and item key
                     parsed_namespace, item_key = self.store._parse_key(
-                        key, "langgraph:"
+                        key, f"{LANGGRAPH_KEY_PREFIX}:"
                     )
 
                     # Apply namespace prefix filtering
@@ -403,8 +385,8 @@ class HashSearchStrategy(SearchStrategy):
                         score = ScoreCalculator.calculate_text_similarity_score(
                             query, doc_data
                         )
-                        # For hash fallback, include results with score > 0.1
-                        if score > 0.1:
+                        # For hash fallback, include results above minimum threshold
+                        if score > MIN_SEARCH_SCORE:
                             results.append((parsed_namespace, item_key, score))
 
                 except Exception as e:
@@ -466,6 +448,11 @@ class HashSearchStrategy(SearchStrategy):
         return items
 
 
+# ============================================================================
+# Key Pattern Search Strategy
+# ============================================================================
+
+
 class KeyPatternSearchStrategy(SearchStrategy):
     """Fallback search strategy using key pattern matching."""
 
@@ -478,8 +465,8 @@ class KeyPatternSearchStrategy(SearchStrategy):
         items = []
 
         try:
-            # Use FilterProcessor to build namespace pattern
-            pattern = FilterProcessor.build_namespace_pattern(op.namespace_prefix)
+            # Use BaseSearchHelper to build namespace pattern
+            pattern = BaseSearchHelper.build_key_pattern(op.namespace_prefix)
 
             # Use SCAN for better performance with large datasets
             cursor = 0
@@ -553,8 +540,9 @@ class KeyPatternSearchStrategy(SearchStrategy):
             return None
 
         # Parse key - remove langgraph: prefix
-        if key.startswith("langgraph:"):
-            key_path = key[10:]  # Remove "langgraph:" prefix
+        prefix_with_colon = f"{LANGGRAPH_KEY_PREFIX}:"
+        if key.startswith(prefix_with_colon):
+            key_path = key[len(prefix_with_colon) :]
         else:
             key_path = key
 
@@ -589,6 +577,11 @@ class KeyPatternSearchStrategy(SearchStrategy):
             updated_at=updated_at,
             score=score,
         )
+
+
+# ============================================================================
+# Search Strategy Manager
+# ============================================================================
 
 
 class SearchStrategyManager:
@@ -633,3 +626,12 @@ class SearchStrategyManager:
 
         # If all strategies failed or returned no results, return empty list
         return []
+
+
+__all__ = [
+    "SearchStrategy",
+    "VectorSearchStrategy",
+    "HashSearchStrategy",
+    "KeyPatternSearchStrategy",
+    "SearchStrategyManager",
+]

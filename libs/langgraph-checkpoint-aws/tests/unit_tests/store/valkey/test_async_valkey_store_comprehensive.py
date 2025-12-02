@@ -1,7 +1,7 @@
 """Comprehensive tests to improve coverage for AsyncValkeyStore."""
 
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from langgraph.store.base import (
@@ -486,139 +486,6 @@ class TestAsyncValkeyStoreSearchWithHash:
                 )
 
 
-class TestAsyncValkeyStoreKeyPatternSearch:
-    """Test key pattern search functionality."""
-
-    async def test_key_pattern_search_with_scan_error(self, mock_valkey_client):
-        """Test key pattern search with scan error."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        with patch.object(
-            store,
-            "_execute_client_method",
-            side_effect=Exception("Scan failed"),
-        ):
-            op = SearchOp(
-                namespace_prefix=("test",), query="search", limit=10, offset=0
-            )
-            results = await store._key_pattern_search_async(op)
-
-            assert results == []
-
-    async def test_key_pattern_search_with_none_scan_result(self, mock_valkey_client):
-        """Test key pattern search with None scan result."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        with patch.object(store, "_execute_client_method", return_value=None):
-            op = SearchOp(
-                namespace_prefix=("test",), query="search", limit=10, offset=0
-            )
-            results = await store._key_pattern_search_async(op)
-
-            assert results == []
-
-    async def test_key_pattern_search_processing_error(self, mock_valkey_client):
-        """Test key pattern search with processing error."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        # Mock scan to return keys
-        with patch.object(
-            store,
-            "_execute_client_method",
-            return_value=(0, ["langgraph:test/key1"]),
-        ):
-            # Mock hgetall to raise exception
-            mock_valkey_client.hgetall.side_effect = Exception("Processing failed")
-
-            op = SearchOp(
-                namespace_prefix=("test",), query="search", limit=10, offset=0
-            )
-            results = await store._key_pattern_search_async(op)
-
-            assert results == []
-
-
-class TestAsyncValkeyStoreVectorSearch:
-    """Test vector search functionality."""
-
-    async def test_vector_search_no_embeddings(self, mock_valkey_client):
-        """Test vector search without embeddings."""
-        store = AsyncValkeyStore(mock_valkey_client)
-        store.embeddings = None
-
-        op = SearchOp(namespace_prefix=("test",), query="search", limit=10, offset=0)
-        results = await store._vector_search(op)
-
-        assert results == []
-
-    async def test_vector_search_callable_embeddings(self, mock_valkey_client):
-        """Test vector search with callable embeddings."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        # Create a proper mock embeddings object with the expected
-        # interface
-        mock_embeddings = MagicMock()
-        mock_embeddings.embed_documents.return_value = [[0.1, 0.2, 0.3]]
-        store.embeddings = mock_embeddings
-
-        op = SearchOp(namespace_prefix=("test",), query="search", limit=10, offset=0)
-        results = await store._vector_search(op)
-
-        assert isinstance(results, list)
-
-    async def test_vector_search_embed_documents_method(self, mock_valkey_client):
-        """Test vector search with embed_documents method."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        mock_embeddings = Mock()
-        mock_embeddings.embed_documents = Mock(return_value=[[0.1, 0.2, 0.3]])
-        store.embeddings = mock_embeddings
-
-        op = SearchOp(namespace_prefix=("test",), query="search", limit=10, offset=0)
-        results = await store._vector_search(op)
-
-        assert isinstance(results, list)
-
-    async def test_vector_search_aembed_documents_method(self, mock_valkey_client):
-        """Test vector search with aembed_documents method."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        mock_embeddings = Mock()
-        mock_embeddings.aembed_documents = AsyncMock(return_value=[[0.1, 0.2, 0.3]])
-        store.embeddings = mock_embeddings
-
-        op = SearchOp(namespace_prefix=("test",), query="search", limit=10, offset=0)
-        results = await store._vector_search(op)
-
-        assert isinstance(results, list)
-
-    async def test_vector_search_embedding_error(self, mock_valkey_client):
-        """Test vector search with embedding generation error."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        mock_embeddings = Mock()
-        mock_embeddings.embed_documents = Mock(
-            side_effect=Exception("Embedding failed")
-        )
-        store.embeddings = mock_embeddings
-
-        op = SearchOp(namespace_prefix=("test",), query="search", limit=10, offset=0)
-        results = await store._vector_search(op)
-
-        assert results == []
-
-    async def test_vector_search_no_embeddings_warning(self, mock_valkey_client):
-        """Test vector search with non-callable embeddings."""
-        store = AsyncValkeyStore(mock_valkey_client)
-        # Use type: ignore to bypass type checker for this specific test case
-        store.embeddings = "not_callable"  # type: ignore
-
-        op = SearchOp(namespace_prefix=("test",), query="search", limit=10, offset=0)
-        results = await store._vector_search(op)
-
-        assert results == []
-
-
 class TestAsyncValkeyStoreHandlePutAsync:
     """Test async put operation edge cases."""
 
@@ -1040,45 +907,6 @@ class TestAsyncValkeyStoreAdditionalCoverage:
                 assert isinstance(store, AsyncValkeyStore)
             # Context manager should exit cleanly
 
-    async def test_vector_search_no_query_vector(self, mock_valkey_client):
-        """Test vector search when no query vector is generated."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        # Mock embeddings that return None/empty
-        mock_embeddings = Mock()
-        mock_embeddings.embed_documents = Mock(return_value=[])
-        store.embeddings = mock_embeddings
-
-        op = SearchOp(namespace_prefix=("test",), query="search", limit=10, offset=0)
-        results = await store._vector_search(op)
-
-        assert results == []
-
-    async def test_vector_search_with_namespace_filter(self, mock_valkey_client):
-        """Test vector search with namespace filter."""
-        store = AsyncValkeyStore(mock_valkey_client)
-        store.collection_name = "test_index"
-
-        mock_embeddings = Mock()
-        mock_embeddings.embed_documents = Mock(return_value=[[0.1, 0.2, 0.3]])
-        store.embeddings = mock_embeddings
-
-        # Mock the search execution to avoid complex FT.SEARCH setup
-        with patch("asyncio.get_event_loop") as mock_loop:
-            mock_executor = AsyncMock(return_value=Mock(docs=[]))
-            mock_loop.return_value.run_in_executor = mock_executor
-
-            op = SearchOp(
-                namespace_prefix=("test", "sub"),
-                query="search",
-                filter={"category": "test"},
-                limit=10,
-                offset=0,
-            )
-            results = await store._vector_search(op)
-
-            assert isinstance(results, list)
-
     async def test_search_with_hash_cursor_continuation(self, mock_valkey_client):
         """Test hash search with cursor continuation."""
         store = AsyncValkeyStore(mock_valkey_client)
@@ -1192,70 +1020,6 @@ class TestAsyncValkeyStoreAdditionalCoverage:
 
             # Should be empty due to filter
             assert results == []
-
-    async def test_key_pattern_search_namespace_filtering(self, mock_valkey_client):
-        """Test key pattern search namespace filtering."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        # Mock scan to return keys with different namespaces
-        all_keys = [
-            "langgraph:test/sub/key1",
-            "langgraph:test/other/key2",
-            "langgraph:different/key3",
-        ]
-
-        # Mock _execute_client_method to handle scan operations properly
-        scan_call_count = 0
-
-        async def mock_execute_side_effect(method_name, *args, **kwargs):
-            nonlocal scan_call_count
-            if method_name == "scan":
-                scan_call_count += 1
-                if scan_call_count == 1:
-                    # Return all keys with cursor 0 to end scan
-                    return (0, all_keys)
-                else:
-                    return (0, [])  # Subsequent calls return empty
-            elif method_name == "hgetall":
-                return {}  # Return empty hash
-            return None
-
-        with patch.object(
-            store, "_execute_client_method", side_effect=mock_execute_side_effect
-        ):
-            op = SearchOp(
-                namespace_prefix=("test", "sub"), query="search", limit=10, offset=0
-            )
-
-            results = await store._key_pattern_search_async(op)
-
-            # Should filter to only keys matching namespace prefix
-            assert isinstance(results, list)
-
-    async def test_key_pattern_search_document_processing_error(
-        self, mock_valkey_client
-    ):
-        """Test key pattern search document processing error."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        with patch.object(
-            store, "_execute_client_method", return_value=(0, ["langgraph:test/key1"])
-        ):
-            # Mock DocumentProcessor to raise exception
-            with patch(
-                "langgraph_checkpoint_aws.store.valkey.async_store.DocumentProcessor"
-            ) as mock_processor:
-                mock_processor.convert_hash_to_document.side_effect = Exception(
-                    "Processing failed"
-                )
-
-                op = SearchOp(
-                    namespace_prefix=("test",), query="search", limit=10, offset=0
-                )
-                results = await store._key_pattern_search_async(op)
-
-                # Should handle error and return empty list
-                assert results == []
 
     async def test_handle_list_async_key_conversion_error(self, mock_valkey_client):
         """Test handle list async key conversion error."""
@@ -1417,19 +1181,3 @@ class TestAsyncValkeyStoreAdditionalCoverage:
 
         # Should set TTL in seconds (30 * 60 = 1800)
         mock_valkey_client.expire.assert_called_once_with("langgraph:test/key1", 1800)
-
-    async def test_handle_search_async_error_handling(self, mock_valkey_client):
-        """Test handle search async error handling."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        # Mock _key_pattern_search_async to raise exception
-        with patch.object(
-            store, "_key_pattern_search_async", side_effect=Exception("Search failed")
-        ):
-            op = SearchOp(
-                namespace_prefix=("test",), query="search", limit=10, offset=0
-            )
-            results = await store._handle_search_async(op)
-
-            # Should catch exception and return empty list
-            assert results == []

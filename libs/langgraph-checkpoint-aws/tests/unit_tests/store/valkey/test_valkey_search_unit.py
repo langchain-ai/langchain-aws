@@ -51,7 +51,7 @@ if VALKEY_AVAILABLE:
 
     from langgraph.store.base import SearchItem, SearchOp
 
-    from langgraph_checkpoint_aws.store.valkey.search_strategies import (
+    from langgraph_checkpoint_aws.store.valkey.search import (
         HashSearchStrategy,
         KeyPatternSearchStrategy,
         SearchStrategyManager,
@@ -844,7 +844,7 @@ class TestKeyPatternSearchStrategy:
         """Test basic key pattern search."""
         # Mock the dependencies properly
         with patch(
-            "langgraph_checkpoint_aws.store.valkey.search_strategies.FilterProcessor"
+            "langgraph_checkpoint_aws.store.valkey.document_utils.FilterProcessor"
         ) as mock_filter:
             mock_filter.build_namespace_pattern.return_value = "langgraph:test/*"
 

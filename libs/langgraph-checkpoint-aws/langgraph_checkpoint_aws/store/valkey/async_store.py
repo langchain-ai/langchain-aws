@@ -33,7 +33,7 @@ from ...checkpoint.valkey.utils import aset_client_info
 from .base import BaseValkeyStore, ValkeyIndexConfig
 from .document_utils import DocumentProcessor, FilterProcessor, ScoreCalculator
 from .exceptions import EmbeddingGenerationError
-from .search_strategies import SearchStrategyManager
+from .search import AsyncSearchStrategyManager
 
 logger = logging.getLogger(__name__)
 
@@ -42,12 +42,12 @@ class AsyncValkeyStore(BaseValkeyStore):
     """Asynchronous Valkey store implementation for LangGraph.
 
     Features:
-    - Vector similarity search with configurable embeddings
-    - JSON document storage with TTL support
-    - Connection pool support for better performance
-    - Async operations
-    - Namespace organization
-    - Batch operations
+        - Vector similarity search with configurable embeddings
+        - JSON document storage with TTL support
+        - Connection pool support for better performance
+        - Async operations
+        - Namespace organization
+        - Batch operations
 
     Examples:
         Basic usage with BedrockEmbeddings:
@@ -137,6 +137,26 @@ class AsyncValkeyStore(BaseValkeyStore):
         )
         ```
 
+    Concurrency:
+        AsyncValkeyStore is designed for asyncio concurrency (cooperative multitasking).
+        Multiple coroutines can safely share a single store instance within the same
+        event loop. The underlying async Valkey client handles concurrent requests
+        efficiently.
+
+        For high-concurrency applications, configure appropriate pool size:
+
+        ```python
+        store = await AsyncValkeyStore.from_conn_string(
+            "valkey://localhost:6379",
+            pool_size=20,  # Size based on expected concurrent operations
+            ...
+        )
+        ```
+
+        Note: If providing custom embeddings, ensure your embeddings object supports
+        async operations. Standard embedding providers (BedrockEmbeddings with async
+        methods, OpenAI, Cohere) support async operations by default.
+
     Note:
         Semantic search is disabled by default. You can enable it by providing
         an `index` configuration when creating the store. Without this configuration,
@@ -170,7 +190,7 @@ class AsyncValkeyStore(BaseValkeyStore):
         self._document_processor = DocumentProcessor()
         self._filter_processor = FilterProcessor()
         self._score_calculator = ScoreCalculator()
-        self._search_strategy_manager = SearchStrategyManager(client, self)  # type: ignore[assignment]
+        self._search_manager = AsyncSearchStrategyManager(self)
 
         # Detect if this is an async client (like fakeredis.aioredis.FakeRedis)
         self._is_async_client = self._detect_async_client(client)
@@ -463,8 +483,7 @@ class AsyncValkeyStore(BaseValkeyStore):
     async def _handle_search_async(self, op: SearchOp) -> list[SearchItem]:
         """Handle search operation using search strategy pattern asynchronously."""
         try:
-            # For now, use the key pattern search as fallback
-            return await self._key_pattern_search_async(op)
+            return await self._search_manager.search(op)
         except Exception as e:
             logger.error(f"Error in search operation: {e}")
             return []
@@ -516,170 +535,6 @@ class AsyncValkeyStore(BaseValkeyStore):
 
         except Exception as e:
             logger.error(f"Error listing namespaces: {e}")
-            return []
-
-    async def _vector_search(self, op: SearchOp) -> list[SearchItem]:
-        """Perform vector similarity search using Valkey Search."""
-        try:
-            # Generate query embedding
-            query_vector = None
-            if self.embeddings and op.query:
-                try:
-                    # Handle different types of embedding functions
-                    if callable(self.embeddings):
-                        # Try calling it directly (works for mock functions and
-                        # simple callables)
-                        vectors = self.embeddings([op.query])
-                        query_vector = vectors[0] if vectors else None
-                    elif hasattr(self.embeddings, "aembed_documents"):
-                        # Use async embedding method
-                        vectors = await self.embeddings.aembed_documents([op.query])
-                        query_vector = vectors[0] if vectors else None
-                    else:
-                        logger.warning(
-                            "Embeddings object does not have aembed_documents method. "
-                            "Use ValkeyStore for sync embeddings."
-                        )
-                        return []
-                except Exception as e:
-                    logger.error(f"Error generating query embedding: {e}")
-                    return []
-
-            if not query_vector:
-                return []
-
-            # Build search query
-            index_name = self.collection_name
-
-            # Create namespace filter
-            namespace_filter = ""
-            if op.namespace_prefix:
-                namespace_prefix = "/".join(op.namespace_prefix)
-                namespace_filter = f"@namespace:{{{namespace_prefix}*}}"
-
-            # Create additional filters
-            filter_parts = []
-            if namespace_filter:
-                filter_parts.append(namespace_filter)
-
-            if op.filter:
-                for key, value in op.filter.items():
-                    # Escape special characters in filter values
-                    escaped_value = str(value).replace(":", "\\:")
-                    filter_parts.append(f"@{key}:{{{escaped_value}}}")
-
-            # Combine filters
-            query_filter = " ".join(filter_parts) if filter_parts else "*"
-
-            # Build vector search query using the recommended approach
-            # Execute search - convert vector to bytes for Valkey
-            import struct
-
-            from valkey.commands.search.query import Query
-
-            vector_bytes = b"".join(struct.pack("<f", x) for x in query_vector)
-
-            # Create query using the recommended .paging() method
-            query = (
-                Query(
-                    f"({query_filter})=>[KNN {op.limit + op.offset} @vector $BLOB "
-                    f"AS score]"
-                )
-                .sort_by("score")
-                .return_fields("id", "score")
-                .paging(op.offset, op.limit)
-                .dialect(2)
-            )
-
-            search_params: dict[str, str | int | float | bytes] = {"BLOB": vector_bytes}
-
-            try:
-                results = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: self.client.ft(index_name).search(query, search_params),
-                )
-
-                items = []
-                # Check if results has docs attribute and process results
-                docs = getattr(results, "docs", None)
-                if docs:
-                    # Skip offset items and process results
-                    for _i, doc in enumerate(docs):
-                        try:
-                            # Parse document data
-                            doc_data = doc.__dict__
-
-                            # Extract namespace and key from document ID
-                            doc_id = doc_data.get("id", "")
-                            if doc_id.startswith("langgraph:"):
-                                key_path = doc_id[10:]  # Remove 'langgraph:' prefix
-                                namespace, item_key = self._parse_key(key_path)
-                            else:
-                                continue
-
-                            # Get the actual document content
-                            full_key = self._build_key(namespace, item_key)
-                            value_data = await asyncio.get_event_loop().run_in_executor(
-                                None, self.client.get, full_key
-                            )
-                            if not value_data:
-                                continue
-
-                            value_data = await self._handle_response_t_async(value_data)
-                            if value_data is None:
-                                continue
-
-                            # Parse document using DocumentProcessor
-                            try:
-                                parsed_data = orjson.loads(value_data)
-                                value = parsed_data.get("value", {})
-                                created_at = datetime.fromisoformat(
-                                    parsed_data.get(
-                                        "created_at", datetime.now().isoformat()
-                                    )
-                                )
-                                updated_at = datetime.fromisoformat(
-                                    parsed_data.get(
-                                        "updated_at", datetime.now().isoformat()
-                                    )
-                                )
-                            except Exception as e:
-                                logger.error(f"Error parsing document data: {e}")
-                                continue
-
-                            # Apply additional filters
-                            if not self._apply_filter(value, op.filter):
-                                continue
-
-                            # Get similarity score from search results
-                            score = float(doc_data.get("score", 0.0))
-
-                            item = SearchItem(
-                                namespace=namespace,
-                                key=item_key,
-                                value=value,
-                                created_at=created_at,
-                                updated_at=updated_at,
-                                score=score,
-                            )
-                            items.append(item)
-
-                        except Exception as e:
-                            logger.error(f"Error processing search result: {e}")
-                            continue
-
-                # Refresh TTL if configured
-                if op.refresh_ttl and self.ttl_config:
-                    await self._refresh_ttl_for_items_async(items)
-
-                return items
-
-            except Exception as e:
-                logger.error(f"Vector search failed: {e}")
-                return []
-
-        except Exception as e:
-            logger.error(f"Error in vector search: {e}")
             return []
 
     async def _search_with_hash_async(
@@ -818,156 +673,6 @@ class AsyncValkeyStore(BaseValkeyStore):
             except Exception as e:
                 logger.debug(f"Error converting result {namespace}/{key}: {e}")
                 continue
-        return items
-
-    async def _key_pattern_search_async(self, op: SearchOp) -> list[SearchItem]:
-        """Fallback search using key pattern matching."""
-        items = []
-
-        try:
-            # Build pattern with langgraph: prefix
-            if op.namespace_prefix:
-                namespace_path = "/".join(op.namespace_prefix)
-                pattern = f"langgraph:{namespace_path}/*"
-            else:
-                pattern = "langgraph:*"
-
-            # Use SCAN for better performance with large datasets
-            cursor = 0
-            all_keys = []
-
-            while True:
-                # Execute scan and properly await the result
-                scan_result = await self._execute_client_method(
-                    "scan", cursor, match=pattern, count=1000
-                )
-                if scan_result is None:
-                    break
-
-                # Handle ResponseT type for scan result
-                scan_result = await self._handle_response_t_async(scan_result)
-                if scan_result is None:
-                    break
-
-                cursor, keys = scan_result
-                # Convert keys to strings directly
-                parsed_keys = []
-                if hasattr(keys, "__iter__") and not isinstance(keys, (str, bytes)):
-                    for key in keys:
-                        if isinstance(key, bytes):
-                            parsed_keys.append(key.decode("utf-8"))
-                        elif isinstance(key, str):
-                            parsed_keys.append(key)
-                        else:
-                            parsed_keys.append(str(key))
-                keys = parsed_keys
-                all_keys.extend(keys)
-                if cursor == 0:
-                    break
-
-            # Filter keys by namespace prefix if specified
-            if op.namespace_prefix:
-                namespace_path = "/".join(op.namespace_prefix)
-                filtered_keys = []
-                for key in all_keys:
-                    if key.startswith("langgraph:"):
-                        key_path = key[10:]  # Remove "langgraph:" prefix
-                        if key_path.startswith(namespace_path + "/"):
-                            filtered_keys.append(key)
-                all_keys = filtered_keys
-
-            # Sort keys for consistent ordering
-            all_keys.sort()
-
-            # Process all keys first to calculate scores, then apply pagination
-            scored_items = []
-
-            for key in all_keys:  # Fixed: use all_keys instead of limited_keys
-                try:
-                    # Use HGETALL since we store data as hash fields
-                    hash_data = await self._execute_client_method("hgetall", key)
-                    # Ensure hash_data is properly typed as dict
-                    if not hash_data or not isinstance(hash_data, dict):
-                        continue
-
-                    # Parse key - remove langgraph: prefix
-                    if key.startswith("langgraph:"):
-                        key_path = key[10:]  # Remove "langgraph:" prefix
-                    else:
-                        key_path = key
-
-                    # Parse namespace and key
-                    namespace, item_key = self._parse_key(key_path)
-
-                    # Use DocumentProcessor to convert hash fields back to document
-                    # format
-                    document = DocumentProcessor.convert_hash_to_document(hash_data)
-                    if document is None:
-                        continue
-
-                    # Parse the JSON-encoded value using DocumentProcessor
-                    parsed_value = DocumentProcessor.parse_document_value(document)
-                    if parsed_value is None:
-                        continue
-
-                    # Parse timestamps using DocumentProcessor
-                    created_at, updated_at = DocumentProcessor.parse_timestamps(
-                        document
-                    )
-
-                    # Apply filter using base class method
-                    if not self._apply_filter(parsed_value, op.filter):
-                        continue
-
-                    # Calculate score using base class method
-                    score = self._calculate_simple_score(op.query, parsed_value)
-
-                    scored_items.append(
-                        (
-                            score,
-                            SearchItem(
-                                namespace=namespace,
-                                key=item_key,
-                                value=parsed_value,
-                                created_at=created_at,
-                                updated_at=updated_at,
-                                score=score,
-                            ),
-                        )
-                    )
-
-                except Exception as e:
-                    logger.error(f"Error processing key {key}: {e}")
-                    continue
-
-            # Sort by score descending
-            scored_items.sort(key=lambda x: x[0], reverse=True)
-
-            # Apply pagination after scoring and sorting
-            start_idx = op.offset
-            end_idx = start_idx + op.limit
-            paginated_items = scored_items[start_idx:end_idx]
-
-            # Debug logging for pagination
-            logger.debug(
-                f"Key pattern search: total items={len(scored_items)}, "
-                f"offset={op.offset}, limit={op.limit}, start_idx={start_idx}, "
-                f"end_idx={end_idx}, paginated_count={len(paginated_items)}"
-            )
-            if paginated_items:
-                keys = [item[1].key for item in paginated_items]
-                logger.debug(f"Paginated keys: {keys}")
-
-            # Extract SearchItem objects
-            items = [item for _, item in paginated_items]
-
-            # Refresh TTL if configured
-            if op.refresh_ttl and self.ttl_config:
-                await self._refresh_ttl_for_items_async(items)
-
-        except Exception as e:
-            logger.error(f"Error in key pattern search: {e}")
-
         return items
 
     async def _refresh_ttl_for_items_async(self, items: list[SearchItem]) -> None:
