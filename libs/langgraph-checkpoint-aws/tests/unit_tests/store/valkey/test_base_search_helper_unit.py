@@ -2,6 +2,9 @@
 
 import pytest
 
+# Skip entire module if valkey not available
+pytest.importorskip("valkey")
+
 from langgraph_checkpoint_aws.store.valkey.search import BaseSearchHelper
 
 

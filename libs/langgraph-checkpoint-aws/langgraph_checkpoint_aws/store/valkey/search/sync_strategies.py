@@ -8,10 +8,17 @@ from __future__ import annotations
 import logging
 import struct
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langgraph.store.base import SearchItem, SearchOp
-from valkey.commands.search.query import Query  # type: ignore[import-untyped]
+
+if TYPE_CHECKING:
+    from valkey.commands.search.query import Query  # type: ignore[import-untyped]
+else:
+    try:
+        from valkey.commands.search.query import Query  # type: ignore[import-untyped]
+    except ImportError:
+        Query = None  # type: ignore[assignment, misc]
 
 from ..constants import LANGGRAPH_KEY_PREFIX, MIN_SEARCH_SCORE
 from ..document_utils import DocumentProcessor, FilterProcessor, ScoreCalculator
