@@ -2356,3 +2356,107 @@ def test_get_num_tokens_from_messages_api_error_fallback() -> None:
         token_count = llm.get_num_tokens_from_messages(messages)
         assert token_count == 5
         mock_base.assert_called_once()
+
+
+def test_reasoning_effort_amazon_nova() -> None:
+    """Test that reasoning_effort configures reasoningConfig for Amazon Nova models."""
+    llm = ChatBedrockConverse(
+        model="us.amazon.nova-lite-v1:0",
+        region_name="us-west-2",
+        reasoning_effort="medium",
+    )
+
+    assert llm.additional_model_request_fields is not None
+    assert "reasoningConfig" in llm.additional_model_request_fields
+    assert llm.additional_model_request_fields["reasoningConfig"] == {
+        "type": "enabled",
+        "maxReasoningEffort": "medium",
+    }
+
+
+@pytest.mark.parametrize("effort", ["low", "medium", "high"])
+def test_reasoning_effort_amazon_nova_all_levels(
+    effort: Literal["low", "medium", "high"]
+) -> None:
+    """Test all reasoning effort levels for Amazon Nova models."""
+    llm = ChatBedrockConverse(
+        model="amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+        reasoning_effort=effort,
+    )
+
+    assert llm.additional_model_request_fields is not None
+    assert llm.additional_model_request_fields["reasoningConfig"]["maxReasoningEffort"] == effort
+
+
+def test_reasoning_effort_openai() -> None:
+    """Test that reasoning_effort is set directly for OpenAI models on Bedrock."""
+    llm = ChatBedrockConverse(
+        model="openai.gpt-oss-120b-1:0",
+        region_name="us-west-2",
+        reasoning_effort="high",
+    )
+
+    assert llm.additional_model_request_fields is not None
+    assert llm.additional_model_request_fields.get("reasoning_effort") == "high"
+    # Should not have reasoningConfig for OpenAI
+    assert "reasoningConfig" not in llm.additional_model_request_fields
+
+
+def test_reasoning_effort_preserves_existing_fields() -> None:
+    """Test that reasoning_effort merges with existing additional_model_request_fields."""
+    llm = ChatBedrockConverse(
+        model="us.amazon.nova-lite-v1:0",
+        region_name="us-west-2",
+        reasoning_effort="low",
+        additional_model_request_fields={"customParam": "value"},
+    )
+
+    assert llm.additional_model_request_fields is not None
+    # Both the reasoning config and custom param should be present
+    assert "reasoningConfig" in llm.additional_model_request_fields
+    assert llm.additional_model_request_fields["customParam"] == "value"
+
+
+def test_reasoning_effort_existing_fields_take_precedence() -> None:
+    """Test that existing additional_model_request_fields take precedence."""
+    llm = ChatBedrockConverse(
+        model="us.amazon.nova-lite-v1:0",
+        region_name="us-west-2",
+        reasoning_effort="low",
+        additional_model_request_fields={
+            "reasoningConfig": {"type": "disabled"},
+        },
+    )
+
+    assert llm.additional_model_request_fields is not None
+    # User-provided config should take precedence
+    assert llm.additional_model_request_fields["reasoningConfig"] == {"type": "disabled"}
+
+
+def test_reasoning_effort_none_does_not_modify_fields() -> None:
+    """Test that reasoning_effort=None doesn't add any fields."""
+    llm = ChatBedrockConverse(
+        model="us.amazon.nova-lite-v1:0",
+        region_name="us-west-2",
+        reasoning_effort=None,
+    )
+
+    assert llm.additional_model_request_fields is None
+
+
+def test_reasoning_effort_unsupported_provider_warning() -> None:
+    """Test that using reasoning_effort with unsupported providers emits a warning."""
+    with pytest.warns(
+        UserWarning,
+        match="reasoning_effort parameter may not be supported for provider",
+    ):
+        llm = ChatBedrockConverse(
+            model="anthropic.claude-3-sonnet-20240229-v1:0",
+            region_name="us-west-2",
+            reasoning_effort="medium",
+        )
+
+    # The value should still be passed through
+    assert llm.additional_model_request_fields is not None
+    assert llm.additional_model_request_fields.get("reasoning_effort") == "medium"

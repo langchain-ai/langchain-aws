@@ -546,6 +546,46 @@ class ChatBedrockConverse(BaseChatModel):
     request_metadata: Optional[Dict[str, str]] = None
     """Key-Value pairs that you can use to filter invocation logs."""
 
+    reasoning_effort: Optional[Literal["low", "medium", "high"]] = None
+    """Reasoning effort level for models that support extended thinking.
+
+    Controls the computational effort used in the reasoning process.
+    Valid options are "low", "medium", or "high".
+
+    This parameter provides a convenient way to enable reasoning without
+    manually configuring `additional_model_request_fields`. When set, it
+    will automatically configure the appropriate reasoning parameters for
+    the model provider:
+
+    - **Amazon Nova models**: Configures `reasoningConfig` with the specified
+      `maxReasoningEffort` level.
+    - **OpenAI models on Bedrock**: Sets the `reasoning_effort` parameter.
+
+    Example:
+        .. code-block:: python
+
+            from langchain_aws import ChatBedrockConverse
+
+            # Using reasoning_effort with Amazon Nova
+            llm = ChatBedrockConverse(
+                model="us.amazon.nova-lite-v1:0",
+                region_name="us-west-2",
+                reasoning_effort="medium",
+            )
+
+            # Using reasoning_effort with OpenAI on Bedrock
+            llm = ChatBedrockConverse(
+                model="openai.gpt-4o-mini-2024-07-18-v1:0",
+                region_name="us-west-2",
+                reasoning_effort="high",
+            )
+
+    Note:
+        For Anthropic Claude models, use `additional_model_request_fields`
+        with the `thinking` parameter instead, as Claude uses `budget_tokens`
+        rather than effort levels.
+    """
+
     guard_last_turn_only: bool = False
     """Boolean flag for applying the guardrail to only the last turn."""
 
@@ -859,6 +899,50 @@ class ChatBedrockConverse(BaseChatModel):
         if self.profile is None:
             model_id = re.sub(r"^[A-Za-z]{2}\.", "", self.model_id)
             self.profile = _get_default_model_profile(model_id)
+        return self
+
+    @model_validator(mode="after")
+    def _configure_reasoning_effort(self) -> Self:
+        """Configure reasoning parameters based on reasoning_effort setting."""
+        if self.reasoning_effort is None:
+            return self
+
+        # Build the appropriate reasoning config based on provider
+        reasoning_config: Dict[str, Any] = {}
+
+        if self.provider == "amazon":
+            # Amazon Nova models use reasoningConfig
+            reasoning_config = {
+                "reasoningConfig": {
+                    "type": "enabled",
+                    "maxReasoningEffort": self.reasoning_effort,
+                }
+            }
+        elif self.provider == "openai":
+            # OpenAI models on Bedrock use reasoning_effort
+            reasoning_config = {"reasoning_effort": self.reasoning_effort}
+        else:
+            # For other providers, warn that reasoning_effort may not be supported
+            warnings.warn(
+                f"reasoning_effort parameter may not be supported for provider "
+                f"'{self.provider}'. For Anthropic Claude models, use "
+                f"additional_model_request_fields with the 'thinking' parameter "
+                f"instead. The reasoning_effort value will be passed as-is to "
+                f"additionalModelRequestFields.",
+                UserWarning,
+                stacklevel=2,
+            )
+            reasoning_config = {"reasoning_effort": self.reasoning_effort}
+
+        # Merge with existing additional_model_request_fields
+        if self.additional_model_request_fields:
+            self.additional_model_request_fields = {
+                **reasoning_config,
+                **self.additional_model_request_fields,
+            }
+        else:
+            self.additional_model_request_fields = reasoning_config
+
         return self
 
     def _get_base_model(self) -> str:
