@@ -10,6 +10,7 @@ from .adapters import (
     ClientAdapter,
     DocumentAdapter,
     EmbeddingAdapter,
+    HashSearchAdapter,
     SyncClientAdapter,
 )
 
@@ -44,6 +45,7 @@ __all__ = [
     "SyncClientAdapter",
     "AsyncClientAdapter",
     "DocumentAdapter",
+    "HashSearchAdapter",
     # Helpers
     "BaseSearchHelper",
     # Protocols

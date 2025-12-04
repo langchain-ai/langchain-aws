@@ -20,11 +20,12 @@ else:
     except ImportError:
         Query = None  # type: ignore[assignment, misc]
 
-from ..constants import LANGGRAPH_KEY_PREFIX, MIN_SEARCH_SCORE
-from ..document_utils import DocumentProcessor, FilterProcessor, ScoreCalculator
 from ..exceptions import SearchIndexError
 from .adapters import (
+    DocumentAdapter,
     EmbeddingAdapter,
+    HashSearchAdapter,
+    SyncClientAdapter,
 )
 from .helpers import BaseSearchHelper
 from .protocols import ValkeyClientProtocol
@@ -196,96 +197,24 @@ class VectorSearchStrategy(SearchStrategy):
         if not docs:
             return items
 
+        # Create sync client adapter
+        client_adapter = SyncClientAdapter(self.client, self.store)
+
         # Skip offset items and process results
         for _i, doc in enumerate(docs[op.offset :]):
             try:
-                # Extract document metadata
-                doc_id, score = self._extract_doc_metadata(doc)
-                if not doc_id:
-                    continue
-
-                # Parse document ID to get namespace and key
-                prefix_with_colon = f"{LANGGRAPH_KEY_PREFIX}:"
-                if doc_id.startswith(prefix_with_colon):
-                    key_path = doc_id[len(prefix_with_colon) :]
-                    namespace, item_key = self.store._parse_key(key_path)
-                else:
-                    continue
-
-                # Get and process document content
-                search_item = self._create_search_item_from_key(
-                    namespace, item_key, score
+                # Use DocumentAdapter for consistent parsing
+                item = DocumentAdapter.parse_vector_search_doc_sync(
+                    doc, client_adapter, self.store, apply_filters=op.filter
                 )
-                if search_item:
-                    items.append(search_item)
+                if item:
+                    items.append(item)
 
             except Exception as e:
                 logger.error(f"Error processing search result: {e}")
                 continue
 
         return items
-
-    def _extract_doc_metadata(self, doc: Any) -> tuple[str, float]:
-        """Extract document ID and score from search result."""
-        try:
-            # For mock docs, handle both dict-like and object-like access
-            if hasattr(doc, "__dict__"):
-                doc_data = doc.__dict__
-            else:
-                doc_data = doc
-
-            # Extract document ID - handle both 'id' attribute and direct access
-            doc_id = getattr(doc, "id", None) or doc_data.get("id", "")
-
-            # Get similarity score from search results - handle both types
-            score = getattr(doc, "score", None) or doc_data.get("score", 0.0)
-            score = float(score)
-
-            return doc_id, score
-        except Exception as e:
-            logger.error(f"Error extracting document metadata: {e}")
-            return "", 0.0
-
-    def _create_search_item_from_key(
-        self, namespace: tuple[str, ...], key: str, score: float
-    ) -> SearchItem | None:
-        """Create SearchItem from namespace, key, and score."""
-        try:
-            # Get the actual document content using HGETALL since data is stored
-            full_key = self.store._build_key(namespace, key)
-            hash_data = self.client.hgetall(full_key)
-            if not hash_data:
-                return None
-
-            hash_data = self.store._handle_response_t(hash_data)
-            if hash_data is None or not isinstance(hash_data, dict):
-                return None
-
-            # Use DocumentProcessor to convert hash fields back to document format
-            document = DocumentProcessor.convert_hash_to_document(hash_data)
-            if document is None:
-                return None
-
-            # Parse the JSON-encoded value using DocumentProcessor
-            parsed_value = DocumentProcessor.parse_document_value(document)
-            if parsed_value is None:
-                return None
-
-            # Parse timestamps using DocumentProcessor
-            created_at, updated_at = DocumentProcessor.parse_timestamps(document)
-
-            return SearchItem(
-                namespace=namespace,
-                key=key,
-                value=parsed_value,
-                created_at=created_at,
-                updated_at=updated_at,
-                score=score,
-            )
-
-        except Exception as e:
-            logger.error(f"Error creating search item for {namespace}/{key}: {e}")
-            return None
 
 
 # ============================================================================
@@ -303,156 +232,34 @@ class HashSearchStrategy(SearchStrategy):
     def search(self, op: SearchOp) -> list[SearchItem]:
         """Perform hash-based search."""
         try:
-            hash_results = self._search_with_hash(
-                op.namespace_prefix, op.query, op.filter, op.limit + op.offset
+            # Use HashSearchAdapter for consistent implementation
+            namespace = op.namespace_prefix or ()
+            hash_results = HashSearchAdapter.scan_and_score_keys_sync(
+                client=self.client,
+                store=self.store,
+                namespace=namespace,
+                query=op.query,
+                filter_dict=op.filter,
+                limit=op.limit,
+                offset=op.offset,
             )
-            items = self._convert_to_search_items(hash_results)
+
+            # Convert to SearchItems
+            items = HashSearchAdapter.convert_hash_results_to_items_sync(
+                client=self.client, store=self.store, results=hash_results
+            )
 
             if items:
-                # Apply offset and limit to hash results
-                start_idx = op.offset
-                end_idx = start_idx + op.limit
-                result_items = items[start_idx:end_idx]
-
                 # Refresh TTL if configured
                 if op.refresh_ttl:
-                    self._refresh_ttl_for_items(result_items)
+                    self._refresh_ttl_for_items(items)
 
-                return result_items
+                return items
 
             return []
         except Exception as e:
             logger.debug(f"Hash-based search failed: {e}")
             return []
-
-    def _search_with_hash(
-        self,
-        namespace: tuple[str, ...],
-        query: str | None = None,
-        filter_dict: dict[str, Any] | None = None,
-        limit: int | None = None,
-    ) -> list[tuple[tuple[str, ...], str, float]]:
-        """Efficient search using hash fields when vector search is unavailable."""
-        # Build scan pattern for namespace
-        if namespace:
-            pattern = f"{LANGGRAPH_KEY_PREFIX}:{'/'.join(namespace)}/*"
-        else:
-            pattern = f"{LANGGRAPH_KEY_PREFIX}:*"
-
-        # Use SCAN for efficient iteration
-        cursor = 0
-        results = []
-        seen_keys = set()
-
-        while True:
-            scan_result = self.client.scan(cursor, match=pattern, count=1000)
-            # Handle ResponseT type for scan result
-            scan_result = self.store._handle_response_t(scan_result)
-            if scan_result is None:
-                break
-
-            cursor, keys = scan_result
-            keys = self.store._safe_parse_keys(keys)
-
-            for key in keys:
-                if key in seen_keys:
-                    continue
-                seen_keys.add(key)
-
-                try:
-                    # Parse key to get namespace and item key
-                    parsed_namespace, item_key = self.store._parse_key(
-                        key, f"{LANGGRAPH_KEY_PREFIX}:"
-                    )
-
-                    # Apply namespace prefix filtering
-                    if namespace:
-                        # Check if the parsed namespace matches the prefix
-                        if len(parsed_namespace) < len(namespace):
-                            continue
-                        # For exact prefix matching, namespace must start with prefix
-                        if parsed_namespace[: len(namespace)] != namespace:
-                            continue
-
-                    # Get the value
-                    value = self.client.get(key)
-                    # Handle ResponseT type for value
-                    value = self.store._handle_response_t(value)
-                    if value:
-                        import orjson
-
-                        doc_data = orjson.loads(value)
-                        # Apply filters efficiently
-                        if filter_dict and not FilterProcessor.apply_filters(
-                            doc_data.get("value", {}), filter_dict
-                        ):
-                            continue
-
-                        # Calculate score
-                        score = ScoreCalculator.calculate_text_similarity_score(
-                            query, doc_data
-                        )
-                        # For hash fallback, include results above minimum threshold
-                        if score > MIN_SEARCH_SCORE:
-                            results.append((parsed_namespace, item_key, score))
-
-                except Exception as e:
-                    logger.debug(f"Error processing key {key}: {e}")
-                    continue
-
-            if cursor == 0:
-                break
-
-        # Sort by score and apply limit
-        sorted_results = sorted(results, key=lambda x: x[2], reverse=True)
-        if limit:
-            return sorted_results[:limit]
-        return sorted_results
-
-    def _convert_to_search_items(
-        self, results: list[tuple[tuple[str, ...], str, float]]
-    ) -> list[SearchItem]:
-        """Convert hash search results to SearchItem objects."""
-        items = []
-        for namespace, key, score in results:
-            try:
-                # Get full document data using HGETALL since data is stored
-                full_key = self.store._build_key(namespace, key)
-                hash_data = self.client.hgetall(full_key)
-                if not hash_data:
-                    continue
-
-                hash_data = self.store._handle_response_t(hash_data)
-                if not hash_data or not isinstance(hash_data, dict):
-                    continue
-
-                # Use DocumentProcessor to convert hash fields back to document format
-                document = DocumentProcessor.convert_hash_to_document(hash_data)
-                if document is None:
-                    continue
-
-                # Parse the JSON-encoded value using DocumentProcessor
-                parsed_value = DocumentProcessor.parse_document_value(document)
-                if parsed_value is None:
-                    continue
-
-                # Parse timestamps using DocumentProcessor
-                created_at, updated_at = DocumentProcessor.parse_timestamps(document)
-
-                items.append(
-                    SearchItem(
-                        namespace=namespace,
-                        key=key,
-                        value=parsed_value,
-                        created_at=created_at,
-                        updated_at=updated_at,
-                        score=score,
-                    )
-                )
-            except Exception as e:
-                logger.debug(f"Error converting result {namespace}/{key}: {e}")
-                continue
-        return items
 
 
 # ============================================================================
@@ -495,14 +302,25 @@ class KeyPatternSearchStrategy(SearchStrategy):
             # Sort keys for consistent ordering
             all_keys.sort()
 
+            # Create sync client adapter
+            client_adapter = SyncClientAdapter(self.client, self.store)
+
             # Process all keys first to calculate scores, then apply pagination
             scored_items = []
 
             for key in all_keys:
                 try:
-                    search_item = self._process_key_for_search(key, op)
-                    if search_item:
-                        scored_items.append(search_item)
+                    # Use DocumentAdapter for consistent parsing
+                    item = DocumentAdapter.parse_scan_key_sync(
+                        key=key,
+                        client_adapter=client_adapter,
+                        store=self.store,
+                        query=op.query,
+                        apply_filters=op.filter,
+                        namespace_prefix=op.namespace_prefix,
+                    )
+                    if item:
+                        scored_items.append(item)
                 except Exception as e:
                     logger.error(f"Error processing key {key}: {e}")
                     continue
@@ -523,67 +341,6 @@ class KeyPatternSearchStrategy(SearchStrategy):
             logger.error(f"Error in key pattern search: {e}")
 
         return items
-
-    def _process_key_for_search(self, key: str, op: SearchOp) -> SearchItem | None:
-        """Process a single key for search results."""
-        # Use HGETALL since data is stored as hash fields
-        hash_data = self.client.hgetall(key)
-        if not hash_data:
-            return None
-
-        # Handle ResponseT type for hash_data
-        hash_data = self.store._handle_response_t(hash_data)
-        if hash_data is None or not isinstance(hash_data, dict):
-            return None
-
-        # Convert hash fields back to document format
-        document = DocumentProcessor.convert_hash_to_document(hash_data)
-        if document is None:
-            return None
-
-        # Parse the JSON-encoded value back to dictionary
-        parsed_value = DocumentProcessor.parse_document_value(document)
-        if parsed_value is None:
-            return None
-
-        # Parse key - remove langgraph: prefix
-        prefix_with_colon = f"{LANGGRAPH_KEY_PREFIX}:"
-        if key.startswith(prefix_with_colon):
-            key_path = key[len(prefix_with_colon) :]
-        else:
-            key_path = key
-
-        # Parse namespace and key
-        namespace, item_key = self.store._parse_key(key_path)
-
-        # Use FilterProcessor to check namespace prefix filtering
-        if op.namespace_prefix and not FilterProcessor.matches_namespace_prefix(
-            namespace, op.namespace_prefix
-        ):
-            return None
-
-        # Use FilterProcessor to apply filters
-        if not FilterProcessor.apply_filters(parsed_value, op.filter):
-            return None
-
-        # Use ScoreCalculator to calculate text similarity score
-        score = ScoreCalculator.calculate_text_similarity_score(op.query, parsed_value)
-
-        # Filter out very low scores for better relevance
-        if op.query and score <= MIN_SEARCH_SCORE:
-            return None
-
-        # Parse timestamps using DocumentProcessor
-        created_at, updated_at = DocumentProcessor.parse_timestamps(document)
-
-        return SearchItem(
-            namespace=namespace,
-            key=item_key,
-            value=parsed_value,
-            created_at=created_at,
-            updated_at=updated_at,
-            score=score,
-        )
 
 
 # ============================================================================

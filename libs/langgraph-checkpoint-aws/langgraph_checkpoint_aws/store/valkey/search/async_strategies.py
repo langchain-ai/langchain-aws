@@ -19,6 +19,7 @@ from .adapters import (
     AsyncClientAdapter,
     DocumentAdapter,
     EmbeddingAdapter,
+    HashSearchAdapter,
 )
 from .helpers import BaseSearchHelper
 
@@ -130,7 +131,7 @@ class AsyncVectorSearchStrategy(AsyncSearchStrategy):
         )
 
         # Convert vector to bytes for Valkey
-        vector_bytes = b"".join(struct.pack("<f", x) for x in query_vector)
+        vec_bytes = struct.pack(f"{len(query_vector)}f", *query_vector)
 
         # Create query
         from valkey.commands.search.query import Query
@@ -142,7 +143,7 @@ class AsyncVectorSearchStrategy(AsyncSearchStrategy):
             .dialect(2)
         )
 
-        search_params: dict[str, str | int | float | bytes] = {"BLOB": vector_bytes}
+        search_params: dict[str, str | int | float | bytes] = {"vec": vec_bytes}
 
         # Execute FT.SEARCH in executor (client is sync)
         index_name = self.store.collection_name
@@ -195,8 +196,11 @@ class AsyncHashSearchStrategy(AsyncSearchStrategy):
     async def search(self, op: SearchOp) -> list[SearchItem]:
         """Perform async hash field search."""
         try:
+            # Use HashSearchAdapter for consistent implementation
             namespace = op.namespace_prefix or ()
-            results = await self.store._search_with_hash_async(
+            hash_results = await HashSearchAdapter.scan_and_score_keys_async(
+                client=self.store.client,
+                store=self.store,
                 namespace=namespace,
                 query=op.query,
                 filter_dict=op.filter,
@@ -204,9 +208,11 @@ class AsyncHashSearchStrategy(AsyncSearchStrategy):
                 offset=op.offset,
             )
 
-            # Convert results to SearchItems (store method handles this)
-            items = await self.store._convert_hash_results_to_search_items_async(
-                results
+            # Convert to SearchItems using adapter
+            items = await HashSearchAdapter.convert_hash_results_to_items_async(
+                client=self.store.client,
+                store=self.store,
+                results=hash_results,
             )
 
             # Refresh TTL if needed

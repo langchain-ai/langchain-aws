@@ -389,7 +389,7 @@ class DocumentAdapter:
             created_at, updated_at = DocumentProcessor.parse_timestamps(document)
 
             # Normalize score to 0-1 range
-            normalized_score = max(0.0, min(1.0, 1.0 - score))
+            normalized_score = max(0.0, min(1.0, score))
 
             return SearchItem(
                 namespace=namespace,
@@ -470,7 +470,7 @@ class DocumentAdapter:
             created_at, updated_at = DocumentProcessor.parse_timestamps(document)
 
             # Normalize score
-            normalized_score = max(0.0, min(1.0, 1.0 - score))
+            normalized_score = max(0.0, min(1.0, score))
 
             return SearchItem(
                 namespace=namespace,
@@ -642,10 +642,359 @@ class DocumentAdapter:
             return None
 
 
+# ============================================================================
+# Hash Search Adapter
+# ============================================================================
+
+
+class HashSearchAdapter:
+    """Adapter for hash-based search operations shared between sync and async.
+
+    This adapter provides hash search functionality when vector search is unavailable,
+    using SCAN operations with text-based scoring.
+    """
+
+    @staticmethod
+    def scan_and_score_keys_sync(
+        client: Any,
+        store: Any,
+        namespace: tuple[str, ...],
+        query: str | None = None,
+        filter_dict: dict[str, Any] | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[tuple[tuple[str, ...], str, float]]:
+        """Scan keys and calculate scores synchronously.
+
+        Args:
+            client: Valkey client instance
+            store: Store instance
+            namespace: Namespace prefix to search in
+            query: Optional text query for scoring
+            filter_dict: Optional filters to apply
+            limit: Maximum number of results
+            offset: Number of results to skip
+
+        Returns:
+            List of (namespace, key, score) tuples
+        """
+        from ..constants import LANGGRAPH_KEY_PREFIX
+        from ..document_utils import FilterProcessor, ScoreCalculator
+
+        # Build scan pattern
+        if namespace:
+            pattern = f"{LANGGRAPH_KEY_PREFIX}:{'/'.join(namespace)}/*"
+        else:
+            pattern = f"{LANGGRAPH_KEY_PREFIX}:*"
+
+        # SCAN for keys
+        cursor = 0
+        results = []
+        seen_keys = set()
+
+        while True:
+            scan_result = client.scan(cursor, match=pattern, count=1000)
+            scan_result = store._handle_response_t(scan_result)
+            if scan_result is None:
+                break
+
+            cursor, keys = scan_result
+            keys = store._safe_parse_keys(keys)
+
+            for key in keys:
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+
+                try:
+                    # Parse namespace and key
+                    parsed_namespace, item_key = store._parse_key(
+                        key, f"{LANGGRAPH_KEY_PREFIX}:"
+                    )
+
+                    # Check namespace prefix
+                    if (
+                        namespace
+                        and not parsed_namespace[: len(namespace)] == namespace
+                    ):
+                        continue
+
+                    # Get document value
+                    value = client.get(key)
+                    value = store._handle_response_t(value)
+                    if not value:
+                        continue
+
+                    import orjson
+
+                    doc_data = orjson.loads(value)
+
+                    # Apply filters
+                    if filter_dict and not FilterProcessor.apply_filters(
+                        doc_data.get("value", {}), filter_dict
+                    ):
+                        continue
+
+                    # Calculate score
+                    score = ScoreCalculator.calculate_text_similarity_score(
+                        query, doc_data
+                    )
+                    if score > MIN_SEARCH_SCORE:
+                        results.append((parsed_namespace, item_key, score))
+
+                except Exception as e:
+                    logger.debug(f"Error processing key {key}: {e}")
+                    continue
+
+            if cursor == 0:
+                break
+
+        # Sort by score descending
+        sorted_results = sorted(results, key=lambda x: x[2], reverse=True)
+
+        # Apply pagination
+        start_idx = offset
+        end_idx = start_idx + limit if limit else len(sorted_results)
+        return sorted_results[start_idx:end_idx]
+
+    @staticmethod
+    async def scan_and_score_keys_async(
+        client: Any,
+        store: Any,
+        namespace: tuple[str, ...],
+        query: str | None = None,
+        filter_dict: dict[str, Any] | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[tuple[tuple[str, ...], str, float]]:
+        """Scan keys and calculate scores asynchronously.
+
+        Args:
+            client: Valkey client instance
+            store: Store instance
+            namespace: Namespace prefix to search in
+            query: Optional text query for scoring
+            filter_dict: Optional filters to apply
+            limit: Maximum number of results
+            offset: Number of results to skip
+
+        Returns:
+            List of (namespace, key, score) tuples
+        """
+        from ..constants import LANGGRAPH_KEY_PREFIX
+        from ..document_utils import FilterProcessor, ScoreCalculator
+
+        # Build scan pattern
+        if namespace:
+            pattern = f"{LANGGRAPH_KEY_PREFIX}:{'/'.join(namespace)}/*"
+        else:
+            pattern = f"{LANGGRAPH_KEY_PREFIX}:*"
+
+        # SCAN for keys
+        cursor = 0
+        results = []
+        seen_keys = set()
+
+        while True:
+            scan_result = await asyncio.get_event_loop().run_in_executor(
+                None, lambda c: client.scan(c, match=pattern, count=1000), cursor
+            )
+            if scan_result is None:
+                break
+
+            cursor, keys = scan_result
+
+            # Parse keys to strings
+            parsed_keys = []
+            if hasattr(keys, "__iter__") and not isinstance(keys, (str, bytes)):
+                for key in keys:
+                    if isinstance(key, bytes):
+                        parsed_keys.append(key.decode("utf-8"))
+                    elif isinstance(key, str):
+                        parsed_keys.append(key)
+                    else:
+                        parsed_keys.append(str(key))
+            keys = parsed_keys
+
+            for key in keys:
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+
+                try:
+                    # Get document value
+                    value = await asyncio.get_event_loop().run_in_executor(
+                        None, client.get, key
+                    )
+                    if not value:
+                        continue
+
+                    value = await store._handle_response_t_async(value)
+                    if not value:
+                        continue
+
+                    import orjson
+
+                    doc_data = orjson.loads(value)
+
+                    # Apply filters
+                    if filter_dict and not FilterProcessor.apply_filters(
+                        doc_data.get("value", {}), filter_dict
+                    ):
+                        continue
+
+                    # Calculate score
+                    score = ScoreCalculator.calculate_text_similarity_score(
+                        query, doc_data
+                    )
+                    if score > MIN_SEARCH_SCORE:
+                        namespace_parsed, key_parsed = store._parse_key(
+                            key, f"{LANGGRAPH_KEY_PREFIX}:"
+                        )
+                        results.append((namespace_parsed, key_parsed, score))
+
+                except Exception as e:
+                    logger.debug(f"Error processing key {key}: {e}")
+                    continue
+
+            if cursor == 0:
+                break
+
+        # Sort by score descending
+        sorted_results = sorted(results, key=lambda x: x[2], reverse=True)
+
+        # Apply pagination
+        start_idx = offset
+        end_idx = start_idx + limit if limit else len(sorted_results)
+        return sorted_results[start_idx:end_idx]
+
+    @staticmethod
+    def convert_hash_results_to_items_sync(
+        client: Any,
+        store: Any,
+        results: list[tuple[tuple[str, ...], str, float]],
+    ) -> list[SearchItem]:
+        """Convert hash search results to SearchItem objects synchronously.
+
+        Args:
+            client: Valkey client instance
+            store: Store instance
+            results: List of (namespace, key, score) tuples
+
+        Returns:
+            List of SearchItem objects
+        """
+
+        items = []
+        for namespace, key, score in results:
+            try:
+                # Get full document data using GET (hash search stores as JSON)
+                full_key = store._build_key(namespace, key)
+                value_data = client.get(full_key)
+                if not value_data:
+                    continue
+
+                value_data = store._handle_response_t(value_data)
+                if not value_data:
+                    continue
+
+                # Parse JSON document
+                from datetime import datetime
+
+                import orjson
+
+                parsed_data = orjson.loads(value_data)
+                parsed_value = parsed_data.get("value", {})
+
+                # Parse timestamps
+                created_at = datetime.fromisoformat(
+                    parsed_data.get("created_at", datetime.now().isoformat())
+                )
+                updated_at = datetime.fromisoformat(
+                    parsed_data.get("updated_at", datetime.now().isoformat())
+                )
+
+                items.append(
+                    SearchItem(
+                        namespace=namespace,
+                        key=key,
+                        value=parsed_value,
+                        created_at=created_at,
+                        updated_at=updated_at,
+                        score=score,
+                    )
+                )
+            except Exception as e:
+                logger.debug(f"Error converting result {namespace}/{key}: {e}")
+                continue
+        return items
+
+    @staticmethod
+    async def convert_hash_results_to_items_async(
+        client: Any,
+        store: Any,
+        results: list[tuple[tuple[str, ...], str, float]],
+    ) -> list[SearchItem]:
+        """Convert hash search results to SearchItem objects asynchronously.
+
+        Args:
+            client: Valkey client instance
+            store: Store instance
+            results: List of (namespace, key, score) tuples
+
+        Returns:
+            List of SearchItem objects
+        """
+        items = []
+        for namespace, key, score in results:
+            try:
+                # Get full document data
+                full_key = store._build_key(namespace, key)
+                value_data = await asyncio.get_event_loop().run_in_executor(
+                    None, client.get, full_key
+                )
+                if not value_data:
+                    continue
+
+                value_data = await store._handle_response_t_async(value_data)
+                if not value_data:
+                    continue
+
+                # Parse document
+                from datetime import datetime
+
+                import orjson
+
+                parsed_data = orjson.loads(value_data)
+                value = parsed_data.get("value", {})
+                created_at = datetime.fromisoformat(
+                    parsed_data.get("created_at", datetime.now().isoformat())
+                )
+                updated_at = datetime.fromisoformat(
+                    parsed_data.get("updated_at", datetime.now().isoformat())
+                )
+
+                items.append(
+                    SearchItem(
+                        namespace=namespace,
+                        key=key,
+                        value=value,
+                        created_at=created_at,
+                        updated_at=updated_at,
+                        score=score,
+                    )
+                )
+            except Exception as e:
+                logger.debug(f"Error converting result {namespace}/{key}: {e}")
+                continue
+        return items
+
+
 __all__ = [
     "EmbeddingAdapter",
     "ClientAdapter",
     "SyncClientAdapter",
     "AsyncClientAdapter",
     "DocumentAdapter",
+    "HashSearchAdapter",
 ]
