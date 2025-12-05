@@ -1,5 +1,6 @@
 """Unit tests for DynamoDB store implementation."""
 
+import os
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import Mock, MagicMock, patch
@@ -18,6 +19,7 @@ from langgraph_checkpoint_aws.store import DynamoDBStore
 from langgraph_checkpoint_aws.store.dynamodb.exceptions import (
     DynamoDBConnectionError,
     TableCreationError,
+    ValidationError,
 )
 
 
@@ -51,9 +53,11 @@ def dynamodb_store(mock_boto3_session, mock_dynamodb_resource, mock_dynamodb_tab
         mock_dynamodb_resource.Table.return_value = mock_dynamodb_table
 
         with patch("boto3.Session", return_value=mock_boto3_session):
-            store = DynamoDBStore(table_name="test_table")
-            store.table = mock_dynamodb_table
-            return store
+            # Set AWS region env var to satisfy validation
+            with patch.dict(os.environ, {"AWS_DEFAULT_REGION": "us-east-1"}):
+                store = DynamoDBStore(table_name="test_table")
+                store.table = mock_dynamodb_table
+                return store
 
 
 class TestDynamoDBStoreInit:
@@ -65,7 +69,7 @@ class TestDynamoDBStoreInit:
             mock_boto3_session.resource.return_value = mock_dynamodb_resource
             mock_dynamodb_resource.Table.return_value = mock_dynamodb_table
 
-            store = DynamoDBStore(table_name="test_table")
+            store = DynamoDBStore(table_name="test_table", region_name="us-east-1")
 
             assert store.table_name == "test_table"
             assert store.ttl_config is None
@@ -80,7 +84,7 @@ class TestDynamoDBStoreInit:
             mock_boto3_session.resource.return_value = mock_dynamodb_resource
             mock_dynamodb_resource.Table.return_value = mock_dynamodb_table
 
-            store = DynamoDBStore(table_name="test_table", ttl=ttl_config)
+            store = DynamoDBStore(table_name="test_table", region_name="us-east-1", ttl=ttl_config)
 
             assert store.ttl_config == ttl_config
 
@@ -92,6 +96,7 @@ class TestDynamoDBStoreInit:
 
             store = DynamoDBStore(
                 table_name="test_table",
+                region_name="us-east-1",
                 max_read_capacity_units=20,
                 max_write_capacity_units=30,
             )
@@ -105,8 +110,45 @@ class TestDynamoDBStoreInit:
             mock_boto3_session.resource.return_value = mock_dynamodb_resource
             mock_dynamodb_resource.Table.return_value = mock_dynamodb_table
 
-            with DynamoDBStore.from_conn_string("test_table") as store:
+            with DynamoDBStore.from_conn_string("test_table", region_name="us-east-1") as store:
                 assert store.table_name == "test_table"
+
+    def test_init_without_region_or_session(self):
+        """Test initialization fails when neither region_name nor session provided."""
+        # Clear AWS region environment variables
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(ValidationError) as exc_info:
+                DynamoDBStore(table_name="test_table")
+            
+            assert "Either 'boto3_session' or 'region_name' must be provided" in str(exc_info.value)
+
+    def test_init_with_env_region(self, mock_boto3_session, mock_dynamodb_resource, mock_dynamodb_table):
+        """Test initialization succeeds with AWS_DEFAULT_REGION env var."""
+        with patch.dict(os.environ, {"AWS_DEFAULT_REGION": "us-east-1"}):
+            with patch("boto3.Session", return_value=mock_boto3_session):
+                mock_boto3_session.resource.return_value = mock_dynamodb_resource
+                mock_dynamodb_resource.Table.return_value = mock_dynamodb_table
+
+                store = DynamoDBStore(table_name="test_table")
+                assert store.table_name == "test_table"
+
+    def test_init_with_aws_region_env(self, mock_boto3_session, mock_dynamodb_resource, mock_dynamodb_table):
+        """Test initialization succeeds with AWS_REGION env var."""
+        with patch.dict(os.environ, {"AWS_REGION": "eu-west-1"}):
+            with patch("boto3.Session", return_value=mock_boto3_session):
+                mock_boto3_session.resource.return_value = mock_dynamodb_resource
+                mock_dynamodb_resource.Table.return_value = mock_dynamodb_table
+
+                store = DynamoDBStore(table_name="test_table")
+                assert store.table_name == "test_table"
+
+    def test_init_with_boto3_session(self, mock_boto3_session, mock_dynamodb_resource, mock_dynamodb_table):
+        """Test initialization with boto3_session (no region_name required)."""
+        mock_boto3_session.resource.return_value = mock_dynamodb_resource
+        mock_dynamodb_resource.Table.return_value = mock_dynamodb_table
+
+        store = DynamoDBStore(table_name="test_table", boto3_session=mock_boto3_session)
+        assert store.table_name == "test_table"
 
 
 class TestDynamoDBStoreSetup:

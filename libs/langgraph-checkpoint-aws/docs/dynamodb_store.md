@@ -151,12 +151,31 @@ with DynamoDBStore.from_conn_string("my-store-table") as store:
     item = store.get(("test",), "example")
 ```
 
+### Specifying AWS Region
+
+```python
+# Option 1: Explicit region_name
+store = DynamoDBStore(table_name="my-store", region_name="us-east-1")
+store.setup()
+
+# Option 2: Using boto3 session
+import boto3
+session = boto3.Session(region_name="us-west-2")
+store = DynamoDBStore(table_name="my-store", boto3_session=session)
+store.setup()
+
+# Option 3: Environment variable (set before running)
+# export AWS_DEFAULT_REGION=us-east-1
+store = DynamoDBStore(table_name="my-store")
+store.setup()
+```
+
 ## Configuration Options
 
 ### Constructor Parameters
 
-- `table_name` (str): Name of the DynamoDB table
-- `region_name` (str, optional): AWS region name
+- `table_name` (str, **required**): Name of the DynamoDB table
+- `region_name` (str, optional): AWS region name. **Either this or `boto3_session` must be provided, unless AWS region environment variables are set.**
 - `boto3_session` (boto3.Session, optional): Custom boto3 session
 - `ttl` (TTLConfig, optional): TTL configuration
 - `max_read_capacity_units` (int, optional): Max read capacity (default: 10)
@@ -184,7 +203,12 @@ The store uses a single DynamoDB table with the following structure:
 
 ## AWS Configuration
 
-Ensure you have proper AWS credentials configured through:
+**Required**: You must provide AWS region configuration through one of:
+1. **Explicit parameter**: Pass `region_name` or `boto3_session` to constructor
+2. **Environment variables**: Set `AWS_DEFAULT_REGION` or `AWS_REGION`
+3. **AWS config file**: Configure region in `~/.aws/config`
+
+Additionally, ensure you have proper AWS credentials configured through:
 
 - Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
 - AWS credentials file (`~/.aws/credentials`)

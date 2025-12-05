@@ -9,6 +9,7 @@ capabilities.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -116,15 +117,32 @@ class DynamoDBStore(BaseStore):
 
         Args:
             table_name: Name of the DynamoDB table to use.
-            region_name: AWS region name. If not provided, uses default from AWS config.
-            boto3_session: Optional boto3 session to use. If not provided, creates a new one.
+            region_name: AWS region name. If not provided along with boto3_session,
+                AWS_DEFAULT_REGION or AWS_REGION environment variable must be set.
+            boto3_session: Optional boto3 session to use. If not provided, creates a new one
+                using region_name or AWS environment variables.
             ttl: Optional TTL configuration for automatic item expiration.
             max_read_capacity_units: Maximum read capacity units for on-demand mode.
                 Only used when creating a new table. Default is 10.
             max_write_capacity_units: Maximum write capacity units for on-demand mode.
                 Only used when creating a new table. Default is 10.
+
+        Raises:
+            ValidationError: If neither boto3_session nor region_name is provided and
+                AWS region environment variables are not set.
         """
         super().__init__()
+        
+        # Validate that either boto3_session, region_name, or AWS env vars are set
+        if boto3_session is None and region_name is None:
+            # Check for AWS region environment variables
+            if not os.environ.get("AWS_DEFAULT_REGION") and not os.environ.get("AWS_REGION"):
+                raise ValidationError(
+                    "Either 'boto3_session' or 'region_name' must be provided, "
+                    "or AWS_DEFAULT_REGION/AWS_REGION environment variable must be set. "
+                    "Example: DynamoDBStore(table_name='my-table', region_name='us-east-1')"
+                )
+        
         self.table_name = table_name
         self.ttl_config = ttl
         self.max_read_capacity_units = max_read_capacity_units or 10
