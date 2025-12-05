@@ -1,4 +1,8 @@
-"""Unit tests for EmbeddingAdapter - simplified test approach."""
+"""Unit tests for EmbeddingAdapter.
+
+Tests the adapter's ability to route to correct sync/async methods
+and provide helpful errors when using the wrong store type.
+"""
 
 import pytest
 
@@ -13,120 +17,107 @@ class MockSyncEmbeddings:
     """Mock embeddings with only sync embed_query."""
 
     def embed_query(self, query: str):
-        return [1.0, 2.0, 3.0]
+        return [0.1, 0.2, 0.3]
 
 
 class MockAsyncEmbeddings:
     """Mock embeddings with only async aembed_query."""
 
     async def aembed_query(self, query: str):
-        return [4.0, 5.0, 6.0]
+        return [0.1, 0.2, 0.3]
 
 
 class MockCallableEmbeddings:
     """Mock callable embeddings."""
 
     def __call__(self, queries: list[str]):
-        return [[7.0, 8.0, 9.0] for _ in queries]
+        return [[0.1, 0.2, 0.3] for _ in queries]
 
 
 class TestEmbeddingAdapter:
-    """Test EmbeddingAdapter with real-ish mock objects."""
-
-    def test_sync_embeddings_detection(self):
-        """Test detection of sync embeddings."""
-        embeddings = MockSyncEmbeddings()
-        adapter = EmbeddingAdapter(embeddings)
-
-        assert adapter.can_embed_sync() is True
-        assert adapter.can_embed_async() is False  # No async methods, won't fall back
-
-    def test_async_embeddings_detection(self):
-        """Test detection of async embeddings."""
-        embeddings = MockAsyncEmbeddings()
-        adapter = EmbeddingAdapter(embeddings)
-
-        assert adapter.can_embed_sync() is False
-        assert adapter.can_embed_async() is True
-
-    def test_callable_embeddings_detection(self):
-        """Test detection of callable embeddings."""
-        embeddings = MockCallableEmbeddings()
-        adapter = EmbeddingAdapter(embeddings)
-
-        assert adapter.can_embed_sync() is True
-        assert adapter.can_embed_async() is True
+    """Test suite for EmbeddingAdapter."""
 
     def test_sync_embedding_generation(self):
-        """Test sync embedding generation."""
+        """Test sync embedding generation with sync embeddings."""
         embeddings = MockSyncEmbeddings()
         adapter = EmbeddingAdapter(embeddings)
 
         result = adapter.embed_query_sync("test query")
-        assert result == [1.0, 2.0, 3.0]
+        assert result == [0.1, 0.2, 0.3]
 
     @pytest.mark.asyncio
     async def test_async_embedding_generation(self):
-        """Test async embedding generation."""
+        """Test async embedding generation with async embeddings."""
         embeddings = MockAsyncEmbeddings()
         adapter = EmbeddingAdapter(embeddings)
 
         result = await adapter.embed_query_async("test query")
-        assert result == [4.0, 5.0, 6.0]
+        assert result == [0.1, 0.2, 0.3]
 
     def test_callable_embedding_sync(self):
-        """Test callable embeddings in sync mode."""
+        """Test callable embeddings work in sync mode."""
         embeddings = MockCallableEmbeddings()
         adapter = EmbeddingAdapter(embeddings)
 
         result = adapter.embed_query_sync("test query")
-        assert result == [7.0, 8.0, 9.0]  # Adapter extracts first element
+        assert result == [0.1, 0.2, 0.3]
 
     @pytest.mark.asyncio
     async def test_callable_embedding_async(self):
-        """Test callable embeddings in async mode."""
+        """Test callable embeddings work in async mode (runs in executor)."""
         embeddings = MockCallableEmbeddings()
         adapter = EmbeddingAdapter(embeddings)
 
         result = await adapter.embed_query_async("test query")
-        assert result == [7.0, 8.0, 9.0]  # Adapter extracts first element
+        assert result == [0.1, 0.2, 0.3]
 
     def test_sync_with_async_only_raises_error(self):
-        """Test sync embedding raises error when only async available."""
+        """Test helpful error when using sync method with async-only embeddings.
+
+        This catches the common mistake of using ValkeyStore with async embeddings.
+        """
         embeddings = MockAsyncEmbeddings()
         adapter = EmbeddingAdapter(embeddings)
 
         with pytest.raises(SearchIndexError) as exc_info:
             adapter.embed_query_sync("test query")
 
-        assert "only has async methods" in str(exc_info.value)
+        assert "async methods" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_async_with_sync_only_raises_error(self):
-        """Test async embedding raises error when only sync methods available."""
+        """Test helpful error when using async method with sync-only embeddings.
+
+        This catches the common mistake of using AsyncValkeyStore with sync embeddings.
+        """
         embeddings = MockSyncEmbeddings()
         adapter = EmbeddingAdapter(embeddings)
 
         with pytest.raises(SearchIndexError) as exc_info:
             await adapter.embed_query_async("test query")
 
-        assert "only has sync methods" in str(exc_info.value)
-        assert "Use ValkeyStore" in str(exc_info.value)
+        assert "sync methods" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_async_with_no_methods_returns_none(self):
-        """Test async embedding returns None when no methods available."""
+        """Test that async embedding with no methods logs warning and returns None.
+
+        This is a graceful failure mode rather than raising an exception.
+        """
 
         class NoMethods:
             pass
 
         adapter = EmbeddingAdapter(NoMethods())
-        result = await adapter.embed_query_async("test query")
+        result = await adapter.embed_query_async("test")
 
         assert result is None
 
     def test_sync_with_no_methods_raises_error(self):
-        """Test sync embedding raises error when no methods available."""
+        """Test that sync embedding with no methods raises clear error.
+
+        Sync mode fails fast rather than returning None.
+        """
 
         class NoMethods:
             pass
@@ -134,26 +125,22 @@ class TestEmbeddingAdapter:
         adapter = EmbeddingAdapter(NoMethods())
 
         with pytest.raises(SearchIndexError) as exc_info:
-            adapter.embed_query_sync("test query")
+            adapter.embed_query_sync("test")
 
         assert "No embedding method available" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_async_handles_exceptions(self):
-        """Test async embedding returns None on exception."""
+        """Test that async embedding handles exceptions gracefully by returning None.
+
+        This prevents one failed embedding from breaking an entire batch.
+        """
 
         class FailingEmbeddings:
             async def aembed_query(self, query: str):
                 raise RuntimeError("Embedding failed")
 
         adapter = EmbeddingAdapter(FailingEmbeddings())
-        result = await adapter.embed_query_async("test query")
 
+        result = await adapter.embed_query_async("test")
         assert result is None
-
-    def test_none_embeddings(self):
-        """Test adapter with None embeddings."""
-        adapter = EmbeddingAdapter(None)
-
-        assert adapter.can_embed_sync() is False
-        assert adapter.can_embed_async() is False

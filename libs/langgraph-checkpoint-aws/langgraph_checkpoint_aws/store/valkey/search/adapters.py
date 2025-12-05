@@ -29,10 +29,13 @@ logger = logging.getLogger(__name__)
 class EmbeddingAdapter:
     """Unified adapter for sync/async embedding generation.
 
-    This adapter provides a consistent interface for generating embeddings
-    regardless of whether the underlying embeddings object supports sync,
-    async, or callable methods. It detects available methods on initialization
-    and provides appropriate error handling for each mode.
+    Provides a consistent interface for generating embeddings from various
+    embedding objects (LangChain embeddings, callables, functions).
+
+    Note: ValkeyStore/AsyncValkeyStore ensure embeddings are valid via
+    ensure_embeddings() before creating this adapter. This adapter focuses
+    on routing to the correct method and providing helpful error messages
+    when sync/async mismatch occurs.
     """
 
     def __init__(self, embeddings: Any) -> None:
@@ -42,44 +45,14 @@ class EmbeddingAdapter:
             embeddings: Embeddings object (may have sync/async methods or be callable)
         """
         self.embeddings = embeddings
-        self._cached_capabilities = self._detect_capabilities()
-
-    def _detect_capabilities(self) -> dict[str, bool]:
-        """Detect what embedding methods are available.
-
-        Returns:
-            Dictionary mapping capability names to availability
-        """
-        return {
-            "sync_query": hasattr(self.embeddings, "embed_query"),
-            "sync_documents": hasattr(self.embeddings, "embed_documents"),
-            "async_query": hasattr(self.embeddings, "aembed_query"),
-            "async_documents": hasattr(self.embeddings, "aembed_documents"),
-            "callable": callable(self.embeddings),
-        }
-
-    def can_embed_sync(self) -> bool:
-        """Check if sync embedding is available.
-
-        Returns:
-            True if sync embedding methods are available
-        """
-        caps = self._cached_capabilities
-        return caps["sync_query"] or caps["sync_documents"] or caps["callable"]
-
-    def can_embed_async(self) -> bool:
-        """Check if async embedding is available.
-
-        Returns:
-            True if async embedding methods are available
-        """
-        caps = self._cached_capabilities
-        return caps["async_query"] or caps["async_documents"] or caps["callable"]
 
     def embed_query_sync(
         self, query: str, index_name: str | None = None
     ) -> list[float]:
         """Generate embedding synchronously.
+
+        Tries methods in order: embed_query → embed_documents → callable.
+        Provides helpful error if only async methods available.
 
         Args:
             query: Text query to embed
@@ -91,21 +64,20 @@ class EmbeddingAdapter:
         Raises:
             SearchIndexError: If sync embedding not available
         """
-        caps = self._cached_capabilities
-
-        # Try sync methods in order of preference
-        if caps["sync_query"]:
+        # Try sync methods in order
+        if hasattr(self.embeddings, "embed_query"):
             return self.embeddings.embed_query(query)
-        elif caps["sync_documents"]:
+        elif hasattr(self.embeddings, "embed_documents"):
             vectors = self.embeddings.embed_documents([query])
             return vectors[0] if vectors else []
-        elif caps["callable"]:
-            # For mock functions
+        elif callable(self.embeddings):
             vectors = self.embeddings([query])
             return vectors[0] if vectors else []
 
-        # If only async methods available, provide helpful error
-        if caps["async_query"] or caps["async_documents"]:
+        # Only async methods available - provide helpful error
+        if hasattr(self.embeddings, "aembed_query") or hasattr(
+            self.embeddings, "aembed_documents"
+        ):
             raise SearchIndexError(
                 "Cannot generate embeddings: embeddings object only has async methods. "
                 "Use AsyncValkeyStore for async embedding generation.",
@@ -124,6 +96,9 @@ class EmbeddingAdapter:
     ) -> list[float] | None:
         """Generate embedding asynchronously.
 
+        Tries methods in order: aembed_query → aembed_documents → callable.
+        Provides helpful error if only sync methods available.
+
         Args:
             query: Text query to embed
             index_name: Optional index name for error messages
@@ -131,23 +106,23 @@ class EmbeddingAdapter:
         Returns:
             Embedding vector or None if generation fails
         """
-        caps = self._cached_capabilities
-
         try:
-            # Try async methods in order of preference
-            if caps["async_query"]:
+            # Try async methods in order
+            if hasattr(self.embeddings, "aembed_query"):
                 return await self.embeddings.aembed_query(query)
-            elif caps["async_documents"]:
+            elif hasattr(self.embeddings, "aembed_documents"):
                 vectors = await self.embeddings.aembed_documents([query])
                 return vectors[0] if vectors else None
-            elif caps["callable"]:
-                # For mock functions - run in executor
+            elif callable(self.embeddings):
+                # Run callable in executor to avoid blocking event loop
                 return await asyncio.get_event_loop().run_in_executor(
                     None, lambda: self.embeddings([query])[0]
                 )
 
-            # If only sync methods available, provide helpful error
-            if caps["sync_query"] or caps["sync_documents"]:
+            # Only sync methods available - provide helpful error
+            if hasattr(self.embeddings, "embed_query") or hasattr(
+                self.embeddings, "embed_documents"
+            ):
                 raise SearchIndexError(
                     "Cannot generate embeddings: embeddings object only has "
                     "sync methods. Use ValkeyStore for sync embedding generation "

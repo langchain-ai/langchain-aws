@@ -6,10 +6,8 @@ import asyncio
 import logging
 from collections.abc import AsyncGenerator, Iterable
 from contextlib import asynccontextmanager
-from datetime import datetime
 from typing import Any, Literal
 
-import orjson
 from langgraph.store.base import (
     NOT_PROVIDED,
     GetOp,
@@ -431,16 +429,6 @@ class AsyncValkeyStore(BaseValkeyStore):
             logger.error(f"Error in put operation: {e}")
             raise
 
-    def _generate_embeddings(self, texts: list[str]) -> list[float] | None:
-        """Override base class method to handle async embedding generation."""
-        # This method should not be called directly in async context
-        # Use _generate_embeddings_async instead
-        logger.warning(
-            "_generate_embeddings called in async context, use "
-            "_generate_embeddings_async"
-        )
-        return None
-
     async def _generate_embeddings_async(self, op: PutOp) -> list[float] | None:
         """Generate embeddings asynchronously for the given operation."""
         if not self.embeddings:
@@ -463,16 +451,10 @@ class AsyncValkeyStore(BaseValkeyStore):
                 return None
 
             # Use async embeddings method
-            if hasattr(self.embeddings, "aembed_documents"):
-                vectors = await self.embeddings.aembed_documents(texts)
-                return vectors[0] if vectors else None
-            else:
-                raise EmbeddingGenerationError(
-                    "Cannot generate embeddings: embeddings object only has "
-                    "sync methods (embed_documents). "
-                    "Use ValkeyStore for sync embedding generation.",
-                    text_content=" ".join(texts[:3]) if texts else None,
-                )
+            # Type checker and runtime will ensure embeddings has aembed_documents
+            vectors = await self.embeddings.aembed_documents(texts)
+            return vectors[0] if vectors else None
+
         except EmbeddingGenerationError:
             # Re-raise EmbeddingGenerationError
             raise
@@ -536,144 +518,6 @@ class AsyncValkeyStore(BaseValkeyStore):
         except Exception as e:
             logger.error(f"Error listing namespaces: {e}")
             return []
-
-    async def _search_with_hash_async(
-        self,
-        namespace: tuple[str, ...],
-        query: str | None = None,
-        filter_dict: dict[str, Any] | None = None,
-        limit: int | None = None,
-        offset: int = 0,
-    ) -> list[tuple[tuple[str, ...], str, float]]:
-        """Efficient search using hash fields when vector search is unavailable."""
-
-        # Build scan pattern for namespace
-        pattern = f"langgraph:{'/'.join(namespace)}/*" if namespace else "langgraph:*"
-
-        # Use SCAN for efficient iteration
-        cursor = 0
-        results = []
-        seen_keys = set()
-
-        def scan_with_cursor(c):
-            return self.client.scan(c, match=pattern, count=1000)
-
-        while True:
-            scan_result = await asyncio.get_event_loop().run_in_executor(
-                None, scan_with_cursor, cursor
-            )
-            # No need to handle ResponseT here - run_in_executor already resolves it
-            if scan_result is None:
-                break
-            cursor, keys = scan_result
-            # Convert keys to strings directly
-            parsed_keys = []
-            if hasattr(keys, "__iter__") and not isinstance(keys, (str, bytes)):
-                for key in keys:
-                    if isinstance(key, bytes):
-                        parsed_keys.append(key.decode("utf-8"))
-                    elif isinstance(key, str):
-                        parsed_keys.append(key)
-                    else:
-                        parsed_keys.append(str(key))
-            keys = parsed_keys
-
-            for key in keys:
-                if key in seen_keys:
-                    continue
-                seen_keys.add(key)
-
-                try:
-                    # Get the value
-                    value = await asyncio.get_event_loop().run_in_executor(
-                        None, self.client.get, key
-                    )
-                    if value:
-                        # Handle ResponseT type for value
-                        value = await self._handle_response_t_async(value)
-                        if value is None:
-                            continue
-                        doc_data = orjson.loads(value)
-                        # Apply filters efficiently
-                        if filter_dict and not self._apply_filter(
-                            doc_data.get("value", {}), filter_dict
-                        ):
-                            continue
-
-                        # Calculate score
-                        score = self._calculate_simple_score(query, doc_data)
-                        if score > 0:
-                            namespace, key = self._parse_key(key, "langgraph:")
-                            results.append((namespace, key, score))
-
-                except Exception as e:
-                    logger.debug(f"Error processing key {key}: {e}")
-                    continue
-
-            if cursor == 0:
-                break
-
-        # Sort results by score descending
-        sorted_results = sorted(results, key=lambda x: x[2], reverse=True)
-
-        # Apply pagination
-        start_idx = offset
-        end_idx = start_idx + limit if limit else len(sorted_results)
-
-        logger.debug(
-            f"Hash search: total results={len(sorted_results)}, "
-            f"offset={offset}, limit={limit}, start_idx={start_idx}, "
-            f"end_idx={end_idx}"
-        )
-
-        return sorted_results[start_idx:end_idx]
-
-    async def _convert_to_search_items_async(
-        self, results: list[tuple[tuple[str, ...], str, float]]
-    ) -> list[SearchItem]:
-        """Convert hash search results to SearchItem objects."""
-        items = []
-        for namespace, key, score in results:
-            try:
-                # Get full document data
-                full_key = self._build_key(namespace, key)
-                value_data = await asyncio.get_event_loop().run_in_executor(
-                    None, self.client.get, full_key
-                )
-                if value_data:
-                    value_data = await self._handle_response_t_async(value_data)
-                    if value_data:
-                        # Parse document using DocumentProcessor
-                        try:
-                            parsed_data = orjson.loads(value_data)
-                            value = parsed_data.get("value", {})
-                            created_at = datetime.fromisoformat(
-                                parsed_data.get(
-                                    "created_at", datetime.now().isoformat()
-                                )
-                            )
-                            updated_at = datetime.fromisoformat(
-                                parsed_data.get(
-                                    "updated_at", datetime.now().isoformat()
-                                )
-                            )
-                            items.append(
-                                SearchItem(
-                                    namespace=namespace,
-                                    key=key,
-                                    value=value,
-                                    created_at=created_at,
-                                    updated_at=updated_at,
-                                    score=score,
-                                )
-                            )
-                        except Exception as e:
-                            logger.error(f"Error parsing document data: {e}")
-                            continue
-            except Exception as e:
-                logger.debug(f"Error converting result {namespace}/{key}: {e}")
-                continue
-        return items
 
     async def _refresh_ttl_for_items_async(self, items: list[SearchItem]) -> None:
         """Refresh TTL for a list of items."""
