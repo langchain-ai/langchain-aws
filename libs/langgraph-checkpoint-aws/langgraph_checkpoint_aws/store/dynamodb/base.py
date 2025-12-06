@@ -14,10 +14,12 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, cast
+import asyncio
 
 import boto3
 import orjson
 from botocore.exceptions import ClientError
+from langchain_core.runnables import run_in_executor
 from langgraph.store.base import (
     BaseStore,
     GetOp,
@@ -662,14 +664,39 @@ class DynamoDBStore(BaseStore):
             logger.warning(f"Error refreshing TTL for {pk}/{sk}: {e}")
 
     async def abatch(self, ops: Iterable[Op]) -> list[Result]:
-        """Async batch operations are not supported.
-        
-        DynamoDBStore only supports synchronous operations.
-        
+        """Execute batch operations asynchronously in parallel.
+
+        This method leverages run_in_executor to execute synchronous DynamoDB
+        operations concurrently in a thread pool. Each operation (GetOp, PutOp,
+        SearchOp, ListNamespacesOp) is wrapped in an async function and executed
+        in parallel using asyncio.gather, to improve throughput for
+        batch operations compared to sequential execution. 
+        TODO: should perform multiple dynamodb put_item with batch_write_item for better performance.
+
+        Args:
+            ops: Iterable of operations to execute. Supported operation types are
+                GetOp, PutOp, SearchOp, and ListNamespacesOp.
+
+        Returns:
+            List of results corresponding to the input operations, in the same
+            order as the input operations.
+
         Raises:
-            NotImplementedError: Always raised for this synchronous store.
+            NotImplementedError: If an unsupported operation type is encountered.
         """
-        raise NotImplementedError(
-            "Async batch operations are not supported by DynamoDBStore. "
-            "This is a synchronous store implementation."
-        )
+
+        async def execute_op(op: Op) -> Result:
+            """Execute a single operation in the executor."""
+            if isinstance(op, GetOp):
+                return await run_in_executor(None, self._batch_get_op, op)
+            if isinstance(op, PutOp):
+                return await run_in_executor(None, self._batch_put_op, op)
+            if isinstance(op, SearchOp):
+                return await run_in_executor(None, self._batch_search_op, op)
+            if isinstance(op, ListNamespacesOp):
+                return await run_in_executor(None, self._batch_list_namespaces_op, op)
+            raise NotImplementedError(f"Operation type {type(op)} not supported")  # noqa: EM102
+
+        # Execute all operations in parallel
+        results = await asyncio.gather(*[execute_op(op) for op in ops])
+        return list(results)

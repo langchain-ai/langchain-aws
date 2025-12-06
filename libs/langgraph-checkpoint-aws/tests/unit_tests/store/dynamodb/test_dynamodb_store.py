@@ -1,6 +1,8 @@
 """Unit tests for DynamoDB store implementation."""
 
 import os
+import time
+import asyncio
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import Mock, MagicMock, patch
@@ -455,3 +457,158 @@ class TestDynamoDBStoreFiltering:
 
         assert len(filtered) == 1
         assert filtered[0]["value"]["status"] == "published"
+
+
+class TestDynamoDBStoreAsync:
+    """Test async operations."""
+
+    @pytest.mark.asyncio
+    async def test_abatch_get(self, dynamodb_store):
+        """Test abatch with GetOp."""
+        op = GetOp(namespace=("users", "1"), key="k1")
+        item = Item(
+            value={"v": 1},
+            key="k1",
+            namespace=("users", "1"),
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+        
+        dynamodb_store._batch_get_op = Mock(return_value=item)
+        
+        results = await dynamodb_store.abatch([op])
+        
+        assert len(results) == 1
+        assert results[0] == item
+        dynamodb_store._batch_get_op.assert_called_once_with(op)
+
+    @pytest.mark.asyncio
+    async def test_abatch_put(self, dynamodb_store):
+        """Test abatch with PutOp."""
+        op = PutOp(namespace=("users", "2"), key="k2", value={"v": 2})
+        
+        dynamodb_store._batch_put_op = Mock(return_value=None)
+        
+        results = await dynamodb_store.abatch([op])
+        
+        assert len(results) == 1
+        assert results[0] is None
+        dynamodb_store._batch_put_op.assert_called_once_with(op)
+
+    @pytest.mark.asyncio
+    async def test_abatch_search(self, dynamodb_store):
+        """Test abatch with SearchOp."""
+        op = SearchOp(namespace_prefix=("users",), limit=10)
+        search_item = SearchItem(
+            value={"v": 1},
+            key="k1",
+            namespace=("users", "1"),
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+        
+        dynamodb_store._batch_search_op = Mock(return_value=[search_item])
+        
+        results = await dynamodb_store.abatch([op])
+        
+        assert len(results) == 1
+        assert results[0] == [search_item]
+        dynamodb_store._batch_search_op.assert_called_once_with(op)
+
+    @pytest.mark.asyncio
+    async def test_abatch_list_namespaces(self, dynamodb_store):
+        """Test abatch with ListNamespacesOp."""
+        op = ListNamespacesOp(limit=10)
+        
+        dynamodb_store._batch_list_namespaces_op = Mock(return_value=[("users", "1")])
+        
+        results = await dynamodb_store.abatch([op])
+        
+        assert len(results) == 1
+        assert results[0] == [("users", "1")]
+        dynamodb_store._batch_list_namespaces_op.assert_called_once_with(op)
+
+    async def assert_concurrent_calls_are_faster_than_sequential(
+        self, n_async_calls: int, func, *args, **kwargs
+    ) -> None:
+        """Helper to run n async tasks concurrently."""
+        start_time = time.time()
+        tasks = [func(*args, **kwargs) for _ in range(n_async_calls)]
+        await asyncio.gather(*tasks)
+        concurrent_time = time.time() - start_time
+        
+        # If sequential, it would take at least n_async_calls * sleep_time
+        # We expect concurrent execution to be much faster, roughly sleep_time
+        # We'll allow a generous buffer (e.g. 2x sleep time + overhead) but definitely less than sequential
+        
+        # We assume the func has a sleep of at least 0.05s
+        # Total sequential time ~ n * 0.05
+        # Total concurrent time ~ 0.05 + overhead
+        
+        avg_single_call_time = 0.05
+        max_expected_concurrent_time = avg_single_call_time * n_async_calls * 0.5 # Should be significantly less than sequential
+        
+        assert concurrent_time < max_expected_concurrent_time, (
+            f"Concurrent execution took {concurrent_time:.2f}s, "
+            f"expected < {max_expected_concurrent_time:.2f}s"
+        )
+
+    @pytest.mark.asyncio
+    async def test_abatch_get_concurrency(self, dynamodb_store):
+        """Test that abatch GetOp is non-blocking and runs concurrently."""
+        delay = 0.05
+        def delayed_get(*args, **kwargs):
+            time.sleep(delay)
+            return Item(value={"v": 1}, key="k1", namespace=("users", "1"), created_at=datetime.now(), updated_at=datetime.now())
+
+        dynamodb_store._batch_get_op = Mock(side_effect=delayed_get)
+        ops = [GetOp(namespace=("users", "1"), key="k1")]
+        
+        await self.assert_concurrent_calls_are_faster_than_sequential(
+            5, dynamodb_store.abatch, ops
+        )
+
+    @pytest.mark.asyncio
+    async def test_abatch_put_concurrency(self, dynamodb_store):
+        """Test that abatch PutOp is non-blocking and runs concurrently."""
+        delay = 0.05
+        def delayed_put(*args, **kwargs):
+            time.sleep(delay)
+            return None
+
+        dynamodb_store._batch_put_op = Mock(side_effect=delayed_put)
+        ops = [PutOp(namespace=("users", "2"), key="k2", value={"v": 2})]
+        
+        await self.assert_concurrent_calls_are_faster_than_sequential(
+            5, dynamodb_store.abatch, ops
+        )
+
+    @pytest.mark.asyncio
+    async def test_abatch_search_concurrency(self, dynamodb_store):
+        """Test that abatch SearchOp is non-blocking and runs concurrently."""
+        delay = 0.05
+        def delayed_search(*args, **kwargs):
+            time.sleep(delay)
+            return [SearchItem(value={"v": 1}, key="k1", namespace=("users", "1"), created_at=datetime.now(), updated_at=datetime.now())]
+
+        dynamodb_store._batch_search_op = Mock(side_effect=delayed_search)
+        ops = [SearchOp(namespace_prefix=("users",), limit=10)]
+        
+        await self.assert_concurrent_calls_are_faster_than_sequential(
+            5, dynamodb_store.abatch, ops
+        )
+
+    @pytest.mark.asyncio
+    async def test_abatch_list_namespaces_concurrency(self, dynamodb_store):
+        """Test that abatch ListNamespacesOp is non-blocking and runs concurrently."""
+        delay = 0.05
+        def delayed_list(*args, **kwargs):
+            time.sleep(delay)
+            return [("users", "1")]
+
+        dynamodb_store._batch_list_namespaces_op = Mock(side_effect=delayed_list)
+        ops = [ListNamespacesOp(limit=10)]
+        
+        await self.assert_concurrent_calls_are_faster_than_sequential(
+            5, dynamodb_store.abatch, ops
+        )
