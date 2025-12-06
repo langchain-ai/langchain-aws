@@ -51,7 +51,7 @@ if VALKEY_AVAILABLE:
 
     from langgraph.store.base import SearchItem, SearchOp
 
-    from langgraph_checkpoint_aws.store.valkey.search_strategies import (
+    from langgraph_checkpoint_aws.store.valkey.search import (
         HashSearchStrategy,
         KeyPatternSearchStrategy,
         SearchStrategyManager,
@@ -178,7 +178,7 @@ class TestSearchFunctionality:
         mock_valkey_client.ft.return_value.search.return_value = mock_result
 
         # Mock document retrieval - vector search uses hgetall, not get
-        doc_value = {"title": "Test Doc", "content": "Test content"}
+        doc_value = {"title": "Test Doc", "content": "Test content", "type": "document"}
         # Create the hash structure that ValkeyStore expects
         hash_data = {
             "value": orjson.dumps(doc_value).decode("utf-8"),
@@ -229,32 +229,39 @@ class TestSearchFunctionality:
             [b"langgraph:test/doc1", b"langgraph:test/doc2"],
         )
 
-        # Mock document retrieval using hgetall (not get)
-        def mock_hgetall(key):
+        # Mock document retrieval using get (hash search uses get, not hgetall)
+        def mock_get(key):
             if key == "langgraph:test/doc1":
-                return {
-                    "value": orjson.dumps(
-                        {"title": "Test Doc 1", "content": "Relevant content"}
-                    ).decode("utf-8"),
-                    "created_at": "2024-01-01T00:00:00",
-                    "updated_at": "2024-01-01T00:00:00",
-                    "vector": "[0.1, 0.2]",
-                }
+                return orjson.dumps(
+                    {
+                        "value": {"title": "Test Doc 1", "content": "Relevant content"},
+                        "created_at": "2024-01-01T00:00:00",
+                        "updated_at": "2024-01-01T00:00:00",
+                    }
+                )
             elif key == "langgraph:test/doc2":
-                return {
-                    "value": orjson.dumps(
-                        {"title": "Test Doc 2", "content": "Unrelated"}
-                    ).decode("utf-8"),
-                    "created_at": "2024-01-01T00:00:00",
-                    "updated_at": "2024-01-01T00:00:00",
-                    "vector": "[0.3, 0.4]",
-                }
-            return {}
+                return orjson.dumps(
+                    {
+                        "value": {"title": "Test Doc 2", "content": "Unrelated"},
+                        "created_at": "2024-01-01T00:00:00",
+                        "updated_at": "2024-01-01T00:00:00",
+                    }
+                )
+            return None
 
-        mock_valkey_client.hgetall.side_effect = mock_hgetall
+        mock_valkey_client.get.side_effect = mock_get
 
         # Mock _handle_response_t to pass through the response
         store._handle_response_t = Mock(side_effect=lambda x: x)
+
+        # Mock _parse_key to extract namespace and key
+        def mock_parse_key(key_path, prefix=None):
+            if prefix:
+                key_path = key_path.replace(prefix, "")
+            parts = key_path.split("/")
+            return tuple(parts[:-1]), parts[-1]
+
+        store._parse_key = Mock(side_effect=mock_parse_key)
 
         # Mock _safe_parse_keys to convert bytes to strings
         store._safe_parse_keys = Mock(
@@ -468,34 +475,31 @@ class TestSearchFunctionality:
             [b"langgraph:test/doc1", b"langgraph:test/doc2", b"langgraph:test/doc3"],
         )
 
-        # Mock document retrieval with various error conditions
-        def mock_hgetall(key):
+        # Mock document retrieval with various error conditions using get
+        def mock_get(key):
             if key == "langgraph:test/doc1":
-                doc_data = create_test_document(
-                    {"title": "Good Doc", "content": "Test"}
+                return orjson.dumps(
+                    {
+                        "value": {"title": "Good Doc", "content": "Test"},
+                        "created_at": "2024-01-01T00:00:00",
+                        "updated_at": "2024-01-01T00:00:00",
+                    }
                 )
-                parsed_doc = json.loads(doc_data.decode("utf-8"))
-                return {
-                    b"value": json.dumps(parsed_doc["value"]).encode(),
-                    b"created_at": parsed_doc["created_at"].encode(),
-                    b"updated_at": parsed_doc["updated_at"].encode(),
-                    b"vector": json.dumps(parsed_doc.get("vector")).encode()
-                    if parsed_doc.get("vector")
-                    else b"null",
-                }
             elif key == "langgraph:test/doc2":
                 raise Exception("Failed to retrieve doc2")
             elif key == "langgraph:test/doc3":
-                return {b"value": b"invalid json"}  # Invalid JSON in value field
-            return {}
+                return b"invalid json"  # Invalid JSON
+            return None
 
-        mock_valkey_client.hgetall.side_effect = mock_hgetall
+        mock_valkey_client.get.side_effect = mock_get
 
         # Mock helper methods
         def mock_handle_response_t(data):
             return data
 
-        def mock_parse_key(key_path):
+        def mock_parse_key(key_path, prefix=None):
+            if prefix:
+                key_path = key_path.replace(prefix, "")
             parts = key_path.split("/")
             if len(parts) >= 2:
                 namespace = tuple(parts[:-1])
@@ -843,35 +847,28 @@ class TestKeyPatternSearchStrategy:
     def test_search_basic(self, mock_client, mock_store):
         """Test basic key pattern search."""
         # Mock the dependencies properly
+        # Mock scan results
+        mock_client.scan.return_value = (0, ["langgraph:test/key1"])
+        mock_store._handle_response_t.return_value = (0, ["langgraph:test/key1"])
+        mock_store._safe_parse_keys.return_value = ["langgraph:test/key1"]
+
+        # Mock DocumentAdapter
         with patch(
-            "langgraph_checkpoint_aws.store.valkey.search_strategies.FilterProcessor"
-        ) as mock_filter:
-            mock_filter.build_namespace_pattern.return_value = "langgraph:test/*"
+            "langgraph_checkpoint_aws.store.valkey.search.sync_strategies.DocumentAdapter"
+        ) as mock_doc_adapter:
+            mock_doc_adapter.parse_scan_key_sync.return_value = SearchItem(
+                key="key1",
+                namespace=("test",),
+                value={"title": "test"},
+                score=0.8,
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+            )
 
-            # Mock scan results
-            mock_client.scan.return_value = (0, ["langgraph:test/key1"])
-            mock_store._handle_response_t.return_value = (0, ["langgraph:test/key1"])
-            mock_store._safe_parse_keys.return_value = ["langgraph:test/key1"]
-
-            # Mock document processing
-            with patch.object(
-                KeyPatternSearchStrategy, "_process_key_for_search"
-            ) as mock_process:
-                mock_process.return_value = SearchItem(
-                    key="key1",
-                    namespace=("test",),
-                    value={"title": "test"},
-                    score=0.8,
-                    created_at=datetime.now(),
-                    updated_at=datetime.now(),
-                )
-
-                strategy = KeyPatternSearchStrategy(mock_client, mock_store)
-                op = SearchOp(namespace_prefix=("test",), query="test")
-
-                results = strategy.search(op)
-
-                assert isinstance(results, list)
+            strategy = KeyPatternSearchStrategy(mock_client, mock_store)
+            op = SearchOp(namespace_prefix=("test",), query="test")
+            results = strategy.search(op)
+            assert isinstance(results, list)
 
     def test_search_error_handling(self, mock_client, mock_store):
         """Test key pattern search error handling."""
@@ -905,10 +902,16 @@ class TestHashSearchStrategy:
         """Test basic hash search."""
         strategy = HashSearchStrategy(mock_client, mock_store)
 
-        # Mock the internal search method
+        # Mock the adapter methods
         with (
-            patch.object(strategy, "_search_with_hash", return_value=[]),
-            patch.object(strategy, "_convert_to_search_items", return_value=[]),
+            patch(
+                "langgraph_checkpoint_aws.store.valkey.search.sync_strategies.HashSearchAdapter.scan_and_score_keys_sync",
+                return_value=[],
+            ),
+            patch(
+                "langgraph_checkpoint_aws.store.valkey.search.sync_strategies.HashSearchAdapter.convert_hash_results_to_items_sync",
+                return_value=[],
+            ),
         ):
             op = SearchOp(namespace_prefix=("test",), query="test")
             results = strategy.search(op)
@@ -931,8 +934,14 @@ class TestHashSearchStrategy:
         ]
 
         with (
-            patch.object(strategy, "_search_with_hash", return_value=[]),
-            patch.object(strategy, "_convert_to_search_items", return_value=mock_items),
+            patch(
+                "langgraph_checkpoint_aws.store.valkey.search.sync_strategies.HashSearchAdapter.scan_and_score_keys_sync",
+                return_value=[],
+            ),
+            patch(
+                "langgraph_checkpoint_aws.store.valkey.search.sync_strategies.HashSearchAdapter.convert_hash_results_to_items_sync",
+                return_value=mock_items,
+            ),
             patch.object(strategy, "_refresh_ttl_for_items") as mock_refresh,
         ):
             op = SearchOp(namespace_prefix=("test",), query="test", refresh_ttl=True)
@@ -945,8 +954,9 @@ class TestHashSearchStrategy:
         """Test hash search error handling."""
         strategy = HashSearchStrategy(mock_client, mock_store)
 
-        with patch.object(
-            strategy, "_search_with_hash", side_effect=Exception("Search failed")
+        with patch(
+            "langgraph_checkpoint_aws.store.valkey.search.sync_strategies.HashSearchAdapter.scan_and_score_keys_sync",
+            side_effect=Exception("Search failed"),
         ):
             op = SearchOp(namespace_prefix=("test",))
             results = strategy.search(op)

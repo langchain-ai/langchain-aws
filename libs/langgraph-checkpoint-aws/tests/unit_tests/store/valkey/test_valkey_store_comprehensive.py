@@ -50,7 +50,6 @@ pytestmark = pytest.mark.skipif(
 
 # Import after optional dependency check
 if VALKEY_AVAILABLE:
-    import json
     from datetime import datetime
     from unittest.mock import MagicMock, Mock, patch
 
@@ -505,11 +504,13 @@ class TestValkeyStorePutOperations:
         mock_embeddings.embed_documents.assert_called_once()
         mock_valkey_client.hset.assert_called_once()
 
-    def test_handle_put_with_embeddings_async_method_no_loop(self, mock_valkey_client):
-        """Test _handle_put with async embeddings when no event loop is running."""
-        # Create mock embeddings with only async method
+    def test_handle_put_embedding_generation_error(self, mock_valkey_client):
+        """Test _handle_put when embedding generation fails.
+
+        Tests async-only embeddings raising EmbeddingGenerationError."""
         mock_embeddings = Mock()
-        del mock_embeddings.embed_documents  # Remove sync method
+        # Remove sync method - only async method available
+        del mock_embeddings.embed_documents
 
         async def mock_aembed_documents(texts):
             return [[0.1, 0.2, 0.3]]
@@ -526,58 +527,16 @@ class TestValkeyStorePutOperations:
 
         op = PutOp(namespace=("test",), key="key1", value={"title": "test content"})
 
-        # Mock asyncio.run to simulate successful async embedding
-        with patch("asyncio.run") as mock_run:
-            mock_run.return_value = [[0.1, 0.2, 0.3]]
-
+        # Should raise EmbeddingGenerationError when only async method available
+        with pytest.raises(ValkeyEmbeddingGenerationError) as exc_info:
             store._handle_put(op)
 
-            mock_run.assert_called_once()
-            mock_valkey_client.hset.assert_called_once()
+        # Verify error message directs user to AsyncValkeyStore
+        assert "Use AsyncValkeyStore" in str(exc_info.value)
+        assert "aembed_documents" in str(exc_info.value)
 
-    def test_handle_put_with_embeddings_in_async_context(self, mock_valkey_client):
-        """Test _handle_put with embeddings when already in async context."""
-        mock_embeddings = Mock()
-        del mock_embeddings.embed_documents  # Remove sync method
-
-        index_config = ValkeyIndexConfig(
-            collection_name="test", dims=3, embed=mock_embeddings, fields=["title"]
-        )
-
-        store = ValkeyStore(mock_valkey_client, index=index_config)
-        store.embeddings = mock_embeddings
-        store.index_fields = ["title"]
-
-        op = PutOp(namespace=("test",), key="key1", value={"title": "test content"})
-
-        # Mock asyncio.get_running_loop to simulate being in async context
-        with patch("asyncio.get_running_loop") as mock_get_loop:
-            mock_get_loop.return_value = Mock()  # Simulate running loop
-
-            store._handle_put(op)
-
-            # Should skip embeddings and log warning
-            mock_valkey_client.hset.assert_called_once()
-
-    def test_handle_put_embedding_generation_error(self, mock_valkey_client):
-        """Test _handle_put when embedding generation fails."""
-        mock_embeddings = Mock()
-        mock_embeddings.embed_documents.side_effect = Exception("Embedding failed")
-
-        index_config = ValkeyIndexConfig(
-            collection_name="test", dims=3, embed=mock_embeddings, fields=["title"]
-        )
-
-        store = ValkeyStore(mock_valkey_client, index=index_config)
-        store.embeddings = mock_embeddings
-        store.index_fields = ["title"]
-
-        op = PutOp(namespace=("test",), key="key1", value={"title": "test content"})
-
-        # Should handle embedding error gracefully
-        store._handle_put(op)
-
-        mock_valkey_client.hset.assert_called_once()
+        # hset should NOT be called since error is raised during embedding generation
+        mock_valkey_client.hset.assert_not_called()
 
     def test_handle_put_with_list_field_values(self, mock_valkey_client):
         """Test _handle_put with list values in indexed fields."""
@@ -663,396 +622,6 @@ class TestValkeyStorePutOperations:
 
         # Should handle delete errors gracefully (logged but not raised)
         store._handle_put(op)
-
-
-class TestValkeyStoreSearchOperations:
-    """Test ValkeyStore search operations."""
-
-    def test_handle_search_key_pattern(self, mock_valkey_client):
-        """Test search operation using key pattern strategy."""
-        # Mock scan results
-        mock_valkey_client.scan.return_value = (0, ["langgraph:test/key1"])
-        mock_valkey_client.get.return_value = (
-            '{"value": {"title": "test"}, '
-            '"created_at": "2023-01-01T00:00:00.000000", '
-            '"updated_at": "2023-01-01T00:00:00.000000"}'
-        )
-
-        store = ValkeyStore(mock_valkey_client)
-        op = SearchOp(namespace_prefix=("test",), query="test")
-
-        results = store._handle_search(op)
-
-        assert isinstance(results, list)
-
-    def test_handle_search_with_vector_search(self, mock_valkey_client):
-        """Test search operation with vector search (when available)."""
-        mock_embeddings = MagicMock()
-        mock_embeddings.embed_query.return_value = [0.1, 0.2, 0.3]
-
-        index_config = ValkeyIndexConfig(
-            collection_name="test", dims=3, embed=mock_embeddings, fields=["title"]
-        )
-
-        with patch(
-            "langgraph_checkpoint_aws.store.valkey.base.ensure_embeddings",
-            return_value=mock_embeddings,
-        ):
-            # Mock search being available
-            mock_valkey_client.execute_command.return_value = [
-                1,  # Total results
-                "langgraph:test/key1",  # Document ID
-                ["score", "0.9", "value", '{"title": "test"}'],  # Document fields
-            ]
-
-            store = ValkeyStore(mock_valkey_client, index=index_config)
-
-            # Mock search availability
-            with patch.object(store, "_is_search_available", return_value=True):
-                op = SearchOp(namespace_prefix=("test",), query="test")
-                results = store._handle_search(op)
-
-                assert isinstance(results, list)
-
-    def test_vector_search_with_namespace_and_filters(self, mock_valkey_client):
-        """Test _vector_search with both namespace prefix and filters."""
-        mock_embeddings = Mock()
-
-        index_config = ValkeyIndexConfig(
-            collection_name="test_index",
-            dims=3,
-            embed=mock_embeddings,
-            fields=["title"],
-        )
-
-        store = ValkeyStore(mock_valkey_client, index=index_config)
-        store.embeddings = mock_embeddings
-        store.index_fields = ["title"]
-
-        # Mock search results
-        mock_result = Mock()
-        mock_result.docs = []
-        mock_valkey_client.ft.return_value.search.return_value = mock_result
-
-        op = SearchOp(
-            namespace_prefix=("test", "public"),
-            query="test query",
-            filter={"type": "document", "status": "active"},
-            limit=10,
-            offset=0,
-        )
-
-        results = store._vector_search(op)
-
-        assert isinstance(results, list)
-        # Verify search was called with proper query construction
-        mock_valkey_client.ft.assert_called_with("test_index")
-
-    def test_vector_search_pure_vector_no_filters(self, mock_valkey_client):
-        """Test _vector_search with pure vector search (no filters)."""
-        mock_embeddings = Mock()
-
-        index_config = ValkeyIndexConfig(
-            collection_name="test_index",
-            dims=3,
-            embed=mock_embeddings,
-            fields=["title"],
-        )
-
-        store = ValkeyStore(mock_valkey_client, index=index_config)
-        store.embeddings = mock_embeddings
-
-        mock_result = Mock()
-        mock_result.docs = []
-        mock_valkey_client.ft.return_value.search.return_value = mock_result
-
-        op = SearchOp(
-            namespace_prefix=(),  # No namespace filter
-            query="test query",
-            filter=None,  # No additional filters
-            limit=10,
-            offset=0,
-        )
-
-        results = store._vector_search(op)
-
-        assert isinstance(results, list)
-
-    def test_vector_search_error_handling(self, mock_valkey_client):
-        """Test _vector_search error handling."""
-        mock_embeddings = Mock()
-
-        index_config = ValkeyIndexConfig(
-            collection_name="test_index",
-            dims=3,
-            embed=mock_embeddings,
-            fields=["title"],
-        )
-
-        store = ValkeyStore(mock_valkey_client, index=index_config)
-        store.embeddings = mock_embeddings
-
-        # Mock search to raise exception
-        mock_valkey_client.ft.return_value.search.side_effect = Exception(
-            "Search failed"
-        )
-
-        op = SearchOp(
-            namespace_prefix=("test",), query="test query", limit=10, offset=0
-        )
-
-        results = store._vector_search(op)
-
-        # Should return empty list on error
-        assert results == []
-
-    def test_process_vector_search_results_with_offset(self, mock_valkey_client):
-        """Test _process_vector_search_results with offset."""
-        store = ValkeyStore(mock_valkey_client)
-
-        # Create mock docs
-        mock_docs = []
-        for i in range(5):
-            doc = Mock()
-            doc.id = f"langgraph:test/doc{i}"
-            doc.score = 0.9 - (i * 0.1)
-            doc.__dict__ = {"id": doc.id, "score": doc.score}
-            mock_docs.append(doc)
-
-        mock_results = Mock()
-        mock_results.docs = mock_docs
-
-        # Mock hgetall to return valid data
-        def mock_hgetall(key):
-            return {
-                "value": json.dumps({"title": f"Doc {key}"}),
-                "created_at": "2024-01-01T00:00:00",
-                "updated_at": "2024-01-01T00:00:00",
-            }
-
-        mock_valkey_client.hgetall.side_effect = mock_hgetall
-
-        op = SearchOp(
-            namespace_prefix=("test",),
-            query="test",
-            limit=10,
-            offset=2,  # Skip first 2 results
-        )
-
-        results = store._process_vector_search_results(mock_results, op)
-
-        # Should process docs starting from offset
-        assert len(results) == 3  # 5 total - 2 offset = 3
-
-    def test_extract_doc_metadata_dict_access(self, mock_valkey_client):
-        """Test _extract_doc_metadata with dict-like document access."""
-        store = ValkeyStore(mock_valkey_client)
-
-        # Test with dict-like doc
-        doc_dict = {"id": "langgraph:test/doc1", "score": 0.85}
-
-        doc_id, score = store._extract_doc_metadata(doc_dict)
-
-        assert doc_id == "langgraph:test/doc1"
-        assert score == 0.85
-
-    def test_extract_doc_metadata_attribute_access(self, mock_valkey_client):
-        """Test _extract_doc_metadata with attribute access."""
-        store = ValkeyStore(mock_valkey_client)
-
-        # Test with object-like doc
-        doc_obj = Mock()
-        doc_obj.id = "langgraph:test/doc2"
-        doc_obj.score = 0.75
-        doc_obj.__dict__ = {"id": "langgraph:test/doc2", "score": 0.75}
-
-        doc_id, score = store._extract_doc_metadata(doc_obj)
-
-        assert doc_id == "langgraph:test/doc2"
-        assert score == 0.75
-
-    def test_extract_doc_metadata_error_handling(self, mock_valkey_client):
-        """Test _extract_doc_metadata error handling."""
-        store = ValkeyStore(mock_valkey_client)
-
-        # Test with problematic doc
-        doc_bad = Mock()
-        doc_bad.id = None
-        doc_bad.score = "invalid"
-
-        doc_id, score = store._extract_doc_metadata(doc_bad)
-
-        assert doc_id == ""
-        assert score == 0.0
-
-    def test_create_search_item_from_key_error_handling(self, mock_valkey_client):
-        """Test _create_search_item_from_key error handling."""
-        store = ValkeyStore(mock_valkey_client)
-
-        # Mock hgetall to raise exception
-        mock_valkey_client.hgetall.side_effect = Exception("Connection error")
-
-        result = store._create_search_item_from_key(("test",), "doc1", 0.9)
-
-        assert result is None
-
-    def test_key_pattern_search_with_complex_data(self, mock_valkey_client):
-        """Test _key_pattern_search with complex data scenarios."""
-        store = ValkeyStore(mock_valkey_client)
-
-        # Mock scan to return keys
-        mock_valkey_client.scan.return_value = (
-            0,
-            ["langgraph:test/doc1", "langgraph:test/doc2"],
-        )
-
-        # Mock hgetall with complex data
-        def mock_hgetall(key):
-            if "doc1" in key:
-                return {
-                    b"value": orjson.dumps(
-                        {"title": "Test Doc 1", "content": "Complex content"}
-                    ).decode(),
-                    b"created_at": b"2024-01-01T00:00:00",
-                    b"updated_at": b"2024-01-01T00:00:00",
-                    b"vector": orjson.dumps([0.1, 0.2, 0.3]).decode(),
-                }
-            elif "doc2" in key:
-                return {
-                    "value": orjson.dumps({"title": "Test Doc 2"}).decode(),
-                    "created_at": "2024-01-01T00:00:00",
-                    "updated_at": "2024-01-01T00:00:00",
-                    "vector": "null",
-                }
-            return {}
-
-        mock_valkey_client.hgetall.side_effect = mock_hgetall
-
-        op = SearchOp(namespace_prefix=("test",), query="Test", limit=10, offset=0)
-
-        results = store._key_pattern_search(op)
-
-        assert isinstance(results, list)
-
-    def test_key_pattern_search_with_malformed_data(self, mock_valkey_client):
-        """Test _key_pattern_search with malformed data."""
-        store = ValkeyStore(mock_valkey_client)
-
-        mock_valkey_client.scan.return_value = (0, ["langgraph:test/doc1"])
-
-        # Mock hgetall with malformed JSON
-        mock_valkey_client.hgetall.return_value = {
-            "value": "invalid-json-data",
-            "created_at": "2024-01-01T00:00:00",
-            "updated_at": "2024-01-01T00:00:00",
-        }
-
-        op = SearchOp(namespace_prefix=("test",), query="test", limit=10, offset=0)
-
-        results = store._key_pattern_search(op)
-
-        # Should handle malformed data gracefully
-        assert isinstance(results, list)
-
-    def test_key_pattern_search_with_low_scores(self, mock_valkey_client):
-        """Test _key_pattern_search filtering out low scores."""
-        store = ValkeyStore(mock_valkey_client)
-
-        mock_valkey_client.scan.return_value = (0, ["langgraph:test/doc1"])
-
-        mock_valkey_client.hgetall.return_value = {
-            "value": orjson.dumps({"title": "Unrelated content"}).decode(),
-            "created_at": "2024-01-01T00:00:00",
-            "updated_at": "2024-01-01T00:00:00",
-        }
-
-        op = SearchOp(
-            namespace_prefix=("test",),
-            # This should result in low score
-            query="very specific query that won't match",
-            limit=10,
-            offset=0,
-        )
-
-        results = store._key_pattern_search(op)
-
-        # Should filter out results with very low scores
-        assert isinstance(results, list)
-
-    def test_key_pattern_search_scan_continuation(self, mock_valkey_client):
-        """Test _key_pattern_search with scan cursor continuation."""
-        store = ValkeyStore(mock_valkey_client)
-
-        # Mock scan to return cursor continuation
-        scan_calls = [
-            (100, ["langgraph:test/doc1"]),  # First call with cursor 100
-            (0, ["langgraph:test/doc2"]),  # Second call with cursor 0 (end)
-        ]
-        mock_valkey_client.scan.side_effect = scan_calls
-
-        mock_valkey_client.hgetall.return_value = {
-            "value": orjson.dumps({"title": "Test"}).decode(),
-            "created_at": "2024-01-01T00:00:00",
-            "updated_at": "2024-01-01T00:00:00",
-        }
-
-        op = SearchOp(namespace_prefix=("test",), query="test", limit=10, offset=0)
-
-        results = store._key_pattern_search(op)
-
-        # Should handle cursor continuation
-        assert isinstance(results, list)
-        assert mock_valkey_client.scan.call_count == 2
-
-    def test_handle_search_error(self, mock_valkey_client):
-        """Test search operation with error."""
-        mock_valkey_client.scan.side_effect = Exception("Search error")
-
-        store = ValkeyStore(mock_valkey_client)
-        op = SearchOp(namespace_prefix=("test",), query="test")
-
-        results = store._handle_search(op)
-
-        # Should return empty list on error, not raise
-        assert results == []
-
-    def test_convert_to_search_items_handle_response_t_none(self, mock_valkey_client):
-        """Test _convert_to_search_items when _handle_response_t returns None."""
-        store = ValkeyStore(mock_valkey_client)
-
-        mock_valkey_client.hgetall.return_value = {"some": "data"}
-
-        with patch.object(store, "_handle_response_t", return_value=None):
-            results = [(("test",), "doc1", 0.9)]
-            items = store._convert_to_search_items(results)
-
-            assert len(items) == 0
-
-    def test_convert_to_search_items_non_dict_response(self, mock_valkey_client):
-        """Test _convert_to_search_items when _handle_response_t returns non-dict."""
-        store = ValkeyStore(mock_valkey_client)
-
-        mock_valkey_client.hgetall.return_value = {"some": "data"}
-
-        with patch.object(store, "_handle_response_t", return_value="not_a_dict"):
-            results = [(("test",), "doc1", 0.9)]
-            items = store._convert_to_search_items(results)
-
-            assert len(items) == 0
-
-    def test_key_pattern_search_handle_response_t_none(self, mock_valkey_client):
-        """Test _key_pattern_search when scan _handle_response_t returns None."""
-        store = ValkeyStore(mock_valkey_client)
-
-        mock_valkey_client.scan.return_value = (0, ["langgraph:test/doc1"])
-
-        with patch.object(store, "_handle_response_t", return_value=None):
-            op = SearchOp(namespace_prefix=("test",), query="test", limit=10, offset=0)
-
-            results = store._key_pattern_search(op)
-
-            # Should handle None response gracefully
-            assert isinstance(results, list)
 
 
 class TestValkeyStoreListOperations:
@@ -1358,7 +927,7 @@ class TestValkeyStoreErrorHandling:
             store.setup()
 
     def test_embedding_generation_error(self, mock_valkey_client):
-        """Test embedding generation error."""
+        """Test embedding generation error is re-raised."""
         mock_embeddings = MagicMock()
         mock_embeddings.embed_documents.side_effect = Exception("Embedding failed")
 
@@ -1375,10 +944,13 @@ class TestValkeyStoreErrorHandling:
 
             op = PutOp(namespace=("test",), key="key1", value={"title": "test"})
 
-            # Should handle embedding error gracefully
-            store._handle_put(op)
+            # Updated behavior: embedding errors are now re-raised
+            with pytest.raises(Exception, match="Embedding failed"):
+                store._handle_put(op)
 
-            mock_valkey_client.hset.assert_called_once()
+            # hset should NOT be called since error is raised
+            # during embedding generation
+            mock_valkey_client.hset.assert_not_called()
 
     def test_document_creation_error(self, mock_valkey_client):
         """Test document creation error handling."""
