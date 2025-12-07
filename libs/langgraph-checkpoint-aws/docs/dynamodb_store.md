@@ -263,6 +263,9 @@ Use **Valkey Store** when:
 - **Scan Cost**: Listing namespaces uses DynamoDB Scan which can be expensive
 - **Filter Limitations**: Basic filtering only (equality checks)
 - **No Transactions**: Operations are not transactional across multiple items
+- **Item Size Limit**: DynamoDB has a [400KB limit per item](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-use-s3-too.html). For larger items, consider using S3 or splitting data.
+
+
 
 ## Examples
 
