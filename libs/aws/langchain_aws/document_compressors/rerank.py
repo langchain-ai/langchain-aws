@@ -126,6 +126,10 @@ class BedrockRerank(BaseDocumentCompressor):
         if len(documents) == 0:
             return []
 
+        effective_top_n = top_n if top_n is not None else self.top_n
+        if effective_top_n is not None:
+            effective_top_n = min(effective_top_n, len(documents))
+
         # Serialize documents for the Bedrock API
         serialized_documents = [
             {"textDocument": {"text": doc.page_content}, "type": "TEXT"}
@@ -145,7 +149,7 @@ class BedrockRerank(BaseDocumentCompressor):
                         "additionalModelRequestFields": additional_model_request_fields
                         or {},
                     },
-                    "numberOfResults": top_n or self.top_n,
+                    "numberOfResults": effective_top_n,
                 },
                 "type": "BEDROCK_RERANKING_MODEL",
             },

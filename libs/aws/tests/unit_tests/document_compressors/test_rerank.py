@@ -69,3 +69,89 @@ def test_compress_documents(mock_rerank: MagicMock, reranker: BedrockRerank) -> 
     assert len(compressed_docs) == 2
     assert compressed_docs[0].metadata["relevance_score"] == 0.95
     assert compressed_docs[1].metadata["relevance_score"] == 0.85
+
+
+@patch("langchain_aws.utils.create_aws_client")
+def test_rerank_clamps_top_n_to_document_count(
+    mock_create_client: MagicMock,
+) -> None:
+    mock_client = MagicMock()
+    mock_create_client.return_value = mock_client
+
+    captured_request: dict = {}
+
+    def mock_rerank(**kwargs: dict) -> dict:
+        captured_request.update(kwargs)
+        num_results = kwargs["rerankingConfiguration"]["bedrockRerankingConfiguration"][
+            "numberOfResults"
+        ]
+        return {
+            "results": [
+                {"index": i, "relevanceScore": 0.9 - (i * 0.1)}
+                for i in range(num_results)
+            ]
+        }
+
+    mock_client.rerank = mock_rerank
+
+    reranker = BedrockRerank(
+        model_arn="arn:aws:bedrock:us-west-2::foundation-model/amazon.rerank-v1:0",
+        region_name="us-east-1",
+        top_n=10,
+        client=mock_client,
+    )
+
+    documents = [
+        Document(page_content="Doc 1"),
+        Document(page_content="Doc 2"),
+        Document(page_content="Doc 3"),
+    ]
+
+    results = reranker.rerank(documents, query="test query")
+
+    actual_num_results = captured_request["rerankingConfiguration"][
+        "bedrockRerankingConfiguration"
+    ]["numberOfResults"]
+    assert actual_num_results == 3
+    assert len(results) == 3
+
+
+@patch("langchain_aws.utils.create_aws_client")
+def test_rerank_top_n_override_also_clamped(
+    mock_create_client: MagicMock,
+) -> None:
+    mock_client = MagicMock()
+    mock_create_client.return_value = mock_client
+
+    captured_request: dict = {}
+
+    def mock_rerank(**kwargs: dict) -> dict:
+        captured_request.update(kwargs)
+        num_results = kwargs["rerankingConfiguration"]["bedrockRerankingConfiguration"][
+            "numberOfResults"
+        ]
+        return {
+            "results": [
+                {"index": i, "relevanceScore": 0.9 - (i * 0.1)}
+                for i in range(num_results)
+            ]
+        }
+
+    mock_client.rerank = mock_rerank
+
+    reranker = BedrockRerank(
+        model_arn="arn:aws:bedrock:us-west-2::foundation-model/amazon.rerank-v1:0",
+        region_name="us-east-1",
+        top_n=2,
+        client=mock_client,
+    )
+
+    documents = [Document(page_content="Doc 1"), Document(page_content="Doc 2")]
+
+    results = reranker.rerank(documents, query="test query", top_n=100)
+
+    actual_num_results = captured_request["rerankingConfiguration"][
+        "bedrockRerankingConfiguration"
+    ]["numberOfResults"]
+    assert actual_num_results == 2
+    assert len(results) == 2
