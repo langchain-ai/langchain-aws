@@ -154,6 +154,15 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         """Check if the model is Cohere Embed v4."""
         return "cohere.embed-v4" in self.model_id
 
+    @property
+    def _is_nova_embed(self) -> bool:
+        """Check if the model is Amazon Nova Embed."""
+        return (
+            self._inferred_provider == "amazon"
+            and "nova" in self.model_id
+            and "embed" in self.model_id
+        )
+
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
@@ -197,6 +206,23 @@ class BedrockEmbeddings(BaseModel, Embeddings):
             else:
                 processed_embeddings = embeddings
             return processed_embeddings[0]
+        elif self._is_nova_embed:
+            response_body = self._invoke_model(
+                input_body={
+                    "taskType": "SINGLE_EMBEDDING",
+                    "singleEmbeddingParams": {
+                        "embeddingPurpose": "GENERIC_INDEX",
+                        "text": {
+                            "truncationMode": "END",
+                            "value": text,
+                        },
+                    },
+                }
+            )
+            embeddings = response_body.get("embeddings")
+            if not embeddings or not embeddings[0].get("embedding"):
+                raise ValueError("No embedding returned from model")
+            return embeddings[0]["embedding"]
         else:
             # includes common provider == "amazon"
             response_body = self._invoke_model(
