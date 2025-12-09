@@ -2356,3 +2356,104 @@ def test_get_num_tokens_from_messages_api_error_fallback() -> None:
         token_count = llm.get_num_tokens_from_messages(messages)
         assert token_count == 5
         mock_base.assert_called_once()
+
+
+def test_service_tier_parameter() -> None:
+    """Test that service_tier parameter is correctly set and passed."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier="priority",
+    )
+    assert llm.service_tier == "priority"
+
+
+@pytest.mark.parametrize(
+    "service_tier",
+    ["priority", "default", "flex", "reserved"],
+)
+def test_service_tier_valid_values(service_tier: str) -> None:
+    """Test that all valid service_tier values are accepted."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier=service_tier,  # type: ignore[arg-type]
+    )
+    assert llm.service_tier == service_tier
+
+
+def test_service_tier_in_converse_params() -> None:
+    """Test that service_tier is included in _converse_params."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier="priority",
+    )
+
+    params = llm._converse_params()
+    assert params["serviceTier"] == "priority"
+
+
+def test_service_tier_none_not_in_params() -> None:
+    """Test that service_tier is not in params when None."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+
+    params = llm._converse_params()
+    assert "serviceTier" not in params
+
+
+def test_service_tier_passed_to_converse() -> None:
+    """Test that service_tier is passed to the converse API call."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier="priority",
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    llm.invoke(messages)
+
+    # Verify converse was called with serviceTier
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert call_kwargs["serviceTier"] == "priority"
+
+
+def test_service_tier_passed_to_converse_stream() -> None:
+    """Test that service_tier is passed to the converse_stream API call."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse_stream.return_value = {
+        "stream": [
+            {"messageStart": {"role": "assistant"}},
+            {"contentBlockDelta": {"delta": {"text": "Hi"}, "contentBlockIndex": 0}},
+            {"messageStop": {"stopReason": "end_turn"}},
+            {
+                "metadata": {
+                    "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}
+                }
+            },
+        ]
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier="flex",
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    list(llm.stream(messages))
+
+    # Verify converse_stream was called with serviceTier
+    call_kwargs = mocked_client.converse_stream.call_args[1]
+    assert call_kwargs["serviceTier"] == "flex"
