@@ -102,7 +102,6 @@ class DynamoDBStore(BaseStore):
         provisioned capacity for consistent traffic patterns.
     """
 
-    MIGRATIONS: list[str] = []
     supports_ttl = True
 
     def __init__(
