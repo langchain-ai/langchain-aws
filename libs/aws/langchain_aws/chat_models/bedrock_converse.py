@@ -1232,6 +1232,7 @@ class ChatBedrockConverse(BaseChatModel):
             toolChoice = _format_tool_choice(toolChoice) if toolChoice else None
             toolConfig = {"tools": _format_tools(tools), "toolChoice": toolChoice}
 
+        tier = serviceTier or self.service_tier
         return _drop_none(
             {
                 "modelId": modelId or self.model_id,
@@ -1246,7 +1247,7 @@ class ChatBedrockConverse(BaseChatModel):
                 ),
                 "guardrailConfig": guardrailConfig or self.guardrail_config,
                 "performanceConfig": performanceConfig or self.performance_config,
-                "serviceTier": serviceTier or self.service_tier,
+                "serviceTier": {"type": tier} if tier else None,
                 "requestMetadata": requestMetadata or self.request_metadata,
             }
         )

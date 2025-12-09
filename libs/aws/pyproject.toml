@@ -13,7 +13,7 @@ version = "1.1.0"
 requires-python = ">=3.10"
 dependencies = [
     "langchain-core>=1.1.0",
-    "boto3>=1.40.19",
+    "boto3>=1.42.5",
     "pydantic>=2.10.6,<3",
     "numpy>=2.3.2,<3; python_version>='3.12'",
     "numpy>=1.0.0,<3; python_version<'3.12'",
@@ -45,8 +45,8 @@ typing = [
     "types-requests>=2.31.0,<2.32.0; platform_python_implementation == 'PyPy'",
 ]
 dev = [
-    "boto3-stubs[essential]>=1.40.19",
-    "botocore-stubs>=1.38.46",
+    "boto3-stubs[essential]>=1.42.5",
+    "botocore-stubs>=1.42.5",
 ]
 
 [tool.uv]

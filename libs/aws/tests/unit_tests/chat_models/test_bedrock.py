@@ -1686,9 +1686,9 @@ def test_service_tier_passed_to_invoke_model() -> None:
     messages = [HumanMessage(content="Hi")]
     llm.invoke(messages)
 
-    # Verify invoke_model was called with serviceTier
+    # Verify invoke_model was called with serviceTier in the correct format
     call_kwargs = mocked_client.invoke_model.call_args[1]
-    assert call_kwargs["serviceTier"] == "priority"
+    assert call_kwargs["serviceTier"] == {"type": "priority"}
 
 
 def test_service_tier_passed_to_as_converse() -> None:

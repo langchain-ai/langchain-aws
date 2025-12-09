@@ -2383,7 +2383,7 @@ def test_service_tier_valid_values(service_tier: str) -> None:
 
 
 def test_service_tier_in_converse_params() -> None:
-    """Test that service_tier is included in _converse_params."""
+    """Test that service_tier is included in _converse_params with correct format."""
     llm = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0",
         region_name="us-west-2",
@@ -2391,7 +2391,7 @@ def test_service_tier_in_converse_params() -> None:
     )
 
     params = llm._converse_params()
-    assert params["serviceTier"] == "priority"
+    assert params["serviceTier"] == {"type": "priority"}
 
 
 def test_service_tier_none_not_in_params() -> None:
@@ -2423,9 +2423,9 @@ def test_service_tier_passed_to_converse() -> None:
     messages = [HumanMessage(content="Hi")]
     llm.invoke(messages)
 
-    # Verify converse was called with serviceTier
+    # Verify converse was called with serviceTier in the correct format
     call_kwargs = mocked_client.converse.call_args[1]
-    assert call_kwargs["serviceTier"] == "priority"
+    assert call_kwargs["serviceTier"] == {"type": "priority"}
 
 
 def test_service_tier_passed_to_converse_stream() -> None:
@@ -2454,6 +2454,6 @@ def test_service_tier_passed_to_converse_stream() -> None:
     messages = [HumanMessage(content="Hi")]
     list(llm.stream(messages))
 
-    # Verify converse_stream was called with serviceTier
+    # Verify converse_stream was called with serviceTier in the correct format
     call_kwargs = mocked_client.converse_stream.call_args[1]
-    assert call_kwargs["serviceTier"] == "flex"
+    assert call_kwargs["serviceTier"] == {"type": "flex"}
