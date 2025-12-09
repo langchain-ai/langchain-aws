@@ -37,10 +37,11 @@ class TestNovaEmbeddings:
         mock_client = Mock()
         mock_create_client.return_value = mock_client
 
+        nova_response = {
+            "embeddings": [{"embeddingType": "TEXT", "embedding": [0.1, 0.2, 0.3]}]
+        }
         mock_client.invoke_model.return_value = {
-            "body": Mock(
-                read=lambda: '{"embeddings": [{"embeddingType": "TEXT", "embedding": [0.1, 0.2, 0.3]}]}'
-            )
+            "body": Mock(read=lambda: json.dumps(nova_response))
         }
 
         embeddings = BedrockEmbeddings(
@@ -84,10 +85,11 @@ class TestNovaEmbeddings:
         mock_client = Mock()
         mock_create_client.return_value = mock_client
 
+        nova_response = {
+            "embeddings": [{"embeddingType": "TEXT", "embedding": [0.1, 0.2, 0.3]}]
+        }
         mock_client.invoke_model.return_value = {
-            "body": Mock(
-                read=lambda: '{"embeddings": [{"embeddingType": "TEXT", "embedding": [0.1, 0.2, 0.3]}]}'
-            )
+            "body": Mock(read=lambda: json.dumps(nova_response))
         }
 
         embeddings = BedrockEmbeddings(
@@ -103,10 +105,11 @@ class TestNovaEmbeddings:
         mock_client = Mock()
         mock_create_client.return_value = mock_client
 
+        nova_response = {
+            "embeddings": [{"embeddingType": "TEXT", "embedding": [0.1, 0.2, 0.3]}]
+        }
         mock_client.invoke_model.return_value = {
-            "body": Mock(
-                read=lambda: '{"embeddings": [{"embeddingType": "TEXT", "embedding": [0.1, 0.2, 0.3]}]}'
-            )
+            "body": Mock(read=lambda: json.dumps(nova_response))
         }
 
         embeddings = BedrockEmbeddings(
@@ -124,10 +127,11 @@ class TestNovaEmbeddings:
         mock_client = Mock()
         mock_create_client.return_value = mock_client
 
+        nova_response = {
+            "embeddings": [{"embeddingType": "TEXT", "embedding": [3.0, 4.0]}]
+        }
         mock_client.invoke_model.return_value = {
-            "body": Mock(
-                read=lambda: '{"embeddings": [{"embeddingType": "TEXT", "embedding": [3.0, 4.0]}]}'
-            )
+            "body": Mock(read=lambda: json.dumps(nova_response))
         }
 
         embeddings = BedrockEmbeddings(
