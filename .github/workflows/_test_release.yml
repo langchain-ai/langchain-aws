@@ -29,7 +29,7 @@ jobs:
       version: ${{ steps.check-version.outputs.version }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up Python + uv
         uses: "./.github/actions/uv_setup"
@@ -80,7 +80,7 @@ jobs:
       actions: read # Needed for actions/download-artifact
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: actions/download-artifact@v6
         with:

@@ -7,7 +7,7 @@ how-tos/langchain-aws-comprehensive-guide.md
 !!! tip "Prerequisites"
     This guide assumes familiarity with the following:
     
-    - [LangChain Documentation](https://python.langchain.com/)
+    - [LangChain Documentation](https://docs.langchain.com/oss/python/langchain/overview)
     - [AWS Services](https://aws.amazon.com/)
     - [Amazon Bedrock](https://aws.amazon.com/bedrock/)
     - [Python Programming](https://python.org)
