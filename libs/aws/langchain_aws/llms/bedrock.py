@@ -1085,7 +1085,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         accept = "application/json"
         contentType = "application/json"
 
-        request_options = {
+        request_options: dict[str, Any] = {
             "body": body,
             "modelId": self.model_id,
             "accept": accept,
@@ -1234,7 +1234,7 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         body = json.dumps(input_body)
 
-        request_options = {
+        request_options: dict[str, Any] = {
             "body": body,
             "modelId": self.model_id,
             "accept": "application/json",
