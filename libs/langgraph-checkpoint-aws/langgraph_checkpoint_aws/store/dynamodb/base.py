@@ -156,7 +156,7 @@ class DynamoDBStore(BaseStore):
             self.session = boto3.Session(region_name=region_name)
 
         try:
-            self.dynamodb = self.session.resource("dynamodb")
+            self.dynamodb = self.session.client("dynamodb")
             self.table = self.dynamodb.Table(table_name)
         except Exception as e:
             raise DynamoDBConnectionError(
