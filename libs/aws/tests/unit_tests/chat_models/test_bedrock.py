@@ -1629,3 +1629,78 @@ def test_get_num_tokens_from_messages_fallback(
         assert token_count == 24
         mock_parent.assert_called_once()
         mock_client.count_tokens.assert_not_called()
+
+
+def test_service_tier_parameter() -> None:
+    """Test that service_tier parameter is correctly set."""
+    llm = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier="priority",
+    )
+    assert llm.service_tier == "priority"
+
+
+@pytest.mark.parametrize(
+    "service_tier",
+    ["priority", "default", "flex", "reserved"],
+)
+def test_service_tier_valid_values(service_tier: str) -> None:
+    """Test that all valid service_tier values are accepted."""
+    llm = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier=service_tier,  # type: ignore[arg-type]
+    )
+    assert llm.service_tier == service_tier
+
+
+def test_service_tier_passed_to_invoke_model() -> None:
+    """Test that service_tier is passed to the invoke_model API call."""
+    mocked_client = MagicMock()
+
+    # Create mock response
+    mock_response = MagicMock()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {"completion": "Hello!", "stop_reason": "end_turn"}
+    ).encode()
+    mock_response.get.side_effect = lambda key, default=None: {
+        "body": mock_response.get.return_value,
+        "ResponseMetadata": {
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "10",
+                "x-amzn-bedrock-output-token-count": "5",
+            }
+        },
+    }.get(key, default)
+
+    mocked_client.invoke_model.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mocked_client,
+        model_id="anthropic.claude-v2",
+        region_name="us-west-2",
+        service_tier="priority",
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    llm.invoke(messages)
+
+    # Verify invoke_model was called with serviceTier in the correct format
+    call_kwargs = mocked_client.invoke_model.call_args[1]
+    assert call_kwargs["serviceTier"] == "priority"
+
+
+def test_service_tier_passed_to_as_converse() -> None:
+    """Test that service_tier is passed to _as_converse."""
+    mocked_client = MagicMock()
+
+    llm = ChatBedrock(
+        client=mocked_client,
+        model_id="amazon.nova-lite-v1:0",
+        region_name="us-west-2",
+        service_tier="flex",
+    )
+
+    converse_llm = llm._as_converse
+    assert converse_llm.service_tier == "flex"
