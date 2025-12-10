@@ -290,7 +290,7 @@ class ChatBedrockConverse(BaseChatModel):
         }
 
         model = ChatBedrockConverse(
-            model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
             max_tokens=5000,
             region_name="us-west-2",
             additional_model_request_fields=thinking_params,
