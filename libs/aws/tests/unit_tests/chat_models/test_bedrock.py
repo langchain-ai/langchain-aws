@@ -1688,7 +1688,7 @@ def test_service_tier_passed_to_invoke_model() -> None:
 
     # Verify invoke_model was called with serviceTier in the correct format
     call_kwargs = mocked_client.invoke_model.call_args[1]
-    assert call_kwargs["serviceTier"] == {"type": "priority"}
+    assert call_kwargs["serviceTier"] == "priority"
 
 
 def test_service_tier_passed_to_as_converse() -> None:

@@ -1093,7 +1093,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         }
 
         if self.service_tier:
-            request_options["serviceTier"] = {"type": self.service_tier}
+            request_options["serviceTier"] = self.service_tier
 
         if self._guardrails_enabled:
             request_options["guardrailIdentifier"] = self.guardrails.get(  # type: ignore[union-attr]
@@ -1242,7 +1242,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         }
 
         if self.service_tier:
-            request_options["serviceTier"] = {"type": self.service_tier}
+            request_options["serviceTier"] = self.service_tier
 
         if self._guardrails_enabled:
             request_options["guardrailIdentifier"] = self.guardrails.get(  # type: ignore[union-attr]
