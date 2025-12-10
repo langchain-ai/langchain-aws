@@ -5,6 +5,7 @@ Unit tests for AgentCore Memory Checkpoint Saver.
 import asyncio
 import json
 import time
+from collections.abc import Iterator
 from unittest.mock import ANY, MagicMock, Mock, patch
 
 import pytest
@@ -185,9 +186,14 @@ class TestAgentCoreMemorySaver:
     def mock_slow_list(self, sample_checkpoint_tuple):
         """Mock list with artificial delay for testing async concurrency."""
 
-        def _mock_slow_list(config, *, filter=None, before=None, limit=None):  # noqa: ARG001 A002
-            time.sleep(MOCK_SLEEP_DURATION)
-            return [sample_checkpoint_tuple]
+        def _mock_slow_list(
+            config, *, filter=None, before=None, limit=None
+        ) -> Iterator[CheckpointTuple]:
+            def _generator():
+                time.sleep(MOCK_SLEEP_DURATION)
+                yield sample_checkpoint_tuple
+
+            return _generator()
 
         return _mock_slow_list
 

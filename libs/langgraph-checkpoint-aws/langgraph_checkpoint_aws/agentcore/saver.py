@@ -4,6 +4,7 @@ AgentCore Memory Checkpoint Saver implementation.
 
 from __future__ import annotations
 
+import asyncio
 import random
 from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any, TypeAlias, cast
@@ -285,9 +286,13 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         before: RunnableConfig | None = None,
         limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
-        for item in await run_in_executor(
-            None, self.list, config, filter=filter, before=before, limit=limit
-        ):
+        loop = asyncio.get_running_loop()
+
+        def _sync_list():
+            return list(self.list(config, filter=filter, before=before, limit=limit))
+
+        items = await loop.run_in_executor(None, _sync_list)
+        for item in items:
             yield item
 
     async def aput(
