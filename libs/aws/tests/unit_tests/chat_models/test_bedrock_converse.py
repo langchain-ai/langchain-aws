@@ -2356,3 +2356,39 @@ def test_get_num_tokens_from_messages_api_error_fallback() -> None:
         token_count = llm.get_num_tokens_from_messages(messages)
         assert token_count == 5
         mock_base.assert_called_once()
+
+
+def test_nova_reasoning_effort_validation() -> None:
+    """Test validation of reasoning effort parameters for
+    amazon.nova-2-lite-v1:0 model."""
+    # Test missing maxReasoningEffort when enabled
+    with pytest.raises(ValueError, match="'maxReasoningEffort' must be set"):
+        ChatBedrockConverse(
+            model="amazon.nova-2-lite-v1:0",
+            region_name="us-east-1",
+            additional_model_request_fields={"reasoningConfig": {"type": "enabled"}},
+        )
+
+    # Test invalid maxReasoningEffort value
+    with pytest.raises(ValueError, match="'maxReasoningEffort' must be set"):
+        ChatBedrockConverse(
+            model="amazon.nova-2-lite-v1:0",
+            region_name="us-east-1",
+            additional_model_request_fields={
+                "reasoningConfig": {"type": "enabled", "maxReasoningEffort": "invalid"}
+            },
+        )
+
+    # Test valid configuration
+    model = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0",
+        region_name="us-east-1",
+        additional_model_request_fields={
+            "reasoningConfig": {"type": "enabled", "maxReasoningEffort": "low"}
+        },
+    )
+    assert model.additional_model_request_fields is not None
+    assert (
+        model.additional_model_request_fields["reasoningConfig"]["maxReasoningEffort"]
+        == "low"
+    )
