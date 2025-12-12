@@ -24,7 +24,12 @@ from typing import (
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.exceptions import OutputParserException
-from langchain_core.language_models import BaseChatModel, LanguageModelInput
+from langchain_core.language_models import (
+    BaseChatModel,
+    LanguageModelInput,
+    ModelProfile,
+    ModelProfileRegistry,
+)
 from langchain_core.language_models.base import LangSmithParams
 from langchain_core.messages import (
     AIMessage,
@@ -58,6 +63,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.chat_models._compat import _convert_from_v1_to_converse
+from langchain_aws.data._profiles import _PROFILES
 from langchain_aws.function_calling import ToolsOutputParser
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
@@ -66,6 +72,16 @@ from langchain_aws.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+_MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
+
+
+def _get_default_model_profile(model_name: str) -> ModelProfile:
+    default = _MODEL_PROFILES.get(model_name) or {}
+    return default.copy()
+
+
 _BM = TypeVar("_BM", bound=BaseModel)
 
 EMPTY_CONTENT = "."
@@ -527,6 +543,22 @@ class ChatBedrockConverse(BaseChatModel):
         """,
     )
 
+    service_tier: Optional[Literal["priority", "default", "flex", "reserved"]] = Field(
+        default=None,
+        description="""Service tier for model invocation.
+
+        Specifies the processing tier type used for serving the request.
+        Supported values are 'priority', 'default', 'flex', and 'reserved'.
+
+        - 'priority': Prioritized processing for lower latency
+        - 'default': Standard processing tier
+        - 'flex': Flexible processing tier with lower cost
+        - 'reserved': Reserved capacity for consistent performance
+
+        If not provided, AWS uses the default tier.
+        """,
+    )
+
     request_metadata: Optional[Dict[str, str]] = None
     """Key-Value pairs that you can use to filter invocation logs."""
 
@@ -835,6 +867,14 @@ class ChatBedrockConverse(BaseChatModel):
                 "disable `guard_last_turn_only`."
             )
 
+        return self
+
+    @model_validator(mode="after")
+    def _set_model_profile(self) -> Self:
+        """Set model profile if not overridden."""
+        if self.profile is None:
+            model_id = re.sub(r"^[A-Za-z]{2}\.", "", self.model_id)
+            self.profile = _get_default_model_profile(model_id)
         return self
 
     def _get_base_model(self) -> str:
@@ -1175,6 +1215,9 @@ class ChatBedrockConverse(BaseChatModel):
         additionalModelResponseFieldPaths: Optional[List[str]] = None,
         guardrailConfig: Optional[dict] = None,
         performanceConfig: Optional[Mapping[str, Any]] = None,
+        serviceTier: Optional[
+            Literal["priority", "default", "flex", "reserved"]
+        ] = None,
         requestMetadata: Optional[dict] = None,
         stream: Optional[bool] = True,
     ) -> Dict[str, Any]:
@@ -1189,6 +1232,7 @@ class ChatBedrockConverse(BaseChatModel):
             toolChoice = _format_tool_choice(toolChoice) if toolChoice else None
             toolConfig = {"tools": _format_tools(tools), "toolChoice": toolChoice}
 
+        tier = serviceTier or self.service_tier
         return _drop_none(
             {
                 "modelId": modelId or self.model_id,
@@ -1203,6 +1247,7 @@ class ChatBedrockConverse(BaseChatModel):
                 ),
                 "guardrailConfig": guardrailConfig or self.guardrail_config,
                 "performanceConfig": performanceConfig or self.performance_config,
+                "serviceTier": {"type": tier} if tier else None,
                 "requestMetadata": requestMetadata or self.request_metadata,
             }
         )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, Literal, Protocol, TypedDict
+from typing import Any, Literal, Protocol, TypedDict, runtime_checkable
 
 try:
     from typing import NotRequired
@@ -96,15 +96,46 @@ class ValkeyStoreConfig(TypedDict):
     ttl: NotRequired[TTLConfigTyped]  # TTL settings
 
 
-class EmbeddingProtocol(Protocol):
-    """Protocol for embedding providers."""
+@runtime_checkable
+class AsyncEmbeddings(Protocol):
+    """Protocol for async embeddings required by AsyncValkeyStore.
+
+    This protocol defines the interface that embedding providers must implement
+    to be used with AsyncValkeyStore. All methods must be async.
+
+    Examples of compatible implementations:
+    - langchain_aws.BedrockEmbeddings (has both sync and async)
+    - langchain_openai.OpenAIEmbeddings (has both sync and async)
+    - Custom async embedding implementations
+
+    Note: If you only have sync embeddings, use ValkeyStore instead.
+    """
+
+    async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Embed a list of documents asynchronously."""
+        ...
+
+    async def aembed_query(self, text: str) -> list[float]:
+        """Embed a single query text asynchronously."""
+        ...
+
+
+@runtime_checkable
+class SyncEmbeddings(Protocol):
+    """Protocol for sync embeddings required by ValkeyStore.
+
+    This protocol defines the interface that embedding providers must implement
+    to be used with ValkeyStore. All methods are synchronous.
+
+    Note: For async operations, use AsyncValkeyStore instead.
+    """
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Embed multiple documents synchronously."""
         ...
 
-    async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
-        """Embed multiple documents asynchronously."""
+    def embed_query(self, text: str) -> list[float]:
+        """Embed a single query text synchronously."""
         ...
 
 
