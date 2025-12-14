@@ -31,7 +31,7 @@ class TestBedrockStandard(ChatModelIntegrationTests):
 
     @property
     def chat_model_params(self) -> dict:
-        return {"model": "us.anthropic.claude-3-7-sonnet-20250219-v1:0"}
+        return {"model": "us.anthropic.claude-haiku-4-5-20251001-v1:0"}
 
     @property
     def standard_chat_model_params(self) -> dict:
@@ -431,10 +431,9 @@ def test_guardrails() -> None:
         "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         "us.anthropic.claude-sonnet-4-20250514-v1:0",
         "us.anthropic.claude-opus-4-20250514-v1:0",
-        # infra issues with the following models
-        # "us.anthropic.claude-opus-4-1-20250805-v1:0",
-        # "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-        # "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "us.anthropic.claude-opus-4-1-20250805-v1:0",
+        "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     ],
 )
 def test_structured_output_tool_choice_not_supported(thinking_model: str) -> None:
@@ -442,7 +441,7 @@ def test_structured_output_tool_choice_not_supported(thinking_model: str) -> Non
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         structured_llm = llm.with_structured_output(ClassifyQuery)
-        response = structured_llm.invoke("How big are cats?")
+        response = structured_llm.invoke("How big are cats? Use the tool.")
     assert len(w) == 0
     assert isinstance(response, ClassifyQuery)
 
@@ -456,7 +455,7 @@ def test_structured_output_tool_choice_not_supported(thinking_model: str) -> Non
     )
     with pytest.warns(match="structured output"):
         structured_llm = llm.with_structured_output(ClassifyQuery)
-    response = structured_llm.invoke("How big are cats?")
+    response = structured_llm.invoke("How big are cats? Use the tool.")
     assert isinstance(response, ClassifyQuery)
 
     with pytest.raises(OutputParserException):
