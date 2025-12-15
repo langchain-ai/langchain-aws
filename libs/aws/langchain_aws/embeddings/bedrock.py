@@ -30,15 +30,16 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     access the Bedrock service.
 
     Example:
-        .. code-block:: python
+        ```python
+        from langchain_aws import BedrockEmbeddings
 
-            from langchain_aws import BedrockEmbeddings
-
-            embeddings = BedrockEmbeddings(
-                model_id="amazon.titan-embed-text-v2:0",
-                region_name="us-east-1",
-                dimensions=256,
-            )
+        embeddings = BedrockEmbeddings(
+            credentials_profile_name="default",
+            region_name="us-east-1",
+            model_id="amazon.nova-2-multimodal-embeddings-v1:0",
+            dimensions=256,
+        )
+        ```
     """
 
     client: Any = Field(default=None, exclude=True)
