@@ -171,10 +171,10 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         if self.dimensions is None:
             return {}
 
-        if self._inferred_provider == "cohere":
+        if self._is_cohere_v4:
             return {"output_dimension": self.dimensions}
-        elif self._is_nova_embed:
-            return {"embeddingDimension": self.dimensions}
+        elif self._inferred_provider == "cohere":
+            return {}
         else:
             return {"dimensions": self.dimensions}
 
@@ -223,17 +223,19 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                 processed_embeddings = embeddings
             return processed_embeddings[0]
         elif self._is_nova_embed:
+            single_embedding_params: Dict[str, Any] = {
+                "embeddingPurpose": "GENERIC_INDEX",
+                "text": {
+                    "truncationMode": "END",
+                    "value": text,
+                },
+            }
+            if self.dimensions:
+                single_embedding_params["embeddingDimension"] = self.dimensions
             response_body = self._invoke_model(
                 input_body={
                     "taskType": "SINGLE_EMBEDDING",
-                    "singleEmbeddingParams": {
-                        "embeddingPurpose": "GENERIC_INDEX",
-                        "text": {
-                            "truncationMode": "END",
-                            "value": text,
-                        },
-                    },
-                    **self._get_dimensions_params(),
+                    "singleEmbeddingParams": single_embedding_params,
                 }
             )
             embeddings = response_body.get("embeddings")

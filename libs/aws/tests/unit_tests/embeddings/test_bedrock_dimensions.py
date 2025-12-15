@@ -21,12 +21,12 @@ class TestDimensionsParameter:
         )
         assert embeddings._get_dimensions_params() == {"dimensions": 256}
 
-    def test_get_dimensions_params_cohere(self) -> None:
-        """Test that Cohere models use 'output_dimension' key."""
+    def test_get_dimensions_params_cohere_v3(self) -> None:
+        """Test that Cohere v3 models ignore dimensions (not supported)."""
         embeddings = BedrockEmbeddings(
             model_id="cohere.embed-english-v3", dimensions=512
         )
-        assert embeddings._get_dimensions_params() == {"output_dimension": 512}
+        assert embeddings._get_dimensions_params() == {}
 
     def test_get_dimensions_params_cohere_v4(self) -> None:
         """Test that Cohere v4 models use 'output_dimension' key."""
@@ -34,11 +34,11 @@ class TestDimensionsParameter:
         assert embeddings._get_dimensions_params() == {"output_dimension": 1024}
 
     def test_get_dimensions_params_nova(self) -> None:
-        """Test that Nova models use 'embeddingDimension' key."""
+        """Test that Nova models use default 'dimensions' key from helper."""
         embeddings = BedrockEmbeddings(
             model_id="amazon.nova-2-multimodal-embeddings-v1:0", dimensions=384
         )
-        assert embeddings._get_dimensions_params() == {"embeddingDimension": 384}
+        assert embeddings._get_dimensions_params() == {"dimensions": 384}
 
 
 class TestDimensionsInRequests:
@@ -85,18 +85,18 @@ class TestDimensionsInRequests:
         assert "dimensions" not in body
 
     @patch("langchain_aws.embeddings.bedrock.create_aws_client")
-    def test_cohere_request_includes_dimensions(self, mock_create_client: Mock) -> None:
-        """Test that Cohere requests include output_dimension in body."""
+    def test_cohere_v4_request_includes_dimensions(
+        self, mock_create_client: Mock
+    ) -> None:
+        """Test that Cohere v4 requests include output_dimension in body."""
         mock_client = Mock()
         mock_create_client.return_value = mock_client
 
         mock_client.invoke_model.return_value = {
-            "body": Mock(read=lambda: '{"embeddings": [[0.1, 0.2]]}')
+            "body": Mock(read=lambda: '{"embeddings": {"float": [[0.1, 0.2]]}}')
         }
 
-        embeddings = BedrockEmbeddings(
-            model_id="cohere.embed-english-v3", dimensions=512
-        )
+        embeddings = BedrockEmbeddings(model_id="us.cohere.embed-v4:0", dimensions=512)
         embeddings._embedding_func("test text")
 
         call_args = mock_client.invoke_model.call_args
@@ -106,20 +106,20 @@ class TestDimensionsInRequests:
         assert body["output_dimension"] == 512
 
     @patch("langchain_aws.embeddings.bedrock.create_aws_client")
-    def test_cohere_multi_embedding_includes_dimensions(
+    def test_cohere_v4_multi_embedding_includes_dimensions(
         self, mock_create_client: Mock
     ) -> None:
-        """Test that Cohere batch embedding includes output_dimension."""
+        """Test that Cohere v4 batch embedding includes output_dimension."""
         mock_client = Mock()
         mock_create_client.return_value = mock_client
 
         mock_client.invoke_model.return_value = {
-            "body": Mock(read=lambda: '{"embeddings": [[0.1, 0.2], [0.3, 0.4]]}')
+            "body": Mock(
+                read=lambda: '{"embeddings": {"float": [[0.1, 0.2], [0.3, 0.4]]}}'
+            )
         }
 
-        embeddings = BedrockEmbeddings(
-            model_id="cohere.embed-english-v3", dimensions=1024
-        )
+        embeddings = BedrockEmbeddings(model_id="us.cohere.embed-v4:0", dimensions=1024)
         embeddings._cohere_multi_embedding(["text1", "text2"])
 
         call_args = mock_client.invoke_model.call_args
@@ -149,7 +149,7 @@ class TestDimensionsInRequests:
         body = json.loads(call_args.kwargs["body"])
 
         assert body["taskType"] == "SINGLE_EMBEDDING"
-        assert body["embeddingDimension"] == 384
+        assert body["singleEmbeddingParams"]["embeddingDimension"] == 384
 
     @patch("langchain_aws.embeddings.bedrock.create_aws_client")
     def test_nova_request_without_dimensions(self, mock_create_client: Mock) -> None:
@@ -172,7 +172,7 @@ class TestDimensionsInRequests:
         call_args = mock_client.invoke_model.call_args
         body = json.loads(call_args.kwargs["body"])
 
-        assert "embeddingDimension" not in body
+        assert "embeddingDimension" not in body["singleEmbeddingParams"]
 
 
 class TestDimensionsWithPublicMethods:
