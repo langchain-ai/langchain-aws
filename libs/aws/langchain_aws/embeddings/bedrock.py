@@ -28,22 +28,17 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
     Make sure the credentials / roles used have the required policies to
     access the Bedrock service.
-    """
 
-    """
     Example:
-        ```python
-        from langchain_community.bedrock_embeddings import BedrockEmbeddings
-        region_name ="us-east-1"
-        credentials_profile_name = "default"
-        model_id = "amazon.titan-embed-text-v1"
+        .. code-block:: python
 
-        be = BedrockEmbeddings(
-            credentials_profile_name=credentials_profile_name,
-            region_name=region_name,
-            model_id=model_id
-        )
-        ```
+            from langchain_aws import BedrockEmbeddings
+
+            embeddings = BedrockEmbeddings(
+                model_id="amazon.titan-embed-text-v2:0",
+                region_name="us-east-1",
+                dimensions=256,
+            )
     """
 
     client: Any = Field(default=None, exclude=True)
@@ -131,6 +126,13 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     normalize: bool = False
     """Whether the embeddings should be normalized to unit vectors"""
 
+    dimensions: Optional[int] = None
+    """The number of dimensions for the output embeddings.
+
+    Only supported by certain models (Titan v2, Cohere, Nova).
+    If not specified, uses the model's default.
+    """
+
     config: Any = None
     """An optional `botocore.config.Config` instance to pass to the client."""
 
@@ -162,6 +164,18 @@ class BedrockEmbeddings(BaseModel, Embeddings):
             and "nova" in self.model_id
             and "embed" in self.model_id
         )
+
+    def _get_dimensions_params(self) -> Dict[str, Any]:
+        """Get dimensions parameter with provider-specific key name."""
+        if self.dimensions is None:
+            return {}
+
+        if self._inferred_provider == "cohere":
+            return {"output_dimension": self.dimensions}
+        elif self._is_nova_embed:
+            return {"embeddingDimension": self.dimensions}
+        else:
+            return {"dimensions": self.dimensions}
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
@@ -195,6 +209,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                 input_body={
                     "input_type": input_type,
                     "texts": [text],
+                    **self._get_dimensions_params(),
                 }
             )
             embeddings = response_body.get("embeddings")
@@ -217,6 +232,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                             "value": text,
                         },
                     },
+                    **self._get_dimensions_params(),
                 }
             )
             embeddings = response_body.get("embeddings")
@@ -226,7 +242,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         else:
             # includes common provider == "amazon"
             response_body = self._invoke_model(
-                input_body={"inputText": text},
+                input_body={"inputText": text, **self._get_dimensions_params()},
             )
             embedding = response_body.get("embedding")
             if embedding is None:
@@ -247,6 +263,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                 input_body={
                     "input_type": "search_document",
                     "texts": text_batch,
+                    **self._get_dimensions_params(),
                 }
             ).get("embeddings")
             # Embed v3 and v4 schemas
