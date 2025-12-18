@@ -810,6 +810,10 @@ class ChatBedrockConverse(BaseChatModel):
                 "before-send.bedrock-runtime.Converse",
                 _add_custom_headers,
             )
+            self.client.meta.events.register(
+                "before-send.bedrock-runtime.ConverseStream",
+                _add_custom_headers,
+            )
 
         # For AIPs, pull base model ID via GetInferenceProfile API call
         if (

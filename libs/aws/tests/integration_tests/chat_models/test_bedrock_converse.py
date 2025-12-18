@@ -821,7 +821,8 @@ def test_get_num_tokens_from_messages_integration() -> None:
     assert token_count == 21
 
 
-def test_request_headers(tmp_path: Any) -> None:
+@pytest.mark.parametrize("streaming", [False, True])
+def test_request_headers(tmp_path: Any, streaming: bool) -> None:
     # Test that we can attach headers to requests
     cassette_path = tmp_path / "headers.yaml"
 
@@ -831,7 +832,10 @@ def test_request_headers(tmp_path: Any) -> None:
             model="us.anthropic.claude-haiku-4-5-20251001-v1:0",
             default_headers={"X-Foo": "Bar"},
         )
-        model.invoke("hi")
+        if streaming:
+            _ = list(model.stream("hi"))
+        else:
+            _ = model.invoke("hi")
 
     cassette = yaml.safe_load(cassette_path.read_text())
     interactions = cassette["interactions"]
