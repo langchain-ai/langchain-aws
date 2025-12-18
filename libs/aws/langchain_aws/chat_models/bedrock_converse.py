@@ -499,6 +499,9 @@ class ChatBedrockConverse(BaseChatModel):
     endpoint_url: Optional[str] = Field(default=None, alias="base_url")
     """Needed if you don't want to default to us-east-1 endpoint"""
 
+    default_headers: Mapping[str, str] | None = None
+    """Headers to pass to the Anthropic clients, will be used for every API call."""
+
     config: Any = None
     """An optional botocore.config.Config instance to pass to the client."""
 
@@ -794,6 +797,18 @@ class ChatBedrockConverse(BaseChatModel):
                 endpoint_url=self.endpoint_url,
                 config=self.config,
                 service_name="bedrock",
+            )
+
+        if self.default_headers is not None:
+
+            def _add_custom_headers(request: Any, **kwargs: Any) -> None:
+                if self.default_headers is not None:
+                    for key, value in self.default_headers.items():
+                        request.headers[key] = value
+
+            self.client.meta.events.register(
+                "before-send.bedrock-runtime.Converse",
+                _add_custom_headers,
             )
 
         # For AIPs, pull base model ID via GetInferenceProfile API call
