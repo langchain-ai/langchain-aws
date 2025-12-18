@@ -6,6 +6,7 @@ from typing import Any, Literal, Optional, Type
 
 import httpx
 import pytest
+import yaml  # type: ignore[import-untyped]
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
@@ -20,6 +21,7 @@ from langchain_core.tools import BaseTool, tool
 from langchain_tests.integration_tests import ChatModelIntegrationTests
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated, TypedDict
+from vcr import VCR
 
 from langchain_aws import ChatBedrockConverse
 
@@ -817,3 +819,23 @@ def test_get_num_tokens_from_messages_integration() -> None:
 
     assert isinstance(token_count, int)
     assert token_count == 21
+
+
+def test_request_headers(tmp_path: Any) -> None:
+    # Test that we can attach headers to requests
+    cassette_path = tmp_path / "headers.yaml"
+
+    vcr = VCR(record_mode="all")
+    with vcr.use_cassette(str(cassette_path)):
+        model = ChatBedrockConverse(
+            model="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            default_headers={"X-Foo": "Bar"},
+        )
+        model.invoke("hi")
+
+    cassette = yaml.safe_load(cassette_path.read_text())
+    interactions = cassette["interactions"]
+    request = interactions[0]["request"]
+    headers = request["headers"]
+
+    assert headers["X-Foo"] == ["Bar"]
