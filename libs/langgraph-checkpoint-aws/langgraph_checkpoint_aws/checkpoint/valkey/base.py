@@ -61,17 +61,17 @@ class BaseValkeySaver(BaseCheckpointSaver[str]):
         self, thread_id: str, checkpoint_ns: str, checkpoint_id: str
     ) -> str:
         """Generate a key for storing checkpoint data."""
-        return f"checkpoint:{thread_id}:{checkpoint_ns}:{checkpoint_id}"
+        return f"checkpoint:{{{thread_id}}}:{checkpoint_ns}:{checkpoint_id}"
 
     def _make_writes_key(
         self, thread_id: str, checkpoint_ns: str, checkpoint_id: str
     ) -> str:
         """Generate a key for storing writes data."""
-        return f"writes:{thread_id}:{checkpoint_ns}:{checkpoint_id}"
+        return f"writes:{{{thread_id}}}:{checkpoint_ns}:{checkpoint_id}"
 
     def _make_thread_key(self, thread_id: str, checkpoint_ns: str) -> str:
         """Generate a key for storing thread checkpoint list."""
-        return f"thread:{thread_id}:{checkpoint_ns}"
+        return f"thread:{{{thread_id}}}:{checkpoint_ns}"
 
     def _serialize_checkpoint_data(
         self,
