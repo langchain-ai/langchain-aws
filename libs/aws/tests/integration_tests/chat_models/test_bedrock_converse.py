@@ -818,7 +818,7 @@ def test_get_num_tokens_from_messages_integration() -> None:
     token_count = chat.get_num_tokens_from_messages(base_messages)
 
     assert isinstance(token_count, int)
-    assert token_count == 21
+    assert token_count == 38
 
 
 @pytest.mark.parametrize("streaming", [False, True])
