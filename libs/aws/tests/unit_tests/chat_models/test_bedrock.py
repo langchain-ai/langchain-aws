@@ -539,7 +539,7 @@ class GetWeather(BaseModel):
 
 def test_anthropic_bind_tools_tool_choice() -> None:
     chat_model = ChatBedrock(
-        model_id="anthropic.claude-3-opus-20240229", region_name="us-west-2"
+        model_id="anthropic.claude-opus-4-1-20250805-v1:0", region_name="us-west-2"
     )  # type: ignore[call-arg]
     chat_model_with_tools = chat_model.bind_tools(
         [GetWeather], tool_choice={"type": "tool", "name": "GetWeather"}
@@ -600,10 +600,10 @@ def test_claude_thinking_forced_tool_raises(
 
 
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
-def test_claude37_thinking_tool_choice_auto_ok(mock_create_aws_client) -> None:
+def test_claude_thinking_tool_choice_auto_ok(mock_create_aws_client) -> None:
     mock_create_aws_client.return_value = MagicMock()
     chat = ChatBedrock(
-        model_id="anthropic.claude-3-7-sonnet-20250219-v1:0",
+        model_id="anthropic.claude-sonnet-4-5-20250929-v1:0",
         region_name="us-west-2",
         model_kwargs={
             "thinking": {"type": "enabled", "budget_tokens": 2048},
@@ -1591,7 +1591,7 @@ def test_get_num_tokens_from_messages_with_base_messages():
     mock_client.count_tokens.return_value = {"inputTokens": 20}
 
     chat = ChatBedrock(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         region="us-west-2",
         max_tokens=4096,
     )
@@ -1606,7 +1606,7 @@ def test_get_num_tokens_from_messages_with_base_messages():
 
     mock_client.count_tokens.assert_called_once()
     call_args = mock_client.count_tokens.call_args[1]
-    assert call_args["modelId"] == "anthropic.claude-3-7-sonnet-20250219-v1:0"
+    assert call_args["modelId"] == "anthropic.claude-sonnet-4-5-20250929-v1:0"
 
     actual_input_body = json.loads(call_args["input"]["invokeModel"]["body"])
     expected_input_body = {

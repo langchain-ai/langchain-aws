@@ -197,7 +197,7 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
 
 def test_multiple_system_messages_anthropic() -> None:
     model = ChatBedrockConverse(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", temperature=0
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
     )
 
     system1 = SystemMessage(content="You are a helpful assistant.")
@@ -219,7 +219,7 @@ class ClassifyQuery(BaseModel):
 
 def test_structured_output_snake_case() -> None:
     model = ChatBedrockConverse(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", temperature=0
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
     )
 
     chat = model.with_structured_output(ClassifyQuery)
@@ -228,7 +228,7 @@ def test_structured_output_snake_case() -> None:
 
 
 def test_tool_calling_snake_case() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
     def classify_query(query_type: Literal["cat", "dog"]) -> None:
         pass
@@ -260,7 +260,7 @@ def test_tool_calling_snake_case() -> None:
 
 
 def test_tool_calling_camel_case() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
     def classifyQuery(queryType: Literal["cat", "dog"]) -> None:
         pass
@@ -286,7 +286,7 @@ def test_tool_calling_camel_case() -> None:
 
 def test_structured_output_streaming() -> None:
     model = ChatBedrockConverse(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", temperature=0
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
     )
     query = (
         "What weighs more, a pound of bricks or a pound of feathers? "
@@ -356,7 +356,7 @@ def test_tool_use_with_cache_point() -> None:
 
     # Create the model instance
     model = ChatBedrockConverse(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", temperature=0
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
     )
 
     # Create cache point configuration
@@ -383,7 +383,7 @@ def test_tool_use_with_cache_point() -> None:
 def test_guardrails() -> None:
     params = {
         "region_name": "us-west-2",
-        "model": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "model": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         "temperature": 0,
         "max_tokens": 100,
         "stop": [],
@@ -471,7 +471,7 @@ def test_structured_output_thinking_force_tool_use() -> None:
     # be removed.
 
     # Instantiate as convenience for getting client
-    llm = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+    llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
     messages = [
         {
             "role": "user",
@@ -479,7 +479,7 @@ def test_structured_output_thinking_force_tool_use() -> None:
         }
     ]
     params = {
-        "modelId": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "modelId": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         "inferenceConfig": {"maxTokens": 5000},
         "toolConfig": {
             "tools": [
@@ -763,7 +763,7 @@ def test_citations_v1(output_version: Literal["v0", "v1"]) -> None:
 
 @pytest.mark.vcr
 def test_pdf_citations() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
     message = HumanMessage(
         [
@@ -776,7 +776,7 @@ def test_pdf_citations() -> None:
 
 
 def test_bedrock_pdf_inputs() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
     message = HumanMessage(
         [
@@ -807,7 +807,7 @@ def test_bedrock_pdf_inputs() -> None:
 
 def test_get_num_tokens_from_messages_integration() -> None:
     chat = ChatBedrockConverse(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
     )
 
     base_messages = [
@@ -818,7 +818,7 @@ def test_get_num_tokens_from_messages_integration() -> None:
     token_count = chat.get_num_tokens_from_messages(base_messages)
 
     assert isinstance(token_count, int)
-    assert token_count == 21
+    assert token_count == 38
 
 
 @pytest.mark.parametrize("streaming", [False, True])
