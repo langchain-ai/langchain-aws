@@ -6,6 +6,7 @@ from typing import Any, Literal, Optional, Type
 
 import httpx
 import pytest
+import yaml  # type: ignore[import-untyped]
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
@@ -20,6 +21,7 @@ from langchain_core.tools import BaseTool, tool
 from langchain_tests.integration_tests import ChatModelIntegrationTests
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated, TypedDict
+from vcr import VCR
 
 from langchain_aws import ChatBedrockConverse
 
@@ -32,6 +34,7 @@ class TestBedrockStandard(ChatModelIntegrationTests):
     @property
     def chat_model_params(self) -> dict:
         return {"model": "us.anthropic.claude-sonnet-4-5-20250929-v1:0"}
+        return {"model": "us.anthropic.claude-haiku-4-5-20251001-v1:0"}
 
     @property
     def standard_chat_model_params(self) -> dict:
@@ -433,8 +436,7 @@ def test_guardrails() -> None:
         "us.anthropic.claude-opus-4-20250514-v1:0",
         "us.anthropic.claude-opus-4-1-20250805-v1:0",
         "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-        #
-        # "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     ],
 )
 def test_structured_output_tool_choice_not_supported(thinking_model: str) -> None:
@@ -442,7 +444,7 @@ def test_structured_output_tool_choice_not_supported(thinking_model: str) -> Non
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         structured_llm = llm.with_structured_output(ClassifyQuery)
-        response = structured_llm.invoke("How big are cats?")
+        response = structured_llm.invoke("How big are cats? Use the tool.")
     assert len(w) == 0
     assert isinstance(response, ClassifyQuery)
 
@@ -456,7 +458,7 @@ def test_structured_output_tool_choice_not_supported(thinking_model: str) -> Non
     )
     with pytest.warns(match="structured output"):
         structured_llm = llm.with_structured_output(ClassifyQuery)
-    response = structured_llm.invoke("How big are cats?")
+    response = structured_llm.invoke("How big are cats? Use the tool.")
     assert isinstance(response, ClassifyQuery)
 
     with pytest.raises(OutputParserException):
@@ -817,4 +819,28 @@ def test_get_num_tokens_from_messages_integration() -> None:
     token_count = chat.get_num_tokens_from_messages(base_messages)
 
     assert isinstance(token_count, int)
-    assert token_count == 21
+    assert token_count == 38
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_request_headers(tmp_path: Any, streaming: bool) -> None:
+    # Test that we can attach headers to requests
+    cassette_path = tmp_path / "headers.yaml"
+
+    vcr = VCR(record_mode="all")
+    with vcr.use_cassette(str(cassette_path)):
+        model = ChatBedrockConverse(
+            model="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            default_headers={"X-Foo": "Bar"},
+        )
+        if streaming:
+            _ = list(model.stream("hi"))
+        else:
+            _ = model.invoke("hi")
+
+    cassette = yaml.safe_load(cassette_path.read_text())
+    interactions = cassette["interactions"]
+    request = interactions[0]["request"]
+    headers = request["headers"]
+
+    assert headers["X-Foo"] == ["Bar"]

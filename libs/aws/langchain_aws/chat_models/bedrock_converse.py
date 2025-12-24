@@ -24,7 +24,12 @@ from typing import (
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.exceptions import OutputParserException
-from langchain_core.language_models import BaseChatModel, LanguageModelInput
+from langchain_core.language_models import (
+    BaseChatModel,
+    LanguageModelInput,
+    ModelProfile,
+    ModelProfileRegistry,
+)
 from langchain_core.language_models.base import LangSmithParams
 from langchain_core.messages import (
     AIMessage,
@@ -58,6 +63,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.chat_models._compat import _convert_from_v1_to_converse
+from langchain_aws.data._profiles import _PROFILES
 from langchain_aws.function_calling import ToolsOutputParser
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
@@ -66,6 +72,16 @@ from langchain_aws.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+_MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
+
+
+def _get_default_model_profile(model_name: str) -> ModelProfile:
+    default = _MODEL_PROFILES.get(model_name) or {}
+    return default.copy()
+
+
 _BM = TypeVar("_BM", bound=BaseModel)
 
 EMPTY_CONTENT = "."
@@ -348,10 +364,10 @@ class ChatBedrockConverse(BaseChatModel):
 
     """  # noqa: E501
 
-    client: Any = Field(default=None, exclude=True)  #: :meta private:
+    client: Any = Field(default=None, exclude=True)
     """The bedrock runtime client for making data plane API calls"""
 
-    bedrock_client: Any = Field(default=None, exclude=True)  #: :meta private:
+    bedrock_client: Any = Field(default=None, exclude=True)
     """The bedrock client for making control plane API calls"""
 
     model_id: str = Field(alias="model")
@@ -369,6 +385,29 @@ class ChatBedrockConverse(BaseChatModel):
     """An optional field to pass the base model id. If provided, this will be used over
     the value of model_id to identify the base model.
 
+    """
+
+    system: Optional[List[Union[str, Dict[str, Any]]]] = None
+    """Optional list of system prompts for the LLM.
+
+    Each entry can be either:
+      - a simple string (for straightforward text-based system prompts), or
+      - a dictionary matching the Converse API system message schema, allowing
+        inclusion of additional fields like `guardContent`, `cachePoint`, etc.
+
+    Example:
+        system = [
+            "a simple system prompt",
+            {
+                "text": "another system prompt",
+                "guardContent": {"text": {"text": "string"}},
+                "cachePoint": {"type": "default"}
+            },
+        ]
+
+    String inputs will be internally converted to the appropriate message format,
+    while dict entries will be passed through as-is. Any invalid formats will be
+    rejected by the Converse API.
     """
 
     max_tokens: Optional[int] = None
@@ -460,6 +499,9 @@ class ChatBedrockConverse(BaseChatModel):
     endpoint_url: Optional[str] = Field(default=None, alias="base_url")
     """Needed if you don't want to default to us-east-1 endpoint"""
 
+    default_headers: Mapping[str, str] | None = None
+    """Headers to pass to the Anthropic clients, will be used for every API call."""
+
     config: Any = None
     """An optional botocore.config.Config instance to pass to the client."""
 
@@ -501,6 +543,22 @@ class ChatBedrockConverse(BaseChatModel):
         Example:
             performance_config={'latency': 'optimized'}
         If not provided, defaults to standard latency.
+        """,
+    )
+
+    service_tier: Optional[Literal["priority", "default", "flex", "reserved"]] = Field(
+        default=None,
+        description="""Service tier for model invocation.
+
+        Specifies the processing tier type used for serving the request.
+        Supported values are 'priority', 'default', 'flex', and 'reserved'.
+
+        - 'priority': Prioritized processing for lower latency
+        - 'default': Standard processing tier
+        - 'flex': Flexible processing tier with lower cost
+        - 'reserved': Reserved capacity for consistent performance
+
+        If not provided, AWS uses the default tier.
         """,
     )
 
@@ -741,6 +799,22 @@ class ChatBedrockConverse(BaseChatModel):
                 service_name="bedrock",
             )
 
+        if self.default_headers is not None:
+
+            def _add_custom_headers(request: Any, **kwargs: Any) -> None:
+                if self.default_headers is not None:
+                    for key, value in self.default_headers.items():
+                        request.headers[key] = value
+
+            self.client.meta.events.register(
+                "before-send.bedrock-runtime.Converse",
+                _add_custom_headers,
+            )
+            self.client.meta.events.register(
+                "before-send.bedrock-runtime.ConverseStream",
+                _add_custom_headers,
+            )
+
         # For AIPs, pull base model ID via GetInferenceProfile API call
         if (
             self.base_model_id is None
@@ -814,6 +888,14 @@ class ChatBedrockConverse(BaseChatModel):
 
         return self
 
+    @model_validator(mode="after")
+    def _set_model_profile(self) -> Self:
+        """Set model profile if not overridden."""
+        if self.profile is None:
+            model_id = re.sub(r"^[A-Za-z]{2}\.", "", self.model_id)
+            self.profile = _get_default_model_profile(model_id)
+        return self
+
     def _get_base_model(self) -> str:
         """Return base model id, stripping any regional prefix."""
 
@@ -872,7 +954,7 @@ class ChatBedrockConverse(BaseChatModel):
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
         else:
-            bedrock_messages, system = _messages_to_bedrock(messages)
+            bedrock_messages, system = _messages_to_bedrock(messages, self.system)
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
                 self._apply_guard_last_turn_only(bedrock_messages)
@@ -926,7 +1008,7 @@ class ChatBedrockConverse(BaseChatModel):
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
         else:
-            bedrock_messages, system = _messages_to_bedrock(messages)
+            bedrock_messages, system = _messages_to_bedrock(messages, self.system)
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
                 self._apply_guard_last_turn_only(bedrock_messages)
@@ -1152,6 +1234,9 @@ class ChatBedrockConverse(BaseChatModel):
         additionalModelResponseFieldPaths: Optional[List[str]] = None,
         guardrailConfig: Optional[dict] = None,
         performanceConfig: Optional[Mapping[str, Any]] = None,
+        serviceTier: Optional[
+            Literal["priority", "default", "flex", "reserved"]
+        ] = None,
         requestMetadata: Optional[dict] = None,
         stream: Optional[bool] = True,
     ) -> Dict[str, Any]:
@@ -1166,6 +1251,7 @@ class ChatBedrockConverse(BaseChatModel):
             toolChoice = _format_tool_choice(toolChoice) if toolChoice else None
             toolConfig = {"tools": _format_tools(tools), "toolChoice": toolChoice}
 
+        tier = serviceTier or self.service_tier
         return _drop_none(
             {
                 "modelId": modelId or self.model_id,
@@ -1180,6 +1266,7 @@ class ChatBedrockConverse(BaseChatModel):
                 ),
                 "guardrailConfig": guardrailConfig or self.guardrail_config,
                 "performanceConfig": performanceConfig or self.performance_config,
+                "serviceTier": {"type": tier} if tier else None,
                 "requestMetadata": requestMetadata or self.request_metadata,
             }
         )
@@ -1257,7 +1344,7 @@ class ChatBedrockConverse(BaseChatModel):
             bedrock_messages, system = (
                 (self.raw_blocks, [])
                 if self.raw_blocks
-                else _messages_to_bedrock(messages)
+                else _messages_to_bedrock(messages, self.system)
             )
 
             input_data = {"converse": {"messages": bedrock_messages}}
@@ -1274,6 +1361,7 @@ class ChatBedrockConverse(BaseChatModel):
 
 def _messages_to_bedrock(
     messages: List[BaseMessage],
+    system: Optional[List[Union[str, Dict[str, Any]]]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Handle Bedrock converse and Anthropic style content blocks"""
     for idx, message in enumerate(messages):
@@ -1295,6 +1383,15 @@ def _messages_to_bedrock(
     bedrock_system: List[Dict[str, Any]] = []
     trimmed_messages = trim_message_whitespace(messages)
     messages = merge_message_runs(trimmed_messages)
+
+    if system:
+        sys_param_to_bedrock = []
+        for s in system:
+            if isinstance(s, str):
+                sys_param_to_bedrock.append({"text": s})
+            else:
+                sys_param_to_bedrock.append(s)
+        bedrock_system.extend(sys_param_to_bedrock)
 
     for msg in messages:
         content = _lc_content_to_bedrock(msg.content)

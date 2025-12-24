@@ -40,7 +40,7 @@ jobs:
       actions: write
     name: "make integration_test"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           repository: "${{ inputs.fork }}/langchain-aws"
           ref: "${{ inputs.branch }}"

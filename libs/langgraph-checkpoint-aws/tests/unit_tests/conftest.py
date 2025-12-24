@@ -229,7 +229,10 @@ def sample_session_checkpoint(sample_invocation_step_summary):
         checkpoint_ns=sample_invocation_step_summary["invocationId"],
         checkpoint_id=sample_invocation_step_summary["invocationStepId"],
         checkpoint=("json", b"e30="),
-        metadata=json.dumps({"key": "value"}),
+        metadata=(
+            "json",
+            base64.b64encode(json.dumps({"key": "value"}).encode()).decode(),
+        ),
         parent_checkpoint_id=None,
         channel_values={},
         version={},
