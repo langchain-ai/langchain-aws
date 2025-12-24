@@ -1,0 +1,30 @@
+"""Constants for Valkey store implementation."""
+
+# Key prefixes
+LANGGRAPH_KEY_PREFIX = "langgraph"
+
+# Default configuration values
+DEFAULT_COLLECTION_NAME = "langgraph_store_idx"
+DEFAULT_TIMEZONE = "UTC"
+DEFAULT_INDEX_TYPE = "hnsw"
+DEFAULT_DISTANCE_METRIC = "COSINE"
+DEFAULT_HNSW_M = 16
+DEFAULT_HNSW_EF_CONSTRUCTION = 200
+DEFAULT_HNSW_EF_RUNTIME = 10
+DEFAULT_DIMS = 128
+
+# Search and scoring
+MIN_SEARCH_SCORE = 0.1
+HIGH_SCORE_THRESHOLD = 0.8
+MEDIUM_SCORE_THRESHOLD = 0.6
+LOW_SCORE_THRESHOLD = 0.3
+
+# Performance tuning
+SCAN_COUNT_BATCH_SIZE = 1000
+DEFAULT_POOL_TIMEOUT = 30.0
+
+# Hash field names
+HASH_FIELD_VALUE = "value"
+HASH_FIELD_CREATED_AT = "created_at"
+HASH_FIELD_UPDATED_AT = "updated_at"
+HASH_FIELD_VECTOR = "vector"

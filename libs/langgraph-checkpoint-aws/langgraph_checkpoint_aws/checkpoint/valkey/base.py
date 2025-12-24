@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import random
 from collections.abc import Sequence
 from typing import Any, cast
@@ -17,7 +18,6 @@ from langgraph.checkpoint.base import (
     SerializerProtocol,
     get_checkpoint_metadata,
 )
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from .utils import set_client_info
 
@@ -44,7 +44,6 @@ class BaseValkeySaver(BaseCheckpointSaver[str]):
         serde: SerializerProtocol | None = None,
     ) -> None:
         super().__init__(serde=serde)
-        self.jsonplus_serde = JsonPlusSerializer()
         self.client = client
         self.ttl = ttl
 
@@ -62,17 +61,17 @@ class BaseValkeySaver(BaseCheckpointSaver[str]):
         self, thread_id: str, checkpoint_ns: str, checkpoint_id: str
     ) -> str:
         """Generate a key for storing checkpoint data."""
-        return f"checkpoint:{thread_id}:{checkpoint_ns}:{checkpoint_id}"
+        return f"checkpoint:{{{thread_id}}}:{checkpoint_ns}:{checkpoint_id}"
 
     def _make_writes_key(
         self, thread_id: str, checkpoint_ns: str, checkpoint_id: str
     ) -> str:
         """Generate a key for storing writes data."""
-        return f"writes:{thread_id}:{checkpoint_ns}:{checkpoint_id}"
+        return f"writes:{{{thread_id}}}:{checkpoint_ns}:{checkpoint_id}"
 
     def _make_thread_key(self, thread_id: str, checkpoint_ns: str) -> str:
         """Generate a key for storing thread checkpoint list."""
-        return f"thread:{thread_id}:{checkpoint_ns}"
+        return f"thread:{{{thread_id}}}:{checkpoint_ns}"
 
     def _serialize_checkpoint_data(
         self,
@@ -96,8 +95,11 @@ class BaseValkeySaver(BaseCheckpointSaver[str]):
 
         # Serialize checkpoint and metadata
         type_, serialized_checkpoint = self.serde.dumps_typed(checkpoint)
-        serialized_metadata = self.jsonplus_serde.dumps(
-            get_checkpoint_metadata(config, metadata)
+
+        # Use plain JSON for metadata (simple types only)
+        metadata_dict = get_checkpoint_metadata(config, metadata)
+        metadata_json = json.dumps(metadata_dict, ensure_ascii=False).encode(
+            "utf-8", "ignore"
         )
 
         # Prepare checkpoint data - encode bytes as base64 for JSON serialization
@@ -109,9 +111,7 @@ class BaseValkeySaver(BaseCheckpointSaver[str]):
             "checkpoint": base64.b64encode(serialized_checkpoint).decode("utf-8")
             if isinstance(serialized_checkpoint, bytes)
             else serialized_checkpoint,
-            "metadata": base64.b64encode(serialized_metadata).decode("utf-8")
-            if isinstance(serialized_metadata, bytes)
-            else serialized_metadata,
+            "metadata": base64.b64encode(metadata_json).decode("utf-8"),
         }
 
     def _deserialize_checkpoint_data(
@@ -142,14 +142,13 @@ class BaseValkeySaver(BaseCheckpointSaver[str]):
             checkpoint_data = base64.b64decode(checkpoint_data.encode("utf-8"))
         checkpoint = self.serde.loads_typed((checkpoint_info["type"], checkpoint_data))
 
+        # Deserialize metadata from plain JSON
         metadata_data = checkpoint_info["metadata"]
         if isinstance(metadata_data, str):
             metadata_data = base64.b64decode(metadata_data.encode("utf-8"))
         metadata = cast(
             CheckpointMetadata,
-            self.jsonplus_serde.loads(metadata_data)
-            if metadata_data is not None
-            else {},
+            json.loads(metadata_data) if metadata_data else {},
         )
 
         # Create parent config if exists
@@ -241,14 +240,11 @@ class BaseValkeySaver(BaseCheckpointSaver[str]):
         if not filter:
             return True
 
+        # Deserialize metadata from plain JSON
         metadata_data = checkpoint_info["metadata"]
         if isinstance(metadata_data, str):
             metadata_data = base64.b64decode(metadata_data.encode("utf-8"))
-        metadata = (
-            self.jsonplus_serde.loads(metadata_data)
-            if metadata_data is not None
-            else {}
-        )
+        metadata = json.loads(metadata_data) if metadata_data else {}
 
         return all(
             key in metadata and metadata[key] == value for key, value in filter.items()

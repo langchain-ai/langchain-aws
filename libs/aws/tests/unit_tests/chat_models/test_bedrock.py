@@ -26,6 +26,25 @@ from langchain_aws.chat_models.bedrock import (
 from langchain_aws.function_calling import convert_to_anthropic_tool
 
 
+def test_profile() -> None:
+    model = ChatBedrock(
+        model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
+        region_name="us-west-2",
+    )
+    assert model.profile
+    assert not model.profile["reasoning_output"]
+
+    model = ChatBedrock(
+        model_id="anthropic.claude-sonnet-4-20250514-v1:0",
+        region_name="us-west-2",
+    )
+    assert model.profile
+    assert model.profile["reasoning_output"]
+
+    model = ChatBedrock(model_id="foo")
+    assert model.profile == {}
+
+
 def test__merge_messages() -> None:
     messages = [
         SystemMessage("foo"),  # type: ignore[misc]
@@ -547,6 +566,15 @@ def test_anthropic_bind_tools_tool_choice() -> None:
 
 
 @pytest.mark.parametrize(
+    "model_id",
+    [
+        "anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "anthropic.claude-sonnet-4-20250514-v1:0",
+        "anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "anthropic.claude-haiku-4-5-20251001-v1:0",
+    ],
+)
+@pytest.mark.parametrize(
     "tool_choice",
     [
         True,
@@ -557,11 +585,11 @@ def test_anthropic_bind_tools_tool_choice() -> None:
 )
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
 def test_claude_thinking_forced_tool_raises(
-    mock_create_aws_client, tool_choice
+    mock_create_aws_client, model_id, tool_choice
 ) -> None:
     mock_create_aws_client.return_value = MagicMock()
     chat = ChatBedrock(
-        model_id="anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model_id=model_id,
         region_name="us-west-2",
         model_kwargs={
             "thinking": {"type": "enabled", "budget_tokens": 2048},
@@ -587,11 +615,21 @@ def test_claude_thinking_tool_choice_auto_ok(mock_create_aws_client) -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "anthropic.claude-haiku-4-5-20251001-v1:0",
+    ],
+)
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
-def test_claude_no_thinking_forced_tool_ok(mock_create_aws_client) -> None:
+def test_claude_models_no_thinking_forced_tool_ok(
+    mock_create_aws_client, model_id
+) -> None:
     mock_create_aws_client.return_value = MagicMock()
     chat = ChatBedrock(
-        model_id="anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model_id=model_id,
         region_name="us-west-2",
     )
     chat_with_tools = chat.bind_tools([GetWeather], tool_choice="any")
@@ -1610,3 +1648,78 @@ def test_get_num_tokens_from_messages_fallback(
         assert token_count == 24
         mock_parent.assert_called_once()
         mock_client.count_tokens.assert_not_called()
+
+
+def test_service_tier_parameter() -> None:
+    """Test that service_tier parameter is correctly set."""
+    llm = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier="priority",
+    )
+    assert llm.service_tier == "priority"
+
+
+@pytest.mark.parametrize(
+    "service_tier",
+    ["priority", "default", "flex", "reserved"],
+)
+def test_service_tier_valid_values(service_tier: str) -> None:
+    """Test that all valid service_tier values are accepted."""
+    llm = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier=service_tier,  # type: ignore[arg-type]
+    )
+    assert llm.service_tier == service_tier
+
+
+def test_service_tier_passed_to_invoke_model() -> None:
+    """Test that service_tier is passed to the invoke_model API call."""
+    mocked_client = MagicMock()
+
+    # Create mock response
+    mock_response = MagicMock()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {"completion": "Hello!", "stop_reason": "end_turn"}
+    ).encode()
+    mock_response.get.side_effect = lambda key, default=None: {
+        "body": mock_response.get.return_value,
+        "ResponseMetadata": {
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "10",
+                "x-amzn-bedrock-output-token-count": "5",
+            }
+        },
+    }.get(key, default)
+
+    mocked_client.invoke_model.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mocked_client,
+        model_id="anthropic.claude-v2",
+        region_name="us-west-2",
+        service_tier="priority",
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    llm.invoke(messages)
+
+    # Verify invoke_model was called with serviceTier in the correct format
+    call_kwargs = mocked_client.invoke_model.call_args[1]
+    assert call_kwargs["serviceTier"] == "priority"
+
+
+def test_service_tier_passed_to_as_converse() -> None:
+    """Test that service_tier is passed to _as_converse."""
+    mocked_client = MagicMock()
+
+    llm = ChatBedrock(
+        client=mocked_client,
+        model_id="amazon.nova-lite-v1:0",
+        region_name="us-west-2",
+        service_tier="flex",
+    )
+
+    converse_llm = llm._as_converse
+    assert converse_llm.service_tier == "flex"

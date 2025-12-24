@@ -1,34 +1,21 @@
 """Unit tests for ValkeySaver using fakeredis."""
 
+import base64
 import json
 from unittest.mock import patch
 
 import pytest
+
+pytest.importorskip("valkey")
+pytest.importorskip("orjson")
+pytest.importorskip("fakeredis")
+
+import fakeredis
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata, CheckpointTuple
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
-# Check for optional dependencies
-try:
-    import fakeredis  # noqa: F401
-    import orjson  # noqa: F401
-    import valkey  # noqa: F401
-
-    from langgraph_checkpoint_aws import ValkeySaver
-
-    VALKEY_AVAILABLE = True
-except ImportError:
-    ValkeySaver = None  # type: ignore[assignment, misc]
-    VALKEY_AVAILABLE = False
-
-# Skip all tests if valkey dependencies are not available
-pytestmark = pytest.mark.skipif(
-    not VALKEY_AVAILABLE,
-    reason=(
-        "valkey, orjson, and fakeredis dependencies not available. "
-        "Install with: pip install 'langgraph-checkpoint-aws[valkey,valkey-test]'"
-    ),
-)
+from langgraph_checkpoint_aws import ValkeySaver
 
 
 class TestValkeySaverUnit:
@@ -489,7 +476,10 @@ class TestValkeySaverUnit:
         checkpoint_info = {
             "checkpoint": typed_data[1],  # Get the serialized bytes
             "type": typed_data[0],  # Get the type
-            "metadata": saver.jsonplus_serde.dumps({"step": 1}),
+            # Use plain JSON for metadata (matching base.py implementation)
+            "metadata": base64.b64encode(
+                json.dumps({"step": 1}, ensure_ascii=False).encode("utf-8", "ignore")
+            ).decode("utf-8"),
             "parent_checkpoint_id": None,
         }
 

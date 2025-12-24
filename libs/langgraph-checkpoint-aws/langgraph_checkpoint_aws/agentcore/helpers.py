@@ -8,6 +8,7 @@ import base64
 import datetime
 import json
 import logging
+import warnings
 from collections import defaultdict
 from typing import Any, cast
 
@@ -184,22 +185,37 @@ class AgentCoreEventClient:
         )
 
     def get_events(
-        self, session_id: str, actor_id: str, limit: int = 100
+        self,
+        session_id: str,
+        actor_id: str,
+        limit: int | None = None,
+        max_results: int | None = 100,
     ) -> list[EventType]:
-        """Retrieve events from AgentCore Memory."""
+        """Retrieve events from AgentCore Memory.
 
-        if limit is not None and limit <= 0:
+        Args:
+            session_id: The session ID to retrieve events for
+            actor_id: The actor ID to retrieve events for
+            limit: The maximum number of events to parse from ListEvents
+            max_results: Maximum number of results to retrieve. Defaults to 100.
+
+        Returns:
+            List of retrieved events
+        """
+
+        if max_results is not None and max_results <= 0:
             return []
 
         all_events = []
         next_token = None
+        limit_reached = False
 
         while True:
             params = {
                 "memoryId": self.memory_id,
                 "actorId": actor_id,
                 "sessionId": session_id,
-                "maxResults": 100,
+                "maxResults": max_results,
                 "includePayloads": True,
             }
 
@@ -218,8 +234,26 @@ class AgentCoreEventClient:
                         except EventDecodingError as e:
                             logger.warning(f"Failed to decode event: {e}")
 
+                        if limit is not None and len(all_events) >= limit:
+                            limit_reached = True
+                            break
+
+                if limit_reached:
+                    break
+
             next_token = response.get("nextToken")
-            if not next_token or (limit is not None and len(all_events) >= limit):
+
+            if limit_reached and next_token:
+                warnings.warn(
+                    f"Stopped retrieving events at limit of {limit}. "
+                    f"There may be additional checkpoints that were not retrieved. "
+                    f"Consider increasing the limit parameter, or set None for no "
+                    f"limit.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+            if limit_reached or not next_token:
                 break
 
         return all_events

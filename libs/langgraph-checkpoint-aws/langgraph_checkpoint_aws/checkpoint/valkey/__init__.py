@@ -18,7 +18,7 @@ except ImportError as e:
     # If dependencies are not available, provide helpful error message
     def _missing_dependencies_error(*args: Any, **kwargs: Any) -> Any:
         raise ImportError(
-            "Valkey checkpoint functionality requires optional dependencies. "
+            "Valkey functionality requires optional dependencies. "
             "Install them with: pip install 'langgraph-checkpoint-aws[valkey]'"
         ) from _import_error
 

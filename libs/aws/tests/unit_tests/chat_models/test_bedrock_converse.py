@@ -82,6 +82,25 @@ class TestBedrockStandard(ChatModelUnitTests):
         super().test_init_streaming()
 
 
+def test_profile() -> None:
+    model = ChatBedrockConverse(
+        model="anthropic.claude-3-5-sonnet-20241022-v2:0",
+        region_name="us-west-2",
+    )
+    assert model.profile
+    assert not model.profile["reasoning_output"]
+
+    model = ChatBedrockConverse(
+        model="anthropic.claude-sonnet-4-20250514-v1:0",
+        region_name="us-west-2",
+    )
+    assert model.profile
+    assert model.profile["reasoning_output"]
+
+    model = ChatBedrockConverse(model="foo")
+    assert model.profile == {}
+
+
 class GetWeather(BaseModel):
     """Get the current weather in a given location"""
 
@@ -1624,10 +1643,12 @@ def test_model_kwargs() -> None:
     llm = ChatBedrockConverse(
         model="my-model",
         region_name="us-west-2",
+        system=["System message"],
         additional_model_request_fields={"foo": "bar"},
     )
     assert llm.model_id == "my-model"
     assert llm.region_name == "us-west-2"
+    assert llm.system == ["System message"]
     assert llm.additional_model_request_fields == {"foo": "bar"}
 
     with pytest.warns(
@@ -2068,6 +2089,63 @@ def test__messages_to_bedrock_preserves_whitespace_non_last_aimessage_blocks() -
     )
 
 
+@pytest.mark.parametrize(
+    "system_prompt_parameter, expected_system",
+    [
+        # No system parameter → use only the system message from messages
+        (None, [{"text": "System message"}]),
+        # Simple string input → converted into a dict with text
+        (
+            ["System message from param"],
+            [
+                {"text": "System message from param"},
+                {"text": "System message"},
+            ],
+        ),
+        # Dict input → passed through as-is
+        (
+            [
+                {
+                    "text": "Structured system message",
+                    "guardContent": {"text": {"text": "guarded"}},
+                }
+            ],
+            [
+                {
+                    "text": "Structured system message",
+                    "guardContent": {"text": {"text": "guarded"}},
+                },
+                {"text": "System message"},
+            ],
+        ),
+        # Mixed string and dict → both should be handled correctly
+        (
+            [
+                "Simple system prompt",
+                {"text": "Advanced system prompt", "cachePoint": {"type": "default"}},
+            ],
+            [
+                {"text": "Simple system prompt"},
+                {"text": "Advanced system prompt", "cachePoint": {"type": "default"}},
+                {"text": "System message"},
+            ],
+        ),
+    ],
+)
+def test__messages_to_bedrock_appends_system_prompt_from_parameter(
+    system_prompt_parameter: List[str | Dict[str, Any]] | None,
+    expected_system: List[Dict[str, Any]],
+) -> None:
+    messages = [
+        SystemMessage(content="System message"),
+        HumanMessage(content="First human message"),
+    ]
+
+    _, actual_system = _messages_to_bedrock(messages, system_prompt_parameter)
+
+    assert actual_system == expected_system
+
+
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
 def test_bedrock_client_inherits_from_runtime_client(
     mock_create_client: mock.Mock,
@@ -2280,3 +2358,104 @@ def test_get_num_tokens_from_messages_api_error_fallback() -> None:
         token_count = llm.get_num_tokens_from_messages(messages)
         assert token_count == 5
         mock_base.assert_called_once()
+
+
+def test_service_tier_parameter() -> None:
+    """Test that service_tier parameter is correctly set and passed."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier="priority",
+    )
+    assert llm.service_tier == "priority"
+
+
+@pytest.mark.parametrize(
+    "service_tier",
+    ["priority", "default", "flex", "reserved"],
+)
+def test_service_tier_valid_values(service_tier: str) -> None:
+    """Test that all valid service_tier values are accepted."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier=service_tier,  # type: ignore[arg-type]
+    )
+    assert llm.service_tier == service_tier
+
+
+def test_service_tier_in_converse_params() -> None:
+    """Test that service_tier is included in _converse_params with correct format."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier="priority",
+    )
+
+    params = llm._converse_params()
+    assert params["serviceTier"] == {"type": "priority"}
+
+
+def test_service_tier_none_not_in_params() -> None:
+    """Test that service_tier is not in params when None."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+
+    params = llm._converse_params()
+    assert "serviceTier" not in params
+
+
+def test_service_tier_passed_to_converse() -> None:
+    """Test that service_tier is passed to the converse API call."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier="priority",
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    llm.invoke(messages)
+
+    # Verify converse was called with serviceTier in the correct format
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert call_kwargs["serviceTier"] == {"type": "priority"}
+
+
+def test_service_tier_passed_to_converse_stream() -> None:
+    """Test that service_tier is passed to the converse_stream API call."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse_stream.return_value = {
+        "stream": [
+            {"messageStart": {"role": "assistant"}},
+            {"contentBlockDelta": {"delta": {"text": "Hi"}, "contentBlockIndex": 0}},
+            {"messageStop": {"stopReason": "end_turn"}},
+            {
+                "metadata": {
+                    "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}
+                }
+            },
+        ]
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier="flex",
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    list(llm.stream(messages))
+
+    # Verify converse_stream was called with serviceTier in the correct format
+    call_kwargs = mocked_client.converse_stream.call_args[1]
+    assert call_kwargs["serviceTier"] == {"type": "flex"}

@@ -10,6 +10,7 @@ from typing import (
     Dict,
     Iterator,
     List,
+    Literal,
     Mapping,
     Optional,
     Tuple,
@@ -658,10 +659,10 @@ class LLMInputOutputAdapter:
 class BedrockBase(BaseLanguageModel, ABC):
     """Base class for Bedrock models."""
 
-    client: Any = Field(default=None, exclude=True)  #: :meta private:
+    client: Any = Field(default=None, exclude=True)
     """The bedrock runtime client for making data plane API calls"""
 
-    bedrock_client: Any = Field(default=None, exclude=True)  #: :meta private:
+    bedrock_client: Any = Field(default=None, exclude=True)
     """The bedrock client for making control plane API calls"""
 
     region_name: Optional[str] = Field(default=None, alias="region")
@@ -836,6 +837,20 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
+
+    service_tier: Optional[Literal["priority", "default", "flex", "reserved"]] = None
+    """Service tier for model invocation.
+
+    Specifies the processing tier type used for serving the request.
+    Supported values are 'priority', 'default', 'flex', and 'reserved'.
+
+    - 'priority': Prioritized processing for lower latency
+    - 'default': Standard processing tier
+    - 'flex': Flexible processing tier with lower cost
+    - 'reserved': Reserved capacity for consistent performance
+
+    If not provided, AWS uses the default tier.
+    """
 
     @property
     def lc_secrets(self) -> Dict[str, str]:
@@ -1070,12 +1085,15 @@ class BedrockBase(BaseLanguageModel, ABC):
         accept = "application/json"
         contentType = "application/json"
 
-        request_options = {
+        request_options: dict[str, Any] = {
             "body": body,
             "modelId": self.model_id,
             "accept": accept,
             "contentType": contentType,
         }
+
+        if self.service_tier:
+            request_options["serviceTier"] = self.service_tier
 
         if self._guardrails_enabled:
             request_options["guardrailIdentifier"] = self.guardrails.get(  # type: ignore[union-attr]
@@ -1216,12 +1234,15 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         body = json.dumps(input_body)
 
-        request_options = {
+        request_options: dict[str, Any] = {
             "body": body,
             "modelId": self.model_id,
             "accept": "application/json",
             "contentType": "application/json",
         }
+
+        if self.service_tier:
+            request_options["serviceTier"] = self.service_tier
 
         if self._guardrails_enabled:
             request_options["guardrailIdentifier"] = self.guardrails.get(  # type: ignore[union-attr]
@@ -1446,7 +1467,7 @@ class BedrockLLM(LLM, BedrockBase):
 
         Example:
             ```python
-                response = llm("Tell me a joke.")
+            response = llm("Tell me a joke.")
             ```
 
         """
