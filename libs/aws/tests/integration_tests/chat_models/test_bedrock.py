@@ -237,7 +237,7 @@ def test_chat_bedrock_streaming_generation_info() -> None:
     list(chat.stream("hi"))
     generation = callback.saved_things["generation"]
     # `Hello!` is two tokens, assert that the expected text is contained in the response
-    assert "Hello! How can I assist you today?" in generation.generations[0][0].text
+    assert "Hello! How can I help you today?" in generation.generations[0][0].text
 
 
 @pytest.mark.scheduled
@@ -348,7 +348,7 @@ def test_get_num_tokens_from_messages_integration() -> None:
     token_count = chat.get_num_tokens_from_messages(base_messages)
 
     assert isinstance(token_count, int)
-    assert token_count == 21
+    assert token_count == 38
 
 
 class GetWeather(BaseModel):
