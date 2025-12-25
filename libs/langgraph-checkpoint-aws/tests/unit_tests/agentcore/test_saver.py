@@ -6,9 +6,10 @@ import asyncio
 import json
 import time
 from collections.abc import Iterator
-from unittest.mock import ANY, MagicMock, Mock, patch
+from unittest.mock import ANY, MagicMock, Mock, call, patch
 
 import pytest
+from botocore.exceptions import ClientError
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata, CheckpointTuple
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
@@ -21,6 +22,7 @@ from langgraph_checkpoint_aws.agentcore.constants import (
 )
 from langgraph_checkpoint_aws.agentcore.helpers import (
     AgentCoreEventClient,
+    BedrockAgentCoreClientWithRetry,
     EventProcessor,
     EventSerializer,
 )
@@ -1244,3 +1246,192 @@ class TestEventProcessor:
         )
 
         assert tuple_result.parent_config is None
+
+
+class TestBedrockAgentCoreClientWithRetry:
+    """Test suite for BedrockAgentCoreClientWithRetry retry logic."""
+
+    @pytest.fixture
+    def mock_boto_client(self):
+        mock_client = Mock()
+        mock_client.create_event = MagicMock()
+        mock_client.list_events = MagicMock()
+        return mock_client
+
+    @pytest.fixture
+    def enhanced_client(self, mock_boto_client):
+        return BedrockAgentCoreClientWithRetry(mock_boto_client, max_retries=3)
+
+    def test_successful_call_no_retry(self, enhanced_client, mock_boto_client):
+        """Test that successful calls don't trigger retries."""
+        mock_boto_client.create_event.return_value = {"eventId": "test-event-id"}
+
+        result = enhanced_client.create_event(
+            memoryId="test-memory-id",
+            actorId="test-actor",
+            sessionId="test-session",
+            eventTimestamp="2024-01-01T00:00:00Z",
+            payload=[{"blob": "test"}],
+        )
+
+        assert result == {"eventId": "test-event-id"}
+        assert mock_boto_client.create_event.call_count == 1
+
+    def test_retry_on_retryable_conflict_exception_success(
+        self, enhanced_client, mock_boto_client
+    ):
+        """Test that RetryableConflictException triggers retry and succeeds."""
+        # First call fails with RetryableConflictException, second succeeds
+        mock_boto_client.create_event.side_effect = [
+            ClientError(
+                {
+                    "Error": {
+                        "Code": "RetryableConflictException",
+                        "Message": "Conflict",
+                    }
+                },
+                "CreateEvent",
+            ),
+            {"eventId": "test-event-id"},
+        ]
+
+        result = enhanced_client.create_event(
+            memoryId="test-memory-id",
+            actorId="test-actor",
+            sessionId="test-session",
+            eventTimestamp="2024-01-01T00:00:00Z",
+            payload=[{"blob": "test"}],
+        )
+
+        assert result == {"eventId": "test-event-id"}
+        assert mock_boto_client.create_event.call_count == 2
+
+    def test_retry_on_retryable_conflict_exception_max_retries(
+        self, enhanced_client, mock_boto_client
+    ):
+        """Test that max retries are respected for RetryableConflictException."""
+        # All calls fail with RetryableConflictException
+        mock_boto_client.create_event.side_effect = ClientError(
+            {"Error": {"Code": "RetryableConflictException", "Message": "Conflict"}},
+            "CreateEvent",
+        )
+
+        with pytest.raises(ClientError) as exc_info:
+            enhanced_client.create_event(
+                memoryId="test-memory-id",
+                actorId="test-actor",
+                sessionId="test-session",
+                eventTimestamp="2024-01-01T00:00:00Z",
+                payload=[{"blob": "test"}],
+            )
+
+        assert exc_info.value.response["Error"]["Code"] == "RetryableConflictException"
+        # Should attempt once + max_retries (3) = 4 total
+        assert mock_boto_client.create_event.call_count == 4
+
+    def test_non_retryable_error_not_retried(self, enhanced_client, mock_boto_client):
+        """Test that non-retryable errors are not retried."""
+        mock_boto_client.create_event.side_effect = ClientError(
+            {"Error": {"Code": "ValidationException", "Message": "Invalid input"}},
+            "CreateEvent",
+        )
+
+        with pytest.raises(ClientError) as exc_info:
+            enhanced_client.create_event(
+                memoryId="test-memory-id",
+                actorId="test-actor",
+                sessionId="test-session",
+                eventTimestamp="2024-01-01T00:00:00Z",
+                payload=[{"blob": "test"}],
+            )
+
+        assert exc_info.value.response["Error"]["Code"] == "ValidationException"
+        # Should only attempt once (no retries)
+        assert mock_boto_client.create_event.call_count == 1
+
+    @patch("langgraph_checkpoint_aws.agentcore.helpers.time.sleep")
+    def test_retry_exponential_backoff(
+        self, mock_sleep, enhanced_client, mock_boto_client
+    ):
+        """Test that exponential backoff is applied between retries."""
+        # First two calls fail, third succeeds
+        mock_boto_client.create_event.side_effect = [
+            ClientError(
+                {
+                    "Error": {
+                        "Code": "RetryableConflictException",
+                        "Message": "Conflict",
+                    }
+                },
+                "CreateEvent",
+            ),
+            ClientError(
+                {
+                    "Error": {
+                        "Code": "RetryableConflictException",
+                        "Message": "Conflict",
+                    }
+                },
+                "CreateEvent",
+            ),
+            {"eventId": "test-event-id"},
+        ]
+
+        result = enhanced_client.create_event(
+            memoryId="test-memory-id",
+            actorId="test-actor",
+            sessionId="test-session",
+            eventTimestamp="2024-01-01T00:00:00Z",
+            payload=[{"blob": "test"}],
+        )
+
+        assert result == {"eventId": "test-event-id"}
+        assert mock_boto_client.create_event.call_count == 3
+        # Verify exponential backoff was applied
+        assert mock_sleep.call_args_list == [
+            call(0.1),  # 0.1 * 2^0
+            call(0.2),  # 0.1 * 2^1
+        ]
+
+    def test_passthrough_non_create_event_methods(
+        self, enhanced_client, mock_boto_client
+    ):
+        """Test that non-create_event methods are passed through without retry logic."""
+        mock_boto_client.list_events.return_value = {"events": []}
+
+        result = enhanced_client.list_events(
+            memoryId="test-memory-id",
+            actorId="test-actor",
+            sessionId="test-session",
+        )
+
+        assert result == {"events": []}
+        mock_boto_client.list_events.assert_called_once()
+
+    def test_custom_max_retries(self, mock_boto_client):
+        """Test that custom max_retries value is respected."""
+        enhanced_client = BedrockAgentCoreClientWithRetry(
+            mock_boto_client, max_retries=1
+        )
+
+        mock_boto_client.create_event.side_effect = ClientError(
+            {
+                "Error": {
+                    "Code": "RetryableConflictException",
+                    "Message": "Conflict",
+                }
+            },
+            "CreateEvent",
+        )
+
+        with pytest.raises(ClientError):
+            enhanced_client.create_event(
+                memoryId="test-memory-id",
+                actorId="test-actor",
+                sessionId="test-session",
+                eventTimestamp="2024-01-01T00:00:00Z",
+                payload=[{"blob": "test"}],
+            )
+
+        # Should attempt once + max_retries (1) = 2 total
+        assert mock_boto_client.create_event.call_count == 2

@@ -26,6 +26,9 @@ from langgraph_checkpoint_aws.agentcore.constants import (
     InvalidConfigError,
 )
 from langgraph_checkpoint_aws.agentcore.helpers import (
+    DEFAULT_INITIAL_BACKOFF,
+    DEFAULT_MAX_BACKOFF,
+    DEFAULT_MAX_RETRIES,
     AgentCoreEventClient,
     EventProcessor,
     EventSerializer,
@@ -52,7 +55,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         serde: serialization protocol to be used. Defaults to JSONPlusSerializer
         limit: maximum number of events to parse from ListEvents.
         max_results: maximum number of results to retrieve from AgentCore Memory.
-                    Defaults to 100
+        max_retries: maximum number of retry attempts for retryable errors.
+        initial_backoff: initial backoff time in seconds for exponential backoff.
+        max_backoff: maximum backoff time in seconds.
     """
 
     def __init__(
@@ -62,6 +67,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         serde: SerializerProtocol | None = None,
         limit: int | None = None,
         max_results: int | None = 100,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        initial_backoff: float = DEFAULT_INITIAL_BACKOFF,
+        max_backoff: float = DEFAULT_MAX_BACKOFF,
         **boto3_kwargs: Any,
     ) -> None:
         super().__init__(serde=serde)
@@ -71,7 +79,12 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         self.max_results = max_results
         self.serializer = EventSerializer(self.serde)
         self.checkpoint_event_client = AgentCoreEventClient(
-            memory_id, self.serializer, **boto3_kwargs
+            memory_id,
+            self.serializer,
+            max_retries=max_retries,
+            initial_backoff=initial_backoff,
+            max_backoff=max_backoff,
+            **boto3_kwargs,
         )
         self.processor = EventProcessor()
 
