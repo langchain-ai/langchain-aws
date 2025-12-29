@@ -1,8 +1,10 @@
 import asyncio
+import base64
 import json
 import logging
 import os
-from typing import Any, Dict, Generator, List, Optional
+import re
+from typing import Any, Dict, Generator, List, Literal, Optional, Union
 
 import numpy as np
 from langchain_core.embeddings import Embeddings
@@ -14,6 +16,9 @@ from typing_extensions import Self
 from langchain_aws.utils import create_aws_client
 
 logger = logging.getLogger(__name__)
+
+# Type alias for media input (base64 string, file path, S3 URI, or raw bytes)
+MediaInput = Union[str, bytes]
 
 
 class BedrockEmbeddings(BaseModel, Embeddings):
@@ -166,6 +171,37 @@ class BedrockEmbeddings(BaseModel, Embeddings):
             and "embed" in self.model_id
         )
 
+    @property
+    def _is_titan_multimodal(self) -> bool:
+        """Check if the model is Titan Embed Image (multimodal)."""
+        return "titan-embed-image" in self.model_id
+
+    @property
+    def _is_marengo(self) -> bool:
+        """Check if the model is TwelveLabs Marengo."""
+        return "marengo" in self.model_id.lower()
+
+    def _supports_image(self) -> bool:
+        """Check if the model supports image embeddings."""
+        return (
+            self._is_titan_multimodal
+            or self._is_nova_embed
+            or self._is_cohere_v4
+            or self._is_marengo
+        )
+
+    def _supports_audio(self) -> bool:
+        """Check if the model supports audio embeddings (sync API)."""
+        return self._is_nova_embed
+
+    def _supports_video(self) -> bool:
+        """Check if the model supports video embeddings (sync API)."""
+        return self._is_nova_embed
+
+    def _supports_s3_input(self) -> bool:
+        """Check if the model supports S3 URI input."""
+        return self._is_nova_embed or self._is_marengo
+
     def _get_dimensions_params(self) -> Dict[str, Any]:
         """Get dimensions parameter with provider-specific key name."""
         if self.dimensions is None:
@@ -307,6 +343,204 @@ class BedrockEmbeddings(BaseModel, Embeddings):
             logger.exception("Error raised by inference endpoint")
             raise e
 
+    def _detect_media_format(self, data: bytes) -> str:
+        """Detect media format from magic bytes."""
+        if len(data) < 12:
+            return "jpeg"  # default fallback
+
+        # JPEG: FF D8 FF
+        if data[:3] == b"\xff\xd8\xff":
+            return "jpeg"
+        # PNG: 89 50 4E 47 0D 0A 1A 0A
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            return "png"
+        # GIF: GIF87a or GIF89a
+        if data[:6] in (b"GIF87a", b"GIF89a"):
+            return "gif"
+        # WEBP: RIFF....WEBP
+        if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            return "webp"
+        # MP4/MOV: ....ftyp
+        if data[4:8] == b"ftyp":
+            return "mp4"
+        # MP3: FF FB or ID3
+        if data[:2] == b"\xff\xfb" or data[:3] == b"ID3":
+            return "mp3"
+        # WAV: RIFF....WAVE
+        if data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+            return "wav"
+        # OGG: OggS
+        if data[:4] == b"OggS":
+            return "ogg"
+
+        return "jpeg"  # default fallback
+
+    def _load_media(
+        self,
+        data: MediaInput,
+        media_type: Literal["image", "audio", "video"],
+    ) -> tuple:
+        """Normalize media input to (payload, format, source_kind).
+
+        Args:
+            data: Base64 string, file path, S3 URI, or raw bytes.
+            media_type: Type of media (image, audio, video).
+
+        Returns:
+            Tuple of (payload, format, source_kind) where:
+            - payload: base64 string or S3 URI
+            - format: detected format (jpeg, png, mp3, etc.)
+            - source_kind: "inline" or "s3"
+        """
+        if isinstance(data, bytes):
+            fmt = self._detect_media_format(data)
+            b64 = base64.b64encode(data).decode("utf-8")
+            return b64, fmt, "inline"
+
+        if data.startswith("s3://"):
+            if not self._supports_s3_input():
+                msg = f"S3 URIs not supported for model {self.model_id}"
+                raise ValueError(msg)
+            ext_match = re.search(r"\.([a-zA-Z0-9]+)$", data)
+            fmt = ext_match.group(1).lower() if ext_match else "jpeg"
+            if fmt == "jpg":
+                fmt = "jpeg"
+            return data, fmt, "s3"
+
+        data_uri_match = re.match(
+            r"^data:(?:image|video|audio)/([a-zA-Z0-9]+);base64,(.+)$", data
+        )
+        if data_uri_match:
+            fmt = data_uri_match.group(1).lower()
+            b64 = data_uri_match.group(2)
+            return b64, fmt, "inline"
+
+        if os.path.isfile(data):
+            with open(data, "rb") as f:
+                file_bytes = f.read()
+            fmt = self._detect_media_format(file_bytes)
+            b64 = base64.b64encode(file_bytes).decode("utf-8")
+            return b64, fmt, "inline"
+
+        # Assume raw base64 string
+        try:
+            decoded = base64.b64decode(data)
+            fmt = self._detect_media_format(decoded)
+            return data, fmt, "inline"
+        except Exception:
+            msg = "Could not interpret input as base64, file path, or S3 URI"
+            raise ValueError(msg)
+
+    def _build_image_request(
+        self, payload: str, fmt: str, source_kind: str
+    ) -> Dict[str, Any]:
+        """Build provider-specific request body for image embedding."""
+        if self._is_titan_multimodal:
+            body: Dict[str, Any] = {"inputImage": payload}
+            if self.dimensions:
+                body["embeddingConfig"] = {"outputEmbeddingLength": self.dimensions}
+            return body
+
+        if self._is_nova_embed:
+            params: Dict[str, Any] = {"embeddingPurpose": "GENERIC_INDEX"}
+            if source_kind == "s3":
+                params["image"] = {
+                    "format": fmt,
+                    "source": {"s3Location": {"uri": payload}},
+                }
+            else:
+                params["image"] = {"format": fmt, "source": {"bytes": payload}}
+            if self.dimensions:
+                params["embeddingDimension"] = self.dimensions
+            return {"taskType": "SINGLE_EMBEDDING", "singleEmbeddingParams": params}
+
+        if self._is_cohere_v4:
+            data_uri = f"data:image/{fmt};base64,{payload}"
+            return {
+                "input_type": "search_document",
+                "images": [data_uri],
+                **self._get_dimensions_params(),
+            }
+
+        if self._is_marengo:
+            media_source: Dict[str, Any]
+            if source_kind == "s3":
+                media_source = {"s3Location": {"uri": payload}}
+            else:
+                media_source = {"base64String": payload}
+            return {"inputType": "image", "image": {"mediaSource": media_source}}
+
+        msg = f"Image embeddings not supported for model {self.model_id}"
+        raise ValueError(msg)
+
+    def _build_audio_request(
+        self, payload: str, fmt: str, source_kind: str
+    ) -> Dict[str, Any]:
+        """Build request body for audio embedding (Nova only)."""
+        params: Dict[str, Any] = {"embeddingPurpose": "GENERIC_INDEX"}
+        if source_kind == "s3":
+            params["audio"] = {
+                "format": fmt,
+                "source": {"s3Location": {"uri": payload}},
+            }
+        else:
+            params["audio"] = {"format": fmt, "source": {"bytes": payload}}
+        if self.dimensions:
+            params["embeddingDimension"] = self.dimensions
+        return {"taskType": "SINGLE_EMBEDDING", "singleEmbeddingParams": params}
+
+    def _build_video_request(
+        self, payload: str, fmt: str, source_kind: str
+    ) -> Dict[str, Any]:
+        """Build request body for video embedding (Nova only)."""
+        params: Dict[str, Any] = {"embeddingPurpose": "GENERIC_INDEX"}
+        if source_kind == "s3":
+            params["video"] = {
+                "format": fmt,
+                "embeddingMode": "AUDIO_VIDEO_COMBINED",
+                "source": {"s3Location": {"uri": payload}},
+            }
+        else:
+            params["video"] = {
+                "format": fmt,
+                "embeddingMode": "AUDIO_VIDEO_COMBINED",
+                "source": {"bytes": payload},
+            }
+        if self.dimensions:
+            params["embeddingDimension"] = self.dimensions
+        return {"taskType": "SINGLE_EMBEDDING", "singleEmbeddingParams": params}
+
+    def _extract_media_embedding(self, response: Dict[str, Any]) -> List[float]:
+        """Extract embedding from provider-specific response."""
+        # Titan format
+        if "embedding" in response and isinstance(response["embedding"], list):
+            return response["embedding"]
+
+        # Nova format
+        if "embeddings" in response and isinstance(response["embeddings"], list):
+            if response["embeddings"] and isinstance(response["embeddings"][0], dict):
+                embedding = response["embeddings"][0].get("embedding")
+                if embedding:
+                    return embedding
+
+        # Cohere format
+        if "embeddings" in response:
+            embeddings = response["embeddings"]
+            if isinstance(embeddings, dict) and "float" in embeddings:
+                return embeddings["float"][0]
+            if isinstance(embeddings, list) and embeddings:
+                return embeddings[0]
+
+        # Marengo format: {"data": [{"embedding": [...]}]}
+        if "data" in response and isinstance(response["data"], list):
+            if response["data"] and isinstance(response["data"][0], dict):
+                embedding = response["data"][0].get("embedding")
+                if embedding:
+                    return embedding
+
+        msg = f"No embedding found in response. Keys: {list(response.keys())}"
+        raise ValueError(msg)
+
     def _normalize_vector(self, embeddings: List[float]) -> List[float]:
         """Normalize the embedding to a unit vector."""
         emb = np.array(embeddings)
@@ -397,6 +631,102 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         result = await asyncio.gather(*[self.aembed_query(text) for text in texts])
 
         return list(result)
+
+    def embed_image(self, image: MediaInput) -> List[float]:
+        """Embed a single image.
+
+        Args:
+            image: Image as base64 string, file path, S3 URI (Nova/Marengo), or bytes.
+
+        Returns:
+            Embedding vector for the image.
+
+        Raises:
+            ValueError: If model doesn't support image embeddings.
+        """
+        if not self._supports_image():
+            msg = f"Image embeddings not supported for model {self.model_id}"
+            raise ValueError(msg)
+
+        payload, fmt, source_kind = self._load_media(image, "image")
+        body = self._build_image_request(payload, fmt, source_kind)
+        response = self._invoke_model(body)
+        embedding = self._extract_media_embedding(response)
+
+        if self.normalize:
+            return self._normalize_vector(embedding)
+        return embedding
+
+    def embed_images(self, images: List[MediaInput]) -> List[List[float]]:
+        """Embed multiple images.
+
+        Args:
+            images: List of images as base64 strings, file paths, S3 URIs, or bytes.
+
+        Returns:
+            List of embedding vectors, one per image.
+        """
+        return [self.embed_image(img) for img in images]
+
+    def embed_audio(self, audio: MediaInput) -> List[float]:
+        """Embed audio content.
+
+        Only supported by Nova models. Audio must be ≤30 seconds for sync API.
+
+        Args:
+            audio: Audio as base64 string, file path, S3 URI, or bytes.
+
+        Returns:
+            Embedding vector for the audio.
+
+        Raises:
+            ValueError: If model doesn't support audio embeddings.
+        """
+        if not self._supports_audio():
+            msg = (
+                f"Audio embeddings not supported for model {self.model_id}. "
+                "Only Nova models support sync audio embeddings."
+            )
+            raise ValueError(msg)
+
+        payload, fmt, source_kind = self._load_media(audio, "audio")
+        body = self._build_audio_request(payload, fmt, source_kind)
+        response = self._invoke_model(body)
+        embedding = self._extract_media_embedding(response)
+
+        if self.normalize:
+            return self._normalize_vector(embedding)
+        return embedding
+
+    def embed_video(self, video: MediaInput) -> List[float]:
+        """Embed video content.
+
+        Only supported by Nova models. Video must be ≤30 seconds for sync API.
+
+        Args:
+            video: Video as base64 string, file path, S3 URI, or bytes.
+
+        Returns:
+            Embedding vector for the video.
+
+        Raises:
+            ValueError: If model doesn't support video embeddings.
+        """
+        if not self._supports_video():
+            msg = (
+                f"Video embeddings not supported for model {self.model_id}. "
+                "Only Nova models support sync video embeddings."
+            )
+            raise ValueError(msg)
+
+        payload, fmt, source_kind = self._load_media(video, "video")
+        body = self._build_video_request(payload, fmt, source_kind)
+        response = self._invoke_model(body)
+        embedding = self._extract_media_embedding(response)
+
+        if self.normalize:
+            return self._normalize_vector(embedding)
+        return embedding
 
 
 def _batch_cohere_embedding_texts(
