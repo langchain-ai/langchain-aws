@@ -186,7 +186,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         return (
             self._is_titan_multimodal
             or self._is_nova_embed
-            or self._is_cohere_v4
+            or self._inferred_provider == "cohere"
             or self._is_marengo
         )
 
@@ -454,12 +454,18 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                 params["embeddingDimension"] = self.dimensions
             return {"taskType": "SINGLE_EMBEDDING", "singleEmbeddingParams": params}
 
-        if self._is_cohere_v4:
+        if self._inferred_provider == "cohere":
             data_uri = f"data:image/{fmt};base64,{payload}"
+            if self._is_cohere_v4:
+                return {
+                    "input_type": "search_document",
+                    "images": [data_uri],
+                    **self._get_dimensions_params(),
+                }
             return {
-                "input_type": "search_document",
+                "input_type": "image",
                 "images": [data_uri],
-                **self._get_dimensions_params(),
+                "embedding_types": ["float"],
             }
 
         if self._is_marengo:

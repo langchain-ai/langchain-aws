@@ -95,10 +95,9 @@ class TestModelDetectionProperties:
         )
         assert embeddings._supports_image() is True
 
-    def test_supports_image_cohere_v3_not_supported(self) -> None:
-        """Cohere v3 does not support image embeddings in AWS Bedrock."""
+    def test_supports_image_cohere_v3(self) -> None:
         embeddings = BedrockEmbeddings(model_id="cohere.embed-english-v3")
-        assert embeddings._supports_image() is False
+        assert embeddings._supports_image() is True
 
     def test_supports_image_cohere_v4(self) -> None:
         embeddings = BedrockEmbeddings(model_id="us.cohere.embed-v4:0")
@@ -318,11 +317,24 @@ class TestImageRequestBuilders:
         params = body["singleEmbeddingParams"]
         assert params["image"]["source"]["s3Location"]["uri"] == "s3://bucket/image.png"
 
-    def test_cohere_v3_image_not_supported(self) -> None:
-        """Cohere v3 does not support image embeddings in AWS Bedrock."""
+    @patch("langchain_aws.embeddings.bedrock.create_aws_client")
+    def test_cohere_v3_image_request(self, mock_create_client: Mock) -> None:
+        mock_client = Mock()
+        mock_create_client.return_value = mock_client
+        mock_client.invoke_model.return_value = {
+            "body": Mock(read=lambda: '{"embeddings": {"float": [[0.1, 0.2, 0.3]]}}')
+        }
+
         embeddings = BedrockEmbeddings(model_id="cohere.embed-english-v3")
-        with pytest.raises(ValueError, match="Image embeddings not supported"):
-            embeddings.embed_image(JPEG_BYTES)
+        embeddings.embed_image(JPEG_BYTES)
+
+        call_args = mock_client.invoke_model.call_args
+        body = json.loads(call_args.kwargs["body"])
+
+        assert body["input_type"] == "image"
+        assert body["embedding_types"] == ["float"]
+        assert len(body["images"]) == 1
+        assert body["images"][0].startswith("data:image/jpeg;base64,")
 
     @patch("langchain_aws.embeddings.bedrock.create_aws_client")
     def test_cohere_v4_image_request(self, mock_create_client: Mock) -> None:
