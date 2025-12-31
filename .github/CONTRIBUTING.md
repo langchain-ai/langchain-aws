@@ -32,10 +32,14 @@ This project utilizes [uv](https://docs.astral.sh/uv/) as a dependency manager.
 
 Install uv: **[documentation on how to install it](https://docs.astral.sh/uv/getting-started/installation/)**.
 
-The instructions here assume that you run all commands from the `libs/aws` directory.
+The instructions here assume that you run all commands from the respective project directory.
 
 ```bash
 cd libs/aws
+```
+or
+```bash
+cd libs/langgraph-checkpoint-aws
 ```
 
 ### Install for development
