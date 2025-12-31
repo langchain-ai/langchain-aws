@@ -18,6 +18,7 @@ from langchain_core.messages import (
 from langchain_core.runnables import RunnableBinding
 from langchain_tests.unit_tests import ChatModelUnitTests
 from pydantic import BaseModel, Field
+from syrupy import SnapshotAssertion
 
 from langchain_aws import ChatBedrockConverse
 from langchain_aws.chat_models.bedrock_converse import (
@@ -80,6 +81,10 @@ class TestBedrockStandard(ChatModelUnitTests):
     @pytest.mark.xfail(reason="Doesn't support streaming init param.")
     def test_init_streaming(self) -> None:
         super().test_init_streaming()
+
+    @pytest.mark.xfail(reason="Pending mapping + init validator in core")
+    def test_serdes(self, model: BaseChatModel, snapshot: SnapshotAssertion) -> None:
+        super().test_serdes(model, snapshot)
 
 
 def test_profile() -> None:
