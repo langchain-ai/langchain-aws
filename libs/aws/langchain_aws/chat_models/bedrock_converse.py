@@ -1252,14 +1252,32 @@ class ChatBedrockConverse(BaseChatModel):
             toolConfig = {"tools": _format_tools(tools), "toolChoice": toolChoice}
 
         tier = serviceTier or self.service_tier
+        
+        # Merge additional_model_request_fields: invoke-level values override constructor defaults
+        # Both need to be in the same case before merging, then convert to camelCase once
+        merged_additional_fields = self.additional_model_request_fields or {}
+        if additionalModelRequestFields:
+            # Convert camelCase back to snake_case for merging
+            invoke_fields_snake = _camel_to_snake_keys(
+                additionalModelRequestFields, excluded_keys={"inputSchema", "properties", "thinking"}
+            )
+            # Merge with invoke-level values overriding constructor defaults
+            merged_additional_fields = {**merged_additional_fields, **invoke_fields_snake}
+        # Convert merged result to camelCase once
+        additional_model_request_fields_camel = (
+            _snake_to_camel_keys(
+                merged_additional_fields, excluded_keys={"inputSchema", "properties", "thinking"}
+            )
+            if merged_additional_fields
+            else None
+        )
+        
         return _drop_none(
             {
                 "modelId": modelId or self.model_id,
                 "inferenceConfig": inferenceConfig,
                 "toolConfig": toolConfig,
-                "additionalModelRequestFields": (
-                    additionalModelRequestFields or self.additional_model_request_fields
-                ),
+                "additionalModelRequestFields": additional_model_request_fields_camel,
                 "additionalModelResponseFieldPaths": (
                     additionalModelResponseFieldPaths
                     or self.additional_model_response_field_paths
