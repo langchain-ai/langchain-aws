@@ -2518,7 +2518,7 @@ def test_additional_model_request_fields_merge_no_duplicate_keys() -> None:
 
 
 def test_additional_model_request_fields_merge_constructor_only() -> None:
-    """Test that additional_model_request_fields from constructor only works correctly."""
+    """Test correctness of additional_model_request_fields from constructor only."""
     mocked_client = mock.MagicMock()
     mocked_client.converse.return_value = {
         "output": {"message": {"content": [{"text": "Hello!"}]}},
