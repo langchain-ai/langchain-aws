@@ -1254,37 +1254,36 @@ class ChatBedrockConverse(BaseChatModel):
         tier = serviceTier or self.service_tier
 
         # Merge additional_model_request_fields: invoke-level values override
-        # constructor defaults
-        # Both need to be in the same case before merging, then convert to
-        # camelCase once
-        merged_additional_fields = self.additional_model_request_fields or {}
-        if additionalModelRequestFields:
-            # Convert camelCase back to snake_case for merging
-            invoke_fields_snake = _camel_to_snake_keys(
-                additionalModelRequestFields,
-                excluded_keys={"inputSchema", "properties", "thinking"},
-            )
-            # Merge with invoke-level values overriding constructor defaults
+        # constructor defaults.
+        # Both sides must be normalized to snake_case before merging to ensure
+        # that keys like "reasoningEffort" and "reasoning_effort" are treated
+        # as the same key. The final result stays in snake_case for the API.
+        constructor_fields = self.additional_model_request_fields
+        invoke_fields = additionalModelRequestFields
+        excluded = {"inputSchema", "properties", "thinking"}
+
+        if constructor_fields or invoke_fields:
             merged_additional_fields = {
-                **merged_additional_fields,
-                **invoke_fields_snake,
+                **(
+                    _camel_to_snake_keys(constructor_fields, excluded_keys=excluded)
+                    if constructor_fields
+                    else {}
+                ),
+                **(
+                    _camel_to_snake_keys(invoke_fields, excluded_keys=excluded)
+                    if invoke_fields
+                    else {}
+                ),
             }
-        # Convert merged result to camelCase once
-        additional_model_request_fields_camel = (
-            _snake_to_camel_keys(
-                merged_additional_fields,
-                excluded_keys={"inputSchema", "properties", "thinking"},
-            )
-            if merged_additional_fields
-            else None
-        )
+        else:
+            merged_additional_fields = {}
 
         return _drop_none(
             {
                 "modelId": modelId or self.model_id,
                 "inferenceConfig": inferenceConfig,
                 "toolConfig": toolConfig,
-                "additionalModelRequestFields": additional_model_request_fields_camel,
+                "additionalModelRequestFields": merged_additional_fields or None,
                 "additionalModelResponseFieldPaths": (
                     additionalModelResponseFieldPaths
                     or self.additional_model_response_field_paths
