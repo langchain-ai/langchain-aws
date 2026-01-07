@@ -2469,7 +2469,7 @@ def test_service_tier_passed_to_converse_stream() -> None:
 def test_additional_model_request_fields_merge_no_duplicate_keys() -> None:
     """Test that additional_model_request_fields from constructor and invoke are merged
     correctly without duplicate keys in different cases.
-    
+
     This test ensures that when additional_model_request_fields is provided both
     at initialization and at invocation, the final request contains only one
     correctly cased field (camelCase), not both reasoning_effort and reasoningEffort.
