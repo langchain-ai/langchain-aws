@@ -2567,3 +2567,57 @@ def test_additional_model_request_fields_merge_invoke_only() -> None:
     additional_fields = call_kwargs["additionalModelRequestFields"]
     assert "reasoningEffort" in additional_fields
     assert additional_fields["reasoningEffort"] == "high"
+
+
+def test_additional_model_request_fields_camel_constructor_snake_invoke() -> None:
+    """Test camelCase at constructor and snake_case at invoke merge correctly."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        additional_model_request_fields={"reasoningEffort": "low"},
+    )
+
+    llm.invoke(
+        [HumanMessage(content="Hi")],
+        additional_model_request_fields={"reasoning_effort": "medium"},
+    )
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+
+    assert list(additional_fields.keys()) == ["reasoningEffort"]
+    assert additional_fields["reasoningEffort"] == "medium"
+
+
+def test_additional_model_request_fields_snake_constructor_camel_invoke() -> None:
+    """Test snake_case at constructor and camelCase at invoke merge correctly."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        additional_model_request_fields={"reasoning_effort": "low"},
+    )
+
+    llm.invoke(
+        [HumanMessage(content="Hi")],
+        additional_model_request_fields={"reasoningEffort": "high"},
+    )
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+
+    assert list(additional_fields.keys()) == ["reasoningEffort"]
+    assert additional_fields["reasoningEffort"] == "high"
