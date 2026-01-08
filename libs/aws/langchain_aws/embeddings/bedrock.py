@@ -742,6 +742,23 @@ class BedrockEmbeddings(BaseModel, Embeddings):
             return self._normalize_vector(embedding)
         return embedding
 
+    async def aembed_image(self, image: MediaInput) -> List[float]:
+        """Asynchronously embed a single image."""
+        return await run_in_executor(None, self.embed_image, image)
+
+    async def aembed_images(self, images: List[MediaInput]) -> List[List[float]]:
+        """Asynchronously embed multiple images."""
+        result = await asyncio.gather(*[self.aembed_image(img) for img in images])
+        return list(result)
+
+    async def aembed_audio(self, audio: MediaInput) -> List[float]:
+        """Asynchronously embed audio content."""
+        return await run_in_executor(None, self.embed_audio, audio)
+
+    async def aembed_video(self, video: MediaInput) -> List[float]:
+        """Asynchronously embed video content."""
+        return await run_in_executor(None, self.embed_video, video)
+
 
 def _batch_cohere_embedding_texts(
     texts: List[str], is_v4: bool = False
