@@ -645,7 +645,13 @@ class ChatBedrockConverse(BaseChatModel):
                 provider == "amazon"
                 and any(
                     x in model_id_lower
-                    for x in ["nova-lite", "nova-micro", "nova-pro", "nova-premier"]
+                    for x in [
+                        "nova-lite",
+                        "nova-micro",
+                        "nova-pro",
+                        "nova-premier",
+                        "nova-2-lite",
+                    ]
                 )
             )
             or
