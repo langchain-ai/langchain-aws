@@ -379,7 +379,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         self,
         data: MediaInput,
         media_type: Literal["image", "audio", "video"],
-    ) -> tuple:
+    ) -> tuple[str, str, Literal["inline", "s3"]]:
         """Normalize media input to (payload, format, source_kind).
 
         Args:
