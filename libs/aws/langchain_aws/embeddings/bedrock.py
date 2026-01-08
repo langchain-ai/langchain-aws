@@ -346,7 +346,12 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     def _detect_media_format(self, data: bytes) -> str:
         """Detect media format from magic bytes."""
         if len(data) < 12:
-            return "jpeg"  # default fallback
+            logger.warning(
+                "Media data too short for format detection (%d bytes), "
+                "defaulting to JPEG",
+                len(data),
+            )
+            return "jpeg"
 
         # JPEG: FF D8 FF
         if data[:3] == b"\xff\xd8\xff":
@@ -373,7 +378,10 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         if data[:4] == b"OggS":
             return "ogg"
 
-        return "jpeg"  # default fallback
+        logger.warning(
+            "Could not detect media format from magic bytes, defaulting to JPEG"
+        )
+        return "jpeg"
 
     def _load_media(
         self,
