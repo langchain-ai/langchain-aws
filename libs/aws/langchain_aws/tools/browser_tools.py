@@ -3,7 +3,7 @@
 import base64
 import json
 import logging
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Literal, Optional, Type
 from urllib.parse import urlparse
 
 from langchain_core.runnables.config import RunnableConfig
@@ -14,6 +14,23 @@ from .browser_session_manager import BrowserSessionManager
 from .utils import aget_current_page, get_current_page
 
 logger = logging.getLogger(__name__)
+
+
+def _get_scroll_deltas(direction: str, amount: int) -> tuple[int, int]:
+    """Convert direction and amount to delta_x, delta_y."""
+    direction = direction.lower()
+    if direction == "down":
+        return 0, amount
+    elif direction == "up":
+        return 0, -amount
+    elif direction == "right":
+        return amount, 0
+    elif direction == "left":
+        return -amount, 0
+    else:
+        raise ValueError(
+            f"Invalid direction: {direction}. Use 'up', 'down', 'left', or 'right'."
+        )
 
 
 class NavigateToolInput(BaseModel):
@@ -81,10 +98,11 @@ class ScreenshotInput(BaseModel):
 class ScrollInput(BaseModel):
     """Input for ScrollTool."""
 
-    direction: str = Field(
-        default="down", description="Scroll direction: 'up', 'down', 'left', or 'right'"
+    direction: Literal["up", "down", "left", "right"] = Field(
+        default="down",
+        description="Scroll direction",
     )
-    amount: int = Field(default=500, description="Number of pixels to scroll")
+    amount: int = Field(default=500, description="Number of pixels to scroll", gt=0)
 
 
 class WaitForElementInput(BaseModel):
@@ -95,10 +113,12 @@ class WaitForElementInput(BaseModel):
         default=30000,
         description="Maximum time to wait in milliseconds "
         "(default: 30000ms = 30 seconds)",
+        gt=0,
+        le=300000,
     )
-    state: str = Field(
+    state: Literal["attached", "detached", "visible", "hidden"] = Field(
         default="visible",
-        description="State to wait for: 'attached', 'detached', 'visible', or 'hidden'",
+        description="State to wait for",
     )
 
 
@@ -884,14 +904,7 @@ class ThreadAwareScrollTool(ThreadAwareBaseTool):
     name: str = "scroll_page"
     description: str = """Scroll the webpage in the specified direction.
 
-Use this tool to:
-- Load more content on infinite scroll pages
-- Navigate to different sections of a long page
-- Bring elements into view before interacting with them
-- Scroll through search results or lists
-
-Directions: 'up', 'down', 'left', 'right'
-Amount: pixels to scroll (default 500)"""
+Directions: 'up', 'down', 'left', 'right'. Amount: pixels to scroll (default 500)."""
 
     args_schema: Type[BaseModel] = ScrollInput
 
@@ -907,22 +920,7 @@ Amount: pixels to scroll (default 500)"""
             thread_id = self.get_thread_id(config)
             page = self.get_sync_page(thread_id)
 
-            delta_x, delta_y = 0, 0
-            direction = direction.lower()
-
-            if direction == "down":
-                delta_y = amount
-            elif direction == "up":
-                delta_y = -amount
-            elif direction == "right":
-                delta_x = amount
-            elif direction == "left":
-                delta_x = -amount
-            else:
-                raise ValueError(
-                    f"Invalid direction: {direction}. "
-                    "Use 'up', 'down', 'left', or 'right'."
-                )
+            delta_x, delta_y = _get_scroll_deltas(direction, amount)
 
             page.mouse.wheel(delta_x, delta_y)
             self.release_sync_browser(thread_id)
@@ -947,22 +945,7 @@ Amount: pixels to scroll (default 500)"""
             thread_id = self.get_thread_id(config)
             page = await self.get_async_page(thread_id)
 
-            delta_x, delta_y = 0, 0
-            direction = direction.lower()
-
-            if direction == "down":
-                delta_y = amount
-            elif direction == "up":
-                delta_y = -amount
-            elif direction == "right":
-                delta_x = amount
-            elif direction == "left":
-                delta_x = -amount
-            else:
-                raise ValueError(
-                    f"Invalid direction: {direction}. "
-                    "Use 'up', 'down', 'left', or 'right'."
-                )
+            delta_x, delta_y = _get_scroll_deltas(direction, amount)
 
             await page.mouse.wheel(delta_x, delta_y)
             await self.release_async_browser(thread_id)
@@ -982,19 +965,8 @@ class ThreadAwareWaitForElementTool(ThreadAwareBaseTool):
     name: str = "wait_for_element"
     description: str = """Wait for an element to appear or reach a specific state.
 
-Use this tool when:
-- Waiting for page content to load after navigation
-- Waiting for dynamic content (AJAX) to appear
-- Waiting for elements to become visible after animations
-- Ensuring an element exists before interacting with it
-
-States:
-- 'visible': Element is present and visible (default)
-- 'attached': Element is in the DOM (may be hidden)
-- 'detached': Element is removed from the DOM
-- 'hidden': Element is present but not visible
-
-Timeout is in milliseconds (default: 30000 = 30 seconds)."""
+States: 'visible' (default), 'attached', 'detached', 'hidden'.
+Timeout in milliseconds (default: 30000)."""
 
     args_schema: Type[BaseModel] = WaitForElementInput
 
@@ -1010,10 +982,6 @@ Timeout is in milliseconds (default: 30000 = 30 seconds)."""
         try:
             thread_id = self.get_thread_id(config)
             page = self.get_sync_page(thread_id)
-
-            valid_states = ["attached", "detached", "visible", "hidden"]
-            if state not in valid_states:
-                raise ValueError(f"Invalid state: {state}. Use one of: {valid_states}")
 
             page.wait_for_selector(selector, state=state, timeout=timeout)
             self.release_sync_browser(thread_id)
@@ -1046,10 +1014,6 @@ Timeout is in milliseconds (default: 30000 = 30 seconds)."""
         try:
             thread_id = self.get_thread_id(config)
             page = await self.get_async_page(thread_id)
-
-            valid_states = ["attached", "detached", "visible", "hidden"]
-            if state not in valid_states:
-                raise ValueError(f"Invalid state: {state}. Use one of: {valid_states}")
 
             await page.wait_for_selector(selector, state=state, timeout=timeout)
             await self.release_async_browser(thread_id)

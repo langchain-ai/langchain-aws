@@ -413,7 +413,7 @@ Examples:
                 Code to execute
             language:
                 Programming language, default is python
-            clearContext:
+            clear_context:
                 Whether to clear execution context, default is False
             config:
                 Runnable config that may contain a thread_id
