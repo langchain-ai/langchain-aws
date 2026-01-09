@@ -68,12 +68,9 @@ You can find usage examples for `langgraph-checkpoint-aws` [in the README](https
 
 ## Contributing
 
-We welcome contributions to this repository! To get started, please follow the contribution guide for your specific project of interest:
+We welcome contributions to this repository! To get started, please follow the [Contributing Guide](https://github.com/langchain-ai/langchain-aws/blob/main/.github/CONTRIBUTING.md).
 
-- For `langchain-aws`, see [langchain-aws/CONTRIBUTING.md](https://github.com/langchain-ai/langchain-aws/blob/main/libs/aws/CONTRIBUTING.md).
-- For `langgraph-checkpointer-aws`, see [langgraph-checkpointer-aws/CONTRIBUTING.md](https://github.com/langchain-ai/langchain-aws/blob/main/libs/langgraph-checkpoint-aws/CONTRIBUTING.md).
-
-Each guide provides detailed instructions on how to set up the project for development and guidance on how to contribute effectively.
+This guide provides detailed instructions on how to set up each project for development and guidance on how to contribute effectively.
 
 ## License
 
