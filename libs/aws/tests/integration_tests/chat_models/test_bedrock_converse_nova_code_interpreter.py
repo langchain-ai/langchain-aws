@@ -7,14 +7,33 @@ from langchain_aws import ChatBedrockConverse
 from langchain_aws.tools import NovaCodeInterpreterTool
 
 
-def test_nova_code_interpreter_basic() -> None:
-    """Test nova_code_interpreter system tool with real API call."""
-    model = ChatBedrockConverse(
-        model="amazon.nova-2-lite-v1:0",
+@pytest.fixture
+def nova_model() -> ChatBedrockConverse:
+    """Basic Nova model without reasoning."""
+    return ChatBedrockConverse(
+        model="us.amazon.nova-2-lite-v1:0",
         max_tokens=10000,
     )
 
-    model_with_tools = model.bind_tools([NovaCodeInterpreterTool()])
+
+@pytest.fixture
+def nova_model_with_reasoning() -> ChatBedrockConverse:
+    """Nova model with low reasoning effort."""
+    return ChatBedrockConverse(
+        model="us.amazon.nova-2-lite-v1:0",
+        max_tokens=10000,
+        additional_model_request_fields={
+            "reasoningConfig": {
+                "type": "enabled",
+                "maxReasoningEffort": "low",
+            }
+        },
+    )
+
+
+def test_nova_code_interpreter_basic(nova_model: ChatBedrockConverse) -> None:
+    """Test nova_code_interpreter system tool with real API call."""
+    model_with_tools = nova_model.bind_tools([NovaCodeInterpreterTool()])
     response = model_with_tools.invoke("Use Python to calculate 123 * 456")
 
     # Verify response structure
@@ -26,32 +45,24 @@ def test_nova_code_interpreter_basic() -> None:
     assert "56088" in response_text or "56,088" in response_text
 
 
-def test_nova_code_interpreter_with_string() -> None:
+def test_nova_code_interpreter_with_string(nova_model: ChatBedrockConverse) -> None:
     """Test nova_code_interpreter using direct string instead of helper class."""
-    model = ChatBedrockConverse(
-        model="amazon.nova-2-lite-v1:0",
-        max_tokens=10000,
-    )
-
-    model_with_tools = model.bind_tools(["nova_code_interpreter"])
+    model_with_tools = nova_model.bind_tools(["nova_code_interpreter"])
     response = model_with_tools.invoke("What is 123 * 456?")
 
     assert isinstance(response, AIMessage)
     assert len(response.content) > 0
-    
+
     # Verify the calculation result (123 * 456 = 56088)
     response_text = str(response.content)
     assert "56088" in response_text or "56,088" in response_text
 
 
-def test_nova_code_interpreter_simple_calculation() -> None:
+def test_nova_code_interpreter_simple_calculation(
+    nova_model: ChatBedrockConverse,
+) -> None:
     """Test nova_code_interpreter with simple calculation."""
-    model = ChatBedrockConverse(
-        model="amazon.nova-2-lite-v1:0",
-        max_tokens=10000,
-    )
-
-    model_with_tools = model.bind_tools([NovaCodeInterpreterTool()])
+    model_with_tools = nova_model.bind_tools([NovaCodeInterpreterTool()])
     response = model_with_tools.invoke("Use Python code to calculate 7 ** 6")
 
     # Verify response structure
@@ -63,22 +74,14 @@ def test_nova_code_interpreter_simple_calculation() -> None:
     assert "117649" in response_text or "117,649" in response_text
 
 
-def test_nova_code_interpreter_with_reasoning() -> None:
+def test_nova_code_interpreter_with_reasoning(
+    nova_model_with_reasoning: ChatBedrockConverse,
+) -> None:
     """Test nova_code_interpreter with reasoning enabled."""
-    model = ChatBedrockConverse(
-        model="amazon.nova-2-lite-v1:0",
-        max_tokens=10000,
-        additional_model_request_fields={
-            "reasoningConfig": {
-                "type": "enabled",
-                "maxReasoningEffort": "low",
-            }
-        },
-    )
-
-    model_with_tools = model.bind_tools([NovaCodeInterpreterTool()])
+    model_with_tools = nova_model_with_reasoning.bind_tools([NovaCodeInterpreterTool()])
     response = model_with_tools.invoke(
-        "Calculate the factorial of 10 and explain the result"
+        "Calculate the factorial of 10, return and explain the result. "
+        "Use Code Interpreter to calculate it."
     )
 
     # Verify response structure
@@ -94,21 +97,15 @@ def test_nova_code_interpreter_with_reasoning() -> None:
     assert "3628800" in response_text or "3,628,800" in response_text
 
 
-def test_nova_code_interpreter_content_blocks() -> None:
+def test_nova_code_interpreter_content_blocks(
+    nova_model_with_reasoning: ChatBedrockConverse,
+) -> None:
     """Test that content blocks are properly parsed for nova_code_interpreter."""
-    model = ChatBedrockConverse(
-        model="amazon.nova-2-lite-v1:0",
-        max_tokens=10000,
-        additional_model_request_fields={
-            "reasoningConfig": {
-                "type": "enabled",
-                "maxReasoningEffort": "low",
-            }
-        },
+    model_with_tools = nova_model_with_reasoning.bind_tools([NovaCodeInterpreterTool()])
+    response = model_with_tools.invoke(
+        "Calculate the sum of numbers from 1 to 100. "
+        "Use Code Interpreter to calculate it."
     )
-
-    model_with_tools = model.bind_tools([NovaCodeInterpreterTool()])
-    response = model_with_tools.invoke("Calculate the sum of numbers from 1 to 100")
 
     # Verify response structure
     assert isinstance(response, AIMessage)
@@ -130,14 +127,9 @@ def test_nova_code_interpreter_content_blocks() -> None:
     assert "5050" in response_text or "5,050" in response_text
 
 
-def test_nova_code_interpreter_streaming() -> None:
+def test_nova_code_interpreter_streaming(nova_model: ChatBedrockConverse) -> None:
     """Test streaming with nova_code_interpreter system tool."""
-    model = ChatBedrockConverse(
-        model="amazon.nova-2-lite-v1:0",
-        max_tokens=10000,
-    )
-
-    model_with_tools = model.bind_tools([NovaCodeInterpreterTool()])
+    model_with_tools = nova_model.bind_tools([NovaCodeInterpreterTool()])
 
     chunks = []
     for chunk in model_with_tools.stream("What is 999 * 888?"):
@@ -149,7 +141,7 @@ def test_nova_code_interpreter_streaming() -> None:
     # Verify final message by accumulating chunks
     full_message = chunks[0]
     for chunk in chunks[1:]:
-        full_message += chunk
+        full_message = full_message + chunk  # type: ignore[assignment]
 
     assert isinstance(full_message, AIMessage)
     assert len(full_message.content) > 0
@@ -159,14 +151,11 @@ def test_nova_code_interpreter_streaming() -> None:
     assert "887112" in response_text or "887,112" in response_text
 
 
-def test_nova_code_interpreter_multi_turn_conversation() -> None:
+def test_nova_code_interpreter_multi_turn_conversation(
+    nova_model: ChatBedrockConverse,
+) -> None:
     """Test nova_code_interpreter in a multi-turn conversation."""
-    model = ChatBedrockConverse(
-        model="amazon.nova-2-lite-v1:0",
-        max_tokens=10000,
-    )
-
-    model_with_tools = model.bind_tools([NovaCodeInterpreterTool()])
+    model_with_tools = nova_model.bind_tools([NovaCodeInterpreterTool()])
 
     # First turn
     message1 = HumanMessage("Calculate 15 * 20")
