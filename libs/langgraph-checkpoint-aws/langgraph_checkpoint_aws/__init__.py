@@ -45,6 +45,9 @@ try:
         ValkeyConnectionError,
         ValkeyStoreError,
     )
+    from langgraph_checkpoint_aws.store.dynamodb import (
+        DynamoDBStore,
+    )
 
     valkey_available = True
 except ImportError as e:
@@ -102,6 +105,7 @@ __all__ = [
     "ValkeySaver",
     "ValkeyCache",
     "DynamoDBSaver",
+    "DynamoDBStore",
     "SDK_USER_AGENT",
     "valkey_available",
 ]
