@@ -840,8 +840,7 @@ def test__bedrock_to_lc_nova_reasoning_content() -> None:
         # Final text response
         {
             "text": (
-                "Based on my search, the 2024 Nobel Prize in Physics "
-                "was awarded to..."
+                "Based on my search, the 2024 Nobel Prize in Physics was awarded to..."
             )
         },
     ]
@@ -878,8 +877,7 @@ def test__bedrock_to_lc_nova_reasoning_content() -> None:
         {
             "type": "text",
             "text": (
-                "Based on my search, the 2024 Nobel Prize in Physics "
-                "was awarded to..."
+                "Based on my search, the 2024 Nobel Prize in Physics was awarded to..."
             ),
         },
     ]
@@ -2534,7 +2532,9 @@ def test_bind_tools_with_nova_system_tool_instances() -> None:
 
     # Test with NovaGroundingTool
     chat_model_with_grounding = chat_model.bind_tools([NovaGroundingTool()])
-    tools = cast(RunnableBinding, chat_model_with_grounding).kwargs["toolConfig"]["tools"]
+    tools = cast(RunnableBinding, chat_model_with_grounding).kwargs["toolConfig"][
+        "tools"
+    ]
     assert len(tools) == 1
     assert tools[0] == {"systemTool": {"name": "nova_grounding"}}
 
@@ -2562,7 +2562,9 @@ def test_bind_tools_with_system_tool_name_strings() -> None:
 
     # Test with direct string
     chat_model_with_grounding = chat_model.bind_tools(["nova_grounding"])
-    tools = cast(RunnableBinding, chat_model_with_grounding).kwargs["toolConfig"]["tools"]
+    tools = cast(RunnableBinding, chat_model_with_grounding).kwargs["toolConfig"][
+        "tools"
+    ]
     assert len(tools) == 1
     assert tools[0] == {"systemTool": {"name": "nova_grounding"}}
 
@@ -2615,17 +2617,17 @@ def test_bind_tools_system_tools_with_tool_choice() -> None:
     chat_model_with_tools = chat_model.bind_tools(
         [NovaGroundingTool()], tool_choice="auto"
     )
-    assert cast(RunnableBinding, chat_model_with_tools).kwargs["toolConfig"]["toolChoice"] == {
-        "auto": {}
-    }
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["toolConfig"][
+        "toolChoice"
+    ] == {"auto": {}}
 
     # Test with any tool choice
     chat_model_with_tools = chat_model.bind_tools(
         [NovaGroundingTool()], tool_choice="any"
     )
-    assert cast(RunnableBinding, chat_model_with_tools).kwargs["toolConfig"]["toolChoice"] == {
-        "any": {}
-    }
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["toolConfig"][
+        "toolChoice"
+    ] == {"any": {}}
 
 
 def test_bind_tools_toolconfig_structure_with_system_tools() -> None:
@@ -2647,7 +2649,7 @@ def test_bind_tools_toolconfig_structure_with_system_tools() -> None:
     # Verify toolConfig is present
     assert "toolConfig" in bound_kwargs
     tool_config = bound_kwargs["toolConfig"]
-    
+
     # Verify tools are present in toolConfig
     assert "tools" in tool_config
     tools = tool_config["tools"]
@@ -2760,7 +2762,7 @@ def test_iam_permission_error_detection() -> None:
     from langchain_aws.chat_models.bedrock_converse import _handle_bedrock_error
 
     # Create a mock AccessDeniedException for InvokeTool
-    error_response = {
+    error_response: Any = {
         "Error": {
             "Code": "AccessDeniedException",
             "Message": (
@@ -2792,7 +2794,7 @@ def test_iam_permission_error_other_access_denied() -> None:
     from langchain_aws.chat_models.bedrock_converse import _handle_bedrock_error
 
     # Create a mock AccessDeniedException without InvokeTool
-    error_response = {
+    error_response: Any = {
         "Error": {
             "Code": "AccessDeniedException",
             "Message": "User is not authorized to perform: bedrock:InvokeModel",
@@ -2815,7 +2817,7 @@ def test_iam_permission_error_non_access_denied() -> None:
     from langchain_aws.chat_models.bedrock_converse import _handle_bedrock_error
 
     # Create a different error type
-    error_response = {
+    error_response: Any = {
         "Error": {
             "Code": "ValidationException",
             "Message": "Invalid input",
@@ -2835,12 +2837,10 @@ def test_generate_with_iam_permission_error() -> None:
     """Test that _generate wraps IAM permission errors."""
     from botocore.exceptions import ClientError
 
-    llm = ChatBedrockConverse(
-        model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
-    )
+    llm = ChatBedrockConverse(model="amazon.nova-2-lite-v1:0", region_name="us-east-1")
 
     # Mock the client to raise AccessDeniedException
-    error_response = {
+    error_response: Any = {
         "Error": {
             "Code": "AccessDeniedException",
             "Message": (
@@ -2850,9 +2850,7 @@ def test_generate_with_iam_permission_error() -> None:
         },
         "ResponseMetadata": {"RequestId": "test-request-id"},
     }
-    llm.client.converse = mock.Mock(
-        side_effect=ClientError(error_response, "Converse")
-    )
+    llm.client.converse = mock.Mock(side_effect=ClientError(error_response, "Converse"))
 
     # Should raise ValueError with enhanced message
     with pytest.raises(ValueError) as exc_info:
@@ -2869,12 +2867,10 @@ def test_stream_with_iam_permission_error() -> None:
     from botocore.exceptions import ClientError
     from langchain_core.messages import HumanMessage
 
-    llm = ChatBedrockConverse(
-        model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
-    )
+    llm = ChatBedrockConverse(model="amazon.nova-2-lite-v1:0", region_name="us-east-1")
 
     # Mock the client to raise AccessDeniedException when converse_stream is called
-    error_response = {
+    error_response: Any = {
         "Error": {
             "Code": "AccessDeniedException",
             "Message": (
@@ -2884,7 +2880,7 @@ def test_stream_with_iam_permission_error() -> None:
         },
         "ResponseMetadata": {"RequestId": "test-request-id"},
     }
-    
+
     # Create a mock that raises the exception
     mock_client = mock.Mock()
     mock_client.converse_stream.side_effect = ClientError(error_response, "Converse")
@@ -2928,7 +2924,7 @@ def test_reasoning_config_validation_only_applies_to_nova_2() -> None:
     # Should raise an error for Nova 2 models with invalid config
     with pytest.raises(
         ValueError,
-        match="When reasoningConfig type is 'enabled', 'maxReasoningEffort' must be specified",
+        match="'maxReasoningEffort' must be specified",
     ):
         ChatBedrockConverse(
             model="amazon.nova-2-lite-v1:0",

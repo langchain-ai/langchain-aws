@@ -327,7 +327,7 @@ class ChatBedrockConverse(BaseChatModel):
 
         model = ChatBedrockConverse(model="amazon.nova-2-lite-v1:0")
         model_with_search = model.bind_tools([NovaGroundingTool()])
-        
+
         response = model_with_search.invoke("What are the latest developments in quantum computing?")
         print(response.content)
         ```
@@ -347,7 +347,7 @@ class ChatBedrockConverse(BaseChatModel):
 
         model = ChatBedrockConverse(model="amazon.nova-2-lite-v1:0")
         model_with_code = model.bind_tools([NovaCodeInterpreterTool()])
-        
+
         response = model_with_code.invoke("Calculate the square root of 475878756857")
         print(response.content)
         ```
@@ -1325,28 +1325,32 @@ class ChatBedrockConverse(BaseChatModel):
 
             # Build toolConfig directly to avoid re-formatting
             tool_config: Dict[str, Any] = {"tools": all_tools}
-            
+
             if tool_choice:
                 tool_choice_formatted = _format_tool_choice(tool_choice)
                 tool_choice_type = list(tool_choice_formatted.keys())[0]
                 if tool_choice_type not in list(self.supports_tool_choice_values or []):
+                    base_model = self._get_base_model()
                     if self.supports_tool_choice_values:
                         supported = (
-                            f"Model {self._get_base_model()} does not currently support "
+                            f"Model {base_model} does not currently support "
                             f"tool_choice of type {tool_choice_type}. The following "
                             f"tool_choice types are supported: "
                             f"{self.supports_tool_choice_values}."
                         )
                     else:
                         supported = (
-                            f"Model {self._get_base_model()} does not currently support "
+                            f"Model {base_model} does not currently support "
                             f"tool_choice."
                         )
 
+                    docs_url = (
+                        "https://docs.aws.amazon.com/bedrock/latest/APIReference"
+                        "/API_runtime_ToolChoice.html"
+                    )
                     raise ValueError(
-                        f"{supported} Please see "
-                        f"https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html "  # noqa: E501
-                        f"for the latest documentation on models that support tool choice."
+                        f"{supported} Please see {docs_url} for the latest "
+                        f"documentation on models that support tool choice."
                     )
                 tool_config["toolChoice"] = tool_choice_formatted
             elif "deepseek.v3" in self._get_base_model():
@@ -1361,28 +1365,34 @@ class ChatBedrockConverse(BaseChatModel):
                 formatted_tool_choice = _format_tool_choice(tool_choice)
                 tool_choice_type = list(formatted_tool_choice.keys())[0]
                 if tool_choice_type not in list(self.supports_tool_choice_values or []):
+                    base_model = self._get_base_model()
                     if self.supports_tool_choice_values:
                         supported = (
-                            f"Model {self._get_base_model()} does not currently support "
+                            f"Model {base_model} does not currently support "
                             f"tool_choice of type {tool_choice_type}. The following "
                             f"tool_choice types are supported: "
                             f"{self.supports_tool_choice_values}."
                         )
                     else:
                         supported = (
-                            f"Model {self._get_base_model()} does not currently support "
+                            f"Model {base_model} does not currently support "
                             f"tool_choice."
                         )
 
+                    docs_url = (
+                        "https://docs.aws.amazon.com/bedrock/latest/APIReference"
+                        "/API_runtime_ToolChoice.html"
+                    )
                     raise ValueError(
-                        f"{supported} Please see "
-                        f"https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html "  # noqa: E501
-                        f"for the latest documentation on models that support tool choice."
+                        f"{supported} Please see {docs_url} for the latest "
+                        f"documentation on models that support tool choice."
                     )
             elif "deepseek.v3" in self._get_base_model():
                 formatted_tool_choice = _format_tool_choice("any")
-            
-            return self.bind(tools=custom_tools, tool_choice=formatted_tool_choice, **kwargs)
+
+            return self.bind(
+                tools=custom_tools, tool_choice=formatted_tool_choice, **kwargs
+            )
 
     def with_structured_output(
         self,
@@ -1483,7 +1493,7 @@ class ChatBedrockConverse(BaseChatModel):
                 additionalModelRequestFields or self.additional_model_request_fields
             )
             should_unset_max_tokens = False
-            
+
             if final_additional_fields:
                 reasoning_config = final_additional_fields.get("reasoningConfig", {})
                 if (
@@ -1491,9 +1501,11 @@ class ChatBedrockConverse(BaseChatModel):
                     and reasoning_config.get("maxReasoningEffort") == "high"
                 ):
                     should_unset_max_tokens = True
-            
+
             inferenceConfig = {
-                "maxTokens": None if should_unset_max_tokens else (maxTokens or self.max_tokens),
+                "maxTokens": None
+                if should_unset_max_tokens
+                else (maxTokens or self.max_tokens),
                 "temperature": temperature or self.temperature,
                 "topP": self.top_p or topP,
                 "stopSequences": stop or stopSequences or self.stop_sequences,
@@ -1511,7 +1523,7 @@ class ChatBedrockConverse(BaseChatModel):
         # as the same key. The final result stays in snake_case for the API.
         constructor_fields = self.additional_model_request_fields
         invoke_fields = additionalModelRequestFields
-        excluded = {"inputSchema", "properties", "thinking"}
+        excluded = {"reasoningConfig", "inputSchema", "properties", "thinking"}
 
         if constructor_fields or invoke_fields:
             merged_additional_fields = {
@@ -1636,17 +1648,17 @@ class ChatBedrockConverse(BaseChatModel):
 
 def _handle_bedrock_error(error: ClientError) -> None:
     """Handle Bedrock API errors and provide enhanced error messages.
-    
+
     Args:
         error: The ClientError from boto3
-        
+
     Raises:
         ValueError: Enhanced error with helpful message for IAM permission issues
         ClientError: Re-raises the original error if not a known case
     """
     error_code = error.response.get("Error", {}).get("Code", "")
     error_message = str(error)
-    
+
     # Check for InvokeTool permission errors
     if error_code == "AccessDeniedException" and "InvokeTool" in error_message:
         raise ValueError(
@@ -1660,7 +1672,7 @@ def _handle_bedrock_error(error: ClientError) -> None:
             "}\n"
             f"Original error: {error}"
         ) from error
-    
+
     # Re-raise other errors unchanged
     raise error
 
@@ -2154,7 +2166,9 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             lc_content.append({"type": "tool_use", **block["tool_use"]})
         elif "server_tool_use" in block:
             # System tools use server_tool_use instead of tool_use
-            block["server_tool_use"]["id"] = block["server_tool_use"].pop("tool_use_id", None)
+            block["server_tool_use"]["id"] = block["server_tool_use"].pop(
+                "tool_use_id", None
+            )
             lc_content.append({"type": "server_tool_use", **block["server_tool_use"]})
         elif "image" in block:
             lc_content.append(
@@ -2211,7 +2225,7 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     parsed_content = []
                 else:
                     parsed_content = _bedrock_to_lc(content)
-                
+
                 lc_content.append(
                     {
                         "type": "tool_result",

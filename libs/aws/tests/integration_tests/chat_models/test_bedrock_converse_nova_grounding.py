@@ -7,14 +7,33 @@ from langchain_aws import ChatBedrockConverse
 from langchain_aws.tools import NovaGroundingTool
 
 
-def test_nova_grounding_tool_basic() -> None:
-    """Test nova_grounding system tool with real API call."""
-    model = ChatBedrockConverse(
-        model="amazon.nova-2-lite-v1:0",
+@pytest.fixture
+def nova_model() -> ChatBedrockConverse:
+    """Basic Nova model without reasoning."""
+    return ChatBedrockConverse(
+        model="us.amazon.nova-2-lite-v1:0",
         max_tokens=10000,
     )
 
-    model_with_tools = model.bind_tools([NovaGroundingTool()])
+
+@pytest.fixture
+def nova_model_with_reasoning() -> ChatBedrockConverse:
+    """Nova model with low reasoning effort."""
+    return ChatBedrockConverse(
+        model="us.amazon.nova-2-lite-v1:0",
+        max_tokens=10000,
+        additional_model_request_fields={
+            "reasoningConfig": {
+                "type": "enabled",
+                "maxReasoningEffort": "low",
+            }
+        },
+    )
+
+
+def test_nova_grounding_tool_basic(nova_model: ChatBedrockConverse) -> None:
+    """Test nova_grounding system tool with real API call."""
+    model_with_tools = nova_model.bind_tools([NovaGroundingTool()])
     response = model_with_tools.invoke("Who won the 2024 Nobel Prize in Physics?")
 
     # Verify response structure
@@ -28,34 +47,20 @@ def test_nova_grounding_tool_basic() -> None:
     )
 
 
-def test_nova_grounding_tool_with_string() -> None:
+def test_nova_grounding_tool_with_string(nova_model: ChatBedrockConverse) -> None:
     """Test nova_grounding using direct string instead of helper class."""
-    model = ChatBedrockConverse(
-        model="amazon.nova-2-lite-v1:0",
-        max_tokens=10000,
-    )
-
-    model_with_tools = model.bind_tools(["nova_grounding"])
+    model_with_tools = nova_model.bind_tools(["nova_grounding"])
     response = model_with_tools.invoke("What is the current weather in Seattle?")
 
     assert isinstance(response, AIMessage)
     assert len(response.content) > 0
 
 
-def test_nova_grounding_with_reasoning_enabled() -> None:
+def test_nova_grounding_with_reasoning_enabled(
+    nova_model_with_reasoning: ChatBedrockConverse,
+) -> None:
     """Test nova_grounding with reasoning enabled."""
-    model = ChatBedrockConverse(
-        model="amazon.nova-2-lite-v1:0",
-        max_tokens=10000,
-        additional_model_request_fields={
-            "reasoningConfig": {
-                "type": "enabled",
-                "maxReasoningEffort": "low",
-            }
-        },
-    )
-
-    model_with_tools = model.bind_tools([NovaGroundingTool()])
+    model_with_tools = nova_model_with_reasoning.bind_tools([NovaGroundingTool()])
     response = model_with_tools.invoke("Who won the Oscar for best actress in 2024?")
 
     # Verify response structure
@@ -67,20 +72,11 @@ def test_nova_grounding_with_reasoning_enabled() -> None:
     assert any(block["type"] == "reasoning" for block in content_blocks)
 
 
-def test_nova_grounding_content_blocks() -> None:
+def test_nova_grounding_content_blocks(
+    nova_model_with_reasoning: ChatBedrockConverse,
+) -> None:
     """Test that content blocks are properly parsed for nova_grounding."""
-    model = ChatBedrockConverse(
-        model="amazon.nova-2-lite-v1:0",
-        max_tokens=10000,
-        additional_model_request_fields={
-            "reasoningConfig": {
-                "type": "enabled",
-                "maxReasoningEffort": "low",
-            }
-        },
-    )
-
-    model_with_tools = model.bind_tools([NovaGroundingTool()])
+    model_with_tools = nova_model_with_reasoning.bind_tools([NovaGroundingTool()])
     response = model_with_tools.invoke(
         "What are the latest developments in quantum computing?"
     )
@@ -101,20 +97,11 @@ def test_nova_grounding_content_blocks() -> None:
     assert len(text_blocks) > 0
 
 
-def test_nova_grounding_streaming() -> None:
+def test_nova_grounding_streaming(
+    nova_model_with_reasoning: ChatBedrockConverse,
+) -> None:
     """Test streaming with nova_grounding system tool."""
-    model = ChatBedrockConverse(
-        model="amazon.nova-2-lite-v1:0",
-        max_tokens=10000,
-        additional_model_request_fields={
-            "reasoningConfig": {
-                "type": "enabled",
-                "maxReasoningEffort": "low",
-            }
-        },
-    )
-
-    model_with_tools = model.bind_tools([NovaGroundingTool()])
+    model_with_tools = nova_model_with_reasoning.bind_tools([NovaGroundingTool()])
 
     chunks = []
     for chunk in model_with_tools.stream("What's the latest news about AI?"):
@@ -126,46 +113,43 @@ def test_nova_grounding_streaming() -> None:
     # Verify final message by accumulating chunks
     full_message = chunks[0]
     for chunk in chunks[1:]:
-        full_message += chunk
+        full_message = full_message + chunk  # type: ignore[assignment]
 
     assert isinstance(full_message, AIMessage)
     assert len(full_message.content) > 0
 
 
-def test_nova_grounding_with_different_reasoning_levels() -> None:
+@pytest.mark.parametrize("effort", ["low", "medium", "high"])
+def test_nova_grounding_with_different_reasoning_levels(effort: str) -> None:
     """Test nova_grounding with different reasoning effort levels."""
-    for effort in ["low", "medium", "high"]:
-        model = ChatBedrockConverse(
-            model="amazon.nova-2-lite-v1:0",
-            max_tokens=10000,
-            additional_model_request_fields={
-                "reasoningConfig": {
-                    "type": "enabled",
-                    "maxReasoningEffort": effort,
-                }
-            },
-        )
-
-        model_with_tools = model.bind_tools([NovaGroundingTool()])
-        response = model_with_tools.invoke("What is the capital of France?")
-
-        assert isinstance(response, AIMessage)
-        assert len(response.content) > 0
-
-        # Verify reasoning content exists
-        content_blocks = response.content_blocks
-        reasoning_blocks = [b for b in content_blocks if b["type"] == "reasoning"]
-        assert len(reasoning_blocks) > 0
-
-
-def test_nova_grounding_multi_turn_conversation() -> None:
-    """Test nova_grounding in a multi-turn conversation."""
     model = ChatBedrockConverse(
-        model="amazon.nova-2-lite-v1:0",
+        model="us.amazon.nova-2-lite-v1:0",
         max_tokens=10000,
+        additional_model_request_fields={
+            "reasoningConfig": {
+                "type": "enabled",
+                "maxReasoningEffort": effort,
+            }
+        },
     )
 
     model_with_tools = model.bind_tools([NovaGroundingTool()])
+    response = model_with_tools.invoke("What is the capital of France?")
+
+    assert isinstance(response, AIMessage)
+    assert len(response.content) > 0
+
+    # Verify reasoning content exists
+    content_blocks = response.content_blocks
+    reasoning_blocks = [b for b in content_blocks if b["type"] == "reasoning"]
+    assert len(reasoning_blocks) > 0
+
+
+def test_nova_grounding_multi_turn_conversation(
+    nova_model: ChatBedrockConverse,
+) -> None:
+    """Test nova_grounding in a multi-turn conversation."""
+    model_with_tools = nova_model.bind_tools([NovaGroundingTool()])
 
     # First turn
     message1 = HumanMessage("What's the population of Tokyo?")
