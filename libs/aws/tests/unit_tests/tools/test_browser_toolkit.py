@@ -1,9 +1,14 @@
 """Unit tests for browser toolkit and tools."""
 
+import pytest
+
+# Skip all tests in this module if optional dependencies are not installed
+pytest.importorskip("bedrock_agentcore", reason="Requires langchain-aws[tools]")
+pytest.importorskip("playwright", reason="Requires langchain-aws[tools]")
+
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from langchain_core.runnables.config import RunnableConfig
 from langchain_core.tools import BaseTool
 
@@ -284,7 +289,7 @@ class TestBrowserToolInputSchemas:
         from langchain_aws.tools.browser_tools import ScreenshotInput
 
         input_data = ScreenshotInput()
-        assert input_data.full_page is False
+        assert input_data.capture_type == "viewport"
 
     def test_scroll_input_defaults(self) -> None:
         """Test ScrollInput default values."""

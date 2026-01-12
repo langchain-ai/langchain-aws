@@ -1,9 +1,13 @@
 """Unit tests for code interpreter toolkit and tools."""
 
+import pytest
+
+# Skip all tests in this module if optional dependencies are not installed
+pytest.importorskip("bedrock_agentcore", reason="Requires langchain-aws[tools]")
+
 from typing import cast
 from unittest.mock import MagicMock, patch
 
-import pytest
 from langchain_core.runnables.config import RunnableConfig
 from langchain_core.tools import BaseTool
 

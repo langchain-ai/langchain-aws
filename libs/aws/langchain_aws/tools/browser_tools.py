@@ -88,10 +88,12 @@ class TypeTextInput(BaseModel):
 class ScreenshotInput(BaseModel):
     """Input for ScreenshotTool."""
 
-    full_page: bool = Field(
-        default=False,
-        description="If True, captures the entire scrollable page. "
-        "If False (default), captures only the visible viewport.",
+    capture_type: Literal["viewport", "full_page"] = Field(
+        default="viewport",
+        description=(
+            "Type of screenshot: 'viewport' (visible area, default) "
+            "or 'full_page' (entire scrollable page)"
+        ),
     )
 
 
@@ -542,7 +544,9 @@ class ThreadAwareExtractHyperlinksTool(ThreadAwareBaseTool):
             for link in soup.find_all("a", href=True):
                 text = link.get_text().strip()
                 href = link["href"]
-                if href.startswith("http") or href.startswith("https"):
+                if isinstance(href, str) and (
+                    href.startswith("http") or href.startswith("https")
+                ):
                     links.append({"text": text, "url": href})
 
             self.release_sync_browser(thread_id)
@@ -589,7 +593,9 @@ class ThreadAwareExtractHyperlinksTool(ThreadAwareBaseTool):
             for link in soup.find_all("a", href=True):
                 text = link.get_text().strip()
                 href = link["href"]
-                if href.startswith("http") or href.startswith("https"):
+                if isinstance(href, str) and (
+                    href.startswith("http") or href.startswith("https")
+                ):
                     links.append({"text": text, "url": href})
 
             await self.release_async_browser(thread_id)
@@ -839,7 +845,7 @@ the entire scrollable page, or False (default) for just the visible viewport."""
 
     def _run(
         self,
-        full_page: bool = False,
+        capture_type: str = "viewport",
         config: Optional[RunnableConfig] = None,
         **_: Any,
     ) -> str:
@@ -847,6 +853,7 @@ the entire scrollable page, or False (default) for just the visible viewport."""
         try:
             thread_id = self.get_thread_id(config)
             page = self.get_sync_page(thread_id)
+            full_page = capture_type == "full_page"
             screenshot_bytes = page.screenshot(full_page=full_page, type="png")
             screenshot_base64 = base64.b64encode(screenshot_bytes).decode("utf-8")
             self.release_sync_browser(thread_id)
@@ -869,7 +876,7 @@ the entire scrollable page, or False (default) for just the visible viewport."""
 
     async def _arun(
         self,
-        full_page: bool = False,
+        capture_type: str = "viewport",
         config: Optional[RunnableConfig] = None,
         **_: Any,
     ) -> str:
@@ -877,6 +884,7 @@ the entire scrollable page, or False (default) for just the visible viewport."""
         try:
             thread_id = self.get_thread_id(config)
             page = await self.get_async_page(thread_id)
+            full_page = capture_type == "full_page"
             screenshot_bytes = await page.screenshot(full_page=full_page, type="png")
             screenshot_base64 = base64.b64encode(screenshot_bytes).decode("utf-8")
             await self.release_async_browser(thread_id)
