@@ -36,6 +36,9 @@ test = [
     "langchain-classic>=1.0.0",
     "langchain-tests>=1.1.2",
     "langchain>=1.0.0rc2",
+    "bedrock-agentcore>=0.1.0; python_version>='3.10'",
+    "playwright>=1.53.0",
+    "beautifulsoup4>=4.13.4",
 ]
 test_integration = []
 lint = ["ruff>=0.13.0"]
