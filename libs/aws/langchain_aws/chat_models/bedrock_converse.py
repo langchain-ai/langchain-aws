@@ -64,9 +64,9 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.chat_models._compat import _convert_from_v1_to_converse
-from langchain_aws.chat_models.system_tools.nova import NovaSystemTool
 from langchain_aws.data._profiles import _PROFILES
 from langchain_aws.function_calling import ToolsOutputParser
+from langchain_aws.tools.nova_tools import NovaSystemTool
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
@@ -309,110 +309,6 @@ class ChatBedrockConverse(BaseChatModel):
         ]
         ```
 
-    Nova 2.0 system tools:
-        Amazon Nova 2.0 models support built-in system tools that execute
-        server-side. These tools enable web search (nova_grounding) and code
-        execution (nova_code_interpreter) capabilities.
-
-        **IAM Permissions Required:**
-        System tools require the `bedrock:InvokeTool` IAM permission in addition
-        to `bedrock:InvokeModel`.
-
-        **Web Grounding (nova_grounding):**
-        Enables the model to search the web for current information.
-
-        ```python
-        from langchain_aws import ChatBedrockConverse
-        from langchain_aws.tools import NovaGroundingTool
-
-        model = ChatBedrockConverse(model="amazon.nova-2-lite-v1:0")
-        model_with_search = model.bind_tools([NovaGroundingTool()])
-        
-        response = model_with_search.invoke("What are the latest developments in quantum computing?")
-        print(response.content)
-        ```
-
-        You can also use the string name directly:
-
-        ```python
-        model_with_search = model.bind_tools(["nova_grounding"])
-        ```
-
-        **Code Interpreter (nova_code_interpreter):**
-        Enables the model to execute Python code in a sandboxed environment.
-
-        ```python
-        from langchain_aws import ChatBedrockConverse
-        from langchain_aws.tools import NovaCodeInterpreterTool
-
-        model = ChatBedrockConverse(model="amazon.nova-2-lite-v1:0")
-        model_with_code = model.bind_tools([NovaCodeInterpreterTool()])
-        
-        response = model_with_code.invoke("Calculate the square root of 475878756857")
-        print(response.content)
-        ```
-
-        **Reasoning with Nova:**
-        Nova models support reasoning configuration similar to Claude's thinking
-        feature, but use `reasoningConfig` instead of `thinking`.
-
-        ```python
-        from langchain_aws import ChatBedrockConverse
-
-        reasoning_config = {
-            "reasoningConfig": {
-                "type": "enabled",
-                "maxReasoningEffort": "low"  # or "medium", "high"
-            }
-        }
-
-        model = ChatBedrockConverse(
-            model="amazon.nova-2-lite-v1:0",
-            max_tokens=10000,
-            additional_model_request_fields=reasoning_config
-        )
-
-        response = model.invoke("Solve this logic puzzle: ...")
-        # Access reasoning content via response.content_blocks
-        ```
-
-        **Combining System Tools and Reasoning:**
-
-        ```python
-        from botocore.config import Config
-        from langchain_aws import ChatBedrockConverse
-        from langchain_aws.tools import NovaGroundingTool
-
-        # Increase timeout for reasoning and tool execution
-        config = Config(
-            connect_timeout=3600,  # 60 minutes
-            read_timeout=3600,     # 60 minutes
-            retries={'max_attempts': 1}
-        )
-
-        model = ChatBedrockConverse(
-            model="amazon.nova-2-lite-v1:0",
-            max_tokens=10000,
-            config=config,
-            additional_model_request_fields={
-                "reasoningConfig": {
-                    "type": "enabled",
-                    "maxReasoningEffort": "medium"  # or "low", "high"
-                }
-            }
-        )
-
-        model_with_tools = model.bind_tools([NovaGroundingTool()])
-        response = model_with_tools.invoke("Research and explain the latest AI breakthroughs")
-        ```
-
-        **Timeout Recommendations:**
-        - **Low reasoning effort**: Default timeout (30 seconds) is usually sufficient
-        - **Medium reasoning effort**: Consider 300-600 seconds (5-10 minutes)
-        - **High reasoning effort**: Consider 1800-3600 seconds (30-60 minutes)
-        - **Code interpreter**: Consider 300-600 seconds for complex computations
-        - **Web grounding**: Default timeout is usually sufficient
-
     Image input:
         ```python
         import base64
@@ -449,7 +345,7 @@ class ChatBedrockConverse(BaseChatModel):
         {'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36}
         ```
 
-    Response metadata
+    Response metadata:
         ```python
         ai_msg = model.invoke(messages)
         ai_msg.response_metadata
@@ -732,7 +628,13 @@ class ChatBedrockConverse(BaseChatModel):
                 provider == "amazon"
                 and any(
                     x in model_id_lower
-                    for x in ["nova-lite", "nova-micro", "nova-pro", "nova-premier"]
+                    for x in [
+                        "nova-lite",
+                        "nova-2-lite",
+                        "nova-micro",
+                        "nova-pro",
+                        "nova-premier",
+                    ]
                 )
             )
             or
@@ -1290,28 +1192,30 @@ class ChatBedrockConverse(BaseChatModel):
 
             # Build toolConfig directly to avoid re-formatting
             tool_config: Dict[str, Any] = {"tools": all_tools}
-            
+
             if tool_choice:
                 tool_choice_formatted = _format_tool_choice(tool_choice)
                 tool_choice_type = list(tool_choice_formatted.keys())[0]
                 if tool_choice_type not in list(self.supports_tool_choice_values or []):
+                    base_model = self._get_base_model()
                     if self.supports_tool_choice_values:
                         supported = (
-                            f"Model {self._get_base_model()} does not currently support "
-                            f"tool_choice of type {tool_choice_type}. The following "
-                            f"tool_choice types are supported: "
+                            f"Model {base_model} does not currently support "
+                            f"tool_choice of type {tool_choice_type}. "
+                            f"The following tool_choice types are supported: "
                             f"{self.supports_tool_choice_values}."
                         )
                     else:
                         supported = (
-                            f"Model {self._get_base_model()} does not currently support "
+                            f"Model {base_model} does not currently support "
                             f"tool_choice."
                         )
 
                     raise ValueError(
                         f"{supported} Please see "
-                        f"https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html "  # noqa: E501
-                        f"for the latest documentation on models that support tool choice."
+                        "https://docs.aws.amazon.com/bedrock/latest/APIReference/"
+                        "API_runtime_ToolChoice.html for the latest documentation "
+                        "on models that support tool choice."
                     )
                 tool_config["toolChoice"] = tool_choice_formatted
             elif "deepseek.v3" in self._get_base_model():
@@ -1326,28 +1230,32 @@ class ChatBedrockConverse(BaseChatModel):
                 formatted_tool_choice = _format_tool_choice(tool_choice)
                 tool_choice_type = list(formatted_tool_choice.keys())[0]
                 if tool_choice_type not in list(self.supports_tool_choice_values or []):
+                    base_model = self._get_base_model()
                     if self.supports_tool_choice_values:
                         supported = (
-                            f"Model {self._get_base_model()} does not currently support "
-                            f"tool_choice of type {tool_choice_type}. The following "
-                            f"tool_choice types are supported: "
+                            f"Model {base_model} does not currently support "
+                            f"tool_choice of type {tool_choice_type}. "
+                            f"The following tool_choice types are supported: "
                             f"{self.supports_tool_choice_values}."
                         )
                     else:
                         supported = (
-                            f"Model {self._get_base_model()} does not currently support "
+                            f"Model {base_model} does not currently support "
                             f"tool_choice."
                         )
 
                     raise ValueError(
                         f"{supported} Please see "
-                        f"https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html "  # noqa: E501
-                        f"for the latest documentation on models that support tool choice."
+                        "https://docs.aws.amazon.com/bedrock/latest/APIReference/"
+                        "API_runtime_ToolChoice.html for the latest documentation "
+                        "on models that support tool choice."
                     )
             elif "deepseek.v3" in self._get_base_model():
                 formatted_tool_choice = _format_tool_choice("any")
-            
-            return self.bind(tools=custom_tools, tool_choice=formatted_tool_choice, **kwargs)
+
+            return self.bind(
+                tools=custom_tools, tool_choice=formatted_tool_choice, **kwargs
+            )
 
     def with_structured_output(
         self,
@@ -1445,7 +1353,7 @@ class ChatBedrockConverse(BaseChatModel):
                 additionalModelRequestFields or self.additional_model_request_fields
             )
             should_unset_max_tokens = False
-            
+
             if final_additional_fields:
                 reasoning_config = final_additional_fields.get("reasoningConfig", {})
                 if (
@@ -1453,9 +1361,11 @@ class ChatBedrockConverse(BaseChatModel):
                     and reasoning_config.get("maxReasoningEffort") == "high"
                 ):
                     should_unset_max_tokens = True
-            
+
             inferenceConfig = {
-                "maxTokens": None if should_unset_max_tokens else (maxTokens or self.max_tokens),
+                "maxTokens": None
+                if should_unset_max_tokens
+                else (maxTokens or self.max_tokens),
                 "temperature": temperature or self.temperature,
                 "topP": self.top_p or topP,
                 "stopSequences": stop or stopSequences or self.stop_sequences,
@@ -1572,17 +1482,17 @@ class ChatBedrockConverse(BaseChatModel):
 
 def _handle_bedrock_error(error: ClientError) -> None:
     """Handle Bedrock API errors and provide enhanced error messages.
-    
+
     Args:
         error: The ClientError from boto3
-        
+
     Raises:
         ValueError: Enhanced error with helpful message for IAM permission issues
         ClientError: Re-raises the original error if not a known case
     """
     error_code = error.response.get("Error", {}).get("Code", "")
     error_message = str(error)
-    
+
     # Check for InvokeTool permission errors
     if error_code == "AccessDeniedException" and "InvokeTool" in error_message:
         raise ValueError(
@@ -1596,7 +1506,7 @@ def _handle_bedrock_error(error: ClientError) -> None:
             "}\n"
             f"Original error: {error}"
         ) from error
-    
+
     # Re-raise other errors unchanged
     raise error
 
@@ -2090,7 +2000,9 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             lc_content.append({"type": "tool_use", **block["tool_use"]})
         elif "server_tool_use" in block:
             # System tools use server_tool_use instead of tool_use
-            block["server_tool_use"]["id"] = block["server_tool_use"].pop("tool_use_id", None)
+            block["server_tool_use"]["id"] = block["server_tool_use"].pop(
+                "tool_use_id", None
+            )
             lc_content.append({"type": "server_tool_use", **block["server_tool_use"]})
         elif "image" in block:
             lc_content.append(
@@ -2147,7 +2059,7 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     parsed_content = []
                 else:
                     parsed_content = _bedrock_to_lc(content)
-                
+
                 lc_content.append(
                     {
                         "type": "tool_result",

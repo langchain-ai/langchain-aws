@@ -1,6 +1,4 @@
-# Nova tools are always available (no optional dependencies)
-# Re-export from chat_models.system_tools for backward compatibility
-from langchain_aws.chat_models.system_tools import (
+from langchain_aws.tools.nova_tools import (
     NovaCodeInterpreterTool,
     NovaGroundingTool,
     NovaSystemTool,
@@ -12,16 +10,15 @@ __all__ = [
     "NovaSystemTool",
 ]
 
-# Browser and code interpreter toolkits require optional dependencies
 try:
-    from .browser_toolkit import create_browser_toolkit
+    from .browser_toolkit import create_browser_toolkit  # noqa: F401
 
     __all__.append("create_browser_toolkit")
 except ImportError:
     pass
 
 try:
-    from .code_interpreter_toolkit import create_code_interpreter_toolkit
+    from .code_interpreter_toolkit import create_code_interpreter_toolkit  # noqa: F401
 
     __all__.append("create_code_interpreter_toolkit")
 except ImportError:
