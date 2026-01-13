@@ -699,6 +699,7 @@ def test_standard_tracing_params() -> None:
         ("meta.llama3-1-405b-instruct-v1:0", "tool_calling"),
         ("us.meta.llama3-3-70b-instruct-v1:0", "tool_calling"),
         ("us.amazon.nova-lite-v1:0", False),
+        ("us.amazon.nova-2-lite-v1:0", False),
         ("us.amazon.nonstreaming-model-v1:0", True),
         ("us.deepseek.r1-v1:0", "tool_calling"),
         ("deepseek.v3-v1:0", False),

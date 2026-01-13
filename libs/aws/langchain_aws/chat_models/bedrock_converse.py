@@ -756,10 +756,10 @@ class ChatBedrockConverse(BaseChatModel):
                     x in model_id_lower
                     for x in [
                         "nova-lite",
-                        "nova-2-lite",
                         "nova-micro",
                         "nova-pro",
                         "nova-premier",
+                        "nova-2-lite",
                     ]
                 )
             )
