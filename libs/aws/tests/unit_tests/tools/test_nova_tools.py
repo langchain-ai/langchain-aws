@@ -1,6 +1,4 @@
-"""Unit tests for Nova system tools."""
-
-from langchain_aws.chat_models.system_tools.nova import (
+from langchain_aws.tools.nova_tools import (
     NovaCodeInterpreterTool,
     NovaGroundingTool,
     NovaSystemTool,

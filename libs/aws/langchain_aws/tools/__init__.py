@@ -1,4 +1,4 @@
-from langchain_aws.chat_models.system_tools import (
+from langchain_aws.tools.nova_tools import (
     NovaCodeInterpreterTool,
     NovaGroundingTool,
     NovaSystemTool,

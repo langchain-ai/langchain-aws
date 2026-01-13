@@ -2524,7 +2524,7 @@ def test_get_num_tokens_from_messages_api_error_fallback() -> None:
 
 def test_bind_tools_with_nova_system_tool_instances() -> None:
     """Test bind_tools with NovaSystemTool instances."""
-    from langchain_aws.chat_models import NovaCodeInterpreterTool, NovaGroundingTool
+    from langchain_aws.tools import NovaCodeInterpreterTool, NovaGroundingTool
 
     chat_model = ChatBedrockConverse(
         model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
@@ -2586,7 +2586,7 @@ def test_bind_tools_with_system_tool_name_strings() -> None:
 
 def test_bind_tools_with_mixed_system_and_custom_tools() -> None:
     """Test bind_tools with mixed system and custom tools."""
-    from langchain_aws.chat_models import NovaGroundingTool
+    from langchain_aws.tools import NovaGroundingTool
 
     chat_model = ChatBedrockConverse(
         model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
@@ -2607,7 +2607,7 @@ def test_bind_tools_with_mixed_system_and_custom_tools() -> None:
 
 def test_bind_tools_system_tools_with_tool_choice() -> None:
     """Test that tool_choice works with system tools."""
-    from langchain_aws.chat_models import NovaGroundingTool
+    from langchain_aws.tools import NovaGroundingTool
 
     chat_model = ChatBedrockConverse(
         model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
@@ -2632,7 +2632,7 @@ def test_bind_tools_system_tools_with_tool_choice() -> None:
 
 def test_bind_tools_toolconfig_structure_with_system_tools() -> None:
     """Test that toolConfig structure is correct with system tools."""
-    from langchain_aws.chat_models import NovaCodeInterpreterTool, NovaGroundingTool
+    from langchain_aws.tools import NovaCodeInterpreterTool, NovaGroundingTool
 
     chat_model = ChatBedrockConverse(
         model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
@@ -2774,7 +2774,7 @@ def test_iam_permission_error_detection() -> None:
         },
         "ResponseMetadata": {"RequestId": "test-request-id"},
     }
-    error = ClientError(error_response, "Converse")
+    error = ClientError(error_response, "Converse")  # type: ignore[arg-type]
 
     # Should raise ValueError with enhanced message
     with pytest.raises(ValueError) as exc_info:
@@ -2801,7 +2801,7 @@ def test_iam_permission_error_other_access_denied() -> None:
         },
         "ResponseMetadata": {"RequestId": "test-request-id"},
     }
-    error = ClientError(error_response, "Converse")
+    error = ClientError(error_response, "Converse")  # type: ignore[arg-type]
 
     # Should re-raise the original error
     with pytest.raises(ClientError) as exc_info:
@@ -2824,7 +2824,7 @@ def test_iam_permission_error_non_access_denied() -> None:
         },
         "ResponseMetadata": {"RequestId": "test-request-id"},
     }
-    error = ClientError(error_response, "Converse")
+    error = ClientError(error_response, "Converse")  # type: ignore[arg-type]
 
     # Should re-raise the original error
     with pytest.raises(ClientError) as exc_info:
@@ -2883,7 +2883,10 @@ def test_stream_with_iam_permission_error() -> None:
 
     # Create a mock that raises the exception
     mock_client = mock.Mock()
-    mock_client.converse_stream.side_effect = ClientError(error_response, "Converse")
+    mock_client.converse_stream.side_effect = ClientError(
+        error_response,  # type: ignore[arg-type]
+        "Converse",
+    )
     llm.client = mock_client
 
     # Should raise ValueError with enhanced message
@@ -2924,7 +2927,8 @@ def test_reasoning_config_validation_only_applies_to_nova_2() -> None:
     # Should raise an error for Nova 2 models with invalid config
     with pytest.raises(
         ValueError,
-        match="'maxReasoningEffort' must be specified",
+        match="When reasoningConfig type is 'enabled', "
+        "'maxReasoningEffort' must be specified",
     ):
         ChatBedrockConverse(
             model="amazon.nova-2-lite-v1:0",
