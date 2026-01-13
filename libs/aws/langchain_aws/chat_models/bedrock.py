@@ -1491,6 +1491,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 "additional_model_response_field_paths",
                 "performance_config",
                 "request_metadata",
+                "service_tier",
             )
         }
         if self.max_tokens:
@@ -1499,6 +1500,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             kwargs["temperature"] = self.temperature
         if self.stop_sequences:
             kwargs["stop_sequences"] = self.stop_sequences
+        if self.service_tier:
+            kwargs["service_tier"] = self.service_tier
 
         return ChatBedrockConverse(
             client=self.client,

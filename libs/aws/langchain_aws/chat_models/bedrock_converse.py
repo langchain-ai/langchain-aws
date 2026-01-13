@@ -121,248 +121,355 @@ _DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
 class ChatBedrockConverse(BaseChatModel):
     """Bedrock chat model integration built on the Bedrock converse API.
 
-    This implementation will eventually replace the existing ChatBedrock implementation
-    once the Bedrock converse API has feature parity with older Bedrock API.
-    Specifically the converse API does not yet support custom Bedrock models.
+        This implementation will eventually replace the existing ChatBedrock implementation
+        once the Bedrock converse API has feature parity with older Bedrock API.
+        Specifically the converse API does not yet support custom Bedrock models.
 
-    Setup:
-        To use Amazon Bedrock make sure you've gone through all the steps described
-        here: https://docs.aws.amazon.com/bedrock/latest/userguide/setting-up.html
+        Setup:
+            To use Amazon Bedrock make sure you've gone through all the steps described
+            here: https://docs.aws.amazon.com/bedrock/latest/userguide/setting-up.html
 
-        Once that's completed, install the LangChain integration:
+            Once that's completed, install the LangChain integration:
 
-        ```bash
-        pip install -U langchain-aws
-        ```
+            ```bash
+            pip install -U langchain-aws
+            ```
 
-    Key init args — completion params:
-        model: str
-            Name of BedrockConverse model to use.
-        temperature: float
-            Sampling temperature.
-        max_tokens: Optional[int]
-            Max number of tokens to generate.
+        Key init args — completion params:
+            model: str
+                Name of BedrockConverse model to use.
+            temperature: float
+                Sampling temperature.
+            max_tokens: Optional[int]
+                Max number of tokens to generate.
 
-    Key init args — client params:
-        region_name: Optional[str]
-            AWS region to use, e.g. 'us-west-2'.
-        base_url: Optional[str]
-            Bedrock endpoint to use. Needed if you don't want to default to us-east-
-            1 endpoint.
-        credentials_profile_name: Optional[str]
-            The name of the profile in the ~/.aws/credentials or ~/.aws/config files.
+        Key init args — client params:
+            region_name: Optional[str]
+                AWS region to use, e.g. 'us-west-2'.
+            base_url: Optional[str]
+                Bedrock endpoint to use. Needed if you don't want to default to us-east-
+                1 endpoint.
+            credentials_profile_name: Optional[str]
+                The name of the profile in the ~/.aws/credentials or ~/.aws/config files.
 
-    See full list of supported init args and their descriptions in the params section.
+        See full list of supported init args and their descriptions in the params section.
 
-    Instantiate:
-        ```python
-        from langchain_aws import ChatBedrockConverse
+        Instantiate:
+            ```python
+            from langchain_aws import ChatBedrockConverse
 
-        model = ChatBedrockConverse(
-            model="anthropic.claude-3-sonnet-20240229-v1:0",
-            temperature=0,
-            max_tokens=None,
-            # other params...
-        )
-        ```
+            model = ChatBedrockConverse(
+                model="anthropic.claude-3-sonnet-20240229-v1:0",
+                temperature=0,
+                max_tokens=None,
+                # other params...
+            )
+            ```
 
-    Invoke:
-        ```python
-        messages = [
-            ("system", "You are a helpful translator. Translate the user sentence to French."),
-            ("human", "I love programming."),
-        ]
-        model.invoke(messages)
-        ```
+        Invoke:
+            ```python
+            messages = [
+                ("system", "You are a helpful translator. Translate the user sentence to French."),
+                ("human", "I love programming."),
+            ]
+            model.invoke(messages)
+            ```
 
-        ```python
-        AIMessage(content=[{'type': 'text', 'text': "J'aime la programmation."}], response_metadata={'ResponseMetadata': {'RequestId': '9ef1e313-a4c1-4f79-b631-171f658d3c0e', 'HTTPStatusCode': 200, 'HTTPHeaders': {'date': 'Sat, 15 Jun 2024 01:19:24 GMT', 'content-type': 'application/json', 'content-length': '205', 'connection': 'keep-alive', 'x-amzn-requestid': '9ef1e313-a4c1-4f79-b631-171f658d3c0e'}, 'RetryAttempts': 0}, 'stopReason': 'end_turn', 'metrics': {'latencyMs': 609}}, id='run-754e152b-2b41-4784-9538-d40d71a5c3bc-0', usage_metadata={'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36})
-        ```
+            ```python
+            AIMessage(content=[{'type': 'text', 'text': "J'aime la programmation."}], response_metadata={'ResponseMetadata': {'RequestId': '9ef1e313-a4c1-4f79-b631-171f658d3c0e', 'HTTPStatusCode': 200, 'HTTPHeaders': {'date': 'Sat, 15 Jun 2024 01:19:24 GMT', 'content-type': 'application/json', 'content-length': '205', 'connection': 'keep-alive', 'x-amzn-requestid': '9ef1e313-a4c1-4f79-b631-171f658d3c0e'}, 'RetryAttempts': 0}, 'stopReason': 'end_turn', 'metrics': {'latencyMs': 609}}, id='run-754e152b-2b41-4784-9538-d40d71a5c3bc-0', usage_metadata={'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36})
+            ```
 
-    Stream:
-        ```python
-        for chunk in model.stream(messages):
-            print(chunk)
-        ```
+        Stream:
+            ```python
+            for chunk in model.stream(messages):
+                print(chunk)
+            ```
 
-        ```python
-        AIMessageChunk(content=[], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-        AIMessageChunk(content=[{'type': 'text', 'text': 'J', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-        AIMessageChunk(content=[{'text': "'", 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-        AIMessageChunk(content=[{'text': 'a', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-        AIMessageChunk(content=[{'text': 'ime', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-        AIMessageChunk(content=[{'text': ' la', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-        AIMessageChunk(content=[{'text': ' programm', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-        AIMessageChunk(content=[{'text': 'ation', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-        AIMessageChunk(content=[{'text': '.', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-        AIMessageChunk(content=[{'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-        AIMessageChunk(content=[], response_metadata={'stopReason': 'end_turn'}, id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
-        AIMessageChunk(content=[], response_metadata={'metrics': {'latencyMs': 581}}, id='run-da3c2606-4792-440a-ac66-72e0d1f6d117', usage_metadata={'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36})
-        ```
+            ```python
+            AIMessageChunk(content=[], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'type': 'text', 'text': 'J', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'text': "'", 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'text': 'a', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'text': 'ime', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'text': ' la', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'text': ' programm', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'text': 'ation', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'text': '.', 'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[{'index': 0}], id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[], response_metadata={'stopReason': 'end_turn'}, id='run-da3c2606-4792-440a-ac66-72e0d1f6d117')
+            AIMessageChunk(content=[], response_metadata={'metrics': {'latencyMs': 581}}, id='run-da3c2606-4792-440a-ac66-72e0d1f6d117', usage_metadata={'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36})
+            ```
 
-        ```python
-        stream = model.stream(messages)
-        full = next(stream)
-        for chunk in stream:
-            full += chunk
-        full
-        ```
+            ```python
+            stream = model.stream(messages)
+            full = next(stream)
+            for chunk in stream:
+                full += chunk
+            full
+            ```
 
-        ```python
-        AIMessageChunk(content=[{'type': 'text', 'text': "J'aime la programmation.", 'index': 0}], response_metadata={'stopReason': 'end_turn', 'metrics': {'latencyMs': 554}}, id='run-56a5a5e0-de86-412b-9835-624652dc3539', usage_metadata={'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36})
-        ```
+            ```python
+            AIMessageChunk(content=[{'type': 'text', 'text': "J'aime la programmation.", 'index': 0}], response_metadata={'stopReason': 'end_turn', 'metrics': {'latencyMs': 554}}, id='run-56a5a5e0-de86-412b-9835-624652dc3539', usage_metadata={'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36})
+            ```
 
-    Tool calling:
-        ```python
-        from pydantic import BaseModel, Field
+        Tool calling:
+            ```python
+            from pydantic import BaseModel, Field
 
-        class GetWeather(BaseModel):
-            '''Get the current weather in a given location'''
+            class GetWeather(BaseModel):
+                '''Get the current weather in a given location'''
 
-            location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+                location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
 
-        class GetPopulation(BaseModel):
-            '''Get the current population in a given location'''
+            class GetPopulation(BaseModel):
+                '''Get the current population in a given location'''
 
-            location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+                location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
 
-        model_with_tools = model.bind_tools([GetWeather, GetPopulation])
-        ai_msg = model_with_tools.invoke("Which city is hotter today and which is bigger: LA or NY?")
-        ai_msg.tool_calls
-        ```
+            model_with_tools = model.bind_tools([GetWeather, GetPopulation])
+            ai_msg = model_with_tools.invoke("Which city is hotter today and which is bigger: LA or NY?")
+            ai_msg.tool_calls
+            ```
 
-        ```python
-        [{'name': 'GetWeather',
-          'args': {'location': 'Los Angeles, CA'},
-          'id': 'tooluse_Mspi2igUTQygp-xbX6XGVw'},
-         {'name': 'GetWeather',
-          'args': {'location': 'New York, NY'},
-          'id': 'tooluse_tOPHiDhvR2m0xF5_5tyqWg'},
-         {'name': 'GetPopulation',
-          'args': {'location': 'Los Angeles, CA'},
-          'id': 'tooluse__gcY_klbSC-GqB-bF_pxNg'},
-         {'name': 'GetPopulation',
-          'args': {'location': 'New York, NY'},
-          'id': 'tooluse_-1HSoGX0TQCSaIg7cdFy8Q'}]
-        ```
+            ```python
+            [{'name': 'GetWeather',
+              'args': {'location': 'Los Angeles, CA'},
+              'id': 'tooluse_Mspi2igUTQygp-xbX6XGVw'},
+             {'name': 'GetWeather',
+              'args': {'location': 'New York, NY'},
+              'id': 'tooluse_tOPHiDhvR2m0xF5_5tyqWg'},
+             {'name': 'GetPopulation',
+              'args': {'location': 'Los Angeles, CA'},
+              'id': 'tooluse__gcY_klbSC-GqB-bF_pxNg'},
+             {'name': 'GetPopulation',
+              'args': {'location': 'New York, NY'},
+              'id': 'tooluse_-1HSoGX0TQCSaIg7cdFy8Q'}]
+            ```
 
-        See `ChatBedrockConverse.bind_tools()` method for more.
+            See `ChatBedrockConverse.bind_tools()` method for more.
 
-    Structured output:
-        ```python
-        from typing import Optional
+        Structured output:
+            ```python
+            from typing import Optional
 
-        from pydantic import BaseModel, Field
+            from pydantic import BaseModel, Field
 
-        class Joke(BaseModel):
-            '''Joke to tell user.'''
+            class Joke(BaseModel):
+                '''Joke to tell user.'''
 
-            setup: str = Field(description="The setup of the joke")
-            punchline: str = Field(description="The punchline to the joke")
-            rating: Optional[int] = Field(description="How funny the joke is, from 1 to 10")
+                setup: str = Field(description="The setup of the joke")
+                punchline: str = Field(description="The punchline to the joke")
+                rating: Optional[int] = Field(description="How funny the joke is, from 1 to 10")
 
-        structured_model = model.with_structured_output(Joke)
-        structured_model.invoke("Tell me a joke about cats")
-        ```
+            structured_model = model.with_structured_output(Joke)
+            structured_model.invoke("Tell me a joke about cats")
+            ```
 
-        ```python
-        Joke(setup='What do you call a cat that gets all dressed up?', punchline='A purrfessional!', rating=7)
-        ```
+            ```python
+            Joke(setup='What do you call a cat that gets all dressed up?', punchline='A purrfessional!', rating=7)
+            ```
 
-        See `ChatBedrockConverse.with_structured_output()` for more.
+            See `ChatBedrockConverse.with_structured_output()` for more.
 
-    Extended thinking:
-        Some models, such as Claude 3.7 Sonnet, support an extended thinking
-        feature that outputs the step-by-step reasoning process that led to an
-        answer.
+        Extended thinking:
+            Some models, such as Claude 3.7 Sonnet, support an extended thinking
+            feature that outputs the step-by-step reasoning process that led to an
+            answer.
 
-        To use it, specify the `thinking` parameter when initializing
-        `ChatBedrockConverse` as shown below.
+            To use it, specify the `thinking` parameter when initializing
+            `ChatBedrockConverse` as shown below.
 
-        You will need to specify a token budget to use this feature. See usage example:
+            You will need to specify a token budget to use this feature. See usage example:
 
-        ```python
-        from langchain_aws import ChatBedrockConverse
+            ```python
+            from langchain_aws import ChatBedrockConverse
 
-        thinking_params= {
-            "thinking": {
-                "type": "enabled",
-                "budget_tokens": 2000
+            thinking_params= {
+                "thinking": {
+                    "type": "enabled",
+                    "budget_tokens": 2000
+                }
             }
-        }
 
-        model = ChatBedrockConverse(
-            model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-            max_tokens=5000,
-            region_name="us-west-2",
-            additional_model_request_fields=thinking_params,
-        )
+            model = ChatBedrockConverse(
+                model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                max_tokens=5000,
+                region_name="us-west-2",
+                additional_model_request_fields=thinking_params,
+            )
 
-        response = model.invoke("What is the cube root of 50.653?")
-        print(response.content)
-        ```
+            response = model.invoke("What is the cube root of 50.653?")
+            print(response.content)
+            ```
 
-        ```python
-        [
-            {'type': 'reasoning_content', 'reasoning_content': {'type': 'text', 'text': 'I need to calculate the cube root of... ', 'signature': '...'}},
-            {'type': 'text', 'text': 'The cube root of 50.653 is...'}
-        ]
-        ```
+            ```python
+            [
+                {'type': 'reasoning_content', 'reasoning_content': {'type': 'text', 'text': 'I need to calculate the cube root of... ', 'signature': '...'}},
+                {'type': 'text', 'text': 'The cube root of 50.653 is...'}
+            ]
+            ```
 
-    Image input:
-        ```python
-        import base64
-        import httpx
-        from langchain_core.messages import HumanMessage
+    <<<<<<< HEAD
+    =======
+        Nova 2.0 system tools:
+            Amazon Nova 2.0 models support built-in system tools that execute
+            server-side. These tools enable web search (nova_grounding) and code
+            execution (nova_code_interpreter) capabilities.
 
-        image_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
-        image_data = base64.b64encode(httpx.get(image_url).content).decode("utf-8")
-        message = HumanMessage(
-            content=[
-                {"type": "text", "text": "describe the weather in this image"},
-                {
-                    "type": "image",
-                    "source": {"type": "base64", "media_type": "image/jpeg", "data": image_data},
-                },
-            ],
-        )
-        ai_msg = model.invoke([message])
-        ai_msg.content
-        ```
+            **IAM Permissions Required:**
+            System tools require the `bedrock:InvokeTool` IAM permission in addition
+            to `bedrock:InvokeModel`.
 
-        ```python
-        [{'type': 'text',
-          'text': 'The image depicts a sunny day with a partly cloudy sky. The sky is a brilliant blue color with scattered white clouds drifting across. The lighting and cloud patterns suggest pleasant, mild weather conditions. The scene shows an open grassy field or meadow, indicating warm temperatures conducive for vegetation growth. Overall, the weather portrayed in this scenic outdoor image appears to be sunny with some clouds, likely representing a nice, comfortable day.'}]
-        ```
+            **Web Grounding (nova_grounding):**
+            Enables the model to search the web for current information.
 
-    Token usage:
-        ```python
-        ai_msg = model.invoke(messages)
-        ai_msg.usage_metadata
-        ```
+            ```python
+            from langchain_aws import ChatBedrockConverse
+            from langchain_aws.tools import NovaGroundingTool
 
-        ```python
-        {'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36}
-        ```
+            model = ChatBedrockConverse(model="amazon.nova-2-lite-v1:0")
+            model_with_search = model.bind_tools([NovaGroundingTool()])
 
-    Response metadata:
-        ```python
-        ai_msg = model.invoke(messages)
-        ai_msg.response_metadata
-        ```
+            response = model_with_search.invoke("What are the latest developments in quantum computing?")
+            print(response.content)
+            ```
 
-        ```python
-        {'ResponseMetadata': {'RequestId': '776a2a26-5946-45ae-859e-82dc5f12017c',
-          'HTTPStatusCode': 200,
-          'HTTPHeaders': {'date': 'Mon, 17 Jun 2024 01:37:05 GMT',
-           'content-type': 'application/json',
-           'content-length': '206',
-           'connection': 'keep-alive',
-           'x-amzn-requestid': '776a2a26-5946-45ae-859e-82dc5f12017c'},
-          'RetryAttempts': 0},
-         'stopReason': 'end_turn',
-         'metrics': {'latencyMs': 1290}}
-        ```
+            You can also use the string name directly:
+
+            ```python
+            model_with_search = model.bind_tools(["nova_grounding"])
+            ```
+
+            **Code Interpreter (nova_code_interpreter):**
+            Enables the model to execute Python code in a sandboxed environment.
+
+            ```python
+            from langchain_aws import ChatBedrockConverse
+            from langchain_aws.tools import NovaCodeInterpreterTool
+
+            model = ChatBedrockConverse(model="amazon.nova-2-lite-v1:0")
+            model_with_code = model.bind_tools([NovaCodeInterpreterTool()])
+
+            response = model_with_code.invoke("Calculate the square root of 475878756857")
+            print(response.content)
+            ```
+
+            **Reasoning with Nova:**
+            Nova models support reasoning configuration similar to Claude's thinking
+            feature, but use `reasoningConfig` instead of `thinking`.
+
+            ```python
+            from langchain_aws import ChatBedrockConverse
+
+            reasoning_config = {
+                "reasoningConfig": {
+                    "type": "enabled",
+                    "maxReasoningEffort": "low"  # or "medium", "high"
+                }
+            }
+
+            model = ChatBedrockConverse(
+                model="amazon.nova-2-lite-v1:0",
+                max_tokens=10000,
+                additional_model_request_fields=reasoning_config
+            )
+
+            response = model.invoke("Solve this logic puzzle: ...")
+            # Access reasoning content via response.content_blocks
+            ```
+
+            **Combining System Tools and Reasoning:**
+
+            ```python
+            from botocore.config import Config
+            from langchain_aws import ChatBedrockConverse
+            from langchain_aws.tools import NovaGroundingTool
+
+            # Increase timeout for reasoning and tool execution
+            config = Config(
+                connect_timeout=3600,  # 60 minutes
+                read_timeout=3600,     # 60 minutes
+                retries={'max_attempts': 1}
+            )
+
+            model = ChatBedrockConverse(
+                model="amazon.nova-2-lite-v1:0",
+                max_tokens=10000,
+                config=config,
+                additional_model_request_fields={
+                    "reasoningConfig": {
+                        "type": "enabled",
+                        "maxReasoningEffort": "medium"  # or "low", "high"
+                    }
+                }
+            )
+
+            model_with_tools = model.bind_tools([NovaGroundingTool()])
+            response = model_with_tools.invoke("Research and explain the latest AI breakthroughs")
+            ```
+
+            **Timeout Recommendations:**
+            - **Low reasoning effort**: Default timeout (30 seconds) is usually sufficient
+            - **Medium reasoning effort**: Consider 300-600 seconds (5-10 minutes)
+            - **High reasoning effort**: Consider 1800-3600 seconds (30-60 minutes)
+            - **Code interpreter**: Consider 300-600 seconds for complex computations
+            - **Web grounding**: Default timeout is usually sufficient
+
+    >>>>>>> 7b3e7de2efaea787b49f2fba3920f29c5e5dc820
+        Image input:
+            ```python
+            import base64
+            import httpx
+            from langchain_core.messages import HumanMessage
+
+            image_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+            image_data = base64.b64encode(httpx.get(image_url).content).decode("utf-8")
+            message = HumanMessage(
+                content=[
+                    {"type": "text", "text": "describe the weather in this image"},
+                    {
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": "image/jpeg", "data": image_data},
+                    },
+                ],
+            )
+            ai_msg = model.invoke([message])
+            ai_msg.content
+            ```
+
+            ```python
+            [{'type': 'text',
+              'text': 'The image depicts a sunny day with a partly cloudy sky. The sky is a brilliant blue color with scattered white clouds drifting across. The lighting and cloud patterns suggest pleasant, mild weather conditions. The scene shows an open grassy field or meadow, indicating warm temperatures conducive for vegetation growth. Overall, the weather portrayed in this scenic outdoor image appears to be sunny with some clouds, likely representing a nice, comfortable day.'}]
+            ```
+
+        Token usage:
+            ```python
+            ai_msg = model.invoke(messages)
+            ai_msg.usage_metadata
+            ```
+
+            ```python
+            {'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36}
+            ```
+
+        Response metadata:
+            ```python
+            ai_msg = model.invoke(messages)
+            ai_msg.response_metadata
+            ```
+
+            ```python
+            {'ResponseMetadata': {'RequestId': '776a2a26-5946-45ae-859e-82dc5f12017c',
+              'HTTPStatusCode': 200,
+              'HTTPHeaders': {'date': 'Mon, 17 Jun 2024 01:37:05 GMT',
+               'content-type': 'application/json',
+               'content-length': '206',
+               'connection': 'keep-alive',
+               'x-amzn-requestid': '776a2a26-5946-45ae-859e-82dc5f12017c'},
+              'RetryAttempts': 0},
+             'stopReason': 'end_turn',
+             'metrics': {'latencyMs': 1290}}
+            ```
 
     """  # noqa: E501
 
@@ -501,6 +608,9 @@ class ChatBedrockConverse(BaseChatModel):
     endpoint_url: Optional[str] = Field(default=None, alias="base_url")
     """Needed if you don't want to default to us-east-1 endpoint"""
 
+    default_headers: Mapping[str, str] | None = None
+    """Headers to pass to the Anthropic clients, will be used for every API call."""
+
     config: Any = None
     """An optional botocore.config.Config instance to pass to the client."""
 
@@ -542,6 +652,22 @@ class ChatBedrockConverse(BaseChatModel):
         Example:
             performance_config={'latency': 'optimized'}
         If not provided, defaults to standard latency.
+        """,
+    )
+
+    service_tier: Optional[Literal["priority", "default", "flex", "reserved"]] = Field(
+        default=None,
+        description="""Service tier for model invocation.
+
+        Specifies the processing tier type used for serving the request.
+        Supported values are 'priority', 'default', 'flex', and 'reserved'.
+
+        - 'priority': Prioritized processing for lower latency
+        - 'default': Standard processing tier
+        - 'flex': Flexible processing tier with lower cost
+        - 'reserved': Reserved capacity for consistent performance
+
+        If not provided, AWS uses the default tier.
         """,
     )
 
@@ -786,6 +912,22 @@ class ChatBedrockConverse(BaseChatModel):
                 endpoint_url=self.endpoint_url,
                 config=self.config,
                 service_name="bedrock",
+            )
+
+        if self.default_headers is not None:
+
+            def _add_custom_headers(request: Any, **kwargs: Any) -> None:
+                if self.default_headers is not None:
+                    for key, value in self.default_headers.items():
+                        request.headers[key] = value
+
+            self.client.meta.events.register(
+                "before-send.bedrock-runtime.Converse",
+                _add_custom_headers,
+            )
+            self.client.meta.events.register(
+                "before-send.bedrock-runtime.ConverseStream",
+                _add_custom_headers,
             )
 
         # For AIPs, pull base model ID via GetInferenceProfile API call
@@ -1344,6 +1486,9 @@ class ChatBedrockConverse(BaseChatModel):
         additionalModelResponseFieldPaths: Optional[List[str]] = None,
         guardrailConfig: Optional[dict] = None,
         performanceConfig: Optional[Mapping[str, Any]] = None,
+        serviceTier: Optional[
+            Literal["priority", "default", "flex", "reserved"]
+        ] = None,
         requestMetadata: Optional[dict] = None,
         stream: Optional[bool] = True,
     ) -> Dict[str, Any]:
@@ -1374,20 +1519,46 @@ class ChatBedrockConverse(BaseChatModel):
             toolChoice = _format_tool_choice(toolChoice) if toolChoice else None
             toolConfig = {"tools": _format_tools(tools), "toolChoice": toolChoice}
 
+        tier = serviceTier or self.service_tier
+
+        # Merge additional_model_request_fields: invoke-level values override
+        # constructor defaults.
+        # Both sides must be normalized to snake_case before merging to ensure
+        # that keys like "reasoningEffort" and "reasoning_effort" are treated
+        # as the same key. The final result stays in snake_case for the API.
+        constructor_fields = self.additional_model_request_fields
+        invoke_fields = additionalModelRequestFields
+        excluded = {"reasoningConfig", "inputSchema", "properties", "thinking"}
+
+        if constructor_fields or invoke_fields:
+            merged_additional_fields = {
+                **(
+                    _camel_to_snake_keys(constructor_fields, excluded_keys=excluded)
+                    if constructor_fields
+                    else {}
+                ),
+                **(
+                    _camel_to_snake_keys(invoke_fields, excluded_keys=excluded)
+                    if invoke_fields
+                    else {}
+                ),
+            }
+        else:
+            merged_additional_fields = {}
+
         return _drop_none(
             {
                 "modelId": modelId or self.model_id,
                 "inferenceConfig": inferenceConfig,
                 "toolConfig": toolConfig,
-                "additionalModelRequestFields": (
-                    additionalModelRequestFields or self.additional_model_request_fields
-                ),
+                "additionalModelRequestFields": merged_additional_fields or None,
                 "additionalModelResponseFieldPaths": (
                     additionalModelResponseFieldPaths
                     or self.additional_model_response_field_paths
                 ),
                 "guardrailConfig": guardrailConfig or self.guardrail_config,
                 "performanceConfig": performanceConfig or self.performance_config,
+                "serviceTier": {"type": tier} if tier else None,
                 "requestMetadata": requestMetadata or self.request_metadata,
             }
         )

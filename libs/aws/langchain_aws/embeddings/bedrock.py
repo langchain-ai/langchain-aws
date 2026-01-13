@@ -28,20 +28,16 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
     Make sure the credentials / roles used have the required policies to
     access the Bedrock service.
-    """
 
-    """
     Example:
         ```python
-        from langchain_community.bedrock_embeddings import BedrockEmbeddings
-        region_name ="us-east-1"
-        credentials_profile_name = "default"
-        model_id = "amazon.titan-embed-text-v1"
+        from langchain_aws import BedrockEmbeddings
 
-        be = BedrockEmbeddings(
-            credentials_profile_name=credentials_profile_name,
-            region_name=region_name,
-            model_id=model_id
+        embeddings = BedrockEmbeddings(
+            credentials_profile_name="default",
+            region_name="us-east-1",
+            model_id="amazon.nova-2-multimodal-embeddings-v1:0",
+            dimensions=256,
         )
         ```
     """
@@ -131,6 +127,13 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     normalize: bool = False
     """Whether the embeddings should be normalized to unit vectors"""
 
+    dimensions: Optional[int] = None
+    """The number of dimensions for the output embeddings.
+
+    Only supported by certain models (Titan v2, Cohere, Nova).
+    If not specified, uses the model's default.
+    """
+
     config: Any = None
     """An optional `botocore.config.Config` instance to pass to the client."""
 
@@ -153,6 +156,27 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     def _is_cohere_v4(self) -> bool:
         """Check if the model is Cohere Embed v4."""
         return "cohere.embed-v4" in self.model_id
+
+    @property
+    def _is_nova_embed(self) -> bool:
+        """Check if the model is Amazon Nova Embed."""
+        return (
+            self._inferred_provider == "amazon"
+            and "nova" in self.model_id
+            and "embed" in self.model_id
+        )
+
+    def _get_dimensions_params(self) -> Dict[str, Any]:
+        """Get dimensions parameter with provider-specific key name."""
+        if self.dimensions is None:
+            return {}
+
+        if self._is_cohere_v4:
+            return {"output_dimension": self.dimensions}
+        elif self._inferred_provider == "cohere":
+            return {}
+        else:
+            return {"dimensions": self.dimensions}
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
@@ -186,6 +210,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                 input_body={
                     "input_type": input_type,
                     "texts": [text],
+                    **self._get_dimensions_params(),
                 }
             )
             embeddings = response_body.get("embeddings")
@@ -197,10 +222,30 @@ class BedrockEmbeddings(BaseModel, Embeddings):
             else:
                 processed_embeddings = embeddings
             return processed_embeddings[0]
+        elif self._is_nova_embed:
+            single_embedding_params: Dict[str, Any] = {
+                "embeddingPurpose": "GENERIC_INDEX",
+                "text": {
+                    "truncationMode": "END",
+                    "value": text,
+                },
+            }
+            if self.dimensions:
+                single_embedding_params["embeddingDimension"] = self.dimensions
+            response_body = self._invoke_model(
+                input_body={
+                    "taskType": "SINGLE_EMBEDDING",
+                    "singleEmbeddingParams": single_embedding_params,
+                }
+            )
+            embeddings = response_body.get("embeddings")
+            if not embeddings or not embeddings[0].get("embedding"):
+                raise ValueError("No embedding returned from model")
+            return embeddings[0]["embedding"]
         else:
             # includes common provider == "amazon"
             response_body = self._invoke_model(
-                input_body={"inputText": text},
+                input_body={"inputText": text, **self._get_dimensions_params()},
             )
             embedding = response_body.get("embedding")
             if embedding is None:
@@ -221,6 +266,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                 input_body={
                     "input_type": "search_document",
                     "texts": text_batch,
+                    **self._get_dimensions_params(),
                 }
             ).get("embeddings")
             # Embed v3 and v4 schemas
