@@ -645,7 +645,13 @@ class ChatBedrockConverse(BaseChatModel):
                 provider == "amazon"
                 and any(
                     x in model_id_lower
-                    for x in ["nova-lite", "nova-micro", "nova-pro", "nova-premier"]
+                    for x in [
+                        "nova-lite",
+                        "nova-micro",
+                        "nova-pro",
+                        "nova-premier",
+                        "nova-2-lite",
+                    ]
                 )
             )
             or
@@ -1252,14 +1258,38 @@ class ChatBedrockConverse(BaseChatModel):
             toolConfig = {"tools": _format_tools(tools), "toolChoice": toolChoice}
 
         tier = serviceTier or self.service_tier
+
+        # Merge additional_model_request_fields: invoke-level values override
+        # constructor defaults.
+        # Both sides must be normalized to snake_case before merging to ensure
+        # that keys like "reasoningEffort" and "reasoning_effort" are treated
+        # as the same key. The final result stays in snake_case for the API.
+        constructor_fields = self.additional_model_request_fields
+        invoke_fields = additionalModelRequestFields
+        excluded = {"inputSchema", "properties", "thinking"}
+
+        if constructor_fields or invoke_fields:
+            merged_additional_fields = {
+                **(
+                    _camel_to_snake_keys(constructor_fields, excluded_keys=excluded)
+                    if constructor_fields
+                    else {}
+                ),
+                **(
+                    _camel_to_snake_keys(invoke_fields, excluded_keys=excluded)
+                    if invoke_fields
+                    else {}
+                ),
+            }
+        else:
+            merged_additional_fields = {}
+
         return _drop_none(
             {
                 "modelId": modelId or self.model_id,
                 "inferenceConfig": inferenceConfig,
                 "toolConfig": toolConfig,
-                "additionalModelRequestFields": (
-                    additionalModelRequestFields or self.additional_model_request_fields
-                ),
+                "additionalModelRequestFields": merged_additional_fields or None,
                 "additionalModelResponseFieldPaths": (
                     additionalModelResponseFieldPaths
                     or self.additional_model_response_field_paths

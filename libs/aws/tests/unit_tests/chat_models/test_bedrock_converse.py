@@ -18,6 +18,7 @@ from langchain_core.messages import (
 from langchain_core.runnables import RunnableBinding
 from langchain_tests.unit_tests import ChatModelUnitTests
 from pydantic import BaseModel, Field
+from syrupy import SnapshotAssertion
 
 from langchain_aws import ChatBedrockConverse
 from langchain_aws.chat_models.bedrock_converse import (
@@ -80,6 +81,10 @@ class TestBedrockStandard(ChatModelUnitTests):
     @pytest.mark.xfail(reason="Doesn't support streaming init param.")
     def test_init_streaming(self) -> None:
         super().test_init_streaming()
+
+    @pytest.mark.xfail(reason="Pending mapping + init validator in core")
+    def test_serdes(self, model: BaseChatModel, snapshot: SnapshotAssertion) -> None:
+        super().test_serdes(model, snapshot)
 
 
 def test_profile() -> None:
@@ -694,6 +699,7 @@ def test_standard_tracing_params() -> None:
         ("meta.llama3-1-405b-instruct-v1:0", "tool_calling"),
         ("us.meta.llama3-3-70b-instruct-v1:0", "tool_calling"),
         ("us.amazon.nova-lite-v1:0", False),
+        ("us.amazon.nova-2-lite-v1:0", False),
         ("us.amazon.nonstreaming-model-v1:0", True),
         ("us.deepseek.r1-v1:0", "tool_calling"),
         ("deepseek.v3-v1:0", False),
@@ -2459,3 +2465,194 @@ def test_service_tier_passed_to_converse_stream() -> None:
     # Verify converse_stream was called with serviceTier in the correct format
     call_kwargs = mocked_client.converse_stream.call_args[1]
     assert call_kwargs["serviceTier"] == {"type": "flex"}
+
+
+def test_additional_model_request_fields_merge_no_duplicate_keys() -> None:
+    """Test that additional_model_request_fields from constructor and invoke are merged
+    correctly without duplicate keys in different cases.
+
+    This test ensures that when additional_model_request_fields is provided both
+    at initialization and at invocation, the final request contains only one
+    correctly cased field (snake_case), not both reasoning_effort and reasoningEffort.
+    """
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    # Create model with additional_model_request_fields in constructor (snake_case)
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="openai.gpt-oss-120b-1:0",
+        region_name="us-west-2",
+        additional_model_request_fields={"reasoning_effort": "low"},
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    # Call invoke with additional_model_request_fields in kwargs (snake_case)
+    llm.invoke(
+        messages,
+        additional_model_request_fields={"reasoning_effort": "medium"},
+    )
+
+    # Verify converse was called
+    assert mocked_client.converse.called
+    call_kwargs = mocked_client.converse.call_args[1]
+
+    # Verify additionalModelRequestFields exists and is a dict
+    assert "additionalModelRequestFields" in call_kwargs
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+    assert isinstance(additional_fields, dict)
+
+    # Verify that the field is in snake_case (not camelCase)
+    assert "reasoning_effort" in additional_fields
+    assert "reasoningEffort" not in additional_fields
+
+    # Verify the value is from invoke (invoke overrides constructor)
+    assert additional_fields["reasoning_effort"] == "medium"
+
+    # Verify no duplicate keys exist
+    keys = list(additional_fields.keys())
+    assert len(keys) == 1
+    assert keys[0] == "reasoning_effort"
+
+
+def test_additional_model_request_fields_merge_constructor_only() -> None:
+    """Test correctness of additional_model_request_fields from constructor only."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="openai.gpt-oss-120b-1:0",
+        region_name="us-west-2",
+        additional_model_request_fields={"reasoning_effort": "low"},
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    llm.invoke(messages)
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert "additionalModelRequestFields" in call_kwargs
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+    assert "reasoning_effort" in additional_fields
+    assert additional_fields["reasoning_effort"] == "low"
+
+
+def test_additional_model_request_fields_merge_invoke_only() -> None:
+    """Test that additional_model_request_fields from invoke only works correctly."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="openai.gpt-oss-120b-1:0",
+        region_name="us-west-2",
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    llm.invoke(
+        messages,
+        additional_model_request_fields={"reasoning_effort": "high"},
+    )
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert "additionalModelRequestFields" in call_kwargs
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+    assert "reasoning_effort" in additional_fields
+    assert additional_fields["reasoning_effort"] == "high"
+
+
+def test_additional_model_request_fields_camel_constructor_snake_invoke() -> None:
+    """Test camelCase at constructor and snake_case at invoke merge correctly."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="openai.gpt-oss-120b-1:0",
+        region_name="us-west-2",
+        additional_model_request_fields={"reasoningEffort": "low"},
+    )
+
+    llm.invoke(
+        [HumanMessage(content="Hi")],
+        additional_model_request_fields={"reasoning_effort": "medium"},
+    )
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+
+    assert list(additional_fields.keys()) == ["reasoning_effort"]
+    assert additional_fields["reasoning_effort"] == "medium"
+
+
+def test_additional_model_request_fields_snake_constructor_camel_invoke() -> None:
+    """Test snake_case at constructor and camelCase at invoke merge correctly."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="openai.gpt-oss-120b-1:0",
+        region_name="us-west-2",
+        additional_model_request_fields={"reasoning_effort": "low"},
+    )
+
+    llm.invoke(
+        [HumanMessage(content="Hi")],
+        additional_model_request_fields={"reasoningEffort": "high"},
+    )
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+
+    assert list(additional_fields.keys()) == ["reasoning_effort"]
+    assert additional_fields["reasoning_effort"] == "high"
+
+
+def test_additional_model_request_fields_invoke_overrides_constructor() -> None:
+    """Test that invoke values take priority over constructor values for same key.
+
+    This test explicitly verifies that when the same key is provided in both
+    constructor and invoke, the invoke value wins.
+    """
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    # Constructor sets reasoning_effort to "constructor_value"
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="openai.gpt-oss-120b-1:0",
+        region_name="us-west-2",
+        additional_model_request_fields={"reasoning_effort": "constructor_value"},
+    )
+
+    # Invoke sets reasoning_effort to "invoke_value"
+    llm.invoke(
+        [HumanMessage(content="Hi")],
+        additional_model_request_fields={"reasoning_effort": "invoke_value"},
+    )
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+
+    # Verify invoke value takes priority over constructor value
+    assert additional_fields["reasoning_effort"] == "invoke_value"
+    assert additional_fields["reasoning_effort"] != "constructor_value"
