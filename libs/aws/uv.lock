@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.13' and platform_python_implementation == 'PyPy'",
@@ -62,7 +62,7 @@ wheels = [
 
 [[package]]
 name = "bedrock-agentcore"
-version = "1.1.2"
+version = "1.1.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
@@ -75,9 +75,9 @@ dependencies = [
     { name = "uvicorn" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/78/cc/aacc1d79e749b65f0ead598bb2e9d7663e66d5c00757dd12d86fffbc05f6/bedrock_agentcore-1.1.2.tar.gz", hash = "sha256:d19a18579ced821578ad8ba1d36c0425510dfe044ce87fadadfede3b3aca23b0", size = 397471, upload-time = "2025-12-26T21:57:51.269Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4b/c1/9ce69235980471fbcbc3d402a8a6beda2100580de3ce6b33a4675dadd673/bedrock_agentcore-1.1.4.tar.gz", hash = "sha256:dd9736794462b71022d2e19a87f07a7dd1df4052cd795f3bc3bf01d03fa3cb04", size = 404294, upload-time = "2026-01-08T18:26:02.223Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/09/74/89c82cc105fc91b3824eb4d82c73d1fe76a6375280c1bfd79cb2e2fd1431/bedrock_agentcore-1.1.2-py3-none-any.whl", hash = "sha256:e2070eecdb31ab177f78db9e1de7ed52c2c627667502f7384b7bf10afdbe6c2e", size = 113262, upload-time = "2025-12-26T21:57:49.767Z" },
+    { url = "https://files.pythonhosted.org/packages/de/d0/ab5898327fbba8b7201863b0984e80008ddb6717c66fad1de513756778ab/bedrock_agentcore-1.1.4-py3-none-any.whl", hash = "sha256:784fcda1e2ccc094b538ada1f82db5b10bb7762df1c02b7293e625e2c9e44292", size = 116418, upload-time = "2026-01-08T18:26:00.827Z" },
 ]
 
 [[package]]
@@ -645,9 +645,12 @@ lint = [
     { name = "ruff" },
 ]
 test = [
+    { name = "beautifulsoup4" },
+    { name = "bedrock-agentcore" },
     { name = "langchain" },
     { name = "langchain-classic" },
     { name = "langchain-tests" },
+    { name = "playwright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -680,9 +683,12 @@ dev = [
 ]
 lint = [{ name = "ruff", specifier = ">=0.13.0" }]
 test = [
+    { name = "beautifulsoup4", specifier = ">=4.13.4" },
+    { name = "bedrock-agentcore", marker = "python_full_version >= '3.10'", specifier = ">=1.1.4" },
     { name = "langchain", specifier = ">=1.0.0rc2" },
     { name = "langchain-classic", specifier = ">=1.0.0" },
     { name = "langchain-tests", specifier = ">=1.1.2" },
+    { name = "playwright", specifier = ">=1.53.0" },
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest-asyncio", specifier = ">=0.20,<1" },
     { name = "pytest-cov", specifier = ">=6.2.1" },
