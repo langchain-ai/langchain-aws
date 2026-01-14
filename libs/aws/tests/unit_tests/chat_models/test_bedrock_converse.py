@@ -809,6 +809,163 @@ def test__bedrock_to_lc_anthropic_reasoning() -> None:
     assert expected_lc == actual
 
 
+def test__bedrock_to_lc_nova_reasoning_content() -> None:
+    """Test parsing Nova's reasoningContent format."""
+    bedrock_content: List[Dict[str, Any]] = [
+        # Nova's reasoningContent format
+        {
+            "reasoningContent": {
+                "reasoningText": {
+                    "text": "I need to search for information about the Nobel Prize..."
+                }
+            }
+        },
+        # System tool use block
+        {
+            "toolUse": {
+                "toolUseId": "tool_123",
+                "name": "nova_grounding",
+                "input": {"query": "2024 Nobel Prize Physics"},
+            }
+        },
+        # System tool result block
+        {
+            "toolResult": {
+                "toolUseId": "tool_123",
+                "content": [
+                    {"text": "The 2024 Nobel Prize in Physics was awarded to..."}
+                ],
+                "status": "success",
+            }
+        },
+        # Final text response
+        {
+            "text": (
+                "Based on my search, the 2024 Nobel Prize in Physics was awarded to..."
+            )
+        },
+    ]
+
+    expected_lc = [
+        # Reasoning content should be parsed
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {
+                "text": "I need to search for information about the Nobel Prize...",
+                "signature": "",
+            },
+        },
+        # System tool use
+        {
+            "type": "tool_use",
+            "id": "tool_123",
+            "name": "nova_grounding",
+            "input": {"query": "2024 Nobel Prize Physics"},
+        },
+        # System tool result
+        {
+            "type": "tool_result",
+            "tool_use_id": "tool_123",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "The 2024 Nobel Prize in Physics was awarded to...",
+                }
+            ],
+            "is_error": False,
+        },
+        # Text response
+        {
+            "type": "text",
+            "text": (
+                "Based on my search, the 2024 Nobel Prize in Physics was awarded to..."
+            ),
+        },
+    ]
+
+    actual = _bedrock_to_lc(bedrock_content)
+    assert expected_lc == actual
+
+
+def test__bedrock_to_lc_nova_code_interpreter() -> None:
+    """Test parsing Nova code interpreter tool blocks."""
+    bedrock_content: List[Dict[str, Any]] = [
+        # Code interpreter tool use
+        {
+            "toolUse": {
+                "toolUseId": "code_123",
+                "name": "nova_code_interpreter",
+                "input": {"code": "import math\nmath.sqrt(475878756857)"},
+            }
+        },
+        # Code interpreter result
+        {
+            "toolResult": {
+                "toolUseId": "code_123",
+                "content": [{"text": "689690.0"}],
+                "status": "success",
+            }
+        },
+    ]
+
+    expected_lc = [
+        {
+            "type": "tool_use",
+            "id": "code_123",
+            "name": "nova_code_interpreter",
+            "input": {"code": "import math\nmath.sqrt(475878756857)"},
+        },
+        {
+            "type": "tool_result",
+            "tool_use_id": "code_123",
+            "content": [{"type": "text", "text": "689690.0"}],
+            "is_error": False,
+        },
+    ]
+
+    actual = _bedrock_to_lc(bedrock_content)
+    assert expected_lc == actual
+
+
+def test__bedrock_to_lc_redacted_tool_result() -> None:
+    """Test handling redacted/empty tool results."""
+    bedrock_content: List[Dict[str, Any]] = [
+        {
+            "toolUse": {
+                "toolUseId": "tool_456",
+                "name": "nova_grounding",
+                "input": {"query": "test query"},
+            }
+        },
+        # Redacted result with empty content
+        {
+            "toolResult": {
+                "toolUseId": "tool_456",
+                "content": [],  # Empty/redacted
+                "status": "success",
+            }
+        },
+    ]
+
+    expected_lc = [
+        {
+            "type": "tool_use",
+            "id": "tool_456",
+            "name": "nova_grounding",
+            "input": {"query": "test query"},
+        },
+        {
+            "type": "tool_result",
+            "tool_use_id": "tool_456",
+            "content": [],  # Empty content preserved
+            "is_error": False,
+        },
+    ]
+
+    actual = _bedrock_to_lc(bedrock_content)
+    assert expected_lc == actual
+
+
 def test__lc_content_to_bedrock_anthropic_reasoning() -> None:
     messages = [
         SystemMessage(content="You are a helpful assistant."),
@@ -2364,6 +2521,423 @@ def test_get_num_tokens_from_messages_api_error_fallback() -> None:
         token_count = llm.get_num_tokens_from_messages(messages)
         assert token_count == 5
         mock_base.assert_called_once()
+
+
+def test_bind_tools_with_nova_system_tool_instances() -> None:
+    """Test bind_tools with NovaSystemTool instances."""
+    from langchain_aws.tools import NovaCodeInterpreterTool, NovaGroundingTool
+
+    chat_model = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    # Test with NovaGroundingTool
+    chat_model_with_grounding = chat_model.bind_tools([NovaGroundingTool()])
+    tools = cast(RunnableBinding, chat_model_with_grounding).kwargs["toolConfig"][
+        "tools"
+    ]
+    assert len(tools) == 1
+    assert tools[0] == {"systemTool": {"name": "nova_grounding"}}
+
+    # Test with NovaCodeInterpreterTool
+    chat_model_with_code = chat_model.bind_tools([NovaCodeInterpreterTool()])
+    tools = cast(RunnableBinding, chat_model_with_code).kwargs["toolConfig"]["tools"]
+    assert len(tools) == 1
+    assert tools[0] == {"systemTool": {"name": "nova_code_interpreter"}}
+
+    # Test with both system tools
+    chat_model_with_both = chat_model.bind_tools(
+        [NovaGroundingTool(), NovaCodeInterpreterTool()]
+    )
+    tools = cast(RunnableBinding, chat_model_with_both).kwargs["toolConfig"]["tools"]
+    assert len(tools) == 2
+    assert tools[0] == {"systemTool": {"name": "nova_grounding"}}
+    assert tools[1] == {"systemTool": {"name": "nova_code_interpreter"}}
+
+
+def test_bind_tools_with_system_tool_name_strings() -> None:
+    """Test bind_tools with system tool name strings."""
+    chat_model = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    # Test with direct string
+    chat_model_with_grounding = chat_model.bind_tools(["nova_grounding"])
+    tools = cast(RunnableBinding, chat_model_with_grounding).kwargs["toolConfig"][
+        "tools"
+    ]
+    assert len(tools) == 1
+    assert tools[0] == {"systemTool": {"name": "nova_grounding"}}
+
+    # Test with direct string
+    chat_model_with_code = chat_model.bind_tools(["nova_code_interpreter"])
+    tools = cast(RunnableBinding, chat_model_with_code).kwargs["toolConfig"]["tools"]
+    assert len(tools) == 1
+    assert tools[0] == {"systemTool": {"name": "nova_code_interpreter"}}
+
+    # Test with both as strings
+    chat_model_with_both = chat_model.bind_tools(
+        ["nova_grounding", "nova_code_interpreter"]
+    )
+    tools = cast(RunnableBinding, chat_model_with_both).kwargs["toolConfig"]["tools"]
+    assert len(tools) == 2
+    assert tools[0] == {"systemTool": {"name": "nova_grounding"}}
+    assert tools[1] == {"systemTool": {"name": "nova_code_interpreter"}}
+
+
+def test_bind_tools_with_mixed_system_and_custom_tools() -> None:
+    """Test bind_tools with mixed system and custom tools."""
+    from langchain_aws.tools import NovaGroundingTool
+
+    chat_model = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    # Mix NovaGroundingTool with custom GetWeather tool
+    chat_model_with_mixed = chat_model.bind_tools([GetWeather, NovaGroundingTool()])
+    tools = cast(RunnableBinding, chat_model_with_mixed).kwargs["toolConfig"]["tools"]
+    assert len(tools) == 2
+
+    # First tool should be the custom tool (GetWeather)
+    assert "function" in tools[0]
+    assert tools[0]["function"]["name"] == "GetWeather"
+
+    # Second tool should be the system tool
+    assert tools[1] == {"systemTool": {"name": "nova_grounding"}}
+
+
+def test_bind_tools_system_tools_with_tool_choice() -> None:
+    """Test that tool_choice works with system tools."""
+    from langchain_aws.tools import NovaGroundingTool
+
+    chat_model = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    # Test with auto tool choice
+    chat_model_with_tools = chat_model.bind_tools(
+        [NovaGroundingTool()], tool_choice="auto"
+    )
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["toolConfig"][
+        "toolChoice"
+    ] == {"auto": {}}
+
+    # Test with any tool choice
+    chat_model_with_tools = chat_model.bind_tools(
+        [NovaGroundingTool()], tool_choice="any"
+    )
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["toolConfig"][
+        "toolChoice"
+    ] == {"any": {}}
+
+
+def test_bind_tools_toolconfig_structure_with_system_tools() -> None:
+    """Test that toolConfig structure is correct with system tools."""
+    from langchain_aws.tools import NovaCodeInterpreterTool, NovaGroundingTool
+
+    chat_model = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    # Bind tools with both system and custom tools
+    chat_model_with_tools = chat_model.bind_tools(
+        [GetWeather, NovaGroundingTool(), NovaCodeInterpreterTool()],
+        tool_choice="auto",
+    )
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+
+    # Verify toolConfig is present
+    assert "toolConfig" in bound_kwargs
+    tool_config = bound_kwargs["toolConfig"]
+
+    # Verify tools are present in toolConfig
+    assert "tools" in tool_config
+    tools = tool_config["tools"]
+    assert len(tools) == 3
+
+    # Verify custom tool format
+    assert "function" in tools[0]
+    assert tools[0]["function"]["name"] == "GetWeather"
+
+    # Verify system tools format
+    assert tools[1] == {"systemTool": {"name": "nova_grounding"}}
+    assert tools[2] == {"systemTool": {"name": "nova_code_interpreter"}}
+
+    # Verify toolChoice is present in toolConfig
+    assert "toolChoice" in tool_config
+    assert tool_config["toolChoice"] == {"auto": {}}
+
+
+def test_reasoning_config_validation_accepts_strings() -> None:
+    """Test that reasoning config validation accepts string values."""
+    # Should not raise an error with string values
+    for effort in ["low", "medium", "high"]:
+        llm = ChatBedrockConverse(
+            model="amazon.nova-2-lite-v1:0",
+            region_name="us-east-1",
+            additional_model_request_fields={
+                "reasoningConfig": {"type": "enabled", "maxReasoningEffort": effort}
+            },
+        )  # type: ignore[call-arg]
+        assert llm is not None
+
+
+def test_reasoning_config_validation_rejects_invalid_effort() -> None:
+    """Test that reasoning config validation rejects invalid effort levels."""
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Invalid maxReasoningEffort: 'invalid'.*"
+            "Must be one of: \\['low', 'medium', 'high'\\]"
+        ),
+    ):
+        ChatBedrockConverse(
+            model="amazon.nova-2-lite-v1:0",
+            region_name="us-east-1",
+            additional_model_request_fields={
+                "reasoningConfig": {"type": "enabled", "maxReasoningEffort": "invalid"}
+            },
+        )  # type: ignore[call-arg]
+
+
+def test_reasoning_config_validation_requires_max_effort_when_enabled() -> None:
+    """Test that reasoning config validation requires maxReasoningEffort."""
+    with pytest.raises(
+        ValueError,
+        match=(
+            "When reasoningConfig type is 'enabled', "
+            "'maxReasoningEffort' must be specified"
+        ),
+    ):
+        ChatBedrockConverse(
+            model="amazon.nova-2-lite-v1:0",
+            region_name="us-east-1",
+            additional_model_request_fields={"reasoningConfig": {"type": "enabled"}},
+        )  # type: ignore[call-arg]
+
+
+def test_reasoning_config_validation_disabled_no_effort_required() -> None:
+    """Test that maxReasoningEffort is not required when reasoning is disabled."""
+    # Should not raise an error when type is disabled
+    llm = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0",
+        region_name="us-east-1",
+        additional_model_request_fields={"reasoningConfig": {"type": "disabled"}},
+    )  # type: ignore[call-arg]
+    assert llm is not None
+
+
+def test_reasoning_config_validation_no_config() -> None:
+    """Test that validation passes when no reasoning config is provided."""
+    # Should not raise an error when no reasoningConfig is provided
+    llm = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0",
+        region_name="us-east-1",
+    )  # type: ignore[call-arg]
+    assert llm is not None
+
+
+def test_reasoning_config_validation_rejects_invalid_type() -> None:
+    """Test that reasoning config validation rejects invalid effort types."""
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Invalid maxReasoningEffort type: int.*"
+            "Must be a string, one of: \\['low', 'medium', 'high'\\]"
+        ),
+    ):
+        ChatBedrockConverse(
+            model="amazon.nova-2-lite-v1:0",
+            region_name="us-east-1",
+            additional_model_request_fields={
+                "reasoningConfig": {"type": "enabled", "maxReasoningEffort": 123}
+            },
+        )  # type: ignore[call-arg]
+
+
+def test_iam_permission_error_detection() -> None:
+    """Test that IAM permission errors for InvokeTool are detected and enhanced."""
+    from botocore.exceptions import ClientError
+
+    from langchain_aws.chat_models.bedrock_converse import _handle_bedrock_error
+
+    # Create a mock AccessDeniedException for InvokeTool
+    error_response: Any = {
+        "Error": {
+            "Code": "AccessDeniedException",
+            "Message": (
+                "User: arn:aws:iam::834212829299:user/demo is not authorized to "
+                "perform: bedrock:InvokeTool on resource: "
+                "arn:aws:bedrock::834212829299:system-tool/amazon.nova_grounding "
+                "with an explicit deny in an identity-based policy"
+            ),
+        },
+        "ResponseMetadata": {"RequestId": "test-request-id"},
+    }
+    error = ClientError(error_response, "Converse")  # type: ignore[arg-type]
+
+    # Should raise ValueError with enhanced message
+    with pytest.raises(ValueError) as exc_info:
+        _handle_bedrock_error(error)
+
+    error_message = str(exc_info.value)
+    assert "bedrock:InvokeTool" in error_message
+    assert "IAM permission" in error_message
+    assert "Example policy statement" in error_message
+    assert "Original error" in error_message
+
+
+def test_iam_permission_error_other_access_denied() -> None:
+    """Test that other AccessDeniedException errors are not modified."""
+    from botocore.exceptions import ClientError
+
+    from langchain_aws.chat_models.bedrock_converse import _handle_bedrock_error
+
+    # Create a mock AccessDeniedException without InvokeTool
+    error_response: Any = {
+        "Error": {
+            "Code": "AccessDeniedException",
+            "Message": "User is not authorized to perform: bedrock:InvokeModel",
+        },
+        "ResponseMetadata": {"RequestId": "test-request-id"},
+    }
+    error = ClientError(error_response, "Converse")  # type: ignore[arg-type]
+
+    # Should re-raise the original error
+    with pytest.raises(ClientError) as exc_info:
+        _handle_bedrock_error(error)
+
+    assert exc_info.value == error
+
+
+def test_iam_permission_error_non_access_denied() -> None:
+    """Test that non-AccessDeniedException errors are not modified."""
+    from botocore.exceptions import ClientError
+
+    from langchain_aws.chat_models.bedrock_converse import _handle_bedrock_error
+
+    # Create a different error type
+    error_response: Any = {
+        "Error": {
+            "Code": "ValidationException",
+            "Message": "Invalid input",
+        },
+        "ResponseMetadata": {"RequestId": "test-request-id"},
+    }
+    error = ClientError(error_response, "Converse")  # type: ignore[arg-type]
+
+    # Should re-raise the original error
+    with pytest.raises(ClientError) as exc_info:
+        _handle_bedrock_error(error)
+
+    assert exc_info.value == error
+
+
+def test_generate_with_iam_permission_error() -> None:
+    """Test that _generate wraps IAM permission errors."""
+    from botocore.exceptions import ClientError
+
+    llm = ChatBedrockConverse(model="amazon.nova-2-lite-v1:0", region_name="us-east-1")
+
+    # Mock the client to raise AccessDeniedException
+    error_response: Any = {
+        "Error": {
+            "Code": "AccessDeniedException",
+            "Message": (
+                "User is not authorized to perform: bedrock:InvokeTool on resource: "
+                "arn:aws:bedrock::123456789:system-tool/amazon.nova_grounding"
+            ),
+        },
+        "ResponseMetadata": {"RequestId": "test-request-id"},
+    }
+    llm.client.converse = mock.Mock(side_effect=ClientError(error_response, "Converse"))
+
+    # Should raise ValueError with enhanced message
+    with pytest.raises(ValueError) as exc_info:
+        llm.invoke("What's the weather?")
+
+    error_message = str(exc_info.value)
+    assert "bedrock:InvokeTool" in error_message
+    assert "IAM permission" in error_message
+    assert "Example policy statement" in error_message
+
+
+def test_stream_with_iam_permission_error() -> None:
+    """Test that _stream wraps IAM permission errors."""
+    from botocore.exceptions import ClientError
+    from langchain_core.messages import HumanMessage
+
+    llm = ChatBedrockConverse(model="amazon.nova-2-lite-v1:0", region_name="us-east-1")
+
+    # Mock the client to raise AccessDeniedException when converse_stream is called
+    error_response: Any = {
+        "Error": {
+            "Code": "AccessDeniedException",
+            "Message": (
+                "User is not authorized to perform: bedrock:InvokeTool on resource: "
+                "arn:aws:bedrock::123456789:system-tool/amazon.nova_grounding"
+            ),
+        },
+        "ResponseMetadata": {"RequestId": "test-request-id"},
+    }
+
+    # Create a mock that raises the exception
+    mock_client = mock.Mock()
+    mock_client.converse_stream.side_effect = ClientError(
+        error_response,  # type: ignore[arg-type]
+        "Converse",
+    )
+    llm.client = mock_client
+
+    # Should raise ValueError with enhanced message
+    # Call _stream directly to avoid invoke() being called
+    with pytest.raises(ValueError) as exc_info:
+        # Consume the generator to trigger the error
+        for _ in llm._stream([HumanMessage(content="What's the weather?")]):
+            pass
+
+    error_message = str(exc_info.value)
+    assert "bedrock:InvokeTool" in error_message
+    assert "IAM permission" in error_message
+    assert "Example policy statement" in error_message
+
+
+def test_reasoning_config_validation_only_applies_to_nova_2() -> None:
+    """Test that reasoning config validation only applies to Nova 2 models."""
+    # Should not raise an error for non-Nova-2 models even with invalid config
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        additional_model_request_fields={
+            "reasoningConfig": {"type": "enabled"}  # Missing maxReasoningEffort
+        },
+    )  # type: ignore[call-arg]
+    assert llm is not None
+
+    # Should not raise an error for Nova 1 models
+    llm = ChatBedrockConverse(
+        model="amazon.nova-lite-v1:0",
+        region_name="us-east-1",
+        additional_model_request_fields={
+            "reasoningConfig": {"type": "enabled"}  # Missing maxReasoningEffort
+        },
+    )  # type: ignore[call-arg]
+    assert llm is not None
+
+    # Should raise an error for Nova 2 models with invalid config
+    with pytest.raises(
+        ValueError,
+        match="When reasoningConfig type is 'enabled', "
+        "'maxReasoningEffort' must be specified",
+    ):
+        ChatBedrockConverse(
+            model="amazon.nova-2-lite-v1:0",
+            region_name="us-east-1",
+            additional_model_request_fields={
+                "reasoningConfig": {"type": "enabled"}  # Missing maxReasoningEffort
+            },
+        )  # type: ignore[call-arg]
 
 
 def test_service_tier_parameter() -> None:

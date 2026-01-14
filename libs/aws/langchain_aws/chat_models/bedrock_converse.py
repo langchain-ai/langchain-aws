@@ -22,6 +22,7 @@ from typing import (
     cast,
 )
 
+from botocore.exceptions import ClientError
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import (
@@ -65,6 +66,7 @@ from typing_extensions import Self
 from langchain_aws.chat_models._compat import _convert_from_v1_to_converse
 from langchain_aws.data._profiles import _PROFILES
 from langchain_aws.function_calling import ToolsOutputParser
+from langchain_aws.tools.nova_tools import NovaSystemTool
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
@@ -343,7 +345,7 @@ class ChatBedrockConverse(BaseChatModel):
         {'input_tokens': 25, 'output_tokens': 11, 'total_tokens': 36}
         ```
 
-    Response metadata
+    Response metadata:
         ```python
         ai_msg = model.invoke(messages)
         ai_msg.response_metadata
@@ -892,6 +894,9 @@ class ChatBedrockConverse(BaseChatModel):
                 "disable `guard_last_turn_only`."
             )
 
+        # Validate reasoning configuration for Nova 2 models
+        self._validate_nova_reasoning_config()
+
         return self
 
     @model_validator(mode="after")
@@ -932,6 +937,57 @@ class ChatBedrockConverse(BaseChatModel):
         else:
             self.disable_streaming = False
 
+    def _validate_nova_reasoning_config(self) -> None:
+        """Validate reasoning configuration for Nova 2 models.
+
+        Only applies to models starting with 'amazon.nova-2'.
+
+        Checks that:
+        - When reasoningConfig type is "enabled", maxReasoningEffort is present
+        - maxReasoningEffort is one of: "low", "medium", "high"
+
+        Raises:
+            ValueError: If reasoning configuration is invalid
+        """
+        VALID_NOVA_2_REASONING_EFFORTS = ["low", "medium", "high"]
+
+        # Only validate for Nova 2 models
+        base_model = self._get_base_model().lower()
+        if not base_model.startswith("amazon.nova-2"):
+            return
+
+        if not self.additional_model_request_fields:
+            return
+
+        reasoning_config = self.additional_model_request_fields.get("reasoningConfig")
+        if not reasoning_config:
+            return
+
+        # Check if reasoning is enabled
+        if reasoning_config.get("type") == "enabled":
+            # Require maxReasoningEffort when enabled
+            if "maxReasoningEffort" not in reasoning_config:
+                raise ValueError(
+                    "When reasoningConfig type is 'enabled', 'maxReasoningEffort' "
+                    "must be specified. "
+                    f"Valid values: {VALID_NOVA_2_REASONING_EFFORTS}"
+                )
+
+            # Validate effort level
+            effort = reasoning_config["maxReasoningEffort"]
+
+            if not isinstance(effort, str):
+                raise ValueError(
+                    f"Invalid maxReasoningEffort type: {type(effort).__name__}. "
+                    f"Must be a string, one of: {VALID_NOVA_2_REASONING_EFFORTS}"
+                )
+
+            if effort not in VALID_NOVA_2_REASONING_EFFORTS:
+                raise ValueError(
+                    f"Invalid maxReasoningEffort: '{effort}'. "
+                    f"Must be one of: {VALID_NOVA_2_REASONING_EFFORTS}"
+                )
+
     def _apply_guard_last_turn_only(self, messages: List[Dict[str, Any]]) -> None:
         for msg in reversed(messages):
             if msg.get("role") == "user":
@@ -967,10 +1023,12 @@ class ChatBedrockConverse(BaseChatModel):
 
         logger.debug(f"input message to bedrock: {bedrock_messages}")
         logger.debug(f"System message to bedrock: {system}")
+        # Remove disable_streaming from kwargs as it's not a valid API parameter
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
         params = self._converse_params(
             stop=stop,
             **_snake_to_camel_keys(
-                kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
+                filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
         )
 
@@ -993,9 +1051,12 @@ class ChatBedrockConverse(BaseChatModel):
 
         logger.debug(f"Input params: {params}")
         logger.info("Using Bedrock Converse API to generate response")
-        response = self.client.converse(
-            messages=bedrock_messages, system=system, **params
-        )
+        try:
+            response = self.client.converse(
+                messages=bedrock_messages, system=system, **params
+            )
+        except ClientError as e:
+            _handle_bedrock_error(e)
         logger.debug(f"Response from Bedrock: {response}")
         response_message = _parse_response(response)
         response_message.response_metadata["model_provider"] = "bedrock_converse"
@@ -1019,10 +1080,12 @@ class ChatBedrockConverse(BaseChatModel):
                 logger.debug("Applying selective guardrail to only the last turn")
                 self._apply_guard_last_turn_only(bedrock_messages)
 
+        # Remove disable_streaming from kwargs as it's not a valid API parameter
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
         params = self._converse_params(
             stop=stop,
             **_snake_to_camel_keys(
-                kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
+                filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
         )
 
@@ -1043,9 +1106,12 @@ class ChatBedrockConverse(BaseChatModel):
             bedrock_messages = _convert_tool_blocks_to_text(bedrock_messages)
             logger.debug(f"converted input messages: {bedrock_messages}")
 
-        response = self.client.converse_stream(
-            messages=bedrock_messages, system=system, **params
-        )
+        try:
+            response = self.client.converse_stream(
+                messages=bedrock_messages, system=system, **params
+            )
+        except ClientError as e:
+            _handle_bedrock_error(e)
         added_model_name = False
         for event in response["stream"]:
             if message_chunk := _parse_stream_event(event):
@@ -1111,47 +1177,120 @@ class ChatBedrockConverse(BaseChatModel):
 
     def bind_tools(
         self,
-        tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool]],
+        tools: Sequence[
+            Union[
+                Dict[str, Any], TypeBaseModel, Callable, BaseTool, str, NovaSystemTool
+            ]
+        ],
         *,
         tool_choice: Optional[Union[dict, str, Literal["auto", "any"]]] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, AIMessage]:
-        formatted_tools: List[Any] = []
+        # Separate system tools from custom tools
+        system_tools: List[Dict[str, Any]] = []
+        custom_tools: List[Any] = []
+
         for tool in tools:
-            if _is_cache_point(tool):
-                formatted_tools.append(tool)
+            # Check if it's a NovaSystemTool instance
+            if isinstance(tool, NovaSystemTool):
+                system_tools.append(tool.to_bedrock_format())
+            # Check if it's a system tool name string
+            elif isinstance(tool, str) and tool in [
+                "nova_grounding",
+                "nova_code_interpreter",
+            ]:
+                system_tools.append({"systemTool": {"name": tool}})
+            # Otherwise, it's a custom tool
             else:
-                try:
-                    formatted_tools.append(convert_to_openai_tool(tool))
-                except Exception:
-                    formatted_tools.append(_format_tools([tool])[0])
-        if tool_choice:
-            tool_choice = _format_tool_choice(tool_choice)
-            tool_choice_type = list(tool_choice.keys())[0]
-            if tool_choice_type not in list(self.supports_tool_choice_values or []):
-                if self.supports_tool_choice_values:
-                    supported = (
-                        f"Model {self._get_base_model()} does not currently support "
-                        f"tool_choice of type {tool_choice_type}. The following "
-                        f"tool_choice types are supported: "
-                        f"{self.supports_tool_choice_values}."
-                    )
+                custom_tools.append(tool)
+
+        # If we have system tools, disable streaming as AWS doesn't support it properly
+        if system_tools:
+            kwargs["disable_streaming"] = True
+
+        # If we have system tools, we need to use toolConfig format
+        # Otherwise, use the old format for backward compatibility
+        if system_tools:
+            # Format custom tools using existing logic
+            formatted_custom_tools: List[Any] = []
+            for tool in custom_tools:
+                if _is_cache_point(tool):
+                    formatted_custom_tools.append(tool)
                 else:
-                    supported = (
-                        f"Model {self._get_base_model()} does not currently support "
-                        f"tool_choice."
+                    try:
+                        formatted_custom_tools.append(convert_to_openai_tool(tool))
+                    except Exception:
+                        formatted_custom_tools.append(_format_tools([tool])[0])
+
+            # Merge system and custom tools
+            all_tools = formatted_custom_tools + system_tools
+
+            # Build toolConfig directly to avoid re-formatting
+            tool_config: Dict[str, Any] = {"tools": all_tools}
+
+            if tool_choice:
+                tool_choice_formatted = _format_tool_choice(tool_choice)
+                tool_choice_type = list(tool_choice_formatted.keys())[0]
+                if tool_choice_type not in list(self.supports_tool_choice_values or []):
+                    base_model = self._get_base_model()
+                    if self.supports_tool_choice_values:
+                        supported = (
+                            f"Model {base_model} does not currently support "
+                            f"tool_choice of type {tool_choice_type}. "
+                            f"The following tool_choice types are supported: "
+                            f"{self.supports_tool_choice_values}."
+                        )
+                    else:
+                        supported = (
+                            f"Model {base_model} does not currently support "
+                            f"tool_choice."
+                        )
+
+                    raise ValueError(
+                        f"{supported} Please see "
+                        "https://docs.aws.amazon.com/bedrock/latest/APIReference/"
+                        "API_runtime_ToolChoice.html for the latest documentation "
+                        "on models that support tool choice."
                     )
+                tool_config["toolChoice"] = tool_choice_formatted
+            elif "deepseek.v3" in self._get_base_model():
+                tool_config["toolChoice"] = _format_tool_choice("any")
 
-                raise ValueError(
-                    f"{supported} Please see "
-                    f"https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html "  # noqa: E501
-                    f"for the latest documentation on models that support tool choice."
-                )
-            kwargs["tool_choice"] = _format_tool_choice(tool_choice)
-        elif "deepseek.v3" in self._get_base_model():
-            kwargs["tool_choice"] = _format_tool_choice("any")
+            return self.bind(toolConfig=tool_config, **kwargs)
+        else:
+            # No system tools - use old format for backward compatibility
+            # Format tool_choice if provided
+            formatted_tool_choice = None
+            if tool_choice:
+                formatted_tool_choice = _format_tool_choice(tool_choice)
+                tool_choice_type = list(formatted_tool_choice.keys())[0]
+                if tool_choice_type not in list(self.supports_tool_choice_values or []):
+                    base_model = self._get_base_model()
+                    if self.supports_tool_choice_values:
+                        supported = (
+                            f"Model {base_model} does not currently support "
+                            f"tool_choice of type {tool_choice_type}. "
+                            f"The following tool_choice types are supported: "
+                            f"{self.supports_tool_choice_values}."
+                        )
+                    else:
+                        supported = (
+                            f"Model {base_model} does not currently support "
+                            f"tool_choice."
+                        )
 
-        return self.bind(tools=formatted_tools, **kwargs)
+                    raise ValueError(
+                        f"{supported} Please see "
+                        "https://docs.aws.amazon.com/bedrock/latest/APIReference/"
+                        "API_runtime_ToolChoice.html for the latest documentation "
+                        "on models that support tool choice."
+                    )
+            elif "deepseek.v3" in self._get_base_model():
+                formatted_tool_choice = _format_tool_choice("any")
+
+            return self.bind(
+                tools=custom_tools, tool_choice=formatted_tool_choice, **kwargs
+            )
 
     def with_structured_output(
         self,
@@ -1247,8 +1386,24 @@ class ChatBedrockConverse(BaseChatModel):
         stream: Optional[bool] = True,
     ) -> Dict[str, Any]:
         if not inferenceConfig:
+            # Check if we need to unset maxTokens for high reasoning effort
+            final_additional_fields = (
+                additionalModelRequestFields or self.additional_model_request_fields
+            )
+            should_unset_max_tokens = False
+
+            if final_additional_fields:
+                reasoning_config = final_additional_fields.get("reasoningConfig", {})
+                if (
+                    reasoning_config.get("type") == "enabled"
+                    and reasoning_config.get("maxReasoningEffort") == "high"
+                ):
+                    should_unset_max_tokens = True
+
             inferenceConfig = {
-                "maxTokens": maxTokens or self.max_tokens,
+                "maxTokens": None
+                if should_unset_max_tokens
+                else (maxTokens or self.max_tokens),
                 "temperature": temperature or self.temperature,
                 "topP": self.top_p or topP,
                 "stopSequences": stop or stopSequences or self.stop_sequences,
@@ -1266,7 +1421,7 @@ class ChatBedrockConverse(BaseChatModel):
         # as the same key. The final result stays in snake_case for the API.
         constructor_fields = self.additional_model_request_fields
         invoke_fields = additionalModelRequestFields
-        excluded = {"inputSchema", "properties", "thinking"}
+        excluded = {"reasoningConfig", "inputSchema", "properties", "thinking"}
 
         if constructor_fields or invoke_fields:
             merged_additional_fields = {
@@ -1387,6 +1542,37 @@ class ChatBedrockConverse(BaseChatModel):
         except Exception as e:
             logger.warning(f"count_tokens API failed: {e}. Using fallback.")
             return super().get_num_tokens_from_messages(messages, tools=tools)
+
+
+def _handle_bedrock_error(error: ClientError) -> None:
+    """Handle Bedrock API errors and provide enhanced error messages.
+
+    Args:
+        error: The ClientError from boto3
+
+    Raises:
+        ValueError: Enhanced error with helpful message for IAM permission issues
+        ClientError: Re-raises the original error if not a known case
+    """
+    error_code = error.response.get("Error", {}).get("Code", "")
+    error_message = str(error)
+
+    # Check for InvokeTool permission errors
+    if error_code == "AccessDeniedException" and "InvokeTool" in error_message:
+        raise ValueError(
+            "System tools require 'bedrock:InvokeTool' IAM permission. "
+            "Please add this permission to your IAM role/user policy. "
+            "Example policy statement:\n"
+            "{\n"
+            '  "Effect": "Allow",\n'
+            '  "Action": ["bedrock:InvokeModel"],\n'
+            '  "Resource": "arn:aws:bedrock:*::foundation-model/*"\n'
+            "}\n"
+            f"Original error: {error}"
+        ) from error
+
+    # Re-raise other errors unchanged
+    raise error
 
 
 def _messages_to_bedrock(
@@ -1797,7 +1983,29 @@ def _lc_content_to_bedrock(
                     }
                 }
             )
+        elif block["type"] == "server_tool_use":
+            # System tools use toolUse format (same as regular tools)
+            bedrock_content.append(
+                {
+                    "toolUse": {
+                        "toolUseId": block["id"],
+                        "input": block["input"],
+                        "name": block["name"],
+                    }
+                }
+            )
         elif block["type"] == "tool_result":
+            bedrock_content.append(
+                {
+                    "toolResult": {
+                        "toolUseId": block["toolUseId"],
+                        "content": _lc_content_to_bedrock(block["content"]),
+                        "status": "error" if block.get("isError") else "success",
+                    }
+                }
+            )
+        elif block["type"] == "server_tool_result":
+            # System tools use toolResult format (same as regular tools)
             bedrock_content.append(
                 {
                     "toolResult": {
@@ -1854,6 +2062,12 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         elif "tool_use" in block:
             block["tool_use"]["id"] = block["tool_use"].pop("tool_use_id", None)
             lc_content.append({"type": "tool_use", **block["tool_use"]})
+        elif "server_tool_use" in block:
+            # System tools use server_tool_use instead of tool_use
+            block["server_tool_use"]["id"] = block["server_tool_use"].pop(
+                "tool_use_id", None
+            )
+            lc_content.append({"type": "server_tool_use", **block["server_tool_use"]})
         elif "image" in block:
             lc_content.append(
                 {
@@ -1894,12 +2108,40 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             # Request syntax assumes bedrock format; returning in same bedrock format
             lc_content.append({"type": "document", **block})
         elif "tool_result" in block:
+            # Handle both dict and list formats (streaming vs non-streaming)
+            tool_result = block["tool_result"]
+            if isinstance(tool_result, list):
+                # Streaming delta format: tool_result is a list of content blocks
+                # Just pass through the content blocks directly
+                lc_content.extend(_bedrock_to_lc(tool_result))
+            else:
+                # Non-streaming format: tool_result is a dict
+                content = tool_result.get("content")
+                if content is None:
+                    parsed_content = ""
+                elif content == []:
+                    parsed_content = []
+                else:
+                    parsed_content = _bedrock_to_lc(content)
+
+                lc_content.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_result["tool_use_id"],
+                        "is_error": tool_result.get("status") == "error",
+                        "content": parsed_content,
+                    }
+                )
+        elif "server_tool_result" in block:
+            # System tools use server_tool_result
+            # Handle optional content field (may be absent in streaming or redacted)
+            content = block["server_tool_result"].get("content")
             lc_content.append(
                 {
-                    "type": "tool_result",
-                    "tool_use_id": block["tool_result"]["tool_use_id"],
-                    "is_error": block["tool_result"].get("status") == "error",
-                    "content": _bedrock_to_lc(block["tool_result"]["content"]),
+                    "type": "server_tool_result",
+                    "tool_use_id": block["server_tool_result"]["tool_use_id"],
+                    "is_error": block["server_tool_result"].get("status") == "error",
+                    "content": _bedrock_to_lc(content) if content else "",
                 }
             )
         # Only occurs in content blocks of a tool_result:
