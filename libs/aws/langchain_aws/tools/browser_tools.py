@@ -1,8 +1,9 @@
 """Thread-aware browser tools that work with the browser session manager."""
 
+import base64
 import json
 import logging
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Literal, Optional, Type
 from urllib.parse import urlparse
 
 from langchain_core.runnables.config import RunnableConfig
@@ -13,6 +14,23 @@ from .browser_session_manager import BrowserSessionManager
 from .utils import aget_current_page, get_current_page
 
 logger = logging.getLogger(__name__)
+
+
+def _get_scroll_deltas(direction: str, amount: int) -> tuple[int, int]:
+    """Convert direction and amount to delta_x, delta_y."""
+    direction = direction.lower()
+    if direction == "down":
+        return 0, amount
+    elif direction == "up":
+        return 0, -amount
+    elif direction == "right":
+        return amount, 0
+    elif direction == "left":
+        return -amount, 0
+    else:
+        raise ValueError(
+            f"Invalid direction: {direction}. Use 'up', 'down', 'left', or 'right'."
+        )
 
 
 class NavigateToolInput(BaseModel):
@@ -55,6 +73,55 @@ class CurrentWebPageToolInput(BaseModel):
     """Input for CurrentWebPageTool."""
 
     pass
+
+
+class TypeTextInput(BaseModel):
+    """Input for TypeTextTool."""
+
+    selector: str = Field(
+        description="CSS selector for the input field to type into "
+        "(e.g., '#search', 'input[name=\"email\"]', '.search-box')"
+    )
+    text: str = Field(description="Text to type into the input field")
+
+
+class ScreenshotInput(BaseModel):
+    """Input for ScreenshotTool."""
+
+    capture_type: Literal["viewport", "full_page"] = Field(
+        default="viewport",
+        description=(
+            "Type of screenshot: 'viewport' (visible area, default) "
+            "or 'full_page' (entire scrollable page)"
+        ),
+    )
+
+
+class ScrollInput(BaseModel):
+    """Input for ScrollTool."""
+
+    direction: Literal["up", "down", "left", "right"] = Field(
+        default="down",
+        description="Scroll direction",
+    )
+    amount: int = Field(default=500, description="Number of pixels to scroll", gt=0)
+
+
+class WaitForElementInput(BaseModel):
+    """Input for WaitForElementTool."""
+
+    selector: str = Field(description="CSS selector for the element to wait for")
+    timeout: int = Field(
+        default=30000,
+        description="Maximum time to wait in milliseconds "
+        "(default: 30000ms = 30 seconds)",
+        gt=0,
+        le=300000,
+    )
+    state: Literal["attached", "detached", "visible", "hidden"] = Field(
+        default="visible",
+        description="State to wait for",
+    )
 
 
 class ThreadAwareBaseTool(BaseTool):
@@ -477,7 +544,9 @@ class ThreadAwareExtractHyperlinksTool(ThreadAwareBaseTool):
             for link in soup.find_all("a", href=True):
                 text = link.get_text().strip()
                 href = link["href"]
-                if href.startswith("http") or href.startswith("https"):
+                if isinstance(href, str) and (
+                    href.startswith("http") or href.startswith("https")
+                ):
                     links.append({"text": text, "url": href})
 
             self.release_sync_browser(thread_id)
@@ -524,7 +593,9 @@ class ThreadAwareExtractHyperlinksTool(ThreadAwareBaseTool):
             for link in soup.find_all("a", href=True):
                 text = link.get_text().strip()
                 href = link["href"]
-                if href.startswith("http") or href.startswith("https"):
+                if isinstance(href, str) and (
+                    href.startswith("http") or href.startswith("https")
+                ):
                     links.append({"text": text, "url": href})
 
             await self.release_async_browser(thread_id)
@@ -688,6 +759,290 @@ class ThreadAwareCurrentWebPageTool(ThreadAwareBaseTool):
             raise ToolException(f"Error getting current webpage info: {str(e)}")
 
 
+class ThreadAwareTypeTool(ThreadAwareBaseTool):
+    """Tool for typing text into input fields on a webpage."""
+
+    name: str = "type_text"
+    description: str = """Type text into an input field on the webpage.
+
+Use this tool to:
+- Fill in search boxes
+- Enter form data (usernames, emails, passwords)
+- Type into text areas
+- Fill any input field identified by CSS selector
+
+The selector should identify a single input element. Common patterns:
+- '#search' - element with id="search"
+- 'input[name="email"]' - input with name attribute
+- '.search-input' - element with class "search-input"
+- 'input[type="text"]' - first text input on page
+
+This clears existing content before typing."""
+
+    args_schema: Type[BaseModel] = TypeTextInput
+
+    def _run(
+        self,
+        selector: str,
+        text: str,
+        config: Optional[RunnableConfig] = None,
+        **_: Any,
+    ) -> str:
+        thread_id = None
+        try:
+            thread_id = self.get_thread_id(config)
+            page = self.get_sync_page(thread_id)
+            page.fill(selector, text)
+            self.release_sync_browser(thread_id)
+            return f"Successfully typed '{text}' into element '{selector}'"
+        except Exception as e:
+            if thread_id:
+                try:
+                    self.release_sync_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
+            raise ToolException(f"Error typing text into '{selector}': {str(e)}")
+
+    async def _arun(
+        self,
+        selector: str,
+        text: str,
+        config: Optional[RunnableConfig] = None,
+        **_: Any,
+    ) -> str:
+        thread_id = None
+        try:
+            thread_id = self.get_thread_id(config)
+            page = await self.get_async_page(thread_id)
+            await page.fill(selector, text)
+            await self.release_async_browser(thread_id)
+            return f"Successfully typed '{text}' into element '{selector}'"
+        except Exception as e:
+            if thread_id:
+                try:
+                    await self.release_async_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
+            raise ToolException(f"Error typing text into '{selector}': {str(e)}")
+
+
+class ThreadAwareScreenshotTool(ThreadAwareBaseTool):
+    """Tool for capturing screenshots of the current webpage."""
+
+    name: str = "take_screenshot"
+    description: str = """Capture a screenshot of the current webpage.
+
+Use this tool to:
+- Verify that navigation or actions completed successfully
+- Capture visual state for debugging
+- Get visual context for decision-making
+- Document the current page state
+
+Returns a base64-encoded PNG image. Set full_page=True to capture
+the entire scrollable page, or False (default) for just the visible viewport."""
+
+    args_schema: Type[BaseModel] = ScreenshotInput
+
+    def _run(
+        self,
+        capture_type: str = "viewport",
+        config: Optional[RunnableConfig] = None,
+        **_: Any,
+    ) -> str:
+        thread_id = None
+        try:
+            thread_id = self.get_thread_id(config)
+            page = self.get_sync_page(thread_id)
+            full_page = capture_type == "full_page"
+            screenshot_bytes = page.screenshot(full_page=full_page, type="png")
+            screenshot_base64 = base64.b64encode(screenshot_bytes).decode("utf-8")
+            self.release_sync_browser(thread_id)
+            page_type = "full page" if full_page else "viewport"
+            return json.dumps(
+                {
+                    "status": "success",
+                    "message": f"Screenshot captured ({page_type})",
+                    "image_base64": screenshot_base64,
+                    "format": "png",
+                }
+            )
+        except Exception as e:
+            if thread_id:
+                try:
+                    self.release_sync_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
+            raise ToolException(f"Error taking screenshot: {str(e)}")
+
+    async def _arun(
+        self,
+        capture_type: str = "viewport",
+        config: Optional[RunnableConfig] = None,
+        **_: Any,
+    ) -> str:
+        thread_id = None
+        try:
+            thread_id = self.get_thread_id(config)
+            page = await self.get_async_page(thread_id)
+            full_page = capture_type == "full_page"
+            screenshot_bytes = await page.screenshot(full_page=full_page, type="png")
+            screenshot_base64 = base64.b64encode(screenshot_bytes).decode("utf-8")
+            await self.release_async_browser(thread_id)
+            page_type = "full page" if full_page else "viewport"
+            return json.dumps(
+                {
+                    "status": "success",
+                    "message": f"Screenshot captured ({page_type})",
+                    "image_base64": screenshot_base64,
+                    "format": "png",
+                }
+            )
+        except Exception as e:
+            if thread_id:
+                try:
+                    await self.release_async_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
+            raise ToolException(f"Error taking screenshot: {str(e)}")
+
+
+class ThreadAwareScrollTool(ThreadAwareBaseTool):
+    """Tool for scrolling the webpage."""
+
+    name: str = "scroll_page"
+    description: str = """Scroll the webpage in the specified direction.
+
+Directions: 'up', 'down', 'left', 'right'. Amount: pixels to scroll (default 500)."""
+
+    args_schema: Type[BaseModel] = ScrollInput
+
+    def _run(
+        self,
+        direction: str = "down",
+        amount: int = 500,
+        config: Optional[RunnableConfig] = None,
+        **_: Any,
+    ) -> str:
+        thread_id = None
+        try:
+            thread_id = self.get_thread_id(config)
+            page = self.get_sync_page(thread_id)
+
+            delta_x, delta_y = _get_scroll_deltas(direction, amount)
+
+            page.mouse.wheel(delta_x, delta_y)
+            self.release_sync_browser(thread_id)
+            return f"Scrolled {direction} by {amount} pixels"
+        except Exception as e:
+            if thread_id:
+                try:
+                    self.release_sync_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
+            raise ToolException(f"Error scrolling page: {str(e)}")
+
+    async def _arun(
+        self,
+        direction: str = "down",
+        amount: int = 500,
+        config: Optional[RunnableConfig] = None,
+        **_: Any,
+    ) -> str:
+        thread_id = None
+        try:
+            thread_id = self.get_thread_id(config)
+            page = await self.get_async_page(thread_id)
+
+            delta_x, delta_y = _get_scroll_deltas(direction, amount)
+
+            await page.mouse.wheel(delta_x, delta_y)
+            await self.release_async_browser(thread_id)
+            return f"Scrolled {direction} by {amount} pixels"
+        except Exception as e:
+            if thread_id:
+                try:
+                    await self.release_async_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
+            raise ToolException(f"Error scrolling page: {str(e)}")
+
+
+class ThreadAwareWaitForElementTool(ThreadAwareBaseTool):
+    """Tool for waiting until an element appears or reaches a specific state."""
+
+    name: str = "wait_for_element"
+    description: str = """Wait for an element to appear or reach a specific state.
+
+States: 'visible' (default), 'attached', 'detached', 'hidden'.
+Timeout in milliseconds (default: 30000)."""
+
+    args_schema: Type[BaseModel] = WaitForElementInput
+
+    def _run(
+        self,
+        selector: str,
+        timeout: int = 30000,
+        state: str = "visible",
+        config: Optional[RunnableConfig] = None,
+        **_: Any,
+    ) -> str:
+        thread_id = None
+        try:
+            thread_id = self.get_thread_id(config)
+            page = self.get_sync_page(thread_id)
+
+            page.wait_for_selector(selector, state=state, timeout=timeout)
+            self.release_sync_browser(thread_id)
+            return f"Element '{selector}' is now {state}"
+        except Exception as e:
+            if thread_id:
+                try:
+                    self.release_sync_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
+
+            error_msg = str(e)
+            if "timeout" in error_msg.lower():
+                raise ToolException(
+                    f"Timeout waiting for element '{selector}' to be {state} "
+                    f"after {timeout}ms. The element may not exist or may not "
+                    "reach the expected state."
+                )
+            raise ToolException(f"Error waiting for element '{selector}': {error_msg}")
+
+    async def _arun(
+        self,
+        selector: str,
+        timeout: int = 30000,
+        state: str = "visible",
+        config: Optional[RunnableConfig] = None,
+        **_: Any,
+    ) -> str:
+        thread_id = None
+        try:
+            thread_id = self.get_thread_id(config)
+            page = await self.get_async_page(thread_id)
+
+            await page.wait_for_selector(selector, state=state, timeout=timeout)
+            await self.release_async_browser(thread_id)
+            return f"Element '{selector}' is now {state}"
+        except Exception as e:
+            if thread_id:
+                try:
+                    await self.release_async_browser(thread_id)
+                except Exception as release_error:
+                    logger.warning(f"Error releasing browser: {release_error}")
+
+            error_msg = str(e)
+            if "timeout" in error_msg.lower():
+                raise ToolException(
+                    f"Timeout waiting for element '{selector}' to be {state} "
+                    f"after {timeout}ms. The element may not exist or may not "
+                    "reach the expected state."
+                )
+            raise ToolException(f"Error waiting for element '{selector}': {error_msg}")
+
+
 def create_thread_aware_tools(
     session_manager: BrowserSessionManager,
 ) -> Dict[str, ThreadAwareBaseTool]:
@@ -721,6 +1076,12 @@ def create_thread_aware_tools(
         ),
         "get_elements": ThreadAwareGetElementsTool(_session_manager=session_manager),
         "current_webpage": ThreadAwareCurrentWebPageTool(
+            _session_manager=session_manager
+        ),
+        "type_text": ThreadAwareTypeTool(_session_manager=session_manager),
+        "screenshot": ThreadAwareScreenshotTool(_session_manager=session_manager),
+        "scroll": ThreadAwareScrollTool(_session_manager=session_manager),
+        "wait_for_element": ThreadAwareWaitForElementTool(
             _session_manager=session_manager
         ),
     }

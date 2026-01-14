@@ -8,12 +8,14 @@ import base64
 import datetime
 import json
 import logging
+import time
 import warnings
 from collections import defaultdict
 from typing import Any, cast
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langgraph.checkpoint.base import (
     Checkpoint,
@@ -39,6 +41,90 @@ logger = logging.getLogger(__name__)
 
 # Union type for all events
 EventType = CheckpointEvent | ChannelDataEvent | WritesEvent
+
+# Default retry configuration
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_INITIAL_BACKOFF = 0.1  # 100ms
+DEFAULT_MAX_BACKOFF = 2.0  # 2 seconds
+
+
+class BedrockAgentCoreClientWithRetry:
+    """Wrapper around bedrock-agentcore client with retry logic.
+
+    Automatically retries on RetryableConflictException.
+    """
+
+    def __init__(
+        self,
+        client: Any,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        initial_backoff: float = DEFAULT_INITIAL_BACKOFF,
+        max_backoff: float = DEFAULT_MAX_BACKOFF,
+    ):
+        """Initialize the enhanced client wrapper.
+
+        Args:
+            client: The boto3 bedrock-agentcore client to wrap
+            max_retries: Maximum number of retry attempts for retryable errors
+            initial_backoff: Initial backoff time in seconds for exponential backoff
+            max_backoff: Maximum backoff time in seconds
+        """
+        self._client = client
+        self._max_retries = max_retries
+        self._initial_backoff = initial_backoff
+        self._max_backoff = max_backoff
+
+    def __getattr__(self, name: str) -> Any:
+        """Proxy attribute access to the wrapped client."""
+        attr = getattr(self._client, name)
+
+        # If it's the create_event method, wrap it with retry logic
+        if name == "create_event" and callable(attr):
+            return self._create_retryable_method(attr)
+
+        return attr
+
+    def _create_retryable_method(self, method: Any) -> Any:
+        """Create a wrapped version of a method with retry logic.
+
+        Args:
+            method: The method to wrap
+
+        Returns:
+            Wrapped method with retry logic
+        """
+
+        def wrapper(*args, **kwargs):
+            for attempt in range(self._max_retries + 1):
+                try:
+                    return method(*args, **kwargs)
+                except ClientError as e:
+                    error_code = e.response.get("Error", {}).get("Code")
+                    if error_code == "RetryableConflictException":
+                        if attempt < self._max_retries:
+                            # Calculate sleep time with exponential backoff
+                            sleep_time = min(
+                                self._initial_backoff * (2**attempt),
+                                self._max_backoff,
+                            )
+                            logger.warning(
+                                f"RetryableConflictException encountered on attempt "
+                                f"{attempt + 1}/{self._max_retries + 1}. "
+                                f"Retrying in {sleep_time:.2f}s..."
+                            )
+                            time.sleep(sleep_time)
+                            continue
+                        else:
+                            logger.error(
+                                f"Max retries ({self._max_retries}) exceeded for "
+                                f"RetryableConflictException"
+                            )
+                    raise
+
+            # This should not be reached
+            raise RuntimeError("Unexpected retry loop exit")
+
+        return wrapper
 
 
 class EventSerializer:
@@ -133,8 +219,25 @@ class AgentCoreEventClient:
     """Handles low-level event storage and retrieval from AgentCore Memory for checkpoints."""  # noqa: E501
 
     def __init__(
-        self, memory_id: str, serializer: EventSerializer | None = None, **boto3_kwargs
+        self,
+        memory_id: str,
+        serializer: EventSerializer | None = None,
+        *,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        initial_backoff: float = DEFAULT_INITIAL_BACKOFF,
+        max_backoff: float = DEFAULT_MAX_BACKOFF,
+        **boto3_kwargs,
     ):
+        """Initialize the AgentCore event client.
+
+        Args:
+            memory_id: The ID of the AgentCore memory to use
+            serializer: Optional custom event serializer
+            max_retries: Maximum number of retry attempts for retryable errors
+            initial_backoff: Initial backoff time in seconds for exponential backoff
+            max_backoff: Maximum backoff time in seconds
+            **boto3_kwargs: Additional arguments to pass to boto3.client
+        """
         self.memory_id = memory_id
         # mypy: need to set actual serializer if None
         if serializer is None:
@@ -147,7 +250,13 @@ class AgentCoreEventClient:
         config = Config(
             user_agent_extra="x-client-framework:langgraph_agentcore_memory"
         )
-        self.client = boto3.client("bedrock-agentcore", config=config, **boto3_kwargs)
+        raw_client = boto3.client("bedrock-agentcore", config=config, **boto3_kwargs)
+        self.client = BedrockAgentCoreClientWithRetry(
+            raw_client,
+            max_retries=max_retries,
+            initial_backoff=initial_backoff,
+            max_backoff=max_backoff,
+        )
 
     def store_blob_event(
         self, event: EventType, session_id: str, actor_id: str

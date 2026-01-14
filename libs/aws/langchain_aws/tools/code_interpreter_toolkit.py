@@ -1,12 +1,105 @@
-import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 from langchain_core.runnables.config import RunnableConfig
 from langchain_core.tools import BaseTool, StructuredTool
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+
+class ExecuteCodeInput(BaseModel):
+    """Input schema for execute_code tool."""
+
+    code: str = Field(
+        description="Python/JavaScript/TypeScript code to execute. Can include "
+        "imports, function definitions, data analysis, and visualizations. "
+        "Variables and imports persist across calls within the same session."
+    )
+    language: str = Field(
+        default="python",
+        description="Programming language: 'python' (default), 'javascript', "
+        "or 'typescript'",
+    )
+    clear_context: bool = Field(
+        default=False,
+        description="If True, clears all previous variable state before execution. "
+        "Use this to start fresh or free memory.",
+    )
+
+
+class ExecuteCommandInput(BaseModel):
+    """Input schema for execute_command tool."""
+
+    command: str = Field(
+        description="Shell command to execute "
+        "(e.g., 'ls -la', 'pip list', 'cat file.txt'). "
+        "Runs in a bash shell environment."
+    )
+
+
+class ReadFilesInput(BaseModel):
+    """Input schema for read_files tool."""
+
+    paths: List[str] = Field(
+        description="List of file paths to read "
+        "(e.g., ['data.csv', 'results/output.json'])"
+    )
+
+
+class WriteFilesInput(BaseModel):
+    """Input schema for write_files tool."""
+
+    files: List[Dict[str, str]] = Field(
+        description="List of files to write. Each dict must have 'path' (relative path "
+        "like 'data.csv' or 'scripts/analyze.py') and 'text' (file content). "
+        "Cannot use absolute paths starting with '/'."
+    )
+
+
+class ListFilesInput(BaseModel):
+    """Input schema for list_files tool."""
+
+    directory_path: str = Field(
+        default="",
+        description="Directory path to list. Empty string or '.' for current "
+        "directory.",
+    )
+
+
+class DeleteFilesInput(BaseModel):
+    """Input schema for delete_files tool."""
+
+    paths: List[str] = Field(description="List of file paths to delete")
+
+
+class UploadFileInput(BaseModel):
+    """Input schema for upload_file tool."""
+
+    path: str = Field(
+        description="Relative path where file should be saved "
+        "(e.g., 'data.csv', 'scripts/analyze.py')"
+    )
+    content: str = Field(description="File content as string")
+    description: str = Field(
+        default="",
+        description="Optional semantic description of the file contents to help "
+        "understand the data structure "
+        "(e.g., 'CSV with columns: date, revenue, product_id')",
+    )
+
+
+class InstallPackagesInput(BaseModel):
+    """Input schema for install_packages tool."""
+
+    packages: List[str] = Field(
+        description="List of Python packages to install. Can include version "
+        "specifiers (e.g., ['pandas>=2.0', 'numpy', 'scikit-learn==1.3.0'])"
+    )
+    upgrade: bool = Field(
+        default=False, description="If True, upgrades packages if already installed"
+    )
 
 
 class CodeInterpreterToolkit:
@@ -23,6 +116,8 @@ class CodeInterpreterToolkit:
     * start_command_execution - Start long-running commands asynchronously
     * get_task - Check status of async tasks
     * stop_task - Stop running tasks
+    * upload_file - Upload files with semantic descriptions
+    * install_packages - Install Python packages
 
     The toolkit lazily initializes the code interpreter session on first use.
     It supports multiple threads by maintaining separate code interpreter sessions for each thread ID.
@@ -127,7 +222,8 @@ class CodeInterpreterToolkit:
         )
         code_interpreter.start()
         logger.info(
-            f"Started code interpreter with session_id:{code_interpreter.session_id} for thread:{thread_id}"  # noqa: E501
+            f"Started code interpreter with session_id:{code_interpreter.session_id} "
+            f"for thread:{thread_id}"
         )
 
         # Store the interpreter
@@ -162,66 +258,144 @@ class CodeInterpreterToolkit:
         """
         tools: List[BaseTool] = []
 
-        # Execute code tool
         execute_code_tool = StructuredTool.from_function(
             name="execute_code",
             func=self._execute_code,
+            args_schema=ExecuteCodeInput,
+            description="""Execute code in a secure AWS sandbox environment.
+
+Use this tool for:
+- Data analysis and transformation (pandas, numpy)
+- Mathematical calculations and statistics
+- File processing (CSV, JSON, Excel, text files)
+- Generating visualizations (matplotlib, plotly, seaborn)
+- Running algorithms and data pipelines
+
+Variables and imports persist across calls within the same session.
+Use clear_context=True to reset state and free memory.""",
         )
         tools.append(execute_code_tool)
 
-        # Execute command tool
         execute_command_tool = StructuredTool.from_function(
             name="execute_command",
             func=self._execute_command,
+            args_schema=ExecuteCommandInput,
+            description="""Execute a shell command in the sandbox environment.
+
+Use this tool for:
+- Listing files and directories (ls, find)
+- Checking installed packages (pip list)
+- System information (python --version, which python)
+- File operations (cat, head, tail, wc)
+- Running scripts (python script.py, bash script.sh)""",
         )
         tools.append(execute_command_tool)
 
-        # Read files tool
         read_files_tool = StructuredTool.from_function(
             name="read_files",
             func=self._read_files,
+            args_schema=ReadFilesInput,
+            description="""Read content of one or more files from the sandbox.
+
+Use this tool to:
+- Read data files before analysis
+- Check contents of generated files
+- Verify file modifications""",
         )
         tools.append(read_files_tool)
 
-        # List files tool
         list_files_tool = StructuredTool.from_function(
             name="list_files",
             func=self._list_files,
+            args_schema=ListFilesInput,
+            description="""List files and directories in the sandbox.
+
+Use this tool to:
+- See what files are available
+- Check output directories
+- Explore the sandbox structure""",
         )
         tools.append(list_files_tool)
 
-        # Remove files tool
         delete_files_tool = StructuredTool.from_function(
             name="delete_files",
             func=self._remove_files,
+            args_schema=DeleteFilesInput,
+            description="""Delete files from the sandbox environment.
+
+Use this tool to:
+- Clean up temporary files
+- Remove old outputs
+- Free disk space""",
         )
         tools.append(delete_files_tool)
 
-        # Write files tool
         write_files_tool = StructuredTool.from_function(
             name="write_files",
             func=self._write_files,
+            args_schema=WriteFilesInput,
+            description="""Write/create files in the sandbox environment.
+
+Use this tool to:
+- Save analysis results
+- Create data files for processing
+- Write scripts or configuration files
+
+Paths must be relative (e.g., 'output.csv', 'scripts/analyze.py').
+Absolute paths starting with '/' are not allowed.""",
         )
         tools.append(write_files_tool)
 
-        # Start command execution tool
+        upload_file_tool = StructuredTool.from_function(
+            name="upload_file",
+            func=self._upload_file,
+            args_schema=UploadFileInput,
+            description="""Upload a file with optional semantic description.
+
+This is a convenience tool for creating files with context.
+The description helps track what the file contains.
+
+Example:
+- path: 'sales_data.csv'
+- content: 'date,revenue\\n2024-01-01,1000'
+- description: 'Daily sales with columns: date, revenue'""",
+        )
+        tools.append(upload_file_tool)
+
+        install_packages_tool = StructuredTool.from_function(
+            name="install_packages",
+            func=self._install_packages,
+            args_schema=InstallPackagesInput,
+            description="""Install Python packages in the sandbox.
+
+Use this tool before running code that requires packages not pre-installed.
+
+Examples:
+- ['pandas', 'matplotlib'] - Install multiple packages
+- ['scikit-learn==1.3.0'] - Install specific version
+- ['tensorflow'], upgrade=True - Upgrade if exists""",
+        )
+        tools.append(install_packages_tool)
+
         start_command_tool = StructuredTool.from_function(
             name="start_command_execution",
             func=self._start_command_execution,
+            description="Start a long-running command asynchronously. "
+            "Returns a task_id to check status.",
         )
         tools.append(start_command_tool)
 
-        # Get task status tool
         get_task_tool = StructuredTool.from_function(
             name="get_task",
             func=self._get_task,
+            description="Check status of an async task by task_id.",
         )
         tools.append(get_task_tool)
 
-        # Stop task tool
         stop_task_tool = StructuredTool.from_function(
             name="stop_task",
             func=self._stop_task,
+            description="Stop a running async task by task_id.",
         )
         tools.append(stop_task_tool)
 
@@ -232,7 +406,7 @@ class CodeInterpreterToolkit:
         code: str,
         config: RunnableConfig,
         language: str = "python",
-        clearContext: bool = False,
+        clear_context: bool = False,
     ) -> str:
         """
         Executes code in the AWS code interpreter environment
@@ -242,7 +416,7 @@ class CodeInterpreterToolkit:
                 Code to execute
             language:
                 Programming language, default is python
-            clearContext:
+            clear_context:
                 Whether to clear execution context, default is False
             config:
                 Runnable config that may contain a thread_id
@@ -256,7 +430,7 @@ class CodeInterpreterToolkit:
 
         response = code_interpreter.invoke(
             method="executeCode",
-            params={"code": code, "language": language, "clearContext": clearContext},
+            params={"code": code, "language": language, "clearContext": clear_context},
         )
 
         return _extract_output_from_stream(response)
@@ -370,6 +544,61 @@ class CodeInterpreterToolkit:
 
         return _extract_output_from_stream(response)
 
+    def _upload_file(
+        self,
+        path: str,
+        content: str,
+        config: RunnableConfig,
+        description: str = "",
+    ) -> str:
+        """
+        Upload a file with optional semantic description.
+
+        Args:
+            path: Relative path where file should be saved
+            content: File content as string
+            description: Optional description of file contents
+            config: Runnable config that may contain a thread_id
+
+        Returns:
+            String confirming upload
+
+        """
+        if path.startswith("/"):
+            raise ValueError(
+                f"Path must be relative, not absolute. Got: {path}. "
+                "Use paths like 'data.csv' or 'scripts/analyze.py'."
+            )
+
+        code_interpreter = self._get_or_create_interpreter(config=config)
+        response = code_interpreter.upload_file(path, content, description)
+        return _extract_output_from_stream(response)
+
+    def _install_packages(
+        self,
+        packages: List[str],
+        config: RunnableConfig,
+        upgrade: bool = False,
+    ) -> str:
+        """
+        Install Python packages in the code interpreter environment.
+
+        Args:
+            packages: List of package names to install
+            upgrade: If True, upgrades existing packages
+            config: Runnable config that may contain a thread_id
+
+        Returns:
+            String containing installation results
+
+        """
+        if not packages:
+            raise ValueError("At least one package name must be provided")
+
+        code_interpreter = self._get_or_create_interpreter(config=config)
+        response = code_interpreter.install_packages(packages, upgrade=upgrade)
+        return _extract_output_from_stream(response)
+
     def _start_command_execution(self, command: str, config: RunnableConfig) -> str:
         """
         Start a long-running command asynchronously
@@ -468,9 +697,8 @@ class CodeInterpreterToolkit:
 
 async def create_code_interpreter_toolkit(
     region: str = "us-west-2",
-) -> Tuple[CodeInterpreterToolkit, List[BaseTool]]:
-    """
-    Create and setup a CodeInterpreterToolkit
+) -> Tuple["CodeInterpreterToolkit", List[BaseTool]]:
+    """Create and setup a CodeInterpreterToolkit.
 
     Args:
         region: AWS region for code interpreter
@@ -478,11 +706,14 @@ async def create_code_interpreter_toolkit(
     Returns:
         Tuple of (toolkit, tools)
 
+    Example:
+        >>> toolkit, tools = await create_code_interpreter_toolkit()
+        >>> # Use tools with an agent
+        >>> agent = create_react_agent(model, tools=tools)
+        >>> await toolkit.cleanup()  # When done
     """
     toolkit = CodeInterpreterToolkit(region=region)
-    # Create tools without immediately initializing the code interpreter
     tools = await toolkit._setup()
-    # Code interpreter will be initialized lazily when first used
     return toolkit, tools
 
 
@@ -515,11 +746,14 @@ def _extract_output_from_stream(response: Any) -> str:
                     output.append(content_item["text"])
                 if content_item["type"] == "resource":
                     resource = content_item["resource"]
+                    file_path = resource.get("uri", "").replace("file://", "")
                     if "text" in resource:
-                        file_path = resource["uri"].replace("file://", "")
                         file_content = resource["text"]
                         output.append(f"==== File: {file_path} ====\n{file_content}\n")
+                    elif "blob" in resource:
+                        # Binary file (images, etc.) - just note it was created
+                        output.append(f"==== Binary File: {file_path} ====\n")
                     else:
-                        output.append(json.dumps(resource))
+                        output.append(f"==== File: {file_path} ====\n")
 
     return "\n".join(output)
