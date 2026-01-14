@@ -1404,8 +1404,8 @@ class ChatBedrockConverse(BaseChatModel):
                 "maxTokens": None
                 if should_unset_max_tokens
                 else (maxTokens or self.max_tokens),
-                "temperature": temperature or self.temperature,
-                "topP": self.top_p or topP,
+                "temperature": self.temperature if temperature is None else temperature,
+                "topP": self.top_p if topP is None else topP,
                 "stopSequences": stop or stopSequences or self.stop_sequences,
             }
         if not toolConfig and tools:
