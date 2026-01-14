@@ -254,7 +254,10 @@ class TestGetOrCreateInterpreter:
             interpreter = toolkit._get_or_create_interpreter(config)
 
             assert interpreter is mock_interpreter
-            mock_class.assert_called_once_with(region="us-west-2")
+            mock_class.assert_called_once_with(
+                region="us-west-2",
+                integration_source="langchain"
+            )
             mock_interpreter.start.assert_called_once()
             assert "thread-1" in toolkit._code_interpreters
 
