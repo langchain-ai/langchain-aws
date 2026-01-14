@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.13' and platform_python_implementation == 'PyPy'",
@@ -62,7 +62,7 @@ wheels = [
 
 [[package]]
 name = "bedrock-agentcore"
-version = "1.1.2"
+version = "1.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
@@ -75,9 +75,9 @@ dependencies = [
     { name = "uvicorn" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/78/cc/aacc1d79e749b65f0ead598bb2e9d7663e66d5c00757dd12d86fffbc05f6/bedrock_agentcore-1.1.2.tar.gz", hash = "sha256:d19a18579ced821578ad8ba1d36c0425510dfe044ce87fadadfede3b3aca23b0", size = 397471, upload-time = "2025-12-26T21:57:51.269Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/65/6b4826347ca76e0f44b871111585cec5cb49d7bd7d083da0ed6d0593c71d/bedrock_agentcore-1.2.0.tar.gz", hash = "sha256:0d8a80b39d5c4a34e92d57e0113f45c623a79cb2cb5a07d0930a0cb5563dfda9", size = 408490, upload-time = "2026-01-13T22:05:28.477Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/09/74/89c82cc105fc91b3824eb4d82c73d1fe76a6375280c1bfd79cb2e2fd1431/bedrock_agentcore-1.1.2-py3-none-any.whl", hash = "sha256:e2070eecdb31ab177f78db9e1de7ed52c2c627667502f7384b7bf10afdbe6c2e", size = 113262, upload-time = "2025-12-26T21:57:49.767Z" },
+    { url = "https://files.pythonhosted.org/packages/49/11/c3bf53670e2fe13354b72a7c8e9518ca22210527ff6e65ef1a86917a6e5e/bedrock_agentcore-1.2.0-py3-none-any.whl", hash = "sha256:3a17184d24b2fe77a4f49c813956623dec8011523da44df187ec22d064237fcb", size = 118697, upload-time = "2026-01-13T22:05:27.131Z" },
 ]
 
 [[package]]
@@ -663,7 +663,7 @@ typing = [
 [package.metadata]
 requires-dist = [
     { name = "beautifulsoup4", marker = "extra == 'tools'", specifier = ">=4.13.4" },
-    { name = "bedrock-agentcore", marker = "python_full_version >= '3.10' and extra == 'tools'", specifier = ">=0.1.0" },
+    { name = "bedrock-agentcore", marker = "python_full_version >= '3.10' and extra == 'tools'", specifier = ">=1.2.0" },
     { name = "boto3", specifier = ">=1.42.5" },
     { name = "langchain-core", specifier = ">=1.2.5" },
     { name = "numpy", marker = "python_full_version < '3.12'", specifier = ">=1.0.0,<3" },
