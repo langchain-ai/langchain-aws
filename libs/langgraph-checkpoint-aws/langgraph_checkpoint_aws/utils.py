@@ -474,7 +474,7 @@ def create_client_config(config: Config | None = None) -> Config:
     existing_user_agent = getattr(config, "user_agent_extra", "") if config else ""
     new_user_agent = (
         f"{existing_user_agent} x-client-framework:langgraph-checkpoint-aws "
-        f"md/sdk_user_agent/{SDK_USER_AGENT} (integration_source=langchain)".strip()
+        f"md/sdk_user_agent/{SDK_USER_AGENT}".strip()
     )
 
     return Config(user_agent_extra=new_user_agent, **config_kwargs)
