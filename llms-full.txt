@@ -454,6 +454,140 @@ result = agent_executor.invoke({
 })
 ```
 
+### AgentCore Tools - Browser and Code Interpreter
+
+Amazon Bedrock AgentCore provides managed tools for browser automation and code execution in secure sandbox environments.
+
+#### Browser Toolkit
+
+Navigate websites, extract content, fill forms, and take screenshots:
+
+```python
+from langchain_aws.tools import create_browser_toolkit
+
+# Create toolkit
+toolkit, browser_tools = create_browser_toolkit(region="us-west-2")
+
+# Available tools: navigate_browser, click, type_text, extract_text, 
+# extract_hyperlinks, get_elements, current_webpage, navigate_back,
+# screenshot, scroll_page, wait_for_element
+
+# Use with agent (thread_id required for session isolation)
+config = {"configurable": {"thread_id": "browse-session-1"}}
+
+tools_by_name = toolkit.get_tools_by_name()
+tools_by_name["navigate_browser"].invoke({"url": "https://example.com"}, config=config)
+text = tools_by_name["extract_text"].invoke({}, config=config)
+
+# Cleanup when done
+await toolkit.cleanup()
+```
+
+#### Code Interpreter Toolkit
+
+Execute Python, JavaScript, and TypeScript in isolated MicroVM sandboxes:
+
+```python
+from langchain_aws.tools import create_code_interpreter_toolkit
+
+# Create toolkit (async!)
+toolkit, code_tools = await create_code_interpreter_toolkit(region="us-west-2")
+
+# Available tools: execute_code, execute_command, read_files, write_files,
+# list_files, delete_files, upload_file, install_packages
+
+tools_by_name = toolkit.get_tools_by_name()
+config = {"configurable": {"thread_id": "code-session-1"}}
+
+# Execute code
+result = tools_by_name["execute_code"].invoke({
+    "code": "import pandas as pd; print(pd.__version__)",
+    "language": "python"
+}, config=config)
+
+# Install packages
+tools_by_name["install_packages"].invoke({
+    "packages": ["requests", "beautifulsoup4"]
+}, config=config)
+
+# Cleanup when done
+await toolkit.cleanup()
+```
+
+#### Using AgentCore Tools with LangGraph
+
+```python
+from langchain_aws import ChatBedrockConverse
+from langchain_aws.tools import create_browser_toolkit, create_code_interpreter_toolkit
+from langgraph.prebuilt import create_react_agent
+
+async def create_agent_with_agentcore_tools():
+    # Initialize model
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2"
+    )
+    
+    # Create toolkits
+    browser_toolkit, browser_tools = create_browser_toolkit(region="us-west-2")
+    code_toolkit, code_tools = await create_code_interpreter_toolkit(region="us-west-2")
+    
+    # Combine tools
+    all_tools = browser_tools + code_tools
+    
+    # Create agent
+    agent = create_react_agent(llm, all_tools)
+    
+    # Use agent with thread_id for session isolation
+    config = {"configurable": {"thread_id": "agent-session-1"}}
+    
+    result = await agent.ainvoke(
+        {"messages": [{"role": "user", "content": "Go to python.org and tell me the latest version"}]},
+        config=config
+    )
+    
+    # Always cleanup
+    await browser_toolkit.cleanup()
+    await code_toolkit.cleanup()
+    
+    return result
+```
+
+**Important Notes:**
+
+- `create_code_interpreter_toolkit()` is **async** - requires `await`
+- Both toolkits require `thread_id` in config for session isolation
+- Always call `cleanup()` when done to release resources
+- Install with: `pip install langchain-aws[tools]`
+
+### AgentCore Memory - Persistent State for LangGraph
+
+Use AgentCore Memory as a checkpointer for LangGraph agents:
+
+```python
+from langgraph_checkpoint_aws import AgentCoreMemorySaver
+
+# Create checkpointer
+checkpointer = AgentCoreMemorySaver(
+    memory_id="your-memory-id",
+    region_name="us-west-2"
+)
+
+# Use with LangGraph
+graph = workflow.compile(checkpointer=checkpointer)
+
+# Invoke with thread_id and actor_id
+config = {
+    "configurable": {
+        "thread_id": "conversation-123",
+        "actor_id": "my-agent"  # Required for AgentCore
+    }
+}
+result = graph.invoke({"messages": []}, config)
+```
+
+**Note:** Install separately with `pip install langgraph-checkpoint-aws`
+
 ### Semantic Search with Vector Storage
 
 Build a semantic search system using embeddings:
