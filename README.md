@@ -60,6 +60,29 @@ response = model.invoke("Hello! How are you today?")
 print(response)
 ```
 
+### AgentCore Tools
+
+```python
+from langchain_aws.tools import create_browser_toolkit, create_code_interpreter_toolkit
+
+# Browser automation
+browser_toolkit, browser_tools = create_browser_toolkit(region="us-west-2")
+
+# Code execution (async)
+code_toolkit, code_tools = await create_code_interpreter_toolkit(region="us-west-2")
+
+# Use with LangGraph agent
+agent = create_react_agent(model, tools=browser_tools + code_tools)
+result = await agent.ainvoke(
+    {"messages": [{"role": "user", "content": "Navigate to example.com"}]},
+    config={"configurable": {"thread_id": "session-1"}}
+)
+
+# Cleanup
+await browser_toolkit.cleanup()
+await code_toolkit.cleanup()
+```
+
 For more detailed usage examples and documentation, please refer to the [LangChain docs](https://python.langchain.com/docs/integrations/platforms/aws/).
 
 ### `langgraph-checkpoint-aws`

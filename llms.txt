@@ -9,6 +9,9 @@
 - [Amazon Bedrock Knowledge Bases Retriever](https://python.langchain.com/docs/integrations/retrievers/bedrock/): Guide for using Amazon Bedrock Knowledge Bases as a retriever in RAG applications. Covers knowledge base setup, retrieval configuration, vector search parameters, and integration with Bedrock foundation models.
 - [Amazon Neptune Graph Database](https://python.langchain.com/docs/integrations/graphs/neptune_cypher/): Documentation for working with Amazon Neptune graph databases using Cypher queries. Covers graph connection setup, query execution, and integration with LangChain graph capabilities for knowledge graphs and graph-based AI applications.
 - [Amazon Neptune Analytics](https://python.langchain.com/docs/integrations/graphs/neptune_cypher/): Guide for using Amazon Neptune Analytics for serverless graph analytics. Covers graph identifier configuration, query optimization, and integration with graph-based AI workflows.
+- [Amazon Bedrock AgentCore Browser Tool](https://python.langchain.com/docs/integrations/tools/bedrock_agentcore_browser/): Guide for using the AgentCore Browser toolkit for web automation. Covers navigation, content extraction, form filling, and screenshots in managed browser sessions.
+- [Amazon Bedrock AgentCore Code Interpreter](https://python.langchain.com/docs/integrations/tools/bedrock_agentcore_code_interpreter/): Documentation for executing Python, JavaScript, and TypeScript code in secure AgentCore sandbox environments. Covers code execution, file operations, and package installation.
+- [Amazon Bedrock AgentCore Memory](https://python.langchain.com/docs/integrations/memory/bedrock_agentcore/): Guide for using AgentCore Memory as a LangGraph checkpointer for persistent conversation state across sessions.
 
 # Examples
 
@@ -19,6 +22,9 @@
 - [Amazon Knowledge Bases Retriever Example](https://github.com/langchain-ai/langchain-aws/blob/main/libs/aws/langchain_aws/retrievers/bedrock.py): Source code example for the AmazonKnowledgeBasesRetriever class. Shows configuration of vector search parameters, knowledge base integration, and retrieval optimization for Bedrock-based RAG systems.
 - [Amazon SageMaker Endpoint Example](https://github.com/langchain-ai/langchain-aws/blob/main/libs/aws/langchain_aws/llms/sagemaker_endpoint.py): Implementation example showing how to deploy and use custom models on SageMaker endpoints. Demonstrates content handler configuration, endpoint management, and real-time inference integration.
 - [Amazon Neptune Graph Example](https://github.com/langchain-ai/langchain-aws/blob/main/libs/aws/langchain_aws/graphs/neptune_graph.py): Source code example for working with Neptune graph databases. Shows graph connection setup, Cypher query execution, and integration with graph-based AI applications.
+- [AgentCore Browser Toolkit Example](https://github.com/langchain-ai/langchain-aws/blob/main/libs/aws/langchain_aws/tools/browser_toolkit.py): Source code for the BrowserToolkit showing how to create and manage browser sessions for web automation tasks.
+- [AgentCore Code Interpreter Example](https://github.com/langchain-ai/langchain-aws/blob/main/libs/aws/langchain_aws/tools/code_interpreter_toolkit.py): Implementation of the CodeInterpreterToolkit demonstrating code execution in isolated sandbox environments.
+- [AgentCore Memory Saver Example](https://github.com/langchain-ai/langchain-aws/blob/main/libs/langgraph-checkpoint-aws/): Implementation of AgentCoreMemorySaver for LangGraph agent state persistence.
 
 # Resources
 
@@ -28,3 +34,4 @@
 - [Amazon SageMaker Documentation](https://docs.aws.amazon.com/sagemaker/): Comprehensive documentation for Amazon SageMaker machine learning platform. Includes guides for model training, deployment, endpoint management, and integration with custom ML workflows.
 - [Amazon Kendra Documentation](https://docs.aws.amazon.com/kendra/): Official documentation for Amazon Kendra enterprise search service. Covers index creation, data source connectors, search configuration, and enterprise search best practices.
 - [Amazon Neptune Documentation](https://docs.aws.amazon.com/neptune/): Documentation for Amazon Neptune graph database service. Includes guides for graph creation, query languages (Gremlin and SPARQL), performance optimization, and graph analytics capabilities.
+- [Amazon Bedrock AgentCore Documentation](https://docs.aws.amazon.com/bedrock-agentcore/): Official AWS documentation for Bedrock AgentCore services including browser, code interpreter, and memory capabilities.
