@@ -216,7 +216,10 @@ class CodeInterpreterToolkit:
             return self._code_interpreters[thread_id]
 
         # Create a new code interpreter for this thread
-        code_interpreter = CodeInterpreter(region=self.region)
+        # Pass integration_source for telemetry attribution
+        code_interpreter = CodeInterpreter(
+            region=self.region, integration_source="langchain"
+        )
         code_interpreter.start()
         logger.info(
             f"Started code interpreter with session_id:{code_interpreter.session_id} "
