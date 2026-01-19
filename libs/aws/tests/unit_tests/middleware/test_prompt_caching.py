@@ -12,7 +12,7 @@ from langchain_aws.middleware.prompt_caching import (
 
 # BedrockPromptCachingMiddleware tests
 
-def test_bedrock_applies_cache_control_to_string() -> None:
+def test_bedrock_skips_when_no_messages() -> None:
     middleware = BedrockPromptCachingMiddleware()
 
     request = MagicMock()
@@ -23,26 +23,22 @@ def test_bedrock_applies_cache_control_to_string() -> None:
 
     middleware._apply_cache_control(request)
 
-    expected = {"type": "ephemeral", "ttl": "5m"}
-    assert isinstance(request.system_prompt, list)
-    assert request.system_prompt[0]["cache_control"] == expected
+    assert request.system_prompt == "You are helpful."
 
 
-def test_bedrock_preserves_existing_cache_control() -> None:
+def test_bedrock_does_not_modify_system_prompt() -> None:
     middleware = BedrockPromptCachingMiddleware()
 
-    existing_cache = {"type": "ephemeral", "ttl": "1h"}
     request = MagicMock()
     request.model = MagicMock(spec=ChatBedrock)
     request.model.model_id = "anthropic.claude-3-haiku-20240307-v1:0"
-    request.system_prompt = [
-        {"type": "text", "text": "Block 1.", "cache_control": existing_cache},
-    ]
-    request.messages = []
+    request.system_prompt = "You are helpful."
+    request.messages = [HumanMessage(content="Hello")]
 
     middleware._apply_cache_control(request)
 
-    assert request.system_prompt[0]["cache_control"] == existing_cache
+    assert request.system_prompt == "You are helpful."
+    assert "cache_control" in str(request.messages[-1].content)
 
 
 def test_bedrock_skips_non_chatbedrock() -> None:

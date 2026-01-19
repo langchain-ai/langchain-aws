@@ -38,9 +38,9 @@ class BedrockPromptCachingMiddleware(AgentMiddleware):
     """Prompt Caching Middleware for ChatBedrock (InvokeModel API).
 
     Optimizes API usage by caching conversation prefixes for Anthropic models
-    on AWS Bedrock. Adds cache_control to both the system prompt and the last
-    message, caching the entire conversation prefix for improved cache hits
-    in multi-turn conversations.
+    on AWS Bedrock. Adds cache_control to the last message, caching the entire
+    conversation prefix (including system prompt) for improved cache hits in
+    multi-turn conversations.
 
     Requires both 'langchain' and 'langchain-aws' packages to be installed.
 
@@ -105,68 +105,38 @@ class BedrockPromptCachingMiddleware(AgentMiddleware):
         return messages_count >= self.min_messages_to_cache
 
     def _apply_cache_control(self, request: ModelRequest) -> None:
-        """Apply cache control to system prompt and last message."""
-        cache_control = {"type": self.type, "ttl": self.ttl}
+        """Apply cache control to the last message."""
+        if not request.messages:
+            return
 
-        # Apply to system prompt
-        if isinstance(request.system_prompt, str) and request.system_prompt.strip():
-            request.system_prompt = [
+        cache_control = {"type": self.type, "ttl": self.ttl}
+        last_msg = request.messages[-1]
+        content = getattr(last_msg, "content", None)
+
+        if isinstance(content, str):
+            new_content = [
                 {
                     "type": "text",
-                    "text": request.system_prompt,
+                    "text": content,
                     "cache_control": cache_control,
                 }
             ]
-        elif isinstance(request.system_prompt, list):
-            new_system = []
-            for item in request.system_prompt:
-                if isinstance(item, dict) and item.get("type") == "text":
-                    new_item = dict(item)
-                    if "cache_control" not in new_item:
-                        new_item["cache_control"] = cache_control
-                    new_system.append(new_item)
-                elif isinstance(item, str):
-                    new_system.append(
-                        {
-                            "type": "text",
-                            "text": item,
-                            "cache_control": cache_control,
-                        }
-                    )
-                else:
-                    new_system.append(item)
-            request.system_prompt = new_system
-
-        # Apply to last message to cache entire conversation prefix
-        if request.messages:
-            last_msg = request.messages[-1]
-            content = getattr(last_msg, "content", None)
-
-            if isinstance(content, str):
-                new_content = [
-                    {
-                        "type": "text",
-                        "text": content,
-                        "cache_control": cache_control,
-                    }
-                ]
-                updated = last_msg.model_copy(update={"content": new_content})
-                request.messages[-1] = updated
-            elif isinstance(content, list) and content:
-                new_content = list(content)
-                last_block = new_content[-1]
-                if isinstance(last_block, dict):
+            request.messages[-1] = last_msg.model_copy(update={"content": new_content})
+        elif isinstance(content, list) and content:
+            new_content = list(content)
+            last_block = new_content[-1]
+            if isinstance(last_block, dict):
+                if "cache_control" not in last_block:
                     new_block = dict(last_block)
                     new_block["cache_control"] = cache_control
                     new_content[-1] = new_block
-                elif isinstance(last_block, str):
-                    new_content[-1] = {
-                        "type": "text",
-                        "text": last_block,
-                        "cache_control": cache_control,
-                    }
-                updated = last_msg.model_copy(update={"content": new_content})
-                request.messages[-1] = updated
+            elif isinstance(last_block, str):
+                new_content[-1] = {
+                    "type": "text",
+                    "text": last_block,
+                    "cache_control": cache_control,
+                }
+            request.messages[-1] = last_msg.model_copy(update={"content": new_content})
 
     def wrap_model_call(
         self,
