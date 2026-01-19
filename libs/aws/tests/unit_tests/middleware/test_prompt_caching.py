@@ -12,34 +12,6 @@ from langchain_aws.middleware.prompt_caching import (
 
 # BedrockPromptCachingMiddleware tests
 
-def test_bedrock_skips_when_no_messages() -> None:
-    middleware = BedrockPromptCachingMiddleware()
-
-    request = MagicMock()
-    request.model = MagicMock(spec=ChatBedrock)
-    request.model.model_id = "anthropic.claude-3-haiku-20240307-v1:0"
-    request.system_prompt = "You are helpful."
-    request.messages = []
-
-    middleware._apply_cache_control(request)
-
-    assert request.system_prompt == "You are helpful."
-
-
-def test_bedrock_does_not_modify_system_prompt() -> None:
-    middleware = BedrockPromptCachingMiddleware()
-
-    request = MagicMock()
-    request.model = MagicMock(spec=ChatBedrock)
-    request.model.model_id = "anthropic.claude-3-haiku-20240307-v1:0"
-    request.system_prompt = "You are helpful."
-    request.messages = [HumanMessage(content="Hello")]
-
-    middleware._apply_cache_control(request)
-
-    assert request.system_prompt == "You are helpful."
-    assert "cache_control" in str(request.messages[-1].content)
-
 
 def test_bedrock_skips_non_chatbedrock() -> None:
     middleware = BedrockPromptCachingMiddleware(unsupported_model_behavior="ignore")
@@ -64,7 +36,8 @@ def test_bedrock_skips_non_anthropic() -> None:
     assert middleware._should_apply_caching(request) is False
 
 
-def test_bedrock_applies_cache_control_to_last_message_string() -> None:
+def test_bedrock_passes_cache_control_via_model_settings() -> None:
+    """Verify cache_control is passed through model_settings, not message modification."""
     middleware = BedrockPromptCachingMiddleware()
 
     request = MagicMock()
@@ -72,55 +45,112 @@ def test_bedrock_applies_cache_control_to_last_message_string() -> None:
     request.model.model_id = "anthropic.claude-3-haiku-20240307-v1:0"
     request.system_prompt = "You are helpful."
     request.messages = [HumanMessage(content="Hello")]
+    request.model_settings = {}
 
-    middleware._apply_cache_control(request)
+    captured_request = None
 
-    last_msg = request.messages[-1]
-    assert isinstance(last_msg.content, list)
-    assert last_msg.content[0]["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
+    def mock_handler(req):
+        nonlocal captured_request
+        captured_request = req
+        return MagicMock()
+
+    middleware.wrap_model_call(request, mock_handler)
+
+    # Verify override was called with cache_control in model_settings
+    request.override.assert_called_once()
+    call_kwargs = request.override.call_args[1]
+    assert "model_settings" in call_kwargs
+    assert call_kwargs["model_settings"]["cache_control"] == {
+        "type": "ephemeral",
+        "ttl": "5m",
+    }
 
 
-def test_bedrock_applies_cache_control_to_last_message_list() -> None:
+def test_bedrock_does_not_modify_messages() -> None:
+    """Verify messages are NOT modified directly (prevents checkpoint accumulation)."""
+    middleware = BedrockPromptCachingMiddleware()
+
+    original_message = HumanMessage(content="Hello")
+    request = MagicMock()
+    request.model = MagicMock(spec=ChatBedrock)
+    request.model.model_id = "anthropic.claude-3-haiku-20240307-v1:0"
+    request.system_prompt = "You are helpful."
+    request.messages = [original_message]
+    request.model_settings = {}
+
+    def mock_handler(req):
+        return MagicMock()
+
+    middleware.wrap_model_call(request, mock_handler)
+
+    # Original message should remain unchanged
+    assert original_message.content == "Hello"
+    assert request.messages[0].content == "Hello"
+
+
+def test_bedrock_does_not_modify_system_prompt() -> None:
+    """Verify system prompt is NOT modified."""
     middleware = BedrockPromptCachingMiddleware()
 
     request = MagicMock()
     request.model = MagicMock(spec=ChatBedrock)
     request.model.model_id = "anthropic.claude-3-haiku-20240307-v1:0"
     request.system_prompt = "You are helpful."
-    request.messages = [
-        HumanMessage(content=[{"type": "text", "text": "Hello"}])
-    ]
+    request.messages = [HumanMessage(content="Hello")]
+    request.model_settings = {}
 
-    middleware._apply_cache_control(request)
+    def mock_handler(req):
+        return MagicMock()
 
-    last_msg = request.messages[-1]
-    assert last_msg.content[-1]["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
+    middleware.wrap_model_call(request, mock_handler)
+
+    # System prompt should remain unchanged
+    assert request.system_prompt == "You are helpful."
 
 
-def test_bedrock_does_not_modify_earlier_messages() -> None:
-    middleware = BedrockPromptCachingMiddleware()
+def test_bedrock_respects_min_messages_to_cache() -> None:
+    middleware = BedrockPromptCachingMiddleware(min_messages_to_cache=3)
 
     request = MagicMock()
     request.model = MagicMock(spec=ChatBedrock)
     request.model.model_id = "anthropic.claude-3-haiku-20240307-v1:0"
     request.system_prompt = "You are helpful."
+    request.messages = [HumanMessage(content="Hello")]
+
+    # 1 message + 1 system = 2, which is less than min_messages_to_cache=3
+    assert middleware._should_apply_caching(request) is False
+
     request.messages = [
-        HumanMessage(content="First message"),
-        AIMessage(content="Response"),
-        HumanMessage(content="Second message"),
+        HumanMessage(content="Hello"),
+        AIMessage(content="Hi"),
+        HumanMessage(content="How are you?"),
     ]
+    # 3 messages + 1 system = 4, which is >= min_messages_to_cache=3
+    assert middleware._should_apply_caching(request) is True
 
-    middleware._apply_cache_control(request)
 
-    # First message should remain unchanged
-    assert request.messages[0].content == "First message"
-    # Second message (AI) should remain unchanged
-    assert request.messages[1].content == "Response"
-    # Only last message should have cache_control
-    assert "cache_control" in str(request.messages[-1].content)
+def test_bedrock_custom_ttl() -> None:
+    """Verify custom TTL is passed correctly."""
+    middleware = BedrockPromptCachingMiddleware(ttl="1h")
+
+    request = MagicMock()
+    request.model = MagicMock(spec=ChatBedrock)
+    request.model.model_id = "anthropic.claude-3-haiku-20240307-v1:0"
+    request.system_prompt = "You are helpful."
+    request.messages = [HumanMessage(content="Hello")]
+    request.model_settings = {}
+
+    def mock_handler(req):
+        return MagicMock()
+
+    middleware.wrap_model_call(request, mock_handler)
+
+    call_kwargs = request.override.call_args[1]
+    assert call_kwargs["model_settings"]["cache_control"]["ttl"] == "1h"
 
 
 # BedrockConversePromptCachingMiddleware tests
+
 
 def test_converse_applies_cache_point_to_string() -> None:
     middleware = BedrockConversePromptCachingMiddleware()

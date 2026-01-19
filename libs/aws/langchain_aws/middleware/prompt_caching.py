@@ -104,48 +104,25 @@ class BedrockPromptCachingMiddleware(AgentMiddleware):
         )
         return messages_count >= self.min_messages_to_cache
 
-    def _apply_cache_control(self, request: ModelRequest) -> None:
-        """Apply cache control to the last message."""
-        if not request.messages:
-            return
-
-        cache_control = {"type": self.type, "ttl": self.ttl}
-        last_msg = request.messages[-1]
-        content = getattr(last_msg, "content", None)
-
-        if isinstance(content, str):
-            new_content = [
-                {
-                    "type": "text",
-                    "text": content,
-                    "cache_control": cache_control,
-                }
-            ]
-            request.messages[-1] = last_msg.model_copy(update={"content": new_content})
-        elif isinstance(content, list) and content:
-            new_content = list(content)
-            last_block = new_content[-1]
-            if isinstance(last_block, dict):
-                if "cache_control" not in last_block:
-                    new_block = dict(last_block)
-                    new_block["cache_control"] = cache_control
-                    new_content[-1] = new_block
-            elif isinstance(last_block, str):
-                new_content[-1] = {
-                    "type": "text",
-                    "text": last_block,
-                    "cache_control": cache_control,
-                }
-            request.messages[-1] = last_msg.model_copy(update={"content": new_content})
+    def _get_cache_control_settings(self) -> dict:
+        """Get cache control settings to pass via model_settings."""
+        return {"type": self.type, "ttl": self.ttl}
 
     def wrap_model_call(
         self,
         request: ModelRequest,
         handler: Callable[[ModelRequest], ModelResponse],
     ) -> ModelCallResult:
-        """Wrap the model call to add cache control."""
+        """Wrap the model call to add cache control via model_settings."""
         if self._should_apply_caching(request):
-            self._apply_cache_control(request)
+            # Pass cache_control through model_settings instead of modifying messages.
+            # This prevents cache_control from accumulating in checkpoints across turns.
+            # ChatBedrock will apply this at API call time.
+            new_model_settings = {
+                **request.model_settings,
+                "cache_control": self._get_cache_control_settings(),
+            }
+            return handler(request.override(model_settings=new_model_settings))
         return handler(request)
 
     async def awrap_model_call(
@@ -153,9 +130,16 @@ class BedrockPromptCachingMiddleware(AgentMiddleware):
         request: ModelRequest,
         handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
     ) -> ModelCallResult:
-        """Wrap the model call to add cache control (async version)."""
+        """Wrap the model call to add cache control via model_settings (async)."""
         if self._should_apply_caching(request):
-            self._apply_cache_control(request)
+            # Pass cache_control through model_settings instead of modifying messages.
+            # This prevents cache_control from accumulating in checkpoints across turns.
+            # ChatBedrock will apply this at API call time.
+            new_model_settings = {
+                **request.model_settings,
+                "cache_control": self._get_cache_control_settings(),
+            }
+            return await handler(request.override(model_settings=new_model_settings))
         return await handler(request)
 
 
