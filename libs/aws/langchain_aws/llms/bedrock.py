@@ -964,7 +964,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             if (
                 len(parts) > 1
                 and parts[0].lower()
-                in {"eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp"}
+                in {"eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp", "au"}
             )
             else parts[0]
         )

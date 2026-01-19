@@ -787,6 +787,13 @@ def test_beta_use_converse_api_with_inference_profile_as_nova_model(
             "ap-northeast-1",
         ),
         (
+            "au.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            None,
+            "anthropic",
+            nullcontext(),
+            "ap-southeast-2",
+        ),
+        (
             "global.anthropic.claude-sonnet-4-20250514-v1:0",
             None,
             "anthropic",
