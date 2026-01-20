@@ -1080,7 +1080,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                         content = msg.get("content")
                         if isinstance(content, list) and content:
                             for block in reversed(content):
-                                if isinstance(block, dict) and "text" in block:
+                                if isinstance(block, dict):
                                     block["cache_control"] = cache_control
                                     break
                             break
