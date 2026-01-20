@@ -153,7 +153,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         if self.provider:
             return self.provider
 
-        regions = ("eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp")
+        regions = ("eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp", "au")
         parts = self.model_id.split(".")
         return parts[1] if parts[0] in regions else parts[0]
 
