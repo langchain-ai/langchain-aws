@@ -58,6 +58,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         max_retries: maximum number of retry attempts for retryable errors.
         initial_backoff: initial backoff time in seconds for exponential backoff.
         max_backoff: maximum backoff time in seconds.
+        remove_dangling_tool_calls: if True, removes orphaned tool_calls from
+            AIMessages when loading checkpoints. If False (default), adds
+            placeholder ToolMessages for orphaned tool_calls.
     """
 
     def __init__(
@@ -70,6 +73,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         max_retries: int = DEFAULT_MAX_RETRIES,
         initial_backoff: float = DEFAULT_INITIAL_BACKOFF,
         max_backoff: float = DEFAULT_MAX_BACKOFF,
+        remove_dangling_tool_calls: bool = False,
         **boto3_kwargs: Any,
     ) -> None:
         super().__init__(serde=serde)
@@ -77,6 +81,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         self.memory_id = memory_id
         self.limit = limit
         self.max_results = max_results
+        self.remove_dangling_tool_calls = remove_dangling_tool_calls
         self.serializer = EventSerializer(self.serde)
         self.checkpoint_event_client = AgentCoreEventClient(
             memory_id,
@@ -86,7 +91,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             max_backoff=max_backoff,
             **boto3_kwargs,
         )
-        self.processor = EventProcessor()
+        self.processor = EventProcessor(
+            remove_dangling_tool_calls=remove_dangling_tool_calls
+        )
 
     def get_tuple(
         self,
