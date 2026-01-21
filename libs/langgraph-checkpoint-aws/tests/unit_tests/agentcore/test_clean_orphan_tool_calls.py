@@ -57,6 +57,7 @@ class TestCleanOrphanToolCalls:
         assert result[1].tool_call_id == "orphan_123"
         assert "interrupted" in result[1].content
         assert "get_weather" in result[1].content
+        assert result[1].status == "error"
 
     def test_patch_mode_mixed_complete_and_orphan_tool_calls(self):
         messages = [
@@ -93,7 +94,9 @@ class TestCleanOrphanToolCalls:
 
         assert len(result) == 3
         assert result[1].tool_call_id == "orphan_1"
+        assert result[1].status == "error"
         assert result[2].tool_call_id == "orphan_2"
+        assert result[2].status == "error"
 
     def test_removal_mode_complete_tool_call_only(self):
         messages = [

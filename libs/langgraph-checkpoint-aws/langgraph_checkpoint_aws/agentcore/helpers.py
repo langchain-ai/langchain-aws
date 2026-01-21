@@ -560,6 +560,7 @@ def _patch_orphan_tool_calls(messages: list[Any]) -> list[Any]:
                             ),
                             name=tc_name,
                             tool_call_id=tc_id,
+                            status="error",
                         )
                     )
 
