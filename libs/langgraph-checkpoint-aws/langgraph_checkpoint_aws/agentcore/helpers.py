@@ -429,8 +429,8 @@ class EventProcessor:
 
         return checkpoints, writes_by_checkpoint, channel_data_by_version
 
+    @staticmethod
     def build_checkpoint_tuple(
-        self,
         checkpoint_event: CheckpointEvent,
         writes: list[WriteItem],
         channel_data: dict[tuple[str, str], Any],
