@@ -401,9 +401,6 @@ class AgentCoreEventClient:
 class EventProcessor:
     """Processes events into checkpoint data structures."""
 
-    def __init__(self, *, remove_dangling_tool_calls: bool = False):
-        self.remove_dangling_tool_calls = remove_dangling_tool_calls
-
     @staticmethod
     def process_events(
         events: list[EventType],
@@ -465,12 +462,11 @@ class EventProcessor:
             if (channel, version) in channel_data:
                 channel_values[channel] = channel_data[(channel, version)]
 
-        # Clean orphan tool_calls from messages channel if present
+        # Patch orphan tool_calls from messages channel if present
         # This ensures messages loaded from checkpoints are valid for LLM providers
         if "messages" in channel_values:
-            channel_values["messages"] = clean_orphan_tool_calls(
-                channel_values["messages"],
-                remove_dangling_tool_calls=self.remove_dangling_tool_calls,
+            channel_values["messages"] = patch_orphan_tool_calls(
+                channel_values["messages"]
             )
 
         checkpoint["channel_values"] = channel_values
@@ -493,41 +489,23 @@ class EventProcessor:
         )
 
 
-def clean_orphan_tool_calls(
-    messages: list[Any],
-    *,
-    remove_dangling_tool_calls: bool = False,
-) -> list[Any]:
-    """Handle tool_calls in AIMessages that don't have corresponding ToolMessages.
+def patch_orphan_tool_calls(messages: list[Any]) -> list[Any]:
+    """Add placeholder ToolMessages for orphaned tool_calls in AIMessages.
+
+    When a checkpoint is saved mid-tool-execution, there may be AIMessages with
+    tool_calls that don't have corresponding ToolMessages. This would cause
+    Bedrock to throw a ValidationException. This function patches the state by
+    adding placeholder ToolMessages with status="error" for each orphaned tool_call.
 
     Args:
         messages: List of messages from checkpoint channel_values
-        remove_dangling_tool_calls: If True, removes orphaned tool_calls from
-            AIMessages (old behavior, causes data loss). If False (default),
-            adds placeholder ToolMessages for orphaned tool_calls (preserves
-            conversation history).
 
     Returns:
-        List of messages with orphaned tool_calls handled appropriately
+        List of messages with placeholder ToolMessages added for orphaned tool_calls
     """
     if not messages:
         return messages
 
-    if remove_dangling_tool_calls:
-        return _remove_orphan_tool_calls(messages)
-    else:
-        return _patch_orphan_tool_calls(messages)
-
-
-def _patch_orphan_tool_calls(messages: list[Any]) -> list[Any]:
-    """Add placeholder ToolMessages for orphaned tool_calls.
-
-    Args:
-        messages: List of messages from checkpoint channel_values
-
-    Returns:
-        List of messages with placeholder ToolMessages added for orphans
-    """
     patched_messages = []
 
     for i, msg in enumerate(messages):
@@ -565,53 +543,6 @@ def _patch_orphan_tool_calls(messages: list[Any]) -> list[Any]:
                     )
 
     return patched_messages
-
-
-def _remove_orphan_tool_calls(messages: list[Any]) -> list[Any]:
-    """Remove tool_calls from AIMessages that don't have corresponding ToolMessages.
-
-    Args:
-        messages: List of messages from checkpoint channel_values
-
-    Returns:
-        List of messages with orphaned tool_calls removed from AIMessages
-    """
-    # Build a set of all tool_call_ids that have corresponding ToolMessages
-    resolved_tool_call_ids = {
-        msg.tool_call_id
-        for msg in messages
-        if isinstance(msg, ToolMessage) and hasattr(msg, "tool_call_id")
-    }
-
-    # Clean up AIMessages with orphaned tool_calls
-    cleaned_messages = []
-    for msg in messages:
-        if isinstance(msg, AIMessage) and msg.tool_calls:
-            # Filter out tool_calls that don't have corresponding ToolMessages
-            valid_tool_calls, removed_tool_calls = [], []
-
-            for tc in msg.tool_calls:
-                tc_id = tc.get("id")
-                if tc_id in resolved_tool_call_ids:
-                    valid_tool_calls.append(tc)
-                else:
-                    removed_tool_calls.append(tc_id)
-
-            # If we removed some tool_calls, create a new message with cleaned
-            # tool_calls
-            if removed_tool_calls:
-                logger.warning(
-                    f"Removed {len(removed_tool_calls)} orphaned tool_call(s) "
-                    f"from AIMessage during checkpoint load: {removed_tool_calls}"
-                )
-                cleaned_msg = msg.model_copy(update={"tool_calls": valid_tool_calls})
-                cleaned_messages.append(cleaned_msg)
-            else:
-                cleaned_messages.append(msg)
-        else:
-            cleaned_messages.append(msg)
-
-    return cleaned_messages
 
 
 def convert_langchain_messages_to_event_messages(
