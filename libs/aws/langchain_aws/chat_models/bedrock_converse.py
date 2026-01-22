@@ -2062,9 +2062,10 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         elif "tool_use" in block:
             block["tool_use"]["id"] = block["tool_use"].pop("tool_use_id", None)
             # Fix: Parse stringified input from streaming mode to dict
-            if "input" in block["tool_use"] and isinstance(block["tool_use"]["input"], str):
+            tool_use_input = block["tool_use"].get("input")
+            if tool_use_input is not None and isinstance(tool_use_input, str):
                 try:
-                    block["tool_use"]["input"] = json.loads(block["tool_use"]["input"])
+                    block["tool_use"]["input"] = json.loads(tool_use_input)
                 except (json.JSONDecodeError, TypeError):
                     # If parsing fails, keep the original value
                     pass
@@ -2075,9 +2076,14 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "tool_use_id", None
             )
             # Fix: Parse stringified input from streaming mode to dict
-            if "input" in block["server_tool_use"] and isinstance(block["server_tool_use"]["input"], str):
+            server_tool_use_input = block["server_tool_use"].get("input")
+            if server_tool_use_input is not None and isinstance(
+                server_tool_use_input, str
+            ):
                 try:
-                    block["server_tool_use"]["input"] = json.loads(block["server_tool_use"]["input"])
+                    block["server_tool_use"]["input"] = json.loads(
+                        server_tool_use_input
+                    )
                 except (json.JSONDecodeError, TypeError):
                     # If parsing fails, keep the original value
                     pass
