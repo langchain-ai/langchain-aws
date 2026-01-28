@@ -441,7 +441,10 @@ class EventProcessor:
         pending_writes = [
             (write.task_id, write.channel, write.value) for write in writes
         ]
-
+        # Check if there are interrupts in pending writes
+        has_interrupts = pending_writes and any(
+            write[1] == "__interrupt__" and write[2] for write in pending_writes
+        )
         # Build parent config
         parent_config = None
         if checkpoint_event.parent_checkpoint_id:
@@ -462,9 +465,10 @@ class EventProcessor:
             if (channel, version) in channel_data:
                 channel_values[channel] = channel_data[(channel, version)]
 
-        # Patch orphan tool_calls from messages channel if present
+        # Validate if messages are present and no langchain interrupts detected
+        # Then patch orphan tool_calls from messages
         # This ensures messages loaded from checkpoints are valid for LLM providers
-        if "messages" in channel_values:
+        if "messages" in channel_values and not has_interrupts:
             channel_values["messages"] = patch_orphan_tool_calls(
                 channel_values["messages"]
             )
