@@ -731,6 +731,24 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     """
 
+    bedrock_api_key: Optional[SecretStr] = Field(
+        alias="api_key",
+        default_factory=secret_from_env("AWS_BEARER_TOKEN_BEDROCK", default=None),
+    )
+    """Bedrock API key.
+
+    Enables authentication using Bedrock API keys instead of standard AWS
+    credentials. When provided, the key is set as the AWS_BEARER_TOKEN_BEDROCK
+    environment variable.
+
+    See: https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-use.html
+
+    If not provided, will be read from `AWS_BEARER_TOKEN_BEDROCK` environment variable.
+
+    If both an API key and AWS credentials are present, the API key takes precedence.
+
+    """
+
     config: Any = None
     """An optional `botocore.config.Config` instance to pass to the client."""
 
@@ -858,6 +876,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             "aws_access_key_id": "AWS_ACCESS_KEY_ID",
             "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
             "aws_session_token": "AWS_SESSION_TOKEN",
+            "bedrock_api_key": "AWS_BEARER_TOKEN_BEDROCK",
         }
 
     @model_validator(mode="after")
@@ -886,6 +905,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 endpoint_url=self.endpoint_url,
                 config=self.config,
                 service_name="bedrock-runtime",
+                bedrock_api_key=self.bedrock_api_key,
             )
 
         # Create bedrock client for control plane API call
@@ -913,6 +933,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 endpoint_url=self.endpoint_url,
                 config=self.config or bedrock_client_cfg.get("config"),
                 service_name="bedrock",
+                bedrock_api_key=self.bedrock_api_key,
             )
 
         if (

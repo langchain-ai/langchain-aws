@@ -2351,6 +2351,7 @@ def test_bedrock_client_inherits_from_runtime_client(
         endpoint_url=None,
         config=None,
         service_name="bedrock",
+        bedrock_api_key=None,
     )
 
 
@@ -2390,6 +2391,7 @@ def test_bedrock_client_uses_explicit_values_over_runtime_client(
         endpoint_url=None,
         config=None,
         service_name="bedrock",
+        bedrock_api_key=None,
     )
 
 

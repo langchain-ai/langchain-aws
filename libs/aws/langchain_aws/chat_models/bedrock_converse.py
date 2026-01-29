@@ -488,6 +488,23 @@ class ChatBedrockConverse(BaseChatModel):
     If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
     """
 
+    bedrock_api_key: Optional[SecretStr] = Field(
+        alias="api_key",
+        default_factory=secret_from_env("AWS_BEARER_TOKEN_BEDROCK", default=None),
+    )
+    """Bedrock API key.
+
+    Enables authentication using Bedrock API keys instead of standard AWS
+    credentials. When provided, the key is set as the AWS_BEARER_TOKEN_BEDROCK
+    environment variable.
+
+    See: https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-use.html
+
+    If not provided, will be read from `AWS_BEARER_TOKEN_BEDROCK` environment variable.
+
+    If both an API key and AWS credentials are present, the API key takes precedence.
+    """
+
     provider: str = ""
     """The model provider, e.g., amazon, cohere, ai21, etc.
 
@@ -782,6 +799,7 @@ class ChatBedrockConverse(BaseChatModel):
                 endpoint_url=self.endpoint_url,
                 config=self.config,
                 service_name="bedrock-runtime",
+                bedrock_api_key=self.bedrock_api_key,
             )
 
         # Create bedrock client for control plane API call
@@ -805,6 +823,7 @@ class ChatBedrockConverse(BaseChatModel):
                 endpoint_url=self.endpoint_url,
                 config=self.config,
                 service_name="bedrock",
+                bedrock_api_key=self.bedrock_api_key,
             )
 
         if self.default_headers is not None:
@@ -1492,6 +1511,7 @@ class ChatBedrockConverse(BaseChatModel):
             "aws_access_key_id": "AWS_ACCESS_KEY_ID",
             "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
             "aws_session_token": "AWS_SESSION_TOKEN",
+            "bedrock_api_key": "AWS_BEARER_TOKEN_BEDROCK",
         }
 
     def get_num_tokens_from_messages(
