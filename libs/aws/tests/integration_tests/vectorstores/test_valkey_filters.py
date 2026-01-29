@@ -4,16 +4,15 @@ These tests require a running Valkey instance with the search module loaded.
 Set VALKEY_HOST environment variable to specify the Valkey server.
 """
 
+import asyncio
 import os
 
 import pytest
 
-pytest.importorskip("valkey")
+pytest.importorskip("glide")
 
 from langchain_core.embeddings import DeterministicFakeEmbedding
-from valkey import Valkey
-from valkey.commands.search.field import NumericField, TagField, TextField, VectorField
-from valkey.commands.search.indexDefinition import IndexDefinition, IndexType
+from glide import GlideClient, GlideClientConfiguration, NodeAddress, ProtocolVersion
 
 from langchain_aws.vectorstores.valkey import ValkeyVectorStore
 from langchain_aws.vectorstores.valkey.filters import ValkeyFilter
@@ -38,30 +37,48 @@ def index_name() -> str:
     return "test_filters_index"
 
 
+async def _create_client(host: str) -> GlideClient:
+    """Create GLIDE client."""
+    config = GlideClientConfiguration(
+        addresses=[NodeAddress(host, 6379)],
+        protocol=ProtocolVersion.RESP3,
+    )
+    return await GlideClient.create(config)
+
+
 @pytest.fixture(scope="module")
 def vectorstore(valkey_url: str, embeddings: DeterministicFakeEmbedding, index_name: str) -> ValkeyVectorStore:
     """Create and populate a Valkey vector store with test data."""
-    client = Valkey.from_url(valkey_url)
+    host = os.getenv("VALKEY_HOST", "localhost")
     
-    # Drop index if exists
-    try:
-        client.execute_command("FT.DROPINDEX", index_name)
-    except Exception:
-        pass
+    async def setup():
+        client = await _create_client(host)
+        
+        # Drop index if exists
+        try:
+            await client.custom_command(["FT.DROPINDEX", index_name])
+        except Exception:
+            pass
+        
+        # Create index using raw FT.CREATE command
+        # Schema: VECTOR content_vector FLAT 6 TYPE FLOAT32 DIM 128 DISTANCE_METRIC COSINE TAG category NUMERIC year NUMERIC price
+        await client.custom_command([
+            "FT.CREATE", index_name,
+            "ON", "HASH",
+            "PREFIX", "1", f"doc:{index_name}:",
+            "SCHEMA",
+            "content_vector", "VECTOR", "FLAT", "6",
+            "TYPE", "FLOAT32",
+            "DIM", "128",
+            "DISTANCE_METRIC", "COSINE",
+            "category", "TAG",
+            "year", "NUMERIC",
+            "price", "NUMERIC",
+        ])
+        
+        await client.close()
     
-    # Create index with vector, tag, and numeric fields
-    schema = (
-        VectorField(
-            "content_vector",
-            "FLAT",
-            {"TYPE": "FLOAT32", "DIM": 128, "DISTANCE_METRIC": "COSINE"},
-        ),
-        TagField("category"),
-        NumericField("year"),
-        NumericField("price"),
-    )
-    definition = IndexDefinition(prefix=[f"doc:{index_name}:"], index_type=IndexType.HASH)
-    client.ft(index_name).create_index(fields=schema, definition=definition)
+    asyncio.run(setup())
     
     # Create vector store
     store = ValkeyVectorStore(
@@ -94,27 +111,24 @@ def vectorstore(valkey_url: str, embeddings: DeterministicFakeEmbedding, index_n
     ]
     store.add_texts(texts, metadatas=metadatas)
     
-    # Patch similarity_search_with_score_by_vector to return metadata fields
-    import numpy as np
-    from typing import List, Tuple, Optional, Any
-    from langchain_core.documents import Document
-    from valkey.commands.search.query import Query
-
-    def _array_to_buffer(array: List[float], dtype=np.float32) -> bytes:
-        return np.array(array, dtype=dtype).tobytes()
-
     yield store
     
     # Cleanup - drop index and delete documents
-    try:
-        # Delete all documents with the index prefix
-        keys = client.keys(f"doc:{index_name}:*")
-        if keys:
-            client.delete(*keys)
-        # Drop the index
-        client.execute_command("FT.DROPINDEX", index_name)
-    except Exception:
-        pass
+    async def cleanup():
+        client = await _create_client(host)
+        try:
+            # Delete all documents with the index prefix
+            keys = await client.keys(f"doc:{index_name}:*")
+            if keys:
+                await client.delete(keys)
+            # Drop the index
+            await client.custom_command(["FT.DROPINDEX", index_name])
+        except Exception:
+            pass
+        finally:
+            await client.close()
+    
+    asyncio.run(cleanup())
 
 
 class TestValkeyTagFilters:

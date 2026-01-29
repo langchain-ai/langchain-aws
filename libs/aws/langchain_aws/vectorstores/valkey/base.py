@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import atexit
 import logging
+import threading
 import uuid
 from typing import (
     Any,
@@ -30,20 +33,62 @@ from langchain_aws.utilities.valkey import get_client
 logger = logging.getLogger(__name__)
 
 try:
-    from valkey import Valkey as ValkeyType  # type: ignore[import-untyped]
+    from glide import GlideClient, GlideClusterClient
+
+    GlideClientType = Union[GlideClient, GlideClusterClient]
 except ImportError:
-    ValkeyType = Any  # type: ignore
+    GlideClientType = Any  # type: ignore
+
+
+# Global event loop and thread for async operations
+_loop: Optional[asyncio.AbstractEventLoop] = None
+_loop_thread: Optional[threading.Thread] = None
+_loop_lock = threading.Lock()
+
+
+def _get_event_loop() -> asyncio.AbstractEventLoop:
+    """Get or create the global event loop for async operations."""
+    global _loop, _loop_thread
+    
+    with _loop_lock:
+        if _loop is None or not _loop.is_running():
+            _loop = asyncio.new_event_loop()
+            
+            def run_loop():
+                asyncio.set_event_loop(_loop)
+                _loop.run_forever()
+            
+            _loop_thread = threading.Thread(target=run_loop, daemon=True)
+            _loop_thread.start()
+            
+            # Register cleanup
+            def cleanup():
+                if _loop and _loop.is_running():
+                    _loop.call_soon_threadsafe(_loop.stop)
+            
+            atexit.register(cleanup)
+    
+    return _loop
+
+
+def _run_async(coro):
+    """Run async coroutine in sync context using dedicated event loop."""
+    loop = _get_event_loop()
+    future = asyncio.run_coroutine_threadsafe(coro, loop)
+    return future.result()
 
 
 def _default_relevance_score(val: float) -> float:
     return 1 - val
 
 
-def check_index_exists(client: ValkeyType, index_name: str) -> bool:
+async def check_index_exists(client: GlideClientType, index_name: str) -> bool:
     """Check if Valkey index exists."""
     try:
-        client.ft(index_name).info()
-    except:  # noqa: E722
+        from glide import ft
+
+        await ft.info(client, index_name)
+    except Exception:
         logger.debug("Index does not exist")
         return False
     logger.debug("Index already exists")
@@ -120,12 +165,12 @@ class ValkeyVectorStore(VectorStore):
             vector_schema: Vector schema configuration.
             relevance_score_fn: Function to compute relevance score.
             key_prefix: Prefix for document keys.
-            **kwargs: Additional arguments to pass to Valkey client.
+            **kwargs: Additional arguments to pass to GLIDE client.
         """
         self.index_name = index_name
         self._embeddings = embedding
         try:
-            valkey_client = get_client(valkey_url=valkey_url, **kwargs)
+            valkey_client = _run_async(get_client(valkey_url=valkey_url, **kwargs))
         except ValueError as e:
             raise ValueError(f"Valkey failed to connect: {e}")
 
@@ -166,22 +211,29 @@ class ValkeyVectorStore(VectorStore):
         if keys is None:
             keys = [f"{self.key_prefix}:{uuid.uuid4().hex}" for _ in texts_list]
 
-        pipeline = self.client.pipeline(transaction=False)
-        for i, text in enumerate(texts_list):
-            key = keys[i]
-            metadata = metadatas[i] if metadatas else {}
-            
-            doc_dict = {
-                "content": text,
-                "content_vector": _array_to_buffer(
-                    embeddings[i], dtype=np.float32
-                ),
-            }
-            doc_dict.update(metadata)
-            
-            pipeline.hset(key, mapping=doc_dict)  # type: ignore
+        async def _add_texts_async():
+            for i, text in enumerate(texts_list):
+                key = keys[i]
+                metadata = metadatas[i] if metadatas else {}
+                
+                # Build field-value mapping
+                field_value_map = {
+                    "content": text,
+                    "content_vector": _array_to_buffer(
+                        embeddings[i], dtype=np.float32
+                    ),
+                }
+                # Add metadata fields
+                for meta_key, meta_value in metadata.items():
+                    # Convert values to strings for storage
+                    if isinstance(meta_value, (int, float, bool)):
+                        field_value_map[meta_key] = str(meta_value)
+                    else:
+                        field_value_map[meta_key] = meta_value
+                
+                await self.client.hset(key, field_value_map)
 
-        pipeline.execute()
+        _run_async(_add_texts_async())
         return keys
 
     def similarity_search(
@@ -269,7 +321,10 @@ class ValkeyVectorStore(VectorStore):
         Returns:
             List of (document, score) tuples.
         """
-        from valkey.commands.search.query import Query  # type: ignore
+        from glide import ft
+        from glide_shared.commands.server_modules.ft_options.ft_search_options import (
+            FtSearchOptions,
+        )
 
         vector_field = self.vector_schema.get("name", "content_vector")
         
@@ -277,26 +332,45 @@ class ValkeyVectorStore(VectorStore):
         if filter:
             base_query = f"({filter})=>[KNN {k} @{vector_field} $vector AS score]"
 
-        query = Query(base_query).dialect(2)
-
         params = {
             "vector": _array_to_buffer(embedding, dtype=np.float32)
         }
 
-        results = self.client.ft(self.index_name).search(query, query_params=params)
+        async def _search_async():
+            results = await ft.search(
+                self.client,
+                self.index_name,
+                base_query,
+                options=FtSearchOptions(params=params),
+            )
+            return results
 
+        results = _run_async(_search_async())
+
+        # results format: [count, {key: {field: value}}]
         docs = []
-        for result in results.docs:
-            content = result.content if hasattr(result, "content") else ""
-            score = float(result.score) if hasattr(result, "score") else 0.0
-            
-            metadata = {}
-            for key, value in result.__dict__.items():
-                if key not in ["id", "content", "content_vector", "score", "payload"]:
-                    metadata[key] = value
+        if len(results) > 1 and isinstance(results[1], dict):
+            for doc_key, doc_data in results[1].items():
+                if isinstance(doc_data, dict):
+                    content = doc_data.get(b"content", b"")
+                    if isinstance(content, bytes):
+                        content = content.decode("utf-8")
+                    
+                    score_val = doc_data.get(b"score", b"0")
+                    if isinstance(score_val, bytes):
+                        score_val = score_val.decode("utf-8")
+                    score = float(score_val)
+                    
+                    metadata = {}
+                    for key, value in doc_data.items():
+                        key_str = key.decode("utf-8") if isinstance(key, bytes) else key
+                        if key_str not in ["content", "content_vector", "score"]:
+                            if isinstance(value, bytes):
+                                value = value.decode("utf-8")
+                            metadata[key_str] = value
 
-            doc = Document(page_content=content, metadata=metadata)
-            docs.append((doc, self.relevance_score_fn(score)))
+                    doc = Document(page_content=content, metadata=metadata)
+                    docs.append((doc, self.relevance_score_fn(score)))
 
         return docs
 
@@ -378,8 +452,9 @@ class ValkeyVectorStore(VectorStore):
         if ids is None:
             return False
 
-        pipeline = self.client.pipeline(transaction=False)
-        for doc_id in ids:
-            pipeline.delete(doc_id)
-        pipeline.execute()
+        async def _delete_async():
+            for doc_id in ids:
+                await self.client.delete(doc_id)
+
+        _run_async(_delete_async())
         return True
