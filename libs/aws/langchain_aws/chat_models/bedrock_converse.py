@@ -2033,7 +2033,9 @@ def _lc_content_to_bedrock(
                     }
                 )
         elif block["type"] == "reasoning_content":
-            reasoning_content = block.get("reasoningContent", {})
+            reasoning_content = block.get("reasoningContent") or block.get(
+                "reasoning_content", {}
+            )
             if reasoning_content.get("signature", ""):
                 bedrock_content.append(
                     {

@@ -1452,6 +1452,67 @@ def test__lc_content_to_bedrock_reasoning_content_signature() -> None:
     assert expected_system == actual_system
 
 
+def test__lc_content_to_bedrock_reasoning_content_snake_case() -> None:
+    """Test that reasoning_content blocks with snake case are
+    handled correctly.
+    """
+    persisted_ai_content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {
+                "text": "Let me think about this step by step...",
+                "signature": "abc123signature",
+            },
+        },
+        {"type": "text", "text": "Here is my response."},
+    ]
+
+    bedrock_content = _lc_content_to_bedrock(persisted_ai_content)
+
+    assert len(bedrock_content) == 2
+    assert "reasoningContent" in bedrock_content[0]
+    assert "reasoningText" in bedrock_content[0]["reasoningContent"]
+    assert (
+        bedrock_content[0]["reasoningContent"]["reasoningText"]["text"]
+        == "Let me think about this step by step..."
+    )
+    assert (
+        bedrock_content[0]["reasoningContent"]["reasoningText"]["signature"]
+        == "abc123signature"
+    )
+
+    assert bedrock_content[1] == {"text": "Here is my response."}
+
+
+def test__lc_content_to_bedrock_reasoning_content_camel_case() -> None:
+    """Test that reasoning_content blocks with camelcase keys are
+    handled correctly.
+    """
+    content_camelcase: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "reasoning_content",
+            "reasoningContent": {
+                "text": "Thinking in camelCase...",
+                "signature": "a_signature",
+            },
+        },
+        {"type": "text", "text": "Response text."},
+    ]
+
+    bedrock_content = _lc_content_to_bedrock(content_camelcase)
+
+    assert len(bedrock_content) == 2
+    assert "reasoningContent" in bedrock_content[0]
+    assert (
+        bedrock_content[0]["reasoningContent"]["reasoningText"]["text"]
+        == "Thinking in camelCase..."
+    )
+    assert (
+        bedrock_content[0]["reasoningContent"]["reasoningText"]["signature"]
+        == "a_signature"
+    )
+
+
 def test__lc_content_to_bedrock_mime_types() -> None:
     video_data = base64.b64encode(b"video_test_data").decode("utf-8")
     image_data = base64.b64encode(b"image_test_data").decode("utf-8")
