@@ -2739,6 +2739,42 @@ def test_bind_tools_toolconfig_structure_with_system_tools() -> None:
     assert tool_config["toolChoice"] == {"auto": {}}
 
 
+def test_bind_tools_formats_custom_tools_to_dicts() -> None:
+    """Test that custom tools are dict formatted with no Nova tools present."""
+    from langchain_core.tools import tool
+
+    @tool
+    def my_custom_tool(query: str) -> str:
+        """A simple test tool.
+
+        Args:
+            query: The query string.
+        """
+        return f"Result for: {query}"
+
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    chat_model_with_tools = chat_model.bind_tools([my_custom_tool])
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+
+    assert "tools" in bound_kwargs
+    assert "toolConfig" not in bound_kwargs
+
+    tools = bound_kwargs["tools"]
+    assert isinstance(tools, list)
+    assert len(tools) == 1
+
+    tool_def = tools[0]
+    assert isinstance(tool_def, dict), f"Expected dict, got {type(tool_def)}"
+
+    assert tool_def.get("type") == "function"
+    assert "function" in tool_def
+    assert tool_def["function"].get("name") == "my_custom_tool"
+
+
 def test_reasoning_config_validation_accepts_strings() -> None:
     """Test that reasoning config validation accepts string values."""
     # Should not raise an error with string values
