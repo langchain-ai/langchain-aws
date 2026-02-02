@@ -95,6 +95,7 @@ class AmazonS3Vectors(VectorStore):
         create_index_if_not_exist: bool = True,
         relevance_score_fn: Optional[Callable[[float], float]] = None,
         embedding: Optional[Embeddings] = None,
+        query_embedding: Optional[Embeddings] = None,
         region_name: Optional[str] = None,
         credentials_profile_name: Optional[str] = None,
         aws_access_key_id: Optional[str] = None,
@@ -125,7 +126,12 @@ class AmazonS3Vectors(VectorStore):
                 does not exist. Default is True.
             relevance_score_fn (Optional[Callable[[float], float]]): The 'correct'
                 relevance function.
-            embedding (Optional[Embeddings]): Embedding function to use.
+            embedding (Optional[Embeddings]): Embedding function to use for indexing
+                documents.
+            query_embedding (Optional[Embeddings]): Separate embedding function to use
+                for queries. If not provided, the `embedding` parameter is used for
+                both indexing and querying. This is useful for embedding providers
+                that require different task types for documents vs queries.
             region_name (Optional[str]): The aws region where the Sagemaker model is
                 deployed, eg. `us-west-2`.
             credentials_profile_name (Optional[str]): The name of the profile in the
@@ -172,6 +178,7 @@ class AmazonS3Vectors(VectorStore):
         self.create_index_if_not_exist = create_index_if_not_exist
         self.relevance_score_fn = relevance_score_fn
         self._embedding = embedding
+        self._query_embedding = query_embedding
         self.client = client
         if client is None:
             aws_access_key_id = aws_access_key_id or os.getenv("AWS_ACCESS_KEY_ID")
@@ -360,6 +367,17 @@ class AmazonS3Vectors(VectorStore):
         msg = "distance_metric must be euclidean or cosine in relevance_score."
         raise ValueError(msg)
 
+    def _get_query_embedding(self) -> Embeddings:
+        """Get the embedding to use for queries."""
+        query_emb = self._query_embedding or self._embedding
+        if query_emb is None:
+            raise ValueError(
+                "`query_embedding` arg missing at init, but cannot fall back to "
+                "using the `embedding` arg because it's also not provided. "
+                "Provide at least the `embedding` arg to be used for query embeddings." 
+            )
+        return query_emb
+
     def similarity_search(
         self, query: str, k: int = 4, *, filter: Optional[dict] = None, **kwargs: Any
     ) -> list[Document]:
@@ -376,10 +394,8 @@ class AmazonS3Vectors(VectorStore):
             List of `Document` objects most similar to the query.
 
         """
-        if self.embeddings is None:
-            raise ValueError("Embeddings object is required for similarity search")
-        embedding = self.embeddings.embed_query(query)
-        return self.similarity_search_by_vector(embedding, k=k, filter=filter, **kwargs)
+        query_vector = self._get_query_embedding().embed_query(query)
+        return self.similarity_search_by_vector(query_vector, k=k, filter=filter, **kwargs)
 
     def similarity_search_with_score(
         self,
@@ -402,14 +418,12 @@ class AmazonS3Vectors(VectorStore):
             List of Tuples of (doc, distance).
 
         """
-        if self.embeddings is None:
-            raise ValueError("Embeddings object is required for similarity search")
-        embedding = self.embeddings.embed_query(query)
+        query_vector = self._get_query_embedding().embed_query(query)
         response = self.client.query_vectors(
             vectorBucketName=self.vector_bucket_name,
             indexName=self.index_name,
             topK=k,
-            queryVector={self.data_type: embedding},
+            queryVector={self.data_type: query_vector},
             filter=filter,
             returnMetadata=True,
             returnDistance=True,
