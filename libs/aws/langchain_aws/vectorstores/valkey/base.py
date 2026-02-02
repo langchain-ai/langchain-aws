@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-import atexit
 import logging
-import threading
 import uuid
 from typing import (
     Any,
@@ -33,61 +30,23 @@ from langchain_aws.utilities.valkey import get_client
 logger = logging.getLogger(__name__)
 
 try:
-    from glide import GlideClient, GlideClusterClient
+    from glide_sync import GlideClient, GlideClusterClient
 
     GlideClientType = Union[GlideClient, GlideClusterClient]
 except ImportError:
     GlideClientType = Any  # type: ignore
 
 
-# Global event loop and thread for async operations
-_loop: Optional[asyncio.AbstractEventLoop] = None
-_loop_thread: Optional[threading.Thread] = None
-_loop_lock = threading.Lock()
-
-
-def _get_event_loop() -> asyncio.AbstractEventLoop:
-    """Get or create the global event loop for async operations."""
-    global _loop, _loop_thread
-    
-    with _loop_lock:
-        if _loop is None or not _loop.is_running():
-            _loop = asyncio.new_event_loop()
-            
-            def run_loop():
-                asyncio.set_event_loop(_loop)
-                _loop.run_forever()
-            
-            _loop_thread = threading.Thread(target=run_loop, daemon=True)
-            _loop_thread.start()
-            
-            # Register cleanup
-            def cleanup():
-                if _loop and _loop.is_running():
-                    _loop.call_soon_threadsafe(_loop.stop)
-            
-            atexit.register(cleanup)
-    
-    return _loop
-
-
-def _run_async(coro):
-    """Run async coroutine in sync context using dedicated event loop."""
-    loop = _get_event_loop()
-    future = asyncio.run_coroutine_threadsafe(coro, loop)
-    return future.result()
-
-
 def _default_relevance_score(val: float) -> float:
     return 1 - val
 
 
-async def check_index_exists(client: GlideClientType, index_name: str) -> bool:
+def check_index_exists(client: GlideClientType, index_name: str) -> bool:
     """Check if Valkey index exists."""
     try:
-        from glide import ft
+        from glide_sync import ft
 
-        await ft.info(client, index_name)
+        ft.info(client, index_name)
     except Exception:
         logger.debug("Index does not exist")
         return False
@@ -98,10 +57,10 @@ async def check_index_exists(client: GlideClientType, index_name: str) -> bool:
 class ValkeyVectorStore(VectorStore):
     """Valkey vector database.
 
-    To use, you should have the `valkey` python package installed:
+    To use, you should have the `valkey-glide-sync` python package installed:
 
         ```bash
-        pip install valkey
+        pip install valkey-glide-sync
         ```
 
     Connection URL schemas:
@@ -170,7 +129,7 @@ class ValkeyVectorStore(VectorStore):
         self.index_name = index_name
         self._embeddings = embedding
         try:
-            valkey_client = _run_async(get_client(valkey_url=valkey_url, **kwargs))
+            valkey_client = get_client(valkey_url=valkey_url, **kwargs)
         except ValueError as e:
             raise ValueError(f"Valkey failed to connect: {e}")
 
@@ -211,29 +170,27 @@ class ValkeyVectorStore(VectorStore):
         if keys is None:
             keys = [f"{self.key_prefix}:{uuid.uuid4().hex}" for _ in texts_list]
 
-        async def _add_texts_async():
-            for i, text in enumerate(texts_list):
-                key = keys[i]
-                metadata = metadatas[i] if metadatas else {}
-                
-                # Build field-value mapping
-                field_value_map = {
-                    "content": text,
-                    "content_vector": _array_to_buffer(
-                        embeddings[i], dtype=np.float32
-                    ),
-                }
-                # Add metadata fields
-                for meta_key, meta_value in metadata.items():
-                    # Convert values to strings for storage
-                    if isinstance(meta_value, (int, float, bool)):
-                        field_value_map[meta_key] = str(meta_value)
-                    else:
-                        field_value_map[meta_key] = meta_value
-                
-                await self.client.hset(key, field_value_map)
+        for i, text in enumerate(texts_list):
+            key = keys[i]
+            metadata = metadatas[i] if metadatas else {}
+            
+            # Build field-value mapping
+            field_value_map = {
+                "content": text,
+                "content_vector": _array_to_buffer(
+                    embeddings[i], dtype=np.float32
+                ),
+            }
+            # Add metadata fields
+            for meta_key, meta_value in metadata.items():
+                # Convert values to strings for storage
+                if isinstance(meta_value, (int, float, bool)):
+                    field_value_map[meta_key] = str(meta_value)
+                else:
+                    field_value_map[meta_key] = meta_value
+            
+            self.client.hset(key, field_value_map)
 
-        _run_async(_add_texts_async())
         return keys
 
     def similarity_search(
@@ -321,7 +278,7 @@ class ValkeyVectorStore(VectorStore):
         Returns:
             List of (document, score) tuples.
         """
-        from glide import ft
+        from glide_sync import ft
         from glide_shared.commands.server_modules.ft_options.ft_search_options import (
             FtSearchOptions,
         )
@@ -336,16 +293,12 @@ class ValkeyVectorStore(VectorStore):
             "vector": _array_to_buffer(embedding, dtype=np.float32)
         }
 
-        async def _search_async():
-            results = await ft.search(
-                self.client,
-                self.index_name,
-                base_query,
-                options=FtSearchOptions(params=params),
-            )
-            return results
-
-        results = _run_async(_search_async())
+        results = ft.search(
+            self.client,
+            self.index_name,
+            base_query,
+            options=FtSearchOptions(params=params),
+        )
 
         # results format: [count, {key: {field: value}}]
         docs = []
@@ -452,9 +405,7 @@ class ValkeyVectorStore(VectorStore):
         if ids is None:
             return False
 
-        async def _delete_async():
-            for doc_id in ids:
-                await self.client.delete(doc_id)
+        for doc_id in ids:
+            self.client.delete(doc_id)
 
-        _run_async(_delete_async())
         return True

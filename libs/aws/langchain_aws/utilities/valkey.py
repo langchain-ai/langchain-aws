@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from glide import GlideClient, GlideClusterClient
+    from glide_sync import GlideClient, GlideClusterClient
 
     GlideClientType = GlideClient | GlideClusterClient
 
 
-async def get_client(valkey_url: str, **kwargs: Any) -> GlideClientType:
+def get_client(valkey_url: str, **kwargs: Any) -> GlideClientType:
     """Get a GLIDE client from the connection url.
 
     Args:
@@ -25,13 +24,13 @@ async def get_client(valkey_url: str, **kwargs: Any) -> GlideClientType:
     Example:
         ```python
         from langchain_aws.utilities.valkey import get_client
-        valkey_client = await get_client(
+        valkey_client = get_client(
             valkey_url="valkey://localhost:6379"
         )
         ```
     """
     try:
-        from glide import (
+        from glide_sync import (
             GlideClient,
             GlideClientConfiguration,
             GlideClusterClient,
@@ -40,8 +39,8 @@ async def get_client(valkey_url: str, **kwargs: Any) -> GlideClientType:
         )
     except ImportError:
         raise ImportError(
-            "Could not import valkey-glide python package. "
-            "Please install it with `pip install valkey-glide>=2.0.0`."
+            "Could not import valkey-glide-sync python package. "
+            "Please install it with `pip install valkey-glide-sync>=2.0.0`."
         )
 
     # Parse URL
@@ -51,12 +50,12 @@ async def get_client(valkey_url: str, **kwargs: Any) -> GlideClientType:
     # Try cluster first
     try:
         config = GlideClusterClientConfiguration(addresses=addresses, **kwargs)
-        client = await GlideClusterClient.create(config)
+        client = GlideClusterClient.create(config)
         return client
     except Exception:
         # Fall back to standalone
         config = GlideClientConfiguration(addresses=addresses, **kwargs)
-        client = await GlideClient.create(config)
+        client = GlideClient.create(config)
         return client
 
 

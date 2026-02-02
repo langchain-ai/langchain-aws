@@ -1,12 +1,14 @@
 # Valkey Vector Store
 
-This module provides a vector store implementation for [Valkey](https://valkey.io/), a Redis-compatible in-memory data store that supports vector search capabilities.
+This module provides a vector store implementation for [Valkey](https://valkey.io/), a Redis-compatible in-memory data store that supports vector search capabilities. Uses the [Valkey GLIDE](https://glide.valkey.io/) synchronous client for optimal performance.
 
 ## Installation
 
 ```bash
 pip install langchain-aws[valkey]
 ```
+
+This installs `valkey-glide-sync>=2.0.0` as the client library.
 
 ## Usage
 
@@ -64,7 +66,9 @@ vectorstore = ValkeyVectorStore.from_texts(
 - **Vector Similarity Search**: Find similar documents using cosine similarity, L2, or inner product
 - **Metadata Filtering**: Filter search results using tag, numeric, and text filters
 - **Scalable**: Built on Valkey's high-performance architecture
-- **AWS Integration**: Works seamlessly with AWS ElastiCache for Valkey
+- **AWS Integration**: Works seamlessly with AWS ElastiCache for Valkey and Amazon MemoryDB
+- **Cluster Support**: Automatic detection and support for Valkey clusters
+- **Synchronous API**: Native sync interface using Valkey GLIDE
 
 ## Connection URL Formats
 
@@ -76,10 +80,16 @@ vectorstore = ValkeyVectorStore.from_texts(
 ## Filtering
 
 ```python
-from langchain_aws.vectorstores.valkey import ValkeyFilter
+from langchain_aws.vectorstores.valkey.filters import ValkeyTag, ValkeyNum, ValkeyText
 
-# Create filters
-filter_expr = (ValkeyFilter.tag("category") == "technology") & (ValkeyFilter.num("year") >= 2020)
+# Tag filter
+filter_expr = ValkeyTag("category") == "technology"
+
+# Numeric filter
+filter_expr = ValkeyNum("year") >= 2020
+
+# Combined filters
+filter_expr = (ValkeyTag("category") == "technology") & (ValkeyNum("year") >= 2020)
 
 # Search with filter
 results = vectorstore.similarity_search(
@@ -115,11 +125,17 @@ vectorstore = ValkeyVectorStore(
 ## Requirements
 
 - Python >= 3.10
-- valkey >= 6.0.0
-- Valkey server with vector search support (Valkey 8.0+)
+- valkey-glide-sync >= 2.0.0
+- Valkey server with vector search support (Valkey 8.0+ or Redis 7.2+ with RediSearch)
 
 ## AWS Services
 
 This vector store works with:
 - [AWS ElastiCache for Valkey](https://aws.amazon.com/elasticache/)
 - [Amazon MemoryDB for Valkey](https://aws.amazon.com/memorydb/)
+
+## Additional Resources
+
+- [Valkey GLIDE Documentation](https://glide.valkey.io/)
+- [Valkey Vector Search](https://valkey.io/commands/ft.search/)
+- [LangChain VectorStores](https://python.langchain.com/docs/modules/data_connection/vectorstores/)

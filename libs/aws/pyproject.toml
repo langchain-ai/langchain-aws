@@ -25,7 +25,7 @@ repository = "https://github.com/langchain-ai/langchain-aws"
 
 [project.optional-dependencies]
 tools = ["bedrock-agentcore>=0.1.0; python_version>='3.10'", "playwright>=1.53.0", "beautifulsoup4>=4.13.4"]
-valkey = ["valkey-glide>=2.0.0"]
+valkey = ["valkey-glide-sync>=2.0.0"]
 
 [dependency-groups]
 test = [
