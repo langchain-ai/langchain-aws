@@ -280,6 +280,11 @@ MOCK_STREAMING_RESPONSE_DEEPSEEK = [
     {"chunk": {"bytes": b'{"choices": [{"text": "you.","stop_reason": "stop"}]}'}},
 ]
 
+MOCK_STREAMING_RESPONSE_ANTHROPIC = [
+    {"chunk": {"bytes": b'{"completion": "Thank", "stop_reason": null}'}},
+    {"chunk": {"bytes": b'{"completion": " you.", "stop_reason": "stop_sequence"}'}},
+]
+
 MOCK_STREAMING_RESPONSE_WRITER = [
     {
         "chunk": {
@@ -993,3 +998,55 @@ def test_get_base_model_with_application_inference_profile(mock_create_client):
     )
     assert result == "anthropic.claude-sonnet-4-20250514-v1:0"
     assert llm.base_model_id == "anthropic.claude-sonnet-4-20250514-v1:0"
+
+
+@pytest.fixture
+def anthropic_streaming_response_with_close():
+    """Streaming response with a mock body that tracks close() calls."""
+    mock_body = MagicMock()
+    mock_body.__iter__ = MagicMock(return_value=iter(MOCK_STREAMING_RESPONSE_ANTHROPIC))
+    return {"body": mock_body}
+
+
+def test_stream_closes_response_body(
+    anthropic_streaming_response_with_close,
+) -> None:
+    """Test that streaming closes the response body after iteration."""
+    mock_client = MagicMock()
+    mock_client.invoke_model_with_response_stream.return_value = (
+        anthropic_streaming_response_with_close
+    )
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model_id="anthropic.claude-v2",
+        region_name="us-west-2",
+    )
+
+    list(llm._prepare_input_and_invoke_stream(prompt="Hello"))
+
+    anthropic_streaming_response_with_close["body"].close.assert_called_once()
+
+
+def test_stream_closes_response_body_on_exception() -> None:
+    """Test that streaming closes body even when iteration raises."""
+    mock_client = MagicMock()
+    mock_body = MagicMock()
+
+    def raise_error():
+        yield from MOCK_STREAMING_RESPONSE_ANTHROPIC
+        raise RuntimeError("Test error")
+
+    mock_body.__iter__ = MagicMock(return_value=raise_error())
+    mock_client.invoke_model_with_response_stream.return_value = {"body": mock_body}
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model_id="anthropic.claude-v2",
+        region_name="us-west-2",
+    )
+
+    with pytest.raises(RuntimeError, match="Test error"):
+        list(llm._prepare_input_and_invoke_stream(prompt="Hello"))
+
+    mock_body.close.assert_called_once()
