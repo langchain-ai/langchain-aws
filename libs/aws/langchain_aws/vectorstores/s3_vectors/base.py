@@ -374,7 +374,7 @@ class AmazonS3Vectors(VectorStore):
             raise ValueError(
                 "`query_embedding` arg missing at init, but cannot fall back to "
                 "using the `embedding` arg because it's also not provided. "
-                "Provide at least the `embedding` arg to be used for query embeddings." 
+                "Provide at least the `embedding` arg to be used for query embeddings."
             )
         return query_emb
 
@@ -395,7 +395,9 @@ class AmazonS3Vectors(VectorStore):
 
         """
         query_vector = self._get_query_embedding().embed_query(query)
-        return self.similarity_search_by_vector(query_vector, k=k, filter=filter, **kwargs)
+        return self.similarity_search_by_vector(
+            query_vector, k=k, filter=filter, **kwargs
+        )
 
     def similarity_search_with_score(
         self,
