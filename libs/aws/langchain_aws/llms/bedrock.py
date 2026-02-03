@@ -905,7 +905,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 endpoint_url=self.endpoint_url,
                 config=self.config,
                 service_name="bedrock-runtime",
-                bedrock_api_key=self.bedrock_api_key,
+                api_key=self.bedrock_api_key,
             )
 
         # Create bedrock client for control plane API call
@@ -933,7 +933,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 endpoint_url=self.endpoint_url,
                 config=self.config or bedrock_client_cfg.get("config"),
                 service_name="bedrock",
-                bedrock_api_key=self.bedrock_api_key,
+                api_key=self.bedrock_api_key,
             )
 
         if (

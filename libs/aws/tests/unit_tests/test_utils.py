@@ -134,7 +134,13 @@ def test_region_from_env_vars(
 ) -> None:
     session_mock, client_mock, client_instance = mock_boto3
 
-    with mock.patch.dict(os.environ, {env_var: env_value}):
+    # Clear other AWS region env vars to test only the specified one
+    env_patch = {env_var: env_value}
+    for var in ["AWS_REGION", "AWS_DEFAULT_REGION"]:
+        if var != env_var:
+            env_patch[var] = ""
+
+    with mock.patch.dict(os.environ, env_patch):
         client = create_aws_client("bedrock-runtime")
 
     session_mock.assert_not_called()
@@ -461,7 +467,7 @@ def test_api_key_sets_env_var(
     with mock.patch.dict(os.environ, {}, clear=True):
         client = create_aws_client(
             "bedrock-runtime",
-            bedrock_api_key=SecretStr("test-api-key"),
+            api_key=SecretStr("test-api-key"),
         )
         assert os.environ.get("AWS_BEARER_TOKEN_BEDROCK") == "test-api-key"
 
@@ -479,7 +485,7 @@ def test_api_key_with_region(
         client = create_aws_client(
             "bedrock-runtime",
             region_name="us-west-2",
-            bedrock_api_key=SecretStr("test-api-key"),
+            api_key=SecretStr("test-api-key"),
         )
 
     session_mock.assert_not_called()
@@ -503,20 +509,20 @@ def test_api_key_with_region(
 def test_api_key_takes_precedence_over_creds(
     mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
     conflicting_creds: Dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     session_mock, client_mock, client_instance = mock_boto3
 
     with mock.patch.dict(os.environ, {}, clear=True):
-        with pytest.warns(
-            UserWarning,
-            match="Both bedrock_api_key and AWS credentials were provided",
-        ):
-            client = create_aws_client(
-                "bedrock-runtime",
-                bedrock_api_key=SecretStr("test-api-key"),
-                **conflicting_creds,
-            )
+        client = create_aws_client(
+            "bedrock-runtime",
+            api_key=SecretStr("test-api-key"),
+            **conflicting_creds,
+        )
         assert os.environ.get("AWS_BEARER_TOKEN_BEDROCK") == "test-api-key"
+
+    # Verify warning was logged
+    assert "Both api_key and AWS credentials were provided" in caplog.text
 
     session_mock.assert_not_called()
     client_mock.assert_called_once_with(service_name="bedrock-runtime")
@@ -533,7 +539,7 @@ def test_empty_or_none_api_key_is_ignored(
     with mock.patch.dict(os.environ, {}, clear=True):
         client = create_aws_client(
             "bedrock-runtime",
-            bedrock_api_key=api_key,
+            api_key=api_key,
         )
 
     session_mock.assert_not_called()
@@ -567,7 +573,7 @@ def test_api_key_overrides_existing_env_var(
     ):
         client = create_aws_client(
             "bedrock-runtime",
-            bedrock_api_key=SecretStr("new-api-key"),
+            api_key=SecretStr("new-api-key"),
         )
         assert os.environ.get("AWS_BEARER_TOKEN_BEDROCK") == "new-api-key"
 

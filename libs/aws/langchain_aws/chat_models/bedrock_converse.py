@@ -799,7 +799,7 @@ class ChatBedrockConverse(BaseChatModel):
                 endpoint_url=self.endpoint_url,
                 config=self.config,
                 service_name="bedrock-runtime",
-                bedrock_api_key=self.bedrock_api_key,
+                api_key=self.bedrock_api_key,
             )
 
         # Create bedrock client for control plane API call
@@ -823,7 +823,7 @@ class ChatBedrockConverse(BaseChatModel):
                 endpoint_url=self.endpoint_url,
                 config=self.config,
                 service_name="bedrock",
-                bedrock_api_key=self.bedrock_api_key,
+                api_key=self.bedrock_api_key,
             )
 
         if self.default_headers is not None:
