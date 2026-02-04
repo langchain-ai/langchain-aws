@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from valkey.commands.search.field import (  # type: ignore
         NumericField,
         TagField,
-        TextField,
         VectorField,
     )
 
@@ -33,29 +32,6 @@ class ValkeyField(BaseModel):
     """Base class for Valkey fields."""
 
     name: str = Field(...)
-
-
-class TextFieldSchema(ValkeyField):
-    """Schema for text fields in Valkey."""
-
-    weight: float = 1
-    no_stem: bool = False
-    phonetic_matcher: Optional[str] = None
-    withsuffixtrie: bool = False
-    no_index: bool = False
-    sortable: Optional[bool] = False
-
-    def as_field(self) -> TextField:
-        from valkey.commands.search.field import TextField  # type: ignore
-
-        return TextField(
-            self.name,
-            weight=self.weight,
-            no_stem=self.no_stem,
-            phonetic_matcher=self.phonetic_matcher,  # type: ignore
-            sortable=self.sortable,
-            no_index=self.no_index,
-        )
 
 
 class TagFieldSchema(ValkeyField):
@@ -166,21 +142,12 @@ class HNSWVectorField(ValkeyVectorField):
 class ValkeyModel(BaseModel):
     """Schema for Valkey index."""
 
-    text: List[TextFieldSchema] = [TextFieldSchema(name="content")]
     tag: Optional[List[TagFieldSchema]] = None
     numeric: Optional[List[NumericFieldSchema]] = None
     extra: Optional[List[ValkeyField]] = None
     vector: Optional[List[Union[FlatVectorField, HNSWVectorField]]] = None
     content_key: str = "content"
     content_vector_key: str = "content_vector"
-
-    def add_content_field(self) -> None:
-        if self.text is None:
-            self.text = []
-        for field in self.text:
-            if field.name == self.content_key:
-                return
-        self.text.append(TextFieldSchema(name=self.content_key))
 
     def add_vector_field(self, vector_field: Dict[str, Any]) -> None:
         if self.vector is None:
@@ -197,7 +164,7 @@ class ValkeyModel(BaseModel):
             )
 
     def as_dict(self) -> Dict[str, List[Any]]:
-        schemas: Dict[str, List[Any]] = {"text": [], "tag": [], "numeric": []}
+        schemas: Dict[str, List[Any]] = {"tag": [], "numeric": []}
         for attr, attr_value in self.__dict__.items():
             if isinstance(attr_value, list) and len(attr_value) > 0:
                 field_values: List[Dict[str, Any]] = []
@@ -233,7 +200,7 @@ class ValkeyModel(BaseModel):
     @property
     def is_empty(self) -> bool:
         return all(
-            field is None for field in [self.tag, self.text, self.numeric, self.vector]
+            field is None for field in [self.tag, self.numeric, self.vector]
         )
 
     def get_fields(self) -> List["ValkeyField"]:
