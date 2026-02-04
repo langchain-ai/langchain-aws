@@ -20,7 +20,7 @@ class TestValkeyVectorStore:
         port = os.environ.get("VALKEY_PORT", "6379")
         return f"valkey://{host}:{port}"
 
-    @patch("langchain_aws.utilities.valkey.get_client")
+    @patch("langchain_aws.vectorstores.valkey.base.get_client")
     def test_init(self, mock_get_client: MagicMock) -> None:
         """Test initialization of ValkeyVectorStore."""
         mock_client = MagicMock()
@@ -38,7 +38,7 @@ class TestValkeyVectorStore:
         assert store._embeddings == mock_embeddings
         assert store.key_prefix == "doc:test_index"
 
-    @patch("langchain_aws.utilities.valkey.get_client")
+    @patch("langchain_aws.vectorstores.valkey.base.get_client")
     def test_init_with_custom_key_prefix(self, mock_get_client: MagicMock) -> None:
         """Test initialization with custom key prefix."""
         mock_client = MagicMock()
@@ -54,7 +54,7 @@ class TestValkeyVectorStore:
 
         assert store.key_prefix == "custom_prefix"
 
-    @patch("langchain_aws.utilities.valkey.get_client")
+    @patch("langchain_aws.vectorstores.valkey.base.get_client")
     def test_embeddings_property(self, mock_get_client: MagicMock) -> None:
         """Test embeddings property."""
         mock_client = MagicMock()
@@ -69,7 +69,7 @@ class TestValkeyVectorStore:
 
         assert store.embeddings == mock_embeddings
 
-    @patch("langchain_aws.utilities.valkey.get_client")
+    @patch("langchain_aws.vectorstores.valkey.base.get_client")
     def test_from_texts(self, mock_get_client: MagicMock) -> None:
         """Test from_texts class method."""
         mock_client = MagicMock()
@@ -91,7 +91,7 @@ class TestValkeyVectorStore:
         assert store.index_name == "test_index"
         assert mock_embeddings.embed_documents.called
 
-    @patch("langchain_aws.utilities.valkey.get_client")
+    @patch("langchain_aws.vectorstores.valkey.base.get_client")
     def test_from_existing_index(self, mock_get_client: MagicMock) -> None:
         """Test from_existing_index class method."""
         mock_client = MagicMock()
