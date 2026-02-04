@@ -13,6 +13,11 @@ on:
         default: false
         description: "Release from a non-master branch (danger!)"
 
+permissions:
+  contents: read
+  actions: write
+  id-token: write
+
 env:
   PYTHON_VERSION: "3.13"
 
