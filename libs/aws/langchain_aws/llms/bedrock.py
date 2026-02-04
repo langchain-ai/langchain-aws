@@ -1337,13 +1337,18 @@ class BedrockBase(BaseLanguageModel, ABC):
             ),
         )
 
-        async for chunk in LLMInputOutputAdapter.aprepare_output_stream(
-            provider,
-            response,
-            stop,
-            True if (messages and provider == "anthropic") else False,
-        ):
-            yield chunk
+        try:
+            async for chunk in LLMInputOutputAdapter.aprepare_output_stream(
+                provider,
+                response,
+                stop,
+                True if (messages and provider == "anthropic") else False,
+            ):
+                yield chunk
+        finally:
+            stream = response.get("body")
+            if stream and hasattr(stream, "close"):
+                stream.close()
 
 
 class BedrockLLM(LLM, BedrockBase):
