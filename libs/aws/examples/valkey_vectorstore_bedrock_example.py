@@ -65,13 +65,19 @@ for i, (doc, score) in enumerate(results_with_scores, 1):
     print(f"   Score: {score:.4f}")
     print(f"   Metadata: {doc.metadata}\n")
 
-# Example with filtering (if filters are implemented)
-# from langchain_aws.vectorstores.valkey import ValkeyFilter
-# filter_expr = ValkeyFilter.tag("category") == "ai"
-# results = vectorstore.similarity_search(
-#     "machine learning",
-#     k=2,
-#     filter=str(filter_expr)
-# )
+# Example with metadata filtering
+from langchain_aws.vectorstores.valkey.filters import ValkeyTag
+
+filter_expr = ValkeyTag("category") == "ai"
+filtered_results = vectorstore.similarity_search(
+    "machine learning",
+    k=2,
+    filter=str(filter_expr)
+)
+
+print("\nFiltered results (category='ai'):")
+for i, doc in enumerate(filtered_results, 1):
+    print(f"{i}. {doc.page_content}")
+    print(f"   Metadata: {doc.metadata}\n")
 
 print("Example completed successfully!")
