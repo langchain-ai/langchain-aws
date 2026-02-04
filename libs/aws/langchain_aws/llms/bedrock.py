@@ -1263,17 +1263,22 @@ class BedrockBase(BaseLanguageModel, ABC):
                 run_manager.on_llm_error(e)
             raise e
 
-        for chunk in LLMInputOutputAdapter.prepare_output_stream(
-            provider,
-            response,
-            stop,
-            True if (messages and provider == "anthropic") else False,
-            coerce_content_to_string=coerce_content_to_string,
-        ):
-            yield chunk
-            # verify and raise callback error if any middleware intervened
-            if not isinstance(chunk, AIMessageChunk):
-                self._get_bedrock_services_signal(chunk.generation_info)  # type: ignore[arg-type]
+        try:
+            for chunk in LLMInputOutputAdapter.prepare_output_stream(
+                provider,
+                response,
+                stop,
+                True if (messages and provider == "anthropic") else False,
+                coerce_content_to_string=coerce_content_to_string,
+            ):
+                yield chunk
+                # verify and raise callback error if any middleware intervened
+                if not isinstance(chunk, AIMessageChunk):
+                    self._get_bedrock_services_signal(chunk.generation_info)  # type: ignore[arg-type]
+        finally:
+            stream = response.get("body")
+            if stream and hasattr(stream, "close"):
+                stream.close()
 
     async def _aprepare_input_and_invoke_stream(
         self,
@@ -1332,13 +1337,18 @@ class BedrockBase(BaseLanguageModel, ABC):
             ),
         )
 
-        async for chunk in LLMInputOutputAdapter.aprepare_output_stream(
-            provider,
-            response,
-            stop,
-            True if (messages and provider == "anthropic") else False,
-        ):
-            yield chunk
+        try:
+            async for chunk in LLMInputOutputAdapter.aprepare_output_stream(
+                provider,
+                response,
+                stop,
+                True if (messages and provider == "anthropic") else False,
+            ):
+                yield chunk
+        finally:
+            stream = response.get("body")
+            if stream and hasattr(stream, "close"):
+                stream.close()
 
 
 class BedrockLLM(LLM, BedrockBase):

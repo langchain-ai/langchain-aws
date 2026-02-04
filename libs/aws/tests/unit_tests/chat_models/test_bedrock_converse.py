@@ -2,7 +2,7 @@
 
 import base64
 import os
-from typing import Any, Dict, List, Literal, Tuple, Type, Union, cast
+from typing import Any, Dict, Iterator, List, Literal, Tuple, Type, Union, cast
 from unittest import mock
 
 import pytest
@@ -3336,3 +3336,59 @@ def test_additional_model_request_fields_invoke_overrides_constructor() -> None:
     # Verify invoke value takes priority over constructor value
     assert additional_fields["reasoning_effort"] == "invoke_value"
     assert additional_fields["reasoning_effort"] != "constructor_value"
+
+
+def test_stream_closes_event_stream() -> None:
+    """Test that stream() explicitly closes the EventStream after iteration."""
+    mocked_client = mock.MagicMock()
+    mock_stream = mock.MagicMock()
+    mock_stream.__iter__ = mock.Mock(
+        return_value=iter(
+            [
+                {"messageStart": {"role": "assistant"}},
+                {
+                    "contentBlockDelta": {
+                        "delta": {"text": "Hi"},
+                        "contentBlockIndex": 0,
+                    }
+                },
+                {"messageStop": {"stopReason": "end_turn"}},
+            ]
+        )
+    )
+    mocked_client.converse_stream.return_value = {"stream": mock_stream}
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+
+    list(llm.stream([HumanMessage(content="Hi")]))
+
+    mock_stream.close.assert_called_once()
+
+
+def test_stream_closes_event_stream_on_exception() -> None:
+    """Test that stream() closes the EventStream even when iteration raises."""
+    mocked_client = mock.MagicMock()
+    mock_stream = mock.MagicMock()
+
+    def raise_error() -> Iterator[Dict[str, Any]]:
+        yield {"messageStart": {"role": "assistant"}}
+        yield {"contentBlockDelta": {"delta": {"text": "Hi"}, "contentBlockIndex": 0}}
+        raise RuntimeError("Test error")
+
+    mock_stream.__iter__ = mock.Mock(return_value=raise_error())
+    mocked_client.converse_stream.return_value = {"stream": mock_stream}
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+
+    with pytest.raises(RuntimeError, match="Test error"):
+        list(llm.stream([HumanMessage(content="Hi")]))
+
+    mock_stream.close.assert_called_once()
