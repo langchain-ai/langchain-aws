@@ -28,6 +28,11 @@ on:
 env:
   PYTHON_VERSION: "3.13"
 
+permissions:
+  contents: read
+  actions: write
+  id-token: write
+
 jobs:
   build:
     defaults:

@@ -8,15 +8,15 @@ on:
         type: string
         description: "From which folder this pipeline executes"
 
+permissions:
+  contents: read
+
 jobs:
   build:
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
     strategy:
       matrix:
         python-version:

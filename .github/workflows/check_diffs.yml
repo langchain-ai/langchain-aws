@@ -16,6 +16,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -39,9 +42,6 @@ jobs:
     name: cd ${{ matrix.working-directory }}
     needs: [build]
     if: ${{ needs.build.outputs.dirs-to-lint != '[]' }}
-    permissions:
-      contents: read
-      actions: write
     strategy:
       matrix:
         working-directory: ${{ fromJson(needs.build.outputs.dirs-to-lint) }}
@@ -54,9 +54,6 @@ jobs:
     name: cd ${{ matrix.working-directory }}
     needs: [build]
     if: ${{ needs.build.outputs.dirs-to-test != '[]' }}
-    permissions:
-      contents: read
-      actions: write
     strategy:
       matrix:
         working-directory: ${{ fromJson(needs.build.outputs.dirs-to-test) }}
@@ -69,9 +66,6 @@ jobs:
     name: cd ${{ matrix.working-directory }}
     needs: [build]
     if: ${{ needs.build.outputs.dirs-to-test != '[]' }}
-    permissions:
-      contents: read
-      actions: write
     strategy:
       matrix:
         working-directory: ${{ fromJson(needs.build.outputs.dirs-to-test) }}
