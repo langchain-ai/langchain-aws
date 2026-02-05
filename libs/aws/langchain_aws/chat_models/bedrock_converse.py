@@ -2060,6 +2060,23 @@ def _lc_content_to_bedrock(
     return [block for block in bedrock_content if block.get("text", True)]
 
 
+def _parse_tool_input_json(tool_block: Dict[str, Any]) -> None:
+    """Parse stringified input to dict if applicable.
+
+    Streaming mode may return tool input as a JSON string that needs parsing.
+    Modifies tool_block in place.
+
+    Args:
+        tool_block: Tool use block dict containing an 'input' field.
+    """
+    tool_input = tool_block.get("input")
+    if isinstance(tool_input, str):
+        try:
+            tool_block["input"] = json.loads(tool_input)
+        except (json.JSONDecodeError, TypeError):
+            pass  # Keep original value if parsing fails
+
+
 def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     lc_content = []
     for block in _camel_to_snake_keys(
@@ -2070,12 +2087,13 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             lc_content.append({"type": "text", "text": block["text"]})
         elif "tool_use" in block:
             block["tool_use"]["id"] = block["tool_use"].pop("tool_use_id", None)
+            _parse_tool_input_json(block["tool_use"])
             lc_content.append({"type": "tool_use", **block["tool_use"]})
         elif "server_tool_use" in block:
-            # System tools use server_tool_use instead of tool_use
             block["server_tool_use"]["id"] = block["server_tool_use"].pop(
                 "tool_use_id", None
             )
+            _parse_tool_input_json(block["server_tool_use"])
             lc_content.append({"type": "server_tool_use", **block["server_tool_use"]})
         elif "image" in block:
             lc_content.append(

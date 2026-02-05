@@ -641,6 +641,83 @@ def test__bedrock_to_lc() -> None:
     assert expected == actual
 
 
+_TOOL_INPUT_PARSING_CASES = [
+    pytest.param(
+        [
+            {
+                "toolUse": {
+                    "toolUseId": "tool_123",
+                    "name": "get_weather",
+                    "input": '{"location": "Seattle"}',
+                }
+            }
+        ],
+        [
+            {
+                "type": "tool_use",
+                "id": "tool_123",
+                "name": "get_weather",
+                "input": {"location": "Seattle"},
+            }
+        ],
+        id="tool_use_valid_json_string",
+    ),
+    pytest.param(
+        [
+            {
+                "serverToolUse": {
+                    "toolUseId": "server_456",
+                    "name": "web_search",
+                    "input": '{"query": "docs"}',
+                }
+            }
+        ],
+        [
+            {
+                "type": "server_tool_use",
+                "id": "server_456",
+                "name": "web_search",
+                "input": {"query": "docs"},
+            }
+        ],
+        id="server_tool_use_valid_json_string",
+    ),
+    pytest.param(
+        [
+            {
+                "toolUse": {
+                    "toolUseId": "tool_789",
+                    "name": "some_tool",
+                    "input": "not valid json {",
+                }
+            }
+        ],
+        [
+            {
+                "type": "tool_use",
+                "id": "tool_789",
+                "name": "some_tool",
+                "input": "not valid json {",
+            }
+        ],
+        id="tool_use_invalid_json_keeps_string",
+    ),
+]
+
+
+@pytest.mark.parametrize(["bedrock_content", "expected"], _TOOL_INPUT_PARSING_CASES)
+def test__bedrock_to_lc_stringified_tool_input(
+    bedrock_content: List[Dict[str, Any]], expected: List[Dict[str, Any]]
+) -> None:
+    """Test _bedrock_to_lc handles stringified tool input from streaming mode.
+
+    Streaming mode may concatenate partial JSON into a string that needs parsing.
+    Invalid JSON strings are kept as-is.
+    """
+    actual = _bedrock_to_lc(bedrock_content)
+    assert actual == expected
+
+
 _CAMEL_SNAKE = [
     ("text", "text"),
     ("toolUseId", "tool_use_id"),
