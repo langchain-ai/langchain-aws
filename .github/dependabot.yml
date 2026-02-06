@@ -8,3 +8,19 @@ updates:
       actions-dependencies:
         patterns:
           - "*"
+
+  - package-ecosystem: "pip"
+    directories:
+      - "/libs/aws"
+      - "/libs/langgraph-checkpoint-aws"
+    schedule:
+      interval: "weekly"
+    groups:
+      production-dependencies:
+        dependency-type: "production"
+        patterns:
+          - "*"
+      development-dependencies:
+        dependency-type: "development"
+        patterns:
+          - "*"
