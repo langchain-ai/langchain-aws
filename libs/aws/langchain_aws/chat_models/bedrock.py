@@ -1280,9 +1280,10 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                         forced = True
                 if forced:
                     raise ValueError(
-                        "Anthropic Claude (3.7/4/4.1/4.5) with thinking enabled "
-                        "does not support forced tool use. To use forced tool use, "
-                        "disable thinking mode."
+                        "Anthropic Claude (3.7/4/4.1/4.5) with thinking enabled does "
+                        "not support forced tool use. Remove forced tool_choice (e.g. "
+                        "'any' or a specific tool), or set tool_choice='auto', or "
+                        "disable thinking."
                     )
 
             # true if the model is a claude 3 model
