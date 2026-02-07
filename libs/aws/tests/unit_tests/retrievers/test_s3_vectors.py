@@ -104,3 +104,14 @@ def test_invoke_with_query_embedding(mock_client) -> None:
     assert results == [
         Document("text1", id="id1", metadata={"key1": "value1"}),
     ]
+
+
+def test_invoke_without_embedding_raises(mock_client) -> None:
+    vector_store = AmazonS3Vectors(
+        vector_bucket_name="test-bucket",
+        index_name="test-index",
+        client=mock_client,
+    )
+
+    with pytest.raises(ValueError, match="embedding"):
+        vector_store.similarity_search("query text")
