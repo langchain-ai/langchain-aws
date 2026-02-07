@@ -2070,12 +2070,32 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             lc_content.append({"type": "text", "text": block["text"]})
         elif "tool_use" in block:
             block["tool_use"]["id"] = block["tool_use"].pop("tool_use_id", None)
+            # Fix: Parse stringified input from streaming mode to dict
+            tool_use_input = block["tool_use"].get("input")
+            if tool_use_input is not None and isinstance(tool_use_input, str):
+                try:
+                    block["tool_use"]["input"] = json.loads(tool_use_input)
+                except (json.JSONDecodeError, TypeError):
+                    # If parsing fails, keep the original value
+                    pass
             lc_content.append({"type": "tool_use", **block["tool_use"]})
         elif "server_tool_use" in block:
             # System tools use server_tool_use instead of tool_use
             block["server_tool_use"]["id"] = block["server_tool_use"].pop(
                 "tool_use_id", None
             )
+            # Fix: Parse stringified input from streaming mode to dict
+            server_tool_use_input = block["server_tool_use"].get("input")
+            if server_tool_use_input is not None and isinstance(
+                server_tool_use_input, str
+            ):
+                try:
+                    block["server_tool_use"]["input"] = json.loads(
+                        server_tool_use_input
+                    )
+                except (json.JSONDecodeError, TypeError):
+                    # If parsing fails, keep the original value
+                    pass
             lc_content.append({"type": "server_tool_use", **block["server_tool_use"]})
         elif "image" in block:
             lc_content.append(
