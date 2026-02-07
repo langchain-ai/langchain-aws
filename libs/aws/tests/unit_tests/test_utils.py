@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Generator, List, Tuple
+from typing import Any, Dict, Generator, List, Tuple
 from unittest import mock
 
 import pytest
@@ -134,7 +134,13 @@ def test_region_from_env_vars(
 ) -> None:
     session_mock, client_mock, client_instance = mock_boto3
 
-    with mock.patch.dict(os.environ, {env_var: env_value}):
+    # Clear other AWS region env vars to test only the specified one
+    env_patch = {env_var: env_value}
+    for var in ["AWS_REGION", "AWS_DEFAULT_REGION"]:
+        if var != env_var:
+            env_patch[var] = ""
+
+    with mock.patch.dict(os.environ, env_patch):
         client = create_aws_client("bedrock-runtime")
 
     session_mock.assert_not_called()
@@ -451,3 +457,126 @@ def test_count_tokens_api_supported_for_model(
     result = count_tokens_api_supported_for_model(model_id)
 
     assert result == expected_result
+
+
+def test_api_key_sets_env_var(
+    mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
+) -> None:
+    session_mock, client_mock, client_instance = mock_boto3
+
+    with mock.patch.dict(os.environ, {}, clear=True):
+        client = create_aws_client(
+            "bedrock-runtime",
+            api_key=SecretStr("test-api-key"),
+        )
+        assert os.environ.get("AWS_BEARER_TOKEN_BEDROCK") == "test-api-key"
+
+    session_mock.assert_not_called()
+    client_mock.assert_called_once_with(service_name="bedrock-runtime")
+    assert client == client_instance
+
+
+def test_api_key_with_region(
+    mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
+) -> None:
+    session_mock, client_mock, client_instance = mock_boto3
+
+    with mock.patch.dict(os.environ, {}, clear=True):
+        client = create_aws_client(
+            "bedrock-runtime",
+            region_name="us-west-2",
+            api_key=SecretStr("test-api-key"),
+        )
+
+    session_mock.assert_not_called()
+    client_mock.assert_called_once_with(
+        service_name="bedrock-runtime",
+        region_name="us-west-2",
+    )
+    assert client == client_instance
+
+
+@pytest.mark.parametrize(
+    "conflicting_creds",
+    [
+        {
+            "aws_access_key_id": SecretStr("key"),
+            "aws_secret_access_key": SecretStr("secret"),
+        },
+        {"credentials_profile_name": "my-profile"},
+    ],
+)
+def test_api_key_takes_precedence_over_creds(
+    mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
+    conflicting_creds: Dict[str, Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    session_mock, client_mock, client_instance = mock_boto3
+
+    with mock.patch.dict(os.environ, {}, clear=True):
+        client = create_aws_client(
+            "bedrock-runtime",
+            api_key=SecretStr("test-api-key"),
+            **conflicting_creds,
+        )
+        assert os.environ.get("AWS_BEARER_TOKEN_BEDROCK") == "test-api-key"
+
+    # Verify warning was logged
+    assert "Both api_key and AWS credentials were provided" in caplog.text
+
+    session_mock.assert_not_called()
+    client_mock.assert_called_once_with(service_name="bedrock-runtime")
+    assert client == client_instance
+
+
+@pytest.mark.parametrize("api_key", [SecretStr(""), None])
+def test_empty_or_none_api_key_is_ignored(
+    mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
+    api_key: SecretStr | None,
+) -> None:
+    session_mock, client_mock, client_instance = mock_boto3
+
+    with mock.patch.dict(os.environ, {}, clear=True):
+        client = create_aws_client(
+            "bedrock-runtime",
+            api_key=api_key,
+        )
+
+    session_mock.assert_not_called()
+    client_mock.assert_called_once_with(service_name="bedrock-runtime")
+    assert client == client_instance
+
+
+def test_api_key_from_env_var_preserved_when_not_provided(
+    mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
+) -> None:
+    session_mock, client_mock, client_instance = mock_boto3
+
+    with mock.patch.dict(
+        os.environ, {"AWS_BEARER_TOKEN_BEDROCK": "env-api-key"}, clear=True
+    ):
+        client = create_aws_client("bedrock-runtime")
+        assert os.environ.get("AWS_BEARER_TOKEN_BEDROCK") == "env-api-key"
+
+    session_mock.assert_not_called()
+    client_mock.assert_called_once_with(service_name="bedrock-runtime")
+    assert client == client_instance
+
+
+def test_api_key_overrides_existing_env_var(
+    mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
+) -> None:
+    session_mock, client_mock, client_instance = mock_boto3
+
+    with mock.patch.dict(
+        os.environ, {"AWS_BEARER_TOKEN_BEDROCK": "old-env-key"}, clear=True
+    ):
+        client = create_aws_client(
+            "bedrock-runtime",
+            api_key=SecretStr("new-api-key"),
+        )
+        assert os.environ.get("AWS_BEARER_TOKEN_BEDROCK") == "new-api-key"
+
+    session_mock.assert_not_called()
+    client_mock.assert_called_once_with(service_name="bedrock-runtime")
+    assert client == client_instance

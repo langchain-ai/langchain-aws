@@ -1536,18 +1536,23 @@ def test_bedrock_client_inherits_from_runtime_client(
 
     mock_create_client.side_effect = side_effect
 
-    ChatBedrock(model="us.meta.llama3-3-70b-instruct-v1:0", client=mock_runtime_client)
+    with mock.patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("AWS_BEARER_TOKEN_BEDROCK", None)
+        ChatBedrock(
+            model="us.meta.llama3-3-70b-instruct-v1:0", client=mock_runtime_client
+        )
 
-    mock_create_client.assert_called_with(
-        region_name="us-west-2",
-        credentials_profile_name=None,
-        aws_access_key_id=None,
-        aws_secret_access_key=None,
-        aws_session_token=None,
-        endpoint_url=None,
-        config=mock_client_config,
-        service_name="bedrock",
-    )
+        mock_create_client.assert_called_with(
+            region_name="us-west-2",
+            credentials_profile_name=None,
+            aws_access_key_id=None,
+            aws_secret_access_key=None,
+            aws_session_token=None,
+            endpoint_url=None,
+            config=mock_client_config,
+            service_name="bedrock",
+            api_key=None,
+        )
 
 
 @patch("langchain_aws.llms.bedrock.create_aws_client")
@@ -1573,23 +1578,26 @@ def test_bedrock_client_uses_explicit_values_over_runtime_client(
 
     mock_create_client.side_effect = side_effect
 
-    ChatBedrock(
-        model="us.meta.llama3-3-70b-instruct-v1:0",
-        client=mock_runtime_client,
-        region="us-east-1",
-        config=explicit_config,
-    )
+    with mock.patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("AWS_BEARER_TOKEN_BEDROCK", None)
+        ChatBedrock(
+            model="us.meta.llama3-3-70b-instruct-v1:0",
+            client=mock_runtime_client,
+            region="us-east-1",
+            config=explicit_config,
+        )
 
-    mock_create_client.assert_called_with(
-        region_name="us-east-1",
-        credentials_profile_name=None,
-        aws_access_key_id=None,
-        aws_secret_access_key=None,
-        aws_session_token=None,
-        endpoint_url=None,
-        config=explicit_config,
-        service_name="bedrock",
-    )
+        mock_create_client.assert_called_with(
+            region_name="us-east-1",
+            credentials_profile_name=None,
+            aws_access_key_id=None,
+            aws_secret_access_key=None,
+            aws_session_token=None,
+            endpoint_url=None,
+            config=explicit_config,
+            service_name="bedrock",
+            api_key=None,
+        )
 
 
 def test_get_num_tokens_from_messages_with_base_messages():
