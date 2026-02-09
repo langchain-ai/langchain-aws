@@ -961,7 +961,12 @@ def test__bedrock_to_lc_tool_use_string_input() -> None:
         },
     ]
     expected = [
-        {"type": "tool_use", "id": "stream_1", "name": "search", "input": {"query": "weather"}},
+        {
+            "type": "tool_use",
+            "id": "stream_1",
+            "name": "search",
+            "input": {"query": "weather"},
+        },
     ]
     assert _bedrock_to_lc(bedrock_content) == expected
 

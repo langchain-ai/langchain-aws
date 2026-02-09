@@ -53,12 +53,12 @@ from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
-from langchain_core.utils.json import parse_partial_json
 from langchain_core.utils import get_pydantic_field_names, secret_from_env
 from langchain_core.utils.function_calling import (
     convert_to_openai_function,
     convert_to_openai_tool,
 )
+from langchain_core.utils.json import parse_partial_json
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 from langchain_core.utils.utils import _build_model_kwargs
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
@@ -73,7 +73,6 @@ from langchain_aws.utils import (
     create_aws_client,
     trim_message_whitespace,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -2054,7 +2053,7 @@ def _lc_content_to_bedrock(
 
 
 def _parse_tool_input(tool_block: Dict[str, Any]) -> None:
-    """Normalize a Bedrock tool-use block in place: tool_use_id -> id, parse string input."""
+    """Normalize Bedrock tool-use block: tool_use_id -> id, parse string input."""
     tool_block["id"] = tool_block.pop("tool_use_id", None)
     raw_input = tool_block.get("input")
     if raw_input is not None and isinstance(raw_input, str):
