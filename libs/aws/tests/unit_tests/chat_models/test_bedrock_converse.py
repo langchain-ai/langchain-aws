@@ -30,6 +30,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _has_tool_use_or_result_blocks,
     _lc_content_to_bedrock,
     _messages_to_bedrock,
+    _parse_tool_input,
     _snake_to_camel,
     _snake_to_camel_keys,
 )
@@ -925,6 +926,66 @@ def test__bedrock_to_lc_nova_code_interpreter() -> None:
 
     actual = _bedrock_to_lc(bedrock_content)
     assert expected_lc == actual
+
+
+def test__parse_tool_input_dict_input_unchanged() -> None:
+    """Dict input is left unchanged; only tool_use_id -> id."""
+    block = {"tool_use_id": "call_1", "name": "my_tool", "input": {"q": "x"}}
+    _parse_tool_input(block)
+    assert block == {"id": "call_1", "name": "my_tool", "input": {"q": "x"}}
+
+
+def test__parse_tool_input_string_input_parsed() -> None:
+    """Valid JSON string input (e.g. from streaming) is parsed to dict."""
+    block = {"tool_use_id": "call_1", "name": "my_tool", "input": '{"q": "x"}'}
+    _parse_tool_input(block)
+    assert block == {"id": "call_1", "name": "my_tool", "input": {"q": "x"}}
+
+
+def test__parse_tool_input_string_input_invalid_kept() -> None:
+    """Invalid or partial JSON string is kept as-is (streaming)."""
+    block = {"tool_use_id": "call_1", "name": "my_tool", "input": '{"q": "'}
+    _parse_tool_input(block)
+    assert block["input"] == '{"q": "'
+
+
+def test__bedrock_to_lc_tool_use_string_input() -> None:
+    """tool_use with string input (streaming) is parsed to dict."""
+    bedrock_content: List[Dict[str, Any]] = [
+        {
+            "toolUse": {
+                "toolUseId": "stream_1",
+                "name": "search",
+                "input": '{"query": "weather"}',
+            }
+        },
+    ]
+    expected = [
+        {"type": "tool_use", "id": "stream_1", "name": "search", "input": {"query": "weather"}},
+    ]
+    assert _bedrock_to_lc(bedrock_content) == expected
+
+
+def test__bedrock_to_lc_server_tool_use() -> None:
+    """server_tool_use is normalized like tool_use (id, parse string input)."""
+    bedrock_content: List[Dict[str, Any]] = [
+        {
+            "serverToolUse": {
+                "toolUseId": "server_1",
+                "name": "system_tool",
+                "input": '{"arg": 42}',
+            }
+        },
+    ]
+    expected = [
+        {
+            "type": "server_tool_use",
+            "id": "server_1",
+            "name": "system_tool",
+            "input": {"arg": 42},
+        },
+    ]
+    assert _bedrock_to_lc(bedrock_content) == expected
 
 
 def test__bedrock_to_lc_redacted_tool_result() -> None:

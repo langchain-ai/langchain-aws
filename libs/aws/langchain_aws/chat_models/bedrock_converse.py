@@ -53,6 +53,7 @@ from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
+from langchain_core.utils.json import parse_partial_json
 from langchain_core.utils import get_pydantic_field_names, secret_from_env
 from langchain_core.utils.function_calling import (
     convert_to_openai_function,
@@ -72,6 +73,7 @@ from langchain_aws.utils import (
     create_aws_client,
     trim_message_whitespace,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -2051,6 +2053,17 @@ def _lc_content_to_bedrock(
     return [block for block in bedrock_content if block.get("text", True)]
 
 
+def _parse_tool_input(tool_block: Dict[str, Any]) -> None:
+    """Normalize a Bedrock tool-use block in place: tool_use_id -> id, parse string input."""
+    tool_block["id"] = tool_block.pop("tool_use_id", None)
+    raw_input = tool_block.get("input")
+    if raw_input is not None and isinstance(raw_input, str):
+        try:
+            tool_block["input"] = parse_partial_json.loads(raw_input)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+
 def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     lc_content = []
     for block in _camel_to_snake_keys(
@@ -2060,33 +2073,10 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if "text" in block:
             lc_content.append({"type": "text", "text": block["text"]})
         elif "tool_use" in block:
-            block["tool_use"]["id"] = block["tool_use"].pop("tool_use_id", None)
-            # Fix: Parse stringified input from streaming mode to dict
-            tool_use_input = block["tool_use"].get("input")
-            if tool_use_input is not None and isinstance(tool_use_input, str):
-                try:
-                    block["tool_use"]["input"] = json.loads(tool_use_input)
-                except (json.JSONDecodeError, TypeError):
-                    # If parsing fails, keep the original value
-                    pass
+            _parse_tool_input(block["tool_use"])
             lc_content.append({"type": "tool_use", **block["tool_use"]})
         elif "server_tool_use" in block:
-            # System tools use server_tool_use instead of tool_use
-            block["server_tool_use"]["id"] = block["server_tool_use"].pop(
-                "tool_use_id", None
-            )
-            # Fix: Parse stringified input from streaming mode to dict
-            server_tool_use_input = block["server_tool_use"].get("input")
-            if server_tool_use_input is not None and isinstance(
-                server_tool_use_input, str
-            ):
-                try:
-                    block["server_tool_use"]["input"] = json.loads(
-                        server_tool_use_input
-                    )
-                except (json.JSONDecodeError, TypeError):
-                    # If parsing fails, keep the original value
-                    pass
+            _parse_tool_input(block["server_tool_use"])
             lc_content.append({"type": "server_tool_use", **block["server_tool_use"]})
         elif "image" in block:
             lc_content.append(
