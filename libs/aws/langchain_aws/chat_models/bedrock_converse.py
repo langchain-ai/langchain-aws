@@ -2058,7 +2058,7 @@ def _parse_tool_input(tool_block: Dict[str, Any]) -> None:
     raw_input = tool_block.get("input")
     if raw_input is not None and isinstance(raw_input, str):
         try:
-            tool_block["input"] = parse_partial_json.loads(raw_input)
+            tool_block["input"] = parse_partial_json(raw_input)
         except (json.JSONDecodeError, TypeError):
             pass
 

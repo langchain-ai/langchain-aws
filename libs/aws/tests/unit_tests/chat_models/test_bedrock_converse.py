@@ -943,10 +943,10 @@ def test__parse_tool_input_string_input_parsed() -> None:
 
 
 def test__parse_tool_input_string_input_invalid_kept() -> None:
-    """Invalid or partial JSON string is kept as-is (streaming)."""
-    block = {"tool_use_id": "call_1", "name": "my_tool", "input": '{"q": "'}
+    """Invalid JSON string that cannot be parsed is kept as-is."""
+    block = {"tool_use_id": "call_1", "name": "my_tool", "input": "not valid json"}
     _parse_tool_input(block)
-    assert block["input"] == '{"q": "'
+    assert block["input"] == "not valid json"
 
 
 def test__bedrock_to_lc_tool_use_string_input() -> None:
