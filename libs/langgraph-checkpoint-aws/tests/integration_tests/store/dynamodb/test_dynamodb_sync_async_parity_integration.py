@@ -273,7 +273,7 @@ async def test_sync_async_batch_parity(
     async_results = await async_store.abatch(get_ops)
 
     assert len(sync_results) == len(async_results) == 3
-    for sync_r, async_r in zip(sync_results, async_results):
+    for sync_r, async_r in zip(sync_results, async_results, strict=True):
         assert sync_r is not None
         assert async_r is not None
         assert sync_r.value == async_r.value
