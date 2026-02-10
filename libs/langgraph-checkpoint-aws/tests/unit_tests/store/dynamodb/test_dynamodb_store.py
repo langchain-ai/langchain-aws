@@ -1,11 +1,12 @@
 """Unit tests for DynamoDB store implementation."""
 
+import asyncio
 import os
 import time
-import asyncio
-import pytest
 from datetime import datetime, timezone
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
+
+import pytest
 from langgraph.store.base import (
     GetOp,
     Item,
@@ -19,11 +20,8 @@ from langgraph.store.base import (
 
 from langgraph_checkpoint_aws.store import DynamoDBStore
 from langgraph_checkpoint_aws.store.dynamodb.exceptions import (
-    DynamoDBConnectionError,
-    TableCreationError,
     ValidationError,
 )
-
 
 # Test constants for async testing
 N_ASYNC_CALLS = 5
@@ -32,77 +30,92 @@ OVERHEAD_DURATION = 0.01
 TOTAL_EXPECTED_TIME = MOCK_SLEEP_DURATION + OVERHEAD_DURATION
 
 
-@pytest.fixture
-def mock_boto3_session():
-    """Mock boto3 session."""
-    session = Mock()
-    return session
+def _make_dynamo_item(
+    pk: str,
+    sk: str,
+    value: dict,
+    created_at: str | None = None,
+    updated_at: str | None = None,
+) -> dict:
+    """Build a DynamoDB client-format item with type annotations."""
+    now = datetime.now(timezone.utc).isoformat()
+    serialized_value: dict = {}
+    for k, v in value.items():
+        if isinstance(v, str):
+            serialized_value[k] = {"S": v}
+        else:
+            serialized_value[k] = {"N": str(v)}
+    item: dict = {
+        "PK": {"S": pk},
+        "SK": {"S": sk},
+        "value": {"M": serialized_value},
+        "created_at": {"S": created_at or now},
+        "updated_at": {"S": updated_at or now},
+    }
+    return item
 
 
 @pytest.fixture
-def mock_dynamodb_resource():
-    """Mock DynamoDB resource."""
-    resource = Mock()
-    return resource
+def mock_dynamodb_client():
+    """Mock DynamoDB client (low-level)."""
+    client = Mock()
+    client.get_waiter = Mock(return_value=Mock())
+    return client
 
 
 @pytest.fixture
-def mock_dynamodb_table():
-    """Mock DynamoDB table."""
-    table = Mock()
-    table.table_name = "test_table"
-    return table
-
-
-@pytest.fixture
-def dynamodb_store(mock_boto3_session, mock_dynamodb_resource, mock_dynamodb_table):
+def dynamodb_store(mock_dynamodb_client):
     """Create a DynamoDBStore instance with mocked dependencies."""
-    with patch("langgraph_checkpoint_aws.store.dynamodb.base.boto3") as mock_boto3:
-        mock_boto3_session.resource.return_value = mock_dynamodb_resource
-        mock_dynamodb_resource.Table.return_value = mock_dynamodb_table
-
-        with patch("boto3.Session", return_value=mock_boto3_session):
-            # Set AWS region env var to satisfy validation
-            with patch.dict(os.environ, {"AWS_DEFAULT_REGION": "us-east-1"}):
-                store = DynamoDBStore(table_name="test_table")
-                store.table = mock_dynamodb_table
-                return store
+    with patch(
+        "langgraph_checkpoint_aws.store.dynamodb.base.create_dynamodb_client",
+        return_value=mock_dynamodb_client,
+    ):
+        with patch.dict(os.environ, {"AWS_DEFAULT_REGION": "us-east-1"}):
+            store = DynamoDBStore(table_name="test_table")
+            return store
 
 
 class TestDynamoDBStoreInit:
     """Test DynamoDB store initialization."""
 
-    def test_init_basic(self, mock_boto3_session, mock_dynamodb_resource, mock_dynamodb_table):
+    def test_init_basic(self, mock_dynamodb_client):
         """Test basic initialization."""
-        with patch("boto3.Session", return_value=mock_boto3_session):
-            mock_boto3_session.resource.return_value = mock_dynamodb_resource
-            mock_dynamodb_resource.Table.return_value = mock_dynamodb_table
-
-            store = DynamoDBStore(table_name="test_table", region_name="us-east-1")
+        with patch(
+            "langgraph_checkpoint_aws.store.dynamodb.base.create_dynamodb_client",
+            return_value=mock_dynamodb_client,
+        ):
+            store = DynamoDBStore(
+                table_name="test_table",
+                region_name="us-east-1",
+            )
 
             assert store.table_name == "test_table"
             assert store.ttl_config is None
             assert store.max_read_capacity_units == 10
             assert store.max_write_capacity_units == 10
 
-    def test_init_with_ttl(self, mock_boto3_session, mock_dynamodb_resource, mock_dynamodb_table):
+    def test_init_with_ttl(self, mock_dynamodb_client):
         """Test initialization with TTL config."""
         ttl_config = TTLConfig(default_ttl=60, refresh_on_read=True)
 
-        with patch("boto3.Session", return_value=mock_boto3_session):
-            mock_boto3_session.resource.return_value = mock_dynamodb_resource
-            mock_dynamodb_resource.Table.return_value = mock_dynamodb_table
-
-            store = DynamoDBStore(table_name="test_table", region_name="us-east-1", ttl=ttl_config)
+        with patch(
+            "langgraph_checkpoint_aws.store.dynamodb.base.create_dynamodb_client",
+            return_value=mock_dynamodb_client,
+        ):
+            store = DynamoDBStore(
+                table_name="test_table",
+                region_name="us-east-1",
+                ttl=ttl_config,
+            )
 
             assert store.ttl_config == ttl_config
 
-    def test_init_with_custom_capacity(self, mock_boto3_session, mock_dynamodb_resource, mock_dynamodb_table):
+    def test_init_with_custom_capacity(self, mock_dynamodb_client):
         """Test initialization with custom capacity units."""
-        with patch("boto3.Session", return_value=mock_boto3_session):
-            mock_boto3_session.resource.return_value = mock_dynamodb_resource
-            mock_dynamodb_resource.Table.return_value = mock_dynamodb_table
-
+        with patch(
+            "langgraph_checkpoint_aws.store.dynamodb.base.create_dynamodb_client",
+            return_value=mock_dynamodb_client,
+        ):
             store = DynamoDBStore(
                 table_name="test_table",
                 region_name="us-east-1",
@@ -113,51 +126,98 @@ class TestDynamoDBStoreInit:
             assert store.max_read_capacity_units == 20
             assert store.max_write_capacity_units == 30
 
-    def test_from_conn_string(self, mock_boto3_session, mock_dynamodb_resource, mock_dynamodb_table):
+    def test_from_conn_string(self, mock_dynamodb_client):
         """Test creating store from connection string."""
-        with patch("boto3.Session", return_value=mock_boto3_session):
-            mock_boto3_session.resource.return_value = mock_dynamodb_resource
-            mock_dynamodb_resource.Table.return_value = mock_dynamodb_table
+        with patch(
+            "langgraph_checkpoint_aws.store.dynamodb.base.create_dynamodb_client",
+            return_value=mock_dynamodb_client,
+        ):
+            with DynamoDBStore.from_conn_string(
+                "test_table", region_name="us-east-1"
+            ) as store:
+                assert store.table_name == "test_table"
 
-            with DynamoDBStore.from_conn_string("test_table", region_name="us-east-1") as store:
+    def test_from_conn_string_with_endpoint_url(self, mock_dynamodb_client):
+        """Test creating store from connection string with endpoint_url."""
+        with patch(
+            "langgraph_checkpoint_aws.store.dynamodb.base.create_dynamodb_client",
+            return_value=mock_dynamodb_client,
+        ):
+            with DynamoDBStore.from_conn_string(
+                "test_table",
+                region_name="us-east-1",
+                endpoint_url="http://localhost:8000",
+            ) as store:
                 assert store.table_name == "test_table"
 
     def test_init_without_region_or_session(self):
-        """Test initialization fails when neither region_name nor session provided."""
+        """Test init fails without region_name nor session."""
         # Clear AWS region environment variables
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(ValidationError) as exc_info:
                 DynamoDBStore(table_name="test_table")
-            
-            assert "Either 'boto3_session' or 'region_name' must be provided" in str(exc_info.value)
 
-    def test_init_with_env_region(self, mock_boto3_session, mock_dynamodb_resource, mock_dynamodb_table):
-        """Test initialization succeeds with AWS_DEFAULT_REGION env var."""
+            assert "Either 'boto3_session' or 'region_name' must be provided" in str(
+                exc_info.value
+            )
+
+    def test_init_with_env_region(self, mock_dynamodb_client):
+        """Test init succeeds with AWS_DEFAULT_REGION env var."""
         with patch.dict(os.environ, {"AWS_DEFAULT_REGION": "us-east-1"}):
-            with patch("boto3.Session", return_value=mock_boto3_session):
-                mock_boto3_session.resource.return_value = mock_dynamodb_resource
-                mock_dynamodb_resource.Table.return_value = mock_dynamodb_table
-
+            with patch(
+                "langgraph_checkpoint_aws.store.dynamodb.base.create_dynamodb_client",
+                return_value=mock_dynamodb_client,
+            ):
                 store = DynamoDBStore(table_name="test_table")
                 assert store.table_name == "test_table"
 
-    def test_init_with_aws_region_env(self, mock_boto3_session, mock_dynamodb_resource, mock_dynamodb_table):
-        """Test initialization succeeds with AWS_REGION env var."""
+    def test_init_with_aws_region_env(self, mock_dynamodb_client):
+        """Test init succeeds with AWS_REGION env var."""
         with patch.dict(os.environ, {"AWS_REGION": "eu-west-1"}):
-            with patch("boto3.Session", return_value=mock_boto3_session):
-                mock_boto3_session.resource.return_value = mock_dynamodb_resource
-                mock_dynamodb_resource.Table.return_value = mock_dynamodb_table
-
+            with patch(
+                "langgraph_checkpoint_aws.store.dynamodb.base.create_dynamodb_client",
+                return_value=mock_dynamodb_client,
+            ):
                 store = DynamoDBStore(table_name="test_table")
                 assert store.table_name == "test_table"
 
-    def test_init_with_boto3_session(self, mock_boto3_session, mock_dynamodb_resource, mock_dynamodb_table):
-        """Test initialization with boto3_session (no region_name required)."""
-        mock_boto3_session.resource.return_value = mock_dynamodb_resource
-        mock_dynamodb_resource.Table.return_value = mock_dynamodb_table
+    def test_init_with_boto3_session(self, mock_dynamodb_client):
+        """Test init with boto3_session (no region_name required)."""
+        mock_session = Mock()
+        with patch(
+            "langgraph_checkpoint_aws.store.dynamodb.base.create_dynamodb_client",
+            return_value=mock_dynamodb_client,
+        ):
+            store = DynamoDBStore(
+                table_name="test_table",
+                boto3_session=mock_session,
+            )
+            assert store.table_name == "test_table"
 
-        store = DynamoDBStore(table_name="test_table", boto3_session=mock_boto3_session)
-        assert store.table_name == "test_table"
+    def test_init_passes_client_kwargs(self):
+        """Test endpoint_url and boto_config are passed correctly."""
+        from botocore.config import Config
+
+        mock_session = Mock()
+        boto_config = Config(retries={"max_attempts": 3})
+
+        with patch(
+            "langgraph_checkpoint_aws.store.dynamodb.base.create_dynamodb_client",
+            return_value=Mock(),
+        ) as mock_create:
+            DynamoDBStore(
+                table_name="test_table",
+                boto3_session=mock_session,
+                endpoint_url="http://localhost:8000",
+                boto_config=boto_config,
+            )
+
+            mock_create.assert_called_once_with(
+                session=mock_session,
+                region_name=None,
+                endpoint_url="http://localhost:8000",
+                boto_config=boto_config,
+            )
 
 
 class TestDynamoDBStoreSetup:
@@ -165,31 +225,35 @@ class TestDynamoDBStoreSetup:
 
     def test_setup_table_exists(self, dynamodb_store):
         """Test setup when table already exists."""
-        dynamodb_store.table.load.return_value = None
+        dynamodb_store.client.describe_table.return_value = {
+            "Table": {"TableName": "test_table"}
+        }
 
         dynamodb_store.setup()
 
-        dynamodb_store.table.load.assert_called_once()
+        dynamodb_store.client.describe_table.assert_called_once_with(
+            TableName="test_table"
+        )
 
     def test_setup_table_not_exists(self, dynamodb_store):
         """Test setup when table doesn't exist."""
         from botocore.exceptions import ClientError
 
-        # Mock table.load() to raise ResourceNotFoundException
         error = ClientError(
-            {"Error": {"Code": "ResourceNotFoundException"}}, "DescribeTable"
+            {"Error": {"Code": "ResourceNotFoundException"}},
+            "DescribeTable",
         )
-        dynamodb_store.table.load.side_effect = error
+        dynamodb_store.client.describe_table.side_effect = error
 
-        # Mock create_table
-        new_table = Mock()
-        new_table.wait_until_exists = Mock()
-        dynamodb_store.dynamodb.create_table = Mock(return_value=new_table)
+        dynamodb_store.client.create_table.return_value = {}
+        mock_waiter = Mock()
+        dynamodb_store.client.get_waiter.return_value = mock_waiter
 
         dynamodb_store.setup()
 
-        dynamodb_store.dynamodb.create_table.assert_called_once()
-        new_table.wait_until_exists.assert_called_once()
+        dynamodb_store.client.create_table.assert_called_once()
+        dynamodb_store.client.get_waiter.assert_called_once_with("table_exists")
+        mock_waiter.wait.assert_called_once_with(TableName="test_table")
 
 
 class TestDynamoDBStoreOperations:
@@ -221,7 +285,7 @@ class TestDynamoDBStoreOperations:
         assert namespace == ("users",)
 
     def test_map_to_item(self, dynamodb_store):
-        """Test mapping DynamoDB item to Item."""
+        """Test mapping deserialized DynamoDB item to Item."""
         now = datetime.now(timezone.utc)
         result_dict = {
             "PK": "users:123",
@@ -237,6 +301,24 @@ class TestDynamoDBStoreOperations:
         assert item.namespace == ("users", "123")
         assert item.key == "prefs"
         assert item.value == {"theme": "dark"}
+
+    def test_deserialize_item(self, dynamodb_store):
+        """Test deserializing a DynamoDB client item."""
+        now = datetime.now(timezone.utc).isoformat()
+        raw_item = {
+            "PK": {"S": "users:123"},
+            "SK": {"S": "prefs"},
+            "value": {"M": {"theme": {"S": "dark"}}},
+            "created_at": {"S": now},
+            "updated_at": {"S": now},
+        }
+
+        deserialized = dynamodb_store._deserialize_item(raw_item)
+
+        assert deserialized["PK"] == "users:123"
+        assert deserialized["SK"] == "prefs"
+        assert deserialized["value"] == {"theme": "dark"}
+        assert deserialized["created_at"] == now
 
     def test_calculate_expiry(self, dynamodb_store):
         """Test TTL expiry calculation."""
@@ -257,18 +339,16 @@ class TestDynamoDBStoreBatch:
 
     def test_batch_get_op(self, dynamodb_store):
         """Test batch GetOp."""
-        now = datetime.now(timezone.utc)
-        dynamodb_store.table.get_item.return_value = {
-            "Item": {
-                "PK": "users:123",
-                "SK": "prefs",
-                "value": {"theme": "dark"},
-                "created_at": now.isoformat(),
-                "updated_at": now.isoformat(),
-            }
+        now = datetime.now(timezone.utc).isoformat()
+        dynamodb_store.client.get_item.return_value = {
+            "Item": _make_dynamo_item("users:123", "prefs", {"theme": "dark"}, now, now)
         }
 
-        op = GetOp(namespace=("users", "123"), key="prefs", refresh_ttl=False)
+        op = GetOp(
+            namespace=("users", "123"),
+            key="prefs",
+            refresh_ttl=False,
+        )
         result = dynamodb_store._batch_get_op(op)
 
         assert result is not None
@@ -277,17 +357,21 @@ class TestDynamoDBStoreBatch:
 
     def test_batch_get_op_not_found(self, dynamodb_store):
         """Test batch GetOp when item not found."""
-        dynamodb_store.table.get_item.return_value = {}
+        dynamodb_store.client.get_item.return_value = {}
 
-        op = GetOp(namespace=("users", "123"), key="prefs", refresh_ttl=False)
+        op = GetOp(
+            namespace=("users", "123"),
+            key="prefs",
+            refresh_ttl=False,
+        )
         result = dynamodb_store._batch_get_op(op)
 
         assert result is None
 
     def test_batch_put_op(self, dynamodb_store):
         """Test batch PutOp."""
-        dynamodb_store.table.get_item.return_value = {}
-        dynamodb_store.table.put_item.return_value = {}
+        dynamodb_store.client.get_item.return_value = {}
+        dynamodb_store.client.put_item.return_value = {}
 
         op = PutOp(
             namespace=("users", "123"),
@@ -299,33 +383,29 @@ class TestDynamoDBStoreBatch:
         result = dynamodb_store._batch_put_op(op)
 
         assert result is None
-        dynamodb_store.table.put_item.assert_called_once()
+        dynamodb_store.client.put_item.assert_called_once()
 
     def test_batch_put_op_delete(self, dynamodb_store):
         """Test batch PutOp for delete."""
-        dynamodb_store.table.delete_item.return_value = {}
+        dynamodb_store.client.delete_item.return_value = {}
 
         op = PutOp(
-            namespace=("users", "123"), key="prefs", value=None, index=None, ttl=None
+            namespace=("users", "123"),
+            key="prefs",
+            value=None,
+            index=None,
+            ttl=None,
         )
         result = dynamodb_store._batch_put_op(op)
 
         assert result is None
-        dynamodb_store.table.delete_item.assert_called_once()
+        dynamodb_store.client.delete_item.assert_called_once()
 
     def test_batch_search_op(self, dynamodb_store):
         """Test batch SearchOp."""
-        now = datetime.now(timezone.utc)
-        dynamodb_store.table.query.return_value = {
-            "Items": [
-                {
-                    "PK": "docs",
-                    "SK": "doc1",
-                    "value": {"text": "Hello"},
-                    "created_at": now.isoformat(),
-                    "updated_at": now.isoformat(),
-                }
-            ]
+        now = datetime.now(timezone.utc).isoformat()
+        dynamodb_store.client.query.return_value = {
+            "Items": [_make_dynamo_item("docs", "doc1", {"text": "Hello"}, now, now)]
         }
 
         op = SearchOp(
@@ -344,23 +424,23 @@ class TestDynamoDBStoreBatch:
 
     def test_batch_search_op_with_filter(self, dynamodb_store):
         """Test batch SearchOp with filter."""
-        now = datetime.now(timezone.utc)
-        dynamodb_store.table.query.return_value = {
+        now = datetime.now(timezone.utc).isoformat()
+        dynamodb_store.client.query.return_value = {
             "Items": [
-                {
-                    "PK": "docs",
-                    "SK": "doc1",
-                    "value": {"type": "article", "status": "published"},
-                    "created_at": now.isoformat(),
-                    "updated_at": now.isoformat(),
-                },
-                {
-                    "PK": "docs",
-                    "SK": "doc2",
-                    "value": {"type": "article", "status": "draft"},
-                    "created_at": now.isoformat(),
-                    "updated_at": now.isoformat(),
-                },
+                _make_dynamo_item(
+                    "docs",
+                    "doc1",
+                    {"type": "article", "status": "published"},
+                    now,
+                    now,
+                ),
+                _make_dynamo_item(
+                    "docs",
+                    "doc2",
+                    {"type": "article", "status": "draft"},
+                    now,
+                    now,
+                ),
             ]
         }
 
@@ -380,16 +460,19 @@ class TestDynamoDBStoreBatch:
 
     def test_batch_list_namespaces_op(self, dynamodb_store):
         """Test batch ListNamespacesOp."""
-        dynamodb_store.table.scan.return_value = {
+        dynamodb_store.client.scan.return_value = {
             "Items": [
-                {"PK": "users:123"},
-                {"PK": "users:456"},
-                {"PK": "docs"},
+                {"PK": {"S": "users:123"}},
+                {"PK": {"S": "users:456"}},
+                {"PK": {"S": "docs"}},
             ]
         }
 
         op = ListNamespacesOp(
-            match_conditions=tuple(), max_depth=None, limit=100, offset=0
+            match_conditions=tuple(),
+            max_depth=None,
+            limit=100,
+            offset=0,
         )
         results = dynamodb_store._batch_list_namespaces_op(op)
 
@@ -400,11 +483,11 @@ class TestDynamoDBStoreBatch:
 
     def test_batch_list_namespaces_op_with_prefix(self, dynamodb_store):
         """Test batch ListNamespacesOp with prefix filter."""
-        dynamodb_store.table.scan.return_value = {
+        dynamodb_store.client.scan.return_value = {
             "Items": [
-                {"PK": "users:123"},
-                {"PK": "users:456"},
-                {"PK": "docs"},
+                {"PK": {"S": "users:123"}},
+                {"PK": {"S": "users:456"}},
+                {"PK": {"S": "docs"}},
             ]
         }
 
@@ -480,11 +563,11 @@ class TestDynamoDBStoreAsync:
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
-        
+
         dynamodb_store._batch_get_op = Mock(return_value=item)
-        
+
         results = await dynamodb_store.abatch([op])
-        
+
         assert len(results) == 1
         assert results[0] == item
         dynamodb_store._batch_get_op.assert_called_once_with(op)
@@ -493,11 +576,11 @@ class TestDynamoDBStoreAsync:
     async def test_abatch_put(self, dynamodb_store):
         """Test abatch with PutOp."""
         op = PutOp(namespace=("users", "2"), key="k2", value={"v": 2})
-        
+
         dynamodb_store._batch_put_op = Mock(return_value=None)
-        
+
         results = await dynamodb_store.abatch([op])
-        
+
         assert len(results) == 1
         assert results[0] is None
         dynamodb_store._batch_put_op.assert_called_once_with(op)
@@ -513,11 +596,11 @@ class TestDynamoDBStoreAsync:
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
-        
+
         dynamodb_store._batch_search_op = Mock(return_value=[search_item])
-        
+
         results = await dynamodb_store.abatch([op])
-        
+
         assert len(results) == 1
         assert results[0] == [search_item]
         dynamodb_store._batch_search_op.assert_called_once_with(op)
@@ -526,11 +609,11 @@ class TestDynamoDBStoreAsync:
     async def test_abatch_list_namespaces(self, dynamodb_store):
         """Test abatch with ListNamespacesOp."""
         op = ListNamespacesOp(limit=10)
-        
+
         dynamodb_store._batch_list_namespaces_op = Mock(return_value=[("users", "1")])
-        
+
         results = await dynamodb_store.abatch([op])
-        
+
         assert len(results) == 1
         assert results[0] == [("users", "1")]
         dynamodb_store._batch_list_namespaces_op.assert_called_once_with(op)
@@ -550,56 +633,74 @@ class TestDynamoDBStoreAsync:
 
     @pytest.mark.asyncio
     async def test_abatch_get_concurrency(self, dynamodb_store):
-        """Test that abatch GetOp is non-blocking and runs concurrently."""
+        """Test that abatch GetOp runs concurrently."""
+
         def delayed_get(*args, **kwargs):
             time.sleep(MOCK_SLEEP_DURATION)
-            return Item(value={"v": 1}, key="k1", namespace=("users", "1"), created_at=datetime.now(), updated_at=datetime.now())
+            return Item(
+                value={"v": 1},
+                key="k1",
+                namespace=("users", "1"),
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+            )
 
         dynamodb_store._batch_get_op = Mock(side_effect=delayed_get)
         ops = [GetOp(namespace=("users", "1"), key="k1")]
-        
+
         await self.assert_concurrent_calls_are_faster_than_sequential(
             5, dynamodb_store.abatch, ops
         )
 
     @pytest.mark.asyncio
     async def test_abatch_put_concurrency(self, dynamodb_store):
-        """Test that abatch PutOp is non-blocking and runs concurrently."""
+        """Test that abatch PutOp runs concurrently."""
+
         def delayed_put(*args, **kwargs):
             time.sleep(MOCK_SLEEP_DURATION)
             return None
 
         dynamodb_store._batch_put_op = Mock(side_effect=delayed_put)
         ops = [PutOp(namespace=("users", "2"), key="k2", value={"v": 2})]
-        
+
         await self.assert_concurrent_calls_are_faster_than_sequential(
             5, dynamodb_store.abatch, ops
         )
 
     @pytest.mark.asyncio
     async def test_abatch_search_concurrency(self, dynamodb_store):
-        """Test that abatch SearchOp is non-blocking and runs concurrently."""
+        """Test that abatch SearchOp runs concurrently."""
+
         def delayed_search(*args, **kwargs):
             time.sleep(MOCK_SLEEP_DURATION)
-            return [SearchItem(value={"v": 1}, key="k1", namespace=("users", "1"), created_at=datetime.now(), updated_at=datetime.now())]
+            return [
+                SearchItem(
+                    value={"v": 1},
+                    key="k1",
+                    namespace=("users", "1"),
+                    created_at=datetime.now(),
+                    updated_at=datetime.now(),
+                )
+            ]
 
         dynamodb_store._batch_search_op = Mock(side_effect=delayed_search)
         ops = [SearchOp(namespace_prefix=("users",), limit=10)]
-        
+
         await self.assert_concurrent_calls_are_faster_than_sequential(
             5, dynamodb_store.abatch, ops
         )
 
     @pytest.mark.asyncio
     async def test_abatch_list_namespaces_concurrency(self, dynamodb_store):
-        """Test that abatch ListNamespacesOp is non-blocking and runs concurrently."""
+        """Test that abatch ListNamespacesOp runs concurrently."""
+
         def delayed_list(*args, **kwargs):
             time.sleep(MOCK_SLEEP_DURATION)
             return [("users", "1")]
 
         dynamodb_store._batch_list_namespaces_op = Mock(side_effect=delayed_list)
         ops = [ListNamespacesOp(limit=10)]
-        
+
         await self.assert_concurrent_calls_are_faster_than_sequential(
             5, dynamodb_store.abatch, ops
         )
