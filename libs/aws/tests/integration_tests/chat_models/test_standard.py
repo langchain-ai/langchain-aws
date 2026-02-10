@@ -39,7 +39,7 @@ class TestBedrockUseConverseStandard(ChatModelIntegrationTests):
     @property
     def chat_model_params(self) -> dict:
         return {
-            "model_id": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "model_id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
             "beta_use_converse_api": True,
         }
 

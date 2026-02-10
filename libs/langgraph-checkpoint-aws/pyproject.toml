@@ -7,13 +7,13 @@ authors = []
 license = {text = "MIT"}
 requires-python = ">=3.10,<4.0"
 dependencies = [
-    "langgraph-checkpoint>=3.0.0,<4.0.0",
+    "langgraph-checkpoint>=3.0.0,<5.0.0",
     "langgraph>=1.0.0",
     "boto3>=1.40.19",
     "typing_extensions>=4.0.0; python_version<'3.11'",
 ]
 name = "langgraph-checkpoint-aws"
-version = "1.0.1"
+version = "1.0.4"
 description = "A LangChain checkpointer implementation that uses Bedrock Session Management Service and ElastiCache Valkey to enable stateful and resumable LangGraph agents."
 readme = "README.md"
 keywords = ["aws", "bedrock", "langchain", "langgraph", "checkpointer","dynamodb", "elasticache", "valkey"]

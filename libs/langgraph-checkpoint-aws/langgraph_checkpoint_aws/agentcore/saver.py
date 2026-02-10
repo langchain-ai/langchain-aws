@@ -4,11 +4,12 @@ AgentCore Memory Checkpoint Saver implementation.
 
 from __future__ import annotations
 
+import asyncio
 import random
 from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any, TypeAlias, cast
 
-from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import RunnableConfig, run_in_executor
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
     ChannelVersions,
@@ -25,6 +26,9 @@ from langgraph_checkpoint_aws.agentcore.constants import (
     InvalidConfigError,
 )
 from langgraph_checkpoint_aws.agentcore.helpers import (
+    DEFAULT_INITIAL_BACKOFF,
+    DEFAULT_MAX_BACKOFF,
+    DEFAULT_MAX_RETRIES,
     AgentCoreEventClient,
     EventProcessor,
     EventSerializer,
@@ -51,7 +55,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         serde: serialization protocol to be used. Defaults to JSONPlusSerializer
         limit: maximum number of events to parse from ListEvents.
         max_results: maximum number of results to retrieve from AgentCore Memory.
-                    Defaults to 100
+        max_retries: maximum number of retry attempts for retryable errors.
+        initial_backoff: initial backoff time in seconds for exponential backoff.
+        max_backoff: maximum backoff time in seconds.
     """
 
     def __init__(
@@ -61,6 +67,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         serde: SerializerProtocol | None = None,
         limit: int | None = None,
         max_results: int | None = 100,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        initial_backoff: float = DEFAULT_INITIAL_BACKOFF,
+        max_backoff: float = DEFAULT_MAX_BACKOFF,
         **boto3_kwargs: Any,
     ) -> None:
         super().__init__(serde=serde)
@@ -70,7 +79,12 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         self.max_results = max_results
         self.serializer = EventSerializer(self.serde)
         self.checkpoint_event_client = AgentCoreEventClient(
-            memory_id, self.serializer, **boto3_kwargs
+            memory_id,
+            self.serializer,
+            max_retries=max_retries,
+            initial_backoff=initial_backoff,
+            max_backoff=max_backoff,
+            **boto3_kwargs,
         )
         self.processor = EventProcessor()
 
@@ -273,9 +287,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         """Delete all checkpoints and writes associated with a thread."""
         self.checkpoint_event_client.delete_events(thread_id, actor_id)
 
-    # ===== Async methods ( TODO: NOT IMPLEMENTED YET ) =====
+    # ===== Async methods ( Running sync methods inside executor ) =====
     async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
-        return self.get_tuple(config)
+        return await run_in_executor(None, self.get_tuple, config)
 
     async def alist(
         self,
@@ -285,7 +299,13 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         before: RunnableConfig | None = None,
         limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
-        for item in self.list(config, filter=filter, before=before, limit=limit):
+        loop = asyncio.get_running_loop()
+
+        def _sync_list():
+            return list(self.list(config, filter=filter, before=before, limit=limit))
+
+        items = await loop.run_in_executor(None, _sync_list)
+        for item in items:
             yield item
 
     async def aput(
@@ -295,7 +315,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         metadata: CheckpointMetadata,
         new_versions: ChannelVersions,
     ) -> RunnableConfig:
-        return self.put(config, checkpoint, metadata, new_versions)
+        return await run_in_executor(
+            None, self.put, config, checkpoint, metadata, new_versions
+        )
 
     async def aput_writes(
         self,
@@ -304,10 +326,12 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         task_id: str,
         task_path: str = "",
     ) -> None:
-        return self.put_writes(config, writes, task_id, task_path)
+        return await run_in_executor(
+            None, self.put_writes, config, writes, task_id, task_path
+        )
 
     async def adelete_thread(self, thread_id: str, actor_id: str = "") -> None:
-        self.delete_thread(thread_id, actor_id)
+        await run_in_executor(None, self.delete_thread, thread_id, actor_id)
         return None
 
     def get_next_version(

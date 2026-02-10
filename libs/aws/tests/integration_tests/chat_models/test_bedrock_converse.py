@@ -6,6 +6,7 @@ from typing import Any, Literal, Optional, Type
 
 import httpx
 import pytest
+import yaml  # type: ignore[import-untyped]
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
@@ -20,6 +21,7 @@ from langchain_core.tools import BaseTool, tool
 from langchain_tests.integration_tests import ChatModelIntegrationTests
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated, TypedDict
+from vcr import VCR
 
 from langchain_aws import ChatBedrockConverse
 
@@ -31,7 +33,7 @@ class TestBedrockStandard(ChatModelIntegrationTests):
 
     @property
     def chat_model_params(self) -> dict:
-        return {"model": "us.anthropic.claude-3-7-sonnet-20250219-v1:0"}
+        return {"model": "us.anthropic.claude-haiku-4-5-20251001-v1:0"}
 
     @property
     def standard_chat_model_params(self) -> dict:
@@ -195,7 +197,7 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
 
 def test_multiple_system_messages_anthropic() -> None:
     model = ChatBedrockConverse(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", temperature=0
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
     )
 
     system1 = SystemMessage(content="You are a helpful assistant.")
@@ -217,7 +219,7 @@ class ClassifyQuery(BaseModel):
 
 def test_structured_output_snake_case() -> None:
     model = ChatBedrockConverse(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", temperature=0
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
     )
 
     chat = model.with_structured_output(ClassifyQuery)
@@ -226,7 +228,7 @@ def test_structured_output_snake_case() -> None:
 
 
 def test_tool_calling_snake_case() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
     def classify_query(query_type: Literal["cat", "dog"]) -> None:
         pass
@@ -258,7 +260,7 @@ def test_tool_calling_snake_case() -> None:
 
 
 def test_tool_calling_camel_case() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
     def classifyQuery(queryType: Literal["cat", "dog"]) -> None:
         pass
@@ -284,7 +286,7 @@ def test_tool_calling_camel_case() -> None:
 
 def test_structured_output_streaming() -> None:
     model = ChatBedrockConverse(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", temperature=0
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
     )
     query = (
         "What weighs more, a pound of bricks or a pound of feathers? "
@@ -354,7 +356,7 @@ def test_tool_use_with_cache_point() -> None:
 
     # Create the model instance
     model = ChatBedrockConverse(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", temperature=0
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
     )
 
     # Create cache point configuration
@@ -381,7 +383,7 @@ def test_tool_use_with_cache_point() -> None:
 def test_guardrails() -> None:
     params = {
         "region_name": "us-west-2",
-        "model": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "model": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         "temperature": 0,
         "max_tokens": 100,
         "stop": [],
@@ -433,8 +435,7 @@ def test_guardrails() -> None:
         "us.anthropic.claude-opus-4-20250514-v1:0",
         "us.anthropic.claude-opus-4-1-20250805-v1:0",
         "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-        #
-        # "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     ],
 )
 def test_structured_output_tool_choice_not_supported(thinking_model: str) -> None:
@@ -442,7 +443,7 @@ def test_structured_output_tool_choice_not_supported(thinking_model: str) -> Non
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         structured_llm = llm.with_structured_output(ClassifyQuery)
-        response = structured_llm.invoke("How big are cats?")
+        response = structured_llm.invoke("How big are cats? Use the tool.")
     assert len(w) == 0
     assert isinstance(response, ClassifyQuery)
 
@@ -456,7 +457,7 @@ def test_structured_output_tool_choice_not_supported(thinking_model: str) -> Non
     )
     with pytest.warns(match="structured output"):
         structured_llm = llm.with_structured_output(ClassifyQuery)
-    response = structured_llm.invoke("How big are cats?")
+    response = structured_llm.invoke("How big are cats? Use the tool.")
     assert isinstance(response, ClassifyQuery)
 
     with pytest.raises(OutputParserException):
@@ -470,7 +471,7 @@ def test_structured_output_thinking_force_tool_use() -> None:
     # be removed.
 
     # Instantiate as convenience for getting client
-    llm = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+    llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
     messages = [
         {
             "role": "user",
@@ -478,7 +479,7 @@ def test_structured_output_thinking_force_tool_use() -> None:
         }
     ]
     params = {
-        "modelId": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "modelId": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         "inferenceConfig": {"maxTokens": 5000},
         "toolConfig": {
             "tools": [
@@ -762,7 +763,7 @@ def test_citations_v1(output_version: Literal["v0", "v1"]) -> None:
 
 @pytest.mark.vcr
 def test_pdf_citations() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
     message = HumanMessage(
         [
@@ -775,7 +776,7 @@ def test_pdf_citations() -> None:
 
 
 def test_bedrock_pdf_inputs() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-3-7-sonnet-20250219-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
     message = HumanMessage(
         [
@@ -806,7 +807,7 @@ def test_bedrock_pdf_inputs() -> None:
 
 def test_get_num_tokens_from_messages_integration() -> None:
     chat = ChatBedrockConverse(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
     )
 
     base_messages = [
@@ -817,4 +818,28 @@ def test_get_num_tokens_from_messages_integration() -> None:
     token_count = chat.get_num_tokens_from_messages(base_messages)
 
     assert isinstance(token_count, int)
-    assert token_count == 21
+    assert token_count == 38
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_request_headers(tmp_path: Any, streaming: bool) -> None:
+    # Test that we can attach headers to requests
+    cassette_path = tmp_path / "headers.yaml"
+
+    vcr = VCR(record_mode="all")
+    with vcr.use_cassette(str(cassette_path)):
+        model = ChatBedrockConverse(
+            model="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            default_headers={"X-Foo": "Bar"},
+        )
+        if streaming:
+            _ = list(model.stream("hi"))
+        else:
+            _ = model.invoke("hi")
+
+    cassette = yaml.safe_load(cassette_path.read_text())
+    interactions = cassette["interactions"]
+    request = interactions[0]["request"]
+    headers = request["headers"]
+
+    assert headers["X-Foo"] == ["Bar"]

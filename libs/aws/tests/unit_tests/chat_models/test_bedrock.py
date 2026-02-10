@@ -26,6 +26,25 @@ from langchain_aws.chat_models.bedrock import (
 from langchain_aws.function_calling import convert_to_anthropic_tool
 
 
+def test_profile() -> None:
+    model = ChatBedrock(
+        model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
+        region_name="us-west-2",
+    )
+    assert model.profile
+    assert not model.profile["reasoning_output"]
+
+    model = ChatBedrock(
+        model_id="anthropic.claude-sonnet-4-20250514-v1:0",
+        region_name="us-west-2",
+    )
+    assert model.profile
+    assert model.profile["reasoning_output"]
+
+    model = ChatBedrock(model_id="foo")
+    assert model.profile == {}
+
+
 def test__merge_messages() -> None:
     messages = [
         SystemMessage("foo"),  # type: ignore[misc]
@@ -520,7 +539,7 @@ class GetWeather(BaseModel):
 
 def test_anthropic_bind_tools_tool_choice() -> None:
     chat_model = ChatBedrock(
-        model_id="anthropic.claude-3-opus-20240229", region_name="us-west-2"
+        model_id="anthropic.claude-opus-4-1-20250805-v1:0", region_name="us-west-2"
     )  # type: ignore[call-arg]
     chat_model_with_tools = chat_model.bind_tools(
         [GetWeather], tool_choice={"type": "tool", "name": "GetWeather"}
@@ -547,6 +566,15 @@ def test_anthropic_bind_tools_tool_choice() -> None:
 
 
 @pytest.mark.parametrize(
+    "model_id",
+    [
+        "anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "anthropic.claude-sonnet-4-20250514-v1:0",
+        "anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "anthropic.claude-haiku-4-5-20251001-v1:0",
+    ],
+)
+@pytest.mark.parametrize(
     "tool_choice",
     [
         True,
@@ -556,12 +584,12 @@ def test_anthropic_bind_tools_tool_choice() -> None:
     ],
 )
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
-def test_claude37_thinking_forced_tool_raises(
-    mock_create_aws_client, tool_choice
+def test_claude_thinking_forced_tool_raises(
+    mock_create_aws_client, model_id, tool_choice
 ) -> None:
     mock_create_aws_client.return_value = MagicMock()
     chat = ChatBedrock(
-        model_id="anthropic.claude-3-7-sonnet-20250219-v1:0",
+        model_id=model_id,
         region_name="us-west-2",
         model_kwargs={
             "thinking": {"type": "enabled", "budget_tokens": 2048},
@@ -572,10 +600,10 @@ def test_claude37_thinking_forced_tool_raises(
 
 
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
-def test_claude37_thinking_tool_choice_auto_ok(mock_create_aws_client) -> None:
+def test_claude_thinking_tool_choice_auto_ok(mock_create_aws_client) -> None:
     mock_create_aws_client.return_value = MagicMock()
     chat = ChatBedrock(
-        model_id="anthropic.claude-3-7-sonnet-20250219-v1:0",
+        model_id="anthropic.claude-sonnet-4-5-20250929-v1:0",
         region_name="us-west-2",
         model_kwargs={
             "thinking": {"type": "enabled", "budget_tokens": 2048},
@@ -587,11 +615,21 @@ def test_claude37_thinking_tool_choice_auto_ok(mock_create_aws_client) -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "anthropic.claude-haiku-4-5-20251001-v1:0",
+    ],
+)
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
-def test_claude37_no_thinking_forced_tool_ok(mock_create_aws_client) -> None:
+def test_claude_models_no_thinking_forced_tool_ok(
+    mock_create_aws_client, model_id
+) -> None:
     mock_create_aws_client.return_value = MagicMock()
     chat = ChatBedrock(
-        model_id="anthropic.claude-3-7-sonnet-20250219-v1:0",
+        model_id=model_id,
         region_name="us-west-2",
     )
     chat_with_tools = chat.bind_tools([GetWeather], tool_choice="any")
@@ -747,6 +785,13 @@ def test_beta_use_converse_api_with_inference_profile_as_nova_model(
             "anthropic",
             nullcontext(),
             "ap-northeast-1",
+        ),
+        (
+            "au.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            None,
+            "anthropic",
+            nullcontext(),
+            "ap-southeast-2",
         ),
         (
             "global.anthropic.claude-sonnet-4-20250514-v1:0",
@@ -1491,18 +1536,23 @@ def test_bedrock_client_inherits_from_runtime_client(
 
     mock_create_client.side_effect = side_effect
 
-    ChatBedrock(model="us.meta.llama3-3-70b-instruct-v1:0", client=mock_runtime_client)
+    with mock.patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("AWS_BEARER_TOKEN_BEDROCK", None)
+        ChatBedrock(
+            model="us.meta.llama3-3-70b-instruct-v1:0", client=mock_runtime_client
+        )
 
-    mock_create_client.assert_called_with(
-        region_name="us-west-2",
-        credentials_profile_name=None,
-        aws_access_key_id=None,
-        aws_secret_access_key=None,
-        aws_session_token=None,
-        endpoint_url=None,
-        config=mock_client_config,
-        service_name="bedrock",
-    )
+        mock_create_client.assert_called_with(
+            region_name="us-west-2",
+            credentials_profile_name=None,
+            aws_access_key_id=None,
+            aws_secret_access_key=None,
+            aws_session_token=None,
+            endpoint_url=None,
+            config=mock_client_config,
+            service_name="bedrock",
+            api_key=None,
+        )
 
 
 @patch("langchain_aws.llms.bedrock.create_aws_client")
@@ -1528,23 +1578,26 @@ def test_bedrock_client_uses_explicit_values_over_runtime_client(
 
     mock_create_client.side_effect = side_effect
 
-    ChatBedrock(
-        model="us.meta.llama3-3-70b-instruct-v1:0",
-        client=mock_runtime_client,
-        region="us-east-1",
-        config=explicit_config,
-    )
+    with mock.patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("AWS_BEARER_TOKEN_BEDROCK", None)
+        ChatBedrock(
+            model="us.meta.llama3-3-70b-instruct-v1:0",
+            client=mock_runtime_client,
+            region="us-east-1",
+            config=explicit_config,
+        )
 
-    mock_create_client.assert_called_with(
-        region_name="us-east-1",
-        credentials_profile_name=None,
-        aws_access_key_id=None,
-        aws_secret_access_key=None,
-        aws_session_token=None,
-        endpoint_url=None,
-        config=explicit_config,
-        service_name="bedrock",
-    )
+        mock_create_client.assert_called_with(
+            region_name="us-east-1",
+            credentials_profile_name=None,
+            aws_access_key_id=None,
+            aws_secret_access_key=None,
+            aws_session_token=None,
+            endpoint_url=None,
+            config=explicit_config,
+            service_name="bedrock",
+            api_key=None,
+        )
 
 
 def test_get_num_tokens_from_messages_with_base_messages():
@@ -1553,7 +1606,7 @@ def test_get_num_tokens_from_messages_with_base_messages():
     mock_client.count_tokens.return_value = {"inputTokens": 20}
 
     chat = ChatBedrock(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         region="us-west-2",
         max_tokens=4096,
     )
@@ -1568,7 +1621,7 @@ def test_get_num_tokens_from_messages_with_base_messages():
 
     mock_client.count_tokens.assert_called_once()
     call_args = mock_client.count_tokens.call_args[1]
-    assert call_args["modelId"] == "anthropic.claude-3-7-sonnet-20250219-v1:0"
+    assert call_args["modelId"] == "anthropic.claude-sonnet-4-5-20250929-v1:0"
 
     actual_input_body = json.loads(call_args["input"]["invokeModel"]["body"])
     expected_input_body = {
@@ -1610,3 +1663,78 @@ def test_get_num_tokens_from_messages_fallback(
         assert token_count == 24
         mock_parent.assert_called_once()
         mock_client.count_tokens.assert_not_called()
+
+
+def test_service_tier_parameter() -> None:
+    """Test that service_tier parameter is correctly set."""
+    llm = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier="priority",
+    )
+    assert llm.service_tier == "priority"
+
+
+@pytest.mark.parametrize(
+    "service_tier",
+    ["priority", "default", "flex", "reserved"],
+)
+def test_service_tier_valid_values(service_tier: str) -> None:
+    """Test that all valid service_tier values are accepted."""
+    llm = ChatBedrock(
+        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier=service_tier,  # type: ignore[arg-type]
+    )
+    assert llm.service_tier == service_tier
+
+
+def test_service_tier_passed_to_invoke_model() -> None:
+    """Test that service_tier is passed to the invoke_model API call."""
+    mocked_client = MagicMock()
+
+    # Create mock response
+    mock_response = MagicMock()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {"completion": "Hello!", "stop_reason": "end_turn"}
+    ).encode()
+    mock_response.get.side_effect = lambda key, default=None: {
+        "body": mock_response.get.return_value,
+        "ResponseMetadata": {
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "10",
+                "x-amzn-bedrock-output-token-count": "5",
+            }
+        },
+    }.get(key, default)
+
+    mocked_client.invoke_model.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mocked_client,
+        model_id="anthropic.claude-v2",
+        region_name="us-west-2",
+        service_tier="priority",
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    llm.invoke(messages)
+
+    # Verify invoke_model was called with serviceTier in the correct format
+    call_kwargs = mocked_client.invoke_model.call_args[1]
+    assert call_kwargs["serviceTier"] == "priority"
+
+
+def test_service_tier_passed_to_as_converse() -> None:
+    """Test that service_tier is passed to _as_converse."""
+    mocked_client = MagicMock()
+
+    llm = ChatBedrock(
+        client=mocked_client,
+        model_id="amazon.nova-lite-v1:0",
+        region_name="us-west-2",
+        service_tier="flex",
+    )
+
+    converse_llm = llm._as_converse
+    assert converse_llm.service_tier == "flex"

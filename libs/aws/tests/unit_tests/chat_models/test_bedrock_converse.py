@@ -2,7 +2,7 @@
 
 import base64
 import os
-from typing import Any, Dict, List, Literal, Tuple, Type, Union, cast
+from typing import Any, Dict, Iterator, List, Literal, Tuple, Type, Union, cast
 from unittest import mock
 
 import pytest
@@ -18,6 +18,7 @@ from langchain_core.messages import (
 from langchain_core.runnables import RunnableBinding
 from langchain_tests.unit_tests import ChatModelUnitTests
 from pydantic import BaseModel, Field
+from syrupy import SnapshotAssertion
 
 from langchain_aws import ChatBedrockConverse
 from langchain_aws.chat_models.bedrock_converse import (
@@ -81,6 +82,29 @@ class TestBedrockStandard(ChatModelUnitTests):
     def test_init_streaming(self) -> None:
         super().test_init_streaming()
 
+    @pytest.mark.xfail(reason="Pending mapping + init validator in core")
+    def test_serdes(self, model: BaseChatModel, snapshot: SnapshotAssertion) -> None:
+        super().test_serdes(model, snapshot)
+
+
+def test_profile() -> None:
+    model = ChatBedrockConverse(
+        model="anthropic.claude-3-5-sonnet-20241022-v2:0",
+        region_name="us-west-2",
+    )
+    assert model.profile
+    assert not model.profile["reasoning_output"]
+
+    model = ChatBedrockConverse(
+        model="anthropic.claude-sonnet-4-20250514-v1:0",
+        region_name="us-west-2",
+    )
+    assert model.profile
+    assert model.profile["reasoning_output"]
+
+    model = ChatBedrockConverse(model="foo")
+    assert model.profile == {}
+
 
 class GetWeather(BaseModel):
     """Get the current weather in a given location"""
@@ -117,6 +141,7 @@ def test_anthropic_bind_tools_tool_choice() -> None:
 @pytest.mark.parametrize(
     "thinking_model",
     [
+        "anthropic.claude-sonnet-4-5-20250929-v1:0",
         "anthropic.claude-3-7-sonnet-20250219-v1:0",
         "anthropic.claude-sonnet-4-20250514-v1:0",
         "anthropic.claude-opus-4-20250514-v1:0",
@@ -668,11 +693,13 @@ def test_standard_tracing_params() -> None:
         ("us.anthropic.claude-sonnet-4-20250514-v1:0", False),
         ("us.anthropic.claude-opus-4-20250514-v1:0", False),
         ("us.anthropic.claude-3-7-sonnet-20250219-v1:0", False),
+        ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", False),
         ("us.anthropic.claude-3-haiku-20240307-v1:0", False),
         ("cohere.command-r-v1:0", False),
         ("meta.llama3-1-405b-instruct-v1:0", "tool_calling"),
         ("us.meta.llama3-3-70b-instruct-v1:0", "tool_calling"),
         ("us.amazon.nova-lite-v1:0", False),
+        ("us.amazon.nova-2-lite-v1:0", False),
         ("us.amazon.nonstreaming-model-v1:0", True),
         ("us.deepseek.r1-v1:0", "tool_calling"),
         ("deepseek.v3-v1:0", False),
@@ -775,6 +802,163 @@ def test__bedrock_to_lc_anthropic_reasoning() -> None:
                 "text": "Another reasoning block",
                 "signature": "",
             },
+        },
+    ]
+
+    actual = _bedrock_to_lc(bedrock_content)
+    assert expected_lc == actual
+
+
+def test__bedrock_to_lc_nova_reasoning_content() -> None:
+    """Test parsing Nova's reasoningContent format."""
+    bedrock_content: List[Dict[str, Any]] = [
+        # Nova's reasoningContent format
+        {
+            "reasoningContent": {
+                "reasoningText": {
+                    "text": "I need to search for information about the Nobel Prize..."
+                }
+            }
+        },
+        # System tool use block
+        {
+            "toolUse": {
+                "toolUseId": "tool_123",
+                "name": "nova_grounding",
+                "input": {"query": "2024 Nobel Prize Physics"},
+            }
+        },
+        # System tool result block
+        {
+            "toolResult": {
+                "toolUseId": "tool_123",
+                "content": [
+                    {"text": "The 2024 Nobel Prize in Physics was awarded to..."}
+                ],
+                "status": "success",
+            }
+        },
+        # Final text response
+        {
+            "text": (
+                "Based on my search, the 2024 Nobel Prize in Physics was awarded to..."
+            )
+        },
+    ]
+
+    expected_lc = [
+        # Reasoning content should be parsed
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {
+                "text": "I need to search for information about the Nobel Prize...",
+                "signature": "",
+            },
+        },
+        # System tool use
+        {
+            "type": "tool_use",
+            "id": "tool_123",
+            "name": "nova_grounding",
+            "input": {"query": "2024 Nobel Prize Physics"},
+        },
+        # System tool result
+        {
+            "type": "tool_result",
+            "tool_use_id": "tool_123",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "The 2024 Nobel Prize in Physics was awarded to...",
+                }
+            ],
+            "is_error": False,
+        },
+        # Text response
+        {
+            "type": "text",
+            "text": (
+                "Based on my search, the 2024 Nobel Prize in Physics was awarded to..."
+            ),
+        },
+    ]
+
+    actual = _bedrock_to_lc(bedrock_content)
+    assert expected_lc == actual
+
+
+def test__bedrock_to_lc_nova_code_interpreter() -> None:
+    """Test parsing Nova code interpreter tool blocks."""
+    bedrock_content: List[Dict[str, Any]] = [
+        # Code interpreter tool use
+        {
+            "toolUse": {
+                "toolUseId": "code_123",
+                "name": "nova_code_interpreter",
+                "input": {"code": "import math\nmath.sqrt(475878756857)"},
+            }
+        },
+        # Code interpreter result
+        {
+            "toolResult": {
+                "toolUseId": "code_123",
+                "content": [{"text": "689690.0"}],
+                "status": "success",
+            }
+        },
+    ]
+
+    expected_lc = [
+        {
+            "type": "tool_use",
+            "id": "code_123",
+            "name": "nova_code_interpreter",
+            "input": {"code": "import math\nmath.sqrt(475878756857)"},
+        },
+        {
+            "type": "tool_result",
+            "tool_use_id": "code_123",
+            "content": [{"type": "text", "text": "689690.0"}],
+            "is_error": False,
+        },
+    ]
+
+    actual = _bedrock_to_lc(bedrock_content)
+    assert expected_lc == actual
+
+
+def test__bedrock_to_lc_redacted_tool_result() -> None:
+    """Test handling redacted/empty tool results."""
+    bedrock_content: List[Dict[str, Any]] = [
+        {
+            "toolUse": {
+                "toolUseId": "tool_456",
+                "name": "nova_grounding",
+                "input": {"query": "test query"},
+            }
+        },
+        # Redacted result with empty content
+        {
+            "toolResult": {
+                "toolUseId": "tool_456",
+                "content": [],  # Empty/redacted
+                "status": "success",
+            }
+        },
+    ]
+
+    expected_lc = [
+        {
+            "type": "tool_use",
+            "id": "tool_456",
+            "name": "nova_grounding",
+            "input": {"query": "test query"},
+        },
+        {
+            "type": "tool_result",
+            "tool_use_id": "tool_456",
+            "content": [],  # Empty content preserved
+            "is_error": False,
         },
     ]
 
@@ -1268,6 +1452,67 @@ def test__lc_content_to_bedrock_reasoning_content_signature() -> None:
     assert expected_system == actual_system
 
 
+def test__lc_content_to_bedrock_reasoning_content_snake_case() -> None:
+    """Test that reasoning_content blocks with snake case are
+    handled correctly.
+    """
+    persisted_ai_content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {
+                "text": "Let me think about this step by step...",
+                "signature": "abc123signature",
+            },
+        },
+        {"type": "text", "text": "Here is my response."},
+    ]
+
+    bedrock_content = _lc_content_to_bedrock(persisted_ai_content)
+
+    assert len(bedrock_content) == 2
+    assert "reasoningContent" in bedrock_content[0]
+    assert "reasoningText" in bedrock_content[0]["reasoningContent"]
+    assert (
+        bedrock_content[0]["reasoningContent"]["reasoningText"]["text"]
+        == "Let me think about this step by step..."
+    )
+    assert (
+        bedrock_content[0]["reasoningContent"]["reasoningText"]["signature"]
+        == "abc123signature"
+    )
+
+    assert bedrock_content[1] == {"text": "Here is my response."}
+
+
+def test__lc_content_to_bedrock_reasoning_content_camel_case() -> None:
+    """Test that reasoning_content blocks with camelcase keys are
+    handled correctly.
+    """
+    content_camelcase: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "reasoning_content",
+            "reasoningContent": {
+                "text": "Thinking in camelCase...",
+                "signature": "a_signature",
+            },
+        },
+        {"type": "text", "text": "Response text."},
+    ]
+
+    bedrock_content = _lc_content_to_bedrock(content_camelcase)
+
+    assert len(bedrock_content) == 2
+    assert "reasoningContent" in bedrock_content[0]
+    assert (
+        bedrock_content[0]["reasoningContent"]["reasoningText"]["text"]
+        == "Thinking in camelCase..."
+    )
+    assert (
+        bedrock_content[0]["reasoningContent"]["reasoningText"]["signature"]
+        == "a_signature"
+    )
+
+
 def test__lc_content_to_bedrock_mime_types() -> None:
     video_data = base64.b64encode(b"video_test_data").decode("utf-8")
     image_data = base64.b64encode(b"image_test_data").decode("utf-8")
@@ -1490,6 +1735,15 @@ def test__get_base_model() -> None:
 
     assert llm_model_only._get_base_model() == "anthropic.claude-3-sonnet-20240229-v1:0"
 
+    llm_with_regional_model = ChatBedrockConverse(
+        model="us.anthropic.claude-3-5-haiku-20241022-v1:0", region_name="us-west-2"
+    )
+
+    assert (
+        llm_with_regional_model._get_base_model()
+        == "anthropic.claude-3-5-haiku-20241022-v1:0"
+    )
+
     llm_with_base_model = ChatBedrockConverse(
         model="arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
         base_model="anthropic.claude-3-sonnet-20240229-v1:0",
@@ -1601,7 +1855,7 @@ def test_anthropic_tool_with_cache_point() -> None:
 
     # Test bind_tools with cache point
     chat_model = ChatBedrockConverse(
-        model="us.anthropic.claude-3-7-sonnet-20250219-v1:0", region_name="us-east-1"
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
     )
     chat_model_with_tools = chat_model.bind_tools([tool_dict, cache_point])
 
@@ -2145,20 +2399,23 @@ def test_bedrock_client_inherits_from_runtime_client(
 
     mock_create_client.side_effect = side_effect
 
-    ChatBedrockConverse(
-        model="us.meta.llama3-3-70b-instruct-v1:0", client=mock_runtime_client
-    )
+    with mock.patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("AWS_BEARER_TOKEN_BEDROCK", None)
+        ChatBedrockConverse(
+            model="us.meta.llama3-3-70b-instruct-v1:0", client=mock_runtime_client
+        )
 
-    mock_create_client.assert_called_with(
-        region_name="us-west-2",
-        credentials_profile_name=None,
-        aws_access_key_id=None,
-        aws_secret_access_key=None,
-        aws_session_token=None,
-        endpoint_url=None,
-        config=None,
-        service_name="bedrock",
-    )
+        mock_create_client.assert_called_with(
+            region_name="us-west-2",
+            credentials_profile_name=None,
+            aws_access_key_id=None,
+            aws_secret_access_key=None,
+            aws_session_token=None,
+            endpoint_url=None,
+            config=None,
+            service_name="bedrock",
+            api_key=None,
+        )
 
 
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
@@ -2182,22 +2439,25 @@ def test_bedrock_client_uses_explicit_values_over_runtime_client(
 
     mock_create_client.side_effect = side_effect
 
-    ChatBedrockConverse(
-        model="us.meta.llama3-3-70b-instruct-v1:0",
-        client=mock_runtime_client,
-        region_name="us-east-1",
-    )
+    with mock.patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("AWS_BEARER_TOKEN_BEDROCK", None)
+        ChatBedrockConverse(
+            model="us.meta.llama3-3-70b-instruct-v1:0",
+            client=mock_runtime_client,
+            region_name="us-east-1",
+        )
 
-    mock_create_client.assert_called_with(
-        region_name="us-east-1",
-        credentials_profile_name=None,
-        aws_access_key_id=None,
-        aws_secret_access_key=None,
-        aws_session_token=None,
-        endpoint_url=None,
-        config=None,
-        service_name="bedrock",
-    )
+        mock_create_client.assert_called_with(
+            region_name="us-east-1",
+            credentials_profile_name=None,
+            aws_access_key_id=None,
+            aws_secret_access_key=None,
+            aws_session_token=None,
+            endpoint_url=None,
+            config=None,
+            service_name="bedrock",
+            api_key=None,
+        )
 
 
 def test__has_tool_use_or_result_blocks() -> None:
@@ -2337,3 +2597,804 @@ def test_get_num_tokens_from_messages_api_error_fallback() -> None:
         token_count = llm.get_num_tokens_from_messages(messages)
         assert token_count == 5
         mock_base.assert_called_once()
+
+
+def test_bind_tools_with_nova_system_tool_instances() -> None:
+    """Test bind_tools with NovaSystemTool instances."""
+    from langchain_aws.tools import NovaCodeInterpreterTool, NovaGroundingTool
+
+    chat_model = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    # Test with NovaGroundingTool
+    chat_model_with_grounding = chat_model.bind_tools([NovaGroundingTool()])
+    tools = cast(RunnableBinding, chat_model_with_grounding).kwargs["toolConfig"][
+        "tools"
+    ]
+    assert len(tools) == 1
+    assert tools[0] == {"systemTool": {"name": "nova_grounding"}}
+
+    # Test with NovaCodeInterpreterTool
+    chat_model_with_code = chat_model.bind_tools([NovaCodeInterpreterTool()])
+    tools = cast(RunnableBinding, chat_model_with_code).kwargs["toolConfig"]["tools"]
+    assert len(tools) == 1
+    assert tools[0] == {"systemTool": {"name": "nova_code_interpreter"}}
+
+    # Test with both system tools
+    chat_model_with_both = chat_model.bind_tools(
+        [NovaGroundingTool(), NovaCodeInterpreterTool()]
+    )
+    tools = cast(RunnableBinding, chat_model_with_both).kwargs["toolConfig"]["tools"]
+    assert len(tools) == 2
+    assert tools[0] == {"systemTool": {"name": "nova_grounding"}}
+    assert tools[1] == {"systemTool": {"name": "nova_code_interpreter"}}
+
+
+def test_bind_tools_with_system_tool_name_strings() -> None:
+    """Test bind_tools with system tool name strings."""
+    chat_model = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    # Test with direct string
+    chat_model_with_grounding = chat_model.bind_tools(["nova_grounding"])
+    tools = cast(RunnableBinding, chat_model_with_grounding).kwargs["toolConfig"][
+        "tools"
+    ]
+    assert len(tools) == 1
+    assert tools[0] == {"systemTool": {"name": "nova_grounding"}}
+
+    # Test with direct string
+    chat_model_with_code = chat_model.bind_tools(["nova_code_interpreter"])
+    tools = cast(RunnableBinding, chat_model_with_code).kwargs["toolConfig"]["tools"]
+    assert len(tools) == 1
+    assert tools[0] == {"systemTool": {"name": "nova_code_interpreter"}}
+
+    # Test with both as strings
+    chat_model_with_both = chat_model.bind_tools(
+        ["nova_grounding", "nova_code_interpreter"]
+    )
+    tools = cast(RunnableBinding, chat_model_with_both).kwargs["toolConfig"]["tools"]
+    assert len(tools) == 2
+    assert tools[0] == {"systemTool": {"name": "nova_grounding"}}
+    assert tools[1] == {"systemTool": {"name": "nova_code_interpreter"}}
+
+
+def test_bind_tools_with_mixed_system_and_custom_tools() -> None:
+    """Test bind_tools with mixed system and custom tools."""
+    from langchain_aws.tools import NovaGroundingTool
+
+    chat_model = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    # Mix NovaGroundingTool with custom GetWeather tool
+    chat_model_with_mixed = chat_model.bind_tools([GetWeather, NovaGroundingTool()])
+    tools = cast(RunnableBinding, chat_model_with_mixed).kwargs["toolConfig"]["tools"]
+    assert len(tools) == 2
+
+    # First tool should be the custom tool (GetWeather)
+    assert "function" in tools[0]
+    assert tools[0]["function"]["name"] == "GetWeather"
+
+    # Second tool should be the system tool
+    assert tools[1] == {"systemTool": {"name": "nova_grounding"}}
+
+
+def test_bind_tools_system_tools_with_tool_choice() -> None:
+    """Test that tool_choice works with system tools."""
+    from langchain_aws.tools import NovaGroundingTool
+
+    chat_model = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    # Test with auto tool choice
+    chat_model_with_tools = chat_model.bind_tools(
+        [NovaGroundingTool()], tool_choice="auto"
+    )
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["toolConfig"][
+        "toolChoice"
+    ] == {"auto": {}}
+
+    # Test with any tool choice
+    chat_model_with_tools = chat_model.bind_tools(
+        [NovaGroundingTool()], tool_choice="any"
+    )
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["toolConfig"][
+        "toolChoice"
+    ] == {"any": {}}
+
+
+def test_bind_tools_toolconfig_structure_with_system_tools() -> None:
+    """Test that toolConfig structure is correct with system tools."""
+    from langchain_aws.tools import NovaCodeInterpreterTool, NovaGroundingTool
+
+    chat_model = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    # Bind tools with both system and custom tools
+    chat_model_with_tools = chat_model.bind_tools(
+        [GetWeather, NovaGroundingTool(), NovaCodeInterpreterTool()],
+        tool_choice="auto",
+    )
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+
+    # Verify toolConfig is present
+    assert "toolConfig" in bound_kwargs
+    tool_config = bound_kwargs["toolConfig"]
+
+    # Verify tools are present in toolConfig
+    assert "tools" in tool_config
+    tools = tool_config["tools"]
+    assert len(tools) == 3
+
+    # Verify custom tool format
+    assert "function" in tools[0]
+    assert tools[0]["function"]["name"] == "GetWeather"
+
+    # Verify system tools format
+    assert tools[1] == {"systemTool": {"name": "nova_grounding"}}
+    assert tools[2] == {"systemTool": {"name": "nova_code_interpreter"}}
+
+    # Verify toolChoice is present in toolConfig
+    assert "toolChoice" in tool_config
+    assert tool_config["toolChoice"] == {"auto": {}}
+
+
+def test_bind_tools_formats_custom_tools_to_dicts() -> None:
+    """Test that custom tools are dict formatted with no Nova tools present."""
+    from langchain_core.tools import tool
+
+    @tool
+    def my_custom_tool(query: str) -> str:
+        """A simple test tool.
+
+        Args:
+            query: The query string.
+        """
+        return f"Result for: {query}"
+
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    chat_model_with_tools = chat_model.bind_tools([my_custom_tool])
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+
+    assert "tools" in bound_kwargs
+    assert "toolConfig" not in bound_kwargs
+
+    tools = bound_kwargs["tools"]
+    assert isinstance(tools, list)
+    assert len(tools) == 1
+
+    tool_def = tools[0]
+    assert isinstance(tool_def, dict), f"Expected dict, got {type(tool_def)}"
+
+    assert tool_def.get("type") == "function"
+    assert "function" in tool_def
+    assert tool_def["function"].get("name") == "my_custom_tool"
+
+
+def test_reasoning_config_validation_accepts_strings() -> None:
+    """Test that reasoning config validation accepts string values."""
+    # Should not raise an error with string values
+    for effort in ["low", "medium", "high"]:
+        llm = ChatBedrockConverse(
+            model="amazon.nova-2-lite-v1:0",
+            region_name="us-east-1",
+            additional_model_request_fields={
+                "reasoningConfig": {"type": "enabled", "maxReasoningEffort": effort}
+            },
+        )  # type: ignore[call-arg]
+        assert llm is not None
+
+
+def test_reasoning_config_validation_rejects_invalid_effort() -> None:
+    """Test that reasoning config validation rejects invalid effort levels."""
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Invalid maxReasoningEffort: 'invalid'.*"
+            "Must be one of: \\['low', 'medium', 'high'\\]"
+        ),
+    ):
+        ChatBedrockConverse(
+            model="amazon.nova-2-lite-v1:0",
+            region_name="us-east-1",
+            additional_model_request_fields={
+                "reasoningConfig": {"type": "enabled", "maxReasoningEffort": "invalid"}
+            },
+        )  # type: ignore[call-arg]
+
+
+def test_reasoning_config_validation_requires_max_effort_when_enabled() -> None:
+    """Test that reasoning config validation requires maxReasoningEffort."""
+    with pytest.raises(
+        ValueError,
+        match=(
+            "When reasoningConfig type is 'enabled', "
+            "'maxReasoningEffort' must be specified"
+        ),
+    ):
+        ChatBedrockConverse(
+            model="amazon.nova-2-lite-v1:0",
+            region_name="us-east-1",
+            additional_model_request_fields={"reasoningConfig": {"type": "enabled"}},
+        )  # type: ignore[call-arg]
+
+
+def test_reasoning_config_validation_disabled_no_effort_required() -> None:
+    """Test that maxReasoningEffort is not required when reasoning is disabled."""
+    # Should not raise an error when type is disabled
+    llm = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0",
+        region_name="us-east-1",
+        additional_model_request_fields={"reasoningConfig": {"type": "disabled"}},
+    )  # type: ignore[call-arg]
+    assert llm is not None
+
+
+def test_reasoning_config_validation_no_config() -> None:
+    """Test that validation passes when no reasoning config is provided."""
+    # Should not raise an error when no reasoningConfig is provided
+    llm = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0",
+        region_name="us-east-1",
+    )  # type: ignore[call-arg]
+    assert llm is not None
+
+
+def test_reasoning_config_validation_rejects_invalid_type() -> None:
+    """Test that reasoning config validation rejects invalid effort types."""
+    with pytest.raises(
+        ValueError,
+        match=(
+            "Invalid maxReasoningEffort type: int.*"
+            "Must be a string, one of: \\['low', 'medium', 'high'\\]"
+        ),
+    ):
+        ChatBedrockConverse(
+            model="amazon.nova-2-lite-v1:0",
+            region_name="us-east-1",
+            additional_model_request_fields={
+                "reasoningConfig": {"type": "enabled", "maxReasoningEffort": 123}
+            },
+        )  # type: ignore[call-arg]
+
+
+def test_iam_permission_error_detection() -> None:
+    """Test that IAM permission errors for InvokeTool are detected and enhanced."""
+    from botocore.exceptions import ClientError
+
+    from langchain_aws.chat_models.bedrock_converse import _handle_bedrock_error
+
+    # Create a mock AccessDeniedException for InvokeTool
+    error_response: Any = {
+        "Error": {
+            "Code": "AccessDeniedException",
+            "Message": (
+                "User: arn:aws:iam::834212829299:user/demo is not authorized to "
+                "perform: bedrock:InvokeTool on resource: "
+                "arn:aws:bedrock::834212829299:system-tool/amazon.nova_grounding "
+                "with an explicit deny in an identity-based policy"
+            ),
+        },
+        "ResponseMetadata": {"RequestId": "test-request-id"},
+    }
+    error = ClientError(error_response, "Converse")  # type: ignore[arg-type]
+
+    # Should raise ValueError with enhanced message
+    with pytest.raises(ValueError) as exc_info:
+        _handle_bedrock_error(error)
+
+    error_message = str(exc_info.value)
+    assert "bedrock:InvokeTool" in error_message
+    assert "IAM permission" in error_message
+    assert "Example policy statement" in error_message
+    assert "Original error" in error_message
+
+
+def test_iam_permission_error_other_access_denied() -> None:
+    """Test that other AccessDeniedException errors are not modified."""
+    from botocore.exceptions import ClientError
+
+    from langchain_aws.chat_models.bedrock_converse import _handle_bedrock_error
+
+    # Create a mock AccessDeniedException without InvokeTool
+    error_response: Any = {
+        "Error": {
+            "Code": "AccessDeniedException",
+            "Message": "User is not authorized to perform: bedrock:InvokeModel",
+        },
+        "ResponseMetadata": {"RequestId": "test-request-id"},
+    }
+    error = ClientError(error_response, "Converse")  # type: ignore[arg-type]
+
+    # Should re-raise the original error
+    with pytest.raises(ClientError) as exc_info:
+        _handle_bedrock_error(error)
+
+    assert exc_info.value == error
+
+
+def test_iam_permission_error_non_access_denied() -> None:
+    """Test that non-AccessDeniedException errors are not modified."""
+    from botocore.exceptions import ClientError
+
+    from langchain_aws.chat_models.bedrock_converse import _handle_bedrock_error
+
+    # Create a different error type
+    error_response: Any = {
+        "Error": {
+            "Code": "ValidationException",
+            "Message": "Invalid input",
+        },
+        "ResponseMetadata": {"RequestId": "test-request-id"},
+    }
+    error = ClientError(error_response, "Converse")  # type: ignore[arg-type]
+
+    # Should re-raise the original error
+    with pytest.raises(ClientError) as exc_info:
+        _handle_bedrock_error(error)
+
+    assert exc_info.value == error
+
+
+def test_generate_with_iam_permission_error() -> None:
+    """Test that _generate wraps IAM permission errors."""
+    from botocore.exceptions import ClientError
+
+    llm = ChatBedrockConverse(model="amazon.nova-2-lite-v1:0", region_name="us-east-1")
+
+    # Mock the client to raise AccessDeniedException
+    error_response: Any = {
+        "Error": {
+            "Code": "AccessDeniedException",
+            "Message": (
+                "User is not authorized to perform: bedrock:InvokeTool on resource: "
+                "arn:aws:bedrock::123456789:system-tool/amazon.nova_grounding"
+            ),
+        },
+        "ResponseMetadata": {"RequestId": "test-request-id"},
+    }
+    llm.client.converse = mock.Mock(side_effect=ClientError(error_response, "Converse"))
+
+    # Should raise ValueError with enhanced message
+    with pytest.raises(ValueError) as exc_info:
+        llm.invoke("What's the weather?")
+
+    error_message = str(exc_info.value)
+    assert "bedrock:InvokeTool" in error_message
+    assert "IAM permission" in error_message
+    assert "Example policy statement" in error_message
+
+
+def test_stream_with_iam_permission_error() -> None:
+    """Test that _stream wraps IAM permission errors."""
+    from botocore.exceptions import ClientError
+    from langchain_core.messages import HumanMessage
+
+    llm = ChatBedrockConverse(model="amazon.nova-2-lite-v1:0", region_name="us-east-1")
+
+    # Mock the client to raise AccessDeniedException when converse_stream is called
+    error_response: Any = {
+        "Error": {
+            "Code": "AccessDeniedException",
+            "Message": (
+                "User is not authorized to perform: bedrock:InvokeTool on resource: "
+                "arn:aws:bedrock::123456789:system-tool/amazon.nova_grounding"
+            ),
+        },
+        "ResponseMetadata": {"RequestId": "test-request-id"},
+    }
+
+    # Create a mock that raises the exception
+    mock_client = mock.Mock()
+    mock_client.converse_stream.side_effect = ClientError(
+        error_response,  # type: ignore[arg-type]
+        "Converse",
+    )
+    llm.client = mock_client
+
+    # Should raise ValueError with enhanced message
+    # Call _stream directly to avoid invoke() being called
+    with pytest.raises(ValueError) as exc_info:
+        # Consume the generator to trigger the error
+        for _ in llm._stream([HumanMessage(content="What's the weather?")]):
+            pass
+
+    error_message = str(exc_info.value)
+    assert "bedrock:InvokeTool" in error_message
+    assert "IAM permission" in error_message
+    assert "Example policy statement" in error_message
+
+
+def test_reasoning_config_validation_only_applies_to_nova_2() -> None:
+    """Test that reasoning config validation only applies to Nova 2 models."""
+    # Should not raise an error for non-Nova-2 models even with invalid config
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        additional_model_request_fields={
+            "reasoningConfig": {"type": "enabled"}  # Missing maxReasoningEffort
+        },
+    )  # type: ignore[call-arg]
+    assert llm is not None
+
+    # Should not raise an error for Nova 1 models
+    llm = ChatBedrockConverse(
+        model="amazon.nova-lite-v1:0",
+        region_name="us-east-1",
+        additional_model_request_fields={
+            "reasoningConfig": {"type": "enabled"}  # Missing maxReasoningEffort
+        },
+    )  # type: ignore[call-arg]
+    assert llm is not None
+
+    # Should raise an error for Nova 2 models with invalid config
+    with pytest.raises(
+        ValueError,
+        match="When reasoningConfig type is 'enabled', "
+        "'maxReasoningEffort' must be specified",
+    ):
+        ChatBedrockConverse(
+            model="amazon.nova-2-lite-v1:0",
+            region_name="us-east-1",
+            additional_model_request_fields={
+                "reasoningConfig": {"type": "enabled"}  # Missing maxReasoningEffort
+            },
+        )  # type: ignore[call-arg]
+
+
+def test_service_tier_parameter() -> None:
+    """Test that service_tier parameter is correctly set and passed."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier="priority",
+    )
+    assert llm.service_tier == "priority"
+
+
+@pytest.mark.parametrize(
+    "service_tier",
+    ["priority", "default", "flex", "reserved"],
+)
+def test_service_tier_valid_values(service_tier: str) -> None:
+    """Test that all valid service_tier values are accepted."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier=service_tier,  # type: ignore[arg-type]
+    )
+    assert llm.service_tier == service_tier
+
+
+def test_service_tier_in_converse_params() -> None:
+    """Test that service_tier is included in _converse_params with correct format."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier="priority",
+    )
+
+    params = llm._converse_params()
+    assert params["serviceTier"] == {"type": "priority"}
+
+
+def test_service_tier_none_not_in_params() -> None:
+    """Test that service_tier is not in params when None."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+
+    params = llm._converse_params()
+    assert "serviceTier" not in params
+
+
+def test_service_tier_passed_to_converse() -> None:
+    """Test that service_tier is passed to the converse API call."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier="priority",
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    llm.invoke(messages)
+
+    # Verify converse was called with serviceTier in the correct format
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert call_kwargs["serviceTier"] == {"type": "priority"}
+
+
+def test_service_tier_passed_to_converse_stream() -> None:
+    """Test that service_tier is passed to the converse_stream API call."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse_stream.return_value = {
+        "stream": [
+            {"messageStart": {"role": "assistant"}},
+            {"contentBlockDelta": {"delta": {"text": "Hi"}, "contentBlockIndex": 0}},
+            {"messageStop": {"stopReason": "end_turn"}},
+            {
+                "metadata": {
+                    "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15}
+                }
+            },
+        ]
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        service_tier="flex",
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    list(llm.stream(messages))
+
+    # Verify converse_stream was called with serviceTier in the correct format
+    call_kwargs = mocked_client.converse_stream.call_args[1]
+    assert call_kwargs["serviceTier"] == {"type": "flex"}
+
+
+def test_additional_model_request_fields_merge_no_duplicate_keys() -> None:
+    """Test that additional_model_request_fields from constructor and invoke are merged
+    correctly without duplicate keys in different cases.
+
+    This test ensures that when additional_model_request_fields is provided both
+    at initialization and at invocation, the final request contains only one
+    correctly cased field (snake_case), not both reasoning_effort and reasoningEffort.
+    """
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    # Create model with additional_model_request_fields in constructor (snake_case)
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="openai.gpt-oss-120b-1:0",
+        region_name="us-west-2",
+        additional_model_request_fields={"reasoning_effort": "low"},
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    # Call invoke with additional_model_request_fields in kwargs (snake_case)
+    llm.invoke(
+        messages,
+        additional_model_request_fields={"reasoning_effort": "medium"},
+    )
+
+    # Verify converse was called
+    assert mocked_client.converse.called
+    call_kwargs = mocked_client.converse.call_args[1]
+
+    # Verify additionalModelRequestFields exists and is a dict
+    assert "additionalModelRequestFields" in call_kwargs
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+    assert isinstance(additional_fields, dict)
+
+    # Verify that the field is in snake_case (not camelCase)
+    assert "reasoning_effort" in additional_fields
+    assert "reasoningEffort" not in additional_fields
+
+    # Verify the value is from invoke (invoke overrides constructor)
+    assert additional_fields["reasoning_effort"] == "medium"
+
+    # Verify no duplicate keys exist
+    keys = list(additional_fields.keys())
+    assert len(keys) == 1
+    assert keys[0] == "reasoning_effort"
+
+
+def test_additional_model_request_fields_merge_constructor_only() -> None:
+    """Test correctness of additional_model_request_fields from constructor only."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="openai.gpt-oss-120b-1:0",
+        region_name="us-west-2",
+        additional_model_request_fields={"reasoning_effort": "low"},
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    llm.invoke(messages)
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert "additionalModelRequestFields" in call_kwargs
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+    assert "reasoning_effort" in additional_fields
+    assert additional_fields["reasoning_effort"] == "low"
+
+
+def test_additional_model_request_fields_merge_invoke_only() -> None:
+    """Test that additional_model_request_fields from invoke only works correctly."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="openai.gpt-oss-120b-1:0",
+        region_name="us-west-2",
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    llm.invoke(
+        messages,
+        additional_model_request_fields={"reasoning_effort": "high"},
+    )
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert "additionalModelRequestFields" in call_kwargs
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+    assert "reasoning_effort" in additional_fields
+    assert additional_fields["reasoning_effort"] == "high"
+
+
+def test_additional_model_request_fields_camel_constructor_snake_invoke() -> None:
+    """Test camelCase at constructor and snake_case at invoke merge correctly."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="openai.gpt-oss-120b-1:0",
+        region_name="us-west-2",
+        additional_model_request_fields={"reasoningEffort": "low"},
+    )
+
+    llm.invoke(
+        [HumanMessage(content="Hi")],
+        additional_model_request_fields={"reasoning_effort": "medium"},
+    )
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+
+    assert list(additional_fields.keys()) == ["reasoning_effort"]
+    assert additional_fields["reasoning_effort"] == "medium"
+
+
+def test_additional_model_request_fields_snake_constructor_camel_invoke() -> None:
+    """Test snake_case at constructor and camelCase at invoke merge correctly."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="openai.gpt-oss-120b-1:0",
+        region_name="us-west-2",
+        additional_model_request_fields={"reasoning_effort": "low"},
+    )
+
+    llm.invoke(
+        [HumanMessage(content="Hi")],
+        additional_model_request_fields={"reasoningEffort": "high"},
+    )
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+
+    assert list(additional_fields.keys()) == ["reasoning_effort"]
+    assert additional_fields["reasoning_effort"] == "high"
+
+
+def test_additional_model_request_fields_invoke_overrides_constructor() -> None:
+    """Test that invoke values take priority over constructor values for same key.
+
+    This test explicitly verifies that when the same key is provided in both
+    constructor and invoke, the invoke value wins.
+    """
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    # Constructor sets reasoning_effort to "constructor_value"
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="openai.gpt-oss-120b-1:0",
+        region_name="us-west-2",
+        additional_model_request_fields={"reasoning_effort": "constructor_value"},
+    )
+
+    # Invoke sets reasoning_effort to "invoke_value"
+    llm.invoke(
+        [HumanMessage(content="Hi")],
+        additional_model_request_fields={"reasoning_effort": "invoke_value"},
+    )
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+
+    # Verify invoke value takes priority over constructor value
+    assert additional_fields["reasoning_effort"] == "invoke_value"
+    assert additional_fields["reasoning_effort"] != "constructor_value"
+
+
+def test_stream_closes_event_stream() -> None:
+    """Test that stream() explicitly closes the EventStream after iteration."""
+    mocked_client = mock.MagicMock()
+    mock_stream = mock.MagicMock()
+    mock_stream.__iter__ = mock.Mock(
+        return_value=iter(
+            [
+                {"messageStart": {"role": "assistant"}},
+                {
+                    "contentBlockDelta": {
+                        "delta": {"text": "Hi"},
+                        "contentBlockIndex": 0,
+                    }
+                },
+                {"messageStop": {"stopReason": "end_turn"}},
+            ]
+        )
+    )
+    mocked_client.converse_stream.return_value = {"stream": mock_stream}
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+
+    list(llm.stream([HumanMessage(content="Hi")]))
+
+    mock_stream.close.assert_called_once()
+
+
+def test_stream_closes_event_stream_on_exception() -> None:
+    """Test that stream() closes the EventStream even when iteration raises."""
+    mocked_client = mock.MagicMock()
+    mock_stream = mock.MagicMock()
+
+    def raise_error() -> Iterator[Dict[str, Any]]:
+        yield {"messageStart": {"role": "assistant"}}
+        yield {"contentBlockDelta": {"delta": {"text": "Hi"}, "contentBlockIndex": 0}}
+        raise RuntimeError("Test error")
+
+    mock_stream.__iter__ = mock.Mock(return_value=raise_error())
+    mocked_client.converse_stream.return_value = {"stream": mock_stream}
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+
+    with pytest.raises(RuntimeError, match="Test error"):
+        list(llm.stream([HumanMessage(content="Hi")]))
+
+    mock_stream.close.assert_called_once()

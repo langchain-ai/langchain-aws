@@ -8,6 +8,9 @@ on:
         type: string
         description: "From which folder this pipeline executes"
 
+permissions:
+  contents: read
+
 env:
   WORKDIR: ${{ inputs.working-directory == '' && '.' || inputs.working-directory }}
 
@@ -18,9 +21,6 @@ jobs:
   build:
     name: "make lint #${{ matrix.python-version }}"
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
     strategy:
       matrix:
         # Only lint on the min and max supported Python versions.
@@ -33,7 +33,7 @@ jobs:
         python-version:
           - "3.12"
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up Python ${{ matrix.python-version }} + uv
         uses: "./.github/actions/uv_setup"
@@ -62,7 +62,7 @@ jobs:
           uv sync --group lint --group typing
 
       - name: Get .mypy_cache to speed up mypy
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         env:
           SEGMENT_DOWNLOAD_TIMEOUT_MIN: "2"
         with:
@@ -81,7 +81,7 @@ jobs:
           uv sync --group test --group test_integration
 
       - name: Get .mypy_cache_test to speed up mypy
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         env:
           SEGMENT_DOWNLOAD_TIMEOUT_MIN: "2"
         with:

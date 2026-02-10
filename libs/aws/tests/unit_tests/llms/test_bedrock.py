@@ -5,6 +5,7 @@ from typing import AsyncGenerator, Dict
 from unittest.mock import MagicMock, patch
 
 import pytest
+from langchain_core.messages import AIMessageChunk
 
 from langchain_aws import BedrockLLM
 from langchain_aws.llms.bedrock import (
@@ -278,6 +279,11 @@ MOCK_STREAMING_RESPONSE_MISTRAL = [
 MOCK_STREAMING_RESPONSE_DEEPSEEK = [
     {"chunk": {"bytes": b'{"choices": [{"text": "Thank","stop_reason": null}]}'}},
     {"chunk": {"bytes": b'{"choices": [{"text": "you.","stop_reason": "stop"}]}'}},
+]
+
+MOCK_STREAMING_RESPONSE_ANTHROPIC = [
+    {"chunk": {"bytes": b'{"completion": "Thank", "stop_reason": null}'}},
+    {"chunk": {"bytes": b'{"completion": " you.", "stop_reason": "stop_sequence"}'}},
 ]
 
 MOCK_STREAMING_RESPONSE_WRITER = [
@@ -993,3 +999,105 @@ def test_get_base_model_with_application_inference_profile(mock_create_client):
     )
     assert result == "anthropic.claude-sonnet-4-20250514-v1:0"
     assert llm.base_model_id == "anthropic.claude-sonnet-4-20250514-v1:0"
+
+
+@pytest.fixture
+def anthropic_streaming_response_with_close():
+    """Streaming response with a mock body that tracks close() calls."""
+    mock_body = MagicMock()
+    mock_body.__iter__ = MagicMock(return_value=iter(MOCK_STREAMING_RESPONSE_ANTHROPIC))
+    return {"body": mock_body}
+
+
+def test_stream_closes_response_body(
+    anthropic_streaming_response_with_close,
+) -> None:
+    """Test that streaming closes the response body after iteration."""
+    mock_client = MagicMock()
+    mock_client.invoke_model_with_response_stream.return_value = (
+        anthropic_streaming_response_with_close
+    )
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region="us-west-2",
+    )
+
+    list(llm._prepare_input_and_invoke_stream(prompt="Hello"))
+
+    anthropic_streaming_response_with_close["body"].close.assert_called_once()
+
+
+def test_stream_closes_response_body_on_exception() -> None:
+    """Test that streaming closes body even when iteration raises."""
+    mock_client = MagicMock()
+    mock_body = MagicMock()
+
+    def raise_error():
+        yield from MOCK_STREAMING_RESPONSE_ANTHROPIC
+        raise RuntimeError("Test error")
+
+    mock_body.__iter__ = MagicMock(return_value=raise_error())
+    mock_client.invoke_model_with_response_stream.return_value = {"body": mock_body}
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region="us-west-2",
+    )
+
+    with pytest.raises(RuntimeError, match="Test error"):
+        list(llm._prepare_input_and_invoke_stream(prompt="Hello"))
+
+    mock_body.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_astream_closes_response_body(
+    anthropic_streaming_response_with_close,
+) -> None:
+    mock_client = MagicMock()
+    mock_client.invoke_model_with_response_stream.return_value = (
+        anthropic_streaming_response_with_close
+    )
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region="us-west-2",
+    )
+
+    chunks = []
+    async for chunk in llm._aprepare_input_and_invoke_stream(prompt="Hello"):
+        chunks.append(chunk)
+
+    assert len(chunks) > 0
+    anthropic_streaming_response_with_close["body"].close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_astream_closes_response_body_on_exception() -> None:
+    mock_client = MagicMock()
+    mock_body = MagicMock()
+    mock_client.invoke_model_with_response_stream.return_value = {"body": mock_body}
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region="us-west-2",
+    )
+
+    async def mock_adapter_stream(*args, **kwargs):
+        yield AIMessageChunk("test")
+        raise RuntimeError("Test error")
+
+    with patch(
+        "langchain_aws.llms.bedrock.LLMInputOutputAdapter.aprepare_output_stream",
+        side_effect=lambda *args, **kwargs: mock_adapter_stream(*args, **kwargs),
+    ):
+        with pytest.raises(RuntimeError, match="Test error"):
+            async for _ in llm._aprepare_input_and_invoke_stream(prompt="Hello"):
+                pass
+
+    mock_body.close.assert_called_once()

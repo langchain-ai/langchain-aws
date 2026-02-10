@@ -105,7 +105,10 @@ class BrowserSessionManager:
             Exception: If browser session creation fails
 
         """
-        browser_client = BrowserClient(region=self.region)
+        # Pass integration_source for telemetry attribution
+        browser_client = BrowserClient(
+            region=self.region, integration_source="langchain"
+        )
 
         try:
             # Start browser session
@@ -162,7 +165,10 @@ class BrowserSessionManager:
             Exception: If browser session creation fails
 
         """
-        browser_client = BrowserClient(region=self.region)
+        # Pass integration_source for telemetry attribution
+        browser_client = BrowserClient(
+            region=self.region, integration_source="langchain"
+        )
 
         try:
             # Start browser session

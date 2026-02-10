@@ -2,10 +2,14 @@
 Unit tests for AgentCore Memory Checkpoint Saver.
 """
 
+import asyncio
 import json
-from unittest.mock import ANY, MagicMock, Mock, patch
+import time
+from collections.abc import Iterator
+from unittest.mock import ANY, MagicMock, Mock, call, patch
 
 import pytest
+from botocore.exceptions import ClientError
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata, CheckpointTuple
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
@@ -18,6 +22,7 @@ from langgraph_checkpoint_aws.agentcore.constants import (
 )
 from langgraph_checkpoint_aws.agentcore.helpers import (
     AgentCoreEventClient,
+    BedrockAgentCoreClientWithRetry,
     EventProcessor,
     EventSerializer,
 )
@@ -29,6 +34,30 @@ from langgraph_checkpoint_aws.agentcore.models import (
     WritesEvent,
 )
 from langgraph_checkpoint_aws.agentcore.saver import AgentCoreMemorySaver
+
+# Configure pytest to use anyio for async tests
+pytestmark = pytest.mark.anyio
+
+# Test constants for async testing
+N_ASYNC_CALLS = 5
+MOCK_SLEEP_DURATION = 0.1 / N_ASYNC_CALLS
+OVERHEAD_DURATION = 0.01
+TOTAL_EXPECTED_TIME = MOCK_SLEEP_DURATION + OVERHEAD_DURATION
+
+
+@pytest.fixture
+def sample_checkpoint_tuple():
+    return CheckpointTuple(
+        config={
+            "configurable": {
+                "thread_id": "test_thread_id",
+                "actor_id": "test_actor",
+                "checkpoint_id": "test_checkpoint_id",
+            }
+        },
+        checkpoint={"id": "test_checkpoint_id"},
+        metadata={"source": "input", "step": 0},
+    )
 
 
 @pytest.fixture
@@ -144,6 +173,61 @@ class TestAgentCoreMemorySaver:
                 "namespace2": "parent_checkpoint_2",
             },
         )
+
+    @pytest.fixture
+    def mock_slow_get_tuple(self, sample_checkpoint_tuple):
+        """Mock get_tuple with artificial delay for testing async concurrency."""
+
+        def _mock_slow_get_tuple(config):  # noqa: ARG001
+            time.sleep(MOCK_SLEEP_DURATION)
+            return sample_checkpoint_tuple
+
+        return _mock_slow_get_tuple
+
+    @pytest.fixture
+    def mock_slow_list(self, sample_checkpoint_tuple):
+        """Mock list with artificial delay for testing async concurrency."""
+
+        def _mock_slow_list(
+            config, *, filter=None, before=None, limit=None
+        ) -> Iterator[CheckpointTuple]:
+            def _generator():
+                time.sleep(MOCK_SLEEP_DURATION)
+                yield sample_checkpoint_tuple
+
+            return _generator()
+
+        return _mock_slow_list
+
+    @pytest.fixture
+    def mock_slow_put(self):
+        """Mock put with artificial delay for testing async concurrency."""
+
+        def _mock_slow_put(config, checkpoint, metadata, new_versions):  # noqa: ARG001
+            time.sleep(MOCK_SLEEP_DURATION)
+            return config
+
+        return _mock_slow_put
+
+    @pytest.fixture
+    def mock_slow_put_writes(self):
+        """Mock put_writes with artificial delay for testing async concurrency."""
+
+        def _mock_slow_put_writes(config, writes, task_id, task_path=""):  # noqa: ARG001
+            time.sleep(MOCK_SLEEP_DURATION)
+            return
+
+        return _mock_slow_put_writes
+
+    @pytest.fixture
+    def mock_slow_delete_thread(self):
+        """Mock delete_thread with artificial delay for testing async concurrency."""
+
+        def _mock_slow_delete_thread(thread_id, actor_id=""):  # noqa: ARG001
+            time.sleep(MOCK_SLEEP_DURATION)
+            return
+
+        return _mock_slow_delete_thread
 
     def test_init_with_default_client(self, memory_id):
         with patch("boto3.client") as mock_boto3_client:
@@ -587,6 +671,202 @@ class TestAgentCoreMemorySaver:
         )
         assert version.startswith("00000000000000000000000000000011.")
 
+    async def test_aget_tuple_calls_sync_method_with_correct_args(
+        self, saver, runnable_config, mock_slow_get_tuple
+    ):
+        with patch.object(
+            saver, "get_tuple", side_effect=mock_slow_get_tuple
+        ) as mock_get:
+            result = await saver.aget_tuple(runnable_config)
+
+            # Verify sync method was called with correct arguments
+            mock_get.assert_called_once_with(runnable_config)
+
+            assert result is not None
+
+    async def test_alist_calls_sync_method_with_correct_args(
+        self, saver, runnable_config, mock_slow_list
+    ):
+        filter_dict = {"test": "filter"}
+        before_config = {"before": "config"}
+        limit_value = 10
+
+        with patch.object(saver, "list", side_effect=mock_slow_list) as mock_list:
+            # Collect all items from async iterator
+            items = []
+            async for item in saver.alist(
+                runnable_config,
+                filter=filter_dict,
+                before=before_config,
+                limit=limit_value,
+            ):
+                items.append(item)
+
+            # Verify sync method was called with correct arguments
+            mock_list.assert_called_once_with(
+                runnable_config,
+                filter=filter_dict,
+                before=before_config,
+                limit=limit_value,
+            )
+            assert len(items) == 1
+            assert isinstance(items[0], CheckpointTuple)
+
+    async def test_aput_calls_sync_method_with_correct_args(
+        self,
+        saver,
+        runnable_config,
+        sample_checkpoint,
+        sample_checkpoint_metadata,
+        mock_slow_put,
+    ):
+        new_versions = {"default": "v2"}
+
+        with patch.object(saver, "put", side_effect=mock_slow_put) as mock_put:
+            result = await saver.aput(
+                runnable_config,
+                sample_checkpoint,
+                sample_checkpoint_metadata,
+                new_versions,
+            )
+
+            # Verify sync method was called with correct arguments
+            mock_put.assert_called_once_with(
+                runnable_config,
+                sample_checkpoint,
+                sample_checkpoint_metadata,
+                new_versions,
+            )
+
+            assert result == runnable_config
+
+    async def test_aput_writes_calls_sync_method_with_correct_args(
+        self, saver, runnable_config, mock_slow_put_writes
+    ):
+        writes = [("channel", "value")]
+        task_id = "test-task"
+        task_path = "test-path"
+
+        with patch.object(
+            saver, "put_writes", side_effect=mock_slow_put_writes
+        ) as mock_put_writes:
+            result = await saver.aput_writes(
+                runnable_config, writes, task_id, task_path
+            )
+
+            # Verify sync method was called with correct arguments
+            mock_put_writes.assert_called_once_with(
+                runnable_config, writes, task_id, task_path
+            )
+            assert result is None
+
+    async def test_adelete_thread_calls_sync_method_with_correct_args(
+        self, saver, runnable_config, mock_slow_delete_thread
+    ):
+        thread_id = runnable_config["configurable"]["thread_id"]
+        actor_id = runnable_config["configurable"]["actor_id"]
+
+        with patch.object(
+            saver, "delete_thread", side_effect=mock_slow_delete_thread
+        ) as mock_delete:
+            result = await saver.adelete_thread(thread_id, actor_id)
+
+            # Verify sync method was called with correct arguments
+            mock_delete.assert_called_once_with(thread_id, actor_id)
+            assert result is None
+
+    async def test_concurrent_calls_aget_tuple(
+        self, saver, runnable_config, mock_slow_get_tuple
+    ):
+        with patch.object(saver, "get_tuple", side_effect=mock_slow_get_tuple):
+            await self.assert_concurrent_calls_are_faster_than_sequential(
+                N_ASYNC_CALLS, saver.aget_tuple, runnable_config
+            )
+
+    async def test_concurrent_calls_adelete_thread(
+        self, saver, runnable_config, mock_slow_delete_thread
+    ):
+        thread_id = runnable_config["configurable"]["thread_id"]
+        actor_id = runnable_config["configurable"]["actor_id"]
+
+        with patch.object(saver, "delete_thread", side_effect=mock_slow_delete_thread):
+            await self.assert_concurrent_calls_are_faster_than_sequential(
+                N_ASYNC_CALLS, saver.adelete_thread, thread_id, actor_id
+            )
+
+    async def test_concurrent_calls_aput_writes(
+        self, saver, runnable_config, mock_slow_put_writes
+    ):
+        writes = [("channel", "value")]
+        task_id = "test-task"
+        task_path = "test-path"
+
+        with patch.object(saver, "put_writes", side_effect=mock_slow_put_writes):
+            await self.assert_concurrent_calls_are_faster_than_sequential(
+                N_ASYNC_CALLS,
+                saver.aput_writes,
+                runnable_config,
+                writes,
+                task_id,
+                task_path,
+            )
+
+    async def test_concurrent_calls_aput(
+        self,
+        saver,
+        runnable_config,
+        sample_checkpoint,
+        sample_checkpoint_metadata,
+        mock_slow_put,
+    ):
+        new_versions = {"default": "v2"}
+
+        with patch.object(saver, "put", side_effect=mock_slow_put):
+            await self.assert_concurrent_calls_are_faster_than_sequential(
+                N_ASYNC_CALLS,
+                saver.aput,
+                runnable_config,
+                sample_checkpoint,
+                sample_checkpoint_metadata,
+                new_versions,
+            )
+
+    async def test_concurrent_calls_alist(self, saver, runnable_config, mock_slow_list):
+        filter_dict = {"test": "filter"}
+        before_config = {"before": "config"}
+        limit_value = 10
+
+        with patch.object(saver, "list", side_effect=mock_slow_list):
+
+            async def consume_alist() -> list:
+                """Helper coroutine to consume the async iterator."""
+                items = []
+                async for item in saver.alist(
+                    runnable_config,
+                    filter=filter_dict,
+                    before=before_config,
+                    limit=limit_value,
+                ):
+                    items.append(item)
+                return items
+
+            await self.assert_concurrent_calls_are_faster_than_sequential(
+                N_ASYNC_CALLS, consume_alist
+            )
+
+    async def assert_concurrent_calls_are_faster_than_sequential(
+        self, n_async_calls: int, func, *args, **kwargs
+    ) -> None:
+        """Helper to run n async tasks concurrently."""
+        tasks = [func(*args, **kwargs) for _ in range(n_async_calls)]
+        start_time = time.time()
+        await asyncio.gather(*tasks)
+        concurrent_time = time.time() - start_time
+        assert concurrent_time < TOTAL_EXPECTED_TIME, (
+            f"Concurrent execution took {concurrent_time:.2f}s, "
+            f"expected < {TOTAL_EXPECTED_TIME}s"
+        )
+
 
 class TestCheckpointerConfig:
     """Test suite for CheckpointerConfig."""
@@ -966,3 +1246,192 @@ class TestEventProcessor:
         )
 
         assert tuple_result.parent_config is None
+
+
+class TestBedrockAgentCoreClientWithRetry:
+    """Test suite for BedrockAgentCoreClientWithRetry retry logic."""
+
+    @pytest.fixture
+    def mock_boto_client(self):
+        mock_client = Mock()
+        mock_client.create_event = MagicMock()
+        mock_client.list_events = MagicMock()
+        return mock_client
+
+    @pytest.fixture
+    def enhanced_client(self, mock_boto_client):
+        return BedrockAgentCoreClientWithRetry(mock_boto_client, max_retries=3)
+
+    def test_successful_call_no_retry(self, enhanced_client, mock_boto_client):
+        """Test that successful calls don't trigger retries."""
+        mock_boto_client.create_event.return_value = {"eventId": "test-event-id"}
+
+        result = enhanced_client.create_event(
+            memoryId="test-memory-id",
+            actorId="test-actor",
+            sessionId="test-session",
+            eventTimestamp="2024-01-01T00:00:00Z",
+            payload=[{"blob": "test"}],
+        )
+
+        assert result == {"eventId": "test-event-id"}
+        assert mock_boto_client.create_event.call_count == 1
+
+    def test_retry_on_retryable_conflict_exception_success(
+        self, enhanced_client, mock_boto_client
+    ):
+        """Test that RetryableConflictException triggers retry and succeeds."""
+        # First call fails with RetryableConflictException, second succeeds
+        mock_boto_client.create_event.side_effect = [
+            ClientError(
+                {
+                    "Error": {
+                        "Code": "RetryableConflictException",
+                        "Message": "Conflict",
+                    }
+                },
+                "CreateEvent",
+            ),
+            {"eventId": "test-event-id"},
+        ]
+
+        result = enhanced_client.create_event(
+            memoryId="test-memory-id",
+            actorId="test-actor",
+            sessionId="test-session",
+            eventTimestamp="2024-01-01T00:00:00Z",
+            payload=[{"blob": "test"}],
+        )
+
+        assert result == {"eventId": "test-event-id"}
+        assert mock_boto_client.create_event.call_count == 2
+
+    def test_retry_on_retryable_conflict_exception_max_retries(
+        self, enhanced_client, mock_boto_client
+    ):
+        """Test that max retries are respected for RetryableConflictException."""
+        # All calls fail with RetryableConflictException
+        mock_boto_client.create_event.side_effect = ClientError(
+            {"Error": {"Code": "RetryableConflictException", "Message": "Conflict"}},
+            "CreateEvent",
+        )
+
+        with pytest.raises(ClientError) as exc_info:
+            enhanced_client.create_event(
+                memoryId="test-memory-id",
+                actorId="test-actor",
+                sessionId="test-session",
+                eventTimestamp="2024-01-01T00:00:00Z",
+                payload=[{"blob": "test"}],
+            )
+
+        assert exc_info.value.response["Error"]["Code"] == "RetryableConflictException"
+        # Should attempt once + max_retries (3) = 4 total
+        assert mock_boto_client.create_event.call_count == 4
+
+    def test_non_retryable_error_not_retried(self, enhanced_client, mock_boto_client):
+        """Test that non-retryable errors are not retried."""
+        mock_boto_client.create_event.side_effect = ClientError(
+            {"Error": {"Code": "ValidationException", "Message": "Invalid input"}},
+            "CreateEvent",
+        )
+
+        with pytest.raises(ClientError) as exc_info:
+            enhanced_client.create_event(
+                memoryId="test-memory-id",
+                actorId="test-actor",
+                sessionId="test-session",
+                eventTimestamp="2024-01-01T00:00:00Z",
+                payload=[{"blob": "test"}],
+            )
+
+        assert exc_info.value.response["Error"]["Code"] == "ValidationException"
+        # Should only attempt once (no retries)
+        assert mock_boto_client.create_event.call_count == 1
+
+    @patch("langgraph_checkpoint_aws.agentcore.helpers.time.sleep")
+    def test_retry_exponential_backoff(
+        self, mock_sleep, enhanced_client, mock_boto_client
+    ):
+        """Test that exponential backoff is applied between retries."""
+        # First two calls fail, third succeeds
+        mock_boto_client.create_event.side_effect = [
+            ClientError(
+                {
+                    "Error": {
+                        "Code": "RetryableConflictException",
+                        "Message": "Conflict",
+                    }
+                },
+                "CreateEvent",
+            ),
+            ClientError(
+                {
+                    "Error": {
+                        "Code": "RetryableConflictException",
+                        "Message": "Conflict",
+                    }
+                },
+                "CreateEvent",
+            ),
+            {"eventId": "test-event-id"},
+        ]
+
+        result = enhanced_client.create_event(
+            memoryId="test-memory-id",
+            actorId="test-actor",
+            sessionId="test-session",
+            eventTimestamp="2024-01-01T00:00:00Z",
+            payload=[{"blob": "test"}],
+        )
+
+        assert result == {"eventId": "test-event-id"}
+        assert mock_boto_client.create_event.call_count == 3
+        # Verify exponential backoff was applied
+        assert mock_sleep.call_args_list == [
+            call(0.1),  # 0.1 * 2^0
+            call(0.2),  # 0.1 * 2^1
+        ]
+
+    def test_passthrough_non_create_event_methods(
+        self, enhanced_client, mock_boto_client
+    ):
+        """Test that non-create_event methods are passed through without retry logic."""
+        mock_boto_client.list_events.return_value = {"events": []}
+
+        result = enhanced_client.list_events(
+            memoryId="test-memory-id",
+            actorId="test-actor",
+            sessionId="test-session",
+        )
+
+        assert result == {"events": []}
+        mock_boto_client.list_events.assert_called_once()
+
+    def test_custom_max_retries(self, mock_boto_client):
+        """Test that custom max_retries value is respected."""
+        enhanced_client = BedrockAgentCoreClientWithRetry(
+            mock_boto_client, max_retries=1
+        )
+
+        mock_boto_client.create_event.side_effect = ClientError(
+            {
+                "Error": {
+                    "Code": "RetryableConflictException",
+                    "Message": "Conflict",
+                }
+            },
+            "CreateEvent",
+        )
+
+        with pytest.raises(ClientError):
+            enhanced_client.create_event(
+                memoryId="test-memory-id",
+                actorId="test-actor",
+                sessionId="test-session",
+                eventTimestamp="2024-01-01T00:00:00Z",
+                payload=[{"blob": "test"}],
+            )
+
+        # Should attempt once + max_retries (1) = 2 total
+        assert mock_boto_client.create_event.call_count == 2

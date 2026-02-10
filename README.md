@@ -60,6 +60,29 @@ response = model.invoke("Hello! How are you today?")
 print(response)
 ```
 
+### AgentCore Tools
+
+```python
+from langchain_aws.tools import create_browser_toolkit, create_code_interpreter_toolkit
+
+# Browser automation
+browser_toolkit, browser_tools = create_browser_toolkit(region="us-west-2")
+
+# Code execution (async)
+code_toolkit, code_tools = await create_code_interpreter_toolkit(region="us-west-2")
+
+# Use with LangGraph agent
+agent = create_react_agent(model, tools=browser_tools + code_tools)
+result = await agent.ainvoke(
+    {"messages": [{"role": "user", "content": "Navigate to example.com"}]},
+    config={"configurable": {"thread_id": "session-1"}}
+)
+
+# Cleanup
+await browser_toolkit.cleanup()
+await code_toolkit.cleanup()
+```
+
 For more detailed usage examples and documentation, please refer to the [LangChain docs](https://python.langchain.com/docs/integrations/platforms/aws/).
 
 ### `langgraph-checkpoint-aws`
@@ -68,12 +91,9 @@ You can find usage examples for `langgraph-checkpoint-aws` [in the README](https
 
 ## Contributing
 
-We welcome contributions to this repository! To get started, please follow the contribution guide for your specific project of interest:
+We welcome contributions to this repository! To get started, please follow the [Contributing Guide](https://github.com/langchain-ai/langchain-aws/blob/main/.github/CONTRIBUTING.md).
 
-- For `langchain-aws`, see [langchain-aws/CONTRIBUTING.md](https://github.com/langchain-ai/langchain-aws/blob/main/libs/aws/CONTRIBUTING.md).
-- For `langgraph-checkpointer-aws`, see [langgraph-checkpointer-aws/CONTRIBUTING.md](https://github.com/langchain-ai/langchain-aws/blob/main/libs/langgraph-checkpoint-aws/CONTRIBUTING.md).
-
-Each guide provides detailed instructions on how to set up the project for development and guidance on how to contribute effectively.
+This guide provides detailed instructions on how to set up each project for development and guidance on how to contribute effectively.
 
 ## License
 

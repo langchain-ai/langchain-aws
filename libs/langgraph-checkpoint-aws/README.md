@@ -981,12 +981,7 @@ Comprehensive examples are available in the `samples/memory/` directory:
 
 ## Contributing
 
-* Fork the repository
-
-* Create a feature branch
-* Make your changes
-* Run tests and linting
-* Submit a pull request
+For detailed information on how to contribute, see the [Contributing Guide](https://github.com/langchain-ai/langchain-aws/blob/main/.github/CONTRIBUTING.md).
 
 ## License
 
