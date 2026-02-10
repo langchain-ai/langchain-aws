@@ -1242,7 +1242,13 @@ class ChatBedrockConverse(BaseChatModel):
                 formatted_custom_tools.append(tool)
             else:
                 try:
-                    formatted_custom_tools.append(convert_to_openai_tool(tool))
+                    openai_tool = convert_to_openai_tool(tool)
+                    # Strip out "strict" field as Bedrock doesn't support it
+                    if "strict" in openai_tool:
+                        openai_tool = {
+                            k: v for k, v in openai_tool.items() if k != "strict"
+                        }
+                    formatted_custom_tools.append(openai_tool)
                 except Exception:
                     formatted_custom_tools.append(_format_tools([tool])[0])
 

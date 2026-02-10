@@ -2781,6 +2781,44 @@ def test_bind_tools_formats_custom_tools_to_dicts() -> None:
     assert tool_def["function"].get("name") == "my_custom_tool"
 
 
+def test_bind_tools_strips_strict_field() -> None:
+    """Test that the 'strict' field is stripped from tools when binding."""
+    # Create a tool with the strict field (OpenAI format)
+    tool_with_strict = {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get the weather",
+            "parameters": {
+                "type": "object",
+                "properties": {"location": {"type": "string"}},
+                "required": ["location"],
+            },
+        },
+        "strict": True,
+    }
+
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    chat_model_with_tools = chat_model.bind_tools([tool_with_strict])
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+
+    assert "tools" in bound_kwargs
+    tools = bound_kwargs["tools"]
+    assert isinstance(tools, list)
+    assert len(tools) == 1
+
+    # Verify the strict field was stripped out
+    tool_def = tools[0]
+    assert "strict" not in tool_def, "The 'strict' field should be stripped for Bedrock"
+    assert tool_def.get("type") == "function"
+    assert "function" in tool_def
+    assert tool_def["function"].get("name") == "get_weather"
+
+
 def test_reasoning_config_validation_accepts_strings() -> None:
     """Test that reasoning config validation accepts string values."""
     # Should not raise an error with string values
