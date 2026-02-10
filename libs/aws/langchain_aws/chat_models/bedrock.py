@@ -536,6 +536,24 @@ def _format_anthropic_messages(
                                     processed_list.append(
                                         {"type": "image", "source": source}
                                     )
+                                elif (
+                                    isinstance(list_item, dict)
+                                    and list_item.get("type") == "text"
+                                ):
+                                    # Strip extra fields that are not accepted
+                                    # by the Bedrock API.
+                                    formatted_item: Dict[str, Any] = {
+                                        k: v
+                                        for k, v in list_item.items()
+                                        if k
+                                        in (
+                                            "type",
+                                            "text",
+                                            "cache_control",
+                                            "citations",
+                                        )
+                                    }
+                                    processed_list.append(formatted_item)
                                 else:
                                     # Keep other items as is
                                     processed_list.append(list_item)

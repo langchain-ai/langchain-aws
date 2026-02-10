@@ -969,6 +969,34 @@ def test__format_anthropic_messages_with_image_conversion_in_tool() -> None:
     assert expected == actual
 
 
+def test__format_anthropic_messages_strips_extra_fields_from_tool_result_text() -> None:
+    """Test that extra fields are stripped from text content block inside
+    tool_result content."""
+    messages = [
+        ToolMessage(  # type: ignore[misc]
+            content=[
+                {
+                    "type": "text",
+                    "text": "tool output",
+                    "id": "lc_12345",
+                }
+            ],
+            tool_call_id="test_tool_call_123",
+        ),
+        HumanMessage("What happened?"),  # type: ignore[misc]
+    ]
+
+    _, actual = _format_anthropic_messages(messages)
+    tool_result = actual[0]["content"][0]
+    assert tool_result["type"] == "tool_result"
+    assert tool_result["tool_use_id"] == "test_tool_call_123"
+
+    # The text block inside the tool_result should only have "type" and "text"
+    text_block = tool_result["content"][0]
+    assert text_block == {"type": "text", "text": "tool output"}
+    assert "id" not in text_block
+
+
 def test__convert_messages_to_prompt_anthropic_message_is_none() -> None:
     messages = None
     assert convert_messages_to_prompt_anthropic(messages) == ""
