@@ -8,16 +8,17 @@ capabilities.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, cast
-import asyncio
+from typing import Any
 
 import boto3
-import orjson
+from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
+from botocore.config import Config
 from botocore.exceptions import ClientError
 from langchain_core.runnables import run_in_executor
 from langgraph.store.base import (
@@ -32,6 +33,8 @@ from langgraph.store.base import (
     SearchOp,
     TTLConfig,
 )
+
+from langgraph_checkpoint_aws.checkpoint.dynamodb.utils import create_dynamodb_client
 
 from .exceptions import DynamoDBConnectionError, TableCreationError, ValidationError
 
@@ -110,6 +113,8 @@ class DynamoDBStore(BaseStore):
         *,
         region_name: str | None = None,
         boto3_session: boto3.Session | None = None,
+        endpoint_url: str | None = None,
+        boto_config: Config | None = None,
         ttl: TTLConfig | None = None,
         max_read_capacity_units: int | None = None,
         max_write_capacity_units: int | None = None,
@@ -120,8 +125,10 @@ class DynamoDBStore(BaseStore):
             table_name: Name of the DynamoDB table to use.
             region_name: AWS region name. If not provided along with boto3_session,
                 AWS_DEFAULT_REGION or AWS_REGION environment variable must be set.
-            boto3_session: Optional boto3 session to use. If not provided, creates a new one
-                using region_name or AWS environment variables.
+            boto3_session: Optional boto3 session to use. If not provided, creates
+                a new one using region_name or AWS environment variables.
+            endpoint_url: Custom endpoint URL for the DynamoDB service.
+            boto_config: Botocore config object.
             ttl: Optional TTL configuration for automatic item expiration.
             max_read_capacity_units: Maximum read capacity units for on-demand mode.
                 Only used when creating a new table. Default is 10.
@@ -129,35 +136,41 @@ class DynamoDBStore(BaseStore):
                 Only used when creating a new table. Default is 10.
 
         Raises:
-            ValidationError: If neither boto3_session nor region_name is provided and
-                AWS region environment variables are not set.
+            ValidationError: If neither boto3_session nor region_name is provided
+                and AWS region environment variables are not set.
         """
         super().__init__()
-        
+
         # Validate that either boto3_session, region_name, or AWS env vars are set
         if boto3_session is None and region_name is None:
             # Check for AWS region environment variables
-            if not os.environ.get("AWS_DEFAULT_REGION") and not os.environ.get("AWS_REGION"):
-                raise ValidationError(
+            if not os.environ.get("AWS_DEFAULT_REGION") and not os.environ.get(
+                "AWS_REGION"
+            ):
+                msg = (
                     "Either 'boto3_session' or 'region_name' must be provided, "
-                    "or AWS_DEFAULT_REGION/AWS_REGION environment variable must be set. "
-                    "Example: DynamoDBStore(table_name='my-table', region_name='us-east-1')"
+                    "or AWS_DEFAULT_REGION/AWS_REGION environment variable must be "
+                    "set. "
+                    "Example: DynamoDBStore(table_name='my-table', "
+                    "region_name='us-east-1')"
                 )
-        
+                raise ValidationError(msg)
+
         self.table_name = table_name
         self.ttl_config = ttl
         self.max_read_capacity_units = max_read_capacity_units or 10
         self.max_write_capacity_units = max_write_capacity_units or 10
+        self._type_serializer = TypeSerializer()
+        self._type_deserializer = TypeDeserializer()
 
-        # Initialize boto3 session and resources
-        if boto3_session:
-            self.session = boto3_session
-        else:
-            self.session = boto3.Session(region_name=region_name)
-
+        # Initialize DynamoDB client using shared utility
         try:
-            self.dynamodb = self.session.client("dynamodb")
-            self.table = self.dynamodb.Table(table_name)
+            self.client = create_dynamodb_client(
+                session=boto3_session,
+                region_name=region_name,
+                endpoint_url=endpoint_url,
+                boto_config=boto_config,
+            )
         except Exception as e:
             raise DynamoDBConnectionError(
                 f"Failed to initialize DynamoDB connection: {e}"
@@ -170,6 +183,8 @@ class DynamoDBStore(BaseStore):
         table_name: str,
         *,
         region_name: str | None = None,
+        endpoint_url: str | None = None,
+        boto_config: Config | None = None,
         ttl: TTLConfig | None = None,
         max_read_capacity_units: int | None = None,
         max_write_capacity_units: int | None = None,
@@ -178,10 +193,15 @@ class DynamoDBStore(BaseStore):
 
         Args:
             table_name: Name of the DynamoDB table to use.
-            region_name: AWS region name. If not provided, uses default from AWS config.
+            region_name: AWS region name. If not provided, uses default from
+                AWS config.
+            endpoint_url: Custom endpoint URL for the DynamoDB service.
+            boto_config: Botocore config object.
             ttl: Optional TTL configuration for automatic item expiration.
-            max_read_capacity_units: Maximum read capacity units for on-demand mode.
-            max_write_capacity_units: Maximum write capacity units for on-demand mode.
+            max_read_capacity_units: Maximum read capacity units for
+                on-demand mode.
+            max_write_capacity_units: Maximum write capacity units for
+                on-demand mode.
 
         Yields:
             DynamoDBStore: A DynamoDB store instance.
@@ -196,6 +216,8 @@ class DynamoDBStore(BaseStore):
         store = cls(
             table_name=table_name,
             region_name=region_name,
+            endpoint_url=endpoint_url,
+            boto_config=boto_config,
             ttl=ttl,
             max_read_capacity_units=max_read_capacity_units,
             max_write_capacity_units=max_write_capacity_units,
@@ -205,6 +227,19 @@ class DynamoDBStore(BaseStore):
         finally:
             # No cleanup needed for DynamoDB client
             pass
+
+    def _deserialize_item(self, item: dict[str, Any]) -> dict[str, Any]:
+        """Deserialize a DynamoDB client item to Python native types.
+
+        Args:
+            item: DynamoDB item with type annotations
+                (e.g., {"PK": {"S": "value"}}).
+
+        Returns:
+            Dictionary with Python native values
+                (e.g., {"PK": "value"}).
+        """
+        return {k: self._type_deserializer.deserialize(v) for k, v in item.items()}
 
     def setup(self) -> None:
         """Set up the DynamoDB table.
@@ -221,8 +256,7 @@ class DynamoDBStore(BaseStore):
             TableCreationError: If table creation fails.
         """
         try:
-            # Try to load the table to check if it exists
-            self.table.load()
+            self.client.describe_table(TableName=self.table_name)
             logger.info(f"DynamoDB table '{self.table_name}' already exists.")
 
             # Enable TTL if configured and not already enabled
@@ -242,11 +276,17 @@ class DynamoDBStore(BaseStore):
     def _create_table(self) -> None:
         """Create the DynamoDB table with appropriate configuration."""
         try:
-            table = self.dynamodb.create_table(
+            self.client.create_table(
                 TableName=self.table_name,
                 KeySchema=[
-                    {"AttributeName": "PK", "KeyType": "HASH"},  # Partition key
-                    {"AttributeName": "SK", "KeyType": "RANGE"},  # Sort key
+                    {
+                        "AttributeName": "PK",
+                        "KeyType": "HASH",
+                    },
+                    {
+                        "AttributeName": "SK",
+                        "KeyType": "RANGE",
+                    },
                 ],
                 AttributeDefinitions=[
                     {"AttributeName": "PK", "AttributeType": "S"},
@@ -258,9 +298,9 @@ class DynamoDBStore(BaseStore):
                     "MaxWriteRequestUnits": self.max_write_capacity_units,
                 },
             )
-            # Wait for table to be created
-            table.wait_until_exists()
-            self.table = table
+            # Wait for table to be created using waiter
+            waiter = self.client.get_waiter("table_exists")
+            waiter.wait(TableName=self.table_name)
             logger.info(f"DynamoDB table '{self.table_name}' created successfully.")
 
             # Enable TTL if configured
@@ -275,10 +315,12 @@ class DynamoDBStore(BaseStore):
     def _enable_ttl(self) -> None:
         """Enable TTL on the DynamoDB table."""
         try:
-            client = self.session.client("dynamodb")
-            client.update_time_to_live(
+            self.client.update_time_to_live(
                 TableName=self.table_name,
-                TimeToLiveSpecification={"Enabled": True, "AttributeName": "expires_at"},
+                TimeToLiveSpecification={
+                    "Enabled": True,
+                    "AttributeName": "expires_at",
+                },
             )
             logger.info(f"TTL enabled on table '{self.table_name}'.")
         except ClientError as e:
@@ -316,10 +358,11 @@ class DynamoDBStore(BaseStore):
         return (namespace,)
 
     def _map_to_item(self, result_dict: dict[str, Any], item_type: type = Item) -> Item:
-        """Map DynamoDB item to store Item.
+        """Map deserialized DynamoDB item to store Item.
 
         Args:
-            result_dict: DynamoDB item dictionary.
+            result_dict: Deserialized DynamoDB item dictionary
+                (Python native types).
             item_type: Type of item to create (Item or SearchItem).
 
         Returns:
@@ -353,14 +396,17 @@ class DynamoDBStore(BaseStore):
         if ttl_minutes is None:
             return None
         # DynamoDB TTL expects Unix timestamp in seconds
-        expiry_seconds = int(datetime.now(timezone.utc).timestamp() + (ttl_minutes * 60))
+        expiry_seconds = int(
+            datetime.now(timezone.utc).timestamp() + (ttl_minutes * 60)
+        )
         return expiry_seconds
 
     def batch(self, ops: Iterable[Op]) -> list[Result]:
         """Execute multiple operations in a batch.
 
         Args:
-            ops: Iterable of operations (GetOp, PutOp, SearchOp, ListNamespacesOp).
+            ops: Iterable of operations (GetOp, PutOp, SearchOp,
+                ListNamespacesOp).
 
         Returns:
             List of results corresponding to each operation.
@@ -393,9 +439,16 @@ class DynamoDBStore(BaseStore):
         """
         composite_key = self._construct_composite_key(op.namespace, op.key)
         try:
-            response = self.table.get_item(Key={"PK": composite_key[0], "SK": composite_key[1]})
-            item = response.get("Item")
-            if item:
+            response = self.client.get_item(
+                TableName=self.table_name,
+                Key={
+                    "PK": {"S": composite_key[0]},
+                    "SK": {"S": composite_key[1]},
+                },
+            )
+            raw_item = response.get("Item")
+            if raw_item:
+                item = self._deserialize_item(raw_item)
                 # Refresh TTL if configured
                 if op.refresh_ttl and self.ttl_config:
                     self._refresh_ttl(composite_key[0], composite_key[1])
@@ -432,13 +485,15 @@ class DynamoDBStore(BaseStore):
 
         try:
             # Query items with the namespace prefix
-            response = self.table.query(
+            response = self.client.query(
+                TableName=self.table_name,
                 KeyConditionExpression="PK = :pk",
-                ExpressionAttributeValues={":pk": namespace_str},
+                ExpressionAttributeValues={":pk": {"S": namespace_str}},
                 Limit=op.limit,
             )
 
-            items = response.get("Items", [])
+            raw_items = response.get("Items", [])
+            items = [self._deserialize_item(raw) for raw in raw_items]
 
             # Apply filter if provided
             if op.filter:
@@ -473,22 +528,26 @@ class DynamoDBStore(BaseStore):
         """
         try:
             # Scan the table to get all unique namespaces
-            response = self.table.scan(
+            response = self.client.scan(
+                TableName=self.table_name,
                 ProjectionExpression="PK",
             )
 
-            namespaces_set = set()
-            for item in response.get("Items", []):
+            namespaces_set: set[tuple[str, ...]] = set()
+            for raw_item in response.get("Items", []):
+                item = self._deserialize_item(raw_item)
                 namespace = self._deconstruct_namespace(item["PK"])
                 namespaces_set.add(namespace)
 
             # Handle pagination if more items exist
             while "LastEvaluatedKey" in response:
-                response = self.table.scan(
+                response = self.client.scan(
+                    TableName=self.table_name,
                     ProjectionExpression="PK",
                     ExclusiveStartKey=response["LastEvaluatedKey"],
                 )
-                for item in response.get("Items", []):
+                for raw_item in response.get("Items", []):
+                    item = self._deserialize_item(raw_item)
                     namespace = self._deconstruct_namespace(item["PK"])
                     namespaces_set.add(namespace)
 
@@ -506,7 +565,9 @@ class DynamoDBStore(BaseStore):
             return []
 
     def _filter_namespaces(
-        self, namespaces: list[tuple[str, ...]], op: ListNamespacesOp
+        self,
+        namespaces: list[tuple[str, ...]],
+        op: ListNamespacesOp,
     ) -> list[tuple[str, ...]]:
         """Filter namespaces based on operation criteria.
 
@@ -537,12 +598,14 @@ class DynamoDBStore(BaseStore):
         return sorted(filtered)
 
     def _apply_filter(
-        self, items: list[dict[str, Any]], filter_dict: dict[str, Any]
+        self,
+        items: list[dict[str, Any]],
+        filter_dict: dict[str, Any],
     ) -> list[dict[str, Any]]:
         """Apply filter to items.
 
         Args:
-            items: List of DynamoDB items.
+            items: List of deserialized DynamoDB items.
             filter_dict: Filter criteria.
 
         Returns:
@@ -555,7 +618,11 @@ class DynamoDBStore(BaseStore):
                 filtered_items.append(item)
         return filtered_items
 
-    def _matches_filter(self, value: dict[str, Any], filter_dict: dict[str, Any]) -> bool:
+    def _matches_filter(
+        self,
+        value: dict[str, Any],
+        filter_dict: dict[str, Any],
+    ) -> bool:
         """Check if value matches filter criteria.
 
         Args:
@@ -591,29 +658,39 @@ class DynamoDBStore(BaseStore):
         current_time = datetime.now(timezone.utc).isoformat()
 
         # Check if item exists to preserve created_at
-        existing_item = None
+        existing_created_at = None
         try:
-            response = self.table.get_item(Key={"PK": composite_key[0], "SK": composite_key[1]})
-            existing_item = response.get("Item")
+            response = self.client.get_item(
+                TableName=self.table_name,
+                Key={
+                    "PK": {"S": composite_key[0]},
+                    "SK": {"S": composite_key[1]},
+                },
+            )
+            raw_item = response.get("Item")
+            if raw_item:
+                created_at_attr = raw_item.get("created_at")
+                if created_at_attr:
+                    existing_created_at = created_at_attr.get("S")
         except Exception:
             pass
 
         item: dict[str, Any] = {
-            "PK": composite_key[0],
-            "SK": composite_key[1],
-            "value": value,
-            "created_at": existing_item["created_at"] if existing_item else current_time,
-            "updated_at": current_time,
+            "PK": {"S": composite_key[0]},
+            "SK": {"S": composite_key[1]},
+            "value": self._type_serializer.serialize(value),
+            "created_at": {"S": existing_created_at or current_time},
+            "updated_at": {"S": current_time},
         }
 
         # Add TTL if configured
         if ttl is not None:
             expires_at = self._calculate_expiry(ttl)
             if expires_at:
-                item["expires_at"] = expires_at
+                item["expires_at"] = {"N": str(expires_at)}
 
         try:
-            self.table.put_item(Item=item)
+            self.client.put_item(TableName=self.table_name, Item=item)
         except Exception as e:
             logger.error(f"Error putting item {namespace}/{key}: {e}")
             raise
@@ -627,7 +704,13 @@ class DynamoDBStore(BaseStore):
         """
         composite_key = self._construct_composite_key(namespace, key)
         try:
-            self.table.delete_item(Key={"PK": composite_key[0], "SK": composite_key[1]})
+            self.client.delete_item(
+                TableName=self.table_name,
+                Key={
+                    "PK": {"S": composite_key[0]},
+                    "SK": {"S": composite_key[1]},
+                },
+            )
         except Exception as e:
             logger.error(f"Error deleting item {namespace}/{key}: {e}")
             raise
@@ -651,12 +734,15 @@ class DynamoDBStore(BaseStore):
             return
 
         try:
-            self.table.update_item(
-                Key={"PK": pk, "SK": sk},
-                UpdateExpression="SET expires_at = :expires_at, updated_at = :updated_at",
+            self.client.update_item(
+                TableName=self.table_name,
+                Key={"PK": {"S": pk}, "SK": {"S": sk}},
+                UpdateExpression=(
+                    "SET expires_at = :expires_at, updated_at = :updated_at"
+                ),
                 ExpressionAttributeValues={
-                    ":expires_at": expires_at,
-                    ":updated_at": datetime.now(timezone.utc).isoformat(),
+                    ":expires_at": {"N": str(expires_at)},
+                    ":updated_at": {"S": datetime.now(timezone.utc).isoformat()},
                 },
             )
         except Exception as e:
@@ -666,22 +752,24 @@ class DynamoDBStore(BaseStore):
         """Execute batch operations asynchronously in parallel.
 
         This method leverages run_in_executor to execute synchronous DynamoDB
-        operations concurrently in a thread pool. Each operation (GetOp, PutOp,
-        SearchOp, ListNamespacesOp) is wrapped in an async function and executed
-        in parallel using asyncio.gather, to improve throughput for
-        batch operations compared to sequential execution. 
-        TODO: should perform multiple dynamodb put_item with batch_write_item for better performance.
+        operations concurrently in a thread pool. Each operation (GetOp,
+        PutOp, SearchOp, ListNamespacesOp) is wrapped in an async function
+        and executed in parallel using asyncio.gather, to improve throughput
+        for batch operations compared to sequential execution.
+        TODO: should perform multiple dynamodb put_item with
+        batch_write_item for better performance.
 
         Args:
-            ops: Iterable of operations to execute. Supported operation types are
-                GetOp, PutOp, SearchOp, and ListNamespacesOp.
+            ops: Iterable of operations to execute. Supported operation types
+                are GetOp, PutOp, SearchOp, and ListNamespacesOp.
 
         Returns:
-            List of results corresponding to the input operations, in the same
-            order as the input operations.
+            List of results corresponding to the input operations, in the
+            same order as the input operations.
 
         Raises:
-            NotImplementedError: If an unsupported operation type is encountered.
+            NotImplementedError: If an unsupported operation type is
+                encountered.
         """
 
         async def execute_op(op: Op) -> Result:
@@ -694,7 +782,9 @@ class DynamoDBStore(BaseStore):
                 return await run_in_executor(None, self._batch_search_op, op)
             if isinstance(op, ListNamespacesOp):
                 return await run_in_executor(None, self._batch_list_namespaces_op, op)
-            raise NotImplementedError(f"Operation type {type(op)} not supported")  # noqa: EM102
+            raise NotImplementedError(  # noqa: EM102
+                f"Operation type {type(op)} not supported"
+            )
 
         # Execute all operations in parallel
         results = await asyncio.gather(*[execute_op(op) for op in ops])

@@ -26,6 +26,9 @@ try:
         ValkeyIndexConfig,
         ValkeyStore,
     )
+    from langgraph_checkpoint_aws.store.dynamodb import (
+        DynamoDBStore,
+    )
     from langgraph_checkpoint_aws.store.valkey.exceptions import (
         DocumentParsingError as ValkeyDocumentParsingError,
     )
@@ -44,9 +47,6 @@ try:
     from langgraph_checkpoint_aws.store.valkey.exceptions import (
         ValkeyConnectionError,
         ValkeyStoreError,
-    )
-    from langgraph_checkpoint_aws.store.dynamodb import (
-        DynamoDBStore,
     )
 
     valkey_available = True
