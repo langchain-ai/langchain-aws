@@ -14,7 +14,7 @@ import os
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, TypeVar
 
 import boto3
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
@@ -37,6 +37,8 @@ from langgraph.store.base import (
 from langgraph_checkpoint_aws.checkpoint.dynamodb.utils import create_dynamodb_client
 
 from .exceptions import DynamoDBConnectionError, TableCreationError, ValidationError
+
+_ItemT = TypeVar("_ItemT", bound=Item)
 
 logger = logging.getLogger(__name__)
 
@@ -357,7 +359,11 @@ class DynamoDBStore(BaseStore):
             return tuple(namespace.split(":"))
         return (namespace,)
 
-    def _map_to_item(self, result_dict: dict[str, Any], item_type: type = Item) -> Item:
+    def _map_to_item(
+        self,
+        result_dict: dict[str, Any],
+        item_type: type[_ItemT] = Item,  # type: ignore[assignment]
+    ) -> _ItemT:
         """Map deserialized DynamoDB item to store Item.
 
         Args:
@@ -414,10 +420,12 @@ class DynamoDBStore(BaseStore):
         results: list[Result] = []
 
         for op in ops:
+            result: Result
             if isinstance(op, GetOp):
                 result = self._batch_get_op(op)
             elif isinstance(op, PutOp):
-                result = self._batch_put_op(op)
+                self._batch_put_op(op)
+                result = None
             elif isinstance(op, SearchOp):
                 result = self._batch_search_op(op)
             elif isinstance(op, ListNamespacesOp):
@@ -581,7 +589,7 @@ class DynamoDBStore(BaseStore):
         filtered = namespaces
 
         # Apply match conditions (prefix/suffix)
-        for condition in op.match_conditions:
+        for condition in op.match_conditions or ():
             if condition.match_type == "prefix":
                 prefix = condition.path
                 filtered = [ns for ns in filtered if ns[: len(prefix)] == prefix]
