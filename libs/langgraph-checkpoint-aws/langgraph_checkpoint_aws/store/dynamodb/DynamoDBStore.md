@@ -190,18 +190,32 @@ with DynamoDBStore.from_conn_string(
 store = DynamoDBStore(table_name="my-store", region_name="us-east-1")
 store.setup()
 
-# Option 2: Using boto3 session
+# Option 2: Using boto3 session with explicit region
 import boto3
 session = boto3.Session(region_name="us-west-2")
 store = DynamoDBStore(table_name="my-store", boto3_session=session)
 store.setup()
 
-# Option 3: Environment variable (set before running)
+# Option 3: Using boto3 session with named profile
+session = boto3.Session(profile_name="my-aws-profile")
+store = DynamoDBStore(table_name="my-store", boto3_session=session)
+store.setup()
+
+# Option 4: Using boto3 session with explicit credentials
+session = boto3.Session(
+    aws_access_key_id="YOUR_ACCESS_KEY",
+    aws_secret_access_key="YOUR_SECRET_KEY",
+    region_name="us-east-1",
+)
+store = DynamoDBStore(table_name="my-store", boto3_session=session)
+store.setup()
+
+# Option 5: Environment variable (set before running)
 # export AWS_DEFAULT_REGION=us-east-1
 store = DynamoDBStore(table_name="my-store")
 store.setup()
 
-# Option 4: Custom endpoint URL (e.g., for DynamoDB Local)
+# Option 6: Custom endpoint URL (e.g., for DynamoDB Local)
 store = DynamoDBStore(
     table_name="my-store",
     region_name="us-east-1",
