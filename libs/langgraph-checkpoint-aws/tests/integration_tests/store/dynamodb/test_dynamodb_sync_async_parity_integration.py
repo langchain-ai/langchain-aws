@@ -249,7 +249,7 @@ async def test_sync_async_batch_parity(
     async_store: DynamoDBStore,
 ) -> None:
     """Test that sync batch and async abatch return consistent results."""
-    from langgraph.store.base import GetOp, PutOp, SearchOp
+    from langgraph.store.base import GetOp, Item, PutOp, SearchItem, SearchOp
 
     namespace = ("test", "batch_parity")
 
@@ -274,8 +274,8 @@ async def test_sync_async_batch_parity(
 
     assert len(sync_results) == len(async_results) == 3
     for sync_r, async_r in zip(sync_results, async_results, strict=True):
-        assert sync_r is not None
-        assert async_r is not None
+        assert isinstance(sync_r, Item)
+        assert isinstance(async_r, Item)
         assert sync_r.value == async_r.value
 
     # Search via batch
@@ -286,7 +286,11 @@ async def test_sync_async_batch_parity(
     sync_search = sync_store.batch(search_ops)
     async_search = await async_store.abatch(search_ops)
 
-    assert len(sync_search[0]) == len(async_search[0]) == 3
-    sync_keys = {r.key for r in sync_search[0]}
-    async_keys = {r.key for r in async_search[0]}
+    sync_search_items = sync_search[0]
+    async_search_items = async_search[0]
+    assert isinstance(sync_search_items, list)
+    assert isinstance(async_search_items, list)
+    assert len(sync_search_items) == len(async_search_items) == 3
+    sync_keys = {r.key for r in sync_search_items if isinstance(r, SearchItem)}
+    async_keys = {r.key for r in async_search_items if isinstance(r, SearchItem)}
     assert sync_keys == async_keys

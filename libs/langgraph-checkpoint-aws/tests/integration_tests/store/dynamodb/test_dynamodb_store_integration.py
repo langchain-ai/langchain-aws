@@ -297,23 +297,24 @@ def test_sync_batch_operations(store: DynamoDBStore) -> None:
     store.batch(put_ops)
 
     # Get via batch
-    get_ops = [
-        GetOp(namespace=namespace, key=f"doc{i}") for i in range(3)
-    ]
+    get_ops = [GetOp(namespace=namespace, key=f"doc{i}") for i in range(3)]
     results = store.batch(get_ops)
 
     assert len(results) == 3
     assert all(isinstance(r, Item) for r in results)
     assert all(r is not None for r in results)
     for i, r in enumerate(results):
+        assert isinstance(r, Item)
         assert r.value == {"text": f"Document {i}"}
 
     # Search via batch
     search_ops = [SearchOp(namespace_prefix=namespace, limit=10)]
     search_results = store.batch(search_ops)
 
-    assert len(search_results[0]) == 3
-    assert all(isinstance(r, SearchItem) for r in search_results[0])
+    search_items = search_results[0]
+    assert isinstance(search_items, list)
+    assert len(search_items) == 3
+    assert all(isinstance(r, SearchItem) for r in search_items)
 
 
 @pytest.mark.skipif(not DYNAMODB_AVAILABLE, reason="DynamoDB Local not available")
