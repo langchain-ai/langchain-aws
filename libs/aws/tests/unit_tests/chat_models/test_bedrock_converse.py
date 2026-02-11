@@ -683,6 +683,10 @@ def test_standard_tracing_params() -> None:
         "ls_model_name": "foo",
         "ls_temperature": 0.1,
         "ls_max_tokens": 10,
+        "ls_invocation_params": {
+            "provider": "foo",
+            "region_name": "us-west-2",
+        },
     }
 
 
