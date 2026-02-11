@@ -3405,7 +3405,8 @@ def test_stream_closes_event_stream_on_exception() -> None:
 
 
 def test_guardrail_config_snake_to_camel_conversion() -> None:
-    """Test that guardrail_config is properly converted from snake_case to camelCase."""
+    """Test that guardrail_config is properly converted
+    from snake_case to camelCase."""
     mocked_client = mock.MagicMock()
     mocked_bedrock_client = mock.MagicMock()
 
@@ -3435,7 +3436,8 @@ def test_guardrail_config_snake_to_camel_conversion() -> None:
 
 
 def test_ls_invocation_params_includes_provider_and_region() -> None:
-    """Test that _get_ls_params includes provider and region_name in ls_invocation_params."""
+    """Test that _get_ls_params includes provider and
+    region_name in ls_invocation_params."""
     llm = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0",
         provider="anthropic",
@@ -3452,7 +3454,8 @@ def test_ls_invocation_params_includes_provider_and_region() -> None:
 def test_ls_invocation_params_infers_region_from_client(
     mock_boto3_client: mock.MagicMock,
 ) -> None:
-    """Test that _get_ls_params infers region from client when not explicitly provided."""
+    """Test that _get_ls_params infers region from client
+    when not explicitly provided."""
     # Configure the mock client to return a region
     mock_boto3_client.meta.region_name = "eu-west-1"
 
