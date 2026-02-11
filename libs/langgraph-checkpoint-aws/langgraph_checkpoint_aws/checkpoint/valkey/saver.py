@@ -524,7 +524,7 @@ class ValkeySaver(BaseValkeySaver):
         """
         try:
             # Find all checkpoint namespaces for this thread
-            pattern = f"thread:{thread_id}:*"
+            pattern = f"thread:{{{thread_id}}}:*"
             thread_keys = self.client.keys(pattern)
 
             if not thread_keys:
