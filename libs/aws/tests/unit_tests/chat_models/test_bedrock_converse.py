@@ -1707,6 +1707,42 @@ def test__lc_content_to_bedrock_mixed_types_with_empty_content() -> None:
     assert bedrock_content == expected
 
 
+def test__lc_content_to_bedrock_non_standard_unwrap() -> None:
+    """Test that `non_standard` blocks are unwrapped to their original value.
+
+    When content passes through `langchain-core`'s `content_blocks`
+    normalization, blocks like `cachePoint` get wrapped as `non_standard`.
+    `_lc_content_to_bedrock` should unwrap them back to the original block.
+    """
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": "System prompt"},
+        {"type": "non_standard", "value": {"cachePoint": {"type": "default"}}},
+    ]
+
+    bedrock_content = _lc_content_to_bedrock(content)
+
+    assert bedrock_content == [
+        {"text": "System prompt"},
+        {"cachePoint": {"type": "default"}},
+    ]
+
+
+def test__lc_content_to_bedrock_non_standard_unwrap_guard_content() -> None:
+    """Test that `non_standard` blocks with `guardContent` are unwrapped."""
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "non_standard",
+            "value": {"guardContent": {"text": {"text": "guard"}}},
+        },
+    ]
+
+    bedrock_content = _lc_content_to_bedrock(content)
+
+    assert bedrock_content == [
+        {"guardContent": {"text": {"text": "guard"}}},
+    ]
+
+
 def test__get_provider() -> None:
     llm = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
