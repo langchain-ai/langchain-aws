@@ -3449,9 +3449,13 @@ def test_ls_invocation_params_includes_provider_and_region() -> None:
     assert ls_params["ls_invocation_params"]["region_name"] == "us-west-2"
 
 
-@mock.patch.dict(os.environ, {"AWS_REGION": "eu-west-1"})
-def test_ls_invocation_params_infers_region_from_client() -> None:
+def test_ls_invocation_params_infers_region_from_client(
+    mock_boto3_client: mock.MagicMock,
+) -> None:
     """Test that _get_ls_params infers region from client when not explicitly provided."""
+    # Configure the mock client to return a region
+    mock_boto3_client.meta.region_name = "eu-west-1"
+
     llm = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0",
         provider="anthropic",
@@ -3464,13 +3468,17 @@ def test_ls_invocation_params_infers_region_from_client() -> None:
     assert ls_params["ls_invocation_params"]["region_name"] == "eu-west-1"
 
 
-@mock.patch.dict(os.environ, {"AWS_REGION": "eu-west-1"})
-def test_ls_invocation_params_prefers_explicit_region_over_inferred() -> None:
+def test_ls_invocation_params_prefers_explicit_region_over_inferred(
+    mock_boto3_client: mock.MagicMock,
+) -> None:
     """Test that explicit region_name takes precedence over inferred region."""
+    # Configure the mock client to return a different region
+    mock_boto3_client.meta.region_name = "eu-west-1"
+
     llm = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0",
         provider="anthropic",
-        region_name="us-west-2",  # Explicit region
+        region_name="us-west-2",  # Explicit region should take precedence
     )
 
     ls_params = llm._get_ls_params()
