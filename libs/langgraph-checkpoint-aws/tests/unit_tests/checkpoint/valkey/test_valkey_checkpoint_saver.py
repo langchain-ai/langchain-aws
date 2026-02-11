@@ -76,7 +76,7 @@ class TestValkeySaverUnit:
         thread_id = "test-thread"
         checkpoint_ns = "test-ns"
         checkpoint_id = "test-checkpoint-id"
-        expected_key = "checkpoint:test-thread:test-ns:test-checkpoint-id"
+        expected_key = "checkpoint:{test-thread}:test-ns:test-checkpoint-id"
 
         actual_key = saver._make_checkpoint_key(thread_id, checkpoint_ns, checkpoint_id)
         assert actual_key == expected_key
@@ -86,7 +86,7 @@ class TestValkeySaverUnit:
         thread_id = "test-thread"
         checkpoint_ns = ""
         checkpoint_id = "test-checkpoint-id"
-        expected_key = "checkpoint:test-thread::test-checkpoint-id"
+        expected_key = "checkpoint:{test-thread}::test-checkpoint-id"
 
         actual_key = saver._make_checkpoint_key(thread_id, checkpoint_ns, checkpoint_id)
         assert actual_key == expected_key
@@ -96,7 +96,7 @@ class TestValkeySaverUnit:
         thread_id = "test-thread"
         checkpoint_ns = "test-ns"
         checkpoint_id = "test-checkpoint-id"
-        expected_key = "writes:test-thread:test-ns:test-checkpoint-id"
+        expected_key = "writes:{test-thread}:test-ns:test-checkpoint-id"
 
         actual_key = saver._make_writes_key(thread_id, checkpoint_ns, checkpoint_id)
         assert actual_key == expected_key
@@ -105,7 +105,7 @@ class TestValkeySaverUnit:
         """Test thread key generation."""
         thread_id = "test-thread"
         checkpoint_ns = "test-ns"
-        expected_key = "thread:test-thread:test-ns"
+        expected_key = "thread:{test-thread}:test-ns"
 
         actual_key = saver._make_thread_key(thread_id, checkpoint_ns)
         assert actual_key == expected_key
@@ -349,17 +349,17 @@ class TestValkeySaverUnit:
 
         # Test with namespace
         key_with_ns = saver._make_checkpoint_key("test", "ns1", "id1")
-        assert key_with_ns == "checkpoint:test:ns1:id1"
+        assert key_with_ns == "checkpoint:{test}:ns1:id1"
 
         # Test without namespace
         key_without_ns = saver._make_checkpoint_key("test", "", "id1")
-        assert key_without_ns == "checkpoint:test::id1"
+        assert key_without_ns == "checkpoint:{test}::id1"
 
     def test_thread_id_validation(self, saver):
         """Test that thread_id is handled properly."""
         # Test normal thread ID
         key = saver._make_checkpoint_key("test-thread", "ns", "id1")
-        assert key == "checkpoint:test-thread:ns:id1"
+        assert key == "checkpoint:{test-thread}:ns:id1"
 
     def test_cleanup_operations(self, saver, fake_valkey_client):
         """Test cleanup/deletion operations."""

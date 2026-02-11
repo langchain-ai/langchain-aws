@@ -43,10 +43,10 @@ test test_watch tests: TEST_FILE ?= tests/unit_tests/
 integration_test integration_tests: TEST_FILE = tests/integration_tests/
 
 tests: ## Run all unit tests
-	uv run --group test pytest --disable-socket --allow-unix-socket $(TEST_FILE)
+	uv run --group test --extra valkey pytest --disable-socket --allow-unix-socket $(TEST_FILE)
 
 test: ## Run individual unit test: make test TEST_FILE=tests/unit_test/test.py
-	uv run --group test pytest --disable-socket --allow-unix-socket $(TEST_FILE)
+	uv run --group test --extra valkey pytest --disable-socket --allow-unix-socket $(TEST_FILE)
 
 integration_tests: ## Run all integration tests
 	uv run --group test --group test_integration pytest $(TEST_FILE)
