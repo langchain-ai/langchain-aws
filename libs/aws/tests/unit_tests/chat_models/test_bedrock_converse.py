@@ -3398,3 +3398,79 @@ def test_stream_closes_event_stream_on_exception() -> None:
         list(llm.stream([HumanMessage(content="Hi")]))
 
     mock_stream.close.assert_called_once()
+
+
+def test_guardrail_config_snake_to_camel_conversion() -> None:
+    """Test that guardrail_config is properly converted from snake_case to camelCase."""
+    mocked_client = mock.MagicMock()
+    mocked_bedrock_client = mock.MagicMock()
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        bedrock_client=mocked_bedrock_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        guardrail_config={
+            "guardrail_identifier": "test-id",
+            "guardrail_version": "1",
+            "trace": "enabled",
+        },
+    )
+
+    params = llm._converse_params()
+
+    # Check that guardrailConfig has camelCase keys
+    assert "guardrailConfig" in params
+    guardrail_config = params["guardrailConfig"]
+    assert "guardrailIdentifier" in guardrail_config
+    assert "guardrailVersion" in guardrail_config
+    assert "trace" in guardrail_config
+    assert guardrail_config["guardrailIdentifier"] == "test-id"
+    assert guardrail_config["guardrailVersion"] == "1"
+    assert guardrail_config["trace"] == "enabled"
+
+
+def test_ls_invocation_params_includes_provider_and_region() -> None:
+    """Test that _get_ls_params includes provider and region_name in ls_invocation_params."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        provider="anthropic",
+        region_name="us-west-2",
+    )
+
+    ls_params = llm._get_ls_params()
+
+    assert "ls_invocation_params" in ls_params
+    assert ls_params["ls_invocation_params"]["provider"] == "anthropic"
+    assert ls_params["ls_invocation_params"]["region_name"] == "us-west-2"
+
+
+@mock.patch.dict(os.environ, {"AWS_REGION": "eu-west-1"})
+def test_ls_invocation_params_infers_region_from_client() -> None:
+    """Test that _get_ls_params infers region from client when not explicitly provided."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        provider="anthropic",
+    )
+
+    ls_params = llm._get_ls_params()
+
+    assert "ls_invocation_params" in ls_params
+    assert ls_params["ls_invocation_params"]["provider"] == "anthropic"
+    assert ls_params["ls_invocation_params"]["region_name"] == "eu-west-1"
+
+
+@mock.patch.dict(os.environ, {"AWS_REGION": "eu-west-1"})
+def test_ls_invocation_params_prefers_explicit_region_over_inferred() -> None:
+    """Test that explicit region_name takes precedence over inferred region."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        provider="anthropic",
+        region_name="us-west-2",  # Explicit region
+    )
+
+    ls_params = llm._get_ls_params()
+
+    assert "ls_invocation_params" in ls_params
+    # Explicit region_name should be used, not the one from client
+    assert ls_params["ls_invocation_params"]["region_name"] == "us-west-2"

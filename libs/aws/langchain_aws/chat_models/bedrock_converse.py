@@ -84,6 +84,20 @@ def _get_default_model_profile(model_name: str) -> ModelProfile:
     return default.copy()
 
 
+def _infer_region_name_from_client(client: Optional[Any]) -> Optional[str]:
+    try:
+        if (
+            client is not None
+            and hasattr(client, "meta")
+            and hasattr(client.meta, "region_name")
+        ):
+            return client.meta.region_name
+        else:
+            return None
+    except (AttributeError, TypeError):
+        return None
+
+
 _BM = TypeVar("_BM", bound=BaseModel)
 
 EMPTY_CONTENT = "."
@@ -805,14 +819,8 @@ class ChatBedrockConverse(BaseChatModel):
         # Create bedrock client for control plane API call
         if self.bedrock_client is None:
             bedrock_client_cfg = {}
-            if self.client:
-                try:
-                    if hasattr(self.client, "meta") and hasattr(
-                        self.client.meta, "region_name"
-                    ):
-                        bedrock_client_cfg["region_name"] = self.client.meta.region_name
-                except (AttributeError, TypeError):
-                    pass
+            if inferred_region_name := _infer_region_name_from_client(self.client):
+                bedrock_client_cfg["region_name"] = inferred_region_name
 
             self.bedrock_client = create_aws_client(
                 region_name=self.region_name or bedrock_client_cfg.get("region_name"),
@@ -1475,7 +1483,9 @@ class ChatBedrockConverse(BaseChatModel):
                     additionalModelResponseFieldPaths
                     or self.additional_model_response_field_paths
                 ),
-                "guardrailConfig": guardrailConfig or self.guardrail_config,
+                "guardrailConfig": _snake_to_camel_keys(
+                    guardrailConfig or self.guardrail_config
+                ),
                 "performanceConfig": performanceConfig or self.performance_config,
                 "serviceTier": {"type": tier} if tier else None,
                 "requestMetadata": requestMetadata or self.request_metadata,
@@ -1497,6 +1507,15 @@ class ChatBedrockConverse(BaseChatModel):
             ls_params["ls_max_tokens"] = ls_max_tokens
         if ls_stop := stop or params.get("stop", None):
             ls_params["ls_stop"] = ls_stop
+        ls_params["ls_invocation_params"] = {}  # type: ignore
+        if self.provider is not None:
+            ls_params["ls_invocation_params"]["provider"] = self.provider  # type: ignore
+        if self.region_name is not None:
+            ls_params["ls_invocation_params"]["region_name"] = self.region_name  # type: ignore
+        elif inferred_region_name := _infer_region_name_from_client(self.client):
+            ls_params["ls_invocation_params"]["region_name"] = (  # type: ignore
+                inferred_region_name
+            )
         return ls_params
 
     @property
