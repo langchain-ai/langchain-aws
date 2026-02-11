@@ -380,8 +380,8 @@ class TestValkeySaverUnit:
         saver.delete_thread("test-thread")
 
         # Verify data was deleted
-        thread_key = saver._make_thread_key("{test-thread}", "ns1")
-        checkpoint_key = saver._make_checkpoint_key("{test-thread}", "ns1", "test-id")
+        thread_key = saver._make_thread_key("test-thread", "ns1")
+        checkpoint_key = saver._make_checkpoint_key("test-thread", "ns1", "test-id")
 
         assert not fake_valkey_client.exists(thread_key)
         assert not fake_valkey_client.exists(checkpoint_key)
