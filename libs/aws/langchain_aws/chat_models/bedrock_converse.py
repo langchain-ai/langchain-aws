@@ -2056,7 +2056,7 @@ def _parse_tool_input(tool_block: Dict[str, Any]) -> None:
     """Normalize Bedrock tool-use block: tool_use_id -> id, parse string input."""
     tool_block["id"] = tool_block.pop("tool_use_id", None)
     raw_input = tool_block.get("input")
-    if raw_input is not None and isinstance(raw_input, str):
+    if isinstance(raw_input, str):
         try:
             tool_block["input"] = parse_partial_json(raw_input)
         except (json.JSONDecodeError, TypeError):
