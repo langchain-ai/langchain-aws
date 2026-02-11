@@ -2074,6 +2074,13 @@ def _lc_content_to_bedrock(
                         }
                     }
                 )
+        elif block["type"] == "non_standard" and "value" in block:
+            # langchain-core's content_blocks property wraps provider-specific
+            # blocks (e.g. cachePoint, guardContent) that lack a recognized
+            # "type" key as {"type": "non_standard", "value": <original>}.
+            # Unwrap to restore the original block — it was valid in .content before
+            # content_blocks wrapped it.
+            bedrock_content.append(block["value"])
         else:
             raise ValueError(f"Unsupported content block type:\n{block}")
     # drop empty text blocks
