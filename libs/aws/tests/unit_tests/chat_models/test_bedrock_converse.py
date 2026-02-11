@@ -3451,7 +3451,7 @@ def test_guardrail_config_snake_to_camel_conversion() -> None:
         bedrock_client=mocked_bedrock_client,
         model="anthropic.claude-3-sonnet-20240229-v1:0",
         region_name="us-west-2",
-        guardrail_config={
+        guardrails={
             "guardrail_identifier": "test-id",
             "guardrail_version": "1",
             "trace": "enabled",
@@ -3483,8 +3483,9 @@ def test_ls_invocation_params_includes_provider_and_region() -> None:
     ls_params = llm._get_ls_params()
 
     assert "ls_invocation_params" in ls_params
-    assert ls_params["ls_invocation_params"]["provider"] == "anthropic"
-    assert ls_params["ls_invocation_params"]["region_name"] == "us-west-2"
+    invocation_params = ls_params["ls_invocation_params"]  # type: ignore[typeddict-item]
+    assert invocation_params["provider"] == "anthropic"
+    assert invocation_params["region_name"] == "us-west-2"
 
 
 def test_ls_invocation_params_infers_region_from_client(
@@ -3503,8 +3504,9 @@ def test_ls_invocation_params_infers_region_from_client(
     ls_params = llm._get_ls_params()
 
     assert "ls_invocation_params" in ls_params
-    assert ls_params["ls_invocation_params"]["provider"] == "anthropic"
-    assert ls_params["ls_invocation_params"]["region_name"] == "eu-west-1"
+    invocation_params = ls_params["ls_invocation_params"]  # type: ignore[typeddict-item]
+    assert invocation_params["provider"] == "anthropic"
+    assert invocation_params["region_name"] == "eu-west-1"
 
 
 def test_ls_invocation_params_prefers_explicit_region_over_inferred(
@@ -3523,5 +3525,6 @@ def test_ls_invocation_params_prefers_explicit_region_over_inferred(
     ls_params = llm._get_ls_params()
 
     assert "ls_invocation_params" in ls_params
+    invocation_params = ls_params["ls_invocation_params"]  # type: ignore[typeddict-item]
     # Explicit region_name should be used, not the one from client
-    assert ls_params["ls_invocation_params"]["region_name"] == "us-west-2"
+    assert invocation_params["region_name"] == "us-west-2"
