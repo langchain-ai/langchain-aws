@@ -1728,11 +1728,12 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         }
         tool_call_chunks = []
         if block["type"] == "tool_use":
+            raw_input = block.get("input")
             tool_call_chunks.append(
                 tool_call_chunk(
                     name=block.get("name"),
                     id=block.get("id"),
-                    args=block.get("input"),
+                    args=json.dumps(raw_input) if raw_input is not None else None,
                     index=event["contentBlockStart"]["contentBlockIndex"],
                 )
             )
@@ -1750,11 +1751,12 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         }
         tool_call_chunks = []
         if block["type"] == "tool_use":
+            raw_input = block.get("input")
             tool_call_chunks.append(
                 tool_call_chunk(
                     name=block.get("name"),
                     id=block.get("id"),
-                    args=block.get("input"),
+                    args=json.dumps(raw_input) if raw_input is not None else None,
                     index=event["contentBlockDelta"]["contentBlockIndex"],
                 )
             )
