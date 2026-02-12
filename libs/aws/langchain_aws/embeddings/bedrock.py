@@ -641,10 +641,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
             List of embeddings, one for each text.
 
         """
-
-        result = await asyncio.gather(*[self.aembed_query(text) for text in texts])
-
-        return list(result)
+        return await run_in_executor(None, self.embed_documents, texts)
 
     def embed_image(self, image: MediaInput) -> List[float]:
         """Embed a single image.
