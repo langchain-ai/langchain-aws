@@ -30,6 +30,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _has_tool_use_or_result_blocks,
     _lc_content_to_bedrock,
     _messages_to_bedrock,
+    _parse_stream_event,
     _snake_to_camel,
     _snake_to_camel_keys,
 )
@@ -3528,3 +3529,192 @@ def test_ls_invocation_params_prefers_explicit_region_over_inferred(
     invocation_params = ls_params["ls_invocation_params"]  # type: ignore[typeddict-item]
     # Explicit region_name should be used, not the one from client
     assert invocation_params["region_name"] == "us-west-2"
+
+
+def test__lc_content_to_bedrock_tool_use_dict_input_unchanged() -> None:
+    """Dict input should pass through unchanged."""
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "tool_use",
+            "id": "tool_1",
+            "name": "get_weather",
+            "input": {"city": "Paris"},
+        }
+    ]
+    result = _lc_content_to_bedrock(content)
+    assert result == [
+        {
+            "toolUse": {
+                "toolUseId": "tool_1",
+                "name": "get_weather",
+                "input": {"city": "Paris"},
+            }
+        }
+    ]
+
+
+def test__lc_content_to_bedrock_tool_use_string_input_parsed_to_dict() -> None:
+    """String input (from streaming accumulation) should be parsed to dict."""
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "tool_use",
+            "id": "tool_1",
+            "name": "get_weather",
+            "input": '{"city": "Paris"}',
+        }
+    ]
+    result = _lc_content_to_bedrock(content)
+    assert result == [
+        {
+            "toolUse": {
+                "toolUseId": "tool_1",
+                "name": "get_weather",
+                "input": {"city": "Paris"},
+            }
+        }
+    ]
+
+
+def test__lc_content_to_bedrock_tool_use_empty_string_input() -> None:
+    """Empty string input should become empty dict."""
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "tool_use",
+            "id": "tool_1",
+            "name": "no_args_tool",
+            "input": "",
+        }
+    ]
+    result = _lc_content_to_bedrock(content)
+    assert result == [
+        {
+            "toolUse": {
+                "toolUseId": "tool_1",
+                "name": "no_args_tool",
+                "input": {},
+            }
+        }
+    ]
+
+
+def test__lc_content_to_bedrock_server_tool_use_string_input_parsed() -> None:
+    """String input on server_tool_use should also be parsed to dict."""
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "server_tool_use",
+            "id": "tool_1",
+            "name": "grounding",
+            "input": '{"query": "latest news"}',
+        }
+    ]
+    result = _lc_content_to_bedrock(content)
+    assert result == [
+        {
+            "toolUse": {
+                "toolUseId": "tool_1",
+                "name": "grounding",
+                "input": {"query": "latest news"},
+            }
+        }
+    ]
+
+
+def test_content_block_start_tool_call_chunk_args_type() -> None:
+    """contentBlockStart should produce tool_call_chunk with string/None args."""
+    event = {
+        "contentBlockStart": {
+            "contentBlockIndex": 0,
+            "start": {
+                "toolUse": {
+                    "toolUseId": "tool_1",
+                    "name": "get_weather",
+                }
+            },
+        }
+    }
+    chunk = _parse_stream_event(event)
+    assert chunk is not None
+    assert len(chunk.tool_call_chunks) == 1
+    args = chunk.tool_call_chunks[0]["args"]
+    assert args is None or isinstance(args, str)
+
+
+def test_content_block_delta_tool_call_chunk_args_type() -> None:
+    """contentBlockDelta should produce tool_call_chunk with string args."""
+    event = {
+        "contentBlockDelta": {
+            "contentBlockIndex": 0,
+            "delta": {
+                "toolUse": {
+                    "input": '{"city": "Paris"}',
+                }
+            },
+        }
+    }
+    chunk = _parse_stream_event(event)
+    assert chunk is not None
+    assert len(chunk.tool_call_chunks) == 1
+    args = chunk.tool_call_chunks[0]["args"]
+    assert isinstance(args, str)
+    assert args == '{"city": "Paris"}'
+
+
+def test_streaming_tool_use_round_trip() -> None:
+    """Simulate streaming tool call, accumulate chunks, convert back to Bedrock."""
+    events = [
+        {
+            "contentBlockStart": {
+                "contentBlockIndex": 0,
+                "start": {
+                    "toolUse": {
+                        "toolUseId": "tool_abc",
+                        "name": "get_weather",
+                    }
+                },
+            }
+        },
+        {
+            "contentBlockDelta": {
+                "contentBlockIndex": 0,
+                "delta": {
+                    "toolUse": {
+                        "input": '{"city":',
+                    }
+                },
+            }
+        },
+        {
+            "contentBlockDelta": {
+                "contentBlockIndex": 0,
+                "delta": {
+                    "toolUse": {
+                        "input": ' "Paris"}',
+                    }
+                },
+            }
+        },
+    ]
+
+    full = None
+    for event in events:
+        chunk = _parse_stream_event(event)
+        if chunk is not None:
+            full = chunk if full is None else full + chunk
+
+    assert full is not None
+
+    assert isinstance(full.content, list)
+    tool_block = next(
+        b
+        for b in full.content
+        if isinstance(b, dict) and b.get("type") == "tool_use"
+    )
+    assert isinstance(tool_block["input"], str)
+    assert len(full.tool_call_chunks) > 0
+
+    bedrock_content = _lc_content_to_bedrock(
+        cast(List[Union[str, Dict[str, Any]]], full.content)
+    )
+    tool_use_block = bedrock_content[0]["toolUse"]
+    assert isinstance(tool_use_block["input"], dict)
+    assert tool_use_block["input"] == {"city": "Paris"}
