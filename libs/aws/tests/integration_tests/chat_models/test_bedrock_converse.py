@@ -624,8 +624,7 @@ def test_streaming_tool_use_round_trip() -> None:
     assert isinstance(tool_call["args"], dict)
     assert isinstance(full.content, list)
     tool_block = next(
-        b for b in full.content
-        if isinstance(b, dict) and b.get("type") == "tool_use"
+        b for b in full.content if isinstance(b, dict) and b.get("type") == "tool_use"
     )
     assert isinstance(tool_block["input"], str), (
         "After streaming accumulation, content[].tool_use.input should be a "
@@ -641,9 +640,7 @@ def test_streaming_tool_use_round_trip() -> None:
         tool_call_id=tool_call["id"],
     )
 
-    response = llm_with_tools.invoke(
-        [input_message, restored_msg, tool_result]
-    )
+    response = llm_with_tools.invoke([input_message, restored_msg, tool_result])
     assert isinstance(response, AIMessage)
 
 

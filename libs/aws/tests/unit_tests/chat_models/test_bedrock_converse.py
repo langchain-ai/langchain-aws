@@ -9,6 +9,7 @@ import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
+    AIMessageChunk,
     BaseMessage,
     HumanMessage,
     SystemMessage,
@@ -3633,7 +3634,7 @@ def test_content_block_start_tool_call_chunk_args_type() -> None:
         }
     }
     chunk = _parse_stream_event(event)
-    assert chunk is not None
+    assert isinstance(chunk, AIMessageChunk)
     assert len(chunk.tool_call_chunks) == 1
     args = chunk.tool_call_chunks[0]["args"]
     assert args is None or isinstance(args, str)
@@ -3652,7 +3653,7 @@ def test_content_block_delta_tool_call_chunk_args_type() -> None:
         }
     }
     chunk = _parse_stream_event(event)
-    assert chunk is not None
+    assert isinstance(chunk, AIMessageChunk)
     assert len(chunk.tool_call_chunks) == 1
     args = chunk.tool_call_chunks[0]["args"]
     assert isinstance(args, str)
@@ -3701,13 +3702,10 @@ def test_streaming_tool_use_round_trip() -> None:
         if chunk is not None:
             full = chunk if full is None else full + chunk
 
-    assert full is not None
-
+    assert isinstance(full, AIMessageChunk)
     assert isinstance(full.content, list)
     tool_block = next(
-        b
-        for b in full.content
-        if isinstance(b, dict) and b.get("type") == "tool_use"
+        b for b in full.content if isinstance(b, dict) and b.get("type") == "tool_use"
     )
     assert isinstance(tool_block["input"], str)
     assert len(full.tool_call_chunks) > 0
