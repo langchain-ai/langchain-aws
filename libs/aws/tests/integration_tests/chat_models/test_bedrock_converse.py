@@ -284,6 +284,24 @@ def test_tool_calling_camel_case() -> None:
     assert full.tool_calls[0]["args"] == response.tool_calls[0]["args"]
 
 
+def test_tool_calling_strict() -> None:
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+
+    class GetWeather(BaseModel):
+        """Get the current weather in a given location."""
+
+        location: str = Field(description="The city and state, e.g. San Francisco, CA")
+
+    chat = model.bind_tools([GetWeather], strict=True, tool_choice="any")
+    response = chat.invoke("What is the weather in Paris?")
+    assert isinstance(response, AIMessage)
+    assert len(response.tool_calls) == 1
+    tool_call = response.tool_calls[0]
+    assert tool_call["name"] == "GetWeather"
+    assert isinstance(tool_call["args"], dict)
+    assert "location" in tool_call["args"]
+
+
 def test_structured_output_streaming() -> None:
     model = ChatBedrockConverse(
         model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
