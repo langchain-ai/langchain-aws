@@ -2716,9 +2716,9 @@ def test_bind_tools_with_mixed_system_and_custom_tools() -> None:
     tools = cast(RunnableBinding, chat_model_with_mixed).kwargs["toolConfig"]["tools"]
     assert len(tools) == 2
 
-    # First tool should be the custom tool (GetWeather)
-    assert "function" in tools[0]
-    assert tools[0]["function"]["name"] == "GetWeather"
+    # First tool should be the custom tool (GetWeather) in Bedrock toolSpec format
+    assert "toolSpec" in tools[0]
+    assert tools[0]["toolSpec"]["name"] == "GetWeather"
 
     # Second tool should be the system tool
     assert tools[1] == {"systemTool": {"name": "nova_grounding"}}
@@ -2774,9 +2774,9 @@ def test_bind_tools_toolconfig_structure_with_system_tools() -> None:
     tools = tool_config["tools"]
     assert len(tools) == 3
 
-    # Verify custom tool format
-    assert "function" in tools[0]
-    assert tools[0]["function"]["name"] == "GetWeather"
+    # Verify custom tool format (Bedrock toolSpec format)
+    assert "toolSpec" in tools[0]
+    assert tools[0]["toolSpec"]["name"] == "GetWeather"
 
     # Verify system tools format
     assert tools[1] == {"systemTool": {"name": "nova_grounding"}}
@@ -2818,9 +2818,8 @@ def test_bind_tools_formats_custom_tools_to_dicts() -> None:
     tool_def = tools[0]
     assert isinstance(tool_def, dict), f"Expected dict, got {type(tool_def)}"
 
-    assert tool_def.get("type") == "function"
-    assert "function" in tool_def
-    assert tool_def["function"].get("name") == "my_custom_tool"
+    assert "toolSpec" in tool_def
+    assert tool_def["toolSpec"].get("name") == "my_custom_tool"
 
 
 def test_bind_tools_strict_true() -> None:
@@ -3881,3 +3880,170 @@ def test__format_data_content_block_unsupported_type() -> None:
     }
     with pytest.raises(ValueError, match="Unsupported data content block type"):
         _format_data_content_block(block)
+
+
+# --- Native structured outputs tests ---
+
+
+def test_format_tools_with_strict() -> None:
+    """Test that _format_tools adds strict to toolSpec when provided."""
+    tools = _format_tools([GetWeather], strict=True)
+    assert len(tools) == 1
+    assert tools[0]["toolSpec"]["strict"] is True
+
+    # Without strict, key should be absent
+    tools_no_strict = _format_tools([GetWeather])
+    assert "strict" not in tools_no_strict[0]["toolSpec"]
+
+    # strict=False should also be set
+    tools_false = _format_tools([GetWeather], strict=False)
+    assert tools_false[0]["toolSpec"]["strict"] is False
+
+
+def test_format_tools_strict_preserves_existing() -> None:
+    """Test that pre-existing strict values on raw dict tools are preserved."""
+    raw_tool = {
+        "toolSpec": {
+            "name": "MyTool",
+            "description": "A tool",
+            "inputSchema": {"json": {"type": "object", "properties": {}}},
+            "strict": False,
+        }
+    }
+    tools = _format_tools([raw_tool], strict=True)
+    # Pre-existing strict=False should NOT be overwritten
+    assert tools[0]["toolSpec"]["strict"] is False
+
+
+def test_bind_tools_with_strict() -> None:
+    """Test that bind_tools threads strict to formatted tools."""
+    chat_model = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
+    )
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], strict=True)
+    bound_tools = cast(RunnableBinding, chat_model_with_tools).kwargs["tools"]
+    assert len(bound_tools) == 1
+    assert bound_tools[0]["toolSpec"]["strict"] is True
+
+
+def test_converse_params_output_config() -> None:
+    """Test that constructor output_config appears in _converse_params output."""
+    output_config = {
+        "textFormat": {
+            "type": "json_schema",
+            "structure": {
+                "jsonSchema": {
+                    "schema": '{"type": "object"}',
+                    "name": "test",
+                    "description": "test",
+                }
+            },
+        }
+    }
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        output_config=output_config,
+    )
+    params = llm._converse_params()
+    assert params["outputConfig"] == output_config
+
+
+def test_converse_params_output_config_kwarg_override() -> None:
+    """Test that invoke-level outputConfig overrides constructor value."""
+    constructor_config = {
+        "textFormat": {
+            "type": "json_schema",
+            "structure": {
+                "jsonSchema": {
+                    "schema": '{"type": "object"}',
+                    "name": "constructor",
+                    "description": "constructor",
+                }
+            },
+        }
+    }
+    override_config = {
+        "textFormat": {
+            "type": "json_schema",
+            "structure": {
+                "jsonSchema": {
+                    "schema": '{"type": "string"}',
+                    "name": "override",
+                    "description": "override",
+                }
+            },
+        }
+    }
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        output_config=constructor_config,
+    )
+    params = llm._converse_params(outputConfig=override_config)
+    assert params["outputConfig"] == override_config
+
+
+def test_converse_params_no_output_config() -> None:
+    """Test that outputConfig is absent when not set."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+    params = llm._converse_params()
+    assert "outputConfig" not in params
+
+
+def test_with_structured_output_method_json_schema() -> None:
+    """Test that method='json_schema' produces pipeline with outputConfig bound."""
+    chat_model = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
+    )
+    structured = chat_model.with_structured_output(GetWeather, method="json_schema")
+    # The first step should be a RunnableBinding with output_config in kwargs
+    first_step = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, first_step).kwargs
+    assert "output_config" in bound_kwargs
+    output_config = bound_kwargs["output_config"]
+    assert output_config["textFormat"]["type"] == "json_schema"
+    json_schema = output_config["textFormat"]["structure"]["jsonSchema"]
+    assert json_schema["name"] == "GetWeather"
+    assert '"location"' in json_schema["schema"]
+
+
+def test_with_structured_output_method_json_schema_dict() -> None:
+    """Test that method='json_schema' works with dict schema."""
+    chat_model = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
+    )
+    schema = {
+        "title": "Joke",
+        "description": "A joke",
+        "type": "object",
+        "properties": {
+            "setup": {"type": "string"},
+            "punchline": {"type": "string"},
+        },
+        "required": ["setup", "punchline"],
+    }
+    structured = chat_model.with_structured_output(schema, method="json_schema")
+    first_step = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, first_step).kwargs
+    assert "output_config" in bound_kwargs
+    output_config = bound_kwargs["output_config"]
+    json_schema = output_config["textFormat"]["structure"]["jsonSchema"]
+    assert json_schema["name"] == "Joke"
+    assert json_schema["description"] == "A joke"
+
+
+def test_with_structured_output_default_method() -> None:
+    """Test that default method still uses function_calling (backward compat)."""
+    chat_model = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
+    )
+    structured = chat_model.with_structured_output(GetWeather)
+    # Default method uses tool binding, so first step should have tools in kwargs
+    first_step = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, first_step).kwargs
+    assert "tools" in bound_kwargs
+    assert "output_config" not in bound_kwargs

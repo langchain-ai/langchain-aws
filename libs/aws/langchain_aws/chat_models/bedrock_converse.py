@@ -284,6 +284,16 @@ class ChatBedrockConverse(BaseChatModel):
         Joke(setup='What do you call a cat that gets all dressed up?', punchline='A purrfessional!', rating=7)
         ```
 
+        Native JSON schema output (requires supported models, e.g. Claude 4.5+):
+        ```python
+        structured_model = model.with_structured_output(Joke, method="json_schema")
+        structured_model.invoke("Tell me a joke about cats")
+        ```
+
+        ```python
+        Joke(setup='Why was the cat sitting on the computer?', punchline='To keep an eye on the mouse!', rating=6)
+        ```
+
         See `ChatBedrockConverse.with_structured_output()` for more.
 
     Extended thinking:
@@ -595,6 +605,14 @@ class ChatBedrockConverse(BaseChatModel):
         If not provided, AWS uses the default tier.
         """,
     )
+
+    output_config: Optional[Dict[str, Any]] = None
+    """Output configuration for structured model responses.
+
+    Configures native JSON schema output format via the Bedrock ``outputConfig``
+    parameter. Only supported on select models (Claude 4.5+, select open-weight).
+    See https://docs.aws.amazon.com/bedrock/latest/userguide/structured-output.html
+    """
 
     request_metadata: Optional[Dict[str, str]] = None
     """Key-Value pairs that you can use to filter invocation logs."""
@@ -1338,6 +1356,23 @@ class ChatBedrockConverse(BaseChatModel):
         schema: _DictOrPydanticClass,
         *,
         include_raw: bool = False,
+        method: Literal["function_calling", "json_schema"] = "function_calling",
+        strict: Optional[bool] = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
+        if method == "json_schema":
+            return self._with_structured_output_json_schema(
+                schema, include_raw=include_raw, **kwargs
+            )
+        return self._with_structured_output_function_calling(
+            schema, include_raw=include_raw, strict=strict, **kwargs
+        )
+
+    def _with_structured_output_function_calling(
+        self,
+        schema: _DictOrPydanticClass,
+        *,
+        include_raw: bool = False,
         strict: Optional[bool] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
@@ -1405,6 +1440,76 @@ class ChatBedrockConverse(BaseChatModel):
         else:
             return llm | output_parser
 
+    def _with_structured_output_json_schema(
+        self,
+        schema: _DictOrPydanticClass,
+        *,
+        include_raw: bool = False,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
+        if isinstance(schema, type) and is_basemodel_subclass(schema):
+            json_schema = schema.model_json_schema()
+            schema_name = schema.__name__
+            schema_description = schema.__doc__ or schema_name
+        elif isinstance(schema, dict):
+            json_schema = schema
+            schema_name = str(schema.get("title", schema.get("name", "output_schema")))
+            schema_description = str(schema.get("description", schema_name))
+        else:
+            msg = (
+                f"Unsupported schema type: {type(schema)}. "
+                "Expected a Pydantic model class or a dict."
+            )
+            raise ValueError(msg)
+
+        output_config = {
+            "textFormat": {
+                "type": "json_schema",
+                "structure": {
+                    "jsonSchema": {
+                        "schema": json.dumps(json_schema),
+                        "name": schema_name,
+                        "description": schema_description,
+                    }
+                },
+            }
+        }
+
+        try:
+            llm = self.bind(
+                output_config=output_config,
+                ls_structured_output_format={
+                    "kwargs": {"method": "json_schema"},
+                    "schema": json_schema,
+                },
+                **kwargs,
+            )
+        except Exception:
+            llm = self.bind(output_config=output_config, **kwargs)
+
+        if isinstance(schema, type) and is_basemodel_subclass(schema):
+            from langchain_core.output_parsers import PydanticOutputParser
+
+            output_parser: OutputParserLike = PydanticOutputParser(
+                pydantic_object=schema
+            )
+        else:
+            from langchain_core.output_parsers import JsonOutputParser
+
+            output_parser = JsonOutputParser()
+
+        if include_raw:
+            parser_assign = RunnablePassthrough.assign(
+                parsed=itemgetter("raw") | output_parser, parsing_error=lambda _: None
+            )
+            parser_none = RunnablePassthrough.assign(parsed=lambda _: None)
+            parser_with_fallback = parser_assign.with_fallbacks(
+                [parser_none], exception_key="parsing_error"
+            )
+            return RunnableMap(raw=llm) | parser_with_fallback
+        else:
+            return llm | output_parser
+
     def _converse_params(
         self,
         *,
@@ -1426,6 +1531,7 @@ class ChatBedrockConverse(BaseChatModel):
             Literal["priority", "default", "flex", "reserved"]
         ] = None,
         requestMetadata: Optional[dict] = None,
+        outputConfig: Optional[dict] = None,
         stream: Optional[bool] = True,
     ) -> Dict[str, Any]:
         if not inferenceConfig:
@@ -1498,6 +1604,7 @@ class ChatBedrockConverse(BaseChatModel):
                 "performanceConfig": performanceConfig or self.performance_config,
                 "serviceTier": {"type": tier} if tier else None,
                 "requestMetadata": requestMetadata or self.request_metadata,
+                "outputConfig": outputConfig or self.output_config,
             }
         )
 
@@ -2318,6 +2425,8 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def _format_tools(
     tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool]],
+    *,
+    strict: Optional[bool] = None,
 ) -> List[Dict[Literal["toolSpec"], Dict[str, Union[Dict[str, Any], str]]]]:
     formatted_tools: List = []
     for tool in tools:
@@ -2333,6 +2442,8 @@ def _format_tools(
 
             tool_spec = formatted_tools[-1]["toolSpec"]
             tool_spec["description"] = tool_spec.get("description") or tool_spec["name"]
+            if strict is not None and "strict" not in tool_spec:
+                tool_spec["strict"] = strict
     return formatted_tools
 
 
