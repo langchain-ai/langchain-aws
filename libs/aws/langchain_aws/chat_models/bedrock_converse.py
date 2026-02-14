@@ -1,4 +1,5 @@
 import base64
+import copy
 import functools
 import json
 import logging
@@ -1452,7 +1453,7 @@ class ChatBedrockConverse(BaseChatModel):
             schema_name = schema.__name__
             schema_description = schema.__doc__ or schema_name
         elif isinstance(schema, dict):
-            json_schema = schema
+            json_schema = copy.deepcopy(schema)
             schema_name = str(schema.get("title", schema.get("name", "output_schema")))
             schema_description = str(schema.get("description", schema_name))
         else:
@@ -1461,6 +1462,10 @@ class ChatBedrockConverse(BaseChatModel):
                 "Expected a Pydantic model class or a dict."
             )
             raise ValueError(msg)
+
+        # Bedrock structured outputs require additionalProperties: false on all
+        # object-type schemas. Recursively ensure compliance.
+        _set_additional_properties_false(json_schema)
 
         output_config = {
             "textFormat": {
@@ -2423,6 +2428,30 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return lc_content
 
 
+def _set_additional_properties_false(schema: dict) -> None:
+    """Recursively set ``additionalProperties: false`` on object-type schemas.
+
+    Bedrock structured outputs require this on every object in the JSON schema.
+    Modifies *schema* in place. Also walks ``$defs``/``definitions``,
+    ``properties``, ``items``, and ``allOf``/``anyOf``/``oneOf``.
+    """
+    if schema.get("type") == "object":
+        schema.setdefault("additionalProperties", False)
+        for prop_schema in (schema.get("properties") or {}).values():
+            if isinstance(prop_schema, dict):
+                _set_additional_properties_false(prop_schema)
+    if "items" in schema and isinstance(schema["items"], dict):
+        _set_additional_properties_false(schema["items"])
+    for keyword in ("$defs", "definitions"):
+        for def_schema in (schema.get(keyword) or {}).values():
+            if isinstance(def_schema, dict):
+                _set_additional_properties_false(def_schema)
+    for keyword in ("allOf", "anyOf", "oneOf"):
+        for sub_schema in schema.get(keyword) or []:
+            if isinstance(sub_schema, dict):
+                _set_additional_properties_false(sub_schema)
+
+
 def _format_tools(
     tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool]],
     *,
@@ -2444,6 +2473,10 @@ def _format_tools(
             tool_spec["description"] = tool_spec.get("description") or tool_spec["name"]
             if strict is not None and "strict" not in tool_spec:
                 tool_spec["strict"] = strict
+            if tool_spec.get("strict"):
+                input_json = (tool_spec.get("inputSchema") or {}).get("json")
+                if isinstance(input_json, dict):
+                    _set_additional_properties_false(input_json)
     return formatted_tools
 
 

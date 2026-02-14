@@ -4047,3 +4047,46 @@ def test_with_structured_output_default_method() -> None:
     bound_kwargs = cast(RunnableBinding, first_step).kwargs
     assert "tools" in bound_kwargs
     assert "output_config" not in bound_kwargs
+
+
+def test_json_schema_adds_additional_properties_false() -> None:
+    """Test that json_schema method adds additionalProperties: false to schemas."""
+    chat_model = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
+    )  # type: ignore[call-arg]
+    structured = chat_model.with_structured_output(GetWeather, method="json_schema")
+    first_step = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, first_step).kwargs
+    output_config = bound_kwargs["output_config"]
+    import json
+
+    schema = json.loads(
+        output_config["textFormat"]["structure"]["jsonSchema"]["schema"]
+    )
+    assert schema["additionalProperties"] is False
+
+
+def test_json_schema_dict_not_mutated() -> None:
+    """Test that passing a dict schema does not mutate the original."""
+    schema = {
+        "title": "Joke",
+        "type": "object",
+        "properties": {"setup": {"type": "string"}},
+        "required": ["setup"],
+    }
+    chat_model = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
+    )  # type: ignore[call-arg]
+    chat_model.with_structured_output(schema, method="json_schema")
+    # Original dict should not have been modified
+    assert "additionalProperties" not in schema
+
+
+def test_format_tools_strict_adds_additional_properties() -> None:
+    """Test that strict=True on _format_tools adds additionalProperties: false."""
+    tools = _format_tools([GetWeather], strict=True)
+    tool_spec = tools[0]["toolSpec"]
+    assert isinstance(tool_spec, dict)
+    input_schema = tool_spec["inputSchema"]
+    assert isinstance(input_schema, dict)
+    assert input_schema["json"]["additionalProperties"] is False
