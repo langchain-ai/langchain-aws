@@ -615,6 +615,30 @@ def test_claude_thinking_tool_choice_auto_ok(mock_create_aws_client) -> None:
     }
 
 
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_claude_thinking_with_structured_output_ok(mock_create_aws_client) -> None:
+    """Test with_structured_output with thinking mode omits forced tool choice."""
+    from pydantic import BaseModel
+
+    class WeatherResponse(BaseModel):
+        temperature: int
+        condition: str
+
+    mock_client = MagicMock()
+    mock_create_aws_client.return_value = mock_client
+
+    chat = ChatBedrock(
+        model_id="anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        model_kwargs={
+            "thinking": {"type": "enabled", "budget_tokens": 2048},
+        },
+    )
+
+    structured_llm = chat.with_structured_output(WeatherResponse)
+    assert structured_llm is not None
+
+
 @pytest.mark.parametrize(
     "model_id",
     [
