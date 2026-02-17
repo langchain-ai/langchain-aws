@@ -76,7 +76,7 @@ class DynamoDBStore(BaseStore):
         ```python
         from langgraph_checkpoint_aws import DynamoDBStore
 
-        with DynamoDBStore.from_conn_string("my-store-table") as store:
+        with DynamoDBStore.from_table_name("my-store-table") as store:
             store.setup()
             store.put(("docs",), "doc1", {"text": "Hello"})
             items = store.search(("docs",))
@@ -180,7 +180,7 @@ class DynamoDBStore(BaseStore):
 
     @classmethod
     @contextmanager
-    def from_conn_string(
+    def from_table_name(
         cls,
         table_name: str,
         *,
@@ -210,7 +210,7 @@ class DynamoDBStore(BaseStore):
 
         Example:
             ```python
-            with DynamoDBStore.from_conn_string("my-table") as store:
+            with DynamoDBStore.from_table_name("my-table") as store:
                 store.setup()
                 store.put(("docs",), "doc1", {"text": "Hello"})
             ```

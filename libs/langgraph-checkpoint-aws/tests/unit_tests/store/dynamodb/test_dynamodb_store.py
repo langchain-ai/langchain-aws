@@ -126,24 +126,24 @@ class TestDynamoDBStoreInit:
             assert store.max_read_capacity_units == 20
             assert store.max_write_capacity_units == 30
 
-    def test_from_conn_string(self, mock_dynamodb_client):
+    def test_from_table_name(self, mock_dynamodb_client):
         """Test creating store from connection string."""
         with patch(
             "langgraph_checkpoint_aws.store.dynamodb.base.create_dynamodb_client",
             return_value=mock_dynamodb_client,
         ):
-            with DynamoDBStore.from_conn_string(
+            with DynamoDBStore.from_table_name(
                 "test_table", region_name="us-east-1"
             ) as store:
                 assert store.table_name == "test_table"
 
-    def test_from_conn_string_with_endpoint_url(self, mock_dynamodb_client):
+    def test_from_table_name_with_endpoint_url(self, mock_dynamodb_client):
         """Test creating store from connection string with endpoint_url."""
         with patch(
             "langgraph_checkpoint_aws.store.dynamodb.base.create_dynamodb_client",
             return_value=mock_dynamodb_client,
         ):
-            with DynamoDBStore.from_conn_string(
+            with DynamoDBStore.from_table_name(
                 "test_table",
                 region_name="us-east-1",
                 endpoint_url="http://localhost:8000",

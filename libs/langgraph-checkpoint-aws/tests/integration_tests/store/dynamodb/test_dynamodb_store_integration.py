@@ -343,9 +343,9 @@ def test_sync_complex_values(store: DynamoDBStore) -> None:
 
 
 @pytest.mark.skipif(not DYNAMODB_AVAILABLE, reason="DynamoDB Local not available")
-def test_sync_from_conn_string(dynamodb_endpoint_url: str, table_name: str) -> None:
-    """Test creating store via from_conn_string context manager."""
-    with DynamoDBStore.from_conn_string(
+def test_sync_from_table_name(dynamodb_endpoint_url: str, table_name: str) -> None:
+    """Test creating store via from_table_name context manager."""
+    with DynamoDBStore.from_table_name(
         table_name,
         region_name="us-east-1",
         endpoint_url=dynamodb_endpoint_url,

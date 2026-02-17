@@ -174,7 +174,7 @@ items = await store.abatch(get_ops)
 ### Context Manager
 
 ```python
-with DynamoDBStore.from_conn_string(
+with DynamoDBStore.from_table_name(
     "my-store-table",
     region_name="us-east-1",
 ) as store:
