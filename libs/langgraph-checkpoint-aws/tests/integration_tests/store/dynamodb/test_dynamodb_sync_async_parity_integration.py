@@ -4,8 +4,6 @@ This test module validates that DynamoDBStore sync and async operations
 return consistent results for the same operations.
 """
 
-from __future__ import annotations
-
 import uuid
 from collections.abc import Generator
 
