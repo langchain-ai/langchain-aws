@@ -117,3 +117,27 @@ class TestCohereV4Fixes:
             # Verify the batching function was called with is_v4=True
             mock_batch.assert_called_once_with(medium_texts, is_v4=True)
             assert len(result) == 2
+
+
+class TestCohereEmbeddings:
+    """Test Cohere embeddings."""
+
+    @pytest.mark.asyncio
+    async def test_aembed_documents_uses_document_embedding(self) -> None:
+        """Test that aembed_documents uses document embedding."""
+        embeddings = BedrockEmbeddings(model_id="us.cohere.embed-v4:0")
+        texts = ["test-text-1", "test-text-2"]
+        with patch.object(BedrockEmbeddings, "_invoke_model") as mock_invoke_model:
+            mock_invoke_model.return_value = {
+                "embeddings": {"float": [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]}
+            }
+            result = await embeddings.aembed_documents(texts)
+            mock_invoke_model.assert_called_once()
+            call_args = mock_invoke_model.call_args
+            input_body = call_args.kwargs["input_body"]
+            assert input_body["input_type"] == "search_document"
+            assert input_body["texts"] == texts
+
+        assert len(result) == 2
+        assert len(result[0]) == 3
+        assert len(result[1]) == 3
