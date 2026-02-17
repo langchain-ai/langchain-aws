@@ -2,12 +2,13 @@
 
 from typing import Any
 
+from .dynamodb import DynamoDBStore
+
 # Store the import error for later use
 _import_error: ImportError | None = None
 
 # Conditional imports for optional dependencies
 try:
-    from .dynamodb import DynamoDBStore
     from .valkey import AsyncValkeyStore, ValkeyIndexConfig, ValkeyStore
 
     __all__ = ["AsyncValkeyStore", "DynamoDBStore", "ValkeyStore", "ValkeyIndexConfig"]
@@ -27,6 +28,5 @@ except ImportError as e:
     AsyncValkeyStore: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
     ValkeyIndexConfig: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
     ValkeyStore: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
-    DynamoDBStore: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
 
     __all__ = ["AsyncValkeyStore", "DynamoDBStore", "ValkeyStore", "ValkeyIndexConfig"]
