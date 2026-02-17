@@ -15,6 +15,9 @@ from langgraph_checkpoint_aws.agentcore.store import (
 from langgraph_checkpoint_aws.checkpoint.dynamodb import (
     DynamoDBSaver,
 )
+from langgraph_checkpoint_aws.store.dynamodb import (
+    DynamoDBStore,
+)
 
 # Conditional imports for Valkey functionality
 try:
@@ -25,9 +28,6 @@ try:
         AsyncValkeyStore,
         ValkeyIndexConfig,
         ValkeyStore,
-    )
-    from langgraph_checkpoint_aws.store.dynamodb import (
-        DynamoDBStore,
     )
     from langgraph_checkpoint_aws.store.valkey.exceptions import (
         DocumentParsingError as ValkeyDocumentParsingError,
