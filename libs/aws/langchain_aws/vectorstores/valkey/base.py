@@ -47,8 +47,8 @@ def check_index_exists(client: GlideClientType, index_name: str) -> bool:
         from glide_sync import ft
 
         ft.info(client, index_name)
-    except Exception:
-        logger.debug("Index does not exist")
+    except (KeyError, ValueError, RuntimeError) as e:
+        logger.debug(f"Index does not exist: {e}")
         return False
     logger.debug("Index already exists")
     return True
@@ -60,7 +60,7 @@ class ValkeyVectorStore(VectorStore):
     To use, you should have the `valkey-glide-sync` python package installed:
 
         ```bash
-        pip install valkey-glide-sync
+        pip install langchain-aws[valkey]
         ```
 
     Connection URL schemas:
@@ -175,9 +175,10 @@ class ValkeyVectorStore(VectorStore):
             metadata = metadatas[i] if metadatas else {}
             
             # Build field-value mapping
+            vector_field_name = self.vector_schema.get("name", "content_vector")
             field_value_map = {
                 "content": text,
-                "content_vector": _array_to_buffer(
+                vector_field_name: _array_to_buffer(
                     embeddings[i], dtype=np.float32
                 ),
             }
@@ -301,6 +302,7 @@ class ValkeyVectorStore(VectorStore):
         )
 
         # results format: [count, {key: {field: value}}]
+        vector_field_name = self.vector_schema.get("name", "content_vector")
         docs = []
         if len(results) > 1 and isinstance(results[1], dict):
             for doc_key, doc_data in results[1].items():
@@ -317,7 +319,7 @@ class ValkeyVectorStore(VectorStore):
                     metadata = {}
                     for key, value in doc_data.items():
                         key_str = key.decode("utf-8") if isinstance(key, bytes) else key
-                        if key_str not in ["content", "content_vector", "score"]:
+                        if key_str not in ["content", vector_field_name, "score"]:
                             if isinstance(value, bytes):
                                 value = value.decode("utf-8")
                             metadata[key_str] = value

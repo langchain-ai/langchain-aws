@@ -91,8 +91,6 @@ vectorstore = ValkeyVectorStore(
 # Add texts
 vectorstore.add_texts(texts, metadatas=metadatas)
 
-vectorstore.similarity_search_with_score_by_vector = vectorstore.similarity_search_with_score_by_vector.__get__(vectorstore, ValkeyVectorStore)
-
 # Perform similarity search
 print("\nSearching for: 'fast database'")
 results = vectorstore.similarity_search("fast database", k=3)

@@ -21,6 +21,12 @@ def get_client(valkey_url: str, **kwargs: Any) -> GlideClientType:
     Returns:
         GLIDE client instance.
 
+    Raises:
+        ImportError: If valkey-glide-sync package is not installed.
+        ConnectionError: If unable to connect to Valkey server.
+        TimeoutError: If connection attempt times out.
+        ValueError: If connection configuration is invalid.
+
     Example:
         ```python
         from langchain_aws.utilities.valkey import get_client
@@ -37,26 +43,25 @@ def get_client(valkey_url: str, **kwargs: Any) -> GlideClientType:
             GlideClusterClientConfiguration,
             NodeAddress,
         )
-    except ImportError:
-        raise ImportError(
+    except ImportError as e:
+        msg = (
             "Could not import valkey-glide-sync python package. "
-            "Please install it with `pip install valkey-glide-sync>=2.0.0`."
+            "Please install it with `pip install langchain-aws[valkey]`."
         )
+        raise ImportError(msg) from e
 
     # Parse URL
     host, port = _parse_valkey_url(valkey_url)
     addresses = [NodeAddress(host, port)]
 
-    # Try cluster first
+    # Try cluster first, fall back to standalone
     try:
         config = GlideClusterClientConfiguration(addresses=addresses, **kwargs)
-        client = GlideClusterClient.create(config)
-        return client
-    except Exception:
-        # Fall back to standalone
+        return GlideClusterClient.create(config)
+    except (ConnectionError, TimeoutError, ValueError) as e:
+        logger.debug(f"Cluster connection failed, falling back to standalone: {e}")
         config = GlideClientConfiguration(addresses=addresses, **kwargs)
-        client = GlideClient.create(config)
-        return client
+        return GlideClient.create(config)
 
 
 def _parse_valkey_url(url: str) -> tuple[str, int]:
