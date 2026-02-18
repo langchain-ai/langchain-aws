@@ -3195,11 +3195,11 @@ def test_service_tier_passed_to_converse_stream() -> None:
 
 def test_additional_model_request_fields_merge_no_duplicate_keys() -> None:
     """Test that additional_model_request_fields from constructor and invoke are merged
-    correctly without duplicate keys in different cases.
+    correctly when both use the same key.
 
     This test ensures that when additional_model_request_fields is provided both
     at initialization and at invocation, the final request contains only one
-    correctly cased field (snake_case), not both reasoning_effort and reasoningEffort.
+    field and the invoke value wins.
     """
     mocked_client = mock.MagicMock()
     mocked_client.converse.return_value = {
@@ -3231,7 +3231,7 @@ def test_additional_model_request_fields_merge_no_duplicate_keys() -> None:
     additional_fields = call_kwargs["additionalModelRequestFields"]
     assert isinstance(additional_fields, dict)
 
-    # Verify that the field is in snake_case (not camelCase)
+    # Verify the key is passed through exactly as provided
     assert "reasoning_effort" in additional_fields
     assert "reasoningEffort" not in additional_fields
 
@@ -3296,60 +3296,6 @@ def test_additional_model_request_fields_merge_invoke_only() -> None:
     assert additional_fields["reasoning_effort"] == "high"
 
 
-def test_additional_model_request_fields_camel_constructor_snake_invoke() -> None:
-    """Test camelCase at constructor and snake_case at invoke merge correctly."""
-    mocked_client = mock.MagicMock()
-    mocked_client.converse.return_value = {
-        "output": {"message": {"content": [{"text": "Hello!"}]}},
-        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
-    }
-
-    llm = ChatBedrockConverse(
-        client=mocked_client,
-        model="openai.gpt-oss-120b-1:0",
-        region_name="us-west-2",
-        additional_model_request_fields={"reasoningEffort": "low"},
-    )
-
-    llm.invoke(
-        [HumanMessage(content="Hi")],
-        additional_model_request_fields={"reasoning_effort": "medium"},
-    )
-
-    call_kwargs = mocked_client.converse.call_args[1]
-    additional_fields = call_kwargs["additionalModelRequestFields"]
-
-    assert list(additional_fields.keys()) == ["reasoning_effort"]
-    assert additional_fields["reasoning_effort"] == "medium"
-
-
-def test_additional_model_request_fields_snake_constructor_camel_invoke() -> None:
-    """Test snake_case at constructor and camelCase at invoke merge correctly."""
-    mocked_client = mock.MagicMock()
-    mocked_client.converse.return_value = {
-        "output": {"message": {"content": [{"text": "Hello!"}]}},
-        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
-    }
-
-    llm = ChatBedrockConverse(
-        client=mocked_client,
-        model="openai.gpt-oss-120b-1:0",
-        region_name="us-west-2",
-        additional_model_request_fields={"reasoning_effort": "low"},
-    )
-
-    llm.invoke(
-        [HumanMessage(content="Hi")],
-        additional_model_request_fields={"reasoningEffort": "high"},
-    )
-
-    call_kwargs = mocked_client.converse.call_args[1]
-    additional_fields = call_kwargs["additionalModelRequestFields"]
-
-    assert list(additional_fields.keys()) == ["reasoning_effort"]
-    assert additional_fields["reasoning_effort"] == "high"
-
-
 def test_additional_model_request_fields_invoke_overrides_constructor() -> None:
     """Test that invoke values take priority over constructor values for same key.
 
@@ -3382,6 +3328,79 @@ def test_additional_model_request_fields_invoke_overrides_constructor() -> None:
     # Verify invoke value takes priority over constructor value
     assert additional_fields["reasoning_effort"] == "invoke_value"
     assert additional_fields["reasoning_effort"] != "constructor_value"
+
+
+def test_additional_model_request_fields_camel_keys_passthrough() -> None:
+    """Test additional_model_request_fields keys are not transformed."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )
+
+    llm.invoke(
+        [HumanMessage(content="Hi")],
+        additional_model_request_fields={
+            "inferenceConfig": {"topK": 50},
+        },
+    )
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+
+    assert "inferenceConfig" in additional_fields
+    assert "inference_config" not in additional_fields
+    assert additional_fields["inferenceConfig"] == {"topK": 50}
+
+
+def test_additional_model_request_fields_keys_passthrough_stream() -> None:
+    """Test that additional_model_request_fields keys are not transformed
+    when streaming."""
+    mocked_client = mock.MagicMock()
+    mock_stream = mock.MagicMock()
+    mock_stream.__iter__ = mock.Mock(
+        return_value=iter(
+            [
+                {"messageStart": {"role": "assistant"}},
+                {
+                    "contentBlockDelta": {
+                        "delta": {"text": "Hi"},
+                        "contentBlockIndex": 0,
+                    }
+                },
+                {"messageStop": {"stopReason": "end_turn"}},
+            ]
+        )
+    )
+    mocked_client.converse_stream.return_value = {"stream": mock_stream}
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )
+
+    list(
+        llm.stream(
+            [HumanMessage(content="Hi")],
+            additional_model_request_fields={
+                "inferenceConfig": {"topK": 50},
+            },
+        )
+    )
+
+    call_kwargs = mocked_client.converse_stream.call_args[1]
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+
+    assert "inferenceConfig" in additional_fields
+    assert "inference_config" not in additional_fields
+    assert additional_fields["inferenceConfig"] == {"topK": 50}
 
 
 def test_stream_closes_event_stream() -> None:

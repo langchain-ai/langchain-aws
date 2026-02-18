@@ -1052,10 +1052,16 @@ class ChatBedrockConverse(BaseChatModel):
         logger.debug(f"System message to bedrock: {system}")
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
+        additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
         params = self._converse_params(
             stop=stop,
             **_snake_to_camel_keys(
                 filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
+            ),
+            **(
+                {"additionalModelRequestFields": additional_fields}
+                if additional_fields is not None
+                else {}
             ),
         )
 
@@ -1109,10 +1115,16 @@ class ChatBedrockConverse(BaseChatModel):
 
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
+        additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
         params = self._converse_params(
             stop=stop,
             **_snake_to_camel_keys(
                 filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
+            ),
+            **(
+                {"additionalModelRequestFields": additional_fields}
+                if additional_fields is not None
+                else {}
             ),
         )
 
@@ -1449,26 +1461,16 @@ class ChatBedrockConverse(BaseChatModel):
         tier = serviceTier or self.service_tier
 
         # Merge additional_model_request_fields: invoke-level values override
-        # constructor defaults.
-        # Both sides must be normalized to snake_case before merging to ensure
-        # that keys like "reasoningEffort" and "reasoning_effort" are treated
-        # as the same key. The final result stays in snake_case for the API.
+        # constructor defaults. Values are passed through without key
+        # transformation -- the user is responsible for providing keys in
+        # the specific format that the target model expects.
         constructor_fields = self.additional_model_request_fields
         invoke_fields = additionalModelRequestFields
-        excluded = {"reasoningConfig", "inputSchema", "properties", "thinking"}
 
         if constructor_fields or invoke_fields:
             merged_additional_fields = {
-                **(
-                    _camel_to_snake_keys(constructor_fields, excluded_keys=excluded)
-                    if constructor_fields
-                    else {}
-                ),
-                **(
-                    _camel_to_snake_keys(invoke_fields, excluded_keys=excluded)
-                    if invoke_fields
-                    else {}
-                ),
+                **(constructor_fields if constructor_fields else {}),
+                **(invoke_fields if invoke_fields else {}),
             }
         else:
             merged_additional_fields = {}
