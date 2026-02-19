@@ -605,6 +605,63 @@ def test_agent_loop_streaming(output_version: Literal["v0", "v1"]) -> None:
     assert isinstance(response, AIMessage)
 
 
+def test_streaming_tool_use_round_trip() -> None:
+    """Test that streaming tool call messages can be sent back to Bedrock.
+
+    Regression test for https://github.com/langchain-ai/langchain-aws/issues/827.
+    After streaming, content[].tool_use.input is a JSON string instead of a
+    dict. When a message is reconstructed from content alone (e.g., loaded
+    from a checkpoint without tool_calls), _lc_content_to_bedrock must parse
+    string input to a dict to avoid Bedrock ValidationException.
+    """
+
+    @tool
+    def get_weather(city: str) -> str:
+        """Get the current weather for a city."""
+        return "It's sunny and 72F."
+
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    )
+    llm_with_tools = llm.bind_tools([get_weather], tool_choice="any")
+
+    input_message = HumanMessage("What is the weather in Paris?")
+
+    full: Optional[BaseMessageChunk] = None
+    for chunk in llm_with_tools.stream([input_message]):
+        assert isinstance(chunk, AIMessageChunk)
+        full = chunk if full is None else full + chunk
+    assert isinstance(full, AIMessageChunk)
+
+    for tc_chunk in full.tool_call_chunks:
+        assert tc_chunk["args"] is None or isinstance(tc_chunk["args"], str)
+
+    assert len(full.tool_calls) == 1
+    tool_call = full.tool_calls[0]
+    assert tool_call["name"] == "get_weather"
+    assert isinstance(tool_call["args"], dict)
+    assert isinstance(full.content, list)
+    tool_block = next(
+        b for b in full.content if isinstance(b, dict) and b.get("type") == "tool_use"
+    )
+    assert isinstance(tool_block["input"], str), (
+        "After streaming accumulation, content[].tool_use.input should be a "
+        "string. If this assertion fails, the streaming behavior has changed "
+        "and this test may need updating."
+    )
+
+    restored_msg = AIMessage(content=full.content)
+    assert restored_msg.tool_calls == []
+
+    tool_result = ToolMessage(
+        content=get_weather.invoke(tool_call).content,
+        tool_call_id=tool_call["id"],
+    )
+
+    response = llm_with_tools.invoke([input_message, restored_msg, tool_result])
+    assert isinstance(response, AIMessage)
+
+
 @pytest.mark.default_cassette("test_thinking.yaml.gz")
 @pytest.mark.vcr
 @pytest.mark.parametrize("output_version", ["v0", "v1"])

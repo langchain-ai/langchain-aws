@@ -58,6 +58,7 @@ from langchain_core.utils.function_calling import (
     convert_to_openai_function,
     convert_to_openai_tool,
 )
+from langchain_core.utils.json import parse_partial_json
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 from langchain_core.utils.utils import _build_model_kwargs
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
@@ -2026,22 +2027,28 @@ def _lc_content_to_bedrock(
             # Assume block in bedrock document format
             bedrock_content.append({"document": block["document"]})
         elif block["type"] == "tool_use":
+            tool_input = block["input"]
+            if isinstance(tool_input, str):
+                tool_input = parse_partial_json(tool_input) if tool_input else {}
             bedrock_content.append(
                 {
                     "toolUse": {
                         "toolUseId": block["id"],
-                        "input": block["input"],
+                        "input": tool_input,
                         "name": block["name"],
                     }
                 }
             )
         elif block["type"] == "server_tool_use":
             # System tools use toolUse format (same as regular tools)
+            tool_input = block["input"]
+            if isinstance(tool_input, str):
+                tool_input = parse_partial_json(tool_input) if tool_input else {}
             bedrock_content.append(
                 {
                     "toolUse": {
                         "toolUseId": block["id"],
-                        "input": block["input"],
+                        "input": tool_input,
                         "name": block["name"],
                     }
                 }
