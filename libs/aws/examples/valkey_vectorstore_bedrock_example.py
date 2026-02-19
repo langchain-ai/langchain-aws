@@ -3,7 +3,7 @@
 This example demonstrates how to use the ValkeyVectorStore for vector similarity search.
 
 Requirements:
-    - Valkey server running (e.g., docker run -p 6379:6379 valkey/valkey:latest)
+    - Valkey server with search module (e.g., docker run -p 6379:6379 valkey/valkey-bundle:latest)
     - AWS credentials configured for Bedrock access
     - Install: pip install langchain-aws[valkey]
 """

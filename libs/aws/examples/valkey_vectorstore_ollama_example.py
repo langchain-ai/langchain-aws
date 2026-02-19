@@ -4,7 +4,7 @@ This example demonstrates how to use the ValkeyVectorStore with Ollama embedding
 for vector similarity search.
 
 Requirements:
-    - Valkey server running with search module loaded
+    - Valkey server with search module (e.g., docker run -p 6379:6379 valkey/valkey-bundle:latest)
     - Ollama running with nomic-embed-text model
     - Install: pip install langchain-aws[valkey] langchain-ollama
     - Set OLLAMA_HOST environment variable (defaults to http://localhost:11434)

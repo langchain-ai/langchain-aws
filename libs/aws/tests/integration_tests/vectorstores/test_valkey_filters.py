@@ -59,14 +59,14 @@ def vectorstore(valkey_url: str, embeddings: DeterministicFakeEmbedding, index_n
             keys = client.keys(f"doc:{index_name}:*")
             if keys:
                 client.delete(keys)
-        except Exception:
-            pass
+        except (GlideError, ValueError):
+            pass  # No keys to delete
         
         # Drop index if exists
         try:
             client.custom_command(["FT.DROPINDEX", index_name])
-        except Exception:
-            pass
+        except (GlideError, ValueError):
+            pass  # Index doesn't exist
         
         # Create index using raw FT.CREATE command
         # Schema: VECTOR content_vector FLAT 6 TYPE FLOAT32 DIM 128 DISTANCE_METRIC COSINE TAG category NUMERIC year NUMERIC price
@@ -131,8 +131,8 @@ def vectorstore(valkey_url: str, embeddings: DeterministicFakeEmbedding, index_n
                 client.delete(keys)
             # Drop the index
             client.custom_command(["FT.DROPINDEX", index_name])
-        except Exception:
-            pass
+        except (GlideError, ValueError):
+            pass  # Cleanup failed, index may not exist
         finally:
             client.close()
     

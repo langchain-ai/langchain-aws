@@ -125,6 +125,10 @@ class ValkeyVectorStore(VectorStore):
             relevance_score_fn: Function to compute relevance score.
             key_prefix: Prefix for document keys.
             **kwargs: Additional arguments to pass to GLIDE client.
+
+        Raises:
+            ValueError: If unable to connect to Valkey server.
+            ImportError: If valkey-glide-sync package is not installed.
         """
         self.index_name = index_name
         self._embeddings = embedding
