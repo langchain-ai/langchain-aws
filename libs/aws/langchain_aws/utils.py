@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 from abc import abstractmethod
@@ -7,6 +8,8 @@ from botocore.exceptions import BotoCoreError, UnknownServiceError
 from langchain_core.messages import AIMessage
 from packaging import version
 from pydantic import SecretStr
+
+logger = logging.getLogger(__name__)
 
 MESSAGE_ROLES = Literal["system", "user", "assistant"]
 MESSAGE_FORMAT = Dict[Literal["role", "content"], Union[MESSAGE_ROLES, str]]
@@ -135,6 +138,7 @@ def create_aws_client(
     aws_session_token: Optional[SecretStr] = None,
     endpoint_url: Optional[str] = None,
     config: Any = None,
+    api_key: Optional[SecretStr] = None,
 ) -> Any:
     """Helper function to validate AWS credentials and create an AWS client.
 
@@ -147,6 +151,8 @@ def create_aws_client(
         aws_session_token: AWS session token.
         endpoint_url: The complete URL to use for the constructed client.
         config: Advanced client configuration options.
+        api_key: Bedrock API key for bearer token authentication.
+            If provided, sets AWS_BEARER_TOKEN_BEDROCK env variable.
     Returns:
         boto3.client: An AWS service client instance.
 
@@ -159,6 +165,24 @@ def create_aws_client(
             region_name or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
         )
 
+        has_aws_credentials = bool(
+            credentials_profile_name
+            or aws_access_key_id
+            or aws_secret_access_key
+            or aws_session_token
+        )
+        has_api_key = bool(api_key and api_key.get_secret_value())
+
+        if has_api_key and has_aws_credentials:
+            logger.warning(
+                "Both api_key and AWS credentials were provided. "
+                "Using api_key for authentication; AWS credentials "
+                "will be ignored."
+            )
+
+        if has_api_key:
+            os.environ["AWS_BEARER_TOKEN_BEDROCK"] = api_key.get_secret_value()  # type: ignore[union-attr]
+
         client_params = {
             "service_name": service_name,
             "region_name": region_name,
@@ -167,12 +191,7 @@ def create_aws_client(
         }
         client_params = {k: v for k, v in client_params.items() if v}
 
-        needs_session = bool(
-            credentials_profile_name
-            or aws_access_key_id
-            or aws_secret_access_key
-            or aws_session_token
-        )
+        needs_session = not has_api_key and has_aws_credentials
 
         if not needs_session:
             return boto3.client(**client_params)

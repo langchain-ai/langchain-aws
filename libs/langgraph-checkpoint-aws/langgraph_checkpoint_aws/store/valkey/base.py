@@ -20,7 +20,7 @@ from langgraph.store.base import (
     SearchItem,
     TTLConfig,
 )
-from langgraph.store.base.embed import ensure_embeddings, get_text_at_path
+from langgraph.store.base.embed import ensure_embeddings
 from valkey import Valkey
 from valkey.connection import ConnectionPool
 
@@ -436,7 +436,7 @@ class BaseValkeyStore(BaseStore):
             updated_at=updated_at,
         )
 
-    def _handle_put_core(self, op: PutOp) -> tuple[str, dict[str, str] | None]:
+    def _handle_put_core(self, op: PutOp) -> tuple[str, dict[str, str | bytes] | None]:
         """Core put operation logic shared between sync and async implementations.
 
         Returns:
@@ -451,38 +451,23 @@ class BaseValkeyStore(BaseStore):
             # Handle deletion
             return key, None
 
-        # Generate embeddings if indexing is enabled
+        # Note: Embedding generation is handled by sync/async implementations
+        # after calling this method, to properly handle sync vs async contexts.
+        # vector parameter is left as None here and will be populated by
+        # _handle_put (sync) or _handle_put_async (async) methods
         vector = None
-        if self.embeddings and op.index is not False:
-            try:
-                fields = op.index or self.index_fields
-                if fields:
-                    texts: list[str] = []
-                    for field in fields:
-                        field_value = get_text_at_path(op.value, field)
-                        if isinstance(field_value, list):
-                            texts.extend(str(v) for v in field_value)
-                        elif field_value:
-                            texts.append(str(field_value))
-
-                    if texts:
-                        # This will be handled differently by sync/async implementations
-                        vector = self._generate_embeddings(texts)
-            except Exception as e:
-                logger.error(f"Error generating embeddings: {e}")
-
         # Use DocumentProcessor to create hash fields for storage
         hash_fields = DocumentProcessor.create_hash_fields(
             op.value, vector, self.index_fields
         )
 
-        return key, hash_fields
+        # Add namespace and key fields for FT index filtering
+        # These are used by the search index for namespace-based filtering
+        namespace_str = "/".join(op.namespace)
+        hash_fields["namespace"] = namespace_str
+        hash_fields["key"] = op.key
 
-    def _generate_embeddings(self, texts: list[str]) -> list[float] | None:
-        """Generate embeddings for texts. Override in subclasses for sync/async."""
-        # This is a placeholder - subclasses should override this method
-        # to handle sync vs async embedding generation appropriately
-        return None
+        return key, hash_fields
 
     def _handle_list_core(
         self, op: ListNamespacesOp, all_keys: list[str]

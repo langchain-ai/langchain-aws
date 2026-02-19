@@ -20,6 +20,7 @@ from typing import (
 )
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import (
     BaseChatModel,
     LangSmithParams,
@@ -536,6 +537,24 @@ def _format_anthropic_messages(
                                     processed_list.append(
                                         {"type": "image", "source": source}
                                     )
+                                elif (
+                                    isinstance(list_item, dict)
+                                    and list_item.get("type") == "text"
+                                ):
+                                    # Strip extra fields that are not accepted
+                                    # by the Bedrock API.
+                                    formatted_item: Dict[str, Any] = {
+                                        k: v
+                                        for k, v in list_item.items()
+                                        if k
+                                        in (
+                                            "type",
+                                            "text",
+                                            "cache_control",
+                                            "citations",
+                                        )
+                                    }
+                                    processed_list.append(formatted_item)
                                 else:
                                     # Keep other items as is
                                     processed_list.append(list_item)
@@ -1279,8 +1298,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                         forced = True
                 if forced:
                     raise ValueError(
-                        "Anthropic Claude (3.7/4/4.1) with thinking enabled does not "
-                        "support forced tool use. Remove forced tool_choice (e.g. "
+                        "Anthropic Claude (3.7/4/4.1/4.5) with thinking enabled does "
+                        "not support forced tool use. Remove forced tool_choice (e.g. "
                         "'any' or a specific tool), or set tool_choice='auto', or "
                         "disable thinking."
                     )
@@ -1438,14 +1457,35 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
 
         tool_name = convert_to_anthropic_tool(schema)["name"]
-        llm = self.bind_tools(
-            [schema],
-            tool_choice=tool_name,
-            ls_structured_output_format={
-                "kwargs": {"method": "function_calling"},
-                "schema": convert_to_openai_tool(schema),
-            },
-        )
+
+        base_model = self._get_base_model()
+        has_thinking = any(
+            x in base_model
+            for x in (
+                "claude-3-7-",
+                "claude-opus-4-",
+                "claude-sonnet-4-",
+                "claude-haiku-4-",
+            )
+        ) and thinking_in_params(self.model_kwargs or {})
+
+        if has_thinking:
+            llm = self.bind_tools(
+                [schema],
+                ls_structured_output_format={
+                    "kwargs": {"method": "function_calling"},
+                    "schema": convert_to_openai_tool(schema),
+                },
+            )
+        else:
+            llm = self.bind_tools(
+                [schema],
+                tool_choice=tool_name,
+                ls_structured_output_format={
+                    "kwargs": {"method": "function_calling"},
+                    "schema": convert_to_openai_tool(schema),
+                },
+            )
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             if self.streaming:
                 output_parser: OutputParserLike = PydanticToolsParser(
@@ -1462,6 +1502,19 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 )
             else:
                 output_parser = ToolsOutputParser(first_tool_only=True, args_only=True)
+
+        if has_thinking:
+
+            def _raise_if_no_tool_calls(message: AIMessage) -> AIMessage:
+                if not message.tool_calls:
+                    raise OutputParserException(
+                        "Model with thinking enabled was expected to call tools "
+                        "but did not. This can happen when tool_choice is downgraded "
+                        "from forced to 'auto' due to thinking mode limitations."
+                    )
+                return message
+
+            llm = llm | _raise_if_no_tool_calls
 
         if include_raw:
             parser_assign = RunnablePassthrough.assign(
@@ -1491,6 +1544,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 "additional_model_response_field_paths",
                 "performance_config",
                 "request_metadata",
+                "service_tier",
             )
         }
         if self.max_tokens:
@@ -1499,6 +1553,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             kwargs["temperature"] = self.temperature
         if self.stop_sequences:
             kwargs["stop_sequences"] = self.stop_sequences
+        if self.service_tier:
+            kwargs["service_tier"] = self.service_tier
 
         return ChatBedrockConverse(
             client=self.client,

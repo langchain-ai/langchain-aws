@@ -1,7 +1,7 @@
 """Comprehensive tests to improve coverage for AsyncValkeyStore."""
 
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from langgraph.store.base import (
@@ -382,252 +382,24 @@ class TestAsyncValkeyStoreSafeParseKeys:
         assert result == []
 
 
-class TestAsyncValkeyStoreSearchWithHash:
-    """Test hash-based search functionality."""
-
-    async def test_search_with_hash_basic(self, mock_valkey_client):
-        """Test basic hash search."""
-        store = AsyncValkeyStore(mock_valkey_client)
-        store._is_async_client = False  # Force sync client path
-
-        # Mock scan to properly simulate cursor progression to avoid infinite
-        # loops
-        scan_call_count = 0
-
-        def mock_scan(cursor, match=None, count=None):
-            nonlocal scan_call_count
-            scan_call_count += 1
-            if scan_call_count == 1:
-                # First call returns some keys with non-zero cursor
-                return (123, ["langgraph:test/key1", "langgraph:test/key2"])
-            else:
-                # Subsequent calls return zero cursor to end iteration
-                return (0, [])
-
-        # Mock the get method to return JSON data
-        def mock_get(key):
-            return (
-                '{"value": {"data": "test"}, '
-                '"created_at": "2023-01-01T00:00:00", '
-                '"updated_at": "2023-01-01T00:00:00"}'
-            )
-
-        with patch("asyncio.get_event_loop") as mock_loop:
-            # Create a side effect function that properly handles the scan cursor
-            # progression
-            call_count = 0
-
-            def executor_side_effect(executor, func, *args):
-                nonlocal call_count
-                call_count += 1
-                if "scan" in str(func) or (
-                    hasattr(func, "__name__") and "scan" in func.__name__
-                ):
-                    # Simulate proper cursor progression: first call returns
-                    # cursor 123, second returns 0
-                    if call_count == 1:
-                        return (123, ["langgraph:test/key1", "langgraph:test/key2"])
-                    else:
-                        return (0, [])  # End the scan loop
-                elif "get" in str(func) or (
-                    hasattr(func, "__name__") and "get" in func.__name__
-                ):
-                    return mock_get("test_key")
-                return None
-
-            mock_loop.return_value.run_in_executor = AsyncMock(
-                side_effect=executor_side_effect
-            )
-
-            results = await store._search_with_hash_async(
-                namespace=("test",), query="search", limit=10, offset=0
-            )
-
-            assert isinstance(results, list)
-
-    async def test_search_with_hash_with_filter(self, mock_valkey_client):
-        """Test hash search with filter."""
-        store = AsyncValkeyStore(mock_valkey_client)
-        store._is_async_client = False  # Force sync client path
-
-        with patch("asyncio.get_event_loop") as mock_loop:
-            mock_executor = AsyncMock(return_value=(0, []))
-            mock_loop.return_value.run_in_executor = mock_executor
-
-            results = await store._search_with_hash_async(
-                namespace=("test",),
-                query="search",
-                filter_dict={"category": "test"},
-                limit=5,
-                offset=0,
-            )
-
-            assert isinstance(results, list)
-
-    async def test_search_with_hash_error_handling(self, mock_valkey_client):
-        """Test hash search error handling."""
-        store = AsyncValkeyStore(mock_valkey_client)
-        store._is_async_client = False  # Force sync client path
-
-        with patch("asyncio.get_event_loop") as mock_loop:
-            # Mock executor to raise exception on first call
-            mock_executor = AsyncMock(side_effect=Exception("Scan failed"))
-            mock_loop.return_value.run_in_executor = mock_executor
-
-            # The method should catch the exception and return empty list
-            # But since the current implementation doesn't have a top-level try-catch,
-            # we expect the exception to be raised
-            with pytest.raises(Exception, match="Scan failed"):
-                await store._search_with_hash_async(
-                    namespace=("test",), query="search", limit=10, offset=0
-                )
-
-
-class TestAsyncValkeyStoreKeyPatternSearch:
-    """Test key pattern search functionality."""
-
-    async def test_key_pattern_search_with_scan_error(self, mock_valkey_client):
-        """Test key pattern search with scan error."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        with patch.object(
-            store,
-            "_execute_client_method",
-            side_effect=Exception("Scan failed"),
-        ):
-            op = SearchOp(
-                namespace_prefix=("test",), query="search", limit=10, offset=0
-            )
-            results = await store._key_pattern_search_async(op)
-
-            assert results == []
-
-    async def test_key_pattern_search_with_none_scan_result(self, mock_valkey_client):
-        """Test key pattern search with None scan result."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        with patch.object(store, "_execute_client_method", return_value=None):
-            op = SearchOp(
-                namespace_prefix=("test",), query="search", limit=10, offset=0
-            )
-            results = await store._key_pattern_search_async(op)
-
-            assert results == []
-
-    async def test_key_pattern_search_processing_error(self, mock_valkey_client):
-        """Test key pattern search with processing error."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        # Mock scan to return keys
-        with patch.object(
-            store,
-            "_execute_client_method",
-            return_value=(0, ["langgraph:test/key1"]),
-        ):
-            # Mock hgetall to raise exception
-            mock_valkey_client.hgetall.side_effect = Exception("Processing failed")
-
-            op = SearchOp(
-                namespace_prefix=("test",), query="search", limit=10, offset=0
-            )
-            results = await store._key_pattern_search_async(op)
-
-            assert results == []
-
-
-class TestAsyncValkeyStoreVectorSearch:
-    """Test vector search functionality."""
-
-    async def test_vector_search_no_embeddings(self, mock_valkey_client):
-        """Test vector search without embeddings."""
-        store = AsyncValkeyStore(mock_valkey_client)
-        store.embeddings = None
-
-        op = SearchOp(namespace_prefix=("test",), query="search", limit=10, offset=0)
-        results = await store._vector_search(op)
-
-        assert results == []
-
-    async def test_vector_search_callable_embeddings(self, mock_valkey_client):
-        """Test vector search with callable embeddings."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        # Create a proper mock embeddings object with the expected
-        # interface
-        mock_embeddings = MagicMock()
-        mock_embeddings.embed_documents.return_value = [[0.1, 0.2, 0.3]]
-        store.embeddings = mock_embeddings
-
-        op = SearchOp(namespace_prefix=("test",), query="search", limit=10, offset=0)
-        results = await store._vector_search(op)
-
-        assert isinstance(results, list)
-
-    async def test_vector_search_embed_documents_method(self, mock_valkey_client):
-        """Test vector search with embed_documents method."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        mock_embeddings = Mock()
-        mock_embeddings.embed_documents = Mock(return_value=[[0.1, 0.2, 0.3]])
-        store.embeddings = mock_embeddings
-
-        op = SearchOp(namespace_prefix=("test",), query="search", limit=10, offset=0)
-        results = await store._vector_search(op)
-
-        assert isinstance(results, list)
-
-    async def test_vector_search_aembed_documents_method(self, mock_valkey_client):
-        """Test vector search with aembed_documents method."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        mock_embeddings = Mock()
-        mock_embeddings.aembed_documents = AsyncMock(return_value=[[0.1, 0.2, 0.3]])
-        store.embeddings = mock_embeddings
-
-        op = SearchOp(namespace_prefix=("test",), query="search", limit=10, offset=0)
-        results = await store._vector_search(op)
-
-        assert isinstance(results, list)
-
-    async def test_vector_search_embedding_error(self, mock_valkey_client):
-        """Test vector search with embedding generation error."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        mock_embeddings = Mock()
-        mock_embeddings.embed_documents = Mock(
-            side_effect=Exception("Embedding failed")
-        )
-        store.embeddings = mock_embeddings
-
-        op = SearchOp(namespace_prefix=("test",), query="search", limit=10, offset=0)
-        results = await store._vector_search(op)
-
-        assert results == []
-
-    async def test_vector_search_no_embeddings_warning(self, mock_valkey_client):
-        """Test vector search with non-callable embeddings."""
-        store = AsyncValkeyStore(mock_valkey_client)
-        # Use type: ignore to bypass type checker for this specific test case
-        store.embeddings = "not_callable"  # type: ignore
-
-        op = SearchOp(namespace_prefix=("test",), query="search", limit=10, offset=0)
-        results = await store._vector_search(op)
-
-        assert results == []
-
-
 class TestAsyncValkeyStoreHandlePutAsync:
     """Test async put operation edge cases."""
 
-    async def test_handle_put_with_embedding_generation_error(self, mock_valkey_client):
-        """Test put operation with embedding generation error."""
+    async def test_handle_put_with_sync_only_embeddings_raises_error(
+        self, mock_valkey_client
+    ):
+        """Test put operation raises AttributeError with sync-only embeddings.
+
+        Verifies fail-fast behavior with sync-only embeddings.
+        """
         store = AsyncValkeyStore(mock_valkey_client)
 
-        # Mock embeddings that raise an error
+        # Mock embeddings with only sync method (no async method)
         mock_embeddings = Mock()
-        mock_embeddings.embed_documents = Mock(
-            side_effect=Exception("Embedding failed")
-        )
+        mock_embeddings.embed_documents = Mock(return_value=[[0.1, 0.2, 0.3]])
+        # Ensure no async method exists
+        del mock_embeddings.aembed_documents
+
         store.embeddings = mock_embeddings
         store.index_fields = ["text"]
 
@@ -638,9 +410,12 @@ class TestAsyncValkeyStoreHandlePutAsync:
             index=["text"],
         )
 
-        # Should not raise error, just log it
-        await store._handle_put_async(op)
-        mock_valkey_client.hset.assert_called_once()
+        # Should raise AttributeError when async method is missing (fail fast)
+        with pytest.raises(AttributeError) as exc_info:
+            await store._handle_put_async(op)
+
+        # Verify error message mentions missing async method
+        assert "aembed_documents" in str(exc_info.value)
 
     async def test_handle_put_with_async_embeddings(self, mock_valkey_client):
         """Test put operation with async embeddings."""
@@ -660,31 +435,6 @@ class TestAsyncValkeyStoreHandlePutAsync:
 
         await store._handle_put_async(op)
         mock_valkey_client.hset.assert_called_once()
-
-    async def test_handle_put_with_sync_embeddings_in_executor(
-        self, mock_valkey_client
-    ):
-        """Test put operation with sync embeddings using executor."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        mock_embeddings = Mock()
-        mock_embeddings.embed_documents = Mock(return_value=[[0.1, 0.2, 0.3]])
-        store.embeddings = mock_embeddings
-        store.index_fields = ["text"]
-
-        op = PutOp(
-            namespace=("test",),
-            key="key1",
-            value={"text": "test content"},
-            index=["text"],
-        )
-
-        with patch("asyncio.get_running_loop") as mock_loop:
-            mock_executor = AsyncMock(return_value=[[0.1, 0.2, 0.3]])
-            mock_loop.return_value.run_in_executor = mock_executor
-
-            await store._handle_put_async(op)
-            mock_valkey_client.hset.assert_called_once()
 
     async def test_handle_put_hset_error(self, mock_valkey_client):
         """Test put operation with hset error."""
@@ -789,36 +539,6 @@ class TestAsyncValkeyStoreRefreshTTL:
 
         # Should not raise error, just log it
         await store._refresh_ttl_for_items_async(items)
-
-
-class TestAsyncValkeyStoreConvertToSearchItems:
-    """Test search item conversion."""
-
-    async def test_convert_to_search_items_get_error(self, mock_valkey_client):
-        """Test converting search items with get error."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        with patch("asyncio.get_event_loop") as mock_loop:
-            mock_executor = AsyncMock(side_effect=Exception("Get failed"))
-            mock_loop.return_value.run_in_executor = mock_executor
-
-            results = [(("test",), "key1", 1.0)]
-            items = await store._convert_to_search_items_async(results)
-
-            assert items == []
-
-    async def test_convert_to_search_items_none_value_data(self, mock_valkey_client):
-        """Test converting search items with None value data."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        with patch("asyncio.get_event_loop") as mock_loop:
-            mock_executor = AsyncMock(return_value=None)
-            mock_loop.return_value.run_in_executor = mock_executor
-
-            results = [(("test",), "key1", 1.0)]
-            items = await store._convert_to_search_items_async(results)
-
-            assert items == []
 
 
 class TestAsyncValkeyStoreErrorPaths:
@@ -1055,223 +775,6 @@ class TestAsyncValkeyStoreAdditionalCoverage:
                 assert isinstance(store, AsyncValkeyStore)
             # Context manager should exit cleanly
 
-    async def test_vector_search_no_query_vector(self, mock_valkey_client):
-        """Test vector search when no query vector is generated."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        # Mock embeddings that return None/empty
-        mock_embeddings = Mock()
-        mock_embeddings.embed_documents = Mock(return_value=[])
-        store.embeddings = mock_embeddings
-
-        op = SearchOp(namespace_prefix=("test",), query="search", limit=10, offset=0)
-        results = await store._vector_search(op)
-
-        assert results == []
-
-    async def test_vector_search_with_namespace_filter(self, mock_valkey_client):
-        """Test vector search with namespace filter."""
-        store = AsyncValkeyStore(mock_valkey_client)
-        store.collection_name = "test_index"
-
-        mock_embeddings = Mock()
-        mock_embeddings.embed_documents = Mock(return_value=[[0.1, 0.2, 0.3]])
-        store.embeddings = mock_embeddings
-
-        # Mock the search execution to avoid complex FT.SEARCH setup
-        with patch("asyncio.get_event_loop") as mock_loop:
-            mock_executor = AsyncMock(return_value=Mock(docs=[]))
-            mock_loop.return_value.run_in_executor = mock_executor
-
-            op = SearchOp(
-                namespace_prefix=("test", "sub"),
-                query="search",
-                filter={"category": "test"},
-                limit=10,
-                offset=0,
-            )
-            results = await store._vector_search(op)
-
-            assert isinstance(results, list)
-
-    async def test_search_with_hash_cursor_continuation(self, mock_valkey_client):
-        """Test hash search with cursor continuation."""
-        store = AsyncValkeyStore(mock_valkey_client)
-        store._is_async_client = False
-
-        # Mock scan to return multiple batches with proper cursor
-        # progression
-        call_count = 0
-
-        def mock_scan_side_effect(cursor, match=None, count=None):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                # First batch with non-zero cursor
-                return (456, ["langgraph:test/key1"])
-            elif call_count == 2:
-                # Second batch with zero cursor (end)
-                return (0, ["langgraph:test/key2"])
-            else:
-                return (0, [])  # Ensure we always end
-
-        def mock_get(key):
-            return (
-                '{"value": {"data": "test"}, '
-                '"created_at": "2023-01-01T00:00:00", '
-                '"updated_at": "2023-01-01T00:00:00"}'
-            )
-
-        with patch("asyncio.get_event_loop") as mock_loop:
-            executor_call_count = 0
-
-            def executor_side_effect(executor, func, *args):
-                nonlocal executor_call_count
-                executor_call_count += 1
-                func_str = str(func)
-                if (
-                    "scan" in func_str
-                    or hasattr(func, "__name__")
-                    and "scan" in func.__name__
-                ):
-                    # Properly simulate cursor progression
-                    return mock_scan_side_effect(
-                        0, match="langgraph:test/*", count=1000
-                    )
-                elif (
-                    "get" in func_str
-                    or hasattr(func, "__name__")
-                    and "get" in func.__name__
-                ):
-                    return mock_get("test_key")
-                return None
-
-            mock_loop.return_value.run_in_executor = AsyncMock(
-                side_effect=executor_side_effect
-            )
-
-            results = await store._search_with_hash_async(
-                namespace=("test",), query="search", limit=10, offset=0
-            )
-
-            assert isinstance(results, list)
-
-    async def test_search_with_hash_filter_application(self, mock_valkey_client):
-        """Test hash search filter application."""
-        store = AsyncValkeyStore(mock_valkey_client)
-        store._is_async_client = False
-
-        # Mock data that should be filtered out
-        def mock_get(key):
-            return (
-                '{"value": {"category": "wrong", "data": "test"}, '
-                '"created_at": "2023-01-01T00:00:00", '
-                '"updated_at": "2023-01-01T00:00:00"}'
-            )
-
-        with patch("asyncio.get_event_loop") as mock_loop:
-            call_count = 0
-
-            def executor_side_effect(executor, func, *args):
-                nonlocal call_count
-                call_count += 1
-                func_str = str(func)
-                if (
-                    "scan" in func_str
-                    or hasattr(func, "__name__")
-                    and "scan" in func.__name__
-                ):
-                    # Always return cursor 0 to end scan immediately
-                    return (0, ["langgraph:test/key1"])
-                elif (
-                    "get" in func_str
-                    or hasattr(func, "__name__")
-                    and "get" in func.__name__
-                ):
-                    return mock_get("test_key")
-                return None
-
-            mock_loop.return_value.run_in_executor = AsyncMock(
-                side_effect=executor_side_effect
-            )
-
-            # Apply filter that should exclude the result
-            results = await store._search_with_hash_async(
-                namespace=("test",),
-                query="search",
-                # This won't match "wrong"
-                filter_dict={"category": "correct"},
-                limit=10,
-                offset=0,
-            )
-
-            # Should be empty due to filter
-            assert results == []
-
-    async def test_key_pattern_search_namespace_filtering(self, mock_valkey_client):
-        """Test key pattern search namespace filtering."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        # Mock scan to return keys with different namespaces
-        all_keys = [
-            "langgraph:test/sub/key1",
-            "langgraph:test/other/key2",
-            "langgraph:different/key3",
-        ]
-
-        # Mock _execute_client_method to handle scan operations properly
-        scan_call_count = 0
-
-        async def mock_execute_side_effect(method_name, *args, **kwargs):
-            nonlocal scan_call_count
-            if method_name == "scan":
-                scan_call_count += 1
-                if scan_call_count == 1:
-                    # Return all keys with cursor 0 to end scan
-                    return (0, all_keys)
-                else:
-                    return (0, [])  # Subsequent calls return empty
-            elif method_name == "hgetall":
-                return {}  # Return empty hash
-            return None
-
-        with patch.object(
-            store, "_execute_client_method", side_effect=mock_execute_side_effect
-        ):
-            op = SearchOp(
-                namespace_prefix=("test", "sub"), query="search", limit=10, offset=0
-            )
-
-            results = await store._key_pattern_search_async(op)
-
-            # Should filter to only keys matching namespace prefix
-            assert isinstance(results, list)
-
-    async def test_key_pattern_search_document_processing_error(
-        self, mock_valkey_client
-    ):
-        """Test key pattern search document processing error."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        with patch.object(
-            store, "_execute_client_method", return_value=(0, ["langgraph:test/key1"])
-        ):
-            # Mock DocumentProcessor to raise exception
-            with patch(
-                "langgraph_checkpoint_aws.store.valkey.async_store.DocumentProcessor"
-            ) as mock_processor:
-                mock_processor.convert_hash_to_document.side_effect = Exception(
-                    "Processing failed"
-                )
-
-                op = SearchOp(
-                    namespace_prefix=("test",), query="search", limit=10, offset=0
-                )
-                results = await store._key_pattern_search_async(op)
-
-                # Should handle error and return empty list
-                assert results == []
-
     async def test_handle_list_async_key_conversion_error(self, mock_valkey_client):
         """Test handle list async key conversion error."""
         store = AsyncValkeyStore(mock_valkey_client)
@@ -1417,40 +920,6 @@ class TestAsyncValkeyStoreAdditionalCoverage:
             assert result is not None
             assert result.value == {"data": "test"}
 
-    async def test_handle_put_async_list_field_values(self, mock_valkey_client):
-        """Test handle put async with list field values."""
-        store = AsyncValkeyStore(mock_valkey_client)
-        store._is_async_client = False  # Force sync client path
-
-        mock_embeddings = Mock()
-        mock_embeddings.embed_documents = Mock(return_value=[[0.1, 0.2, 0.3]])
-        store.embeddings = mock_embeddings
-        store.index_fields = ["tags"]
-
-        # Value with list field that should be processed
-        op = PutOp(
-            namespace=("test",),
-            key="key1",
-            value={"tags": ["tag1", "tag2", "tag3"]},  # List field
-            index=["tags"],
-        )
-
-        # Mock the executor for sync embeddings - need to ensure it's called
-        with patch("asyncio.get_running_loop") as mock_loop:
-            mock_executor = AsyncMock(return_value=[[0.1, 0.2, 0.3]])
-            mock_loop.return_value.run_in_executor = mock_executor
-
-            # Also need to ensure the sync client path is taken for embeddings
-            # The issue is that the code checks for aembed_documents first
-            # So we need to make sure it doesn't have that method
-            if hasattr(mock_embeddings, "aembed_documents"):
-                delattr(mock_embeddings, "aembed_documents")
-
-            await store._handle_put_async(op)
-
-            # Should process list values and generate embeddings through executor
-            mock_executor.assert_called_once()
-
     async def test_handle_put_async_ttl_setting(self, mock_valkey_client):
         """Test handle put async TTL setting."""
         store = AsyncValkeyStore(mock_valkey_client)
@@ -1466,19 +935,3 @@ class TestAsyncValkeyStoreAdditionalCoverage:
 
         # Should set TTL in seconds (30 * 60 = 1800)
         mock_valkey_client.expire.assert_called_once_with("langgraph:test/key1", 1800)
-
-    async def test_handle_search_async_error_handling(self, mock_valkey_client):
-        """Test handle search async error handling."""
-        store = AsyncValkeyStore(mock_valkey_client)
-
-        # Mock _key_pattern_search_async to raise exception
-        with patch.object(
-            store, "_key_pattern_search_async", side_effect=Exception("Search failed")
-        ):
-            op = SearchOp(
-                namespace_prefix=("test",), query="search", limit=10, offset=0
-            )
-            results = await store._handle_search_async(op)
-
-            # Should catch exception and return empty list
-            assert results == []

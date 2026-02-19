@@ -13,6 +13,11 @@ on:
         default: false
         description: "Release from a non-master branch (danger!)"
 
+permissions:
+  contents: read
+  actions: write
+  id-token: write
+
 env:
   PYTHON_VERSION: "3.13"
 
@@ -29,7 +34,7 @@ jobs:
       version: ${{ steps.check-version.outputs.version }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up Python + uv
         uses: "./.github/actions/uv_setup"
@@ -52,7 +57,7 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
 
       - name: Upload build
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: test-dist
           path: ${{ inputs.working-directory }}/dist/
@@ -80,9 +85,9 @@ jobs:
       actions: read # Needed for actions/download-artifact
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
         with:
           name: test-dist
           path: ${{ inputs.working-directory }}/dist/
