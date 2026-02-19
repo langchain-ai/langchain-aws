@@ -2909,6 +2909,18 @@ def test_bind_tools_strict_with_tool_choice() -> None:
     assert func["strict"] is True
 
 
+def test_with_structured_output_passes_strict_to_bind_tools() -> None:
+    """Test that with_structured_output passes strict through to bind_tools."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    structured = chat_model.with_structured_output(GetWeather, strict=True)
+    llm = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, llm).kwargs
+    func = bound_kwargs["tools"][0]["function"]
+    assert func["strict"] is True
+
+
 def test_reasoning_config_validation_accepts_strings() -> None:
     """Test that reasoning config validation accepts string values."""
     # Should not raise an error with string values

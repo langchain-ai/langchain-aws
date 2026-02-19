@@ -1338,6 +1338,7 @@ class ChatBedrockConverse(BaseChatModel):
         schema: _DictOrPydanticClass,
         *,
         include_raw: bool = False,
+        strict: Optional[bool] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
         supports_tool_choice_values = self.supports_tool_choice_values or ()
@@ -1365,13 +1366,14 @@ class ChatBedrockConverse(BaseChatModel):
                 llm = self.bind_tools(
                     [schema],
                     tool_choice=tool_choice,
+                    strict=strict,
                     ls_structured_output_format={
                         "kwargs": {"method": "function_calling"},
                         "schema": convert_to_openai_tool(schema),
                     },
                 )
             except Exception:
-                llm = self.bind_tools([schema], tool_choice=tool_choice)
+                llm = self.bind_tools([schema], tool_choice=tool_choice, strict=strict)
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             if self.disable_streaming:
                 output_parser: OutputParserLike = ToolsOutputParser(
