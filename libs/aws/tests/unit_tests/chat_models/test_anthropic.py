@@ -236,9 +236,8 @@ def test_chat_anthropic_bedrock_region_explicit_overrides_env() -> None:
 @pytest.mark.parametrize(
     "model_name",
     [
-        "claude-haiku-4-5",
         "anthropic.claude-haiku-4-5-20251001-v1:0",
-        "us.anthropic.claude-haiku-4-5-20251001-v2:0",
+        "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     ],
 )
 def test_model_profile(model_name: str) -> None:

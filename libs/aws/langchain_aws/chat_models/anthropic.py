@@ -3,16 +3,25 @@
 import os
 import re
 from functools import cached_property
-from typing import Any
+from typing import Any, cast
 
 from anthropic import AnthropicBedrock, AsyncAnthropicBedrock
-from langchain_anthropic.chat_models import ChatAnthropic, _get_default_model_profile
+from langchain_anthropic.chat_models import ChatAnthropic
+from langchain_core.language_models import ModelProfile, ModelProfileRegistry
 from langchain_core.language_models.chat_models import LangSmithParams
 from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws.chat_models._anthropic_utils import _create_bedrock_client_params
+from langchain_aws.data._profiles import _PROFILES
+
+_MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
+
+
+def _get_default_model_profile(model_name: str) -> ModelProfile:
+    default = _MODEL_PROFILES.get(model_name) or {}
+    return default.copy()
 
 
 class ChatAnthropicBedrock(ChatAnthropic):
@@ -181,16 +190,6 @@ class ChatAnthropicBedrock(ChatAnthropic):
     def _set_model_profile(self) -> Self:
         """Set model profile if not overridden."""
         if self.profile is None:
-            # Strip region prefix (e.g., "us."), provider prefix (e.g., "anthropic."),
-            # and version suffix (e.g., "-v1:0")
-            model_id = re.sub(r"^[A-Za-z]{2}\.", "", self.model)  # Remove region
-            model_id = re.sub(r"^anthropic\.", "", model_id)  # Remove provider
-            model_id = re.sub(r"-v\d+:\d+$", "", model_id)  # Remove version suffix
-            self.profile = _get_default_model_profile(model_id)
-        if (
-            self.profile is not None
-            and self.betas
-            and "context-1m-2025-08-07" in self.betas
-        ):
-            self.profile["max_input_tokens"] = 1_000_000
+            model = re.sub(r"^[A-Za-z]{2}\.", "", self.model)
+            self.profile = _get_default_model_profile(model)
         return self
