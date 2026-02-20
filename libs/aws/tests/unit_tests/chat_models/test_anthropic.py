@@ -1,9 +1,11 @@
 """ChatAnthropicBedrock tests."""
 
-from typing import cast
+from typing import Tuple, Type, cast
 
 import pytest
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
+from langchain_tests.unit_tests import ChatModelUnitTests
 from pydantic import SecretStr
 from pytest import MonkeyPatch
 
@@ -11,6 +13,45 @@ from langchain_aws import ChatAnthropicBedrock
 from langchain_aws.chat_models._anthropic_utils import _create_bedrock_client_params
 
 BEDROCK_MODEL_NAME = "anthropic.claude-sonnet-4-6"
+
+
+class TestBedrockStandard(ChatModelUnitTests):
+    @property
+    def chat_model_class(self) -> Type[BaseChatModel]:
+        return ChatAnthropicBedrock
+
+    @property
+    def chat_model_params(self) -> dict:
+        return {"model": "anthropic.claude-3-sonnet-20240229-v1:0"}
+
+    @property
+    def standard_chat_model_params(self) -> dict:
+        return {
+            "temperature": 0,
+            "max_tokens": 100,
+            "stop": [],
+        }
+
+    @property
+    def init_from_env_params(self) -> Tuple[dict, dict, dict]:
+        """Return env vars, init args, and expected instance attrs for initializing
+        from env vars."""
+        return (
+            {
+                "AWS_ACCESS_KEY_ID": "key_id",
+                "AWS_SECRET_ACCESS_KEY": "secret_key",
+                "AWS_SESSION_TOKEN": "token",
+                "AWS_REGION": "region",
+            },
+            {
+                "model": "anthropic.claude-3-sonnet-20240229-v1:0",
+            },
+            {
+                "aws_access_key_id": "key_id",
+                "aws_secret_access_key": "secret_key",
+                "aws_session_token": "token",
+            },
+        )
 
 
 def test_chat_anthropic_bedrock_initialization() -> None:
