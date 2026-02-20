@@ -33,6 +33,7 @@ test = [
     "syrupy>=4.9.1",
     "pytest-asyncio>=0.20,<2",
     "pytest-watcher>=0.4.3",
+    "pytest-xdist>=3.8.0,<4.0.0",
     "anthropic[bedrock]",
     "langchain-anthropic",
     "langchain-classic>=1.0.0",
