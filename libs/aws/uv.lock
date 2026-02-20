@@ -830,9 +830,11 @@ lint = [
     { name = "ruff" },
 ]
 test = [
+    { name = "anthropic", extra = ["bedrock"] },
     { name = "beautifulsoup4" },
     { name = "bedrock-agentcore" },
     { name = "langchain" },
+    { name = "langchain-anthropic" },
     { name = "langchain-classic" },
     { name = "langchain-tests" },
     { name = "playwright" },
@@ -859,7 +861,7 @@ requires-dist = [
     { name = "bedrock-agentcore", marker = "python_full_version >= '3.10' and extra == 'tools'", specifier = ">=1.2.0" },
     { name = "boto3", specifier = ">=1.42.5" },
     { name = "langchain-anthropic", marker = "extra == 'anthropic'" },
-    { name = "langchain-core", specifier = ">=1.2.5" },
+    { name = "langchain-core", git = "https://github.com/langchain-ai/langchain?subdirectory=libs%2Fcore" },
     { name = "numpy", specifier = ">=1.0.0,<3" },
     { name = "playwright", marker = "extra == 'tools'", specifier = ">=1.53.0" },
     { name = "pydantic", specifier = ">=2.10.6,<3" },
@@ -873,9 +875,11 @@ dev = [
 ]
 lint = [{ name = "ruff", specifier = ">=0.13.0" }]
 test = [
+    { name = "anthropic", extras = ["bedrock"] },
     { name = "beautifulsoup4", specifier = ">=4.13.4" },
     { name = "bedrock-agentcore", specifier = ">=1.2.0" },
     { name = "langchain", specifier = ">=1.0.0" },
+    { name = "langchain-anthropic" },
     { name = "langchain-classic", specifier = ">=1.0.0" },
     { name = "langchain-tests", specifier = ">=1.1.3" },
     { name = "playwright", specifier = ">=1.53.0" },
@@ -917,8 +921,8 @@ wheels = [
 
 [[package]]
 name = "langchain-core"
-version = "1.2.11"
-source = { registry = "https://pypi.org/simple" }
+version = "1.2.15"
+source = { git = "https://github.com/langchain-ai/langchain?subdirectory=libs%2Fcore#00538ff5fc1084864a54675bfb24b3dd30ef1261" }
 dependencies = [
     { name = "jsonpatch" },
     { name = "langsmith" },
@@ -928,10 +932,6 @@ dependencies = [
     { name = "tenacity" },
     { name = "typing-extensions" },
     { name = "uuid-utils" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/12/17/1943cedfc118e04b8128e4c3e1dbf0fa0ea58eefddbb6198cfd699d19f01/langchain_core-1.2.11.tar.gz", hash = "sha256:f164bb36602dd74a3a50c1334fca75309ad5ed95767acdfdbb9fa95ce28a1e01", size = 831211, upload-time = "2026-02-10T20:35:28.35Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/10/30/1f80e3fc674353cad975ed5294353d42512535d2094ef032c06454c2c873/langchain_core-1.2.11-py3-none-any.whl", hash = "sha256:ae11ceb8dda60d0b9d09e763116e592f1683327c17be5b715f350fd29aee65d3", size = 500062, upload-time = "2026-02-10T20:35:26.698Z" },
 ]
 
 [[package]]
