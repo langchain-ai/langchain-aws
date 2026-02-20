@@ -59,7 +59,7 @@ from langgraph_checkpoint_aws import AgentCoreMemorySaver
 
 REGION = "us-west-2"
 MEMORY_ID = "YOUR_MEMORY_ID"
-MODEL_ID = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
 
 # Initialize checkpointer for state persistence. No additional setup required.
 # Sessions will be saved and persisted for actor_id/session_id combinations
@@ -103,7 +103,7 @@ from langgraph_checkpoint_aws import (
 
 REGION = "us-west-2"
 MEMORY_ID = "YOUR_MEMORY_ID"
-MODEL_ID = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
 
 # Initialize store for saving and searching over long term memories
 # such as preferences and facts across sessions
