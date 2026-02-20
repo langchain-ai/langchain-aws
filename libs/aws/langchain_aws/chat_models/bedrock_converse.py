@@ -1358,7 +1358,6 @@ class ChatBedrockConverse(BaseChatModel):
         *,
         include_raw: bool = False,
         method: Literal["function_calling", "json_schema"] = "function_calling",
-        strict: Optional[bool] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
         if method == "json_schema":
@@ -1366,7 +1365,7 @@ class ChatBedrockConverse(BaseChatModel):
                 schema, include_raw=include_raw, **kwargs
             )
         return self._with_structured_output_function_calling(
-            schema, include_raw=include_raw, strict=strict, **kwargs
+            schema, include_raw=include_raw, **kwargs
         )
 
     def _with_structured_output_function_calling(
@@ -2436,7 +2435,7 @@ def _set_additional_properties_false(schema: dict) -> None:
     ``properties``, ``items``, and ``allOf``/``anyOf``/``oneOf``.
     """
     if schema.get("type") == "object":
-        schema.setdefault("additionalProperties", False)
+        schema["additionalProperties"] = False
         for prop_schema in (schema.get("properties") or {}).values():
             if isinstance(prop_schema, dict):
                 _set_additional_properties_false(prop_schema)
@@ -2454,8 +2453,6 @@ def _set_additional_properties_false(schema: dict) -> None:
 
 def _format_tools(
     tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool]],
-    *,
-    strict: Optional[bool] = None,
 ) -> List[Dict[Literal["toolSpec"], Dict[str, Union[Dict[str, Any], str]]]]:
     formatted_tools: List = []
     for tool in tools:
@@ -2471,12 +2468,6 @@ def _format_tools(
 
             tool_spec = formatted_tools[-1]["toolSpec"]
             tool_spec["description"] = tool_spec.get("description") or tool_spec["name"]
-            if strict is not None and "strict" not in tool_spec:
-                tool_spec["strict"] = strict
-            if tool_spec.get("strict"):
-                input_json = (tool_spec.get("inputSchema") or {}).get("json")
-                if isinstance(input_json, dict):
-                    _set_additional_properties_false(input_json)
     return formatted_tools
 
 

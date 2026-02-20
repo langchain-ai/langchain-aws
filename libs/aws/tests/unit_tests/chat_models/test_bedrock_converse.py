@@ -2716,9 +2716,9 @@ def test_bind_tools_with_mixed_system_and_custom_tools() -> None:
     tools = cast(RunnableBinding, chat_model_with_mixed).kwargs["toolConfig"]["tools"]
     assert len(tools) == 2
 
-    # First tool should be the custom tool (GetWeather) in Bedrock toolSpec format
-    assert "toolSpec" in tools[0]
-    assert tools[0]["toolSpec"]["name"] == "GetWeather"
+    # First tool should be the custom tool (GetWeather)
+    assert "function" in tools[0]
+    assert tools[0]["function"]["name"] == "GetWeather"
 
     # Second tool should be the system tool
     assert tools[1] == {"systemTool": {"name": "nova_grounding"}}
@@ -2774,9 +2774,9 @@ def test_bind_tools_toolconfig_structure_with_system_tools() -> None:
     tools = tool_config["tools"]
     assert len(tools) == 3
 
-    # Verify custom tool format (Bedrock toolSpec format)
-    assert "toolSpec" in tools[0]
-    assert tools[0]["toolSpec"]["name"] == "GetWeather"
+    # Verify custom tool format
+    assert "function" in tools[0]
+    assert tools[0]["function"]["name"] == "GetWeather"
 
     # Verify system tools format
     assert tools[1] == {"systemTool": {"name": "nova_grounding"}}
@@ -2818,8 +2818,9 @@ def test_bind_tools_formats_custom_tools_to_dicts() -> None:
     tool_def = tools[0]
     assert isinstance(tool_def, dict), f"Expected dict, got {type(tool_def)}"
 
-    assert "toolSpec" in tool_def
-    assert tool_def["toolSpec"].get("name") == "my_custom_tool"
+    assert tool_def.get("type") == "function"
+    assert "function" in tool_def
+    assert tool_def["function"].get("name") == "my_custom_tool"
 
 
 def test_bind_tools_strict_true() -> None:
@@ -3885,47 +3886,6 @@ def test__format_data_content_block_unsupported_type() -> None:
 # --- Native structured outputs tests ---
 
 
-def test_format_tools_with_strict() -> None:
-    """Test that _format_tools adds strict to toolSpec when provided."""
-    tools = _format_tools([GetWeather], strict=True)
-    assert len(tools) == 1
-    assert tools[0]["toolSpec"]["strict"] is True
-
-    # Without strict, key should be absent
-    tools_no_strict = _format_tools([GetWeather])
-    assert "strict" not in tools_no_strict[0]["toolSpec"]
-
-    # strict=False should also be set
-    tools_false = _format_tools([GetWeather], strict=False)
-    assert tools_false[0]["toolSpec"]["strict"] is False
-
-
-def test_format_tools_strict_preserves_existing() -> None:
-    """Test that pre-existing strict values on raw dict tools are preserved."""
-    raw_tool = {
-        "toolSpec": {
-            "name": "MyTool",
-            "description": "A tool",
-            "inputSchema": {"json": {"type": "object", "properties": {}}},
-            "strict": False,
-        }
-    }
-    tools = _format_tools([raw_tool], strict=True)
-    # Pre-existing strict=False should NOT be overwritten
-    assert tools[0]["toolSpec"]["strict"] is False
-
-
-def test_bind_tools_with_strict() -> None:
-    """Test that bind_tools threads strict to formatted tools."""
-    chat_model = ChatBedrockConverse(
-        model="anthropic.claude-3-sonnet-20240229-v1:0", region_name="us-west-2"
-    )
-    chat_model_with_tools = chat_model.bind_tools([GetWeather], strict=True)
-    bound_tools = cast(RunnableBinding, chat_model_with_tools).kwargs["tools"]
-    assert len(bound_tools) == 1
-    assert bound_tools[0]["toolSpec"]["strict"] is True
-
-
 def test_converse_params_output_config() -> None:
     """Test that constructor output_config appears in _converse_params output."""
     output_config = {
@@ -4082,11 +4042,3 @@ def test_json_schema_dict_not_mutated() -> None:
     assert "additionalProperties" not in schema
 
 
-def test_format_tools_strict_adds_additional_properties() -> None:
-    """Test that strict=True on _format_tools adds additionalProperties: false."""
-    tools = _format_tools([GetWeather], strict=True)
-    tool_spec = tools[0]["toolSpec"]
-    assert isinstance(tool_spec, dict)
-    input_schema = tool_spec["inputSchema"]
-    assert isinstance(input_schema, dict)
-    assert input_schema["json"]["additionalProperties"] is False

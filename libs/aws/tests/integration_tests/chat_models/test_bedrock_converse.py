@@ -986,18 +986,6 @@ def test_structured_output_json_schema_streaming() -> None:
     assert result.punchline
 
 
-def test_bind_tools_strict() -> None:
-    """Test that bind_tools with strict=True succeeds on supported model."""
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
-    chat = model.bind_tools([GetWeather], tool_choice="any", strict=True)
-    response = chat.invoke("What's the weather in San Francisco?")
-    assert isinstance(response, AIMessage)
-    assert len(response.tool_calls) >= 1
-    assert response.tool_calls[0]["name"] == "GetWeather"
-
-
 def test_structured_output_json_schema_include_raw() -> None:
     """Test include_raw=True returns dict with raw, parsed, parsing_error."""
     model = ChatBedrockConverse(
