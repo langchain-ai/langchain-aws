@@ -49,6 +49,7 @@ typing = [
     "mypy>=1.17.1",
     "types-requests>=2.32.0; platform_python_implementation != 'PyPy'",
     "types-requests>=2.31.0,<2.33.0; platform_python_implementation == 'PyPy'",
+    "langchain-anthropic",
 ]
 dev = [
     "boto3-stubs[essential]>=1.42.5",
