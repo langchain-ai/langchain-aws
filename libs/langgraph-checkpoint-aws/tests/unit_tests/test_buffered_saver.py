@@ -15,7 +15,7 @@ class TestBufferedCheckpointSaver:
         buffered = BufferedCheckpointSaver(simple_checkpoint_saver)
 
         assert buffered.saver is simple_checkpoint_saver
-        assert buffered._checkpointer is simple_checkpoint_saver
+        assert buffered._saver is simple_checkpoint_saver
         assert buffered._pending_checkpoint is None
         assert buffered._pending_writes == []
         assert buffered._last_config is None
