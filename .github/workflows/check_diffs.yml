@@ -63,17 +63,12 @@ jobs:
     secrets: inherit
 
   test-optional-dependencies:
-    name: cd ${{ matrix.working-directory }}
+    name: cd libs/aws
     needs: [build]
-    if: ${{ needs.build.outputs.dirs-to-test != '[]' && contains(fromJson(needs.build.outputs.dirs-to-test), 'libs/aws') }}
-    strategy:
-      matrix:
-        working-directory: ${{ fromJson(needs.build.outputs.dirs-to-test) }}
-        exclude:
-          - working-directory: libs/checkpoint-aws
+    if: ${{ contains(fromJson(needs.build.outputs.dirs-to-test || '[]'), 'libs/aws') }}
     uses: ./.github/workflows/_test_optional_dependencies.yml
     with:
-      working-directory: ${{ matrix.working-directory }}
+      working-directory: libs/aws
     secrets: inherit
 
   compile-integration-tests:
