@@ -1,0 +1,55 @@
+name: test-optional-dependencies
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        required: true
+        type: string
+        description: "From which folder this pipeline executes"
+
+permissions:
+  contents: read
+
+jobs:
+  test-without-optional-deps:
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    runs-on: ubuntu-latest
+    name: "test core (no optional deps)"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python + uv
+        uses: "./.github/actions/uv_setup"
+        with:
+          python-version: "3.13"
+
+      - name: Install core dependencies only
+        shell: bash
+        run: |
+          # Install ONLY core package dependencies, not optional deps
+          uv sync --no-group test --no-group test_integration --no-group lint --no-group typing --no-group dev
+
+      - name: Install pytest for testing
+        shell: bash
+        run: |
+          uv pip install pytest
+
+      - name: Test core imports work
+        shell: bash
+        run: |
+          uv run python -c "
+          from langchain_aws import (
+              ChatBedrock,
+              ChatBedrockConverse,
+          )
+          print('✓ All core imports successful')
+          "
+
+      - name: Run core unit tests
+        shell: bash
+        run: |
+          # Run tests that don't require optional dependencies
+          uv run pytest tests/unit_tests/test_standard.py -v
