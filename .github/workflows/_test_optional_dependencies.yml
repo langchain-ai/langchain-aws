@@ -17,7 +17,7 @@ jobs:
       run:
         working-directory: ${{ inputs.working-directory }}
     runs-on: ubuntu-latest
-    name: "test core (no optional deps)"
+    name: "run tests without optional deps"
     steps:
       - uses: actions/checkout@v6
 
@@ -34,7 +34,7 @@ jobs:
         shell: bash
         run: VIRTUAL_ENV=.venv uv pip uninstall langchain-anthropic anthropic
 
-      - name: Verify optional dependencies are NOT installed
+      - name: Verify optional dependencies are not installed
         shell: bash
         run: |
           uv run --no-sync python -c "import langchain_anthropic" && exit 1 || echo "✓ langchain_anthropic not installed (expected)"
