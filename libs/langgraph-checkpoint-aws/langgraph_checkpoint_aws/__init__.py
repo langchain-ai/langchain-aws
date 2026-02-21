@@ -12,6 +12,9 @@ from langgraph_checkpoint_aws.agentcore.saver import (
 from langgraph_checkpoint_aws.agentcore.store import (
     AgentCoreMemoryStore,
 )
+from langgraph_checkpoint_aws.buffered_saver import (
+    BufferedCheckpointSaver,
+)
 from langgraph_checkpoint_aws.checkpoint.dynamodb import (
     DynamoDBSaver,
 )
@@ -93,6 +96,7 @@ __all__ = [
     "AgentCoreValkeySaver",
     "AsyncValkeySaver",
     "AsyncValkeyStore",
+    "BufferedCheckpointSaver",
     "ValkeyConnectionError",
     "ValkeyDocumentParsingError",
     "ValkeyEmbeddingGenerationError",
