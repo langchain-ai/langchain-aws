@@ -16,6 +16,7 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
     """
     A wrapper for checkpoint savers that defers persistence until flushed.
     Supports both sync and async execution.
+    Not thread-safe.
 
     This wrapper can wrap any BaseCheckpointSaver implementation (DynamoDBSaver,
     AgentCoreMemorySaver, ValkeySaver, etc.) to reduce API calls by buffering
