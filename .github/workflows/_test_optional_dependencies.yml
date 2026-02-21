@@ -26,9 +26,11 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install dependencies
+      - name: Install core dependencies only
         shell: bash
-        run: uv sync
+        run: |
+          uv venv
+          uv pip install -e . pytest
 
       - name: Verify optional dependencies are NOT installed
         shell: bash
