@@ -1,0 +1,31 @@
+# serializer version: 1
+# name: TestBedrockStandard.test_serdes[serialized]
+  dict({
+    'id': list([
+      'langchain',
+      'chat_models',
+      'anthropic_bedrock',
+      'ChatAnthropicBedrock',
+    ]),
+    'kwargs': dict({
+      'anthropic_api_key': dict({
+        'id': list([
+          'ANTHROPIC_API_KEY',
+        ]),
+        'lc': 1,
+        'type': 'secret',
+      }),
+      'anthropic_api_url': 'https://api.anthropic.com',
+      'max_retries': 2,
+      'max_tokens': 100,
+      'model': 'anthropic.claude-3-sonnet-20240229-v1:0',
+      'stop_sequences': list([
+      ]),
+      'stream_usage': True,
+      'temperature': 0.0,
+    }),
+    'lc': 1,
+    'name': 'ChatAnthropicBedrock',
+    'type': 'constructor',
+  })
+# ---
