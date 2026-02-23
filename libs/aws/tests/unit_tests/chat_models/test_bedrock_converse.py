@@ -145,7 +145,6 @@ def test_anthropic_bind_tools_tool_choice() -> None:
     "thinking_model",
     [
         "anthropic.claude-sonnet-4-5-20250929-v1:0",
-        "anthropic.claude-3-7-sonnet-20250219-v1:0",
         "anthropic.claude-sonnet-4-20250514-v1:0",
         "anthropic.claude-opus-4-20250514-v1:0",
         "anthropic.claude-haiku-4-5-20251001-v1:0",
@@ -699,7 +698,6 @@ def test_standard_tracing_params() -> None:
         ("us.anthropic.claude-haiku-4-5-20251001-v1:0", False),
         ("us.anthropic.claude-sonnet-4-20250514-v1:0", False),
         ("us.anthropic.claude-opus-4-20250514-v1:0", False),
-        ("us.anthropic.claude-3-7-sonnet-20250219-v1:0", False),
         ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", False),
         ("us.anthropic.claude-3-haiku-20240307-v1:0", False),
         ("cohere.command-r-v1:0", False),
@@ -1779,12 +1777,12 @@ def test__get_base_model() -> None:
     assert llm_model_only._get_base_model() == "anthropic.claude-3-sonnet-20240229-v1:0"
 
     llm_with_regional_model = ChatBedrockConverse(
-        model="us.anthropic.claude-3-5-haiku-20241022-v1:0", region_name="us-west-2"
+        model="us.anthropic.claude-haiku-4-5-20251001-v1:0", region_name="us-west-2"
     )
 
     assert (
         llm_with_regional_model._get_base_model()
-        == "anthropic.claude-3-5-haiku-20241022-v1:0"
+        == "anthropic.claude-haiku-4-5-20251001-v1:0"
     )
 
     llm_with_base_model = ChatBedrockConverse(
@@ -2581,7 +2579,7 @@ def test_get_num_tokens_from_messages_supported_model() -> None:
 
     llm = ChatBedrockConverse(
         client=mocked_client,
-        model="anthropic.claude-3-5-haiku-20241022-v1:0",
+        model="anthropic.claude-haiku-4-5-20251001-v1:0",
         region_name="us-east-1",
     )
 
@@ -2595,7 +2593,7 @@ def test_get_num_tokens_from_messages_supported_model() -> None:
 
     # Verify API call format
     call_args = mocked_client.count_tokens.call_args
-    assert call_args[1]["modelId"] == "anthropic.claude-3-5-haiku-20241022-v1:0"
+    assert call_args[1]["modelId"] == "anthropic.claude-haiku-4-5-20251001-v1:0"
     assert "converse" in call_args[1]["input"]
 
 
@@ -2628,7 +2626,7 @@ def test_get_num_tokens_from_messages_api_error_fallback() -> None:
 
     llm = ChatBedrockConverse(
         client=mocked_client,
-        model="anthropic.claude-3-5-haiku-20241022-v1:0",
+        model="anthropic.claude-haiku-4-5-20251001-v1:0",
         region_name="us-west-2",
     )
 

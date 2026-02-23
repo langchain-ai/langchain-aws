@@ -62,6 +62,15 @@ jobs:
       working-directory: ${{ matrix.working-directory }}
     secrets: inherit
 
+  test-optional-dependencies:
+    name: cd libs/aws
+    needs: [build]
+    if: ${{ contains(fromJson(needs.build.outputs.dirs-to-test || '[]'), 'libs/aws') }}
+    uses: ./.github/workflows/_test_optional_dependencies.yml
+    with:
+      working-directory: libs/aws
+    secrets: inherit
+
   compile-integration-tests:
     name: cd ${{ matrix.working-directory }}
     needs: [build]
@@ -75,7 +84,7 @@ jobs:
     secrets: inherit
   ci_success:
     name: "CI Success"
-    needs: [build, lint, test, compile-integration-tests]
+    needs: [build, lint, test, test-optional-dependencies, compile-integration-tests]
     if: |
       always()
     runs-on: ubuntu-latest

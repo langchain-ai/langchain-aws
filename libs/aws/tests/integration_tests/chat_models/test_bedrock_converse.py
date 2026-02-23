@@ -448,7 +448,6 @@ def test_guardrails() -> None:
 @pytest.mark.parametrize(
     "thinking_model",
     [
-        "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         "us.anthropic.claude-sonnet-4-20250514-v1:0",
         "us.anthropic.claude-opus-4-20250514-v1:0",
         "us.anthropic.claude-opus-4-1-20250805-v1:0",

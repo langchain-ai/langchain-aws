@@ -69,7 +69,7 @@ jobs:
       - name: Run integration tests
         shell: bash
         run: |
-          uv run pytest -vv -s ${{ inputs.test-file }}
+          uv run pytest -n auto -vv -s ${{ inputs.test-file }}
 
       - name: Ensure the tests did not create any additional files
         shell: bash

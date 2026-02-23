@@ -30,7 +30,7 @@ class BrowserToolkit:
 
             # Create a ReAct agent using the browser tools
             agent = create_agent(
-                "bedrock_converse:us.anthropic.claude-3-5-haiku-20241022-v1:0",
+                "bedrock_converse:us.anthropic.claude-haiku-4-5-20251001-v1:0",
                 tools=browser_tools
             )
 
