@@ -47,7 +47,7 @@ class TestValkeyTag:
         assert str(expr) == "*"
 
     def test_eq_none(self) -> None:
-        expr = ValkeyFilter.tag("category") == None
+        expr = ValkeyFilter.tag("category") is None
         assert str(expr) == "*"
 
     def test_ne_single_tag(self) -> None:
@@ -138,12 +138,12 @@ class TestValkeyNum:
     def test_invalid_type(self) -> None:
         num = ValkeyFilter.num("price")
         with pytest.raises(TypeError):
-            num._set_value("invalid", (int, float, type(None)), ValkeyFilterOperator.EQ)
+            num._set_value("invalid", (int, float, type(None)), ValkeyFilterOperator.EQ)  # type: ignore[arg-type]
 
     def test_unsupported_operator(self) -> None:
         num = ValkeyFilter.num("price")
         with pytest.raises(ValueError, match="Operator .* not supported"):
-            num._set_value(100, (int, float, type(None)), ValkeyFilterOperator.LIKE)
+            num._set_value(100, (int, float, type(None)), ValkeyFilterOperator.LIKE)  # type: ignore[arg-type]
 
     def test_operator_misuse(self) -> None:
         num1 = ValkeyFilter.num("price")
@@ -179,7 +179,7 @@ class TestValkeyText:
     def test_invalid_type(self) -> None:
         text = ValkeyFilter.text("title")
         with pytest.raises(TypeError):
-            text._set_value(123, (str, type(None)), ValkeyFilterOperator.EQ)
+            text._set_value(123, (str, type(None)), ValkeyFilterOperator.EQ)  # type: ignore[arg-type]
 
     def test_operator_misuse(self) -> None:
         text1 = ValkeyFilter.text("title")

@@ -56,12 +56,12 @@ def get_client(valkey_url: str, **kwargs: Any) -> GlideClientType:
 
     # Try cluster first, fall back to standalone
     try:
-        config = GlideClusterClientConfiguration(addresses=addresses, **kwargs)
-        return GlideClusterClient.create(config)
+        cluster_config = GlideClusterClientConfiguration(addresses=addresses, **kwargs)
+        return GlideClusterClient.create(cluster_config)
     except (ConnectionError, TimeoutError, ValueError) as e:
         logger.debug(f"Cluster connection failed, falling back to standalone: {e}")
-        config = GlideClientConfiguration(addresses=addresses, **kwargs)
-        return GlideClient.create(config)
+        standalone_config = GlideClientConfiguration(addresses=addresses, **kwargs)
+        return GlideClient.create(standalone_config)
 
 
 def _parse_valkey_url(url: str) -> tuple[str, int]:
@@ -69,11 +69,11 @@ def _parse_valkey_url(url: str) -> tuple[str, int]:
     # Remove protocol
     if "://" in url:
         url = url.split("://", 1)[1]
-    
+
     # Remove credentials if present
     if "@" in url:
         url = url.split("@", 1)[1]
-    
+
     # Extract host and port
     if ":" in url:
         host, port_str = url.rsplit(":", 1)
@@ -83,5 +83,5 @@ def _parse_valkey_url(url: str) -> tuple[str, int]:
     else:
         host = url
         port = 6379
-    
+
     return host, port

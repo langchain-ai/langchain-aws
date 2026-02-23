@@ -3,6 +3,8 @@
 These tests require a running Valkey instance with the search module loaded.
 Set VALKEY_HOST environment variable to specify the Valkey server.
 """
+# ruff: noqa: E501
+# mypy: ignore-errors
 
 import os
 
@@ -10,8 +12,13 @@ import pytest
 
 pytest.importorskip("glide_sync")
 
+from glide_sync import (
+    GlideClient,
+    GlideClientConfiguration,
+    NodeAddress,
+    ProtocolVersion,
+)
 from langchain_core.embeddings import DeterministicFakeEmbedding
-from glide_sync import GlideClient, GlideClientConfiguration, NodeAddress, ProtocolVersion
 
 from langchain_aws.vectorstores.valkey import ValkeyVectorStore
 from langchain_aws.vectorstores.valkey.filters import ValkeyFilter
@@ -47,47 +54,48 @@ def _create_client(host: str) -> GlideClient:
 
 
 @pytest.fixture(scope="module")
-def vectorstore(valkey_url: str, embeddings: DeterministicFakeEmbedding, index_name: str) -> ValkeyVectorStore:
+def vectorstore(
+    valkey_url: str, embeddings: DeterministicFakeEmbedding, index_name: str
+) -> ValkeyVectorStore:
     """Create and populate a Valkey vector store with test data."""
     host = os.getenv("VALKEY_HOST", "localhost")
-    
+
     def setup():
         client = _create_client(host)
-        
+
         # Aggressive cleanup - delete all existing documents first
         try:
             keys = client.keys(f"doc:{index_name}:*")
             if keys:
                 client.delete(keys)
-        except (GlideError, ValueError):
+        except (RuntimeError, ValueError):
             pass  # No keys to delete
-        
+
         # Drop index if exists
         try:
             client.custom_command(["FT.DROPINDEX", index_name])
-        except (GlideError, ValueError):
+        except (RuntimeError, ValueError):
             pass  # Index doesn't exist
-        
+
         # Create index using raw FT.CREATE command
         # Schema: VECTOR content_vector FLAT 6 TYPE FLOAT32 DIM 128 DISTANCE_METRIC COSINE TAG category NUMERIC year NUMERIC price
+        # fmt: off
         client.custom_command([
             "FT.CREATE", index_name,
             "ON", "HASH",
             "PREFIX", "1", f"doc:{index_name}:",
             "SCHEMA",
-            "content_vector", "VECTOR", "FLAT", "6",
-            "TYPE", "FLOAT32",
-            "DIM", "128",
-            "DISTANCE_METRIC", "COSINE",
+            "content_vector", "VECTOR", "FLAT", "6", "TYPE", "FLOAT32", "DIM", "128", "DISTANCE_METRIC", "COSINE",
             "category", "TAG",
             "year", "NUMERIC",
             "price", "NUMERIC",
         ])
-        
+        # fmt: on
+
         client.close()
-    
+
     setup()
-    
+
     # Create vector store
     store = ValkeyVectorStore(
         embedding=embeddings,
@@ -99,9 +107,9 @@ def vectorstore(valkey_url: str, embeddings: DeterministicFakeEmbedding, index_n
             "dims": 128,
             "distance_metric": "COSINE",
             "datatype": "FLOAT32",
-        }
+        },
     )
-    
+
     # Add test documents
     texts = [
         "Laptop computer with high performance",
@@ -118,9 +126,9 @@ def vectorstore(valkey_url: str, embeddings: DeterministicFakeEmbedding, index_n
         {"category": "audio", "year": 2023, "price": 200},
     ]
     store.add_texts(texts, metadatas=metadatas)
-    
+
     yield store
-    
+
     # Cleanup - drop index and delete documents
     def cleanup():
         client = _create_client(host)
@@ -131,11 +139,11 @@ def vectorstore(valkey_url: str, embeddings: DeterministicFakeEmbedding, index_n
                 client.delete(keys)
             # Drop the index
             client.custom_command(["FT.DROPINDEX", index_name])
-        except (GlideError, ValueError):
+        except (RuntimeError, ValueError):
             pass  # Cleanup failed, index may not exist
         finally:
             client.close()
-    
+
     cleanup()
 
 
@@ -144,7 +152,9 @@ class TestValkeyTagFilters:
 
     def test_tag_equals_single(self, vectorstore: ValkeyVectorStore) -> None:
         filter_expr = ValkeyFilter.tag("category") == "electronics"
-        results = vectorstore.similarity_search("computer", k=10, filter=str(filter_expr))
+        results = vectorstore.similarity_search(
+            "computer", k=10, filter=str(filter_expr)
+        )
         assert len(results) == 3
         assert all(doc.metadata.get("category") == "electronics" for doc in results)
 
@@ -156,7 +166,9 @@ class TestValkeyTagFilters:
 
     def test_tag_not_equals(self, vectorstore: ValkeyVectorStore) -> None:
         filter_expr = ValkeyFilter.tag("category") != "electronics"
-        results = vectorstore.similarity_search("product", k=10, filter=str(filter_expr))
+        results = vectorstore.similarity_search(
+            "product", k=10, filter=str(filter_expr)
+        )
         assert len(results) == 2
         assert all(doc.metadata.get("category") != "electronics" for doc in results)
 
@@ -166,31 +178,41 @@ class TestValkeyNumFilters:
 
     def test_num_equals(self, vectorstore: ValkeyVectorStore) -> None:
         filter_expr = ValkeyFilter.num("year") == 2024
-        results = vectorstore.similarity_search("product", k=10, filter=str(filter_expr))
+        results = vectorstore.similarity_search(
+            "product", k=10, filter=str(filter_expr)
+        )
         assert len(results) == 3
         assert all(doc.metadata.get("year") == "2024" for doc in results)
 
     def test_num_greater_than(self, vectorstore: ValkeyVectorStore) -> None:
         filter_expr = ValkeyFilter.num("price") > 500
-        results = vectorstore.similarity_search("product", k=10, filter=str(filter_expr))
+        results = vectorstore.similarity_search(
+            "product", k=10, filter=str(filter_expr)
+        )
         assert len(results) == 3
         assert all(int(doc.metadata.get("price", 0)) > 500 for doc in results)
 
     def test_num_less_than(self, vectorstore: ValkeyVectorStore) -> None:
         filter_expr = ValkeyFilter.num("price") < 1000
-        results = vectorstore.similarity_search("product", k=10, filter=str(filter_expr))
+        results = vectorstore.similarity_search(
+            "product", k=10, filter=str(filter_expr)
+        )
         assert len(results) == 3
         assert all(int(doc.metadata.get("price", 0)) < 1000 for doc in results)
 
     def test_num_greater_equal(self, vectorstore: ValkeyVectorStore) -> None:
         filter_expr = ValkeyFilter.num("price") >= 800
-        results = vectorstore.similarity_search("product", k=10, filter=str(filter_expr))
+        results = vectorstore.similarity_search(
+            "product", k=10, filter=str(filter_expr)
+        )
         assert len(results) == 3
         assert all(int(doc.metadata.get("price", 0)) >= 800 for doc in results)
 
     def test_num_less_equal(self, vectorstore: ValkeyVectorStore) -> None:
         filter_expr = ValkeyFilter.num("price") <= 800
-        results = vectorstore.similarity_search("product", k=10, filter=str(filter_expr))
+        results = vectorstore.similarity_search(
+            "product", k=10, filter=str(filter_expr)
+        )
         assert len(results) == 3
         assert all(int(doc.metadata.get("price", 0)) <= 800 for doc in results)
 
@@ -215,35 +237,52 @@ class TestValkeyComplexFilters:
     """Test complex filter expressions with AND/OR operations."""
 
     def test_and_operation(self, vectorstore: ValkeyVectorStore) -> None:
-        filter_expr = (ValkeyFilter.tag("category") == "electronics") & (ValkeyFilter.num("year") == 2024)
-        results = vectorstore.similarity_search("product", k=10, filter=str(filter_expr))
+        filter_expr = (ValkeyFilter.tag("category") == "electronics") & (
+            ValkeyFilter.num("year") == 2024
+        )
+        results = vectorstore.similarity_search(
+            "product", k=10, filter=str(filter_expr)
+        )
         assert len(results) == 2
         assert all(doc.metadata.get("category") == "electronics" for doc in results)
         assert all(doc.metadata.get("year") == "2024" for doc in results)
 
     def test_or_operation(self, vectorstore: ValkeyVectorStore) -> None:
-        filter_expr = (ValkeyFilter.tag("category") == "mobile") | (ValkeyFilter.tag("category") == "audio")
-        results = vectorstore.similarity_search("product", k=10, filter=str(filter_expr))
+        filter_expr = (ValkeyFilter.tag("category") == "mobile") | (
+            ValkeyFilter.tag("category") == "audio"
+        )
+        results = vectorstore.similarity_search(
+            "product", k=10, filter=str(filter_expr)
+        )
         assert len(results) == 2
         categories = {doc.metadata.get("category") for doc in results}
         assert categories == {"mobile", "audio"}
 
     def test_complex_nested(self, vectorstore: ValkeyVectorStore) -> None:
         filter_expr = (
-            (ValkeyFilter.tag("category") == "electronics") & (ValkeyFilter.num("price") > 1000)
+            (ValkeyFilter.tag("category") == "electronics")
+            & (ValkeyFilter.num("price") > 1000)
         ) | (ValkeyFilter.tag("category") == "audio")
-        results = vectorstore.similarity_search("product", k=10, filter=str(filter_expr))
+        results = vectorstore.similarity_search(
+            "product", k=10, filter=str(filter_expr)
+        )
         assert len(results) == 3
-        
+
         electronics_expensive = [
-            doc for doc in results 
-            if doc.metadata.get("category") == "electronics" and int(doc.metadata.get("price", 0)) > 1000
+            doc
+            for doc in results
+            if doc.metadata.get("category") == "electronics"
+            and int(doc.metadata.get("price", 0)) > 1000
         ]
         audio = [doc for doc in results if doc.metadata.get("category") == "audio"]
         assert len(electronics_expensive) + len(audio) == len(results)
 
     def test_price_range(self, vectorstore: ValkeyVectorStore) -> None:
-        filter_expr = (ValkeyFilter.num("price") >= 500) & (ValkeyFilter.num("price") <= 1200)
-        results = vectorstore.similarity_search("product", k=10, filter=str(filter_expr))
+        filter_expr = (ValkeyFilter.num("price") >= 500) & (
+            ValkeyFilter.num("price") <= 1200
+        )
+        results = vectorstore.similarity_search(
+            "product", k=10, filter=str(filter_expr)
+        )
         assert len(results) == 3
         assert all(500 <= int(doc.metadata.get("price", 0)) <= 1200 for doc in results)

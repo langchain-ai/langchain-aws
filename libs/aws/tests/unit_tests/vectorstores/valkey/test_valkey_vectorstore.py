@@ -1,6 +1,7 @@
 """Unit tests for Valkey vector store."""
 
 import os
+
 import pytest
 
 pytest.importorskip("valkey")

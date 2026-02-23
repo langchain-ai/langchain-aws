@@ -177,14 +177,12 @@ class ValkeyVectorStore(VectorStore):
         for i, text in enumerate(texts_list):
             key = keys[i]
             metadata = metadatas[i] if metadatas else {}
-            
+
             # Build field-value mapping
             vector_field_name = self.vector_schema.get("name", "content_vector")
             field_value_map = {
                 "content": text,
-                vector_field_name: _array_to_buffer(
-                    embeddings[i], dtype=np.float32
-                ),
+                vector_field_name: _array_to_buffer(embeddings[i], dtype=np.float32),
             }
             # Add metadata fields
             for meta_key, meta_value in metadata.items():
@@ -193,8 +191,8 @@ class ValkeyVectorStore(VectorStore):
                     field_value_map[meta_key] = str(meta_value)
                 else:
                     field_value_map[meta_key] = meta_value
-            
-            self.client.hset(key, field_value_map)
+
+            self.client.hset(key, field_value_map)  # type: ignore[arg-type]
 
         return keys
 
@@ -283,26 +281,24 @@ class ValkeyVectorStore(VectorStore):
         Returns:
             List of (document, score) tuples.
         """
-        from glide_sync import ft
         from glide_shared.commands.server_modules.ft_options.ft_search_options import (
             FtSearchOptions,
         )
+        from glide_sync import ft
 
         vector_field = self.vector_schema.get("name", "content_vector")
-        
+
         base_query = f"*=>[KNN {k} @{vector_field} $vector AS score]"
         if filter:
             base_query = f"({filter})=>[KNN {k} @{vector_field} $vector AS score]"
 
-        params = {
-            "vector": _array_to_buffer(embedding, dtype=np.float32)
-        }
+        params = {"vector": _array_to_buffer(embedding, dtype=np.float32)}
 
         results = ft.search(
             self.client,
             self.index_name,
             base_query,
-            options=FtSearchOptions(params=params),
+            options=FtSearchOptions(params=params),  # type: ignore[arg-type]
         )
 
         # results format: [count, {key: {field: value}}]
@@ -314,12 +310,12 @@ class ValkeyVectorStore(VectorStore):
                     content = doc_data.get(b"content", b"")
                     if isinstance(content, bytes):
                         content = content.decode("utf-8")
-                    
+
                     score_val = doc_data.get(b"score", b"0")
                     if isinstance(score_val, bytes):
                         score_val = score_val.decode("utf-8")
                     score = float(score_val)
-                    
+
                     metadata = {}
                     for key, value in doc_data.items():
                         key_str = key.decode("utf-8") if isinstance(key, bytes) else key
@@ -412,6 +408,6 @@ class ValkeyVectorStore(VectorStore):
             return False
 
         for doc_id in ids:
-            self.client.delete(doc_id)
+            self.client.delete([doc_id])  # type: ignore[list-item]
 
         return True
