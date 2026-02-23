@@ -24,7 +24,7 @@ class CheckpointerConfig(BaseModel):
         characters; collision probability is negligible. Used when checkpoint_ns
         is set to stay under AWS session_id length limit (100 characters).
         """
-        return hashlib.sha256(full_id.encode("utf-8")).hexdigest()
+        return hashlib.sha256(full_id.encode()).hexdigest()
 
     @property
     def session_id(self) -> str:

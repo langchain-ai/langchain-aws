@@ -306,7 +306,7 @@ class TestAgentCoreValkeySaver:
         key = saver._make_checkpoint_key(config, "checkpoint-1")
         # With checkpoint_ns set, session_id is shortened (SHA-256 hex) for AWS
         expected_session_id = hashlib.sha256(
-            "session-1_test-ns".encode("utf-8")
+            b"session-1_test-ns"
         ).hexdigest()
         expected = (
             f"agentcore:checkpoint:{expected_session_id}:agent-1:test-ns:"
