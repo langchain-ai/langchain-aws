@@ -1114,7 +1114,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 )
 
             if stop:
-                params["stop_sequences"] = stop
+                provider = self._get_provider()
+                if k := self.provider_stop_sequence_key_name_map.get(provider):
+                    params[k] = stop
 
             completion, tool_calls, llm_output, body = self._prepare_input_and_invoke(
                 prompt=prompt,
