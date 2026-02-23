@@ -18,11 +18,11 @@ class CheckpointerConfig(BaseModel):
 
     def _shorten_session_id(self, full_id: str) -> str:
         """
-        Deterministic shortening: SHA-256 in UTF-8, then hex digest -> 64 chars [0-9a-f].
+        Deterministic shortening: SHA-256 in UTF-8, then hex digest (64 chars).
 
-        Same full_id always yields the same 64-char id. No special characters;
-        collision probability is negligible. Used when checkpoint_ns is set to
-        stay under AWS session_id length limit (100 characters).
+        Same full_id always yields the same 64-char id [0-9a-f]. No special
+        characters; collision probability is negligible. Used when checkpoint_ns
+        is set to stay under AWS session_id length limit (100 characters).
         """
         return hashlib.sha256(full_id.encode("utf-8")).hexdigest()
 

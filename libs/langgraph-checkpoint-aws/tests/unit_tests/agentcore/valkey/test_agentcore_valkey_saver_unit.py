@@ -1,6 +1,7 @@
 """Tests for AgentCore Valkey checkpoint saver."""
 
 import base64
+import hashlib
 import json
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -303,7 +304,14 @@ class TestAgentCoreValkeySaver:
         )
 
         key = saver._make_checkpoint_key(config, "checkpoint-1")
-        expected = "agentcore:checkpoint:session-1_test-ns:agent-1:test-ns:checkpoint-1"
+        # With checkpoint_ns set, session_id is shortened (SHA-256 hex) for AWS
+        expected_session_id = hashlib.sha256(
+            "session-1_test-ns".encode("utf-8")
+        ).hexdigest()
+        expected = (
+            f"agentcore:checkpoint:{expected_session_id}:agent-1:test-ns:"
+            "checkpoint-1"
+        )
         assert key == expected
 
     def test_make_writes_key(self, saver):
