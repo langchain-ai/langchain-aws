@@ -15,6 +15,7 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
 )
+from langchain_core.messages.ai import UsageMetadata
 from langchain_core.tools import (
     BaseTool,
 )
@@ -55,10 +56,27 @@ class ContentHandlerStream(ChatModelContentHandler):
             # Remove the "data: " prefix
             response_text = response_text[6:]
             response_json = json.loads(response_text)
-            if response_json["choices"][0]["delta"]["content"] != stop_token:
-                content = response_json["choices"][0]["delta"]["content"]
 
-            return AIMessageChunk(content=content)
+            usage_metadata: UsageMetadata | None = None
+            if usage := response_json.get("usage"):
+                usage_metadata = UsageMetadata(
+                    input_tokens=usage.get("prompt_tokens", 0),
+                    output_tokens=usage.get("completion_tokens", 0),
+                    total_tokens=usage.get("total_tokens", 0),
+                )
+
+            content = ""
+            choices = response_json.get("choices", [])
+            if choices and "delta" in choices[0]:
+                delta_content = choices[0]["delta"].get("content", "")
+                if delta_content and delta_content != stop_token:
+                    content = delta_content
+
+            return AIMessageChunk(
+                content=content,
+                id=response_json.get("id"),
+                usage_metadata=usage_metadata,
+            )
         except Exception as e:
             return AIMessageChunk(content=f"Error processing response: {str(e)}")
 
@@ -70,33 +88,39 @@ class MockStreamingBody:
             + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
             + b'"system_fingerprint":"3.0.1-native",'
             + b'"choices":[{"index":0,"delta":{"role":"assistant","content":"An"},'
-            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}\n',
             b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,'
             + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
             + b'"system_fingerprint":"3.0.1-native",'
             + b'"choices":[{"index":0,"delta":{"role":"assistant","content":" L"},'
-            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}\n',
             b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,'
             + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
             + b'"system_fingerprint":"3.0.1-native",'
             + b'"choices":[{"index":0,"delta":{"role":"assistant","content":"LM"},'
-            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}\n',
             b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,'
             + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
             + b'"system_fingerprint":"3.0.1-native",'
             + b'"choices":[{"index":0,"delta":{"role":"assistant","content":" is"},'
-            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}\n',
             b'data: {"object":"chat.completion.chunk","id":"","created":1742696408,'
             + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
             + b'"system_fingerprint":"3.0.1-native",'
             + b'"choices":[{"index":0,"delta":{"role":"assistant","content":" an"},'
-            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
+            + b'"logprobs":null,"finish_reason":null}],"usage":null}\n',
             b'data: {"object":"chat.completion.chunk","id":"","created":1742696408,'
             + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
             + b'"system_fingerprint":"3.0.1-native",'
             + b'"choices":[{"index":0,"delta":{"role":"assistant",'
             + b'"content":" acronym"},'
-            + b'"logprobs":null,"finish_reason":null}],"usage":null}',
+            + b'"logprobs":null,"finish_reason":"stop"}],"usage":null}\n',
+            b'data: {"object":"chat.completion.chunk","id":"","created":1742696408,'
+            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
+            + b'"system_fingerprint":"3.0.1-native",'
+            + b'"choices":[],'
+            + b'"usage":{"prompt_tokens":8,"completion_tokens":6,'
+            + b'"total_tokens":14}}\n',
         ]
         self.index = 0
 
@@ -223,3 +247,30 @@ def test_sagemaker_endpoint_stream() -> None:
     chunks = list(chat_model.stream(messages))
     assert len(chunks) > 0
     assert all(isinstance(chunk, AIMessageChunk) for chunk in chunks)
+
+
+def test_sagemaker_endpoint_stream_with_usage_metadata() -> None:
+    client = Mock()
+    client.invoke_endpoint_with_response_stream.return_value = {
+        "Body": MockStreamingBody()
+    }
+
+    chat_model = ChatSagemakerEndpoint(
+        endpoint_name="test-endpoint",
+        region_name="us-west-2",
+        content_handler=ContentHandlerStream(),
+        client=client,
+    )
+
+    chunks = list(chat_model.stream([HumanMessage(content="What is an LLM?")]))
+
+    full_text = "".join(str(c.content) for c in chunks)
+    assert full_text == "An LLM is an acronym"
+
+    usage_chunks = [c for c in chunks if c.usage_metadata]
+    assert len(usage_chunks) == 1
+    assert usage_chunks[0].usage_metadata == {
+        "input_tokens": 8,
+        "output_tokens": 6,
+        "total_tokens": 14,
+    }
