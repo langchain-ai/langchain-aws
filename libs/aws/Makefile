@@ -30,10 +30,10 @@ test:  ## Run individual unit test: make test TEST_FILE=tests/unit_test/test.py
 	env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN -u BEDROCK_AWS_ACCESS_KEY_ID -u BEDROCK_AWS_SECRET_ACCESS_KEY uv run --group test pytest --disable-socket --allow-unix-socket $(TEST_FILE)
 
 integration_tests: ## Run all integration tests
-	uv run --group test --group test_integration pytest $(TEST_FILE)
+	uv run --group test --group test_integration pytest -n auto $(TEST_FILE)
 
 integration_test: ## Run individual integration test: make integration_test TEST_FILE=tests/integration_tests/integ_test.py
-	uv run --group test --group test_integration pytest $(TEST_FILE)
+	uv run --group test --group test_integration pytest -n auto $(TEST_FILE)
 
 test_watch: ## Run and interactively watch unit tests
 	uv run --group test ptw --snapshot-update --now . -- -vv $(TEST_FILE)
