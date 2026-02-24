@@ -889,9 +889,7 @@ class TestCheckpointerConfig:
         assert checkpoint_config.checkpoint_ns == "test_ns"
         assert checkpoint_config.checkpoint_id == "test_checkpoint"
         # With checkpoint_ns set, session_id is shortened (SHA-256 hex) for AWS limit
-        expected_session_id = hashlib.sha256(
-            b"test_thread_test_ns"
-        ).hexdigest()
+        expected_session_id = hashlib.sha256(b"test_thread_test_ns").hexdigest()
         assert checkpoint_config.session_id == expected_session_id
 
     def test_from_runnable_config_no_namespace(self):

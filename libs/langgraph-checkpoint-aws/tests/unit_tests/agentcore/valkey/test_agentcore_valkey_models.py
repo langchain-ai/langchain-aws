@@ -36,9 +36,7 @@ class TestValkeyCheckpointerConfig:
         )
 
         # With checkpoint_ns set, session_id is shortened (SHA-256 hex) for AWS limit
-        expected_session_id = hashlib.sha256(
-            b"session-1_test-ns"
-        ).hexdigest()
+        expected_session_id = hashlib.sha256(b"session-1_test-ns").hexdigest()
         expected = f"agentcore:checkpoint:{expected_session_id}:agent-1:test-ns"
         assert config.checkpoint_key_prefix == expected
 
@@ -57,9 +55,7 @@ class TestValkeyCheckpointerConfig:
             thread_id="session-1", actor_id="agent-1", checkpoint_ns="test-ns"
         )
 
-        expected_session_id = hashlib.sha256(
-            b"session-1_test-ns"
-        ).hexdigest()
+        expected_session_id = hashlib.sha256(b"session-1_test-ns").hexdigest()
         expected = f"agentcore:channel:{expected_session_id}:agent-1:test-ns"
         assert config.channel_key_prefix == expected
 
@@ -77,9 +73,7 @@ class TestValkeyCheckpointerConfig:
         config = ValkeyCheckpointerConfig.from_runnable_config(runnable_config)
 
         # With checkpoint_ns set, session_id is shortened for AWS 100-char limit
-        expected_session_id = hashlib.sha256(
-            b"session-1_test-ns"
-        ).hexdigest()
+        expected_session_id = hashlib.sha256(b"session-1_test-ns").hexdigest()
         assert config.session_id == expected_session_id
         assert config.actor_id == "agent-1"
         assert config.thread_id == "session-1"  # thread_id is the original value
