@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Dict, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Tuple, Union
 
 if TYPE_CHECKING:
     from playwright.async_api import Browser as AsyncBrowser
     from playwright.sync_api import Browser as SyncBrowser
 
 from bedrock_agentcore.tools.browser_client import BrowserClient
+from bedrock_agentcore.tools.config import (
+    BrowserExtension,
+    ProfileConfiguration,
+    ProxyConfiguration,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,14 +33,28 @@ class BrowserSessionManager:
 
     """
 
-    def __init__(self, region: str = "us-west-2"):
+    def __init__(
+        self,
+        region: str = "us-west-2",
+        proxy_configuration: Optional[Union[ProxyConfiguration, Dict[str, Any]]] = None,
+        extensions: Optional[Sequence[Union[BrowserExtension, Dict[str, Any]]]] = None,
+        profile_configuration: Optional[
+            Union[ProfileConfiguration, Dict[str, Any]]
+        ] = None,
+    ):
         """
         Initialize the browser session manager.
 
         Args:
             region: AWS region for browser client
+            proxy_configuration: Proxy configuration to pass to browser client
+            extensions: Extensions configuration to pass to browser client
+            profile_configuration: Profile configuration to pass to browser client
         """
         self.region = region
+        self.proxy_configuration = proxy_configuration
+        self.extensions = extensions
+        self.profile_configuration = profile_configuration
         self._async_sessions: Dict[str, Tuple[BrowserClient, AsyncBrowser, bool]] = {}
         self._sync_sessions: Dict[str, Tuple[BrowserClient, SyncBrowser, bool]] = {}
 
@@ -111,8 +130,17 @@ class BrowserSessionManager:
         )
 
         try:
+            # Build start kwargs with optional parameters
+            start_kwargs: Dict[str, Any] = {}
+            if self.proxy_configuration is not None:
+                start_kwargs["proxy_configuration"] = self.proxy_configuration
+            if self.extensions is not None:
+                start_kwargs["extensions"] = self.extensions
+            if self.profile_configuration is not None:
+                start_kwargs["profile_configuration"] = self.profile_configuration
+
             # Start browser session
-            browser_client.start()
+            browser_client.start(**start_kwargs)
 
             # Get WebSocket connection info
             ws_url, headers = browser_client.generate_ws_headers()
@@ -171,8 +199,17 @@ class BrowserSessionManager:
         )
 
         try:
+            # Build start kwargs with optional parameters
+            start_kwargs: Dict[str, Any] = {}
+            if self.proxy_configuration is not None:
+                start_kwargs["proxy_configuration"] = self.proxy_configuration
+            if self.extensions is not None:
+                start_kwargs["extensions"] = self.extensions
+            if self.profile_configuration is not None:
+                start_kwargs["profile_configuration"] = self.profile_configuration
+
             # Start browser session
-            browser_client.start()
+            browser_client.start(**start_kwargs)
 
             # Get WebSocket connection info
             ws_url, headers = browser_client.generate_ws_headers()
