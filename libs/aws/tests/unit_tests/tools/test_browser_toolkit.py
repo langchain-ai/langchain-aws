@@ -105,6 +105,46 @@ class TestBrowserToolkit:
             await toolkit.cleanup()
             mock_close.assert_called_once()
 
+    def test_toolkit_forwards_params_to_session_manager(self) -> None:
+        """Test toolkit forwards proxy, extensions, and profile to session manager."""
+        from langchain_aws.tools.browser_toolkit import BrowserToolkit
+
+        proxy_config = {"host": "proxy.example.com", "port": 8080}
+        extensions = [{"id": "ext1", "version": "1.0"}]
+        profile_config = {"name": "test-profile"}
+
+        toolkit = BrowserToolkit(
+            region="us-east-1",
+            proxy_configuration=proxy_config,
+            extensions=extensions,
+            profile_configuration=profile_config,
+        )
+
+        assert toolkit.session_manager.region == "us-east-1"
+        assert toolkit.session_manager.proxy_configuration == proxy_config
+        assert toolkit.session_manager.extensions == extensions
+        assert toolkit.session_manager.profile_configuration == profile_config
+
+    def test_create_browser_toolkit_forwards_params(self) -> None:
+        """Test create_browser_toolkit factory forwards all params."""
+        from langchain_aws.tools.browser_toolkit import create_browser_toolkit
+
+        proxy_config = {"host": "proxy.example.com", "port": 8080}
+        extensions = [{"id": "ext1", "version": "1.0"}]
+        profile_config = {"name": "test-profile"}
+
+        toolkit, tools = create_browser_toolkit(
+            region="us-west-1",
+            proxy_configuration=proxy_config,
+            extensions=extensions,
+            profile_configuration=profile_config,
+        )
+
+        assert toolkit.session_manager.region == "us-west-1"
+        assert toolkit.session_manager.proxy_configuration == proxy_config
+        assert toolkit.session_manager.extensions == extensions
+        assert toolkit.session_manager.profile_configuration == profile_config
+
 
 class TestBrowserSessionManager:
     """Tests for BrowserSessionManager class."""
@@ -257,6 +297,230 @@ class TestBrowserSessionManager:
 
         assert len(manager._async_sessions) == 0
         assert len(manager._sync_sessions) == 0
+
+    @pytest.mark.asyncio
+    async def test_session_manager_passes_proxy_to_start(self) -> None:
+        """Test session manager passes proxy_configuration to browser_client.start()."""
+        from langchain_aws.tools.browser_session_manager import BrowserSessionManager
+
+        proxy_config = {"host": "proxy.example.com", "port": 8080}
+        manager = BrowserSessionManager(
+            region="us-west-2", proxy_configuration=proxy_config
+        )
+
+        with (
+            patch(
+                "langchain_aws.tools.browser_session_manager.BrowserClient"
+            ) as mock_client_class,
+            patch("playwright.async_api.async_playwright") as mock_playwright,
+        ):
+            mock_client = MagicMock()
+            mock_client.start = MagicMock()
+            mock_client.generate_ws_headers = MagicMock(
+                return_value=("ws://test", {"header": "value"})
+            )
+            mock_client_class.return_value = mock_client
+
+            mock_browser = AsyncMock()
+            mock_pw_instance = AsyncMock()
+            mock_pw_instance.chromium.connect_over_cdp = AsyncMock(
+                return_value=mock_browser
+            )
+            mock_pw_context = MagicMock()
+            mock_pw_context.start = AsyncMock(return_value=mock_pw_instance)
+            mock_playwright.return_value = mock_pw_context
+
+            await manager.get_async_browser("thread-1")
+
+            mock_client.start.assert_called_once_with(proxy_configuration=proxy_config)
+
+    @pytest.mark.asyncio
+    async def test_session_manager_passes_extensions_to_start(self) -> None:
+        """Test session manager passes extensions to browser_client.start()."""
+        from langchain_aws.tools.browser_session_manager import BrowserSessionManager
+
+        extensions = [{"id": "ext1", "version": "1.0"}]
+        manager = BrowserSessionManager(region="us-west-2", extensions=extensions)
+
+        with (
+            patch(
+                "langchain_aws.tools.browser_session_manager.BrowserClient"
+            ) as mock_client_class,
+            patch("playwright.async_api.async_playwright") as mock_playwright,
+        ):
+            mock_client = MagicMock()
+            mock_client.start = MagicMock()
+            mock_client.generate_ws_headers = MagicMock(
+                return_value=("ws://test", {"header": "value"})
+            )
+            mock_client_class.return_value = mock_client
+
+            mock_browser = AsyncMock()
+            mock_pw_instance = AsyncMock()
+            mock_pw_instance.chromium.connect_over_cdp = AsyncMock(
+                return_value=mock_browser
+            )
+            mock_pw_context = MagicMock()
+            mock_pw_context.start = AsyncMock(return_value=mock_pw_instance)
+            mock_playwright.return_value = mock_pw_context
+
+            await manager.get_async_browser("thread-1")
+
+            mock_client.start.assert_called_once_with(extensions=extensions)
+
+    @pytest.mark.asyncio
+    async def test_session_manager_passes_profile_to_start(self) -> None:
+        """Test session manager passes profile_configuration to start()."""
+        from langchain_aws.tools.browser_session_manager import BrowserSessionManager
+
+        profile_config = {"name": "test-profile"}
+        manager = BrowserSessionManager(
+            region="us-west-2", profile_configuration=profile_config
+        )
+
+        with (
+            patch(
+                "langchain_aws.tools.browser_session_manager.BrowserClient"
+            ) as mock_client_class,
+            patch("playwright.async_api.async_playwright") as mock_playwright,
+        ):
+            mock_client = MagicMock()
+            mock_client.start = MagicMock()
+            mock_client.generate_ws_headers = MagicMock(
+                return_value=("ws://test", {"header": "value"})
+            )
+            mock_client_class.return_value = mock_client
+
+            mock_browser = AsyncMock()
+            mock_pw_instance = AsyncMock()
+            mock_pw_instance.chromium.connect_over_cdp = AsyncMock(
+                return_value=mock_browser
+            )
+            mock_pw_context = MagicMock()
+            mock_pw_context.start = AsyncMock(return_value=mock_pw_instance)
+            mock_playwright.return_value = mock_pw_context
+
+            await manager.get_async_browser("thread-1")
+
+            mock_client.start.assert_called_once_with(
+                profile_configuration=profile_config
+            )
+
+    @pytest.mark.asyncio
+    async def test_session_manager_default_no_extra_kwargs(self) -> None:
+        """Test session manager doesn't pass extra kwargs when configs are None."""
+        from langchain_aws.tools.browser_session_manager import BrowserSessionManager
+
+        manager = BrowserSessionManager(region="us-west-2")
+
+        with (
+            patch(
+                "langchain_aws.tools.browser_session_manager.BrowserClient"
+            ) as mock_client_class,
+            patch("playwright.async_api.async_playwright") as mock_playwright,
+        ):
+            mock_client = MagicMock()
+            mock_client.start = MagicMock()
+            mock_client.generate_ws_headers = MagicMock(
+                return_value=("ws://test", {"header": "value"})
+            )
+            mock_client_class.return_value = mock_client
+
+            mock_browser = AsyncMock()
+            mock_pw_instance = AsyncMock()
+            mock_pw_instance.chromium.connect_over_cdp = AsyncMock(
+                return_value=mock_browser
+            )
+            mock_pw_context = MagicMock()
+            mock_pw_context.start = AsyncMock(return_value=mock_pw_instance)
+            mock_playwright.return_value = mock_pw_context
+
+            await manager.get_async_browser("thread-1")
+
+            mock_client.start.assert_called_once_with()
+
+    @pytest.mark.asyncio
+    async def test_session_manager_passes_all_params_together(self) -> None:
+        """Test session manager passes all config params to start()."""
+        from langchain_aws.tools.browser_session_manager import BrowserSessionManager
+
+        proxy_config = {"host": "proxy.example.com", "port": 8080}
+        extensions = [{"id": "ext1", "version": "1.0"}]
+        profile_config = {"name": "test-profile"}
+
+        manager = BrowserSessionManager(
+            region="us-west-2",
+            proxy_configuration=proxy_config,
+            extensions=extensions,
+            profile_configuration=profile_config,
+        )
+
+        with (
+            patch(
+                "langchain_aws.tools.browser_session_manager.BrowserClient"
+            ) as mock_client_class,
+            patch("playwright.async_api.async_playwright") as mock_playwright,
+        ):
+            mock_client = MagicMock()
+            mock_client.start = MagicMock()
+            mock_client.generate_ws_headers = MagicMock(
+                return_value=("ws://test", {"header": "value"})
+            )
+            mock_client_class.return_value = mock_client
+
+            mock_browser = AsyncMock()
+            mock_pw_instance = AsyncMock()
+            mock_pw_instance.chromium.connect_over_cdp = AsyncMock(
+                return_value=mock_browser
+            )
+            mock_pw_context = MagicMock()
+            mock_pw_context.start = AsyncMock(return_value=mock_pw_instance)
+            mock_playwright.return_value = mock_pw_context
+
+            await manager.get_async_browser("thread-1")
+
+            mock_client.start.assert_called_once_with(
+                proxy_configuration=proxy_config,
+                extensions=extensions,
+                profile_configuration=profile_config,
+            )
+
+    def test_sync_session_passes_proxy_to_start(self) -> None:
+        """Test sync session creation passes proxy config to start()."""
+        from langchain_aws.tools.browser_session_manager import (
+            BrowserSessionManager,
+        )
+
+        proxy_config = {"host": "proxy.example.com", "port": 8080}
+        manager = BrowserSessionManager(
+            region="us-west-2", proxy_configuration=proxy_config
+        )
+
+        with (
+            patch(
+                "langchain_aws.tools.browser_session_manager.BrowserClient"
+            ) as mock_client_class,
+            patch("playwright.sync_api.sync_playwright") as mock_playwright,
+        ):
+            mock_client = MagicMock()
+            mock_client.start = MagicMock()
+            mock_client.generate_ws_headers = MagicMock(
+                return_value=("ws://test", {"header": "value"})
+            )
+            mock_client_class.return_value = mock_client
+
+            mock_browser = MagicMock()
+            mock_pw_instance = MagicMock()
+            mock_pw_instance.chromium.connect_over_cdp = MagicMock(
+                return_value=mock_browser
+            )
+            mock_pw_context = MagicMock()
+            mock_pw_context.start = MagicMock(return_value=mock_pw_instance)
+            mock_playwright.return_value = mock_pw_context
+
+            manager.get_sync_browser("thread-1")
+
+            mock_client.start.assert_called_once_with(proxy_configuration=proxy_config)
 
 
 class TestBrowserToolInputSchemas:
