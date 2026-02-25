@@ -1020,13 +1020,23 @@ class ChatBedrockConverse(BaseChatModel):
         for msg in reversed(messages):
             if msg.get("role") == "user":
                 new_content = []
+                has_text_block = False
                 for block in msg["content"]:
                     if "text" in block:
+                        has_text_block = True
                         new_content.append(
                             {"guardContent": {"text": {"text": block["text"]}}}
                         )
                     else:
                         new_content.append(block)
+                if not has_text_block:
+                    # Without any guardContent block, Bedrock scans all text
+                    # in the conversation — empty guardContent prevents that.
+                    # In an agent loop, not every LLM invocation has a user
+                    # text message (e.g. tool result continuations).
+                    # Ref: https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-use-converse-api.html
+                    # Fix: https://github.com/langchain-ai/langchain-aws/issues/900
+                    new_content.append({"guardContent": {"text": {"text": ""}}})
                 msg["content"] = new_content
                 break
 
