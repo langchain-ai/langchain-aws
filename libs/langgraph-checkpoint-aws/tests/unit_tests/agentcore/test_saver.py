@@ -908,6 +908,17 @@ class TestCheckpointerConfig:
         assert checkpoint_config.checkpoint_id is None
         assert checkpoint_config.session_id == "test_thread"
 
+    def test_session_id_no_sanitization_when_checkpoint_ns_set(self):
+        """full_id is thread_id + '_' + checkpoint_ns; no replace of : or |."""
+        config = CheckpointerConfig(
+            thread_id="t1",
+            actor_id="a1",
+            checkpoint_ns="ns:with|pipes",
+        )
+        # Hash is of raw "t1_ns:with|pipes", not sanitized
+        expected = hashlib.sha256(b"t1_ns:with|pipes").hexdigest()
+        assert config.session_id == expected
+
     def test_from_runnable_config_missing_thread_id(self):
         config = RunnableConfig(
             configurable={
