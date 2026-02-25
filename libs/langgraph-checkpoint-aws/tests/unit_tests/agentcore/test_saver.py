@@ -3,6 +3,7 @@ Unit tests for AgentCore Memory Checkpoint Saver.
 """
 
 import asyncio
+import hashlib
 import json
 import time
 from collections.abc import Iterator
@@ -887,7 +888,9 @@ class TestCheckpointerConfig:
         assert checkpoint_config.actor_id == "test_actor"
         assert checkpoint_config.checkpoint_ns == "test_ns"
         assert checkpoint_config.checkpoint_id == "test_checkpoint"
-        assert checkpoint_config.session_id == "test_thread_test_ns"
+        # With checkpoint_ns set, session_id is shortened (SHA-256 hex) for AWS limit
+        expected_session_id = hashlib.sha256(b"test_thread_test_ns").hexdigest()
+        assert checkpoint_config.session_id == expected_session_id
 
     def test_from_runnable_config_no_namespace(self):
         config = RunnableConfig(
@@ -904,6 +907,17 @@ class TestCheckpointerConfig:
         assert checkpoint_config.checkpoint_ns == ""
         assert checkpoint_config.checkpoint_id is None
         assert checkpoint_config.session_id == "test_thread"
+
+    def test_session_id_no_sanitization_when_checkpoint_ns_set(self):
+        """full_id is thread_id + '_' + checkpoint_ns; no replace of : or |."""
+        config = CheckpointerConfig(
+            thread_id="t1",
+            actor_id="a1",
+            checkpoint_ns="ns:with|pipes",
+        )
+        # Hash is of raw "t1_ns:with|pipes", not sanitized
+        expected = hashlib.sha256(b"t1_ns:with|pipes").hexdigest()
+        assert config.session_id == expected
 
     def test_from_runnable_config_missing_thread_id(self):
         config = RunnableConfig(

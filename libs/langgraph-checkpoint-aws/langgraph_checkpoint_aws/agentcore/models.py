@@ -2,9 +2,13 @@
 Data models for AgentCore Memory Checkpoint Saver.
 """
 
+import hashlib
+import logging
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class CheckpointerConfig(BaseModel):
@@ -15,13 +19,23 @@ class CheckpointerConfig(BaseModel):
     checkpoint_ns: str = ""
     checkpoint_id: str | None = None
 
+    def _shorten_session_id(self, full_id: str) -> str:
+        """
+        Deterministic shortening: SHA-256 in UTF-8, then hex digest (64 chars).
+
+        Same full_id always yields the same 64-char id [0-9a-f]. No special
+        characters; collision probability is negligible. Used when checkpoint_ns
+        is set to stay under AWS session_id length limit (100 characters).
+        """
+        return hashlib.sha256(full_id.encode()).hexdigest()
+
     @property
     def session_id(self) -> str:
         """Generate session ID from thread_id and checkpoint_ns."""
         if self.checkpoint_ns:
-            # Use underscore separator to ensure valid session ID pattern
-            checkpoint = self.checkpoint_ns.replace(":", "_").replace("|", "_")
-            return f"{self.thread_id}_{checkpoint}"
+            full_id = f"{self.thread_id}_{self.checkpoint_ns}"
+            logger.debug("full_id (thread_id + checkpoint_ns): %s", full_id)
+            return self._shorten_session_id(full_id)
         return self.thread_id
 
     @classmethod
