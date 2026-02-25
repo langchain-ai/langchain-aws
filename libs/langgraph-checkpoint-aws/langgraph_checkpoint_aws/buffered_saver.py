@@ -315,6 +315,8 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
                 pending_writes=pending_writes,
             )
 
+        return None
+
     def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         """Retrieve a checkpoint, checking buffer first."""
         checkpoint_tuple = self._get_tuple_if_buffered(config)
