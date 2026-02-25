@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any
@@ -271,17 +272,14 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
             buffered_configurable = buffered_config.get("configurable", {})
             requested_configurable = config.get("configurable", {})
 
-            # Check if request matches the buffered checkpoint
             buffered_thread_id = buffered_configurable.get("thread_id")
-            buffered_checkpoint_ns = buffered_configurable.get("checkpoint_ns", "")
+            buffered_checkpoint_ns = buffered_configurable.get("checkpoint_ns")
             buffered_checkpoint_id = checkpoint.get("id")
 
             requested_thread_id = requested_configurable.get("thread_id")
-            requested_checkpoint_ns = requested_configurable.get("checkpoint_ns", "")
+            requested_checkpoint_ns = requested_configurable.get("checkpoint_ns")
             requested_checkpoint_id = requested_configurable.get("checkpoint_id")
 
-            # Match if same thread/namespace and either no checkpoint_id requested
-            # or the requested checkpoint_id matches the buffered one
             if (
                 requested_thread_id == buffered_thread_id
                 and requested_checkpoint_ns == buffered_checkpoint_ns
@@ -290,11 +288,20 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
                     or requested_checkpoint_id == buffered_checkpoint_id
                 )
             ):
-                # Collect pending writes for this checkpoint
                 pending_writes: list[tuple[str, str, Any]] = []
-                for _, writes, task_id, _ in self._pending_writes:
-                    for channel, value in writes:
-                        pending_writes.append((task_id, channel, value))
+                for write_config, writes, task_id, _ in self._pending_writes:
+                    write_configurable = write_config.get("configurable", {})
+                    write_thread_id = write_configurable.get("thread_id")
+                    write_checkpoint_ns = write_configurable.get("checkpoint_ns")
+                    write_checkpoint_id = write_configurable.get("checkpoint_id")
+
+                    if (
+                        write_thread_id == buffered_thread_id
+                        and write_checkpoint_ns == buffered_checkpoint_ns
+                        and write_checkpoint_id == buffered_checkpoint_id
+                    ):
+                        for channel, value in writes:
+                            pending_writes.append((task_id, channel, value))
 
                 return CheckpointTuple(
                     config=self._update_runnable_config(buffered_config, checkpoint),
