@@ -47,7 +47,7 @@ class TestValkeyTag:
         assert str(expr) == "*"
 
     def test_eq_none(self) -> None:
-        expr = ValkeyFilter.tag("category") is None
+        expr = ValkeyFilter.tag("category") == None  # noqa: E711
         assert str(expr) == "*"
 
     def test_ne_single_tag(self) -> None:
