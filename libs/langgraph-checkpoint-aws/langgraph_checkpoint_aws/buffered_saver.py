@@ -365,14 +365,13 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
     ) -> RunnableConfig:
         """Update the runnable config with the checkpoint id."""
         configurable = config.get("configurable", {})
+
         result_configurable: dict[str, Any] = {
+            **configurable,
             "thread_id": configurable.get("thread_id"),
             "checkpoint_ns": configurable.get("checkpoint_ns", ""),
             "checkpoint_id": checkpoint["id"],
         }
-        # Preserve actor_id if present (for AgentCoreMemorySaver compatibility)
-        if "actor_id" in configurable:
-            result_configurable["actor_id"] = configurable["actor_id"]
 
         return {"configurable": result_configurable}
 
@@ -386,12 +385,10 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
             return None
 
         result_configurable: dict[str, Any] = {
+            **configurable,
             "thread_id": configurable.get("thread_id"),
             "checkpoint_ns": configurable.get("checkpoint_ns", ""),
             "checkpoint_id": parent_id,
         }
-        # Preserve actor_id if present
-        if "actor_id" in configurable:
-            result_configurable["actor_id"] = configurable["actor_id"]
 
         return {"configurable": result_configurable}
