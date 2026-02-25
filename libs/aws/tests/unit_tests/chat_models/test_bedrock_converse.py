@@ -28,6 +28,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _camel_to_snake_keys,
     _convert_tool_blocks_to_text,
     _extract_response_metadata,
+    _format_data_content_block,
     _format_tools,
     _has_tool_use_or_result_blocks,
     _lc_content_to_bedrock,
@@ -3812,3 +3813,71 @@ def test_streaming_tool_use_round_trip() -> None:
     tool_use_block = bedrock_content[0]["toolUse"]
     assert isinstance(tool_use_block["input"], dict)
     assert tool_use_block["input"] == {"city": "Paris"}
+
+
+def test__format_data_content_block_video_base64() -> None:
+    """Test that _format_data_content_block handles video blocks with base64 data."""
+    video_data = base64.b64encode(b"video_test_data").decode("utf-8")
+    block = {
+        "type": "video",
+        "base64": video_data,
+        "mimeType": "video/mp4",
+    }
+    result = _format_data_content_block(block)
+    assert result == {
+        "video": {
+            "format": "mp4",
+            "source": {"bytes": base64.b64decode(video_data.encode("utf-8"))},
+        }
+    }
+
+
+def test__format_data_content_block_video_source_type() -> None:
+    """Test that _format_data_content_block handles video blocks with sourceType."""
+    video_data = base64.b64encode(b"video_test_data").decode("utf-8")
+    block = {
+        "type": "video",
+        "sourceType": "base64",
+        "mimeType": "video/mp4",
+        "data": video_data,
+    }
+    result = _format_data_content_block(block)
+    assert result == {
+        "video": {
+            "format": "mp4",
+            "source": {"bytes": base64.b64decode(video_data.encode("utf-8"))},
+        }
+    }
+
+
+def test__format_data_content_block_video_missing_mime_type() -> None:
+    """Test _format_data_content_block raises for video without mimeType."""
+    block = {
+        "type": "video",
+        "base64": base64.b64encode(b"video_test_data").decode("utf-8"),
+    }
+    with pytest.raises(ValueError, match="mime_type key is required"):
+        _format_data_content_block(block)
+
+
+def test__format_data_content_block_video_no_base64() -> None:
+    """Test _format_data_content_block raises for video without base64."""
+    block = {
+        "type": "video",
+        "mimeType": "video/mp4",
+    }
+    with pytest.raises(
+        ValueError, match="Video data only supported through in-line base64 format"
+    ):
+        _format_data_content_block(block)
+
+
+def test__format_data_content_block_unsupported_type() -> None:
+    """Test that _format_data_content_block raises ValueError for unsupported types."""
+    block = {
+        "type": "audio",
+        "base64": base64.b64encode(b"audio_data").decode("utf-8"),
+        "mimeType": "audio/mp3",
+    }
+    with pytest.raises(ValueError, match="Unsupported data content block type"):
+        _format_data_content_block(block)
