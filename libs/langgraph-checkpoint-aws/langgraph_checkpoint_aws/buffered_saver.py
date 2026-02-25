@@ -1,4 +1,3 @@
-import logging
 from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any
@@ -178,9 +177,10 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
             result = self._saver.put(config, checkpoint, metadata, new_versions)
             self._pending_checkpoint = None
 
-        for config, writes, task_id, task_path in self._pending_writes:
+        while self._pending_writes:
+            config, writes, task_id, task_path = self._pending_writes[0]
             self._saver.put_writes(config, writes, task_id, task_path)
-        self._pending_writes = []
+            self._pending_writes.pop(0)
 
         return result
 
@@ -190,16 +190,15 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
         """
         result = None
 
-        # Persist the checkpoint first
         if self._pending_checkpoint is not None:
             config, checkpoint, metadata, new_versions = self._pending_checkpoint
             result = await self._saver.aput(config, checkpoint, metadata, new_versions)
             self._pending_checkpoint = None
 
-        # Then persist all pending writes
-        for config, writes, task_id, task_path in self._pending_writes:
+        while self._pending_writes:
+            config, writes, task_id, task_path = self._pending_writes[0]
             await self._saver.aput_writes(config, writes, task_id, task_path)
-        self._pending_writes = []
+            self._pending_writes.pop(0)
 
         return result
 
@@ -265,60 +264,69 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
         # NOTE: No need for async execution as this is in-memory
         self.put_writes(config, writes, task_id, task_path)
 
+    def _get_tuple_if_buffered(
+        self,
+        config: RunnableConfig,
+    ) -> CheckpointTuple | None:
+        """Get a checkpoint tuple from the buffered checkpoint."""
+        if self._pending_checkpoint is None:
+            return None
+
+        buffered_config, checkpoint, metadata, _ = self._pending_checkpoint
+        buffered_configurable = buffered_config.get("configurable", {})
+        requested_configurable = config.get("configurable", {})
+
+        buffered_thread_id = buffered_configurable.get("thread_id")
+        buffered_checkpoint_ns = buffered_configurable.get("checkpoint_ns")
+        buffered_checkpoint_id = checkpoint.get("id")
+
+        requested_thread_id = requested_configurable.get("thread_id")
+        requested_checkpoint_ns = requested_configurable.get("checkpoint_ns")
+        requested_checkpoint_id = requested_configurable.get("checkpoint_id")
+
+        if (
+            requested_thread_id == buffered_thread_id
+            and requested_checkpoint_ns == buffered_checkpoint_ns
+            and (
+                not requested_checkpoint_id
+                or requested_checkpoint_id == buffered_checkpoint_id
+            )
+        ):
+            pending_writes: list[tuple[str, str, Any]] = []
+            for write_config, writes, task_id, _ in self._pending_writes:
+                write_configurable = write_config.get("configurable", {})
+                write_thread_id = write_configurable.get("thread_id")
+                write_checkpoint_ns = write_configurable.get("checkpoint_ns")
+                write_checkpoint_id = write_configurable.get("checkpoint_id")
+
+                if (
+                    write_thread_id == buffered_thread_id
+                    and write_checkpoint_ns == buffered_checkpoint_ns
+                    and write_checkpoint_id == buffered_checkpoint_id
+                ):
+                    for channel, value in writes:
+                        pending_writes.append((task_id, channel, value))
+
+            return CheckpointTuple(
+                config=self._update_runnable_config(buffered_config, checkpoint),
+                checkpoint=checkpoint,
+                metadata=metadata,
+                parent_config=self._update_parent_runnable_config(buffered_config),
+                pending_writes=pending_writes,
+            )
+
     def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         """Retrieve a checkpoint, checking buffer first."""
-        if self._pending_checkpoint:
-            buffered_config, checkpoint, metadata, _ = self._pending_checkpoint
-            buffered_configurable = buffered_config.get("configurable", {})
-            requested_configurable = config.get("configurable", {})
-
-            buffered_thread_id = buffered_configurable.get("thread_id")
-            buffered_checkpoint_ns = buffered_configurable.get("checkpoint_ns")
-            buffered_checkpoint_id = checkpoint.get("id")
-
-            requested_thread_id = requested_configurable.get("thread_id")
-            requested_checkpoint_ns = requested_configurable.get("checkpoint_ns")
-            requested_checkpoint_id = requested_configurable.get("checkpoint_id")
-
-            if (
-                requested_thread_id == buffered_thread_id
-                and requested_checkpoint_ns == buffered_checkpoint_ns
-                and (
-                    not requested_checkpoint_id
-                    or requested_checkpoint_id == buffered_checkpoint_id
-                )
-            ):
-                pending_writes: list[tuple[str, str, Any]] = []
-                for write_config, writes, task_id, _ in self._pending_writes:
-                    write_configurable = write_config.get("configurable", {})
-                    write_thread_id = write_configurable.get("thread_id")
-                    write_checkpoint_ns = write_configurable.get("checkpoint_ns")
-                    write_checkpoint_id = write_configurable.get("checkpoint_id")
-
-                    if (
-                        write_thread_id == buffered_thread_id
-                        and write_checkpoint_ns == buffered_checkpoint_ns
-                        and write_checkpoint_id == buffered_checkpoint_id
-                    ):
-                        for channel, value in writes:
-                            pending_writes.append((task_id, channel, value))
-
-                return CheckpointTuple(
-                    config=self._update_runnable_config(buffered_config, checkpoint),
-                    checkpoint=checkpoint,
-                    metadata=metadata,
-                    parent_config=self._update_parent_runnable_config(buffered_config),
-                    pending_writes=pending_writes,
-                )
-
+        checkpoint_tuple = self._get_tuple_if_buffered(config)
+        if checkpoint_tuple is not None:
+            return checkpoint_tuple
         return self._saver.get_tuple(config)
 
     async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         """Async version of get_tuple."""
-        if self._pending_checkpoint:
-            result = self.get_tuple(config)
-            if result:
-                return result
+        checkpoint_tuple = self._get_tuple_if_buffered(config)
+        if checkpoint_tuple is not None:
+            return checkpoint_tuple
         return await self._saver.aget_tuple(config)
 
     def list(
