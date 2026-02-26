@@ -1117,13 +1117,13 @@ class ChatBedrockConverse(BaseChatModel):
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
         additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
-params = self._converse_params(
-  stop=stop,
-  additionalModelRequestFields=additional_fields,
-  **_snake_to_camel_keys(
-    filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
-  )
-)
+        params = self._converse_params(
+            stop=stop,
+            additionalModelRequestFields=additional_fields,
+            **_snake_to_camel_keys(
+                filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
+            ),
+        )
 
         # Check for tool blocks without toolConfig and handle conversion
         if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(
