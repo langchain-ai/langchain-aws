@@ -99,7 +99,7 @@ def _assert_ready(session_info: dict) -> None:
     assert status == "READY", msg
 
 
-def test_proxy_passthrough():
+def test_proxy_passthrough() -> None:
     """Test proxy_configuration passthrough."""
     print("Test 1: Proxy passthrough via create_browser_toolkit")
     toolkit, tools = create_browser_toolkit(
@@ -159,7 +159,7 @@ def test_proxy_passthrough():
     print("  PASSED")
 
 
-def test_extensions_passthrough():
+def test_extensions_passthrough() -> None:
     """Test extensions passthrough."""
     print("\nTest 2: Extensions passthrough")
     toolkit, tools = create_browser_toolkit(
@@ -185,7 +185,7 @@ def test_extensions_passthrough():
     print("  PASSED")
 
 
-def test_profile_passthrough():
+def test_profile_passthrough() -> None:
     """Test profile_configuration passthrough."""
     print("\nTest 3: Profile passthrough")
     toolkit, tools = create_browser_toolkit(
@@ -224,7 +224,7 @@ def test_profile_passthrough():
     print("  PASSED")
 
 
-def test_all_params_combined():
+def test_all_params_combined() -> None:
     """Test proxy, extensions, and profile together."""
     print("\nTest 4: All parameters combined")
     toolkit, tools = create_browser_toolkit(
@@ -262,7 +262,7 @@ def test_all_params_combined():
         )
 
 
-def test_backward_compat_no_params():
+def test_backward_compat_no_params() -> None:
     """Test no extra params still works (regression)."""
     print("\nTest 5: Backward compat -- no extra params")
     toolkit, tools = create_browser_toolkit(region=REGION)
