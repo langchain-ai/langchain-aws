@@ -1344,6 +1344,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         schema: Union[Dict[str, Any], TypeBaseModel, Type],
         *,
         include_raw: bool = False,
+        strict: Optional[bool] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
         """Model wrapper that returns outputs formatted to match the given schema.
@@ -1366,6 +1367,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
                 The final output is always a `dict` with keys `'raw'`, `'parsed'`, and
                 `'parsing_error'`.
+            strict: If True, enables strict mode for tool definitions.
+                Only supported when Converse API passthrough is enabled
+                (beta_use_converse_api=True).
 
         Returns:
             A Runnable that takes any ChatModel input. The output type depends on
@@ -1460,7 +1464,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         """  # noqa: E501
         if self.beta_use_converse_api:
             return self._as_converse.with_structured_output(
-                schema, include_raw=include_raw, **kwargs
+                schema, include_raw=include_raw, strict=strict, **kwargs
             )
         if "claude-" not in self._get_base_model():
             raise ValueError(
@@ -1483,6 +1487,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         if has_thinking:
             llm = self.bind_tools(
                 [schema],
+                strict=strict,
                 ls_structured_output_format={
                     "kwargs": {"method": "function_calling"},
                     "schema": convert_to_openai_tool(schema),
@@ -1492,6 +1497,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             llm = self.bind_tools(
                 [schema],
                 tool_choice=tool_name,
+                strict=strict,
                 ls_structured_output_format={
                     "kwargs": {"method": "function_calling"},
                     "schema": convert_to_openai_tool(schema),
