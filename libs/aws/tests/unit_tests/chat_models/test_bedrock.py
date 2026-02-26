@@ -568,7 +568,6 @@ def test_anthropic_bind_tools_tool_choice() -> None:
 @pytest.mark.parametrize(
     "model_id",
     [
-        "anthropic.claude-3-7-sonnet-20250219-v1:0",
         "anthropic.claude-sonnet-4-20250514-v1:0",
         "anthropic.claude-sonnet-4-5-20250929-v1:0",
         "anthropic.claude-haiku-4-5-20251001-v1:0",
@@ -642,7 +641,7 @@ def test_claude_thinking_with_structured_output_ok(mock_create_aws_client) -> No
 @pytest.mark.parametrize(
     "model_id",
     [
-        "anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "anthropic.claude-sonnet-4-20250514-v1:0",
         "anthropic.claude-sonnet-4-5-20250929-v1:0",
         "anthropic.claude-haiku-4-5-20251001-v1:0",
     ],
@@ -676,6 +675,56 @@ def test_other_anthropic_model_thinking_forced_tool_ok(mock_create_aws_client) -
     assert cast(RunnableBinding, chat_with_tools).kwargs["tool_choice"] == {
         "type": "any"
     }
+
+
+def test_bind_tools_strict_warns_without_converse_api() -> None:
+    chat_model = ChatBedrock(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region="us-west-2"
+    )  # type: ignore[call-arg]
+    with pytest.warns(UserWarning, match="only supported when using the Converse API"):
+        chat_model.bind_tools([GetWeather], strict=True)
+
+
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_bind_tools_strict_passed_to_converse_api(
+    mock_create_aws_client: Any,
+) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    chat_model = ChatBedrock(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region="us-west-2",
+        beta_use_converse_api=True,
+    )
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], strict=True)
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+    func = bound_kwargs["tools"][0]["function"]
+    assert func["strict"] is True
+
+
+def test_with_structured_output_strict_warns_without_converse_api() -> None:
+    chat_model = ChatBedrock(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region="us-west-2"
+    )  # type: ignore[call-arg]
+    with pytest.warns(UserWarning, match="only supported when using the Converse API"):
+        chat_model.with_structured_output(GetWeather, strict=True)
+
+
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_with_structured_output_strict_passed_to_converse_api(
+    mock_create_aws_client: Any,
+) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    chat_model = ChatBedrock(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region="us-west-2",
+        beta_use_converse_api=True,
+    )
+    structured = chat_model.with_structured_output(GetWeather, strict=True)
+    llm = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, llm).kwargs
+    func = bound_kwargs["tools"][0]["function"]
+    assert func["strict"] is True
 
 
 def test_standard_tracing_params() -> None:
@@ -846,7 +895,7 @@ def test_beta_use_converse_api_with_inference_profile_as_nova_model(
             "us-gov-west-1",
         ),
         (
-            "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "us.anthropic.claude-sonnet-4-20250514-v1:0",
             None,
             "anthropic",
             nullcontext(),

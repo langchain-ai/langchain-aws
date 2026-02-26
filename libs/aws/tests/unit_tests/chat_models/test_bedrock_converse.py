@@ -9,6 +9,7 @@ import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
+    AIMessageChunk,
     BaseMessage,
     HumanMessage,
     SystemMessage,
@@ -27,9 +28,12 @@ from langchain_aws.chat_models.bedrock_converse import (
     _camel_to_snake_keys,
     _convert_tool_blocks_to_text,
     _extract_response_metadata,
+    _format_data_content_block,
+    _format_tools,
     _has_tool_use_or_result_blocks,
     _lc_content_to_bedrock,
     _messages_to_bedrock,
+    _parse_stream_event,
     _snake_to_camel,
     _snake_to_camel_keys,
 )
@@ -142,7 +146,6 @@ def test_anthropic_bind_tools_tool_choice() -> None:
     "thinking_model",
     [
         "anthropic.claude-sonnet-4-5-20250929-v1:0",
-        "anthropic.claude-3-7-sonnet-20250219-v1:0",
         "anthropic.claude-sonnet-4-20250514-v1:0",
         "anthropic.claude-opus-4-20250514-v1:0",
         "anthropic.claude-haiku-4-5-20251001-v1:0",
@@ -696,7 +699,6 @@ def test_standard_tracing_params() -> None:
         ("us.anthropic.claude-haiku-4-5-20251001-v1:0", False),
         ("us.anthropic.claude-sonnet-4-20250514-v1:0", False),
         ("us.anthropic.claude-opus-4-20250514-v1:0", False),
-        ("us.anthropic.claude-3-7-sonnet-20250219-v1:0", False),
         ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", False),
         ("us.anthropic.claude-3-haiku-20240307-v1:0", False),
         ("cohere.command-r-v1:0", False),
@@ -1776,12 +1778,12 @@ def test__get_base_model() -> None:
     assert llm_model_only._get_base_model() == "anthropic.claude-3-sonnet-20240229-v1:0"
 
     llm_with_regional_model = ChatBedrockConverse(
-        model="us.anthropic.claude-3-5-haiku-20241022-v1:0", region_name="us-west-2"
+        model="us.anthropic.claude-haiku-4-5-20251001-v1:0", region_name="us-west-2"
     )
 
     assert (
         llm_with_regional_model._get_base_model()
-        == "anthropic.claude-3-5-haiku-20241022-v1:0"
+        == "anthropic.claude-haiku-4-5-20251001-v1:0"
     )
 
     llm_with_base_model = ChatBedrockConverse(
@@ -2578,7 +2580,7 @@ def test_get_num_tokens_from_messages_supported_model() -> None:
 
     llm = ChatBedrockConverse(
         client=mocked_client,
-        model="anthropic.claude-3-5-haiku-20241022-v1:0",
+        model="anthropic.claude-haiku-4-5-20251001-v1:0",
         region_name="us-east-1",
     )
 
@@ -2592,7 +2594,7 @@ def test_get_num_tokens_from_messages_supported_model() -> None:
 
     # Verify API call format
     call_args = mocked_client.count_tokens.call_args
-    assert call_args[1]["modelId"] == "anthropic.claude-3-5-haiku-20241022-v1:0"
+    assert call_args[1]["modelId"] == "anthropic.claude-haiku-4-5-20251001-v1:0"
     assert "converse" in call_args[1]["input"]
 
 
@@ -2625,7 +2627,7 @@ def test_get_num_tokens_from_messages_api_error_fallback() -> None:
 
     llm = ChatBedrockConverse(
         client=mocked_client,
-        model="anthropic.claude-3-5-haiku-20241022-v1:0",
+        model="anthropic.claude-haiku-4-5-20251001-v1:0",
         region_name="us-west-2",
     )
 
@@ -2819,6 +2821,103 @@ def test_bind_tools_formats_custom_tools_to_dicts() -> None:
     assert tool_def.get("type") == "function"
     assert "function" in tool_def
     assert tool_def["function"].get("name") == "my_custom_tool"
+
+
+def test_bind_tools_strict_true() -> None:
+    """Test that strict=True sets the flag and applies schema transforms."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], strict=True)
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+    tools = bound_kwargs["tools"]
+    assert len(tools) == 1
+
+    func = tools[0]["function"]
+    assert func["strict"] is True
+    assert "location" in func["parameters"]["required"]
+    assert func["parameters"]["additionalProperties"] is False
+
+
+def test_bind_tools_strict_none_default() -> None:
+    """Test that default strict=None does not include strict key in tool definition."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    chat_model_with_tools = chat_model.bind_tools([GetWeather])
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+    func = bound_kwargs["tools"][0]["function"]
+    assert "strict" not in func
+
+
+def test_bind_tools_strict_false() -> None:
+    """Test that strict=False explicitly sets strict to False."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], strict=False)
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+    func = bound_kwargs["tools"][0]["function"]
+    assert func["strict"] is False
+
+
+def test_format_tools_preserves_strict() -> None:
+    """Test that _format_tools preserves strict when converting to Bedrock toolSpec."""
+    openai_tool = {
+        "type": "function",
+        "function": {
+            "name": "GetWeather",
+            "description": "Get the current weather in a given location",
+            "strict": True,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "The city and state",
+                    }
+                },
+                "required": ["location"],
+                "additionalProperties": False,
+            },
+        },
+    }
+    result = _format_tools([openai_tool])
+    assert len(result) == 1
+    tool_spec = result[0]["toolSpec"]
+    assert tool_spec["strict"] is True
+    assert tool_spec["name"] == "GetWeather"
+    assert "inputSchema" in tool_spec
+
+
+def test_bind_tools_strict_with_tool_choice() -> None:
+    """Test that strict and tool_choice work together without interference."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    chat_model_with_tools = chat_model.bind_tools(
+        [GetWeather], strict=True, tool_choice="auto"
+    )
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+    assert bound_kwargs["tool_choice"] == {"auto": {}}
+    func = bound_kwargs["tools"][0]["function"]
+    assert func["strict"] is True
+
+
+def test_with_structured_output_passes_strict_to_bind_tools() -> None:
+    """Test that with_structured_output passes strict through to bind_tools."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    structured = chat_model.with_structured_output(GetWeather, strict=True)
+    llm = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, llm).kwargs
+    func = bound_kwargs["tools"][0]["function"]
+    assert func["strict"] is True
 
 
 def test_reasoning_config_validation_accepts_strings() -> None:
@@ -3547,3 +3646,257 @@ def test_ls_invocation_params_prefers_explicit_region_over_inferred(
     invocation_params = ls_params["ls_invocation_params"]  # type: ignore[typeddict-item]
     # Explicit region_name should be used, not the one from client
     assert invocation_params["region_name"] == "us-west-2"
+
+
+def test__lc_content_to_bedrock_tool_use_dict_input_unchanged() -> None:
+    """Dict input should pass through unchanged."""
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "tool_use",
+            "id": "tool_1",
+            "name": "get_weather",
+            "input": {"city": "Paris"},
+        }
+    ]
+    result = _lc_content_to_bedrock(content)
+    assert result == [
+        {
+            "toolUse": {
+                "toolUseId": "tool_1",
+                "name": "get_weather",
+                "input": {"city": "Paris"},
+            }
+        }
+    ]
+
+
+def test__lc_content_to_bedrock_tool_use_string_input_parsed_to_dict() -> None:
+    """String input (from streaming accumulation) should be parsed to dict."""
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "tool_use",
+            "id": "tool_1",
+            "name": "get_weather",
+            "input": '{"city": "Paris"}',
+        }
+    ]
+    result = _lc_content_to_bedrock(content)
+    assert result == [
+        {
+            "toolUse": {
+                "toolUseId": "tool_1",
+                "name": "get_weather",
+                "input": {"city": "Paris"},
+            }
+        }
+    ]
+
+
+def test__lc_content_to_bedrock_tool_use_empty_string_input() -> None:
+    """Empty string input should become empty dict."""
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "tool_use",
+            "id": "tool_1",
+            "name": "no_args_tool",
+            "input": "",
+        }
+    ]
+    result = _lc_content_to_bedrock(content)
+    assert result == [
+        {
+            "toolUse": {
+                "toolUseId": "tool_1",
+                "name": "no_args_tool",
+                "input": {},
+            }
+        }
+    ]
+
+
+def test__lc_content_to_bedrock_server_tool_use_string_input_parsed() -> None:
+    """String input on server_tool_use should also be parsed to dict."""
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "server_tool_use",
+            "id": "tool_1",
+            "name": "grounding",
+            "input": '{"query": "latest news"}',
+        }
+    ]
+    result = _lc_content_to_bedrock(content)
+    assert result == [
+        {
+            "toolUse": {
+                "toolUseId": "tool_1",
+                "name": "grounding",
+                "input": {"query": "latest news"},
+            }
+        }
+    ]
+
+
+def test_content_block_start_tool_call_chunk_args_type() -> None:
+    """contentBlockStart should produce tool_call_chunk with string/None args."""
+    event = {
+        "contentBlockStart": {
+            "contentBlockIndex": 0,
+            "start": {
+                "toolUse": {
+                    "toolUseId": "tool_1",
+                    "name": "get_weather",
+                }
+            },
+        }
+    }
+    chunk = _parse_stream_event(event)
+    assert isinstance(chunk, AIMessageChunk)
+    assert len(chunk.tool_call_chunks) == 1
+    args = chunk.tool_call_chunks[0]["args"]
+    assert args is None or isinstance(args, str)
+
+
+def test_content_block_delta_tool_call_chunk_args_type() -> None:
+    """contentBlockDelta should produce tool_call_chunk with string args."""
+    event = {
+        "contentBlockDelta": {
+            "contentBlockIndex": 0,
+            "delta": {
+                "toolUse": {
+                    "input": '{"city": "Paris"}',
+                }
+            },
+        }
+    }
+    chunk = _parse_stream_event(event)
+    assert isinstance(chunk, AIMessageChunk)
+    assert len(chunk.tool_call_chunks) == 1
+    args = chunk.tool_call_chunks[0]["args"]
+    assert isinstance(args, str)
+    assert args == '{"city": "Paris"}'
+
+
+def test_streaming_tool_use_round_trip() -> None:
+    """Simulate streaming tool call, accumulate chunks, convert back to Bedrock."""
+    events = [
+        {
+            "contentBlockStart": {
+                "contentBlockIndex": 0,
+                "start": {
+                    "toolUse": {
+                        "toolUseId": "tool_abc",
+                        "name": "get_weather",
+                    }
+                },
+            }
+        },
+        {
+            "contentBlockDelta": {
+                "contentBlockIndex": 0,
+                "delta": {
+                    "toolUse": {
+                        "input": '{"city":',
+                    }
+                },
+            }
+        },
+        {
+            "contentBlockDelta": {
+                "contentBlockIndex": 0,
+                "delta": {
+                    "toolUse": {
+                        "input": ' "Paris"}',
+                    }
+                },
+            }
+        },
+    ]
+
+    full = None
+    for event in events:
+        chunk = _parse_stream_event(event)
+        if chunk is not None:
+            full = chunk if full is None else full + chunk
+
+    assert isinstance(full, AIMessageChunk)
+    assert isinstance(full.content, list)
+    tool_block = next(
+        b for b in full.content if isinstance(b, dict) and b.get("type") == "tool_use"
+    )
+    assert isinstance(tool_block["input"], str)
+    assert len(full.tool_call_chunks) > 0
+
+    bedrock_content = _lc_content_to_bedrock(
+        cast(List[Union[str, Dict[str, Any]]], full.content)
+    )
+    tool_use_block = bedrock_content[0]["toolUse"]
+    assert isinstance(tool_use_block["input"], dict)
+    assert tool_use_block["input"] == {"city": "Paris"}
+
+
+def test__format_data_content_block_video_base64() -> None:
+    """Test that _format_data_content_block handles video blocks with base64 data."""
+    video_data = base64.b64encode(b"video_test_data").decode("utf-8")
+    block = {
+        "type": "video",
+        "base64": video_data,
+        "mimeType": "video/mp4",
+    }
+    result = _format_data_content_block(block)
+    assert result == {
+        "video": {
+            "format": "mp4",
+            "source": {"bytes": base64.b64decode(video_data.encode("utf-8"))},
+        }
+    }
+
+
+def test__format_data_content_block_video_source_type() -> None:
+    """Test that _format_data_content_block handles video blocks with sourceType."""
+    video_data = base64.b64encode(b"video_test_data").decode("utf-8")
+    block = {
+        "type": "video",
+        "sourceType": "base64",
+        "mimeType": "video/mp4",
+        "data": video_data,
+    }
+    result = _format_data_content_block(block)
+    assert result == {
+        "video": {
+            "format": "mp4",
+            "source": {"bytes": base64.b64decode(video_data.encode("utf-8"))},
+        }
+    }
+
+
+def test__format_data_content_block_video_missing_mime_type() -> None:
+    """Test _format_data_content_block raises for video without mimeType."""
+    block = {
+        "type": "video",
+        "base64": base64.b64encode(b"video_test_data").decode("utf-8"),
+    }
+    with pytest.raises(ValueError, match="mime_type key is required"):
+        _format_data_content_block(block)
+
+
+def test__format_data_content_block_video_no_base64() -> None:
+    """Test _format_data_content_block raises for video without base64."""
+    block = {
+        "type": "video",
+        "mimeType": "video/mp4",
+    }
+    with pytest.raises(
+        ValueError, match="Video data only supported through in-line base64 format"
+    ):
+        _format_data_content_block(block)
+
+
+def test__format_data_content_block_unsupported_type() -> None:
+    """Test that _format_data_content_block raises ValueError for unsupported types."""
+    block = {
+        "type": "audio",
+        "base64": base64.b64encode(b"audio_data").decode("utf-8"),
+        "mimeType": "audio/mp3",
+    }
+    with pytest.raises(ValueError, match="Unsupported data content block type"):
+        _format_data_content_block(block)

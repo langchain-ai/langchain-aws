@@ -1,4 +1,4 @@
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_aws.chains import (
     create_neptune_opencypher_qa_chain,
@@ -19,6 +19,9 @@ from langchain_aws.vectorstores.inmemorydb import (
     InMemoryVectorStore,
 )
 from langchain_aws.vectorstores.s3_vectors import AmazonS3Vectors
+
+if TYPE_CHECKING:
+    from langchain_aws.chat_models import ChatAnthropicBedrock
 
 
 def setup_logging() -> None:
@@ -77,6 +80,7 @@ except Exception:
 __all__ = [
     "BedrockEmbeddings",
     "BedrockLLM",
+    "ChatAnthropicBedrock",
     "ChatBedrock",
     "ChatBedrockConverse",
     "SagemakerEndpoint",
@@ -92,3 +96,19 @@ __all__ = [
     "AmazonS3Vectors",
     "BedrockRerank",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Lazy import for optional dependencies."""
+    if name == "ChatAnthropicBedrock":
+        try:
+            from langchain_aws.chat_models import ChatAnthropicBedrock
+
+            return ChatAnthropicBedrock
+        except ImportError as e:
+            msg = (
+                f"Cannot import {name}. "
+                "Please install it with `pip install langchain-aws[anthropic]`."
+            )
+            raise ImportError(msg) from e
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

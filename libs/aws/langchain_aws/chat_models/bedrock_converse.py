@@ -58,6 +58,7 @@ from langchain_core.utils.function_calling import (
     convert_to_openai_function,
     convert_to_openai_tool,
 )
+from langchain_core.utils.json import parse_partial_json
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 from langchain_core.utils.utils import _build_model_kwargs
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
@@ -940,7 +941,7 @@ class ChatBedrockConverse(BaseChatModel):
         if self.base_model_id:
             return self.base_model_id
 
-        # For regional model IDs (e.g., us.anthropic.claude-3-5-haiku-20241022-v1:0),
+        # For regional model IDs (e.g., us.anthropic.claude-haiku-4-5-20251001-v1:0),
         # get the base model ID by removing the regional prefix
         if self.model_id.startswith(
             ("eu.", "us.", "us-gov.", "apac.", "sa.", "amer.", "global.", "jp.", "au.")
@@ -1228,6 +1229,7 @@ params = self._converse_params(
         ],
         *,
         tool_choice: Optional[Union[dict, str, Literal["auto", "any"]]] = None,
+        strict: Optional[bool] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, AIMessage]:
         # Separate system tools from custom tools
@@ -1258,9 +1260,14 @@ params = self._converse_params(
                 formatted_custom_tools.append(tool)
             else:
                 try:
-                    formatted_custom_tools.append(convert_to_openai_tool(tool))
+                    formatted_custom_tools.append(
+                        convert_to_openai_tool(tool, strict=strict)
+                    )
                 except Exception:
-                    formatted_custom_tools.append(_format_tools([tool])[0])
+                    formatted = _format_tools([tool])[0]
+                    if strict is not None and "toolSpec" in formatted:
+                        formatted["toolSpec"]["strict"] = strict  # type: ignore[assignment]
+                    formatted_custom_tools.append(formatted)
 
         if system_tools:
             # Merge system and custom tools
@@ -1339,6 +1346,7 @@ params = self._converse_params(
         schema: _DictOrPydanticClass,
         *,
         include_raw: bool = False,
+        strict: Optional[bool] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
         supports_tool_choice_values = self.supports_tool_choice_values or ()
@@ -1366,13 +1374,14 @@ params = self._converse_params(
                 llm = self.bind_tools(
                     [schema],
                     tool_choice=tool_choice,
+                    strict=strict,
                     ls_structured_output_format={
                         "kwargs": {"method": "function_calling"},
                         "schema": convert_to_openai_tool(schema),
                     },
                 )
             except Exception:
-                llm = self.bind_tools([schema], tool_choice=tool_choice)
+                llm = self.bind_tools([schema], tool_choice=tool_choice, strict=strict)
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             if self.disable_streaming:
                 output_parser: OutputParserLike = ToolsOutputParser(
@@ -1909,6 +1918,32 @@ def _format_data_content_block(block: dict) -> dict:
             error_message = "File data only supported through in-line base64 format."
             raise ValueError(error_message)
 
+    elif block["type"] == "video":
+        if "base64" in block or block.get("sourceType") == "base64":
+            if "mimeType" not in block:
+                error_message = "mime_type key is required for base64 data."
+                raise ValueError(error_message)
+            formatted_block = {
+                "video": {
+                    "format": _mime_type_to_format(block["mimeType"]),
+                    "source": {
+                        "bytes": _b64str_to_bytes(
+                            block.get("base64") or block.get("data", "")
+                        )
+                    },
+                }
+            }
+        else:
+            error_message = "Video data only supported through in-line base64 format."
+            raise ValueError(error_message)
+
+    else:
+        error_message = (
+            f"Unsupported data content block type: '{block['type']}'. "
+            f"Supported types are: 'image', 'file', 'video'."
+        )
+        raise ValueError(error_message)
+
     return formatted_block
 
 
@@ -2018,22 +2053,28 @@ def _lc_content_to_bedrock(
             # Assume block in bedrock document format
             bedrock_content.append({"document": block["document"]})
         elif block["type"] == "tool_use":
+            tool_input = block["input"]
+            if isinstance(tool_input, str):
+                tool_input = parse_partial_json(tool_input) if tool_input else {}
             bedrock_content.append(
                 {
                     "toolUse": {
                         "toolUseId": block["id"],
-                        "input": block["input"],
+                        "input": tool_input,
                         "name": block["name"],
                     }
                 }
             )
         elif block["type"] == "server_tool_use":
             # System tools use toolUse format (same as regular tools)
+            tool_input = block["input"]
+            if isinstance(tool_input, str):
+                tool_input = parse_partial_json(tool_input) if tool_input else {}
             bedrock_content.append(
                 {
                     "toolUse": {
                         "toolUseId": block["id"],
-                        "input": block["input"],
+                        "input": tool_input,
                         "name": block["name"],
                     }
                 }

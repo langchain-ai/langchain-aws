@@ -1,5 +1,7 @@
 """Tests for AgentCore Valkey models."""
 
+import hashlib
+
 import pytest
 
 pytest.importorskip("valkey")
@@ -33,7 +35,9 @@ class TestValkeyCheckpointerConfig:
             thread_id="session-1", actor_id="agent-1", checkpoint_ns="test-ns"
         )
 
-        expected = "agentcore:checkpoint:session-1_test-ns:agent-1:test-ns"
+        # With checkpoint_ns set, session_id is shortened (SHA-256 hex) for AWS limit
+        expected_session_id = hashlib.sha256(b"session-1_test-ns").hexdigest()
+        expected = f"agentcore:checkpoint:{expected_session_id}:agent-1:test-ns"
         assert config.checkpoint_key_prefix == expected
 
     def test_writes_key_prefix(self):
@@ -51,7 +55,8 @@ class TestValkeyCheckpointerConfig:
             thread_id="session-1", actor_id="agent-1", checkpoint_ns="test-ns"
         )
 
-        expected = "agentcore:channel:session-1_test-ns:agent-1:test-ns"
+        expected_session_id = hashlib.sha256(b"session-1_test-ns").hexdigest()
+        expected = f"agentcore:channel:{expected_session_id}:agent-1:test-ns"
         assert config.channel_key_prefix == expected
 
     def test_from_runnable_config(self):
@@ -67,7 +72,9 @@ class TestValkeyCheckpointerConfig:
 
         config = ValkeyCheckpointerConfig.from_runnable_config(runnable_config)
 
-        assert config.session_id == "session-1_test-ns"  # session_id includes namespace
+        # With checkpoint_ns set, session_id is shortened for AWS 100-char limit
+        expected_session_id = hashlib.sha256(b"session-1_test-ns").hexdigest()
+        assert config.session_id == expected_session_id
         assert config.actor_id == "agent-1"
         assert config.thread_id == "session-1"  # thread_id is the original value
         assert config.checkpoint_ns == "test-ns"

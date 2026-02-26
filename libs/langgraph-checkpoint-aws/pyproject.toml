@@ -13,7 +13,7 @@ dependencies = [
     "typing_extensions>=4.0.0; python_version<'3.11'",
 ]
 name = "langgraph-checkpoint-aws"
-version = "1.0.4"
+version = "1.0.5"
 description = "A LangChain checkpointer implementation that uses Bedrock Session Management Service and ElastiCache Valkey to enable stateful and resumable LangGraph agents."
 readme = "README.md"
 keywords = ["aws", "bedrock", "langchain", "langgraph", "checkpointer","dynamodb", "elasticache", "valkey"]
@@ -39,6 +39,7 @@ test = [
     "pytest-socket>=0.7.0",
     "pytest-asyncio>=0.26.0",
     "pytest-mock>=3.15.1",
+    "pytest-xdist>=3.8.0,<4.0.0",
     "fakeredis>=2.25.1"
 ]
 test_integration = [
