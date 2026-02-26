@@ -1465,8 +1465,8 @@ params = self._converse_params(
 
         if constructor_fields or invoke_fields:
             merged_additional_fields = {
-                **(constructor_fields if constructor_fields else {}),
-                **(invoke_fields if invoke_fields else {}),
+                **(constructor_fields or {}),
+                **(invoke_fields or {}),
             }
         else:
             merged_additional_fields = {}
