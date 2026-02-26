@@ -677,6 +677,56 @@ def test_other_anthropic_model_thinking_forced_tool_ok(mock_create_aws_client) -
     }
 
 
+def test_bind_tools_strict_warns_without_converse_api() -> None:
+    chat_model = ChatBedrock(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region="us-west-2"
+    )  # type: ignore[call-arg]
+    with pytest.warns(UserWarning, match="only supported when using the Converse API"):
+        chat_model.bind_tools([GetWeather], strict=True)
+
+
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_bind_tools_strict_passed_to_converse_api(
+    mock_create_aws_client: Any,
+) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    chat_model = ChatBedrock(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region="us-west-2",
+        beta_use_converse_api=True,
+    )
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], strict=True)
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+    func = bound_kwargs["tools"][0]["function"]
+    assert func["strict"] is True
+
+
+def test_with_structured_output_strict_warns_without_converse_api() -> None:
+    chat_model = ChatBedrock(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region="us-west-2"
+    )  # type: ignore[call-arg]
+    with pytest.warns(UserWarning, match="only supported when using the Converse API"):
+        chat_model.with_structured_output(GetWeather, strict=True)
+
+
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_with_structured_output_strict_passed_to_converse_api(
+    mock_create_aws_client: Any,
+) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    chat_model = ChatBedrock(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region="us-west-2",
+        beta_use_converse_api=True,
+    )
+    structured = chat_model.with_structured_output(GetWeather, strict=True)
+    llm = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, llm).kwargs
+    func = bound_kwargs["tools"][0]["function"]
+    assert func["strict"] is True
+
+
 def test_standard_tracing_params() -> None:
     llm = ChatBedrock(model_id="foo", region_name="us-west-2")  # type: ignore[call-arg]
     expected = {

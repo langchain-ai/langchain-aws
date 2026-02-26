@@ -1242,6 +1242,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool]],
         *,
         tool_choice: Optional[Union[dict, str, Literal["auto", "none"], bool]] = None,
+        strict: Optional[bool] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, AIMessage]:
         """Bind tool-like objects to this chat model.
@@ -1258,6 +1259,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 "auto" to automatically determine which function to call
                 (if any), or a dict of the form:
                 {"type": "function", "function": {"name": <<tool_name>>}}.
+            strict: If True, enables strict mode for tool definitions.
+                Only supported when Converse API passthrough is enabled.
+                (beta_use_converse_api=True).
             **kwargs: Any additional parameters to pass to the
                 [Runnable][langchain_core.runnables.Runnable] constructor.
 
@@ -1266,7 +1270,14 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             if isinstance(tool_choice, bool):
                 tool_choice = "any" if tool_choice else None
             return self._as_converse.bind_tools(
-                tools, tool_choice=tool_choice, **kwargs
+                tools, tool_choice=tool_choice, strict=strict, **kwargs
+            )
+        if strict is not None:
+            warnings.warn(
+                "The 'strict' parameter is only supported when using the Converse "
+                "API (beta_use_converse_api=True). It will be ignored.",
+                UserWarning,
+                stacklevel=2,
             )
         if self._get_provider() == "anthropic":
             formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
@@ -1333,6 +1344,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         schema: Union[Dict[str, Any], TypeBaseModel, Type],
         *,
         include_raw: bool = False,
+        strict: Optional[bool] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
         """Model wrapper that returns outputs formatted to match the given schema.
@@ -1355,6 +1367,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
                 The final output is always a `dict` with keys `'raw'`, `'parsed'`, and
                 `'parsing_error'`.
+            strict: If True, enables strict mode for tool definitions.
+                Only supported when Converse API passthrough is enabled
+                (beta_use_converse_api=True).
 
         Returns:
             A Runnable that takes any ChatModel input. The output type depends on
@@ -1449,7 +1464,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         """  # noqa: E501
         if self.beta_use_converse_api:
             return self._as_converse.with_structured_output(
-                schema, include_raw=include_raw, **kwargs
+                schema, include_raw=include_raw, strict=strict, **kwargs
             )
         if "claude-" not in self._get_base_model():
             raise ValueError(
@@ -1472,6 +1487,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         if has_thinking:
             llm = self.bind_tools(
                 [schema],
+                strict=strict,
                 ls_structured_output_format={
                     "kwargs": {"method": "function_calling"},
                     "schema": convert_to_openai_tool(schema),
@@ -1481,6 +1497,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             llm = self.bind_tools(
                 [schema],
                 tool_choice=tool_name,
+                strict=strict,
                 ls_structured_output_format={
                     "kwargs": {"method": "function_calling"},
                     "schema": convert_to_openai_tool(schema),
