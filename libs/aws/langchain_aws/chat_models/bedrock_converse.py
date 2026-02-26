@@ -545,10 +545,11 @@ class ChatBedrockConverse(BaseChatModel):
     additional_model_request_fields: Optional[Dict[str, Any]] = None
     """Additional inference parameters that the model supports.
 
-    Parameters beyond the base set of inference parameters that Converse supports in the
-   Optional dict of additional parameters to pass in the request. Keys must match the exact
-   format expected by the target model (e.g., "inferenceConfig" not "inference_config"). 
-   Refer to the model's AWS documentation for supported parameters.
+    Parameters beyond the base set of inference parameters that Converse
+    supports in the additionalModelRequestFields field. Keys must match
+    the exact format expected by the target model (e.g., inferenceConfig,
+    not inference_config). Refer to the model's AWS documentation for
+    supported parameters.
 
     """
 
