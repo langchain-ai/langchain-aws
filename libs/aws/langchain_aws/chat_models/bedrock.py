@@ -1086,7 +1086,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                             break
                         elif isinstance(content, str):
                             msg["content"] = [
-                                {"type": "text", "text": content, "cache_control": cache_control}
+                                {
+                                    "type": "text",
+                                    "text": content,
+                                    "cache_control": cache_control,
+                                }
                             ]
                             break
 
