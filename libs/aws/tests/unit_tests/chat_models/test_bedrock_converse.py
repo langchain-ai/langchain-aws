@@ -29,6 +29,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _convert_tool_blocks_to_text,
     _extract_response_metadata,
     _format_data_content_block,
+    _format_tools,
     _has_tool_use_or_result_blocks,
     _lc_content_to_bedrock,
     _messages_to_bedrock,
@@ -2820,6 +2821,103 @@ def test_bind_tools_formats_custom_tools_to_dicts() -> None:
     assert tool_def.get("type") == "function"
     assert "function" in tool_def
     assert tool_def["function"].get("name") == "my_custom_tool"
+
+
+def test_bind_tools_strict_true() -> None:
+    """Test that strict=True sets the flag and applies schema transforms."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], strict=True)
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+    tools = bound_kwargs["tools"]
+    assert len(tools) == 1
+
+    func = tools[0]["function"]
+    assert func["strict"] is True
+    assert "location" in func["parameters"]["required"]
+    assert func["parameters"]["additionalProperties"] is False
+
+
+def test_bind_tools_strict_none_default() -> None:
+    """Test that default strict=None does not include strict key in tool definition."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    chat_model_with_tools = chat_model.bind_tools([GetWeather])
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+    func = bound_kwargs["tools"][0]["function"]
+    assert "strict" not in func
+
+
+def test_bind_tools_strict_false() -> None:
+    """Test that strict=False explicitly sets strict to False."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], strict=False)
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+    func = bound_kwargs["tools"][0]["function"]
+    assert func["strict"] is False
+
+
+def test_format_tools_preserves_strict() -> None:
+    """Test that _format_tools preserves strict when converting to Bedrock toolSpec."""
+    openai_tool = {
+        "type": "function",
+        "function": {
+            "name": "GetWeather",
+            "description": "Get the current weather in a given location",
+            "strict": True,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "The city and state",
+                    }
+                },
+                "required": ["location"],
+                "additionalProperties": False,
+            },
+        },
+    }
+    result = _format_tools([openai_tool])
+    assert len(result) == 1
+    tool_spec = result[0]["toolSpec"]
+    assert tool_spec["strict"] is True
+    assert tool_spec["name"] == "GetWeather"
+    assert "inputSchema" in tool_spec
+
+
+def test_bind_tools_strict_with_tool_choice() -> None:
+    """Test that strict and tool_choice work together without interference."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    chat_model_with_tools = chat_model.bind_tools(
+        [GetWeather], strict=True, tool_choice="auto"
+    )
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+    assert bound_kwargs["tool_choice"] == {"auto": {}}
+    func = bound_kwargs["tools"][0]["function"]
+    assert func["strict"] is True
+
+
+def test_with_structured_output_passes_strict_to_bind_tools() -> None:
+    """Test that with_structured_output passes strict through to bind_tools."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    structured = chat_model.with_structured_output(GetWeather, strict=True)
+    llm = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, llm).kwargs
+    func = bound_kwargs["tools"][0]["function"]
+    assert func["strict"] is True
 
 
 def test_reasoning_config_validation_accepts_strings() -> None:
