@@ -41,6 +41,7 @@ def get_client(valkey_url: str, **kwargs: Any) -> GlideClientType:
             GlideClientConfiguration,
             GlideClusterClient,
             GlideClusterClientConfiguration,
+            GlideError,
             NodeAddress,
         )
     except ImportError as e:
@@ -58,7 +59,7 @@ def get_client(valkey_url: str, **kwargs: Any) -> GlideClientType:
     try:
         cluster_config = GlideClusterClientConfiguration(addresses=addresses, **kwargs)
         return GlideClusterClient.create(cluster_config)
-    except (ConnectionError, TimeoutError, ValueError) as e:
+    except GlideError as e:
         logger.debug(f"Cluster connection failed, falling back to standalone: {e}")
         standalone_config = GlideClientConfiguration(addresses=addresses, **kwargs)
         return GlideClient.create(standalone_config)
