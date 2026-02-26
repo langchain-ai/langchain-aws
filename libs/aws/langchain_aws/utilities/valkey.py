@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeAlias, Union
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from glide_sync import GlideClient, GlideClusterClient
 
-    GlideClientType = GlideClient | GlideClusterClient
+GlideClientType: TypeAlias = Union["GlideClient", "GlideClusterClient"]
 
 
 def get_client(valkey_url: str, **kwargs: Any) -> GlideClientType:

@@ -25,16 +25,9 @@ from pydantic import ConfigDict
 from langchain_aws.utilities.redis import (
     _array_to_buffer,
 )
-from langchain_aws.utilities.valkey import get_client
+from langchain_aws.utilities.valkey import GlideClientType, get_client
 
 logger = logging.getLogger(__name__)
-
-try:
-    from glide_sync import GlideClient, GlideClusterClient
-
-    GlideClientType = Union[GlideClient, GlideClusterClient]
-except ImportError:
-    GlideClientType = Any  # type: ignore
 
 
 def _default_relevance_score(val: float) -> float:
@@ -192,7 +185,7 @@ class ValkeyVectorStore(VectorStore):
                 else:
                     field_value_map[meta_key] = meta_value
 
-            self.client.hset(key, field_value_map)  # type: ignore[arg-type]
+            self.client.hset(key, field_value_map)  # type: ignore[arg-type, attr-defined]
 
         return keys
 
@@ -408,6 +401,6 @@ class ValkeyVectorStore(VectorStore):
             return False
 
         for doc_id in ids:
-            self.client.delete([doc_id])  # type: ignore[list-item]
+            self.client.delete([doc_id])  # type: ignore[list-item, attr-defined]
 
         return True
