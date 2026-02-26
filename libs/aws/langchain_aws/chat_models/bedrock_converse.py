@@ -1059,13 +1059,9 @@ class ChatBedrockConverse(BaseChatModel):
         additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
         params = self._converse_params(
             stop=stop,
+            additionalModelRequestFields=additional_fields,
             **_snake_to_camel_keys(
                 filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
-            ),
-            **(
-                {"additionalModelRequestFields": additional_fields}
-                if additional_fields is not None
-                else {}
             ),
         )
 
