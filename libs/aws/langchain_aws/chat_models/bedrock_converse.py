@@ -546,7 +546,9 @@ class ChatBedrockConverse(BaseChatModel):
     """Additional inference parameters that the model supports.
 
     Parameters beyond the base set of inference parameters that Converse supports in the
-    inferenceConfig field.
+   Optional dict of additional parameters to pass in the request. Keys must match the exact
+   format expected by the target model (e.g., "inferenceConfig" not "inference_config"). 
+   Refer to the model's AWS documentation for supported parameters.
 
     """
 
