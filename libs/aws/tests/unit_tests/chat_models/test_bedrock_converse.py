@@ -3502,6 +3502,36 @@ def test_additional_model_request_fields_keys_passthrough_stream() -> None:
     assert additional_fields["inferenceConfig"] == {"topK": 50}
 
 
+def test_additional_model_request_fields_mixed_formats() -> None:
+    """Test that both camelCase and snake_case keys coexist without transformation."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )
+
+    llm.invoke(
+        [HumanMessage(content="Hi")],
+        additional_model_request_fields={
+            "inferenceConfig": {"topK": 50},
+            "custom_param": "value",
+        },
+    )
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+
+    assert additional_fields["inferenceConfig"] == {"topK": 50}
+    assert additional_fields["custom_param"] == "value"
+    assert "inference_config" not in additional_fields
+
+
 def test_stream_closes_event_stream() -> None:
     """Test that stream() explicitly closes the EventStream after iteration."""
     mocked_client = mock.MagicMock()
