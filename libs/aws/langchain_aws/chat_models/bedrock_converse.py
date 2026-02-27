@@ -545,8 +545,11 @@ class ChatBedrockConverse(BaseChatModel):
     additional_model_request_fields: Optional[Dict[str, Any]] = None
     """Additional inference parameters that the model supports.
 
-    Parameters beyond the base set of inference parameters that Converse supports in the
-    inferenceConfig field.
+    Parameters beyond the base set of inference parameters that Converse
+    supports in the additionalModelRequestFields field. Keys must match
+    the exact format expected by the target model (e.g., inferenceConfig,
+    not inference_config). Refer to the model's AWS documentation for
+    supported parameters.
 
     """
 
@@ -1053,8 +1056,10 @@ class ChatBedrockConverse(BaseChatModel):
         logger.debug(f"System message to bedrock: {system}")
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
+        additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
         params = self._converse_params(
             stop=stop,
+            additionalModelRequestFields=additional_fields,
             **_snake_to_camel_keys(
                 filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
@@ -1110,8 +1115,10 @@ class ChatBedrockConverse(BaseChatModel):
 
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
+        additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
         params = self._converse_params(
             stop=stop,
+            additionalModelRequestFields=additional_fields,
             **_snake_to_camel_keys(
                 filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
@@ -1458,26 +1465,16 @@ class ChatBedrockConverse(BaseChatModel):
         tier = serviceTier or self.service_tier
 
         # Merge additional_model_request_fields: invoke-level values override
-        # constructor defaults.
-        # Both sides must be normalized to snake_case before merging to ensure
-        # that keys like "reasoningEffort" and "reasoning_effort" are treated
-        # as the same key. The final result stays in snake_case for the API.
+        # constructor defaults. Values are passed through without key
+        # transformation -- the user is responsible for providing keys in
+        # the specific format that the target model expects.
         constructor_fields = self.additional_model_request_fields
         invoke_fields = additionalModelRequestFields
-        excluded = {"reasoningConfig", "inputSchema", "properties", "thinking"}
 
         if constructor_fields or invoke_fields:
             merged_additional_fields = {
-                **(
-                    _camel_to_snake_keys(constructor_fields, excluded_keys=excluded)
-                    if constructor_fields
-                    else {}
-                ),
-                **(
-                    _camel_to_snake_keys(invoke_fields, excluded_keys=excluded)
-                    if invoke_fields
-                    else {}
-                ),
+                **(constructor_fields or {}),
+                **(invoke_fields or {}),
             }
         else:
             merged_additional_fields = {}
