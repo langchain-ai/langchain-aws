@@ -397,6 +397,10 @@ class ChatSagemakerEndpoint(BaseChatModel):
 
             for line in iterator:
                 message = self.content_handler.transform_output(line)
+                usage_metadata = getattr(message, "usage_metadata", None)
+                response_metadata = message.response_metadata
+                msg_id = message.id
+
                 if (
                     stop is not None
                     and isinstance(message, AIMessage)
@@ -405,12 +409,11 @@ class ChatSagemakerEndpoint(BaseChatModel):
                     text = enforce_stop_tokens(message.content, stop)
                     message = AIMessage(
                         content=text,
-                        usage_metadata=getattr(message, "usage_metadata", None),
-                        response_metadata=message.response_metadata,
-                        id=message.id,
+                        usage_metadata=usage_metadata,
+                        response_metadata=response_metadata,
+                        id=msg_id,
                     )
 
-                usage_metadata = getattr(message, "usage_metadata", None)
                 has_content = bool(message.content)
                 has_usage = usage_metadata is not None
 
@@ -422,15 +425,15 @@ class ChatSagemakerEndpoint(BaseChatModel):
                         chunk = AIMessageChunk(
                             content=message.content or "",
                             usage_metadata=usage_metadata,
-                            response_metadata=message.response_metadata,
-                            id=message.id,
+                            response_metadata=response_metadata,
+                            id=msg_id,
                         )
                     else:
                         chunk = BaseMessageChunk(
                             content=message.content or "",
                             type=message.type,
-                            response_metadata=message.response_metadata,
-                            id=message.id,
+                            response_metadata=response_metadata,
+                            id=msg_id,
                         )
                     generation_chunk = ChatGenerationChunk(message=chunk)
                     if run_manager:

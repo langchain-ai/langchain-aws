@@ -39,6 +39,27 @@ class DefaultHandler(ChatModelContentHandler):
         return AIMessage(content=response_json[0]["generated_text"])
 
 
+def _extract_usage(response_json: dict) -> UsageMetadata | None:
+    usage = response_json.get("usage")
+    if not usage:
+        return None
+    return UsageMetadata(
+        input_tokens=usage.get("prompt_tokens", 0),
+        output_tokens=usage.get("completion_tokens", 0),
+        total_tokens=usage.get("total_tokens", 0),
+    )
+
+
+def _extract_content(response_json: dict) -> str:
+    stop_token = "[DONE]"
+    choices = response_json.get("choices", [])
+    if choices and "delta" in choices[0]:
+        delta_content = choices[0]["delta"].get("content", "")
+        if delta_content and delta_content != stop_token:
+            return delta_content
+    return ""
+
+
 class ContentHandlerStream(ChatModelContentHandler):
     content_type = "application/json"
     accepts = "application/json"
@@ -48,79 +69,65 @@ class ContentHandlerStream(ChatModelContentHandler):
         return json.dumps(body).encode("utf-8")
 
     def transform_output(self, output: bytes) -> AIMessageChunk:
-        stop_token = "[DONE]"
         try:
             response_text = output.decode("utf-8").strip()
             if not response_text:
                 return AIMessageChunk(content="")
-            # Remove the "data: " prefix
-            response_text = response_text[6:]
+            response_text = response_text[6:]  # Remove "data: " prefix
             response_json = json.loads(response_text)
 
-            usage_metadata: UsageMetadata | None = None
-            if usage := response_json.get("usage"):
-                usage_metadata = UsageMetadata(
-                    input_tokens=usage.get("prompt_tokens", 0),
-                    output_tokens=usage.get("completion_tokens", 0),
-                    total_tokens=usage.get("total_tokens", 0),
-                )
-
-            content = ""
-            choices = response_json.get("choices", [])
-            if choices and "delta" in choices[0]:
-                delta_content = choices[0]["delta"].get("content", "")
-                if delta_content and delta_content != stop_token:
-                    content = delta_content
-
             return AIMessageChunk(
-                content=content,
+                content=_extract_content(response_json),
                 id=response_json.get("id"),
-                usage_metadata=usage_metadata,
+                usage_metadata=_extract_usage(response_json),
             )
         except Exception as e:
             return AIMessageChunk(content=f"Error processing response: {str(e)}")
 
 
+def _make_chunk(
+    content: str | None = None,
+    finish_reason: str | None = None,
+    usage: dict | None = None,
+) -> bytes:
+    choices = []
+    if content is not None:
+        choices.append(
+            {
+                "index": 0,
+                "delta": {"role": "assistant", "content": content},
+                "logprobs": None,
+                "finish_reason": finish_reason,
+            }
+        )
+    chunk = {
+        "object": "chat.completion.chunk",
+        "id": "",
+        "created": 1742696407,
+        "model": "Qwen/Qwen2.5-1.5B-Instruct",
+        "system_fingerprint": "3.0.1-native",
+        "choices": choices,
+        "usage": usage,
+    }
+    return b"data: " + json.dumps(chunk).encode() + b"\n"
+
+
 class MockStreamingBody:
     def __init__(self) -> None:
         self.data = [
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,'
-            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
-            + b'"system_fingerprint":"3.0.1-native",'
-            + b'"choices":[{"index":0,"delta":{"role":"assistant","content":"An"},'
-            + b'"logprobs":null,"finish_reason":null}],"usage":null}\n',
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,'
-            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
-            + b'"system_fingerprint":"3.0.1-native",'
-            + b'"choices":[{"index":0,"delta":{"role":"assistant","content":" L"},'
-            + b'"logprobs":null,"finish_reason":null}],"usage":null}\n',
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,'
-            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
-            + b'"system_fingerprint":"3.0.1-native",'
-            + b'"choices":[{"index":0,"delta":{"role":"assistant","content":"LM"},'
-            + b'"logprobs":null,"finish_reason":null}],"usage":null}\n',
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696407,'
-            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
-            + b'"system_fingerprint":"3.0.1-native",'
-            + b'"choices":[{"index":0,"delta":{"role":"assistant","content":" is"},'
-            + b'"logprobs":null,"finish_reason":null}],"usage":null}\n',
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696408,'
-            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
-            + b'"system_fingerprint":"3.0.1-native",'
-            + b'"choices":[{"index":0,"delta":{"role":"assistant","content":" an"},'
-            + b'"logprobs":null,"finish_reason":null}],"usage":null}\n',
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696408,'
-            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
-            + b'"system_fingerprint":"3.0.1-native",'
-            + b'"choices":[{"index":0,"delta":{"role":"assistant",'
-            + b'"content":" acronym"},'
-            + b'"logprobs":null,"finish_reason":"stop"}],"usage":null}\n',
-            b'data: {"object":"chat.completion.chunk","id":"","created":1742696408,'
-            + b'"model":"Qwen/Qwen2.5-1.5B-Instruct",'
-            + b'"system_fingerprint":"3.0.1-native",'
-            + b'"choices":[],'
-            + b'"usage":{"prompt_tokens":8,"completion_tokens":6,'
-            + b'"total_tokens":14}}\n',
+            _make_chunk(content="An"),
+            _make_chunk(content=" L"),
+            _make_chunk(content="LM"),
+            _make_chunk(content=" is"),
+            _make_chunk(content=" an"),
+            _make_chunk(content=" acronym", finish_reason="stop"),
+            _make_chunk(
+                usage={
+                    "prompt_tokens": 8,
+                    "completion_tokens": 6,
+                    "total_tokens": 14,
+                }
+            ),
         ]
         self.index = 0
 

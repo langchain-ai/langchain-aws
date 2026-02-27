@@ -224,6 +224,38 @@ def test_stream_preserves_metadata_through_stop_tokens() -> None:
     assert chunk_msg.id == msg_id
 
 
+def test_stream_preserves_metadata_with_list_content() -> None:
+    resp_meta = {"model": "my-model"}
+    msg_id = "cmpl-list"
+    usage = {
+        "input_tokens": 10,
+        "output_tokens": 5,
+        "total_tokens": 15,
+    }
+    responses: List[BaseMessage] = [
+        AIMessage(
+            content=[{"type": "text", "text": "Hello"}, {"type": "text", "text": "!"}],
+            usage_metadata=usage,
+            response_metadata=resp_meta,
+            id=msg_id,
+        ),
+    ]
+    llm = _build_streaming_llm(responses)
+
+    chunks = list(llm._stream([HumanMessage(content="hi")]))
+
+    assert len(chunks) == 1
+    chunk_msg = chunks[0].message
+    expected_content = [
+        {"type": "text", "text": "Hello"},
+        {"type": "text", "text": "!"},
+    ]
+    assert chunk_msg.content == expected_content
+    assert chunk_msg.usage_metadata == usage  # type: ignore[union-attr]
+    assert chunk_msg.response_metadata == resp_meta
+    assert chunk_msg.id == msg_id
+
+
 def test_stream_passthrough_ai_message_chunk() -> None:
     usage = {
         "input_tokens": 10,
