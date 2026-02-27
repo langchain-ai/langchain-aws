@@ -397,23 +397,45 @@ class ChatSagemakerEndpoint(BaseChatModel):
 
             for line in iterator:
                 message = self.content_handler.transform_output(line)
+                usage_metadata = getattr(message, "usage_metadata", None)
+                response_metadata = message.response_metadata
+                msg_id = message.id
+
                 if (
                     stop is not None
                     and isinstance(message, AIMessage)
                     and isinstance(message.content, str)
                 ):
                     text = enforce_stop_tokens(message.content, stop)
-                    message = AIMessage(content=text)
+                    message = AIMessage(
+                        content=text,
+                        usage_metadata=usage_metadata,
+                        response_metadata=response_metadata,
+                        id=msg_id,
+                    )
 
-                if message.content:
-                    if isinstance(message, AIMessage):
-                        chunk = AIMessageChunk(content=message.content)
-                        generation_chunk = ChatGenerationChunk(message=chunk)
-                    else:
-                        base_chunk = BaseMessageChunk(
-                            content=message.content, type=message.type
+                has_content = bool(message.content)
+                has_usage = usage_metadata is not None
+
+                if has_content or has_usage:
+                    chunk: BaseMessageChunk
+                    if isinstance(message, AIMessageChunk):
+                        chunk = message
+                    elif isinstance(message, AIMessage):
+                        chunk = AIMessageChunk(
+                            content=message.content or "",
+                            usage_metadata=usage_metadata,
+                            response_metadata=response_metadata,
+                            id=msg_id,
                         )
-                        generation_chunk = ChatGenerationChunk(message=base_chunk)
+                    else:
+                        chunk = BaseMessageChunk(
+                            content=message.content or "",
+                            type=message.type,
+                            response_metadata=response_metadata,
+                            id=msg_id,
+                        )
+                    generation_chunk = ChatGenerationChunk(message=chunk)
                     if run_manager:
                         run_manager.on_llm_new_token(
                             generation_chunk.text, chunk=generation_chunk
