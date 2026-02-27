@@ -2048,6 +2048,135 @@ def test_stream_guard_last_turn_only() -> None:
     }
 
 
+def test_generate_guard_last_turn_only_tool_continuation() -> None:
+    """Test that tool-continuation turns get a no-op guardContent block.
+
+    When the last user message contains only toolResult blocks (no text),
+    a no-op guardContent block must be appended so Bedrock doesn't fall back
+    to scanning the entire conversation.
+    """
+    llm, mocked_client = _create_mock_llm_guard_last_turn_only()
+    llm_with_tools = llm.bind_tools([GetWeather])
+
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Tool result analysis"}]}},
+        "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+    }
+
+    messages = [
+        HumanMessage(content="What is the weather?"),
+        AIMessage(
+            content="Let me check.",
+            tool_calls=[
+                {"name": "GetWeather", "args": {"location": "NYC"}, "id": "call_1"}
+            ],
+        ),
+        ToolMessage(content="72°F and sunny", tool_call_id="call_1"),
+    ]
+
+    llm_with_tools.invoke(messages)
+    _, kwargs = mocked_client.converse.call_args
+    bedrock_msgs = kwargs["messages"]
+
+    # First user message should NOT be wrapped
+    assert bedrock_msgs[0]["content"][0] == {"text": "What is the weather?"}
+
+    # Last user message (tool result) should have toolResult + no-op guardContent
+    last_user_msg = bedrock_msgs[-1]
+    assert last_user_msg["role"] == "user"
+    tool_result_blocks = [b for b in last_user_msg["content"] if "toolResult" in b]
+    guard_blocks = [b for b in last_user_msg["content"] if "guardContent" in b]
+    assert len(tool_result_blocks) == 1
+    assert len(guard_blocks) == 1
+    assert guard_blocks[0] == {"guardContent": {"text": {"text": ""}}}
+
+
+def test_generate_guard_last_turn_only_mixed_content() -> None:
+    """Test that mixed user messages (text + toolResult) wrap text only.
+
+    When the last user message contains both text and toolResult blocks,
+    text blocks should be wrapped in guardContent and no extra empty
+    guardContent should be appended.
+    """
+    llm, mocked_client = _create_mock_llm_guard_last_turn_only()
+    llm_with_tools = llm.bind_tools([GetWeather])
+
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "ok"}]}},
+        "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+    }
+
+    messages = [
+        HumanMessage(content="Hello"),
+        AIMessage(
+            content="Checking.",
+            tool_calls=[
+                {"name": "GetWeather", "args": {"location": "NYC"}, "id": "call_2"}
+            ],
+        ),
+        ToolMessage(content="result data", tool_call_id="call_2"),
+        HumanMessage(content="Now summarize that"),
+    ]
+
+    llm_with_tools.invoke(messages)
+    _, kwargs = mocked_client.converse.call_args
+    bedrock_msgs = kwargs["messages"]
+
+    # Last user message merges toolResult + HumanMessage text into one
+    # user-role message (Bedrock format consolidates consecutive user turns)
+    last_user_msg = bedrock_msgs[-1]
+    assert last_user_msg["role"] == "user"
+    # toolResult block should be passed through unchanged
+    tool_result_blocks = [b for b in last_user_msg["content"] if "toolResult" in b]
+    assert len(tool_result_blocks) == 1
+    # Text block should be wrapped in guardContent
+    guard_blocks = [b for b in last_user_msg["content"] if "guardContent" in b]
+    assert len(guard_blocks) == 1
+    assert guard_blocks[0] == {"guardContent": {"text": {"text": "Now summarize that"}}}
+    # No extra empty guardContent should be appended since text was found
+    empty_guards = [
+        b
+        for b in last_user_msg["content"]
+        if "guardContent" in b and b["guardContent"]["text"]["text"] == ""
+    ]
+    assert len(empty_guards) == 0
+
+
+def test_stream_guard_last_turn_only_tool_continuation() -> None:
+    """Test that stream() also appends no-op guardContent for tool turns."""
+    llm, mocked_client = _create_mock_llm_guard_last_turn_only()
+    llm_with_tools = llm.bind_tools([GetWeather])
+
+    mocked_client.converse_stream.return_value = {
+        "stream": [{"messageStart": {"role": "assistant"}}]
+    }
+
+    messages = [
+        HumanMessage(content="What is the weather?"),
+        AIMessage(
+            content="Let me check.",
+            tool_calls=[
+                {"name": "GetWeather", "args": {"location": "NYC"}, "id": "call_1"}
+            ],
+        ),
+        ToolMessage(content="72°F and sunny", tool_call_id="call_1"),
+    ]
+    list(llm_with_tools.stream(messages))
+
+    _, kwargs = mocked_client.converse_stream.call_args
+    bedrock_msgs = kwargs["messages"]
+
+    # First user message should NOT be wrapped
+    assert bedrock_msgs[0]["content"][0] == {"text": "What is the weather?"}
+
+    # Last user message should have toolResult + no-op guardContent
+    last_user_msg = bedrock_msgs[-1]
+    assert last_user_msg["role"] == "user"
+    guard_blocks = [b for b in last_user_msg["content"] if "guardContent" in b]
+    assert len(guard_blocks) == 1
+    assert guard_blocks[0] == {"guardContent": {"text": {"text": ""}}}
+
+
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
 def test_bedrock_client_creation(mock_create_client: mock.Mock) -> None:
     """Test that bedrock_client is created during validation."""
