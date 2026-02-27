@@ -934,6 +934,27 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     system = [
                         {"type": "text", "text": self.system_prompt_with_tools}
                     ] + list(system)
+
+            # Apply cache_control to last message if provided via kwargs
+            cache_control = kwargs.pop("cache_control", None)
+            if cache_control and formatted_messages:
+                for fmt_msg in reversed(formatted_messages):
+                    content = fmt_msg.get("content")
+                    if isinstance(content, list) and content:
+                        for block in reversed(content):
+                            if isinstance(block, dict):
+                                block["cache_control"] = cache_control
+                                break
+                        break
+                    elif isinstance(content, str):
+                        fmt_msg["content"] = [
+                            {
+                                "type": "text",
+                                "text": content,
+                                "cache_control": cache_control,
+                            }
+                        ]
+                        break
         elif provider in ("openai", "qwen"):
             formatted_messages = cast(
                 List[Dict[str, Any]],

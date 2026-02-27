@@ -1729,11 +1729,13 @@ def test_system_prompt_cache_control_preserved() -> None:
     """Test that system prompt with cache_control is preserved as list."""
     mock_client = MagicMock()
     mock_response = MagicMock()
-    mock_response.get.return_value.read.return_value = json.dumps({
-        "content": [{"type": "text", "text": "Hello!"}],
-        "usage": {"input_tokens": 10, "output_tokens": 5},
-        "stop_reason": "end_turn",
-    }).encode()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+    ).encode()
     mock_response.get.side_effect = lambda key, default=None: {
         "body": mock_response.get.return_value,
         "ResponseMetadata": {"HTTPHeaders": {}},
@@ -1745,11 +1747,15 @@ def test_system_prompt_cache_control_preserved() -> None:
         model_id="anthropic.claude-3-haiku-20240307-v1:0",
         region_name="us-west-2",
     )
-    system = SystemMessage([{
-        "type": "text",
-        "text": "You are helpful.",
-        "cache_control": {"type": "ephemeral"},
-    }])
+    system = SystemMessage(
+        [
+            {
+                "type": "text",
+                "text": "You are helpful.",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+    )
     llm.invoke([system, HumanMessage(content="Hi")])
 
     body = json.loads(mock_client.invoke_model.call_args[1]["body"])
@@ -1761,11 +1767,13 @@ def test_system_prompt_list_format() -> None:
     """Test that list system prompts are passed through without conversion."""
     mock_client = MagicMock()
     mock_response = MagicMock()
-    mock_response.get.return_value.read.return_value = json.dumps({
-        "content": [{"type": "text", "text": "Hello!"}],
-        "usage": {"input_tokens": 10, "output_tokens": 5},
-        "stop_reason": "end_turn",
-    }).encode()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+    ).encode()
     mock_response.get.side_effect = lambda key, default=None: {
         "body": mock_response.get.return_value,
         "ResponseMetadata": {"HTTPHeaders": {}},
@@ -1777,10 +1785,12 @@ def test_system_prompt_list_format() -> None:
         model_id="anthropic.claude-3-haiku-20240307-v1:0",
         region_name="us-west-2",
     )
-    system = SystemMessage([
-        {"type": "text", "text": "Block 1."},
-        {"type": "text", "text": "Block 2."},
-    ])
+    system = SystemMessage(
+        [
+            {"type": "text", "text": "Block 1."},
+            {"type": "text", "text": "Block 2."},
+        ]
+    )
     llm.invoke([system, HumanMessage(content="Hi")])
 
     body = json.loads(mock_client.invoke_model.call_args[1]["body"])
@@ -1792,11 +1802,13 @@ def test_system_prompt_with_tools_prepends_block() -> None:
     """Test that tools are prepended as content block when system is a list."""
     mock_client = MagicMock()
     mock_response = MagicMock()
-    mock_response.get.return_value.read.return_value = json.dumps({
-        "content": [{"type": "text", "text": "Hello!"}],
-        "usage": {"input_tokens": 10, "output_tokens": 5},
-        "stop_reason": "end_turn",
-    }).encode()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+    ).encode()
     mock_response.get.side_effect = lambda key, default=None: {
         "body": mock_response.get.return_value,
         "ResponseMetadata": {"HTTPHeaders": {}},
@@ -1809,11 +1821,15 @@ def test_system_prompt_with_tools_prepends_block() -> None:
         region_name="us-west-2",
     )
     llm.system_prompt_with_tools = "You have tools."
-    system = SystemMessage([{
-        "type": "text",
-        "text": "Be helpful.",
-        "cache_control": {"type": "ephemeral"},
-    }])
+    system = SystemMessage(
+        [
+            {
+                "type": "text",
+                "text": "Be helpful.",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+    )
     llm.invoke([system, HumanMessage(content="Hi")])
 
     body = json.loads(mock_client.invoke_model.call_args[1]["body"])
@@ -1828,11 +1844,13 @@ def test_system_prompt_string_format() -> None:
     """Test that string system prompts still work."""
     mock_client = MagicMock()
     mock_response = MagicMock()
-    mock_response.get.return_value.read.return_value = json.dumps({
-        "content": [{"type": "text", "text": "Hello!"}],
-        "usage": {"input_tokens": 10, "output_tokens": 5},
-        "stop_reason": "end_turn",
-    }).encode()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+    ).encode()
     mock_response.get.side_effect = lambda key, default=None: {
         "body": mock_response.get.return_value,
         "ResponseMetadata": {"HTTPHeaders": {}},
@@ -1855,14 +1873,29 @@ def test_stream_system_prompt_cache_control() -> None:
     mock_client = MagicMock()
 
     def stream_gen():
-        yield {"chunk": {"bytes": json.dumps({
-            "type": "content_block_delta",
-            "delta": {"type": "text_delta", "text": "Hi"},
-        }).encode()}}
-        yield {"chunk": {"bytes": json.dumps({
-            "type": "message_stop",
-            "amazon-bedrock-invocationMetrics": {"inputTokenCount": 10, "outputTokenCount": 5},
-        }).encode()}}
+        yield {
+            "chunk": {
+                "bytes": json.dumps(
+                    {
+                        "type": "content_block_delta",
+                        "delta": {"type": "text_delta", "text": "Hi"},
+                    }
+                ).encode()
+            }
+        }
+        yield {
+            "chunk": {
+                "bytes": json.dumps(
+                    {
+                        "type": "message_stop",
+                        "amazon-bedrock-invocationMetrics": {
+                            "inputTokenCount": 10,
+                            "outputTokenCount": 5,
+                        },
+                    }
+                ).encode()
+            }
+        }
 
     mock_response = MagicMock()
     mock_response.get.return_value = stream_gen()
@@ -1873,11 +1906,15 @@ def test_stream_system_prompt_cache_control() -> None:
         model_id="anthropic.claude-3-haiku-20240307-v1:0",
         region_name="us-west-2",
     )
-    system = SystemMessage([{
-        "type": "text",
-        "text": "You are helpful.",
-        "cache_control": {"type": "ephemeral"},
-    }])
+    system = SystemMessage(
+        [
+            {
+                "type": "text",
+                "text": "You are helpful.",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+    )
     list(llm.stream([system, HumanMessage(content="Hi")]))
 
     body = json.loads(
@@ -1893,14 +1930,29 @@ async def test_astream_system_prompt_cache_control() -> None:
     mock_client = MagicMock()
 
     def stream_gen():
-        yield {"chunk": {"bytes": json.dumps({
-            "type": "content_block_delta",
-            "delta": {"type": "text_delta", "text": "Hi"},
-        }).encode()}}
-        yield {"chunk": {"bytes": json.dumps({
-            "type": "message_stop",
-            "amazon-bedrock-invocationMetrics": {"inputTokenCount": 10, "outputTokenCount": 5},
-        }).encode()}}
+        yield {
+            "chunk": {
+                "bytes": json.dumps(
+                    {
+                        "type": "content_block_delta",
+                        "delta": {"type": "text_delta", "text": "Hi"},
+                    }
+                ).encode()
+            }
+        }
+        yield {
+            "chunk": {
+                "bytes": json.dumps(
+                    {
+                        "type": "message_stop",
+                        "amazon-bedrock-invocationMetrics": {
+                            "inputTokenCount": 10,
+                            "outputTokenCount": 5,
+                        },
+                    }
+                ).encode()
+            }
+        }
 
     mock_response = MagicMock()
     mock_response.get.return_value = stream_gen()
@@ -1911,11 +1963,15 @@ async def test_astream_system_prompt_cache_control() -> None:
         model_id="anthropic.claude-3-haiku-20240307-v1:0",
         region_name="us-west-2",
     )
-    system = SystemMessage([{
-        "type": "text",
-        "text": "You are helpful.",
-        "cache_control": {"type": "ephemeral"},
-    }])
+    system = SystemMessage(
+        [
+            {
+                "type": "text",
+                "text": "You are helpful.",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+    )
     async for _ in llm.astream([system, HumanMessage(content="Hi")]):
         pass
 
@@ -1924,3 +1980,171 @@ async def test_astream_system_prompt_cache_control() -> None:
     )
     assert isinstance(body["system"], list)
     assert body["system"][0].get("cache_control") == {"type": "ephemeral"}
+
+
+def test_cache_control_kwarg_applied_to_string_content() -> None:
+    """Test that cache_control kwarg converts string content to block."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+    ).encode()
+    mock_response.get.side_effect = lambda key, default=None: {
+        "body": mock_response.get.return_value,
+        "ResponseMetadata": {"HTTPHeaders": {}},
+    }.get(key, default)
+    mock_client.invoke_model.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        region_name="us-west-2",
+    )
+    llm.invoke(
+        [SystemMessage("You are helpful."), HumanMessage(content="Hi")],
+        cache_control={"type": "ephemeral", "ttl": "5m"},
+    )
+
+    body = json.loads(mock_client.invoke_model.call_args[1]["body"])
+    last_msg = body["messages"][-1]
+    # String content should be converted to list with cache_control
+    assert isinstance(last_msg["content"], list)
+    assert last_msg["content"][0] == {
+        "type": "text",
+        "text": "Hi",
+        "cache_control": {"type": "ephemeral", "ttl": "5m"},
+    }
+
+
+def test_cache_control_kwarg_applied_to_list_content() -> None:
+    """Test that cache_control kwarg is applied to last block."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+    ).encode()
+    mock_response.get.side_effect = lambda key, default=None: {
+        "body": mock_response.get.return_value,
+        "ResponseMetadata": {"HTTPHeaders": {}},
+    }.get(key, default)
+    mock_client.invoke_model.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        region_name="us-west-2",
+    )
+    llm.invoke(
+        [
+            SystemMessage("You are helpful."),
+            HumanMessage(content="Hello"),
+            AIMessage(content="Hi there!"),
+            HumanMessage(content="How are you?"),
+        ],
+        cache_control={"type": "ephemeral"},
+    )
+
+    body = json.loads(mock_client.invoke_model.call_args[1]["body"])
+    last_msg = body["messages"][-1]
+    content = last_msg["content"]
+    if isinstance(content, list):
+        last_block = next(b for b in reversed(content) if isinstance(b, dict))
+        assert last_block["cache_control"] == {"type": "ephemeral"}
+    else:
+        pytest.fail("Expected list content after cache_control applied")
+
+
+def test_cache_control_kwarg_not_in_api_body() -> None:
+    """Test that cache_control is popped from params, not sent to API."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+    ).encode()
+    mock_response.get.side_effect = lambda key, default=None: {
+        "body": mock_response.get.return_value,
+        "ResponseMetadata": {"HTTPHeaders": {}},
+    }.get(key, default)
+    mock_client.invoke_model.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        region_name="us-west-2",
+    )
+    llm.invoke(
+        [SystemMessage("You are helpful."), HumanMessage(content="Hi")],
+        cache_control={"type": "ephemeral"},
+    )
+
+    body = json.loads(mock_client.invoke_model.call_args[1]["body"])
+    # cache_control should NOT leak as a top-level body parameter
+    assert "cache_control" not in body
+
+
+def test_stream_cache_control_kwarg_applied() -> None:
+    """Test that cache_control kwarg works in streaming mode."""
+    mock_client = MagicMock()
+
+    def stream_gen():
+        yield {
+            "chunk": {
+                "bytes": json.dumps(
+                    {
+                        "type": "content_block_delta",
+                        "delta": {"type": "text_delta", "text": "Hi"},
+                    }
+                ).encode()
+            }
+        }
+        yield {
+            "chunk": {
+                "bytes": json.dumps(
+                    {
+                        "type": "message_stop",
+                        "amazon-bedrock-invocationMetrics": {
+                            "inputTokenCount": 10,
+                            "outputTokenCount": 5,
+                        },
+                    }
+                ).encode()
+            }
+        }
+
+    mock_response = MagicMock()
+    mock_response.get.return_value = stream_gen()
+    mock_client.invoke_model_with_response_stream.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        region_name="us-west-2",
+    )
+    list(
+        llm.stream(
+            [SystemMessage("You are helpful."), HumanMessage(content="Hi")],
+            cache_control={"type": "ephemeral", "ttl": "5m"},
+        )
+    )
+
+    body = json.loads(
+        mock_client.invoke_model_with_response_stream.call_args[1]["body"]
+    )
+    last_msg = body["messages"][-1]
+    assert isinstance(last_msg["content"], list)
+    assert last_msg["content"][0]["cache_control"] == {
+        "type": "ephemeral",
+        "ttl": "5m",
+    }
