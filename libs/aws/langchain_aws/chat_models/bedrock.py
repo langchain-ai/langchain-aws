@@ -915,6 +915,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
         if provider == "anthropic":
             result = ChatPromptAdapter.format_messages(provider, messages)
+            assert isinstance(result, tuple)
             system_raw, formatted_messages = (
                 result[0],
                 cast(List[Dict[str, Any]], result[1]),
@@ -1053,6 +1054,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
             if provider == "anthropic":
                 result = ChatPromptAdapter.format_messages(provider, messages)
+                assert isinstance(result, tuple)
                 system_raw, formatted_messages = (
                     result[0],
                     cast(List[Dict[str, Any]], result[1]),
@@ -1076,8 +1078,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 # Apply cache_control to last message if provided via kwargs
                 cache_control = params.pop("cache_control", None)
                 if cache_control and formatted_messages:
-                    for msg in reversed(formatted_messages):
-                        content = msg.get("content")
+                    for fmt_msg in reversed(formatted_messages):
+                        content = fmt_msg.get("content")
                         if isinstance(content, list) and content:
                             for block in reversed(content):
                                 if isinstance(block, dict):
@@ -1085,7 +1087,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                                     break
                             break
                         elif isinstance(content, str):
-                            msg["content"] = [
+                            fmt_msg["content"] = [
                                 {
                                     "type": "text",
                                     "text": content,
