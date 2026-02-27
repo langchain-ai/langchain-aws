@@ -4040,5 +4040,3 @@ def test_json_schema_dict_not_mutated() -> None:
     chat_model.with_structured_output(schema, method="json_schema")
     # Original dict should not have been modified
     assert "additionalProperties" not in schema
-
-
