@@ -7,7 +7,8 @@ This module provides sanitization functions to fix this on checkpoint load.
 
 import json
 import logging
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, cast
 
 from langchain_core.messages import AIMessage, BaseMessage
 
@@ -46,21 +47,23 @@ def _parse_tool_args(args: Any) -> Any:
     return args
 
 
-def _sanitize_tool_calls(tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _sanitize_tool_calls(
+    tool_calls: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Ensure all tool call args are dicts, not strings.
 
     Args:
-        tool_calls: List of tool call dicts with 'name', 'args', 'id' keys
+        tool_calls: Sequence of tool call dicts with 'name', 'args', 'id' keys
 
     Returns:
         Sanitized list with args properly deserialized
     """
     if not tool_calls:
-        return tool_calls
+        return list(tool_calls)
 
     sanitized = []
     for tc in tool_calls:
-        tc_copy = tc.copy()
+        tc_copy = dict(tc)
         if "args" in tc_copy:
             original_args = tc_copy["args"]
             tc_copy["args"] = _parse_tool_args(original_args)
@@ -157,7 +160,7 @@ def sanitize_message(msg: BaseMessage) -> BaseMessage:
 
     needs_sanitization = False
 
-    sanitized_tool_calls = None
+    sanitized_tool_calls: list[dict[str, Any]] | None = None
     if msg.tool_calls:
         sanitized_tool_calls = _sanitize_tool_calls(msg.tool_calls)
         if sanitized_tool_calls != msg.tool_calls:
@@ -185,13 +188,13 @@ def sanitize_message(msg: BaseMessage) -> BaseMessage:
     return msg
 
 
-def sanitize_checkpoint(checkpoint: dict | None) -> dict | None:
+def sanitize_checkpoint(checkpoint: Any) -> Any:
     """Sanitize a checkpoint's messages to fix malformed tool_call args.
 
     This is the main entry point for checkpoint sanitization.
 
     Args:
-        checkpoint: Raw checkpoint dict
+        checkpoint: Checkpoint dict (or Checkpoint TypedDict)
 
     Returns:
         Sanitized checkpoint with properly formatted tool calls
@@ -227,7 +230,7 @@ def sanitize_checkpoint(checkpoint: dict | None) -> dict | None:
         "Sanitized %d message(s) with malformed tool_call args", sanitized_count
     )
 
-    sanitized_checkpoint = checkpoint.copy()
-    sanitized_checkpoint["channel_values"] = channel_values.copy()
+    sanitized_checkpoint = dict(checkpoint)
+    sanitized_checkpoint["channel_values"] = dict(channel_values)
     sanitized_checkpoint["channel_values"]["messages"] = sanitized_messages
     return sanitized_checkpoint
