@@ -1754,6 +1754,17 @@ def _parse_response(response: Dict[str, Any]) -> AIMessage:
             "https://docs.aws.amazon.com/general/latest/gr/bedrock.html"
         )
     lc_content = _bedrock_to_lc(response.pop("output")["message"]["content"])
+    # Ensure tool_use input is always a dict. The Bedrock Converse API may
+    # return input as a JSON string instead of a dict in rare cases, and
+    # deserialized messages (e.g. from checkpoints) may also have string input.
+    # Note: this is intentionally NOT done in _bedrock_to_lc because that
+    # function is also used for streaming deltas where input arrives as partial
+    # JSON strings that must accumulate before parsing.
+    for block in lc_content:
+        if block.get("type") in ("tool_use", "server_tool_use"):
+            tool_input = block.get("input")
+            if isinstance(tool_input, str):
+                block["input"] = parse_partial_json(tool_input) if tool_input else {}
     tool_calls = _extract_tool_calls(lc_content)
     usage = _extract_usage_metadata(response)
     return AIMessage(

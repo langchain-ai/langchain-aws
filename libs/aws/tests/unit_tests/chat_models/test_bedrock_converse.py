@@ -33,6 +33,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _has_tool_use_or_result_blocks,
     _lc_content_to_bedrock,
     _messages_to_bedrock,
+    _parse_response,
     _parse_stream_event,
     _snake_to_camel,
     _snake_to_camel_keys,
@@ -3930,3 +3931,141 @@ def test__format_data_content_block_unsupported_type() -> None:
     }
     with pytest.raises(ValueError, match="Unsupported data content block type"):
         _format_data_content_block(block)
+
+
+def _make_bedrock_response(
+    content: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Helper to construct a mock Bedrock Converse API response."""
+    return {
+        "output": {"message": {"role": "assistant", "content": content}},
+        "ResponseMetadata": {"RequestId": "test", "HTTPStatusCode": 200},
+        "stopReason": "tool_use",
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+
+def test__parse_response_tool_use_string_input_parsed() -> None:
+    """String tool_use input in Bedrock response should be parsed to dict."""
+    response = _make_bedrock_response(
+        [
+            {
+                "toolUse": {
+                    "toolUseId": "tool_1",
+                    "name": "get_weather",
+                    "input": '{"city": "Paris"}',
+                }
+            }
+        ]
+    )
+    msg = _parse_response(response)
+    assert isinstance(msg.content, list)
+    assert msg.content[0]["input"] == {"city": "Paris"}
+    assert isinstance(msg.content[0]["input"], dict)
+
+
+def test__parse_response_tool_use_empty_string_input() -> None:
+    """Empty string tool_use input should become empty dict."""
+    response = _make_bedrock_response(
+        [
+            {
+                "toolUse": {
+                    "toolUseId": "tool_1",
+                    "name": "no_args_tool",
+                    "input": "",
+                }
+            }
+        ]
+    )
+    msg = _parse_response(response)
+    assert isinstance(msg.content, list)
+    assert msg.content[0]["input"] == {}
+
+
+def test__parse_response_tool_use_dict_input_unchanged() -> None:
+    """Dict tool_use input should pass through unchanged."""
+    response = _make_bedrock_response(
+        [
+            {
+                "toolUse": {
+                    "toolUseId": "tool_1",
+                    "name": "get_weather",
+                    "input": {"city": "Paris"},
+                }
+            }
+        ]
+    )
+    msg = _parse_response(response)
+    assert isinstance(msg.content, list)
+    assert msg.content[0]["input"] == {"city": "Paris"}
+
+
+def test__parse_response_tool_calls_with_string_input() -> None:
+    """tool_calls should have dict args even when Bedrock input was a string."""
+    response = _make_bedrock_response(
+        [
+            {
+                "toolUse": {
+                    "toolUseId": "tool_1",
+                    "name": "get_weather",
+                    "input": '{"city": "NYC"}',
+                }
+            }
+        ]
+    )
+    msg = _parse_response(response)
+    assert len(msg.tool_calls) == 1
+    assert isinstance(msg.tool_calls[0]["args"], dict)
+    assert msg.tool_calls[0]["args"] == {"city": "NYC"}
+
+
+def test__parse_response_nested_json_string_input() -> None:
+    """Nested JSON string input should be parsed correctly."""
+    response = _make_bedrock_response(
+        [
+            {
+                "toolUse": {
+                    "toolUseId": "tool_1",
+                    "name": "create_product",
+                    "input": '{"name": "Latte", "price": 25, "tags": ["coffee"]}',
+                }
+            }
+        ]
+    )
+    msg = _parse_response(response)
+    assert isinstance(msg.content, list)
+    assert msg.content[0]["input"] == {
+        "name": "Latte",
+        "price": 25,
+        "tags": ["coffee"],
+    }
+
+
+def test__parse_response_string_input_round_trip() -> None:
+    """Full round-trip: Bedrock string input -> AIMessage -> back to Bedrock."""
+    response = _make_bedrock_response(
+        [
+            {"text": "I'll create that product for you."},
+            {
+                "toolUse": {
+                    "toolUseId": "toolu_abc123",
+                    "name": "create_product",
+                    "input": '{"name": "Latte", "price": 25}',
+                }
+            },
+        ]
+    )
+
+    # Bedrock -> AIMessage (fix ensures dict input)
+    msg = _parse_response(response)
+    assert isinstance(msg.content, list)
+    assert isinstance(msg.content[1]["input"], dict)
+    assert msg.content[1]["input"] == {"name": "Latte", "price": 25}
+
+    # AIMessage content -> Bedrock (round-trip)
+    bedrock_result = _lc_content_to_bedrock(
+        cast(List[Union[str, Dict[str, Any]]], msg.content)
+    )
+    tool_use_block = bedrock_result[1]["toolUse"]
+    assert isinstance(tool_use_block["input"], dict)
+    assert tool_use_block["input"] == {"name": "Latte", "price": 25}
