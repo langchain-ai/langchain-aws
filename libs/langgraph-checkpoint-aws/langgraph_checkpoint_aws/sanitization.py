@@ -162,7 +162,10 @@ def sanitize_message(msg: BaseMessage) -> BaseMessage:
 
     sanitized_tool_calls: list[dict[str, Any]] | None = None
     if msg.tool_calls:
-        sanitized_tool_calls = _sanitize_tool_calls(msg.tool_calls)
+        # Cast ToolCall (TypedDict) list to dict list for sanitization
+        sanitized_tool_calls = _sanitize_tool_calls(
+            cast(list[dict[str, Any]], msg.tool_calls)
+        )
         if sanitized_tool_calls != msg.tool_calls:
             needs_sanitization = True
 
