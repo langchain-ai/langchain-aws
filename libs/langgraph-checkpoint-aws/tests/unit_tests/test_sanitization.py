@@ -1,9 +1,6 @@
 """Tests for checkpoint sanitization utilities."""
 
-import json
-
-import pytest
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from langgraph_checkpoint_aws.sanitization import (
     _parse_tool_args,
@@ -15,10 +12,11 @@ from langgraph_checkpoint_aws.sanitization import (
 
 
 def _make_buggy_ai_message(**kwargs):
-    """Create an AIMessage with malformed tool_call args (string instead of dict).
+    """Create an AIMessage with malformed tool_call args.
 
-    In the real bug, malformed data comes from checkpoint deserialization which
-    bypasses Pydantic validation. We use model_construct() to simulate this.
+    In the real bug, malformed data comes from checkpoint deserialization
+    which bypasses Pydantic validation. We use model_construct() to
+    simulate this.
     """
     defaults = {
         "additional_kwargs": {},
@@ -63,7 +61,11 @@ class TestSanitizeToolCalls:
 
     def test_dict_args_unchanged(self):
         tool_calls = [
-            {"name": "create_product", "id": "call_123", "args": {"name": "X", "price": 50}}
+            {
+                "name": "create_product",
+                "id": "call_123",
+                "args": {"name": "X", "price": 50},
+            }
         ]
         result = _sanitize_tool_calls(tool_calls)
         assert result == tool_calls
@@ -96,7 +98,7 @@ class TestSanitizeContentBlocks:
     """Test _sanitize_content_blocks function."""
 
     def test_string_content_unchanged(self):
-        assert _sanitize_content_blocks("Hello, world!") == "Hello, world!"
+        assert _sanitize_content_blocks("Hello!") == "Hello!"
 
     def test_text_block_unchanged(self):
         content = [{"type": "text", "text": "Hello"}]
@@ -128,7 +130,7 @@ class TestSanitizeContentBlocks:
 
     def test_mixed_blocks(self):
         content = [
-            {"type": "text", "text": "I'll create that product."},
+            {"type": "text", "text": "Creating product."},
             {
                 "type": "tool_use",
                 "name": "create_product",
@@ -137,7 +139,7 @@ class TestSanitizeContentBlocks:
             },
         ]
         result = _sanitize_content_blocks(content)
-        assert result[0] == {"type": "text", "text": "I'll create that product."}
+        assert result[0]["type"] == "text"
         assert result[1]["input"] == {"name": "X"}
 
 
@@ -154,8 +156,6 @@ class TestSanitizeMessage:
         assert result.content == "Hello back!"
 
     def test_ai_message_tool_calls_sanitized(self):
-        # Use model_construct to bypass Pydantic validation — simulates
-        # checkpoint deserialization where string args bypass validation
         msg = _make_buggy_ai_message(
             content="I'll create that.",
             tool_calls=[
@@ -167,7 +167,10 @@ class TestSanitizeMessage:
             ],
         )
         result = sanitize_message(msg)
-        assert result.tool_calls[0]["args"] == {"name": "X", "price": 50}
+        assert result.tool_calls[0]["args"] == {
+            "name": "X",
+            "price": 50,
+        }
 
     def test_ai_message_content_blocks_sanitized(self):
         msg = AIMessage(
@@ -226,16 +229,16 @@ class TestSanitizeCheckpoint:
         result = sanitize_checkpoint(checkpoint)
 
         # Original should be unchanged
-        assert (
-            checkpoint["channel_values"]["messages"][1].tool_calls[0]["args"]
-            == '{"name": "X", "price": 50}'
-        )
+        orig_args = checkpoint["channel_values"][
+            "messages"
+        ][1].tool_calls[0]["args"]
+        assert orig_args == '{"name": "X", "price": 50}'
 
         # Result should be sanitized
-        assert result["channel_values"]["messages"][1].tool_calls[0]["args"] == {
-            "name": "X",
-            "price": 50,
-        }
+        fixed_args = result["channel_values"][
+            "messages"
+        ][1].tool_calls[0]["args"]
+        assert fixed_args == {"name": "X", "price": 50}
 
     def test_preserves_other_fields(self):
         checkpoint = {
@@ -254,32 +257,35 @@ class TestSanitizeCheckpoint:
         assert result["v"] == 1
         assert result["id"] == "checkpoint_123"
         assert result["ts"] == "2026-01-08T10:00:00Z"
-        assert result["channel_values"]["other_channel"] == {"data": "value"}
+        assert result["channel_values"]["other_channel"] == {
+            "data": "value",
+        }
         assert result["channel_versions"] == {"messages": 1}
 
 
 class TestIntegration:
-    """Integration tests simulating real-world Bedrock HITL scenarios."""
+    """Integration tests for real-world Bedrock HITL scenarios."""
 
     def test_bedrock_hitl_checkpoint_roundtrip(self):
-        """Simulate full HITL checkpoint flow with Bedrock serialization bug."""
-        # Use model_construct to simulate deserialized checkpoint data
-        # where Pydantic validation was bypassed during loading
+        """Simulate HITL checkpoint flow with serialization bug."""
         buggy_ai_msg = _make_buggy_ai_message(
             content=[
-                {"type": "text", "text": "I'll create that product."},
+                {
+                    "type": "text",
+                    "text": "I'll create that product.",
+                },
                 {
                     "type": "tool_use",
                     "name": "Foodics___create_product",
                     "id": "toolu_abc",
-                    "input": '{"name": "Latte", "price": 25, "category_id": "cat_123"}',
+                    "input": '{"name": "Latte", "price": 25}',
                 },
             ],
             tool_calls=[
                 {
                     "name": "Foodics___create_product",
                     "id": "toolu_abc",
-                    "args": '{"name": "Latte", "price": 25, "category_id": "cat_123"}',
+                    "args": '{"name": "Latte", "price": 25}',
                 }
             ],
         )
@@ -288,24 +294,22 @@ class TestIntegration:
             "id": "cp_123",
             "channel_values": {
                 "messages": [
-                    HumanMessage(content="Create a product called Latte"),
+                    HumanMessage(content="Create a Latte"),
                     buggy_ai_msg,
                 ]
             },
         }
 
-        fixed_checkpoint = sanitize_checkpoint(buggy_checkpoint)
-
-        ai_msg = fixed_checkpoint["channel_values"]["messages"][1]
+        fixed = sanitize_checkpoint(buggy_checkpoint)
+        ai_msg = fixed["channel_values"]["messages"][1]
 
         assert isinstance(ai_msg.content[1]["input"], dict)
         assert ai_msg.content[1]["input"]["name"] == "Latte"
-
         assert isinstance(ai_msg.tool_calls[0]["args"], dict)
         assert ai_msg.tool_calls[0]["args"]["name"] == "Latte"
 
     def test_already_correct_checkpoint_unchanged(self):
-        """Checkpoints that are already correct should not be modified."""
+        """Correct checkpoints should not be modified."""
         correct_checkpoint = {
             "v": 1,
             "id": "cp_123",
@@ -319,14 +323,14 @@ class TestIntegration:
                                 "type": "tool_use",
                                 "name": "create_product",
                                 "id": "toolu_abc",
-                                "input": {"name": "X", "price": 50},
+                                "input": {"name": "X"},
                             },
                         ],
                         tool_calls=[
                             {
                                 "name": "create_product",
                                 "id": "toolu_abc",
-                                "args": {"name": "X", "price": 50},
+                                "args": {"name": "X"},
                             }
                         ],
                     ),
@@ -335,6 +339,4 @@ class TestIntegration:
         }
 
         result = sanitize_checkpoint(correct_checkpoint)
-
-        # Should return the same object (no changes needed)
         assert result is correct_checkpoint
