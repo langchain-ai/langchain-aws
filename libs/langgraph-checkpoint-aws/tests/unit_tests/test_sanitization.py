@@ -14,6 +14,22 @@ from langgraph_checkpoint_aws.sanitization import (
 )
 
 
+def _make_buggy_ai_message(**kwargs):
+    """Create an AIMessage with malformed tool_call args (string instead of dict).
+
+    In the real bug, malformed data comes from checkpoint deserialization which
+    bypasses Pydantic validation. We use model_construct() to simulate this.
+    """
+    defaults = {
+        "additional_kwargs": {},
+        "response_metadata": {},
+        "id": None,
+        "type": "ai",
+    }
+    defaults.update(kwargs)
+    return AIMessage.model_construct(**defaults)
+
+
 class TestParseToolArgs:
     """Test _parse_tool_args function."""
 
@@ -138,7 +154,9 @@ class TestSanitizeMessage:
         assert result.content == "Hello back!"
 
     def test_ai_message_tool_calls_sanitized(self):
-        msg = AIMessage(
+        # Use model_construct to bypass Pydantic validation — simulates
+        # checkpoint deserialization where string args bypass validation
+        msg = _make_buggy_ai_message(
             content="I'll create that.",
             tool_calls=[
                 {
@@ -185,22 +203,23 @@ class TestSanitizeCheckpoint:
         assert sanitize_checkpoint(checkpoint) == checkpoint
 
     def test_messages_sanitized(self):
+        buggy_ai_msg = _make_buggy_ai_message(
+            content="Creating...",
+            tool_calls=[
+                {
+                    "name": "create_product",
+                    "id": "call_123",
+                    "args": '{"name": "X", "price": 50}',
+                }
+            ],
+        )
         checkpoint = {
             "v": 1,
             "id": "123",
             "channel_values": {
                 "messages": [
                     HumanMessage(content="Create product X"),
-                    AIMessage(
-                        content="Creating...",
-                        tool_calls=[
-                            {
-                                "name": "create_product",
-                                "id": "call_123",
-                                "args": '{"name": "X", "price": 50}',
-                            }
-                        ],
-                    ),
+                    buggy_ai_msg,
                 ]
             },
         }
@@ -244,30 +263,33 @@ class TestIntegration:
 
     def test_bedrock_hitl_checkpoint_roundtrip(self):
         """Simulate full HITL checkpoint flow with Bedrock serialization bug."""
+        # Use model_construct to simulate deserialized checkpoint data
+        # where Pydantic validation was bypassed during loading
+        buggy_ai_msg = _make_buggy_ai_message(
+            content=[
+                {"type": "text", "text": "I'll create that product."},
+                {
+                    "type": "tool_use",
+                    "name": "Foodics___create_product",
+                    "id": "toolu_abc",
+                    "input": '{"name": "Latte", "price": 25, "category_id": "cat_123"}',
+                },
+            ],
+            tool_calls=[
+                {
+                    "name": "Foodics___create_product",
+                    "id": "toolu_abc",
+                    "args": '{"name": "Latte", "price": 25, "category_id": "cat_123"}',
+                }
+            ],
+        )
         buggy_checkpoint = {
             "v": 1,
             "id": "cp_123",
             "channel_values": {
                 "messages": [
                     HumanMessage(content="Create a product called Latte"),
-                    AIMessage(
-                        content=[
-                            {"type": "text", "text": "I'll create that product."},
-                            {
-                                "type": "tool_use",
-                                "name": "Foodics___create_product",
-                                "id": "toolu_abc",
-                                "input": '{"name": "Latte", "price": 25, "category_id": "cat_123"}',
-                            },
-                        ],
-                        tool_calls=[
-                            {
-                                "name": "Foodics___create_product",
-                                "id": "toolu_abc",
-                                "args": '{"name": "Latte", "price": 25, "category_id": "cat_123"}',
-                            }
-                        ],
-                    ),
+                    buggy_ai_msg,
                 ]
             },
         }
