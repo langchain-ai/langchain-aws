@@ -100,7 +100,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             return result
         sanitized = sanitize_checkpoint(result.checkpoint)
         if sanitized is not result.checkpoint:
-            return result._replace(checkpoint=sanitized)
+            return result._replace(checkpoint=cast(Checkpoint, sanitized))
         return result
 
     def get_tuple(
