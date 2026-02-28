@@ -1710,6 +1710,27 @@ class ChatBedrockConverse(BaseChatModel):
             return super().get_num_tokens_from_messages(messages, tools=tools)
 
 
+_base_wso_doc = BaseChatModel.with_structured_output.__doc__ or ""
+_method_doc = """\
+    method: The method for structured output generation. Supported
+        options are ``"function_calling"`` and ``"json_schema"``.
+
+        - ``"function_calling"`` (default): Uses forced tool calling to
+          generate structured output.
+        - ``"json_schema"``: Uses Bedrock's native ``outputConfig``
+          with ``textFormat`` to constrain model output to a JSON schema.
+          Only supported on select models (e.g., Claude 4.5 and later,
+          select open-weight models). See the `Bedrock structured output
+          documentation
+          <https://docs.aws.amazon.com/bedrock/latest/userguide/structured-output.html>`_
+          for the latest supported models.
+
+"""
+ChatBedrockConverse.with_structured_output.__doc__ = _base_wso_doc.replace(
+    "Raises:", _method_doc + "Raises:", 1
+)
+
+
 def _handle_bedrock_error(error: ClientError) -> None:
     """Handle Bedrock API errors and provide enhanced error messages.
 
