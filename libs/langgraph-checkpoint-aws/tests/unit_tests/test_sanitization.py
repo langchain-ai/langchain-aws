@@ -229,15 +229,11 @@ class TestSanitizeCheckpoint:
         result = sanitize_checkpoint(checkpoint)
 
         # Original should be unchanged
-        orig_args = checkpoint["channel_values"][
-            "messages"
-        ][1].tool_calls[0]["args"]
+        orig_args = checkpoint["channel_values"]["messages"][1].tool_calls[0]["args"]
         assert orig_args == '{"name": "X", "price": 50}'
 
         # Result should be sanitized
-        fixed_args = result["channel_values"][
-            "messages"
-        ][1].tool_calls[0]["args"]
+        fixed_args = result["channel_values"]["messages"][1].tool_calls[0]["args"]
         assert fixed_args == {"name": "X", "price": 50}
 
     def test_preserves_other_fields(self):
