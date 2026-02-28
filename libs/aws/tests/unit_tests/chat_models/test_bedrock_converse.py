@@ -34,6 +34,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _lc_content_to_bedrock,
     _messages_to_bedrock,
     _parse_stream_event,
+    _set_additional_properties_false,
     _snake_to_camel,
     _snake_to_camel_keys,
 )
@@ -3930,3 +3931,330 @@ def test__format_data_content_block_unsupported_type() -> None:
     }
     with pytest.raises(ValueError, match="Unsupported data content block type"):
         _format_data_content_block(block)
+
+
+# --- Native structured outputs tests ---
+
+
+def test_converse_params_output_config() -> None:
+    """Test that constructor output_config appears in _converse_params output."""
+    output_config = {
+        "textFormat": {
+            "type": "json_schema",
+            "structure": {
+                "jsonSchema": {
+                    "schema": '{"type": "object"}',
+                    "name": "test",
+                    "description": "test",
+                }
+            },
+        }
+    }
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        output_config=output_config,
+    )
+    params = llm._converse_params()
+    assert params["outputConfig"] == output_config
+
+
+def test_converse_params_output_config_kwarg_override() -> None:
+    """Test that invoke-level outputConfig overrides constructor value."""
+    constructor_config = {
+        "textFormat": {
+            "type": "json_schema",
+            "structure": {
+                "jsonSchema": {
+                    "schema": '{"type": "object"}',
+                    "name": "constructor",
+                    "description": "constructor",
+                }
+            },
+        }
+    }
+    override_config = {
+        "textFormat": {
+            "type": "json_schema",
+            "structure": {
+                "jsonSchema": {
+                    "schema": '{"type": "string"}',
+                    "name": "override",
+                    "description": "override",
+                }
+            },
+        }
+    }
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        output_config=constructor_config,
+    )
+    params = llm._converse_params(outputConfig=override_config)
+    assert params["outputConfig"] == override_config
+
+
+def test_converse_params_no_output_config() -> None:
+    """Test that outputConfig is absent when not set."""
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )
+    params = llm._converse_params()
+    assert "outputConfig" not in params
+
+
+def test_with_structured_output_method_json_schema() -> None:
+    """Test that method='json_schema' produces pipeline with outputConfig bound."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )
+    structured = chat_model.with_structured_output(GetWeather, method="json_schema")
+    # The first step should be a RunnableBinding with output_config in kwargs
+    first_step = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, first_step).kwargs
+    assert "output_config" in bound_kwargs
+    output_config = bound_kwargs["output_config"]
+    assert output_config["textFormat"]["type"] == "json_schema"
+    json_schema = output_config["textFormat"]["structure"]["jsonSchema"]
+    assert json_schema["name"] == "GetWeather"
+    assert '"location"' in json_schema["schema"]
+
+
+def test_with_structured_output_method_json_schema_dict() -> None:
+    """Test that method='json_schema' works with dict schema."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )
+    schema = {
+        "title": "Joke",
+        "description": "A joke",
+        "type": "object",
+        "properties": {
+            "setup": {"type": "string"},
+            "punchline": {"type": "string"},
+        },
+        "required": ["setup", "punchline"],
+    }
+    structured = chat_model.with_structured_output(schema, method="json_schema")
+    first_step = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, first_step).kwargs
+    assert "output_config" in bound_kwargs
+    output_config = bound_kwargs["output_config"]
+    json_schema = output_config["textFormat"]["structure"]["jsonSchema"]
+    assert json_schema["name"] == "Joke"
+    assert json_schema["description"] == "A joke"
+
+
+def test_with_structured_output_default_method() -> None:
+    """Test that default method still uses function_calling (backward compat)."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )
+    structured = chat_model.with_structured_output(GetWeather)
+    # Default method uses tool binding, so first step should have tools in kwargs
+    first_step = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, first_step).kwargs
+    assert "tools" in bound_kwargs
+    assert "output_config" not in bound_kwargs
+
+
+def test_json_schema_adds_additional_properties_false() -> None:
+    """Test that json_schema method adds additionalProperties: false to schemas."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )  # type: ignore[call-arg]
+    structured = chat_model.with_structured_output(GetWeather, method="json_schema")
+    first_step = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, first_step).kwargs
+    output_config = bound_kwargs["output_config"]
+    import json
+
+    schema = json.loads(
+        output_config["textFormat"]["structure"]["jsonSchema"]["schema"]
+    )
+    assert schema["additionalProperties"] is False
+
+
+def test_json_schema_dict_not_mutated() -> None:
+    """Test that passing a dict schema does not mutate the original."""
+    schema = {
+        "title": "Joke",
+        "type": "object",
+        "properties": {"setup": {"type": "string"}},
+        "required": ["setup"],
+    }
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )  # type: ignore[call-arg]
+    chat_model.with_structured_output(schema, method="json_schema")
+    # Original dict should not have been modified
+    assert "additionalProperties" not in schema
+
+
+def test_set_additional_properties_false_nested_properties() -> None:
+    """Test that nested object properties get additionalProperties: false."""
+    schema: dict = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "address": {
+                "type": "object",
+                "properties": {
+                    "street": {"type": "string"},
+                    "city": {"type": "string"},
+                },
+            },
+        },
+    }
+    _set_additional_properties_false(schema)
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["address"]["additionalProperties"] is False
+    # Non-object properties should not be affected
+    assert "additionalProperties" not in schema["properties"]["name"]
+
+
+def test_set_additional_properties_false_array_items() -> None:
+    """Test that object items inside arrays get additionalProperties: false."""
+    schema: dict = {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"},
+                "label": {"type": "string"},
+            },
+        },
+    }
+    _set_additional_properties_false(schema)
+    # Top-level is an array, not an object, so no additionalProperties there
+    assert "additionalProperties" not in schema
+    # But the items object should have it
+    assert schema["items"]["additionalProperties"] is False
+
+
+def test_set_additional_properties_false_defs() -> None:
+    """Test that $defs and definitions entries get additionalProperties: false."""
+    schema: dict = {
+        "type": "object",
+        "properties": {
+            "pet": {"$ref": "#/$defs/Pet"},
+        },
+        "$defs": {
+            "Pet": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "species": {"type": "string"},
+                },
+            },
+        },
+        "definitions": {
+            "Owner": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                },
+            },
+        },
+    }
+    _set_additional_properties_false(schema)
+    assert schema["additionalProperties"] is False
+    assert schema["$defs"]["Pet"]["additionalProperties"] is False
+    assert schema["definitions"]["Owner"]["additionalProperties"] is False
+
+
+def test_set_additional_properties_false_composition_keywords() -> None:
+    """Test that allOf, anyOf, and oneOf sub-schemas get additionalProperties."""
+    schema: dict = {
+        "allOf": [
+            {
+                "type": "object",
+                "properties": {"a": {"type": "string"}},
+            },
+        ],
+        "anyOf": [
+            {
+                "type": "object",
+                "properties": {"b": {"type": "string"}},
+            },
+            {"type": "string"},
+        ],
+        "oneOf": [
+            {
+                "type": "object",
+                "properties": {"c": {"type": "integer"}},
+            },
+        ],
+    }
+    _set_additional_properties_false(schema)
+    assert schema["allOf"][0]["additionalProperties"] is False
+    assert schema["anyOf"][0]["additionalProperties"] is False
+    # Non-object sub-schemas should not be affected
+    assert "additionalProperties" not in schema["anyOf"][1]
+    assert schema["oneOf"][0]["additionalProperties"] is False
+
+
+def test_set_additional_properties_false_deeply_nested() -> None:
+    """Test a complex schema combining nested properties, items, $defs, and anyOf."""
+    schema: dict = {
+        "type": "object",
+        "properties": {
+            "people": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "contact": {
+                            "anyOf": [
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "email": {"type": "string"},
+                                    },
+                                },
+                                {"type": "null"},
+                            ],
+                        },
+                    },
+                },
+            },
+        },
+        "$defs": {
+            "Address": {
+                "type": "object",
+                "properties": {
+                    "coords": {
+                        "type": "object",
+                        "properties": {
+                            "lat": {"type": "number"},
+                            "lon": {"type": "number"},
+                        },
+                    },
+                },
+            },
+        },
+    }
+    _set_additional_properties_false(schema)
+    # Top-level object
+    assert schema["additionalProperties"] is False
+    # Array items object
+    items = schema["properties"]["people"]["items"]
+    assert items["additionalProperties"] is False
+    # anyOf branch with object type
+    assert items["properties"]["contact"]["anyOf"][0]["additionalProperties"] is False
+    # anyOf branch with null type should not be affected
+    assert "additionalProperties" not in items["properties"]["contact"]["anyOf"][1]
+    # $defs object
+    assert schema["$defs"]["Address"]["additionalProperties"] is False
+    # Nested object inside $defs
+    assert (
+        schema["$defs"]["Address"]["properties"]["coords"]["additionalProperties"]
+        is False
+    )

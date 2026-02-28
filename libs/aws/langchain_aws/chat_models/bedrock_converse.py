@@ -1,4 +1,5 @@
 import base64
+import copy
 import functools
 import json
 import logging
@@ -282,6 +283,16 @@ class ChatBedrockConverse(BaseChatModel):
 
         ```python
         Joke(setup='What do you call a cat that gets all dressed up?', punchline='A purrfessional!', rating=7)
+        ```
+
+        Native JSON schema output (requires supported models, e.g. Claude 4.5+):
+        ```python
+        structured_model = model.with_structured_output(Joke, method="json_schema")
+        structured_model.invoke("Tell me a joke about cats")
+        ```
+
+        ```python
+        Joke(setup='Why was the cat sitting on the computer?', punchline='To keep an eye on the mouse!', rating=6)
         ```
 
         See `ChatBedrockConverse.with_structured_output()` for more.
@@ -598,6 +609,14 @@ class ChatBedrockConverse(BaseChatModel):
         If not provided, AWS uses the default tier.
         """,
     )
+
+    output_config: Optional[Dict[str, Any]] = None
+    """Output configuration for structured model responses.
+
+    Configures native JSON schema output format via the Bedrock ``outputConfig``
+    parameter. Only supported on select models (Claude 4.5+, select open-weight).
+    See https://docs.aws.amazon.com/bedrock/latest/userguide/structured-output.html
+    """
 
     request_metadata: Optional[Dict[str, str]] = None
     """Key-Value pairs that you can use to filter invocation logs."""
@@ -1345,6 +1364,22 @@ class ChatBedrockConverse(BaseChatModel):
         schema: _DictOrPydanticClass,
         *,
         include_raw: bool = False,
+        method: Literal["function_calling", "json_schema"] = "function_calling",
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
+        if method == "json_schema":
+            return self._with_structured_output_json_schema(
+                schema, include_raw=include_raw, **kwargs
+            )
+        return self._with_structured_output_function_calling(
+            schema, include_raw=include_raw, **kwargs
+        )
+
+    def _with_structured_output_function_calling(
+        self,
+        schema: _DictOrPydanticClass,
+        *,
+        include_raw: bool = False,
         strict: Optional[bool] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
@@ -1412,6 +1447,80 @@ class ChatBedrockConverse(BaseChatModel):
         else:
             return llm | output_parser
 
+    def _with_structured_output_json_schema(
+        self,
+        schema: _DictOrPydanticClass,
+        *,
+        include_raw: bool = False,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
+        if isinstance(schema, type) and is_basemodel_subclass(schema):
+            json_schema = schema.model_json_schema()
+            schema_name = schema.__name__
+            schema_description = schema.__doc__ or schema_name
+        elif isinstance(schema, dict):
+            json_schema = copy.deepcopy(schema)
+            schema_name = str(schema.get("title", schema.get("name", "output_schema")))
+            schema_description = str(schema.get("description", schema_name))
+        else:
+            msg = (
+                f"Unsupported schema type: {type(schema)}. "
+                "Expected a Pydantic model class or a dict."
+            )
+            raise ValueError(msg)
+
+        # Bedrock structured outputs require additionalProperties: false on all
+        # object-type schemas. Recursively ensure compliance.
+        _set_additional_properties_false(json_schema)
+
+        output_config = {
+            "textFormat": {
+                "type": "json_schema",
+                "structure": {
+                    "jsonSchema": {
+                        "schema": json.dumps(json_schema),
+                        "name": schema_name,
+                        "description": schema_description,
+                    }
+                },
+            }
+        }
+
+        try:
+            llm = self.bind(
+                output_config=output_config,
+                ls_structured_output_format={
+                    "kwargs": {"method": "json_schema"},
+                    "schema": json_schema,
+                },
+                **kwargs,
+            )
+        except Exception:
+            llm = self.bind(output_config=output_config, **kwargs)
+
+        if isinstance(schema, type) and is_basemodel_subclass(schema):
+            from langchain_core.output_parsers import PydanticOutputParser
+
+            output_parser: OutputParserLike = PydanticOutputParser(
+                pydantic_object=schema
+            )
+        else:
+            from langchain_core.output_parsers import JsonOutputParser
+
+            output_parser = JsonOutputParser()
+
+        if include_raw:
+            parser_assign = RunnablePassthrough.assign(
+                parsed=itemgetter("raw") | output_parser, parsing_error=lambda _: None
+            )
+            parser_none = RunnablePassthrough.assign(parsed=lambda _: None)
+            parser_with_fallback = parser_assign.with_fallbacks(
+                [parser_none], exception_key="parsing_error"
+            )
+            return RunnableMap(raw=llm) | parser_with_fallback
+        else:
+            return llm | output_parser
+
     def _converse_params(
         self,
         *,
@@ -1433,6 +1542,7 @@ class ChatBedrockConverse(BaseChatModel):
             Literal["priority", "default", "flex", "reserved"]
         ] = None,
         requestMetadata: Optional[dict] = None,
+        outputConfig: Optional[dict] = None,
         stream: Optional[bool] = True,
     ) -> Dict[str, Any]:
         if not inferenceConfig:
@@ -1495,6 +1605,7 @@ class ChatBedrockConverse(BaseChatModel):
                 "performanceConfig": performanceConfig or self.performance_config,
                 "serviceTier": {"type": tier} if tier else None,
                 "requestMetadata": requestMetadata or self.request_metadata,
+                "outputConfig": outputConfig or self.output_config,
             }
         )
 
@@ -1594,6 +1705,27 @@ class ChatBedrockConverse(BaseChatModel):
         except Exception as e:
             logger.warning(f"count_tokens API failed: {e}. Using fallback.")
             return super().get_num_tokens_from_messages(messages, tools=tools)
+
+
+_base_wso_doc = BaseChatModel.with_structured_output.__doc__ or ""
+_method_doc = """\
+    method: The method for structured output generation. Supported
+        options are ``"function_calling"`` and ``"json_schema"``.
+
+        - ``"function_calling"`` (default): Uses forced tool calling to
+          generate structured output.
+        - ``"json_schema"``: Uses Bedrock's native ``outputConfig``
+          with ``textFormat`` to constrain model output to a JSON schema.
+          Only supported on select models (e.g., Claude 4.5 and later,
+          select open-weight models). See the `Bedrock structured output
+          documentation
+          <https://docs.aws.amazon.com/bedrock/latest/userguide/structured-output.html>`_
+          for the latest supported models.
+
+"""
+ChatBedrockConverse.with_structured_output.__doc__ = _base_wso_doc.replace(
+    "Raises:", _method_doc + "Raises:", 1
+)
 
 
 def _handle_bedrock_error(error: ClientError) -> None:
@@ -2311,6 +2443,30 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 f"'reasoning_content' keys. Received:\n\n{block}"
             )
     return lc_content
+
+
+def _set_additional_properties_false(schema: dict) -> None:
+    """Recursively set ``additionalProperties: false`` on object-type schemas.
+
+    Bedrock structured outputs require this on every object in the JSON schema.
+    Modifies *schema* in place. Also walks ``$defs``/``definitions``,
+    ``properties``, ``items``, and ``allOf``/``anyOf``/``oneOf``.
+    """
+    if schema.get("type") == "object":
+        schema["additionalProperties"] = False
+        for prop_schema in (schema.get("properties") or {}).values():
+            if isinstance(prop_schema, dict):
+                _set_additional_properties_false(prop_schema)
+    if "items" in schema and isinstance(schema["items"], dict):
+        _set_additional_properties_false(schema["items"])
+    for keyword in ("$defs", "definitions"):
+        for def_schema in (schema.get(keyword) or {}).values():
+            if isinstance(def_schema, dict):
+                _set_additional_properties_false(def_schema)
+    for keyword in ("allOf", "anyOf", "oneOf"):
+        for sub_schema in schema.get(keyword) or []:
+            if isinstance(sub_schema, dict):
+                _set_additional_properties_false(sub_schema)
 
 
 def _format_tools(

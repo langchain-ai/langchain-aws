@@ -917,3 +917,88 @@ def test_request_headers(tmp_path: Any, streaming: bool) -> None:
     headers = request["headers"]
 
     assert headers["X-Foo"] == ["Bar"]
+
+
+# --- Native structured outputs integration tests ---
+
+
+class JokeSchema(BaseModel):
+    """A joke with setup and punchline."""
+
+    setup: str = Field(description="The setup of the joke")
+    punchline: str = Field(description="The punchline of the joke")
+
+
+class GetWeather(BaseModel):
+    """Get the current weather in a given location."""
+
+    location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+
+
+def test_structured_output_json_schema_pydantic() -> None:
+    """Test method='json_schema' with Pydantic model returns validated instance."""
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
+    )
+    structured = model.with_structured_output(JokeSchema, method="json_schema")
+    result = structured.invoke("Tell me a short joke about programming")
+    assert isinstance(result, JokeSchema)
+    assert result.setup
+    assert result.punchline
+
+
+def test_structured_output_json_schema_dict() -> None:
+    """Test method='json_schema' with dict schema returns matching dict."""
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
+    )
+    schema = {
+        "title": "Joke",
+        "description": "A joke with setup and punchline.",
+        "type": "object",
+        "properties": {
+            "setup": {"type": "string", "description": "The setup of the joke"},
+            "punchline": {
+                "type": "string",
+                "description": "The punchline of the joke",
+            },
+        },
+        "required": ["setup", "punchline"],
+    }
+    structured = model.with_structured_output(schema, method="json_schema")
+    result = structured.invoke("Tell me a short joke about programming")
+    assert isinstance(result, dict)
+    assert "setup" in result
+    assert "punchline" in result
+
+
+def test_structured_output_json_schema_streaming() -> None:
+    """Test that streaming works with method='json_schema'."""
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
+    )
+    structured = model.with_structured_output(JokeSchema, method="json_schema")
+    result = None
+    for chunk in structured.stream("Tell me a short joke about programming"):
+        result = chunk
+    assert isinstance(result, JokeSchema)
+    assert result.setup
+    assert result.punchline
+
+
+def test_structured_output_json_schema_include_raw() -> None:
+    """Test include_raw=True returns dict with raw, parsed, parsing_error."""
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
+    )
+    structured = model.with_structured_output(
+        JokeSchema, method="json_schema", include_raw=True
+    )
+    result = structured.invoke("Tell me a short joke about programming")
+    assert isinstance(result, dict)
+    assert "raw" in result
+    assert "parsed" in result
+    assert "parsing_error" in result
+    assert isinstance(result["raw"], AIMessage)
+    assert isinstance(result["parsed"], JokeSchema)
+    assert result["parsing_error"] is None
