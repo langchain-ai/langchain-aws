@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from botocore.client import BaseClient
 from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import TASKS
 
 from langgraph_checkpoint_aws.constants import CHECKPOINT_PREFIX, WRITES_PREFIX
@@ -270,3 +271,8 @@ def sample_checkpoint_metadata(sample_timestamp):
             "namespace2": "parent_checkpoint_2",
         },
     )
+
+
+@pytest.fixture
+def simple_checkpoint_saver() -> MemorySaver:
+    return MemorySaver()
