@@ -12,14 +12,9 @@ from langchain_core.tools import Tool
 from langchain_aws import ChatBedrock
 
 from langgraph_checkpoint_aws import AgentCoreMemorySaver, BufferedCheckpointSaver
-
-def test_agent_tools(agent_tools: list[Tool]):
-    """Test the agent tools."""
-    add, multiply, get_weather = agent_tools
-    assert add.invoke({"a": 5, "b": 3}) == 8
-    assert multiply.invoke({"a": 4, "b": 6}) == 24
-    assert get_weather.invoke("sf") == "It's always sunny in sf"
-    assert get_weather.invoke("nyc") == "It might be cloudy in nyc"
+from tests.integration_tests.agentcore.utils import (
+    clean_agentcore_memory,
+)
 
 
 class _TestSequentialWorkflowState(TypedDict):
@@ -126,7 +121,6 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
     def test_flush_on_exit_with_seq_workflow(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
@@ -134,6 +128,7 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
 
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(
             buffered_agentcore_memory_saver,
         )
@@ -144,7 +139,11 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
             }
         }
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver,
+            actor_id=actor_id,
+            thread_ids=[thread_id],
+        ):
             assert buffered_agentcore_memory_saver.is_empty
 
             with buffered_agentcore_memory_saver.flush_on_exit():
@@ -169,19 +168,17 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
             }
 
             assert len(list(agentcore_memory_saver.list(config))) == 1
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
 
     def test_flush_on_exit_with_seq_workflow_streaming(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(
             buffered_agentcore_memory_saver,
         )
@@ -194,7 +191,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             with buffered_agentcore_memory_saver.flush_on_exit():
                 for _ in graph.stream({"step_count": 0}, config):
                     assert not buffered_agentcore_memory_saver.is_empty
@@ -214,19 +213,17 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
                 "completed": True,
                 "step_count": 3,
             }
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
 
     def test_flush_on_exit_with_parallel_workflow(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_parallel_workflow_graph(buffered_agentcore_memory_saver)
         config = {
             "configurable": {
@@ -237,7 +234,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             with buffered_agentcore_memory_saver.flush_on_exit():
                 graph.invoke({"step_count": 0, "results": []}, config)
 
@@ -258,19 +257,17 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
             assert channel_values["completed"] is True
             assert set(channel_values["results"]) == {"result_a", "result_b"}
             assert len(list(agentcore_memory_saver.list(config))) == 1
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
 
     def test_flush_on_exit_with_parallel_workflow_streaming(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_parallel_workflow_graph(buffered_agentcore_memory_saver)
         config = {
             "configurable": {
@@ -281,7 +278,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             with buffered_agentcore_memory_saver.flush_on_exit():
                 for _ in graph.stream({"step_count": 0, "results": []}, config):
                     assert not buffered_agentcore_memory_saver.is_empty
@@ -300,19 +299,17 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
             assert channel_values["step_count"] == 3
             assert channel_values["completed"] is True
             assert set(channel_values["results"]) == {"result_a", "result_b"}
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
 
     def test_flush_mid_seq_workflow(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(
             buffered_agentcore_memory_saver,
             flush_mid_workflow=True,
@@ -326,7 +323,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             with buffered_agentcore_memory_saver.flush_on_exit():
                 graph.invoke({"step_count": 0}, config)
 
@@ -350,19 +349,17 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
 
             # One from mid-workflow flush, one from flush_on_exit
             assert len(list(agentcore_memory_saver.list(config))) == 2
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
 
     def test_flush_mid_seq_workflow_with_streaming(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(
             buffered_agentcore_memory_saver,
             flush_mid_workflow=True,
@@ -376,7 +373,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             with buffered_agentcore_memory_saver.flush_on_exit():
                 streamed_nodes = []
                 for event in graph.stream({"step_count": 0}, config):
@@ -423,33 +422,33 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
 
             # One from mid-workflow flush, one from flush_on_exit
             assert len(list(agentcore_memory_saver.list(config))) == 2
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
 
     def test_flush_mid_parallel_workflow(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_parallel_workflow_graph(
             buffered_agentcore_memory_saver,
             flush_mid_workflow=True,
         )
         config = {
             "configurable": {
-                "thread_id": agentcore_session_id,
-                "actor_id": agentcore_actor_id,
+                "thread_id": thread_id,
+                "actor_id": actor_id,
             }
         }
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             with buffered_agentcore_memory_saver.flush_on_exit():
                 graph.invoke({"step_count": 0, "results": []}, config)
 
@@ -472,19 +471,17 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
 
             # One from mid-workflow flush, one from flush_on_exit
             assert len(list(agentcore_memory_saver.list(config))) == 2
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
 
     def test_flush_mid_parallel_workflow_with_streaming(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_parallel_workflow_graph(
             buffered_agentcore_memory_saver,
             flush_mid_workflow=True,
@@ -498,7 +495,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             with buffered_agentcore_memory_saver.flush_on_exit():
                 streamed_nodes = []
                 for event in graph.stream({"step_count": 0, "results": []}, config):
@@ -537,13 +536,10 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
             assert channel_values["completed"] is True
             assert set(channel_values["results"]) == {"result_a", "result_b"}
             assert len(list(agentcore_memory_saver.list(config))) == 2
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
 
     def test_context_manager_flushes_on_exception_and_propagates(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
@@ -552,6 +548,7 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(
             buffered_agentcore_memory_saver,
             raise_mid_workflow=True,
@@ -566,7 +563,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             with pytest.raises(ValueError, match="Test error: simulated task failure"):
                 with buffered_agentcore_memory_saver.flush_on_exit():
                     graph.invoke({"step_count": 0}, config)
@@ -583,32 +582,32 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
                 "completed": False,
                 "step_count": 1,
             }
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
 
     def test_manual_flush_without_context_manager(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(
             buffered_agentcore_memory_saver,
         )
         config = {
             "configurable": {
-                "thread_id": agentcore_session_id,
-                "actor_id": agentcore_actor_id,
+                "thread_id": thread_id,
+                "actor_id": actor_id,
             }
         }
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             result = graph.invoke({"step_count": 0}, config)
             assert result["completed"] is True
             assert not buffered_agentcore_memory_saver.is_empty
@@ -628,28 +627,28 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
                 "completed": True,
                 "step_count": 3,
             }
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
 
     def test_state_persistence_across_invocations(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(buffered_agentcore_memory_saver)
         config = {
             "configurable": {
-                "thread_id": agentcore_session_id,
-                "actor_id": agentcore_actor_id,
+                "thread_id": thread_id,
+                "actor_id": actor_id,
             }
         }
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             with buffered_agentcore_memory_saver.flush_on_exit():
                 result1 = graph.invoke({"step_count": 0}, config)
                 assert result1["step_count"] == 3
@@ -661,20 +660,18 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
                 assert result2["step_count"] == 6
 
             assert len(list(agentcore_memory_saver.list(config))) == 2
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
 
     def test_multiple_sessions_isolation(
         self,
         agentcore_session_id: str,
         agentcore_actor_id: str,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
     ):
         thread_id_1 = agentcore_session_id + "-1"
         thread_id_2 = agentcore_session_id + "-2"
         actor_id = agentcore_actor_id
 
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(buffered_agentcore_memory_saver)
 
         config_1 = {
@@ -690,7 +687,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
             }
         }
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id_1, thread_id_2],
+        ):
             with buffered_agentcore_memory_saver.flush_on_exit():
                 result_1 = graph.invoke({"step_count": 0}, config_1)
 
@@ -716,20 +715,17 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
             assert checkpoints_2[0].config["configurable"]["thread_id"] == thread_id_2
             assert checkpoints_1[0].checkpoint["channel_values"]["step_count"] == 3
             assert checkpoints_2[0].checkpoint["channel_values"]["step_count"] == 3
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id_1, actor_id)
-            agentcore_memory_saver.delete_thread(thread_id_2, actor_id)
 
     def test_checkpoint_listing_with_limit(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(buffered_agentcore_memory_saver)
         config = {
             "configurable": {
@@ -738,7 +734,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
             }
         }
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             num_invocations = 3
             for i in range(num_invocations):
                 with buffered_agentcore_memory_saver.flush_on_exit():
@@ -765,18 +763,17 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
             most_recent = all_checkpoints[0].checkpoint["channel_values"]["step_count"]
             oldest = all_checkpoints[-1].checkpoint["channel_values"]["step_count"]
             assert most_recent > oldest
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
 
     def test_checkpoint_save_and_retrieve(
         self,
         agentcore_session_id: str,
         agentcore_actor_id: str,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
+
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
 
         config = {
             "configurable": {
@@ -805,7 +802,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
             "writes": {"node1": ["write1", "write2"]},
         }
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             with buffered_agentcore_memory_saver.flush_on_exit():
                 saved_config = buffered_agentcore_memory_saver.put(
                     config,
@@ -837,8 +836,6 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
             expected_metadata["actor_id"] = actor_id
             assert persisted_tuple.metadata == expected_metadata
 
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
 
     def test_math_agent_with_checkpointing(
         self,
@@ -847,12 +844,15 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
         agentcore_session_id: str,
         agentcore_actor_id: str,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
 
-        try:
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
+
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             graph = create_agent(
                 bedrock_model,
                 tools=agent_tools,
@@ -908,9 +908,6 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
             checkpoint_tuples_after = list(agentcore_memory_saver.list(config))
             assert len(checkpoint_tuples_after) > len(checkpoint_tuples)
 
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
-
     def test_weather_query_with_checkpointing(
         self,
         agent_tools: list[Tool],
@@ -918,12 +915,15 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
         agentcore_session_id: str,
         agentcore_actor_id: str,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
 
-        try:
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
+
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             graph = create_agent(
                 bedrock_model,
                 tools=agent_tools,
@@ -953,9 +953,6 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
             assert checkpoint_tuples
             assert len(checkpoint_tuples) == 1
 
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
-
     def test_checkpoint_listing_with_limit(
         self,
         agent_tools: list[Tool],
@@ -963,12 +960,15 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
         agentcore_session_id: str,
         agentcore_actor_id: str,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
 
-        try:
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
+
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             graph = create_agent(
                 bedrock_model,
                 tools=agent_tools,
@@ -1002,17 +1002,12 @@ class TestBufferedAgentCoreMemorySaverIntegrationSync:
                 == all_checkpoints[1].config["configurable"]["checkpoint_id"]
             )
 
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
-
-
 class TestBufferedAgentCoreMemorySaverIntegrationAsync:
 
     @pytest.mark.asyncio
     async def test_async_flush_on_exit_with_seq_workflow(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
@@ -1020,6 +1015,7 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
 
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(
             buffered_agentcore_memory_saver,
         )
@@ -1030,7 +1026,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
             }
         }
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             assert buffered_agentcore_memory_saver.is_empty
 
             async with buffered_agentcore_memory_saver.aflush_on_exit():
@@ -1055,20 +1053,18 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
             }
 
             assert len(await list(agentcore_memory_saver.alist(config))) == 1
-        finally:
-            await agentcore_memory_saver.adelete_thread(thread_id, actor_id)
 
     @pytest.mark.asyncio
     async def test_async_flush_on_exit_with_seq_workflow_streaming(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(
             buffered_agentcore_memory_saver,
         )
@@ -1081,7 +1077,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             async with buffered_agentcore_memory_saver.aflush_on_exit():
                 async for _ in graph.astream({"step_count": 0}, config):
                     assert not buffered_agentcore_memory_saver.is_empty
@@ -1101,20 +1099,18 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
                 "completed": True,
                 "step_count": 3,
             }
-        finally:
-            await agentcore_memory_saver.adelete_thread(thread_id, actor_id)
 
     @pytest.mark.asyncio
     async def test_async_flush_on_exit_with_parallel_workflow(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_parallel_workflow_graph(buffered_agentcore_memory_saver)
         config = {
             "configurable": {
@@ -1125,7 +1121,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             async with buffered_agentcore_memory_saver.aflush_on_exit():
                 await graph.ainvoke({"step_count": 0, "results": []}, config)
 
@@ -1146,20 +1144,18 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
             assert channel_values["completed"] is True
             assert set(channel_values["results"]) == {"result_a", "result_b"}
             assert len(list(agentcore_memory_saver.list(config))) == 1
-        finally:
-            await agentcore_memory_saver.adelete_thread(thread_id, actor_id)
 
     @pytest.mark.asyncio
     async def test_async_flush_on_exit_with_parallel_workflow_streaming(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_parallel_workflow_graph(buffered_agentcore_memory_saver)
         config = {
             "configurable": {
@@ -1170,7 +1166,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             async with buffered_agentcore_memory_saver.aflush_on_exit():
                 async for _ in graph.astream({"step_count": 0, "results": []}, config):
                     assert not buffered_agentcore_memory_saver.is_empty
@@ -1189,20 +1187,18 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
             assert channel_values["step_count"] == 3
             assert channel_values["completed"] is True
             assert set(channel_values["results"]) == {"result_a", "result_b"}
-        finally:
-            await agentcore_memory_saver.adelete_thread(thread_id, actor_id)
 
     @pytest.mark.asyncio
     async def test_async_flush_mid_seq_workflow(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(
             buffered_agentcore_memory_saver,
             flush_mid_workflow=True,
@@ -1216,7 +1212,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             with buffered_agentcore_memory_saver.aflush_on_exit():
                 await graph.ainvoke({"step_count": 0}, config)
 
@@ -1240,20 +1238,18 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
 
             # One from mid-workflow flush, one from flush_on_exit
             assert len(await list(agentcore_memory_saver.alist(config))) == 2
-        finally:
-            await agentcore_memory_saver.adelete_thread(thread_id, actor_id)
 
     @pytest.mark.asyncio
     async def test_async_flush_mid_seq_workflow_with_streaming(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(
             buffered_agentcore_memory_saver,
             flush_mid_workflow=True,
@@ -1267,7 +1263,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             async with buffered_agentcore_memory_saver.aflush_on_exit():
                 streamed_nodes = []
                 async for event in graph.astream({"step_count": 0}, config):
@@ -1314,34 +1312,34 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
 
             # One from mid-workflow flush, one from flush_on_exit
             assert len(await list(agentcore_memory_saver.alist(config))) == 2
-        finally:
-            await agentcore_memory_saver.adelete_thread(thread_id, actor_id)
 
     @pytest.mark.asyncio
     async def test_async_flush_mid_parallel_workflow(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_parallel_workflow_graph(
             buffered_agentcore_memory_saver,
             flush_mid_workflow=True,
         )
         config = {
             "configurable": {
-                "thread_id": agentcore_session_id,
-                "actor_id": agentcore_actor_id,
+                "thread_id": thread_id,
+                "actor_id": actor_id,
             }
         }
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             async with buffered_agentcore_memory_saver.aflush_on_exit():
                 await graph.ainvoke({"step_count": 0, "results": []}, config)
 
@@ -1364,20 +1362,18 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
 
             # One from mid-workflow flush, one from flush_on_exit
             assert len(await list(agentcore_memory_saver.alist(config))) == 2
-        finally:
-            await agentcore_memory_saver.adelete_thread(thread_id, actor_id)
 
     @pytest.mark.asyncio
     async def test_async_flush_mid_parallel_workflow_with_streaming(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_parallel_workflow_graph(
             buffered_agentcore_memory_saver,
             flush_mid_workflow=True,
@@ -1391,7 +1387,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             async with buffered_agentcore_memory_saver.aflush_on_exit():
                 streamed_nodes = []
                 async for event in graph.astream({"step_count": 0, "results": []}, config):
@@ -1430,14 +1428,11 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
             assert channel_values["completed"] is True
             assert set(channel_values["results"]) == {"result_a", "result_b"}
             assert len(await list(agentcore_memory_saver.alist(config))) == 2
-        finally:
-            await agentcore_memory_saver.adelete_thread(thread_id, actor_id)
 
     @pytest.mark.asyncio
     async def test_async_context_manager_flushes_on_exception_and_propagates(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
@@ -1446,6 +1441,7 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(
             buffered_agentcore_memory_saver,
             raise_mid_workflow=True,
@@ -1460,7 +1456,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             with pytest.raises(ValueError, match="Test error: simulated task failure"):
                 async with buffered_agentcore_memory_saver.aflush_on_exit():
                     await graph.ainvoke({"step_count": 0}, config)
@@ -1477,33 +1475,33 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
                 "completed": False,
                 "step_count": 1,
             }
-        finally:
-            await agentcore_memory_saver.adelete_thread(thread_id, actor_id)
 
     @pytest.mark.asyncio
     async def test_async_manual_flush_without_context_manager(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(
             buffered_agentcore_memory_saver,
         )
         config = {
             "configurable": {
-                "thread_id": agentcore_session_id,
-                "actor_id": agentcore_actor_id,
+                "thread_id": thread_id,
+                "actor_id": actor_id,
             }
         }
 
         assert buffered_agentcore_memory_saver.is_empty
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             result = await graph.ainvoke({"step_count": 0}, config)
             assert result["completed"] is True
             assert not buffered_agentcore_memory_saver.is_empty
@@ -1523,30 +1521,30 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
                 "completed": True,
                 "step_count": 3,
             }
-        finally:
-            await agentcore_memory_saver.adelete_thread(thread_id, actor_id)
 
 
     @pytest.mark.asyncio
     async def test_async_state_persistence_across_invocations(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(buffered_agentcore_memory_saver)
         config = {
             "configurable": {
-                "thread_id": agentcore_session_id,
-                "actor_id": agentcore_actor_id,
+                "thread_id": thread_id,
+                "actor_id": actor_id,
             }
         }
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             async with buffered_agentcore_memory_saver.aflush_on_exit():
                 result1 = await graph.ainvoke({"step_count": 0}, config)
                 assert result1["step_count"] == 3
@@ -1558,8 +1556,6 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
                 assert result2["step_count"] == 6
 
             assert len(await list(agentcore_memory_saver.alist(config))) == 2
-        finally:
-            await agentcore_memory_saver.adelete_thread(thread_id, actor_id)
 
     @pytest.mark.asyncio
     async def test_async_multiple_sessions_isolation(
@@ -1567,12 +1563,12 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
         agentcore_session_id: str,
         agentcore_actor_id: str,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
     ):
         thread_id_1 = agentcore_session_id + "-1"
         thread_id_2 = agentcore_session_id + "-2"
         actor_id = agentcore_actor_id
 
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(buffered_agentcore_memory_saver)
 
         config_1 = {
@@ -1588,7 +1584,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
             }
         }
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             async with buffered_agentcore_memory_saver.aflush_on_exit():
                 result_1 = await graph.ainvoke({"step_count": 0}, config_1)
 
@@ -1614,21 +1612,18 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
             assert checkpoints_2[0].config["configurable"]["thread_id"] == thread_id_2
             assert checkpoints_1[0].checkpoint["channel_values"]["step_count"] == 3
             assert checkpoints_2[0].checkpoint["channel_values"]["step_count"] == 3
-        finally:
-            await agentcore_memory_saver.adelete_thread(thread_id_1, actor_id)
-            await agentcore_memory_saver.adelete_thread(thread_id_2, actor_id)
 
     @pytest.mark.asyncio
     async def test_async_checkpoint_listing_with_limit(
         self,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
         agentcore_session_id: str,
         agentcore_actor_id: str,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
         
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
         graph = _build_sequential_workflow_graph(buffered_agentcore_memory_saver)
         config = {
             "configurable": {
@@ -1637,7 +1632,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
             }
         }
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             num_invocations = 3
             for i in range(num_invocations):
                 async with buffered_agentcore_memory_saver.aflush_on_exit():
@@ -1664,8 +1661,6 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
             most_recent = all_checkpoints[0].checkpoint["channel_values"]["step_count"]
             oldest = all_checkpoints[-1].checkpoint["channel_values"]["step_count"]
             assert most_recent > oldest
-        finally:
-            await agentcore_memory_saver.adelete_thread(thread_id, actor_id)
 
     @pytest.mark.asyncio
     async def test_async_checkpoint_save_and_retrieve(
@@ -1673,10 +1668,11 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
         agentcore_session_id: str,
         agentcore_actor_id: str,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
+
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
 
         config = {
             "configurable": {
@@ -1705,7 +1701,9 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
             "writes": {"node1": ["write1", "write2"]},
         }
 
-        try:
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             async with buffered_agentcore_memory_saver.aflush_on_exit():
                 saved_config = await buffered_agentcore_memory_saver.aput(
                     config,
@@ -1737,9 +1735,6 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
             expected_metadata["actor_id"] = actor_id
             assert persisted_tuple.metadata == expected_metadata
 
-        finally:
-            await agentcore_memory_saver.adelete_thread(thread_id, actor_id)
-
     @pytest.mark.asyncio
     async def test_async_math_agent_with_checkpointing(
         self,
@@ -1748,12 +1743,15 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
         agentcore_session_id: str,
         agentcore_actor_id: str,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
 
-        try:
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
+
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             graph = create_agent(
                 bedrock_model,
                 tools=agent_tools,
@@ -1809,9 +1807,6 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
             checkpoint_tuples_after = await list(agentcore_memory_saver.alist(config))
             assert len(checkpoint_tuples_after) > len(checkpoint_tuples)
 
-        finally:
-            await agentcore_memory_saver.adelete_thread(thread_id, actor_id)
-
     @pytest.mark.asyncio
     async def test_async_weather_query_with_checkpointing(
         self,
@@ -1820,12 +1815,15 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
         agentcore_session_id: str,
         agentcore_actor_id: str,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
 
-        try:
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
+
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             graph = create_agent(
                 bedrock_model,
                 tools=agent_tools,
@@ -1855,9 +1853,6 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
             assert checkpoint_tuples
             assert len(checkpoint_tuples) == 1
 
-        finally:
-            agentcore_memory_saver.delete_thread(thread_id, actor_id)
-
     @pytest.mark.asyncio
     async def test_async_checkpoint_listing_with_limit(
         self,
@@ -1866,12 +1861,14 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
         agentcore_session_id: str,
         agentcore_actor_id: str,
         agentcore_memory_saver: AgentCoreMemorySaver,
-        buffered_agentcore_memory_saver: BufferedCheckpointSaver,
     ):
         thread_id = agentcore_session_id
         actor_id = agentcore_actor_id
 
-        try:
+        buffered_agentcore_memory_saver = BufferedCheckpointSaver(agentcore_memory_saver)
+        with clean_agentcore_memory(
+            agentcore_memory_saver, actor_id=actor_id, thread_ids=[thread_id],
+        ):
             graph = create_agent(
                 bedrock_model,
                 tools=agent_tools,
@@ -1904,6 +1901,3 @@ class TestBufferedAgentCoreMemorySaverIntegrationAsync:
                 limited_checkpoints[1].config["configurable"]["checkpoint_id"]
                 == all_checkpoints[1].config["configurable"]["checkpoint_id"]
             )
-
-        finally:
-            await agentcore_memory_saver.adelete_thread(thread_id, actor_id)
