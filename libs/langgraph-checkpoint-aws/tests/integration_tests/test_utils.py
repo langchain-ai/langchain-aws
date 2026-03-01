@@ -1,11 +1,12 @@
-import pytest
 import sys
+
+import pytest
 
 from tests.integration_tests.utils import (
     add,
-    multiply,
-    get_weather,
     generate_large_data,
+    get_weather,
+    multiply,
 )
 
 
@@ -18,13 +19,12 @@ def test_generate_large_data(size_kb: int):
 
 
 class TestAgentTools:
-    
-    def test_add():
+    def test_add(self):
         assert add.invoke({"a": 5, "b": 3}) == 8
 
-    def test_multiply():
+    def test_multiply(self):
         assert multiply.invoke({"a": 4, "b": 6}) == 24
 
-    def test_get_weather():
+    def test_get_weather(self):
         assert get_weather.invoke("sf") == "It's always sunny in sf"
         assert get_weather.invoke("nyc") == "It might be cloudy in nyc"

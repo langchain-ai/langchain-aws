@@ -1,6 +1,12 @@
 import logging
+
 import pytest
-from langgraph_checkpoint_aws.agentcore.valkey import AgentCoreValkeySaver
+
+from tests.utils import is_valkey_available
+
+if is_valkey_available():
+    from langgraph_checkpoint_aws.agentcore.valkey import AgentCoreValkeySaver
+
 
 logger = logging.getLogger(__name__)
 
@@ -11,9 +17,9 @@ TTL_SECONDS: int = 600  # 10 minutes
 @pytest.fixture(scope="function")
 def agentcore_valkey_saver():
     """Create Valkey saver instance for integration tests."""
-    
+
     uri = "valkey://localhost:6379/1"
-    
+
     def _delete_keys(saver: AgentCoreValkeySaver):
         """Cleanup test keys from Valkey server."""
         try:
@@ -31,7 +37,7 @@ def agentcore_valkey_saver():
             if all_keys:
                 saver.client.delete(*all_keys)
         except Exception:
-            logger.exception(f"Failed to cleanup test keys from Valkey server")
+            logger.exception("Failed to cleanup test keys from Valkey server")
 
     try:
         with AgentCoreValkeySaver.from_conn_string(

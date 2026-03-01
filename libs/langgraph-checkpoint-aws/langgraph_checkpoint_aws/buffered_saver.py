@@ -12,7 +12,6 @@ from langgraph.checkpoint.base import (
     CheckpointTuple,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -96,7 +95,7 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
         """
         if isinstance(saver, BufferedCheckpointSaver):
             raise ValueError(f"{type(self).__name__} cannot be nested")
-        
+
         super().__init__(serde=saver.serde)
 
         self._saver = saver
@@ -145,6 +144,7 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
             # Checkpoint and writes are automatically flushed on exit
             ```
         """
+
         def try_flush():
             try:
                 self.flush()
@@ -153,7 +153,7 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
                     "Failed to auto-flush buffered checkpoint and writes on exit."
                 )
                 raise
-        
+
         try:
             yield self
         except Exception:
@@ -180,6 +180,7 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
             # Checkpoint and writes are automatically flushed on exit
             ```
         """
+
         async def try_aflush():
             try:
                 await self.aflush()
@@ -188,7 +189,7 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
                     "Failed to auto-flush buffered checkpoint and writes on exit."
                 )
                 raise
-        
+
         try:
             yield self
         except Exception:

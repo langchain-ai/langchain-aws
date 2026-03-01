@@ -1,5 +1,7 @@
 """Unit tests for BufferedCheckpointSaver."""
 
+from unittest.mock import patch
+
 import pytest
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata
@@ -268,8 +270,6 @@ class TestBufferedCheckpointSaver:
         )
 
         result = buffered.get_tuple(config)
-
-        # MemorySaver has no data, so result is None
         assert result is None
 
     def test_get_tuple_delegates_when_thread_id_mismatch(
@@ -395,7 +395,6 @@ class TestBufferedCheckpointSaver:
 
         result = await buffered.aget_tuple(config)
 
-        # MemorySaver has no data
         assert result is None
 
     def test_flush_persists_checkpoint(
@@ -459,7 +458,6 @@ class TestBufferedCheckpointSaver:
         # Verify writes were persisted (check via get_tuple)
         persisted = simple_checkpoint_saver.get_tuple(writes_config)
         assert persisted is not None
-        # MemorySaver stores pending writes
         assert len(persisted.pending_writes) >= 2
 
     def test_flush_persists_checkpoint_then_writes(
@@ -494,9 +492,7 @@ class TestBufferedCheckpointSaver:
     def test_flush_returns_none_when_empty(self, simple_checkpoint_saver):
         """Test flush returns None when nothing to flush."""
         buffered = BufferedCheckpointSaver(simple_checkpoint_saver)
-
         result = buffered.flush()
-
         assert result is None
 
     @pytest.mark.asyncio
@@ -765,7 +761,6 @@ class TestBufferedCheckpointSaver:
         """Test get_next_version delegates to underlying saver."""
         buffered = BufferedCheckpointSaver(simple_checkpoint_saver)
 
-        # MemorySaver returns incrementing integers as strings
         result = buffered.get_next_version(None)
         assert result is not None
 
@@ -787,7 +782,11 @@ class TestBufferedCheckpointSaverEdgeCases:
         ids=["empty_configurable", "no_configurable"],
     )
     def test_put_with_missing_or_empty_configurable(
-        self, simple_checkpoint_saver, sample_checkpoint, sample_checkpoint_metadata, config
+        self,
+        simple_checkpoint_saver,
+        sample_checkpoint,
+        sample_checkpoint_metadata,
+        config,
     ):
         """Test put with empty or missing configurable dict."""
         buffered = BufferedCheckpointSaver(simple_checkpoint_saver)
@@ -801,7 +800,8 @@ class TestBufferedCheckpointSaverEdgeCases:
     def test_get_tuple_with_empty_configurable(
         self, simple_checkpoint_saver, sample_checkpoint, sample_checkpoint_metadata
     ):
-        """Test get_tuple with empty configurable matches buffered checkpoint with empty configurable."""
+        """Test get_tuple with empty configurable matches
+        buffered checkpoint with empty configurable."""
         buffered = BufferedCheckpointSaver(simple_checkpoint_saver)
         # Put with empty configurable
         config = RunnableConfig(configurable={})
@@ -821,11 +821,18 @@ class TestBufferedCheckpointSaverEdgeCases:
         ids=["explicit_none_thread_id", "missing_thread_id"],
     )
     def test_get_tuple_with_none_or_missing_thread_id(
-        self, simple_checkpoint_saver, sample_checkpoint, sample_checkpoint_metadata, request_configurable
+        self,
+        simple_checkpoint_saver,
+        sample_checkpoint,
+        sample_checkpoint_metadata,
+        request_configurable,
     ):
-        """Test get_tuple with None or missing thread_id matches buffered with None thread_id."""
+        """Test get_tuple with None
+        or missing thread_id matches buffered with None thread_id."""
         buffered = BufferedCheckpointSaver(simple_checkpoint_saver)
-        config = RunnableConfig(configurable={"thread_id": None, "checkpoint_ns": "ns1"})
+        config = RunnableConfig(
+            configurable={"thread_id": None, "checkpoint_ns": "ns1"}
+        )
         buffered.put(config, sample_checkpoint, sample_checkpoint_metadata, {})
 
         # Request should match (both resolve to None)
@@ -859,7 +866,9 @@ class TestBufferedCheckpointSaverEdgeCases:
         )
 
         # Put checkpoint
-        simple_checkpoint_saver.put(config, sample_checkpoint, sample_checkpoint_metadata, {})
+        simple_checkpoint_saver.put(
+            config, sample_checkpoint, sample_checkpoint_metadata, {}
+        )
 
         # Put empty writes
         writes_config = RunnableConfig(
@@ -952,7 +961,8 @@ class TestBufferedCheckpointSaverMultipleThreadsAndNamespaces:
         mismatched_key,
         mismatched_value,
     ):
-        """Test that writes with mismatched thread_id/namespace/checkpoint_id are not included."""
+        """Test that writes with mismatched thread_id/namespace/checkpoint_id
+        are not included."""
         buffered = BufferedCheckpointSaver(simple_checkpoint_saver)
         config = RunnableConfig(
             configurable={"thread_id": "thread1", "checkpoint_ns": "ns1"}
@@ -1001,7 +1011,9 @@ class TestBufferedCheckpointSaverMultipleThreadsAndNamespaces:
             configurable={"thread_id": "thread2", "checkpoint_ns": "ns1"}
         )
 
-        simple_checkpoint_saver.put(config1, sample_checkpoint, sample_checkpoint_metadata, {})
+        simple_checkpoint_saver.put(
+            config1, sample_checkpoint, sample_checkpoint_metadata, {}
+        )
 
         checkpoint2 = Checkpoint(
             v=1,
@@ -1012,7 +1024,9 @@ class TestBufferedCheckpointSaverMultipleThreadsAndNamespaces:
             versions_seen={},
             pending_sends=[],
         )
-        simple_checkpoint_saver.put(config2, checkpoint2, sample_checkpoint_metadata, {})
+        simple_checkpoint_saver.put(
+            config2, checkpoint2, sample_checkpoint_metadata, {}
+        )
 
         # Buffer writes for both threads
         writes_config1 = RunnableConfig(
@@ -1078,7 +1092,10 @@ class TestBufferedCheckpointSaverParentConfig:
 
         assert result is not None
         assert result.parent_config is not None
-        assert result.parent_config["configurable"]["checkpoint_id"] == "parent_checkpoint_id"
+        assert (
+            result.parent_config["configurable"]["checkpoint_id"]
+            == "parent_checkpoint_id"
+        )
 
     def test_parent_config_is_none_when_no_checkpoint_id(
         self, simple_checkpoint_saver, sample_checkpoint, sample_checkpoint_metadata
@@ -1139,7 +1156,9 @@ class TestBufferedCheckpointSaverParentConfig:
 
         # Get the buffered checkpoint
         result = buffered.get_tuple(
-            RunnableConfig(configurable={"thread_id": "thread1", "checkpoint_ns": "ns1"})
+            RunnableConfig(
+                configurable={"thread_id": "thread1", "checkpoint_ns": "ns1"}
+            )
         )
 
         assert result is not None
@@ -1257,7 +1276,9 @@ class TestBufferedCheckpointSaverWritesOrdering:
         )
 
         # First persist checkpoint to underlying saver
-        simple_checkpoint_saver.put(config, sample_checkpoint, sample_checkpoint_metadata, {})
+        simple_checkpoint_saver.put(
+            config, sample_checkpoint, sample_checkpoint_metadata, {}
+        )
 
         writes_config = RunnableConfig(
             configurable={
@@ -1277,7 +1298,6 @@ class TestBufferedCheckpointSaverWritesOrdering:
         # Check writes were persisted to underlying saver
         result = simple_checkpoint_saver.get_tuple(writes_config)
         assert result is not None
-        # MemorySaver preserves write order
         assert len(result.pending_writes) == 3
 
 
@@ -1319,7 +1339,9 @@ class TestBufferedCheckpointSaverErrorHandling:
         exception_raised = False
         try:
             async with buffered.aflush_on_exit():
-                await buffered.aput(config, sample_checkpoint, sample_checkpoint_metadata, {})
+                await buffered.aput(
+                    config, sample_checkpoint, sample_checkpoint_metadata, {}
+                )
                 raise ValueError("Test exception")
         except ValueError:
             exception_raised = True
@@ -1357,7 +1379,8 @@ class TestBufferedCheckpointSaverComplexScenarios:
     def test_realistic_graph_execution_pattern(
         self, simple_checkpoint_saver, sample_checkpoint_metadata
     ):
-        """Test a realistic pattern of checkpoint/write operations during graph execution."""
+        """Test a realistic pattern of checkpoint/write
+        operations during graph execution."""
         buffered = BufferedCheckpointSaver(simple_checkpoint_saver)
         config = RunnableConfig(
             configurable={"thread_id": "thread1", "checkpoint_ns": ""}
@@ -1383,7 +1406,11 @@ class TestBufferedCheckpointSaverComplexScenarios:
                 "checkpoint_id": "cp_start",
             }
         )
-        buffered.put_writes(writes_config_start, [("messages", {"role": "user", "content": "Hello"})], "start_task")
+        buffered.put_writes(
+            writes_config_start,
+            [("messages", {"role": "user", "content": "Hello"})],
+            "start_task",
+        )
 
         # Simulate agent node checkpoint (overwrites previous)
         config_with_parent = RunnableConfig(
@@ -1402,7 +1429,9 @@ class TestBufferedCheckpointSaverComplexScenarios:
             versions_seen={},
             pending_sends=[],
         )
-        buffered.put(config_with_parent, checkpoint_agent, sample_checkpoint_metadata, {})
+        buffered.put(
+            config_with_parent, checkpoint_agent, sample_checkpoint_metadata, {}
+        )
 
         # Simulate writes from agent
         writes_config_agent = RunnableConfig(
@@ -1412,7 +1441,11 @@ class TestBufferedCheckpointSaverComplexScenarios:
                 "checkpoint_id": "cp_agent",
             }
         )
-        buffered.put_writes(writes_config_agent, [("messages", {"role": "assistant", "content": "Hi!"})], "agent_task")
+        buffered.put_writes(
+            writes_config_agent,
+            [("messages", {"role": "assistant", "content": "Hi!"})],
+            "agent_task",
+        )
 
         # Verify only the latest checkpoint is buffered
         result = buffered.get_tuple(config)
@@ -1468,7 +1501,9 @@ class TestBufferedCheckpointSaverComplexScenarios:
             versions_seen={},
             pending_sends=[],
         )
-        buffered.put(subgraph_config, subgraph_checkpoint, sample_checkpoint_metadata, {})
+        buffered.put(
+            subgraph_config, subgraph_checkpoint, sample_checkpoint_metadata, {}
+        )
 
         # Get main graph checkpoint (should delegate to underlying saver)
         main_result = buffered.get_tuple(main_config)
@@ -1480,7 +1515,9 @@ class TestBufferedCheckpointSaverComplexScenarios:
         assert subgraph_result is not None
         assert subgraph_result.checkpoint["id"] == "subgraph_cp"
 
-    def test_writes_only_no_checkpoint(self, simple_checkpoint_saver, sample_checkpoint, sample_checkpoint_metadata):
+    def test_writes_only_no_checkpoint(
+        self, simple_checkpoint_saver, sample_checkpoint, sample_checkpoint_metadata
+    ):
         """Test buffering only writes without a checkpoint."""
         buffered = BufferedCheckpointSaver(simple_checkpoint_saver)
 
@@ -1488,7 +1525,9 @@ class TestBufferedCheckpointSaverComplexScenarios:
         config = RunnableConfig(
             configurable={"thread_id": "thread1", "checkpoint_ns": "ns1"}
         )
-        simple_checkpoint_saver.put(config, sample_checkpoint, sample_checkpoint_metadata, {})
+        simple_checkpoint_saver.put(
+            config, sample_checkpoint, sample_checkpoint_metadata, {}
+        )
 
         # Buffer only writes
         writes_config = RunnableConfig(
@@ -1507,8 +1546,6 @@ class TestBufferedCheckpointSaverComplexScenarios:
         result = buffered.get_tuple(config)
         assert result is not None
         assert result.checkpoint["id"] == sample_checkpoint["id"]
-        # Note: buffered writes are NOT included when checkpoint is from underlying saver
-        # This is correct behavior - writes are associated with the buffered checkpoint
 
         # Flush should persist the writes
         buffered.flush()
@@ -1536,7 +1573,9 @@ class TestBufferedCheckpointSaverComplexScenarios:
         # Add many writes
         num_writes = 100
         for i in range(num_writes):
-            buffered.put_writes(writes_config, [(f"channel_{i}", f"value_{i}")], f"task_{i}")
+            buffered.put_writes(
+                writes_config, [(f"channel_{i}", f"value_{i}")], f"task_{i}"
+            )
 
         result = buffered.get_tuple(config)
         assert result is not None
@@ -1544,7 +1583,11 @@ class TestBufferedCheckpointSaverComplexScenarios:
 
         # Verify order is preserved
         for i in range(num_writes):
-            assert result.pending_writes[i] == (f"task_{i}", f"channel_{i}", f"value_{i}")
+            assert result.pending_writes[i] == (
+                f"task_{i}",
+                f"channel_{i}",
+                f"value_{i}",
+            )
 
         # Flush should handle all writes
         buffered.flush()
@@ -1569,13 +1612,7 @@ class TestBufferedCheckpointSaverComplexScenarios:
                     {"role": "assistant", "content": "Hi there!"},
                     {"role": "user", "content": "How are you?"},
                 ],
-                "state": {
-                    "nested": {
-                        "deeply": {
-                            "value": [1, 2, 3, {"key": "value"}]
-                        }
-                    }
-                },
+                "state": {"nested": {"deeply": {"value": [1, 2, 3, {"key": "value"}]}}},
                 "binary_data": b"some binary data",
                 "none_value": None,
                 "empty_list": [],
@@ -1591,7 +1628,12 @@ class TestBufferedCheckpointSaverComplexScenarios:
         result = buffered.get_tuple(config)
         assert result is not None
         assert result.checkpoint["channel_values"]["messages"][0]["content"] == "Hello"
-        assert result.checkpoint["channel_values"]["state"]["nested"]["deeply"]["value"][3]["key"] == "value"
+        assert (
+            result.checkpoint["channel_values"]["state"]["nested"]["deeply"]["value"][
+                3
+            ]["key"]
+            == "value"
+        )
         assert result.checkpoint["pending_sends"][0]["type"] == "send"
 
     def test_metadata_preservation(self, simple_checkpoint_saver, sample_checkpoint):
@@ -1649,9 +1691,7 @@ class TestBufferedCheckpointSaverListBehavior:
         results = list(buffered.list(config, filter={"source": "input"}))
         assert len(results) == 1
 
-    def test_list_with_limit(
-        self, simple_checkpoint_saver, sample_checkpoint_metadata
-    ):
+    def test_list_with_limit(self, simple_checkpoint_saver, sample_checkpoint_metadata):
         """Test list with limit parameter."""
         buffered = BufferedCheckpointSaver(simple_checkpoint_saver)
         config = RunnableConfig(
@@ -1669,7 +1709,9 @@ class TestBufferedCheckpointSaverListBehavior:
                 versions_seen={},
                 pending_sends=[],
             )
-            simple_checkpoint_saver.put(config, checkpoint, sample_checkpoint_metadata, {})
+            simple_checkpoint_saver.put(
+                config, checkpoint, sample_checkpoint_metadata, {}
+            )
 
         # List with limit
         results = list(buffered.list(config, limit=3))
@@ -1696,7 +1738,9 @@ class TestBufferedCheckpointSaverListBehavior:
                 versions_seen={},
                 pending_sends=[],
             )
-            simple_checkpoint_saver.put(config, checkpoint, sample_checkpoint_metadata, {})
+            simple_checkpoint_saver.put(
+                config, checkpoint, sample_checkpoint_metadata, {}
+            )
             checkpoint_ids.append(f"checkpoint_{i}")
 
         # List before the last checkpoint
@@ -1732,7 +1776,9 @@ class TestBufferedCheckpointSaverListBehavior:
                 versions_seen={},
                 pending_sends=[],
             )
-            await simple_checkpoint_saver.aput(config, checkpoint, sample_checkpoint_metadata, {})
+            await simple_checkpoint_saver.aput(
+                config, checkpoint, sample_checkpoint_metadata, {}
+            )
 
         # Async list with limit
         results = []
@@ -1746,13 +1792,10 @@ class TestBufferedCheckpointSaverUnderlyingSaverFailures:
     """Tests for handling underlying saver failures."""
 
     def test_flush_checkpoint_failure_preserves_all_data(
-        self, sample_checkpoint, sample_checkpoint_metadata
+        self, simple_checkpoint_saver, sample_checkpoint, sample_checkpoint_metadata
     ):
         """Test that if checkpoint flush fails, all data is preserved for retry."""
-        from unittest.mock import patch
-        from langgraph.checkpoint.memory import MemorySaver
-
-        saver = MemorySaver()
+        saver = simple_checkpoint_saver
         buffered = BufferedCheckpointSaver(saver)
         config = RunnableConfig(
             configurable={"thread_id": "thread1", "checkpoint_ns": "ns1"}
@@ -1795,7 +1838,9 @@ class TestBufferedCheckpointSaverUnderlyingSaverFailures:
         config = RunnableConfig(
             configurable={"thread_id": "thread1", "checkpoint_ns": "ns1"}
         )
-        simple_checkpoint_saver.put(config, sample_checkpoint, sample_checkpoint_metadata, {})
+        simple_checkpoint_saver.put(
+            config, sample_checkpoint, sample_checkpoint_metadata, {}
+        )
 
         writes_config = RunnableConfig(
             configurable={
@@ -1820,7 +1865,9 @@ class TestBufferedCheckpointSaverUnderlyingSaverFailures:
                 raise Exception("Write failure")
             return original_put_writes(*args, **kwargs)
 
-        with patch.object(simple_checkpoint_saver, "put_writes", side_effect=failing_put_writes):
+        with patch.object(
+            simple_checkpoint_saver, "put_writes", side_effect=failing_put_writes
+        ):
             with pytest.raises(Exception, match="Write failure"):
                 buffered.flush()
 
@@ -1830,13 +1877,12 @@ class TestBufferedCheckpointSaverUnderlyingSaverFailures:
 
     @pytest.mark.asyncio
     async def test_aflush_checkpoint_failure_preserves_all_data(
-        self, sample_checkpoint, sample_checkpoint_metadata
+        self, simple_checkpoint_saver, sample_checkpoint, sample_checkpoint_metadata
     ):
-        """Test that if async checkpoint flush fails, all data is preserved for retry."""
-        from unittest.mock import patch
-        from langgraph.checkpoint.memory import MemorySaver
+        """Test that if async checkpoint flush fails,
+        all data is preserved for retry."""
 
-        saver = MemorySaver()
+        saver = simple_checkpoint_saver
         buffered = BufferedCheckpointSaver(saver)
         config = RunnableConfig(
             configurable={"thread_id": "thread1", "checkpoint_ns": "ns1"}
@@ -1941,7 +1987,9 @@ class TestBufferedCheckpointSaverConfigPreservation:
         assert result is not None
         assert result.parent_config is not None
         assert result.parent_config["configurable"]["custom_key"] == "custom_value"
-        assert result.parent_config["configurable"]["checkpoint_id"] == "parent_checkpoint"
+        assert (
+            result.parent_config["configurable"]["checkpoint_id"] == "parent_checkpoint"
+        )
 
 
 class TestBufferedCheckpointSaverChannelVersions:
@@ -1950,8 +1998,8 @@ class TestBufferedCheckpointSaverChannelVersions:
     def test_channel_versions_passed_to_underlying_saver(
         self, simple_checkpoint_saver, sample_checkpoint, sample_checkpoint_metadata
     ):
-        """Test that channel versions are passed through to underlying saver on flush."""
-        from unittest.mock import patch, MagicMock
+        """Test that channel versions are passed through
+        to underlying saver on flush."""
 
         buffered = BufferedCheckpointSaver(simple_checkpoint_saver)
         config = RunnableConfig(
@@ -1960,10 +2008,14 @@ class TestBufferedCheckpointSaverChannelVersions:
 
         new_versions = {"messages": "v5", "state": "v3"}
 
-        buffered.put(config, sample_checkpoint, sample_checkpoint_metadata, new_versions)
+        buffered.put(
+            config, sample_checkpoint, sample_checkpoint_metadata, new_versions
+        )
 
         # Capture the call to underlying saver
-        with patch.object(simple_checkpoint_saver, "put", wraps=simple_checkpoint_saver.put) as mock_put:
+        with patch.object(
+            simple_checkpoint_saver, "put", wraps=simple_checkpoint_saver.put
+        ) as mock_put:
             buffered.flush()
             mock_put.assert_called_once()
             call_args = mock_put.call_args
@@ -2002,7 +2054,9 @@ class TestBufferedCheckpointSaverTaskPath:
         config = RunnableConfig(
             configurable={"thread_id": "thread1", "checkpoint_ns": "ns1"}
         )
-        simple_checkpoint_saver.put(config, sample_checkpoint, sample_checkpoint_metadata, {})
+        simple_checkpoint_saver.put(
+            config, sample_checkpoint, sample_checkpoint_metadata, {}
+        )
 
         writes_config = RunnableConfig(
             configurable={
@@ -2014,7 +2068,9 @@ class TestBufferedCheckpointSaverTaskPath:
         buffered.put_writes(writes_config, [("ch1", "v1")], "task1", "/custom/path")
 
         with patch.object(
-            simple_checkpoint_saver, "put_writes", wraps=simple_checkpoint_saver.put_writes
+            simple_checkpoint_saver,
+            "put_writes",
+            wraps=simple_checkpoint_saver.put_writes,
         ) as mock_put_writes:
             buffered.flush()
             mock_put_writes.assert_called_once()
@@ -2081,7 +2137,11 @@ class TestBufferedCheckpointSaverSpecialValues:
         complex_value = {
             "messages": [
                 {"role": "user", "content": "Hello", "metadata": {"timestamp": 123}},
-                {"role": "assistant", "content": "Hi!", "tool_calls": [{"name": "search"}]},
+                {
+                    "role": "assistant",
+                    "content": "Hi!",
+                    "tool_calls": [{"name": "search"}],
+                },
             ],
             "nested": {"deep": {"value": [1, 2, {"key": "value"}]}},
         }
@@ -2152,32 +2212,13 @@ class TestBufferedCheckpointSaverSpecialValues:
 class TestBufferedCheckpointSaverWrappedSaverTypes:
     """Tests for ensuring BufferedCheckpointSaver works with different saver types."""
 
-    def test_wrapping_another_buffered_saver(
-        self, simple_checkpoint_saver, sample_checkpoint, sample_checkpoint_metadata
-    ):
-        """Test wrapping a BufferedCheckpointSaver with another BufferedCheckpointSaver."""
-        inner_buffered = BufferedCheckpointSaver(simple_checkpoint_saver)
-        outer_buffered = BufferedCheckpointSaver(inner_buffered)
-
-        config = RunnableConfig(
-            configurable={"thread_id": "thread1", "checkpoint_ns": "ns1"}
-        )
-
-        outer_buffered.put(config, sample_checkpoint, sample_checkpoint_metadata, {})
-
-        # Outer flush should persist to inner buffer
-        outer_buffered.flush()
-        assert outer_buffered.is_empty
-        assert inner_buffered.has_buffered_checkpoint
-
-        # Inner flush should persist to underlying saver
-        inner_buffered.flush()
-        assert inner_buffered.is_empty
-
-        # Verify persisted
-        result = simple_checkpoint_saver.get_tuple(config)
-        assert result is not None
-        assert result.checkpoint["id"] == sample_checkpoint["id"]
+    def test_nesting_buffered_saver_raises_error(self, simple_checkpoint_saver):
+        """Test that nesting BufferedCheckpointSaver raises an error."""
+        buffered = BufferedCheckpointSaver(simple_checkpoint_saver)
+        with pytest.raises(
+            ValueError, match="BufferedCheckpointSaver cannot be nested"
+        ):
+            BufferedCheckpointSaver(buffered)
 
     def test_serde_inheritance(self, simple_checkpoint_saver):
         """Test that serde is properly inherited from wrapped saver."""
@@ -2300,7 +2341,9 @@ class TestBufferedCheckpointSaverContextManagerEdgeCases:
 
         # First use
         async with buffered.aflush_on_exit():
-            await buffered.aput(config1, sample_checkpoint, sample_checkpoint_metadata, {})
+            await buffered.aput(
+                config1, sample_checkpoint, sample_checkpoint_metadata, {}
+            )
 
         # Second use with different data
         checkpoint2 = Checkpoint(
@@ -2360,7 +2403,9 @@ class TestBufferedCheckpointSaverGetTupleEdgeCases:
         )
 
         # First persist to underlying saver
-        simple_checkpoint_saver.put(config, sample_checkpoint, sample_checkpoint_metadata, {})
+        simple_checkpoint_saver.put(
+            config, sample_checkpoint, sample_checkpoint_metadata, {}
+        )
 
         # Buffer a different checkpoint
         checkpoint2 = Checkpoint(
@@ -2434,9 +2479,12 @@ class TestBufferedCheckpointSaverLastConfig:
 
         buffered.put(config, sample_checkpoint, sample_checkpoint_metadata, {})
 
+        last_config = buffered._last_config
+        last_thread_id = last_config["configurable"]["thread_id"]
+        last_checkpoint_id = last_config["configurable"]["checkpoint_id"]
         assert buffered._last_config is not None
-        assert buffered._last_config["configurable"]["thread_id"] == "thread1"
-        assert buffered._last_config["configurable"]["checkpoint_id"] == sample_checkpoint["id"]
+        assert last_thread_id == "thread1"
+        assert last_checkpoint_id == sample_checkpoint["id"]
 
     def test_last_config_updated_on_each_put(
         self, simple_checkpoint_saver, sample_checkpoint_metadata
@@ -2509,8 +2557,10 @@ class TestBufferedCheckpointSaverLastConfig:
         buffered.flush()
 
         # _last_config should still be set after flush
-        assert buffered._last_config is not None
-        assert buffered._last_config["configurable"]["checkpoint_id"] == sample_checkpoint["id"]
+        last_config = buffered._last_config
+        last_checkpoint_id = last_config["configurable"]["checkpoint_id"]
+        assert last_config is not None
+        assert last_checkpoint_id == sample_checkpoint["id"]
 
 
 class TestBufferedCheckpointSaverPendingWritesWithUnderlyingData:
@@ -2519,14 +2569,20 @@ class TestBufferedCheckpointSaverPendingWritesWithUnderlyingData:
     def test_buffered_writes_not_returned_when_checkpoint_from_underlying(
         self, simple_checkpoint_saver, sample_checkpoint, sample_checkpoint_metadata
     ):
-        """Test that buffered writes are NOT returned when checkpoint comes from underlying saver."""
+        """Test that buffered writes are NOT returned when checkpoint
+        comes from underlying saver."""
         buffered = BufferedCheckpointSaver(simple_checkpoint_saver)
         config = RunnableConfig(
             configurable={"thread_id": "thread1", "checkpoint_ns": "ns1"}
         )
 
         # Persist checkpoint to underlying saver
-        simple_checkpoint_saver.put(config, sample_checkpoint, sample_checkpoint_metadata, {})
+        simple_checkpoint_saver.put(
+            config,
+            sample_checkpoint,
+            sample_checkpoint_metadata,
+            {},
+        )
 
         # Buffer writes (but no buffered checkpoint)
         writes_config = RunnableConfig(
@@ -2539,17 +2595,16 @@ class TestBufferedCheckpointSaverPendingWritesWithUnderlyingData:
         buffered.put_writes(writes_config, [("ch1", "v1")], "task1")
 
         # get_tuple should return checkpoint from underlying saver
-        # The buffered writes should NOT be included (they're only associated with buffered checkpoint)
         result = buffered.get_tuple(config)
         assert result is not None
         assert result.checkpoint["id"] == sample_checkpoint["id"]
         # Writes from buffer are NOT included when checkpoint is from underlying saver
-        # This is because the _get_tuple_if_buffered returns None when there's no buffered checkpoint
 
     def test_writes_for_old_checkpoint_not_included_after_new_put(
         self, simple_checkpoint_saver, sample_checkpoint_metadata
     ):
-        """Test that writes for old checkpoint are not included after putting new checkpoint."""
+        """Test that writes for old checkpoint are not included
+        after putting new checkpoint."""
         buffered = BufferedCheckpointSaver(simple_checkpoint_saver)
         config = RunnableConfig(
             configurable={"thread_id": "thread1", "checkpoint_ns": "ns1"}

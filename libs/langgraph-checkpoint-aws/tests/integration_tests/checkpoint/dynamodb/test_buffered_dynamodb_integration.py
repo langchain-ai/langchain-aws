@@ -1,4 +1,5 @@
 """Integration tests for BufferedCheckpointSaver wrapping DynamoDBSaver."""
+
 import datetime
 import logging
 import operator
@@ -6,16 +7,16 @@ import time
 from typing import Annotated, Literal, TypedDict
 
 import pytest
-from langgraph.checkpoint.base import Checkpoint, uuid6
+from langchain.agents import create_agent
+from langchain_aws import ChatBedrock
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import Tool
+from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata, uuid6
 from langgraph.graph import END, START, StateGraph
-from langgraph.graph.state import CompiledStateGraph
 from langgraph.graph.message import add_messages
 from langgraph.types import Command
-from langchain.agents import create_agent
-from langchain_core.tools import Tool
-from langchain_aws import ChatBedrock
 
-from langgraph_checkpoint_aws import DynamoDBSaver, BufferedCheckpointSaver
+from langgraph_checkpoint_aws import BufferedCheckpointSaver, DynamoDBSaver
 from tests.integration_tests.checkpoint.dynamodb.utils import (
     clean_dynamodb,
 )
@@ -23,23 +24,31 @@ from tests.integration_tests.utils import (
     generate_large_data,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
-class _TestSequentialWorkflowState(TypedDict):
+class _TestSequentialWorkflowState(TypedDict, total=False):
     task_a_completed: bool
     task_b_completed: bool
     completed: bool
     step_count: Annotated[int, operator.add]
+
 
 def _build_sequential_workflow_graph(
     checkpointer: BufferedCheckpointSaver,
     *,
     flush_mid_workflow: bool = False,
     raise_mid_workflow: bool = False,
-) -> CompiledStateGraph[_TestSequentialWorkflowState]:
-    """Build a 3-step sequential workflow: task_a -> task_b -> finalize."""
+):
+    """Build a 3-step sequential workflow: init -> task_a -> task_b -> finalize."""
+
+    def init(state: _TestSequentialWorkflowState) -> _TestSequentialWorkflowState:
+        return {
+            "task_a_completed": False,
+            "task_b_completed": False,
+            "completed": False,
+            "step_count": 0,
+        }
 
     def task_a(state: _TestSequentialWorkflowState) -> dict:
         return {
@@ -64,11 +73,13 @@ def _build_sequential_workflow_graph(
         }
 
     graph = StateGraph(_TestSequentialWorkflowState)
+    graph.add_node("init", init)
     graph.add_node("task_a", task_a)
     graph.add_node("task_b", task_b)
     graph.add_node("finalize", finalize)
 
-    graph.add_edge(START, "task_a")
+    graph.add_edge(START, "init")
+    graph.add_edge("init", "task_a")
     graph.add_edge("task_a", "task_b")
     graph.add_edge("task_b", "finalize")
     graph.add_edge("finalize", END)
@@ -76,7 +87,7 @@ def _build_sequential_workflow_graph(
     return graph.compile(checkpointer=checkpointer)
 
 
-class _TestParallelGraphState(TypedDict):
+class _TestParallelGraphState(TypedDict, total=False):
     results: Annotated[list, operator.add]
     step_count: Annotated[int, operator.add]
     completed: bool
@@ -87,8 +98,15 @@ def _build_parallel_workflow_graph(
     *,
     flush_mid_workflow: bool = False,
     raise_mid_workflow: bool = False,
-) -> CompiledStateGraph[_TestParallelGraphState]:
-    """Build a parallel workflow: (task_a, task_b) -> merge."""
+):
+    """Build a parallel workflow: init -> (task_a, task_b) -> merge."""
+
+    def init(state: _TestParallelGraphState) -> _TestParallelGraphState:
+        return {
+            "results": [],
+            "step_count": 0,
+            "completed": False,
+        }
 
     def task_a(state: _TestParallelGraphState) -> dict:
         return {
@@ -113,12 +131,14 @@ def _build_parallel_workflow_graph(
         }
 
     graph = StateGraph(_TestParallelGraphState)
+    graph.add_node("init", init)
     graph.add_node("task_a", task_a)
     graph.add_node("task_b", task_b)
     graph.add_node("merge", merge_step)
 
-    graph.add_edge(START, "task_a")
-    graph.add_edge(START, "task_b")
+    graph.add_edge(START, "init")
+    graph.add_edge("init", "task_a")
+    graph.add_edge("init", "task_b")
     graph.add_edge("task_a", "merge")
     graph.add_edge("task_b", "merge")
     graph.add_edge("merge", END)
@@ -139,7 +159,7 @@ class _TestConditionalWorkflowState(TypedDict):
 
 def _build_conditional_workflow_graph(
     checkpointer: BufferedCheckpointSaver | DynamoDBSaver,
-) -> CompiledStateGraph[_TestConditionalWorkflowState]:
+):
     """Build a workflow with conditional routing based on step_count."""
 
     def initialize_workflow(state: _TestConditionalWorkflowState) -> dict:
@@ -183,7 +203,9 @@ def _build_conditional_workflow_graph(
             "metadata": {**state.get("metadata", {}), "end_time": time.time()},
         }
 
-    def should_generate_large_data(state: _TestConditionalWorkflowState) -> Literal["yes", "no"]:
+    def should_generate_large_data(
+        state: _TestConditionalWorkflowState,
+    ) -> Literal["yes", "no"]:
         return "yes" if state.get("step_count", 0) >= 2 else "no"
 
     graph = StateGraph(_TestConditionalWorkflowState)
@@ -218,8 +240,9 @@ class _TestParallelResumableState(TypedDict):
 
 def _build_parallel_resumable_graph(
     checkpointer: BufferedCheckpointSaver | DynamoDBSaver,
-) -> CompiledStateGraph[_TestParallelResumableState]:
-    """Build a parallel workflow with resumability: (task_a, task_b, task_c) -> merge."""
+):
+    """Build a parallel workflow with resumability:
+    (task_a, task_b, task_c) -> merge."""
 
     def task_a(state: _TestParallelResumableState) -> dict:
         return {
@@ -279,7 +302,7 @@ class _TestSubgraphWorkflowState(TypedDict):
 
 def _build_analysis_subgraph(
     checkpointer: BufferedCheckpointSaver | DynamoDBSaver,
-) -> CompiledStateGraph[_TestSubgraphWorkflowState]:
+):
     """Build analysis subgraph: extract -> transform."""
 
     def extract_data(state: _TestSubgraphWorkflowState) -> dict:
@@ -302,7 +325,7 @@ def _build_analysis_subgraph(
 
 def _build_validation_subgraph(
     checkpointer: BufferedCheckpointSaver | DynamoDBSaver,
-) -> CompiledStateGraph[_TestSubgraphWorkflowState]:
+):
     """Build validation subgraph: check -> verify."""
 
     def check_data(state: _TestSubgraphWorkflowState) -> dict:
@@ -325,7 +348,7 @@ def _build_validation_subgraph(
 
 def _build_parent_graph_with_subgraphs(
     checkpointer: BufferedCheckpointSaver | DynamoDBSaver,
-) -> CompiledStateGraph[_TestSubgraphWorkflowState]:
+):
     """Build parent graph: analysis_subgraph -> validation_subgraph -> combine."""
 
     def combine_results(state: _TestSubgraphWorkflowState) -> dict:
@@ -349,7 +372,6 @@ def _build_parent_graph_with_subgraphs(
 
 
 class TestBufferedDynamoDBSaverIntegrationSync:
-
     def test_flush_on_exit_with_seq_workflow(
         self,
         dynamodb_saver: DynamoDBSaver,
@@ -362,7 +384,7 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         graph = _build_sequential_workflow_graph(
             buffered_dynamodb_saver,
         )
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -375,7 +397,7 @@ class TestBufferedDynamoDBSaverIntegrationSync:
             assert buffered_dynamodb_saver.is_empty
 
             with buffered_dynamodb_saver.flush_on_exit():
-                graph.invoke({"step_count": 0}, config)
+                graph.invoke({}, config)
 
                 assert not buffered_dynamodb_saver.is_empty
                 assert buffered_dynamodb_saver.has_buffered_checkpoint
@@ -411,12 +433,12 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_sequential_workflow_graph(
             buffered_dynamodb_saver,
         )
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -425,10 +447,11 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             with buffered_dynamodb_saver.flush_on_exit():
-                for _ in graph.stream({"step_count": 0}, config):
+                for _ in graph.stream({}, config):
                     assert not buffered_dynamodb_saver.is_empty
                     assert buffered_dynamodb_saver.has_buffered_checkpoint
                     assert buffered_dynamodb_saver.has_buffered_writes
@@ -461,10 +484,10 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_parallel_workflow_graph(buffered_dynamodb_saver)
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -473,7 +496,8 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             with buffered_dynamodb_saver.flush_on_exit():
                 graph.invoke({"step_count": 0, "results": []}, config)
@@ -510,10 +534,10 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_parallel_workflow_graph(buffered_dynamodb_saver)
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -522,7 +546,8 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             with buffered_dynamodb_saver.flush_on_exit():
                 for _ in graph.stream({"step_count": 0, "results": []}, config):
@@ -557,13 +582,13 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_sequential_workflow_graph(
             buffered_dynamodb_saver,
             flush_mid_workflow=True,
         )
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -572,10 +597,11 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             with buffered_dynamodb_saver.flush_on_exit():
-                graph.invoke({"step_count": 0}, config)
+                graph.invoke({}, config)
 
                 assert not buffered_dynamodb_saver.is_empty
                 assert buffered_dynamodb_saver.has_buffered_checkpoint
@@ -612,13 +638,13 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_sequential_workflow_graph(
             buffered_dynamodb_saver,
             flush_mid_workflow=True,
         )
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -627,11 +653,12 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             with buffered_dynamodb_saver.flush_on_exit():
                 streamed_nodes = []
-                for event in graph.stream({"step_count": 0}, config):
+                for event in graph.stream({}, config):
                     node_name = list(event.keys())[0]
                     streamed_nodes.append(node_name)
 
@@ -690,13 +717,13 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_parallel_workflow_graph(
             buffered_dynamodb_saver,
             flush_mid_workflow=True,
         )
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -705,7 +732,8 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             with buffered_dynamodb_saver.flush_on_exit():
                 graph.invoke({"step_count": 0, "results": []}, config)
@@ -744,13 +772,13 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_parallel_workflow_graph(
             buffered_dynamodb_saver,
             flush_mid_workflow=True,
         )
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -759,7 +787,8 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             with buffered_dynamodb_saver.flush_on_exit():
                 streamed_nodes = []
@@ -813,17 +842,18 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         dynamodb_saver: DynamoDBSaver,
         agentcore_session_id: str,
     ):
-        """Test that a buffered checkpoint saver flushes state even when an exception occurs within a context manager."""
+        """Test that a buffered checkpoint saver flushes state even
+        when an exception occurs within a context manager."""
 
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_sequential_workflow_graph(
             buffered_dynamodb_saver,
             raise_mid_workflow=True,
         )
 
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -832,11 +862,12 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             with pytest.raises(ValueError, match="Test error: simulated task failure"):
                 with buffered_dynamodb_saver.flush_on_exit():
-                    graph.invoke({"step_count": 0}, config)
+                    graph.invoke({}, config)
 
             assert buffered_dynamodb_saver.is_empty
             assert not buffered_dynamodb_saver.has_buffered_checkpoint
@@ -857,12 +888,12 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_sequential_workflow_graph(
             buffered_dynamodb_saver,
         )
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -871,9 +902,10 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
-            result = graph.invoke({"step_count": 0}, config)
+            result = graph.invoke({}, config)
             assert result["completed"] is True
             assert not buffered_dynamodb_saver.is_empty
             assert buffered_dynamodb_saver.has_buffered_checkpoint
@@ -899,20 +931,21 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_sequential_workflow_graph(buffered_dynamodb_saver)
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
         }
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             with buffered_dynamodb_saver.flush_on_exit():
-                result1 = graph.invoke({"step_count": 0}, config)
+                result1 = graph.invoke({}, config)
                 assert result1["step_count"] == 3
 
             assert len(list(dynamodb_saver.list(config))) == 1
@@ -934,28 +967,29 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_sequential_workflow_graph(buffered_dynamodb_saver)
 
-        config_1 = {
+        config_1: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id_1,
             }
         }
-        config_2 = {
+        config_2: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id_2,
             }
         }
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id_1, thread_id_2],
+            dynamodb_saver,
+            thread_ids=[thread_id_1, thread_id_2],
         ):
             with buffered_dynamodb_saver.flush_on_exit():
-                result_1 = graph.invoke({"step_count": 0}, config_1)
+                result_1 = graph.invoke({}, config_1)
 
             assert result_1["step_count"] == 3
             assert result_1["completed"] is True
 
             with buffered_dynamodb_saver.flush_on_exit():
-                result_2 = graph.invoke({"step_count": 0}, config_2)
+                result_2 = graph.invoke({}, config_2)
 
             assert result_2["step_count"] == 3
             assert result_2["completed"] is True
@@ -980,23 +1014,24 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_sequential_workflow_graph(buffered_dynamodb_saver)
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
         }
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             num_invocations = 3
             for i in range(num_invocations):
                 with buffered_dynamodb_saver.flush_on_exit():
                     if i == 0:
-                        result = graph.invoke({"step_count": 0}, config)
+                        result = graph.invoke({}, config)
                     else:
                         result = graph.invoke(None, config)
                 assert result["step_count"] == (i + 1) * 3
@@ -1010,7 +1045,9 @@ class TestBufferedDynamoDBSaverIntegrationSync:
 
             # Limited results should match the first N from the full list
             for i in range(limit):
-                limited_id = limited_checkpoints[i].config["configurable"]["checkpoint_id"]
+                limited_id = limited_checkpoints[i].config["configurable"][
+                    "checkpoint_id"
+                ]
                 full_id = all_checkpoints[i].config["configurable"]["checkpoint_id"]
                 assert limited_id == full_id
 
@@ -1028,7 +1065,7 @@ class TestBufferedDynamoDBSaverIntegrationSync:
 
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
 
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
                 "checkpoint_ns": "test_namespace",
@@ -1045,17 +1082,18 @@ class TestBufferedDynamoDBSaverIntegrationSync:
             },
             channel_versions={"messages": "v1", "results": "v1"},
             versions_seen={"node1": {"messages": "v1"}},
-            pending_sends=[],
+            updated_channels=[],
         )
 
-        checkpoint_metadata = {
+        checkpoint_metadata: CheckpointMetadata = {
             "source": "input",
             "step": 1,
-            "writes": {"node1": ["write1", "write2"]},
+            "writes": {"node1": ["write1", "write2"]},  # type: ignore[typeddict-item]
         }
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             with buffered_dynamodb_saver.flush_on_exit():
                 saved_config = buffered_dynamodb_saver.put(
@@ -1065,17 +1103,11 @@ class TestBufferedDynamoDBSaverIntegrationSync:
                     {"messages": "v2", "results": "v2"},
                 )
 
-                assert (
-                    saved_config["configurable"]["checkpoint_id"] == checkpoint["id"]
-                )
+                assert saved_config["configurable"]["checkpoint_id"] == checkpoint["id"]
                 assert saved_config["configurable"]["thread_id"] == thread_id
-                assert (
-                    saved_config["configurable"]["checkpoint_ns"] == "test_namespace"
-                )
+                assert saved_config["configurable"]["checkpoint_ns"] == "test_namespace"
 
-                checkpoint_tuple = buffered_dynamodb_saver.get_tuple(
-                    saved_config
-                )
+                checkpoint_tuple = buffered_dynamodb_saver.get_tuple(saved_config)
                 assert checkpoint_tuple is not None
                 assert checkpoint_tuple.checkpoint["id"] == checkpoint["id"]
 
@@ -1085,7 +1117,6 @@ class TestBufferedDynamoDBSaverIntegrationSync:
 
             expected_metadata = checkpoint_metadata.copy()
             assert persisted_tuple.metadata == expected_metadata
-
 
     def test_math_agent_with_checkpointing(
         self,
@@ -1099,14 +1130,15 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             graph = create_agent(
                 bedrock_model,
                 tools=agent_tools,
                 checkpointer=buffered_dynamodb_saver,
             )
-            config = {
+            config: RunnableConfig = {
                 "configurable": {
                     "thread_id": thread_id,
                 }
@@ -1121,7 +1153,7 @@ class TestBufferedDynamoDBSaverIntegrationSync:
                                 "What is 15 times 23? Then add 100 to the result.",
                             )
                         ]
-                    },
+                    },  # type: ignore[arg-type]
                     config,
                 )
                 assert response
@@ -1144,10 +1176,10 @@ class TestBufferedDynamoDBSaverIntegrationSync:
                         "messages": [
                             (
                                 "human",
-                                "What was the final result from my previous calculation?",
+                                "What was the final result from my previous calculation?",  # noqa: E501
                             )
                         ]
-                    },
+                    },  # type: ignore[arg-type]
                     config,
                 )
                 assert response2
@@ -1167,14 +1199,15 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             graph = create_agent(
                 bedrock_model,
                 tools=agent_tools,
                 checkpointer=buffered_dynamodb_saver,
             )
-            config = {
+            config: RunnableConfig = {
                 "configurable": {
                     "thread_id": thread_id,
                 }
@@ -1182,7 +1215,7 @@ class TestBufferedDynamoDBSaverIntegrationSync:
 
             with buffered_dynamodb_saver.flush_on_exit():
                 response = graph.invoke(
-                    {"messages": [("human", "What's the weather in sf and nyc?")]},
+                    {"messages": [("human", "What's the weather in sf and nyc?")]},  # type: ignore[arg-type]
                     config,
                 )
                 assert response
@@ -1196,52 +1229,6 @@ class TestBufferedDynamoDBSaverIntegrationSync:
             checkpoint_tuples = list(dynamodb_saver.list(config))
             assert checkpoint_tuples
             assert len(checkpoint_tuples) == 1
-
-    def test_checkpoint_listing_with_limit(
-        self,
-        agent_tools: list[Tool],
-        bedrock_model: ChatBedrock,
-        agentcore_session_id: str,
-        dynamodb_saver: DynamoDBSaver,
-    ):
-        thread_id = agentcore_session_id
-
-        buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
-
-        with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
-        ):
-            graph = create_agent(
-                bedrock_model,
-                tools=agent_tools,
-                checkpointer=buffered_dynamodb_saver,
-            )
-            config = {
-                "configurable": {
-                    "thread_id": thread_id,
-                }
-            }
-
-            for i in range(3):
-                with buffered_dynamodb_saver.flush_on_exit():
-                    graph.invoke(
-                        {"messages": [("human", f"Calculate {i + 1} times 2")]}, config
-                    )
-
-            all_checkpoints = list(dynamodb_saver.list(config))
-            limited_checkpoints = list(dynamodb_saver.list(config, limit=2))
-
-            assert len(all_checkpoints) >= 3
-            assert len(limited_checkpoints) == 2
-
-            assert (
-                limited_checkpoints[0].config["configurable"]["checkpoint_id"]
-                == all_checkpoints[0].config["configurable"]["checkpoint_id"]
-            )
-            assert (
-                limited_checkpoints[1].config["configurable"]["checkpoint_id"]
-                == all_checkpoints[1].config["configurable"]["checkpoint_id"]
-            )
 
     def test_conditional_routing_and_checkpoint_branching(
         self,
@@ -1271,7 +1258,7 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         with clean_dynamodb(dynamodb_saver, thread_ids=[thread_id_path1]):
             with buffered_dynamodb_saver.flush_on_exit():
                 app = _build_conditional_workflow_graph(buffered_dynamodb_saver)
-                result1 = app.invoke({"step_count": 0}, config1)
+                result1 = app.invoke({}, config1)
 
                 # Verify NO large payload (took "no" path)
                 has_large_payload = (
@@ -1342,7 +1329,7 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         thread_id = agentcore_session_id
 
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
-        config = {"configurable": {"thread_id": thread_id}}
+        config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
         with clean_dynamodb(dynamodb_saver, thread_ids=[thread_id]):
             # ATTEMPT 1: Partial failure (task_b fails)
@@ -1362,7 +1349,7 @@ class TestBufferedDynamoDBSaverIntegrationSync:
             # Check partial results - task_a and task_c should have completed
             partial_results = state_after_failure.values.get("parallel_results", [])
             assert len(partial_results) == 2, (
-                f"Should have 2 partial results (task_a, task_c), got {len(partial_results)}"
+                f"Should have 2 partial results (task_a, task_c), got {len(partial_results)}"  # noqa: E501
             )
 
             # Check pending nodes
@@ -1421,7 +1408,7 @@ class TestBufferedDynamoDBSaverIntegrationSync:
         thread_id = agentcore_session_id
 
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
-        config = {"configurable": {"thread_id": thread_id}}
+        config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
         with clean_dynamodb(dynamodb_saver, thread_ids=[thread_id]):
             with buffered_dynamodb_saver.flush_on_exit():
@@ -1454,7 +1441,6 @@ class TestBufferedDynamoDBSaverIntegrationSync:
 
 
 class TestBufferedDynamoDBSaverIntegrationAsync:
-
     @pytest.mark.asyncio
     async def test_async_flush_on_exit_with_seq_workflow(
         self,
@@ -1468,19 +1454,20 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         graph = _build_sequential_workflow_graph(
             buffered_dynamodb_saver,
         )
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
         }
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             assert buffered_dynamodb_saver.is_empty
 
             async with buffered_dynamodb_saver.aflush_on_exit():
-                await graph.ainvoke({"step_count": 0}, config)
+                await graph.ainvoke({}, config)
 
                 assert not buffered_dynamodb_saver.is_empty
                 assert buffered_dynamodb_saver.has_buffered_checkpoint
@@ -1517,12 +1504,12 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_sequential_workflow_graph(
             buffered_dynamodb_saver,
         )
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -1531,10 +1518,11 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             async with buffered_dynamodb_saver.aflush_on_exit():
-                async for _ in graph.astream({"step_count": 0}, config):
+                async for _ in graph.astream({}, config):
                     assert not buffered_dynamodb_saver.is_empty
                     assert buffered_dynamodb_saver.has_buffered_checkpoint
                     assert buffered_dynamodb_saver.has_buffered_writes
@@ -1568,10 +1556,10 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_parallel_workflow_graph(buffered_dynamodb_saver)
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -1580,7 +1568,8 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             async with buffered_dynamodb_saver.aflush_on_exit():
                 await graph.ainvoke({"step_count": 0, "results": []}, config)
@@ -1618,10 +1607,10 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_parallel_workflow_graph(buffered_dynamodb_saver)
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -1630,7 +1619,8 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             async with buffered_dynamodb_saver.aflush_on_exit():
                 async for _ in graph.astream({"step_count": 0, "results": []}, config):
@@ -1666,13 +1656,13 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_sequential_workflow_graph(
             buffered_dynamodb_saver,
             flush_mid_workflow=True,
         )
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -1681,10 +1671,11 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
-            with buffered_dynamodb_saver.aflush_on_exit():
-                await graph.ainvoke({"step_count": 0}, config)
+            async with buffered_dynamodb_saver.aflush_on_exit():
+                await graph.ainvoke({}, config)
 
                 assert not buffered_dynamodb_saver.is_empty
                 assert buffered_dynamodb_saver.has_buffered_checkpoint
@@ -1722,13 +1713,13 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_sequential_workflow_graph(
             buffered_dynamodb_saver,
             flush_mid_workflow=True,
         )
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -1737,11 +1728,12 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             async with buffered_dynamodb_saver.aflush_on_exit():
                 streamed_nodes = []
-                async for event in graph.astream({"step_count": 0}, config):
+                async for event in graph.astream({}, config):
                     node_name = list(event.keys())[0]
                     streamed_nodes.append(node_name)
 
@@ -1801,13 +1793,13 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_parallel_workflow_graph(
             buffered_dynamodb_saver,
             flush_mid_workflow=True,
         )
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -1816,7 +1808,8 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             async with buffered_dynamodb_saver.aflush_on_exit():
                 await graph.ainvoke({"step_count": 0, "results": []}, config)
@@ -1856,13 +1849,13 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_parallel_workflow_graph(
             buffered_dynamodb_saver,
             flush_mid_workflow=True,
         )
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -1871,11 +1864,14 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             async with buffered_dynamodb_saver.aflush_on_exit():
                 streamed_nodes = []
-                async for event in graph.astream({"step_count": 0, "results": []}, config):
+                async for event in graph.astream(
+                    {"step_count": 0, "results": []}, config
+                ):
                     node_name = list(event.keys())[0]
                     streamed_nodes.append(node_name)
 
@@ -1926,17 +1922,18 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         dynamodb_saver: DynamoDBSaver,
         agentcore_session_id: str,
     ):
-        """Test that a buffered checkpoint saver flushes state even when an exception occurs within a context manager."""
+        """Test that a buffered checkpoint saver flushes state
+        even when an exception occurs within a context manager."""
 
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_sequential_workflow_graph(
             buffered_dynamodb_saver,
             raise_mid_workflow=True,
         )
 
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -1945,11 +1942,12 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             with pytest.raises(ValueError, match="Test error: simulated task failure"):
                 async with buffered_dynamodb_saver.aflush_on_exit():
-                    await graph.ainvoke({"step_count": 0}, config)
+                    await graph.ainvoke({}, config)
 
             assert buffered_dynamodb_saver.is_empty
             assert not buffered_dynamodb_saver.has_buffered_checkpoint
@@ -1971,12 +1969,12 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_sequential_workflow_graph(
             buffered_dynamodb_saver,
         )
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
@@ -1985,9 +1983,10 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         assert buffered_dynamodb_saver.is_empty
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
-            result = await graph.ainvoke({"step_count": 0}, config)
+            result = await graph.ainvoke({}, config)
             assert result["completed"] is True
             assert not buffered_dynamodb_saver.is_empty
             assert buffered_dynamodb_saver.has_buffered_checkpoint
@@ -2007,7 +2006,6 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
                 "step_count": 3,
             }
 
-
     @pytest.mark.asyncio
     async def test_async_state_persistence_across_invocations(
         self,
@@ -2015,20 +2013,21 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_sequential_workflow_graph(buffered_dynamodb_saver)
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
         }
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             async with buffered_dynamodb_saver.aflush_on_exit():
-                result1 = await graph.ainvoke({"step_count": 0}, config)
+                result1 = await graph.ainvoke({}, config)
                 assert result1["step_count"] == 3
 
             assert len(list(dynamodb_saver.list(config))) == 1
@@ -2037,7 +2036,7 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
                 result2 = await graph.ainvoke(None, config)
                 assert result2["step_count"] == 6
 
-            assert len(await list(dynamodb_saver.alist(config))) == 2
+            assert len([x async for x in dynamodb_saver.alist(config)]) == 2
 
     @pytest.mark.asyncio
     async def test_async_multiple_sessions_isolation(
@@ -2051,34 +2050,35 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_sequential_workflow_graph(buffered_dynamodb_saver)
 
-        config_1 = {
+        config_1: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id_1,
             }
         }
-        config_2 = {
+        config_2: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id_2,
             }
         }
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id_1, thread_id_2],
+            dynamodb_saver,
+            thread_ids=[thread_id_1, thread_id_2],
         ):
             async with buffered_dynamodb_saver.aflush_on_exit():
-                result_1 = await graph.ainvoke({"step_count": 0}, config_1)
+                result_1 = await graph.ainvoke({}, config_1)
 
             assert result_1["step_count"] == 3
             assert result_1["completed"] is True
 
             async with buffered_dynamodb_saver.aflush_on_exit():
-                result_2 = await graph.ainvoke({"step_count": 0}, config_2)
+                result_2 = await graph.ainvoke({}, config_2)
 
             assert result_2["step_count"] == 3
             assert result_2["completed"] is True
 
-            checkpoints_1 = await list(dynamodb_saver.alist(config_1))
-            checkpoints_2 = await list(dynamodb_saver.alist(config_2))
+            checkpoints_1 = [x async for x in dynamodb_saver.alist(config_1)]
+            checkpoints_2 = [x async for x in dynamodb_saver.alist(config_2)]
             assert len(checkpoints_1) == 1
             assert len(checkpoints_2) == 1
 
@@ -2098,37 +2098,42 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         agentcore_session_id: str,
     ):
         thread_id = agentcore_session_id
-        
+
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
         graph = _build_sequential_workflow_graph(buffered_dynamodb_saver)
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
             }
         }
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             num_invocations = 3
             for i in range(num_invocations):
                 async with buffered_dynamodb_saver.aflush_on_exit():
                     if i == 0:
-                        result = await graph.ainvoke({"step_count": 0}, config)
+                        result = await graph.ainvoke({}, config)
                     else:
                         result = await graph.ainvoke(None, config)
                 assert result["step_count"] == (i + 1) * 3
 
-            all_checkpoints = await list(dynamodb_saver.alist(config))
+            all_checkpoints = [x async for x in dynamodb_saver.alist(config)]
             assert len(all_checkpoints) == num_invocations
 
             limit = 2
-            limited_checkpoints = await list(dynamodb_saver.alist(config, limit=limit))
+            limited_checkpoints = [
+                x async for x in dynamodb_saver.alist(config, limit=limit)
+            ]
             assert len(limited_checkpoints) == limit
 
             # Limited results should match the first N from the full list
             for i in range(limit):
-                limited_id = limited_checkpoints[i].config["configurable"]["checkpoint_id"]
+                limited_id = limited_checkpoints[i].config["configurable"][
+                    "checkpoint_id"
+                ]
                 full_id = all_checkpoints[i].config["configurable"]["checkpoint_id"]
                 assert limited_id == full_id
 
@@ -2147,7 +2152,7 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
 
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
 
-        config = {
+        config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
                 "checkpoint_ns": "test_namespace",
@@ -2164,17 +2169,18 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
             },
             channel_versions={"messages": "v1", "results": "v1"},
             versions_seen={"node1": {"messages": "v1"}},
-            pending_sends=[],
+            updated_channels=[],
         )
 
-        checkpoint_metadata = {
+        checkpoint_metadata: CheckpointMetadata = {
             "source": "input",
             "step": 1,
-            "writes": {"node1": ["write1", "write2"]},
+            "writes": {"node1": ["write1", "write2"]},  # type: ignore[typeddict-item]
         }
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             async with buffered_dynamodb_saver.aflush_on_exit():
                 saved_config = await buffered_dynamodb_saver.aput(
@@ -2184,13 +2190,9 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
                     {"messages": "v2", "results": "v2"},
                 )
 
-                assert (
-                    saved_config["configurable"]["checkpoint_id"] == checkpoint["id"]
-                )
+                assert saved_config["configurable"]["checkpoint_id"] == checkpoint["id"]
                 assert saved_config["configurable"]["thread_id"] == thread_id
-                assert (
-                    saved_config["configurable"]["checkpoint_ns"] == "test_namespace"
-                )
+                assert saved_config["configurable"]["checkpoint_ns"] == "test_namespace"
 
                 checkpoint_tuple = await buffered_dynamodb_saver.aget_tuple(
                     saved_config
@@ -2218,14 +2220,15 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             graph = create_agent(
                 bedrock_model,
                 tools=agent_tools,
                 checkpointer=buffered_dynamodb_saver,
             )
-            config = {
+            config: RunnableConfig = {
                 "configurable": {
                     "thread_id": thread_id,
                 }
@@ -2240,7 +2243,7 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
                                 "What is 15 times 23? Then add 100 to the result.",
                             )
                         ]
-                    },
+                    },  # type: ignore[arg-type]
                     config,
                 )
                 assert response
@@ -2253,7 +2256,7 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
             persisted_checkpoint = await dynamodb_saver.aget(config)
             assert persisted_checkpoint
 
-            checkpoint_tuples = list(await dynamodb_saver.alist(config))
+            checkpoint_tuples = [x async for x in dynamodb_saver.alist(config)]
             assert checkpoint_tuples
             assert len(checkpoint_tuples) == 1
 
@@ -2263,15 +2266,15 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
                         "messages": [
                             (
                                 "human",
-                                "What was the final result from my previous calculation?",
+                                "What was the final result from my previous calculation?",  # noqa: E501
                             )
                         ]
-                    },
+                    },  # type: ignore[arg-type]
                     config,
                 )
                 assert response2
 
-            checkpoint_tuples_after = await list(dynamodb_saver.alist(config))
+            checkpoint_tuples_after = [x async for x in dynamodb_saver.alist(config)]
             assert len(checkpoint_tuples_after) > len(checkpoint_tuples)
 
     @pytest.mark.asyncio
@@ -2287,14 +2290,15 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
 
         with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
+            dynamodb_saver,
+            thread_ids=[thread_id],
         ):
             graph = create_agent(
                 bedrock_model,
                 tools=agent_tools,
                 checkpointer=buffered_dynamodb_saver,
             )
-            config = {
+            config: RunnableConfig = {
                 "configurable": {
                     "thread_id": thread_id,
                 }
@@ -2302,7 +2306,7 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
 
             async with buffered_dynamodb_saver.aflush_on_exit():
                 response = await graph.ainvoke(
-                    {"messages": [("human", "What's the weather in sf and nyc?")]},
+                    {"messages": [("human", "What's the weather in sf and nyc?")]},  # type: ignore[arg-type]
                     config,
                 )
                 assert response
@@ -2313,55 +2317,9 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
             persisted_checkpoint = await dynamodb_saver.aget(config)
             assert persisted_checkpoint
 
-            checkpoint_tuples = await list(dynamodb_saver.alist(config))
+            checkpoint_tuples = [x async for x in dynamodb_saver.alist(config)]
             assert checkpoint_tuples
             assert len(checkpoint_tuples) == 1
-
-    @pytest.mark.asyncio
-    async def test_async_checkpoint_listing_with_limit(
-        self,
-        agent_tools: list[Tool],
-        bedrock_model: ChatBedrock,
-        agentcore_session_id: str,
-        dynamodb_saver: DynamoDBSaver,
-    ):
-        thread_id = agentcore_session_id
-
-        buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
-        with clean_dynamodb(
-            dynamodb_saver, thread_ids=[thread_id],
-        ):
-            graph = create_agent(
-                bedrock_model,
-                tools=agent_tools,
-                checkpointer=buffered_dynamodb_saver,
-            )
-            config = {
-                "configurable": {
-                    "thread_id": thread_id,
-                }
-            }
-
-            for i in range(3):
-                async with buffered_dynamodb_saver.aflush_on_exit():
-                    await graph.ainvoke(
-                        {"messages": [("human", f"Calculate {i + 1} times 2")]}, config
-                    )
-
-            all_checkpoints = await list(dynamodb_saver.alist(config))
-            limited_checkpoints = await list(dynamodb_saver.alist(config, limit=2))
-
-            assert len(all_checkpoints) >= 3
-            assert len(limited_checkpoints) == 2
-
-            assert (
-                limited_checkpoints[0].config["configurable"]["checkpoint_id"]
-                == all_checkpoints[0].config["configurable"]["checkpoint_id"]
-            )
-            assert (
-                limited_checkpoints[1].config["configurable"]["checkpoint_id"]
-                == all_checkpoints[1].config["configurable"]["checkpoint_id"]
-            )
 
     @pytest.mark.asyncio
     async def test_async_conditional_routing_and_checkpoint_branching(
@@ -2392,7 +2350,7 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         with clean_dynamodb(dynamodb_saver, thread_ids=[thread_id_path1]):
             async with buffered_dynamodb_saver.aflush_on_exit():
                 app = _build_conditional_workflow_graph(buffered_dynamodb_saver)
-                result1 = await app.ainvoke({"step_count": 0}, config1)
+                result1 = await app.ainvoke({}, config1)
 
                 # Verify NO large payload (took "no" path)
                 has_large_payload = (
@@ -2464,7 +2422,7 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         thread_id = agentcore_session_id
 
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
-        config = {"configurable": {"thread_id": thread_id}}
+        config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
         with clean_dynamodb(dynamodb_saver, thread_ids=[thread_id]):
             # ATTEMPT 1: Partial failure (task_b fails)
@@ -2484,7 +2442,7 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
             # Check partial results - task_a and task_c should have completed
             partial_results = state_after_failure.values.get("parallel_results", [])
             assert len(partial_results) == 2, (
-                f"Should have 2 partial results (task_a, task_c), got {len(partial_results)}"
+                f"Should have 2 partial results (task_a, task_c), got {len(partial_results)}"  # noqa: E501
             )
 
             # Check pending nodes
@@ -2544,7 +2502,7 @@ class TestBufferedDynamoDBSaverIntegrationAsync:
         thread_id = agentcore_session_id
 
         buffered_dynamodb_saver = BufferedCheckpointSaver(dynamodb_saver)
-        config = {"configurable": {"thread_id": thread_id}}
+        config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
         with clean_dynamodb(dynamodb_saver, thread_ids=[thread_id]):
             async with buffered_dynamodb_saver.aflush_on_exit():

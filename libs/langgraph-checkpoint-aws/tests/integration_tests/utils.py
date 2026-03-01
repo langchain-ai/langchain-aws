@@ -1,15 +1,18 @@
-import pytest
 import random
 import string
-from typing import Literal
-from langchain_core.tools import tool
-from botocore.exceptions import ClientError
+from typing import TYPE_CHECKING, Literal
 
-import boto3
+import pytest
+from botocore.exceptions import ClientError
+from langchain_core.tools import tool
+
+if TYPE_CHECKING:
+    from mypy_boto3_s3 import S3Client
 
 ##########################################################
 # Pytest
 ##########################################################
+
 
 def skip_on_aws_403(call_fn, action_description: str):
     """Skip test if AWS returns 403/AccessDenied error."""
@@ -25,17 +28,19 @@ def skip_on_aws_403(call_fn, action_description: str):
         else:
             raise
 
+
 ##########################################################
 # S3
 ##########################################################
 
+
 def verify_s3_checkpoint_exists(
     bucket: str,
     thread_id: str,
-    s3_client: boto3.client,
-    ) -> tuple[bool, int]:
+    s3_client: "S3Client",
+) -> tuple[bool, int]:
     """Check if checkpoint data exists in S3 for given thread.
-    
+
     Returns:
         tuple[bool, int]: Whether the checkpoint exists, and its total size in bytes.
     """
@@ -47,9 +52,11 @@ def verify_s3_checkpoint_exists(
     except ClientError:
         return False, 0
 
+
 ##########################################################
 # Utils
 ##########################################################
+
 
 def generate_large_data(size_kb: int) -> str:
     """Generate random data of specified size to prevent compression."""
@@ -57,19 +64,23 @@ def generate_large_data(size_kb: int) -> str:
         random.choices(string.ascii_letters + string.digits, k=size_kb * 1024)
     )
 
+
 ##########################################################
 # Tools
 ##########################################################
+
 
 @tool
 def add(a: int, b: int) -> int:
     """Add two integers and return the result."""
     return a + b
 
+
 @tool
 def multiply(a: int, b: int) -> int:
     """Multiply two integers and return the result."""
     return a * b
+
 
 @tool
 def get_weather(city: Literal["nyc", "sf"]) -> str:

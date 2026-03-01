@@ -32,12 +32,11 @@ def agentcore_actor_id() -> str:
 
 @pytest.fixture(scope="function")
 def agentcore_memory_saver(
-        agentcore_memory_id,
-        aws_region,
-    ) -> AgentCoreMemorySaver:
+    agentcore_memory_id,
+    aws_region,
+) -> AgentCoreMemorySaver:
     """Create AgentCoreMemorySaver instance."""
     return AgentCoreMemorySaver(
         memory_id=agentcore_memory_id,
         region_name=aws_region,
     )
-

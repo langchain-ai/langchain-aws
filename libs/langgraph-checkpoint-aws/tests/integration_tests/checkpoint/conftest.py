@@ -4,8 +4,7 @@ import os
 import pytest
 from botocore.exceptions import ClientError
 
-from tests.integration_tests.conftest import skip_on_aws_403
-
+from tests.integration_tests.utils import skip_on_aws_403
 
 logger = logging.getLogger(__name__)
 

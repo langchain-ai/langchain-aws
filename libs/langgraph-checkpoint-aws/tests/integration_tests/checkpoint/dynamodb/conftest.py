@@ -2,7 +2,6 @@ import pytest
 
 from langgraph_checkpoint_aws import DynamoDBSaver
 
-
 TTL_SECONDS: int = 600  # 10 minutes
 
 
