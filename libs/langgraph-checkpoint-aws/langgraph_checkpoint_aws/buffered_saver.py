@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any
@@ -10,6 +11,9 @@ from langgraph.checkpoint.base import (
     CheckpointMetadata,
     CheckpointTuple,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class BufferedCheckpointSaver(BaseCheckpointSaver):
@@ -90,6 +94,9 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
         Args:
             saver: The underlying checkpoint saver.
         """
+        if isinstance(saver, BufferedCheckpointSaver):
+            raise ValueError(f"{type(self).__name__} cannot be nested")
+        
         super().__init__(serde=saver.serde)
 
         self._saver = saver
@@ -138,10 +145,25 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
             # Checkpoint and writes are automatically flushed on exit
             ```
         """
+        def try_flush():
+            try:
+                self.flush()
+            except Exception:
+                logger.exception(
+                    "Failed to auto-flush buffered checkpoint and writes on exit."
+                )
+                raise
+        
         try:
             yield self
+        except Exception:
+            logger.warning(
+                "Underlying checkpoint saver error. "
+                "Auto-flush will run, but state may be inconsistent."
+            )
+            raise
         finally:
-            self.flush()
+            try_flush()
 
     @asynccontextmanager
     async def aflush_on_exit(self):
@@ -158,10 +180,25 @@ class BufferedCheckpointSaver(BaseCheckpointSaver):
             # Checkpoint and writes are automatically flushed on exit
             ```
         """
+        async def try_aflush():
+            try:
+                await self.aflush()
+            except Exception:
+                logger.exception(
+                    "Failed to auto-flush buffered checkpoint and writes on exit."
+                )
+                raise
+        
         try:
             yield self
+        except Exception:
+            logger.warning(
+                "Underlying checkpoint saver error. "
+                "Auto-flush on exit will run, but state may be inconsistent."
+            )
+            raise
         finally:
-            await self.aflush()
+            await try_aflush()
 
     def flush(self) -> RunnableConfig | None:
         """
