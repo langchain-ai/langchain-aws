@@ -37,7 +37,7 @@ def test_bedrock_skips_non_anthropic() -> None:
 
 
 def test_bedrock_passes_cache_control_via_model_settings() -> None:
-    """Verify cache_control is passed through model_settings, not message modification."""
+    """Verify cache_control is passed through model_settings."""
     middleware = BedrockPromptCachingMiddleware()
 
     request = MagicMock()
@@ -163,9 +163,13 @@ def test_converse_applies_cache_point_to_string() -> None:
 
     middleware._apply_cache_point(request)
 
-    assert isinstance(request.system_prompt, list)
-    assert request.system_prompt[0] == {"text": "You are helpful."}
-    assert request.system_prompt[1] == {"cachePoint": {"type": "default"}}
+    # Should call override with SystemMessage containing cache point
+    request.override.assert_called_once()
+    call_kwargs = request.override.call_args[1]
+    system_msg = call_kwargs["system_message"]
+    assert isinstance(system_msg.content, list)
+    assert system_msg.content[0] == {"type": "text", "text": "You are helpful."}
+    assert system_msg.content[1] == {"cachePoint": {"type": "default"}}
 
 
 def test_converse_preserves_existing_cache_point() -> None:
@@ -182,8 +186,8 @@ def test_converse_preserves_existing_cache_point() -> None:
 
     middleware._apply_cache_point(request)
 
-    # Should not add another cachePoint
-    assert len(request.system_prompt) == 2
+    # Should not call override when cache point already exists
+    request.override.assert_not_called()
 
 
 def test_converse_skips_non_chatbedrockconverse() -> None:

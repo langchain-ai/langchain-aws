@@ -6,8 +6,10 @@ Requires:
 """
 
 from collections.abc import Awaitable, Callable
-from typing import Literal, Union
+from typing import Any, Literal, Union
 from warnings import warn
+
+from langchain_core.messages import SystemMessage
 
 from langchain_aws.chat_models.bedrock import ChatBedrock
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
@@ -204,22 +206,28 @@ class BedrockConversePromptCachingMiddleware(AgentMiddleware):
         )
         return messages_count >= self.min_messages_to_cache
 
-    def _apply_cache_point(self, request: ModelRequest) -> None:
-        """Apply cachePoint to the system prompt."""
+    def _apply_cache_point(self, request: ModelRequest) -> ModelRequest:
+        """Apply cachePoint to the system prompt via immutable override."""
         cache_point = {"cachePoint": {"type": "default"}}
 
         if isinstance(request.system_prompt, str) and request.system_prompt.strip():
-            request.system_prompt = [
-                {"text": request.system_prompt},
+            new_content: list[str | dict[str, Any]] = [
+                {"type": "text", "text": request.system_prompt},
                 cache_point,
             ]
+            return request.override(system_message=SystemMessage(content=new_content))
         elif isinstance(request.system_prompt, list):
             has_cache_point = any(
                 isinstance(item, dict) and "cachePoint" in item
                 for item in request.system_prompt
             )
             if not has_cache_point:
-                request.system_prompt = list(request.system_prompt) + [cache_point]
+                extended: list[str | dict[str, Any]] = [
+                    *request.system_prompt,
+                    cache_point,
+                ]
+                return request.override(system_message=SystemMessage(content=extended))
+        return request
 
     def wrap_model_call(
         self,
@@ -228,7 +236,7 @@ class BedrockConversePromptCachingMiddleware(AgentMiddleware):
     ) -> ModelCallResult:
         """Wrap the model call to add cache point."""
         if self._should_apply_caching(request):
-            self._apply_cache_point(request)
+            request = self._apply_cache_point(request)
         return handler(request)
 
     async def awrap_model_call(
@@ -238,5 +246,5 @@ class BedrockConversePromptCachingMiddleware(AgentMiddleware):
     ) -> ModelCallResult:
         """Wrap the model call to add cache point (async version)."""
         if self._should_apply_caching(request):
-            self._apply_cache_point(request)
+            request = self._apply_cache_point(request)
         return await handler(request)
