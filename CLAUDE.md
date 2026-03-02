@@ -35,7 +35,7 @@ The package is organized by AWS service integration type:
 - **AgentCore Integration**: Memory service integration for LangGraph agents
 - **Session Management**: AWS Bedrock session management integration
 
-### Development tools & commands**
+### Development tools & commands
 
 - `uv` – Fast Python package installer and resolver (replaces pip/poetry)
 - `make` – Task runner for common development commands. Feel free to look at the `Makefile` for available commands and usage patterns.
