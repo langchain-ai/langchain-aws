@@ -128,9 +128,9 @@ class ChatModelContentHandler(ContentHandlerBase[Any, Any]):
 
 
 class OpenAICompatibleChatModelContentHandler(ChatModelContentHandler):
-    """OpenAI-style content handler.
+    """OpenAI-compatible content handler.
 
-    This handler transforms input messages to JSON and parses responses in OpenAI-style format.
+    This handler transforms input messages to JSON and parses responses in OpenAI-compatible format.
 
     Example:
         ```python
@@ -174,8 +174,9 @@ class OpenAICompatibleChatModelContentHandler(ChatModelContentHandler):
 
         response = json.loads(output)
 
-        if "choices" not in response:
-            raise NotImplementedError("Unsupported response format")
+        is_openai_compatible = "choices" in response
+        if not is_openai_compatible:
+            raise ValueError("Response format is not OpenAI-compatible")
 
         return self._parse_openai_style_response(response)
 
@@ -204,7 +205,7 @@ class OpenAICompatibleChatModelContentHandler(ChatModelContentHandler):
         self,
         tool_calls_data: Optional[List[Dict[str, Any]]],
     ) -> List[ToolCall]:
-        """Parse tool calls from OpenAI-style response format."""
+        """Parse tool calls from OpenAI-compatible response format."""
         if not tool_calls_data:
             return []
 
@@ -227,12 +228,13 @@ class OpenAICompatibleChatModelContentHandler(ChatModelContentHandler):
         self,
         response: Dict[str, Any],
     ) -> Union[AIMessage, AIMessageChunk]:
-        """Parse OpenAI-style endpoint response to AIMessage or AIMessageChunk."""
+        """Parse OpenAI-compatible endpoint response to AIMessage or AIMessageChunk."""
         content = ""
         tool_calls_data = None
 
         choices = response.get("choices", [])
         if not choices:
+            logger.warning("No `choices` field found in OpenAI-compatible response")
             return AIMessage(content="")
 
         choice = choices[0]
@@ -545,6 +547,9 @@ class ChatSagemakerEndpoint(BaseChatModel):
 
             for line in iterator:
                 message = self.content_handler.transform_output(line)
+                usage_metadata = getattr(message, "usage_metadata", None)
+                response_metadata = message.response_metadata
+                msg_id = message.id
 
                 # Handle AIMessageChunk (streaming) directly
                 if isinstance(message, AIMessageChunk):
@@ -557,10 +562,13 @@ class ChatSagemakerEndpoint(BaseChatModel):
                         message = AIMessageChunk(
                             content=enforce_stop_tokens(message.content, stop),
                             tool_call_chunks=message.tool_call_chunks,
+                            usage_metadata=usage_metadata,
+                            response_metadata=response_metadata,
+                            id=msg_id,
                         )
 
-                    # Yield if there's content OR tool_call_chunks
-                    if message.content or message.tool_call_chunks:
+                    # Yield if there's content, tool_call_chunks, or usage metadata
+                    if message.content or message.tool_call_chunks or usage_metadata:
                         generation_chunk = ChatGenerationChunk(message=message)
                         if run_manager:
                             run_manager.on_llm_new_token(
@@ -572,11 +580,17 @@ class ChatSagemakerEndpoint(BaseChatModel):
                 elif isinstance(message, AIMessage):
                     if stop is not None and isinstance(message.content, str):
                         text = enforce_stop_tokens(message.content, stop)
-                        message = AIMessage(content=text, tool_calls=message.tool_calls)
+                        message = AIMessage(
+                            content=text,
+                            tool_calls=message.tool_calls,
+                            usage_metadata=usage_metadata,
+                            response_metadata=response_metadata,
+                            id=msg_id,
+                        )
 
-                    if message.content or message.tool_calls:
+                    if message.content or message.tool_calls or usage_metadata:
                         chunk = AIMessageChunk(
-                            content=message.content,
+                            content=message.content or "",
                             tool_call_chunks=[
                                 ToolCallChunk(
                                     index=i,
@@ -588,6 +602,9 @@ class ChatSagemakerEndpoint(BaseChatModel):
                             ]
                             if message.tool_calls
                             else [],
+                            usage_metadata=usage_metadata,
+                            response_metadata=response_metadata,
+                            id=msg_id,
                         )
                         generation_chunk = ChatGenerationChunk(message=chunk)
                         if run_manager:
@@ -597,9 +614,12 @@ class ChatSagemakerEndpoint(BaseChatModel):
                         yield generation_chunk
 
                 # Handle other message types
-                elif message.content:
+                elif message.content or usage_metadata:
                     base_chunk = BaseMessageChunk(
-                        content=message.content, type=message.type
+                        content=message.content or "",
+                        type=message.type,
+                        response_metadata=response_metadata,
+                        id=msg_id,
                     )
                     generation_chunk = ChatGenerationChunk(message=base_chunk)
                     if run_manager:

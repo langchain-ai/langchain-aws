@@ -17,6 +17,16 @@ from langchain_core.messages.tool import ToolCall
 from langchain_core.runnables import RunnableBinding
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
+from typing import Any, Dict, List
+from unittest.mock import Mock
+
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+)
 
 from langchain_aws.chat_models.sagemaker_endpoint import (
     ChatModelContentHandler,
@@ -51,6 +61,40 @@ class DefaultHandler(ChatModelContentHandler):
     def transform_output(self, output: bytes) -> str:
         response_json = json.loads(output.decode())
         return AIMessage(content=response_json[0]["generated_text"])
+
+
+def _make_stream_payload(lines: List[bytes]) -> List[Dict[str, Any]]:
+    return [{"PayloadPart": {"Bytes": line}} for line in lines]
+
+
+class StreamingHandler(ChatModelContentHandler):
+    content_type = "application/json"
+    accepts = "application/json"
+
+    def __init__(self, responses: List[BaseMessage]) -> None:
+        self._responses = iter(responses)
+
+    def transform_input(self, prompt: Any, model_kwargs: Dict) -> bytes:
+        return json.dumps(prompt).encode("utf-8")
+
+    def transform_output(self, output: bytes) -> BaseMessage:
+        return next(self._responses)
+
+
+def _build_streaming_llm(
+    responses: List[BaseMessage],
+) -> ChatSagemakerEndpoint:
+    handler = StreamingHandler(responses)
+    body = _make_stream_payload([b'{"text":"placeholder"}\n' for _ in responses])
+    client = Mock()
+    client.invoke_endpoint_with_response_stream.return_value = {"Body": body}
+
+    return ChatSagemakerEndpoint(
+        endpoint_name="test-endpoint",
+        region_name="us-east-1",
+        content_handler=handler,
+        client=client,
+    )
 
 
 def test_format_messages_request() -> None:
@@ -471,14 +515,14 @@ class TestOpenAICompatibleChatModelContentHandler:
     def test_transform_output_unsupported_format(
         self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
-        """Verify unsupported format raises NotImplementedError."""
+        """Verify unsupported format raises ValueError."""
         response = json.dumps(
             {
                 "generated_text": "Some text"  # TGI format, not OpenAI
             }
         ).encode("utf-8")
 
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(ValueError):
             handler.transform_output(response)
 
     def test_transform_output_empty_choices(
@@ -1105,6 +1149,177 @@ class TestChatSagemakerEndpoint:
         # Note: this creates a new binding, not merging
         assert isinstance(llm_with_both, RunnableBinding)
 
+def test_stream_yields_usage_only_chunk_with_metadata() -> None:
+    resp_meta = {"finish_reason": "stop"}
+    msg_id = "cmpl-final"
+    usage = {
+        "input_tokens": 21,
+        "output_tokens": 14,
+        "total_tokens": 35,
+    }
+    responses: List[BaseMessage] = [
+        AIMessage(content="Hello"),
+        AIMessage(
+            content="",
+            response_metadata=resp_meta,
+            id=msg_id,
+            usage_metadata=usage,
+        ),
+    ]
+    llm = _build_streaming_llm(responses)
+
+    run_manager = Mock()
+    chunks = list(llm._stream([HumanMessage(content="hi")], run_manager=run_manager))
+
+    assert len(chunks) == 2
+    assert chunks[0].message.content == "Hello"
+    assert chunks[0].message.usage_metadata is None  # type: ignore[union-attr]
+
+    final = chunks[1].message
+    assert isinstance(final, AIMessageChunk)
+    assert final.content == ""
+    assert final.usage_metadata == usage  # type: ignore[union-attr]
+    assert final.response_metadata == resp_meta
+    assert final.id == msg_id
+
+    assert run_manager.on_llm_new_token.call_count == 2
+    second_call = run_manager.on_llm_new_token.call_args_list[1]
+    assert second_call[0][0] == ""
+    assert second_call[1]["chunk"].message.usage_metadata == usage
+
+def test_stream_preserves_metadata_with_content() -> None:
+    resp_meta = {"model": "my-model", "finish_reason": "stop"}
+    msg_id = "cmpl-abc123"
+    usage = {
+        "input_tokens": 10,
+        "output_tokens": 5,
+        "total_tokens": 15,
+    }
+    responses: List[BaseMessage] = [
+        AIMessage(
+            content="world",
+            usage_metadata=usage,
+            response_metadata=resp_meta,
+            id=msg_id,
+        ),
+    ]
+    llm = _build_streaming_llm(responses)
+
+    chunks = list(llm._stream([HumanMessage(content="hi")]))
+
+    assert len(chunks) == 1
+    chunk_msg = chunks[0].message
+    assert chunk_msg.content == "world"
+    assert chunk_msg.usage_metadata == usage  # type: ignore[union-attr]
+    assert chunk_msg.response_metadata == resp_meta
+    assert chunk_msg.id == msg_id
+
+
+def test_stream_drops_empty_chunk_without_usage() -> None:
+    responses: List[BaseMessage] = [
+        AIMessage(content="Hello"),
+        AIMessage(content=""),
+    ]
+    llm = _build_streaming_llm(responses)
+
+    chunks = list(llm._stream([HumanMessage(content="hi")]))
+
+    assert len(chunks) == 1
+    assert chunks[0].message.content == "Hello"
+
+
+def test_stream_preserves_metadata_through_stop_tokens() -> None:
+    resp_meta = {"model": "my-model"}
+    msg_id = "cmpl-xyz"
+    usage = {
+        "input_tokens": 5,
+        "output_tokens": 3,
+        "total_tokens": 8,
+    }
+    responses: List[BaseMessage] = [
+        AIMessage(
+            content="Hello STOP world",
+            response_metadata=resp_meta,
+            id=msg_id,
+            usage_metadata=usage,
+        ),
+    ]
+    llm = _build_streaming_llm(responses)
+
+    chunks = list(llm._stream([HumanMessage(content="hi")], stop=["STOP"]))
+
+    assert len(chunks) == 1
+    chunk_msg = chunks[0].message
+    assert chunk_msg.content == "Hello "
+    assert chunk_msg.usage_metadata == usage  # type: ignore[union-attr]
+    assert chunk_msg.response_metadata == resp_meta
+    assert chunk_msg.id == msg_id
+
+
+def test_stream_preserves_metadata_with_list_content() -> None:
+    resp_meta = {"model": "my-model"}
+    msg_id = "cmpl-list"
+    usage = {
+        "input_tokens": 10,
+        "output_tokens": 5,
+        "total_tokens": 15,
+    }
+    responses: List[BaseMessage] = [
+        AIMessage(
+            content=[{"type": "text", "text": "Hello"}, {"type": "text", "text": "!"}],
+            usage_metadata=usage,
+            response_metadata=resp_meta,
+            id=msg_id,
+        ),
+    ]
+    llm = _build_streaming_llm(responses)
+
+    chunks = list(llm._stream([HumanMessage(content="hi")]))
+
+    assert len(chunks) == 1
+    chunk_msg = chunks[0].message
+    expected_content = [
+        {"type": "text", "text": "Hello"},
+        {"type": "text", "text": "!"},
+    ]
+    assert chunk_msg.content == expected_content
+    assert chunk_msg.usage_metadata == usage  # type: ignore[union-attr]
+    assert chunk_msg.response_metadata == resp_meta
+    assert chunk_msg.id == msg_id
+
+
+def test_stream_passthrough_ai_message_chunk() -> None:
+    usage = {
+        "input_tokens": 10,
+        "output_tokens": 5,
+        "total_tokens": 15,
+    }
+    resp_meta = {"model": "vllm-7b", "finish_reason": "stop"}
+    msg_id = "cmpl-passthrough"
+    responses: List[BaseMessage] = [
+        AIMessageChunk(content="Hello"),
+        AIMessageChunk(
+            content="",
+            usage_metadata=usage,
+            response_metadata=resp_meta,
+            id=msg_id,
+        ),
+    ]
+    llm = _build_streaming_llm(responses)
+
+    chunks = list(llm._stream([HumanMessage(content="hi")]))
+
+    assert len(chunks) == 2
+    assert chunks[0].message.content == "Hello"
+    assert isinstance(chunks[0].message, AIMessageChunk)
+
+    final = chunks[1].message
+    assert isinstance(final, AIMessageChunk)
+    assert final.content == ""
+    assert final.usage_metadata == usage  # type: ignore[union-attr]
+    assert final.response_metadata == resp_meta
+    assert final.id == msg_id
+
 
 class TestChatSagemakerEndpointEndToEnd:
     """End-to-end tests for ChatSagemakerEndpoint tool calling flows."""
@@ -1444,6 +1659,266 @@ class TestChatSagemakerEndpointEndToEnd:
 
         full_content = "".join(chunk.content for chunk in content_chunks)
         assert full_content == "The weather in Paris is sunny and 22°C."
+
+    def test_tool_calling_streaming_with_metadata(self, mock_client: Mock) -> None:
+        """
+        End-to-end test for tool calling with streaming and metadata preservation.
+
+        Verifies that usage_metadata, response_metadata, and id are preserved
+        when streaming tool calls and text responses.
+        """
+        # Create a custom content handler that returns chunks with metadata
+        class MetadataAwareContentHandler(OpenAICompatibleChatModelContentHandler):
+            def transform_output(self, output: Any) -> AIMessageChunk:
+                if hasattr(output, "read"):
+                    output = output.read()
+                if isinstance(output, bytes):
+                    output = output.decode("utf-8")
+
+                response = json.loads(output)
+                choices = response.get("choices", [])
+                if not choices:
+                    return AIMessageChunk(content="")
+
+                choice = choices[0]
+                delta = choice.get("delta", {})
+                content = delta.get("content") or ""
+
+                # Parse tool call chunks
+                tool_call_chunks = self._parse_openai_style_tool_calls_chunks(
+                    delta.get("tool_calls")
+                )
+
+                # Extract metadata from response
+                usage = response.get("usage")
+                usage_metadata = None
+                if usage:
+                    usage_metadata = {
+                        "input_tokens": usage.get("prompt_tokens", 0),
+                        "output_tokens": usage.get("completion_tokens", 0),
+                        "total_tokens": usage.get("total_tokens", 0),
+                    }
+
+                return AIMessageChunk(
+                    content=content,
+                    tool_call_chunks=tool_call_chunks,
+                    usage_metadata=usage_metadata,
+                    response_metadata=response.get("response_metadata", {}),
+                    id=response.get("id"),
+                )
+
+        # Streaming chunks with tool calls and metadata on final chunk
+        streaming_chunks = [
+            {
+                "PayloadPart": {
+                    "Bytes": json.dumps(
+                        {
+                            "id": "chatcmpl-abc123",
+                            "choices": [
+                                {
+                                    "delta": {
+                                        "tool_calls": [
+                                            {
+                                                "index": 0,
+                                                "id": "call_meta_123",
+                                                "function": {
+                                                    "name": "GetWeather",
+                                                    "arguments": '{"location": "NYC"}',
+                                                },
+                                            }
+                                        ]
+                                    }
+                                }
+                            ],
+                            "response_metadata": {"model": "test-model"},
+                        }
+                    ).encode("utf-8")
+                    + b"\n"
+                }
+            },
+            {
+                "PayloadPart": {
+                    "Bytes": json.dumps(
+                        {
+                            "id": "chatcmpl-abc123",
+                            "choices": [{"delta": {}}],
+                            "usage": {
+                                "prompt_tokens": 10,
+                                "completion_tokens": 5,
+                                "total_tokens": 15,
+                            },
+                            "response_metadata": {"model": "test-model"},
+                        }
+                    ).encode("utf-8")
+                    + b"\n"
+                }
+            },
+        ]
+
+        mock_client.invoke_endpoint_with_response_stream.return_value = {
+            "Body": iter(streaming_chunks)
+        }
+
+        llm = ChatSagemakerEndpoint(
+            endpoint_name="test-endpoint",
+            region_name="us-west-2",
+            client=mock_client,
+            streaming=True,
+            content_handler=MetadataAwareContentHandler(),
+        )
+        llm_with_tools = llm.bind_tools([GetWeather])
+
+        messages = [HumanMessage(content="What's the weather in NYC?")]
+        chunks = list(llm_with_tools.stream(messages))
+
+        # Filter out framework-added "last" chunks
+        content_chunks = [
+            c for c in chunks if not getattr(c, "chunk_position", None)
+        ]
+
+        # Should have 2 chunks: tool call + usage metadata
+        assert len(content_chunks) == 2
+
+        # First chunk has tool call and metadata
+        first_chunk = content_chunks[0]
+        assert isinstance(first_chunk, AIMessageChunk)
+        assert first_chunk.tool_call_chunks[0]["id"] == "call_meta_123"
+        assert first_chunk.tool_call_chunks[0]["name"] == "GetWeather"
+        assert first_chunk.id == "chatcmpl-abc123"
+        assert first_chunk.response_metadata == {"model": "test-model"}
+
+        # Second chunk has usage metadata
+        final_chunk = content_chunks[1]
+        assert isinstance(final_chunk, AIMessageChunk)
+        assert final_chunk.usage_metadata is not None
+        assert final_chunk.usage_metadata["input_tokens"] == 10
+        assert final_chunk.usage_metadata["output_tokens"] == 5
+        assert final_chunk.usage_metadata["total_tokens"] == 15
+        assert final_chunk.id == "chatcmpl-abc123"
+
+    def test_streaming_text_with_metadata(self, mock_client: Mock) -> None:
+        """
+        Test that text streaming preserves metadata (usage, response_metadata, id).
+        """
+        # Create a custom content handler that returns chunks with metadata
+        class MetadataAwareContentHandler(OpenAICompatibleChatModelContentHandler):
+            def transform_output(self, output: Any) -> AIMessageChunk:
+                if hasattr(output, "read"):
+                    output = output.read()
+                if isinstance(output, bytes):
+                    output = output.decode("utf-8")
+
+                response = json.loads(output)
+                choices = response.get("choices", [])
+                if not choices:
+                    return AIMessageChunk(content="")
+
+                choice = choices[0]
+                delta = choice.get("delta", {})
+                content = delta.get("content") or ""
+
+                # Extract metadata from response
+                usage = response.get("usage")
+                usage_metadata = None
+                if usage:
+                    usage_metadata = {
+                        "input_tokens": usage.get("prompt_tokens", 0),
+                        "output_tokens": usage.get("completion_tokens", 0),
+                        "total_tokens": usage.get("total_tokens", 0),
+                    }
+
+                return AIMessageChunk(
+                    content=content,
+                    usage_metadata=usage_metadata,
+                    response_metadata=response.get("response_metadata", {}),
+                    id=response.get("id"),
+                )
+
+        text_streaming_chunks = [
+            {
+                "PayloadPart": {
+                    "Bytes": json.dumps(
+                        {
+                            "id": "chatcmpl-text123",
+                            "choices": [{"delta": {"content": "Hello "}}],
+                            "response_metadata": {"model": "gpt-4"},
+                        }
+                    ).encode("utf-8")
+                    + b"\n"
+                }
+            },
+            {
+                "PayloadPart": {
+                    "Bytes": json.dumps(
+                        {
+                            "id": "chatcmpl-text123",
+                            "choices": [{"delta": {"content": "world!"}}],
+                            "response_metadata": {"model": "gpt-4"},
+                        }
+                    ).encode("utf-8")
+                    + b"\n"
+                }
+            },
+            {
+                "PayloadPart": {
+                    "Bytes": json.dumps(
+                        {
+                            "id": "chatcmpl-text123",
+                            "choices": [{"delta": {}}],
+                            "usage": {
+                                "prompt_tokens": 5,
+                                "completion_tokens": 2,
+                                "total_tokens": 7,
+                            },
+                            "response_metadata": {"model": "gpt-4"},
+                        }
+                    ).encode("utf-8")
+                    + b"\n"
+                }
+            },
+        ]
+
+        mock_client.invoke_endpoint_with_response_stream.return_value = {
+            "Body": iter(text_streaming_chunks)
+        }
+
+        llm = ChatSagemakerEndpoint(
+            endpoint_name="test-endpoint",
+            region_name="us-west-2",
+            client=mock_client,
+            streaming=True,
+            content_handler=MetadataAwareContentHandler(),
+        )
+
+        messages = [HumanMessage(content="Say hello")]
+        chunks = list(llm.stream(messages))
+
+        # Filter out framework-added "last" chunks
+        content_chunks = [
+            c for c in chunks if not getattr(c, "chunk_position", None)
+        ]
+
+        # Should have 3 chunks: 2 content + 1 usage
+        assert len(content_chunks) == 3
+
+        # Verify content chunks have metadata
+        assert content_chunks[0].content == "Hello "
+        assert content_chunks[0].id == "chatcmpl-text123"
+        assert content_chunks[0].response_metadata == {"model": "gpt-4"}
+
+        assert content_chunks[1].content == "world!"
+        assert content_chunks[1].id == "chatcmpl-text123"
+
+        # Final chunk has usage metadata
+        assert content_chunks[2].content == ""
+        assert content_chunks[2].usage_metadata is not None
+        assert content_chunks[2].usage_metadata["input_tokens"] == 5
+        assert content_chunks[2].usage_metadata["output_tokens"] == 2
+        assert content_chunks[2].usage_metadata["total_tokens"] == 7
+
+        # Verify full content
+        full_content = "".join(c.content for c in content_chunks)
+        assert full_content == "Hello world!"
 
 
 class TestMessagesToSagemaker:
