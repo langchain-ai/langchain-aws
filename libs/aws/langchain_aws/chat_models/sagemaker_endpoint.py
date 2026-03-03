@@ -128,7 +128,7 @@ class ChatModelContentHandler(ContentHandlerBase[Any, Any]):
     """Content handler for ChatSagemakerEndpoint class."""
 
 
-class OpenAIStyleChatModelContentHandler(ChatModelContentHandler):
+class OpenAICompatibleChatModelContentHandler(ChatModelContentHandler):
     """OpenAI-style content handler.
 
     This handler transforms input messages to JSON and parses responses in OpenAI-style format.
@@ -137,10 +137,10 @@ class OpenAIStyleChatModelContentHandler(ChatModelContentHandler):
         ```python
         from langchain_aws.chat_models.sagemaker_endpoint import (
             ChatSagemakerEndpoint,
-            OpenAIStyleChatModelContentHandler,
+            OpenAICompatibleChatModelContentHandler,
         )
 
-        content_handler = OpenAIStyleChatModelContentHandler()
+        content_handler = OpenAICompatibleChatModelContentHandler()
         chat = ChatSagemakerEndpoint(
             endpoint_name="my-endpoint",
             content_handler=content_handler,
@@ -413,7 +413,7 @@ class ChatSagemakerEndpoint(BaseChatModel):
     """An optional botocore.config.Config instance to pass to the client."""
 
     content_handler: ChatModelContentHandler = Field(
-        default=OpenAIStyleChatModelContentHandler()  # Stateless
+        default=OpenAICompatibleChatModelContentHandler()  # Stateless
     )
     """The content handler class that provides an input and output transform functions
     to handle formats between LLM and the endpoint.

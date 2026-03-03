@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from langchain_aws.chat_models.sagemaker_endpoint import (
     ChatModelContentHandler,
     ChatSagemakerEndpoint,
-    OpenAIStyleChatModelContentHandler,
+    OpenAICompatibleChatModelContentHandler,
     _messages_to_sagemaker,
 )
 
@@ -103,17 +103,17 @@ def test__messages_to_sagemaker() -> None:
     assert expected == actual
 
 
-class TestOpenAIStyleChatModelContentHandler:
-    """Tests for OpenAIStyleChatModelContentHandler
+class TestOpenAICompatibleChatModelContentHandler:
+    """Tests for OpenAICompatibleChatModelContentHandler
     - critical for payload transformation."""
 
     @pytest.fixture
-    def handler(self) -> OpenAIStyleChatModelContentHandler:
+    def handler(self) -> OpenAICompatibleChatModelContentHandler:
         """Create a handler instance."""
-        return OpenAIStyleChatModelContentHandler()
+        return OpenAICompatibleChatModelContentHandler()
 
     def test_transform_input_basic(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify basic message transformation to JSON bytes."""
         messages = [{"role": "user", "content": "Hello"}]
@@ -126,7 +126,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert parsed["temperature"] == 0.7
 
     def test_transform_input_with_multiple_messages(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify multi-turn conversation is properly transformed."""
         messages = [
@@ -145,7 +145,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert parsed["messages"][-1]["role"] == "user"
 
     def test_transform_input_with_all_model_kwargs(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify all common model kwargs are included in payload."""
         messages = [{"role": "user", "content": "Test"}]
@@ -167,7 +167,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert parsed["stream"] is True
 
     def test_transform_input_with_tools(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify tools are included in the payload."""
         messages = [{"role": "user", "content": "What's the weather?"}]
@@ -191,14 +191,14 @@ class TestOpenAIStyleChatModelContentHandler:
         assert parsed["tools"][0]["function"]["name"] == "get_weather"
 
     def test_transform_input_returns_bytes(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify transform_input returns bytes, not string."""
         result = handler.transform_input([{"role": "user", "content": "test"}], {})
         assert isinstance(result, bytes)
 
     def test_transform_input_empty_model_kwargs(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify empty model_kwargs doesn't cause issues."""
         messages = [{"role": "user", "content": "Hello"}]
@@ -210,7 +210,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert set(parsed.keys()) == {"messages"}
 
     def test_transform_output_non_streaming(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify non-streaming response parsing."""
         response = json.dumps(
@@ -232,7 +232,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.content == "Hello! How can I help?"
 
     def test_transform_output_non_streaming_with_tool_calls(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify tool calls are properly parsed from non-streaming response."""
         response = json.dumps(
@@ -267,7 +267,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.tool_calls[0]["args"] == {"location": "Paris"}
 
     def test_transform_output_non_streaming_multiple_tool_calls(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify multiple tool calls are properly parsed."""
         response = json.dumps(
@@ -310,7 +310,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.tool_calls[1]["args"]["location"] == "London"
 
     def test_transform_output_non_streaming_empty_content(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify empty content is handled correctly."""
         response = json.dumps(
@@ -332,7 +332,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.content == ""
 
     def test_transform_output_non_streaming_null_content(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify null content is handled correctly."""
         response = json.dumps(
@@ -354,7 +354,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.content == ""
 
     def test_transform_output_streaming_chunk(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify streaming chunk parsing."""
         response = json.dumps(
@@ -375,7 +375,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.content == "Hello"
 
     def test_transform_output_streaming_with_tool_call_chunks(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify streaming tool call chunks are properly parsed."""
         response = json.dumps(
@@ -408,7 +408,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.tool_call_chunks[0]["name"] == "get_weather"
 
     def test_transform_output_streaming_empty_delta(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify empty delta is handled (common at stream end)."""
         response = json.dumps({"choices": [{"delta": {}}]}).encode("utf-8")
@@ -419,7 +419,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.content == ""
 
     def test_transform_output_streaming_partial_tool_args(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify partial tool arguments are preserved as strings for accumulation."""
         # First chunk - name and start of args
@@ -469,7 +469,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result2.tool_call_chunks[0]["args"] == 'ation": "Paris"}'
 
     def test_transform_output_unsupported_format(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify unsupported format raises NotImplementedError."""
         response = json.dumps(
@@ -482,7 +482,7 @@ class TestOpenAIStyleChatModelContentHandler:
             handler.transform_output(response)
 
     def test_transform_output_empty_choices(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify empty choices list returns empty AIMessage."""
         response = json.dumps({"choices": []}).encode("utf-8")
@@ -493,7 +493,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.content == ""
 
     def test_transform_output_invalid_json(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify invalid JSON raises appropriate error."""
         response = b"not valid json"
@@ -502,7 +502,7 @@ class TestOpenAIStyleChatModelContentHandler:
             handler.transform_output(response)
 
     def test_transform_output_handles_bytes_and_string(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify both bytes and string inputs are handled."""
         response_dict = {
@@ -520,7 +520,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result_str.content == "Hi"
 
     def test_parse_openai_style_tool_calls_non_streaming(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify non-streaming tool call parsing returns ToolCall objects."""
         tool_calls_data = [
@@ -542,7 +542,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result[0]["args"] == {"location": "Paris"}
 
     def test_parse_openai_style_tool_calls_chunks_streaming(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify streaming tool call parsing returns ToolCallChunk objects."""
         tool_calls_data = [
@@ -562,7 +562,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result[0]["args"] == '{"loc'  # Kept as string for accumulation
 
     def test_parse_openai_style_tool_calls_empty(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify empty tool calls return empty list."""
         result = handler._parse_openai_style_tool_calls(None)
@@ -578,7 +578,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result == []
 
     def test_parse_openai_style_tool_calls_complex_args(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify complex nested arguments are properly parsed."""
         tool_calls_data = [
@@ -605,7 +605,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result[0]["args"]["options"]["limit"] == 10
 
     def test_parse_openai_style_tool_calls_empty_arguments(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify empty arguments are handled correctly."""
         tool_calls_data = [
@@ -621,7 +621,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result[0]["args"] == {}
 
     def test_parse_openai_style_tool_calls_missing_function(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify missing function key is handled gracefully."""
         tool_calls_data = [{"id": "call_abc"}]
@@ -634,7 +634,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result[0]["args"] == {}
 
     def test_parse_openai_style_response_non_streaming_basic(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify non-streaming response with message key returns AIMessage."""
         response = {
@@ -656,7 +656,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.tool_calls == []
 
     def test_parse_openai_style_response_streaming_basic(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify streaming response with delta key returns AIMessageChunk."""
         response = {
@@ -676,7 +676,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.tool_call_chunks == []
 
     def test_parse_openai_style_response_non_streaming_with_tool_calls(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify non-streaming response with tool calls
         returns AIMessage with tool_calls."""
@@ -714,7 +714,7 @@ class TestOpenAIStyleChatModelContentHandler:
         }
 
     def test_parse_openai_style_response_streaming_with_tool_call_chunks(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify streaming response with tool calls returns
         AIMessageChunk with tool_call_chunks."""
@@ -748,7 +748,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.tool_call_chunks[0]["args"] == '{"query": "python"'
 
     def test_parse_openai_style_response_empty_choices(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify empty choices returns empty AIMessage."""
         response = {"choices": []}
@@ -759,7 +759,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.content == ""
 
     def test_parse_openai_style_response_missing_choices(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify missing choices key returns empty AIMessage."""
         response = {"id": "chatcmpl-123", "object": "chat.completion"}
@@ -770,7 +770,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.content == ""
 
     def test_parse_openai_style_response_non_streaming_empty_content(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify non-streaming response with empty content."""
         response = {
@@ -790,7 +790,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.content == ""
 
     def test_parse_openai_style_response_non_streaming_null_content(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify non-streaming response with null content."""
         response = {
@@ -810,7 +810,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.content == ""
 
     def test_parse_openai_style_response_streaming_empty_delta(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify streaming response with empty delta (common at stream end)."""
         response = {"choices": [{"delta": {}}]}
@@ -822,7 +822,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.tool_call_chunks == []
 
     def test_parse_openai_style_response_streaming_null_delta(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify streaming response with null delta."""
         response = {"choices": [{"delta": None}]}
@@ -833,7 +833,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.content == ""
 
     def test_parse_openai_style_response_non_streaming_multiple_tool_calls(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify non-streaming response with multiple tool calls."""
         response = {
@@ -874,7 +874,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.tool_calls[1]["name"] == "get_time"
 
     def test_parse_openai_style_response_streaming_multiple_tool_call_chunks(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify streaming response with multiple tool call chunks."""
         response = {
@@ -906,7 +906,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.tool_call_chunks[1]["index"] == 1
 
     def test_parse_openai_style_response_non_streaming_null_message(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify non-streaming response with null message."""
         response = {"choices": [{"message": None}]}
@@ -917,7 +917,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.content == ""
 
     def test_parse_openai_style_response_non_streaming_tool_calls_only(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify non-streaming response with tool calls but no content."""
         response = {
@@ -949,7 +949,7 @@ class TestOpenAIStyleChatModelContentHandler:
         assert result.tool_calls[0]["name"] == "get_weather"
 
     def test_parse_openai_style_response_detects_streaming_by_delta_key(
-        self, handler: OpenAIStyleChatModelContentHandler
+        self, handler: OpenAICompatibleChatModelContentHandler
     ) -> None:
         """Verify streaming detection is based on presence of 'delta' key."""
         # Even with empty delta, should return AIMessageChunk
