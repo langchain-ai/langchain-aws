@@ -1,12 +1,25 @@
 """Sagemaker Chat Model."""
 
 import io
+import json
 import logging
-from typing import Any, Dict, Iterator, List, Mapping, Optional
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Type,
+    Union,
+)
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.language_models import (
     BaseChatModel,
+    LanguageModelInput,
 )
 from langchain_core.messages import (
     AIMessage,
@@ -15,13 +28,19 @@ from langchain_core.messages import (
     BaseMessageChunk,
     HumanMessage,
     SystemMessage,
+    ToolMessage,
     merge_message_runs,
 )
+from langchain_core.messages.tool import ToolCall, ToolCallChunk
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
+from langchain_core.runnables import Runnable
+from langchain_core.tools import BaseTool
 from langchain_core.utils import secret_from_env
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import ConfigDict, Field, SecretStr, model_validator
-from typing_extensions import Self
+from typing_extensions import Self, override
 
+from langchain_aws.function_calling import lc_tool_calls_to_openai_tool_calls
 from langchain_aws.utils import (
     ContentHandlerBase,
     create_aws_client,
@@ -106,6 +125,133 @@ class ChatLineIterator:
 
 class ChatModelContentHandler(ContentHandlerBase[Any, Any]):
     """Content handler for ChatSagemakerEndpoint class."""
+
+
+class OpenAICompatibleChatModelContentHandler(ChatModelContentHandler):
+    """OpenAI-style content handler.
+
+    This handler transforms input messages to JSON and parses responses in OpenAI-style format.
+
+    Example:
+        ```python
+        from langchain_aws.chat_models.sagemaker_endpoint import (
+            ChatSagemakerEndpoint,
+            OpenAICompatibleChatModelContentHandler,
+        )
+
+        content_handler = OpenAICompatibleChatModelContentHandler()
+        chat = ChatSagemakerEndpoint(
+            endpoint_name="my-endpoint",
+            content_handler=content_handler,
+        )
+        ```
+    """  # noqa: E501
+
+    content_type: str = "application/json"
+    accepts: str = "application/json"
+
+    def transform_input(
+        self, messages: List[Dict[str, Any]], model_kwargs: Dict[str, Any]
+    ) -> bytes:
+        """Transform messages to JSON bytes for the endpoint.
+
+        Args:
+            messages: List of message dicts in SageMaker format.
+            model_kwargs: Additional model parameters.
+
+        Returns:
+            JSON-encoded bytes.
+        """
+        payload = {"messages": messages, **model_kwargs}
+        return json.dumps(payload).encode("utf-8")
+
+    def transform_output(self, output: Any) -> Union[AIMessage, AIMessageChunk]:
+        """Transform endpoint response to AIMessage or AIMessageChunk."""
+        if hasattr(output, "read"):
+            output = output.read()
+        if isinstance(output, bytes):
+            output = output.decode("utf-8")
+
+        response = json.loads(output)
+
+        if "choices" not in response:
+            raise NotImplementedError("Unsupported response format")
+
+        return self._parse_openai_style_response(response)
+
+    def _parse_openai_style_tool_calls_chunks(
+        self,
+        tool_calls_data: Optional[List[Dict[str, Any]]],
+    ) -> List[ToolCallChunk]:
+        """Parse tool call chunks from OpenAI-style response format."""
+        if not tool_calls_data:
+            return []
+
+        tool_call_chunks: List[ToolCallChunk] = []
+        for tc in tool_calls_data:
+            func = tc.get("function") or {}
+            tool_call_chunks.append(
+                ToolCallChunk(
+                    index=tc.get("index"),
+                    id=tc.get("id"),
+                    name=func.get("name"),
+                    args=func.get("arguments"),
+                )
+            )
+        return tool_call_chunks
+
+    def _parse_openai_style_tool_calls(
+        self,
+        tool_calls_data: Optional[List[Dict[str, Any]]],
+    ) -> List[ToolCall]:
+        """Parse tool calls from OpenAI-style response format."""
+        if not tool_calls_data:
+            return []
+
+        tool_calls: List[ToolCall] = []
+        for tc in tool_calls_data:
+            func = tc.get("function") or {}
+            args = func.get("arguments", {})
+            if isinstance(args, str):
+                args = json.loads(args) if args else {}
+            tool_calls.append(
+                ToolCall(
+                    id=tc.get("id", ""),
+                    name=func.get("name", ""),
+                    args=args,
+                )
+            )
+        return tool_calls
+
+    def _parse_openai_style_response(
+        self,
+        response: Dict[str, Any],
+    ) -> Union[AIMessage, AIMessageChunk]:
+        """Parse OpenAI-style endpoint response to AIMessage or AIMessageChunk."""
+        content = ""
+        tool_calls_data = None
+
+        choices = response.get("choices", [])
+        if not choices:
+            return AIMessage(content="")
+
+        choice = choices[0]
+        is_streaming = "delta" in choice
+
+        if is_streaming:
+            delta = choice.get("delta") or {}
+            content = delta.get("content") or ""
+            tool_calls_data = delta.get("tool_calls")
+            tool_call_chunks = self._parse_openai_style_tool_calls_chunks(
+                tool_calls_data
+            )
+            return AIMessageChunk(content=content, tool_call_chunks=tool_call_chunks)
+        else:
+            message = choice.get("message") or {}
+            content = message.get("content") or ""
+            tool_calls_data = message.get("tool_calls")
+            tool_calls = self._parse_openai_style_tool_calls(tool_calls_data)
+            return AIMessage(content=content, tool_calls=tool_calls)
 
 
 class ChatSagemakerEndpoint(BaseChatModel):
@@ -265,7 +411,9 @@ class ChatSagemakerEndpoint(BaseChatModel):
     config: Any = None
     """An optional botocore.config.Config instance to pass to the client."""
 
-    content_handler: ChatModelContentHandler
+    content_handler: ChatModelContentHandler = Field(
+        default=OpenAICompatibleChatModelContentHandler()  # Stateless
+    )
     """The content handler class that provides an input and output transform functions
     to handle formats between LLM and the endpoint.
 
@@ -397,23 +545,63 @@ class ChatSagemakerEndpoint(BaseChatModel):
 
             for line in iterator:
                 message = self.content_handler.transform_output(line)
-                if (
-                    stop is not None
-                    and isinstance(message, AIMessage)
-                    and isinstance(message.content, str)
-                ):
-                    text = enforce_stop_tokens(message.content, stop)
-                    message = AIMessage(content=text)
 
-                if message.content:
-                    if isinstance(message, AIMessage):
-                        chunk = AIMessageChunk(content=message.content)
-                        generation_chunk = ChatGenerationChunk(message=chunk)
-                    else:
-                        base_chunk = BaseMessageChunk(
-                            content=message.content, type=message.type
+                # Handle AIMessageChunk (streaming) directly
+                if isinstance(message, AIMessageChunk):
+                    # Apply stop tokens if needed
+                    if (
+                        stop is not None
+                        and isinstance(message.content, str)
+                        and message.content
+                    ):
+                        message = AIMessageChunk(
+                            content=enforce_stop_tokens(message.content, stop),
+                            tool_call_chunks=message.tool_call_chunks,
                         )
-                        generation_chunk = ChatGenerationChunk(message=base_chunk)
+
+                    # Yield if there's content OR tool_call_chunks
+                    if message.content or message.tool_call_chunks:
+                        generation_chunk = ChatGenerationChunk(message=message)
+                        if run_manager:
+                            run_manager.on_llm_new_token(
+                                generation_chunk.text, chunk=generation_chunk
+                            )
+                        yield generation_chunk
+
+                # Handle AIMessage (non-streaming response in stream context)
+                elif isinstance(message, AIMessage):
+                    if stop is not None and isinstance(message.content, str):
+                        text = enforce_stop_tokens(message.content, stop)
+                        message = AIMessage(content=text, tool_calls=message.tool_calls)
+
+                    if message.content or message.tool_calls:
+                        chunk = AIMessageChunk(
+                            content=message.content,
+                            tool_call_chunks=[
+                                ToolCallChunk(
+                                    index=i,
+                                    id=tc.get("id"),
+                                    name=tc.get("name"),
+                                    args=json.dumps(tc.get("args", {})),
+                                )
+                                for i, tc in enumerate(message.tool_calls)
+                            ]
+                            if message.tool_calls
+                            else [],
+                        )
+                        generation_chunk = ChatGenerationChunk(message=chunk)
+                        if run_manager:
+                            run_manager.on_llm_new_token(
+                                generation_chunk.text, chunk=generation_chunk
+                            )
+                        yield generation_chunk
+
+                # Handle other message types
+                elif message.content:
+                    base_chunk = BaseMessageChunk(
+                        content=message.content, type=message.type
+                    )
+                    generation_chunk = ChatGenerationChunk(message=base_chunk)
                     if run_manager:
                         run_manager.on_llm_new_token(
                             generation_chunk.text, chunk=generation_chunk
@@ -447,6 +635,20 @@ class ChatSagemakerEndpoint(BaseChatModel):
 
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
+    @override
+    def bind_tools(
+        self,
+        tools: Sequence[Union[Dict[str, Any], Type, Callable, BaseTool]],
+        *,
+        tool_choice: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, AIMessage]:
+        """Bind tools to the model for function calling."""
+        formatted_tools = [convert_to_openai_tool(tool) for tool in tools]
+        if tool_choice is not None:
+            kwargs["tool_choice"] = tool_choice
+        return self.bind(tools=formatted_tools, **kwargs)
+
 
 def _messages_to_sagemaker(
     messages: List[BaseMessage],
@@ -470,9 +672,28 @@ def _messages_to_sagemaker(
             else:
                 sagemaker_messages.append({"role": "user", "content": content})
         elif isinstance(msg, AIMessage):
-            sagemaker_messages.append({"role": "assistant", "content": content})
+            ai_message: Dict[str, Any] = {
+                "role": "assistant",
+                "content": content,
+            }
+            # Convert tool_calls to OpenAI format if present
+            if msg.tool_calls:
+                ai_message["tool_calls"] = lc_tool_calls_to_openai_tool_calls(
+                    msg.tool_calls
+                )
+            sagemaker_messages.append(ai_message)
         elif isinstance(msg, SystemMessage):
             sagemaker_messages.insert(0, {"role": "system", "content": content})
+        elif isinstance(msg, ToolMessage):
+            sagemaker_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": msg.tool_call_id,
+                    "content": content,
+                    "artifact": msg.artifact,
+                    "status": msg.status,
+                }
+            )
         else:
             raise ValueError(f"Unsupported message type {type(msg)}")
     return sagemaker_messages
