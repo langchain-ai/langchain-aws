@@ -9,6 +9,7 @@ import pytest
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
+    BaseMessage,
     HumanMessage,
     SystemMessage,
     ToolMessage,
@@ -17,16 +18,6 @@ from langchain_core.messages.tool import ToolCall
 from langchain_core.runnables import RunnableBinding
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
-from typing import Any, Dict, List
-from unittest.mock import Mock
-
-from langchain_core.messages import (
-    AIMessage,
-    AIMessageChunk,
-    BaseMessage,
-    HumanMessage,
-    SystemMessage,
-)
 
 from langchain_aws.chat_models.sagemaker_endpoint import (
     ChatModelContentHandler,
@@ -1149,6 +1140,7 @@ class TestChatSagemakerEndpoint:
         # Note: this creates a new binding, not merging
         assert isinstance(llm_with_both, RunnableBinding)
 
+
 def test_stream_yields_usage_only_chunk_with_metadata() -> None:
     resp_meta = {"finish_reason": "stop"}
     msg_id = "cmpl-final"
@@ -1186,6 +1178,7 @@ def test_stream_yields_usage_only_chunk_with_metadata() -> None:
     second_call = run_manager.on_llm_new_token.call_args_list[1]
     assert second_call[0][0] == ""
     assert second_call[1]["chunk"].message.usage_metadata == usage
+
 
 def test_stream_preserves_metadata_with_content() -> None:
     resp_meta = {"model": "my-model", "finish_reason": "stop"}
@@ -1667,6 +1660,7 @@ class TestChatSagemakerEndpointEndToEnd:
         Verifies that usage_metadata, response_metadata, and id are preserved
         when streaming tool calls and text responses.
         """
+
         # Create a custom content handler that returns chunks with metadata
         class MetadataAwareContentHandler(OpenAICompatibleChatModelContentHandler):
             def transform_output(self, output: Any) -> AIMessageChunk:
@@ -1772,9 +1766,7 @@ class TestChatSagemakerEndpointEndToEnd:
         chunks = list(llm_with_tools.stream(messages))
 
         # Filter out framework-added "last" chunks
-        content_chunks = [
-            c for c in chunks if not getattr(c, "chunk_position", None)
-        ]
+        content_chunks = [c for c in chunks if not getattr(c, "chunk_position", None)]
 
         # Should have 2 chunks: tool call + usage metadata
         assert len(content_chunks) == 2
@@ -1800,6 +1792,7 @@ class TestChatSagemakerEndpointEndToEnd:
         """
         Test that text streaming preserves metadata (usage, response_metadata, id).
         """
+
         # Create a custom content handler that returns chunks with metadata
         class MetadataAwareContentHandler(OpenAICompatibleChatModelContentHandler):
             def transform_output(self, output: Any) -> AIMessageChunk:
@@ -1894,9 +1887,7 @@ class TestChatSagemakerEndpointEndToEnd:
         chunks = list(llm.stream(messages))
 
         # Filter out framework-added "last" chunks
-        content_chunks = [
-            c for c in chunks if not getattr(c, "chunk_position", None)
-        ]
+        content_chunks = [c for c in chunks if not getattr(c, "chunk_position", None)]
 
         # Should have 3 chunks: 2 content + 1 usage
         assert len(content_chunks) == 3

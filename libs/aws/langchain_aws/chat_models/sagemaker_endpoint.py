@@ -185,6 +185,7 @@ class OpenAICompatibleChatModelContentHandler(ChatModelContentHandler):
         tool_calls_data: Optional[List[Dict[str, Any]]],
     ) -> List[ToolCallChunk]:
         """Parse tool call chunks from OpenAI-style response format."""
+        # docs: https://developers.openai.com/api/reference/resources/chat/?utm_source=chatgpt.com
         if not tool_calls_data:
             return []
 
@@ -206,6 +207,7 @@ class OpenAICompatibleChatModelContentHandler(ChatModelContentHandler):
         tool_calls_data: Optional[List[Dict[str, Any]]],
     ) -> List[ToolCall]:
         """Parse tool calls from OpenAI-compatible response format."""
+        # docs: https://developers.openai.com/api/reference/resources/chat/?utm_source=chatgpt.com
         if not tool_calls_data:
             return []
 
@@ -229,6 +231,7 @@ class OpenAICompatibleChatModelContentHandler(ChatModelContentHandler):
         response: Dict[str, Any],
     ) -> Union[AIMessage, AIMessageChunk]:
         """Parse OpenAI-compatible endpoint response to AIMessage or AIMessageChunk."""
+        # docs: https://developers.openai.com/api/reference/resources/chat/?utm_source=chatgpt.com
         content = ""
         tool_calls_data = None
 
