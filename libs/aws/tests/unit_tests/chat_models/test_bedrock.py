@@ -874,7 +874,7 @@ def test_beta_use_converse_api_with_inference_profile_as_nova_model(
             "us-west-2",
         ),
         (
-            "eu.anthropic.claude-3-haiku-20240307-v1:0",
+            "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
             None,
             "anthropic",
             nullcontext(),
@@ -1860,7 +1860,7 @@ def test_system_prompt_cache_control_preserved() -> None:
 
     llm = ChatBedrock(
         client=mock_client,
-        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
         region_name="us-west-2",
     )
     system = SystemMessage(
@@ -1898,7 +1898,7 @@ def test_system_prompt_list_format() -> None:
 
     llm = ChatBedrock(
         client=mock_client,
-        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
         region_name="us-west-2",
     )
     system = SystemMessage(
@@ -1933,7 +1933,7 @@ def test_system_prompt_with_tools_prepends_block() -> None:
 
     llm = ChatBedrock(
         client=mock_client,
-        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
         region_name="us-west-2",
     )
     llm.system_prompt_with_tools = "You have tools."
@@ -1975,7 +1975,7 @@ def test_system_prompt_string_format() -> None:
 
     llm = ChatBedrock(
         client=mock_client,
-        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
         region_name="us-west-2",
     )
     llm.invoke([SystemMessage("You are helpful."), HumanMessage(content="Hi")])  # type: ignore[misc]
@@ -2019,7 +2019,7 @@ def test_stream_system_prompt_cache_control() -> None:
 
     llm = ChatBedrock(
         client=mock_client,
-        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
         region_name="us-west-2",
     )
     system = SystemMessage(
@@ -2076,7 +2076,7 @@ async def test_astream_system_prompt_cache_control() -> None:
 
     llm = ChatBedrock(
         client=mock_client,
-        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
         region_name="us-west-2",
     )
     system = SystemMessage(
@@ -2117,7 +2117,7 @@ def test_cache_control_kwarg_applied_to_string_content() -> None:
 
     llm = ChatBedrock(
         client=mock_client,
-        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
         region_name="us-west-2",
     )
     llm.invoke(
@@ -2155,7 +2155,7 @@ def test_cache_control_kwarg_applied_to_list_content() -> None:
 
     llm = ChatBedrock(
         client=mock_client,
-        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
         region_name="us-west-2",
     )
     llm.invoke(
@@ -2197,7 +2197,7 @@ def test_cache_control_kwarg_not_in_api_body() -> None:
 
     llm = ChatBedrock(
         client=mock_client,
-        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
         region_name="us-west-2",
     )
     llm.invoke(
@@ -2245,7 +2245,7 @@ def test_stream_cache_control_kwarg_applied() -> None:
 
     llm = ChatBedrock(
         client=mock_client,
-        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
         region_name="us-west-2",
     )
     list(

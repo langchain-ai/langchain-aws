@@ -787,6 +787,32 @@ _message_type_lookups = {
 }
 
 
+def _apply_cache_control_to_messages(
+    cache_control: Optional[Dict[str, Any]],
+    formatted_messages: Optional[List[Dict[str, Any]]],
+) -> None:
+    """Apply cache_control to the last content block of the last message."""
+    if not cache_control or not formatted_messages:
+        return
+    for fmt_msg in reversed(formatted_messages):
+        content = fmt_msg.get("content")
+        if isinstance(content, list) and content:
+            for block in reversed(content):
+                if isinstance(block, dict):
+                    block["cache_control"] = cache_control
+                    break
+            break
+        elif isinstance(content, str):
+            fmt_msg["content"] = [
+                {
+                    "type": "text",
+                    "text": content,
+                    "cache_control": cache_control,
+                }
+            ]
+            break
+
+
 class ChatBedrock(BaseChatModel, BedrockBase):
     """A chat model that uses the Bedrock API."""
 
@@ -955,25 +981,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     ] + list(system)
 
             # Apply cache_control to last message if provided via kwargs
-            cache_control = kwargs.pop("cache_control", None)
-            if cache_control and formatted_messages:
-                for fmt_msg in reversed(formatted_messages):
-                    content = fmt_msg.get("content")
-                    if isinstance(content, list) and content:
-                        for block in reversed(content):
-                            if isinstance(block, dict):
-                                block["cache_control"] = cache_control
-                                break
-                        break
-                    elif isinstance(content, str):
-                        fmt_msg["content"] = [
-                            {
-                                "type": "text",
-                                "text": content,
-                                "cache_control": cache_control,
-                            }
-                        ]
-                        break
+            _apply_cache_control_to_messages(
+                kwargs.pop("cache_control", None), formatted_messages
+            )
         elif provider in ("openai", "qwen"):
             formatted_messages = cast(
                 List[Dict[str, Any]],
@@ -1116,25 +1126,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 citations_enabled = _citations_enabled(formatted_messages)
 
                 # Apply cache_control to last message if provided via kwargs
-                cache_control = params.pop("cache_control", None)
-                if cache_control and formatted_messages:
-                    for fmt_msg in reversed(formatted_messages):
-                        content = fmt_msg.get("content")
-                        if isinstance(content, list) and content:
-                            for block in reversed(content):
-                                if isinstance(block, dict):
-                                    block["cache_control"] = cache_control
-                                    break
-                            break
-                        elif isinstance(content, str):
-                            fmt_msg["content"] = [
-                                {
-                                    "type": "text",
-                                    "text": content,
-                                    "cache_control": cache_control,
-                                }
-                            ]
-                            break
+                _apply_cache_control_to_messages(
+                    params.pop("cache_control", None), formatted_messages
+                )
 
             elif provider in ("openai", "qwen"):
                 formatted_messages = cast(
