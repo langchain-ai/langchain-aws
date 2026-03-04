@@ -4,11 +4,8 @@ from unittest.mock import MagicMock
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from langchain_aws import ChatBedrock, ChatBedrockConverse
-from langchain_aws.middleware.prompt_caching import (
-    BedrockConversePromptCachingMiddleware,
-    BedrockPromptCachingMiddleware,
-)
+from langchain_aws import ChatBedrock
+from langchain_aws.middleware.prompt_caching import BedrockPromptCachingMiddleware
 
 # BedrockPromptCachingMiddleware tests
 
@@ -147,71 +144,3 @@ def test_bedrock_custom_ttl() -> None:
 
     call_kwargs = request.override.call_args[1]
     assert call_kwargs["model_settings"]["cache_control"]["ttl"] == "1h"
-
-
-# BedrockConversePromptCachingMiddleware tests
-
-
-def test_converse_applies_cache_point_to_string() -> None:
-    middleware = BedrockConversePromptCachingMiddleware()
-
-    request = MagicMock()
-    request.model = MagicMock(spec=ChatBedrockConverse)
-    request.model.model = "anthropic.claude-3-haiku-20240307-v1:0"
-    request.system_prompt = "You are helpful."
-    request.messages = []
-
-    middleware._apply_cache_point(request)
-
-    # Should call override with SystemMessage containing cache point
-    request.override.assert_called_once()
-    call_kwargs = request.override.call_args[1]
-    system_msg = call_kwargs["system_message"]
-    assert isinstance(system_msg.content, list)
-    assert system_msg.content[0] == {"type": "text", "text": "You are helpful."}
-    assert system_msg.content[1] == {"cachePoint": {"type": "default"}}
-
-
-def test_converse_preserves_existing_cache_point() -> None:
-    middleware = BedrockConversePromptCachingMiddleware()
-
-    request = MagicMock()
-    request.model = MagicMock(spec=ChatBedrockConverse)
-    request.model.model = "anthropic.claude-3-haiku-20240307-v1:0"
-    request.system_prompt = [
-        {"text": "Block 1."},
-        {"cachePoint": {"type": "default"}},
-    ]
-    request.messages = []
-
-    middleware._apply_cache_point(request)
-
-    # Should not call override when cache point already exists
-    request.override.assert_not_called()
-
-
-def test_converse_skips_non_chatbedrockconverse() -> None:
-    middleware = BedrockConversePromptCachingMiddleware(
-        unsupported_model_behavior="ignore"
-    )
-
-    request = MagicMock()
-    request.model = MagicMock()
-    request.system_prompt = "You are helpful."
-    request.messages = []
-
-    assert middleware._should_apply_caching(request) is False
-
-
-def test_converse_skips_non_anthropic() -> None:
-    middleware = BedrockConversePromptCachingMiddleware(
-        unsupported_model_behavior="ignore"
-    )
-
-    request = MagicMock()
-    request.model = MagicMock(spec=ChatBedrockConverse)
-    request.model.model = "amazon.titan-text-express-v1"
-    request.system_prompt = "You are helpful."
-    request.messages = []
-
-    assert middleware._should_apply_caching(request) is False

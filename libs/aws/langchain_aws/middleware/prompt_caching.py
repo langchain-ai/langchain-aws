@@ -2,17 +2,14 @@
 
 Requires:
     - langchain: For agent middleware framework
-    - langchain-aws: For ChatBedrock/ChatBedrockConverse models (already a dependency)
+    - langchain-aws: For ChatBedrock model (already a dependency)
 """
 
 from collections.abc import Awaitable, Callable
-from typing import Any, Literal, Union
+from typing import Literal
 from warnings import warn
 
-from langchain_core.messages import SystemMessage
-
 from langchain_aws.chat_models.bedrock import ChatBedrock
-from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 
 try:
     from langchain.agents.middleware.types import (
@@ -30,7 +27,7 @@ except ImportError as e:
     raise ImportError(msg) from e
 
 
-def _is_anthropic_model(model: Union[ChatBedrock, ChatBedrockConverse]) -> bool:
+def _is_anthropic_model(model: ChatBedrock) -> bool:
     """Check if the model is an Anthropic model on Bedrock."""
     model_id = getattr(model, "model_id", "") or getattr(model, "model", "")
     return "anthropic" in model_id.lower()
@@ -82,7 +79,7 @@ class BedrockPromptCachingMiddleware(AgentMiddleware):
             msg = (
                 f"BedrockPromptCachingMiddleware only supports ChatBedrock, "
                 f"not {type(request.model).__name__}. "
-                f"For ChatBedrockConverse, use BedrockConversePromptCachingMiddleware."
+                f"Converse API prompt caching support is planned for a future release."
             )
             if self.unsupported_model_behavior == "raise":
                 raise ValueError(msg)
@@ -142,109 +139,4 @@ class BedrockPromptCachingMiddleware(AgentMiddleware):
                 "cache_control": self._get_cache_control_settings(),
             }
             return await handler(request.override(model_settings=new_model_settings))
-        return await handler(request)
-
-
-class BedrockConversePromptCachingMiddleware(AgentMiddleware):
-    """Prompt Caching Middleware for ChatBedrockConverse (Converse API).
-
-    Optimizes API usage by caching conversation prefixes for Anthropic models
-    on AWS Bedrock via the Converse API.
-
-    Requires both 'langchain' and 'langchain-aws' packages to be installed.
-
-    Learn more about AWS Bedrock prompt caching
-    [here](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html).
-    """
-
-    def __init__(
-        self,
-        min_messages_to_cache: int = 0,
-        unsupported_model_behavior: Literal["ignore", "warn", "raise"] = "warn",
-    ) -> None:
-        """Initialize the middleware with cache settings.
-
-        Args:
-            min_messages_to_cache: The minimum number of messages until the
-                cache is used, default is 0.
-            unsupported_model_behavior: The behavior to take when an
-                unsupported model is used. "ignore" will ignore the unsupported
-                model and continue without caching. "warn" will warn the user
-                and continue without caching. "raise" will raise an error and
-                stop the agent.
-        """
-        self.min_messages_to_cache = min_messages_to_cache
-        self.unsupported_model_behavior = unsupported_model_behavior
-
-    def _should_apply_caching(self, request: ModelRequest) -> bool:
-        """Check if caching should be applied to the request."""
-        if not isinstance(request.model, ChatBedrockConverse):
-            msg = (
-                "BedrockConversePromptCachingMiddleware only supports "
-                f"ChatBedrockConverse, not {type(request.model).__name__}. "
-                "For ChatBedrock, use BedrockPromptCachingMiddleware."
-            )
-            if self.unsupported_model_behavior == "raise":
-                raise ValueError(msg)
-            if self.unsupported_model_behavior == "warn":
-                warn(msg, stacklevel=3)
-            return False
-
-        if not _is_anthropic_model(request.model):
-            model_id = getattr(request.model, "model", "unknown")
-            msg = f"Prompt caching only supported for Anthropic models: {model_id}"
-            if self.unsupported_model_behavior == "raise":
-                raise ValueError(msg)
-            if self.unsupported_model_behavior == "warn":
-                warn(msg, stacklevel=3)
-            return False
-
-        messages_count = (
-            len(request.messages) + 1
-            if request.system_prompt
-            else len(request.messages)
-        )
-        return messages_count >= self.min_messages_to_cache
-
-    def _apply_cache_point(self, request: ModelRequest) -> ModelRequest:
-        """Apply cachePoint to the system prompt via immutable override."""
-        cache_point = {"cachePoint": {"type": "default"}}
-
-        if isinstance(request.system_prompt, str) and request.system_prompt.strip():
-            new_content: list[str | dict[str, Any]] = [
-                {"type": "text", "text": request.system_prompt},
-                cache_point,
-            ]
-            return request.override(system_message=SystemMessage(content=new_content))
-        elif isinstance(request.system_prompt, list):
-            has_cache_point = any(
-                isinstance(item, dict) and "cachePoint" in item
-                for item in request.system_prompt
-            )
-            if not has_cache_point:
-                extended: list[str | dict[str, Any]] = [
-                    *request.system_prompt,
-                    cache_point,
-                ]
-                return request.override(system_message=SystemMessage(content=extended))
-        return request
-
-    def wrap_model_call(
-        self,
-        request: ModelRequest,
-        handler: Callable[[ModelRequest], ModelResponse],
-    ) -> ModelCallResult:
-        """Wrap the model call to add cache point."""
-        if self._should_apply_caching(request):
-            request = self._apply_cache_point(request)
-        return handler(request)
-
-    async def awrap_model_call(
-        self,
-        request: ModelRequest,
-        handler: Callable[[ModelRequest], Awaitable[ModelResponse]],
-    ) -> ModelCallResult:
-        """Wrap the model call to add cache point (async version)."""
-        if self._should_apply_caching(request):
-            request = self._apply_cache_point(request)
         return await handler(request)
