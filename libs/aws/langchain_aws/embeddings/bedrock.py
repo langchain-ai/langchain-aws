@@ -767,12 +767,12 @@ def _batch_cohere_embedding_texts(
 ) -> Generator[List[str], None, None]:
     """Batches a set of texts into chunks acceptable for the Cohere embedding API.
 
-    For Cohere Embed v3: Chunks of at most 96 items, or 2048 characters.
-    For Cohere Embed v4: Chunks of at most 96 items, or ~512,000 characters
-    (approx 128K tokens).
+    Cohere allows up to 96 texts per request. Each individual text can be up to:
+    - Embed v3: 2048 characters
+    - Embed v4: ~128K tokens (~512,000 characters)
 
+    The character limit applies per-text, not as a cumulative batch total.
     """
-
     max_items = 96
     if is_v4:
         # Cohere Embed v4 supports up to 128K tokens per input
@@ -792,27 +792,9 @@ def _batch_cohere_embedding_texts(
             "2048 characters."
         )
 
-    # Initialize batches
-    current_batch: List[str] = []
-    current_chars = 0
+    # Validate all text lengths before yielding any batches
+    if any(len(text) > max_chars for text in texts):
+        raise ValueError(char_limit_msg)
 
-    for text in texts:
-        text_len = len(text)
-
-        if text_len > max_chars:
-            raise ValueError(char_limit_msg)
-
-        # Check if adding the current string would exceed the limits
-        if len(current_batch) >= max_items or current_chars + text_len > max_chars:
-            # Process the current batch if limits are exceeded
-            yield current_batch
-            # Start a new batch
-            current_batch = []
-            current_chars = 0
-
-        # Otherwise, add the string to the current batch
-        current_batch.append(text)
-        current_chars += text_len
-
-    if current_batch:
-        yield current_batch
+    for i in range(0, len(texts), max_items):
+        yield texts[i : i + max_items]
