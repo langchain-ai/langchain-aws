@@ -814,14 +814,7 @@ def _apply_cache_control_to_messages(
 
 
 class ChatBedrock(BaseChatModel, BedrockBase):
-    """A chat model that uses the Bedrock API.
-
-    Note:
-        When using ChatBedrock with Anthropic models via the legacy
-        ``InvokeModel`` path (``beta_use_converse_api=False``), if ``max_tokens``
-        is not explicitly provided, LangChain injects ``max_tokens=1024`` into
-        the request body.
-    """
+    """A chat model that uses the Bedrock API."""
 
     system_prompt_with_tools: str = ""
     beta_use_converse_api: bool = False
