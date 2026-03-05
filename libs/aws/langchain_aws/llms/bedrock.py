@@ -855,6 +855,11 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
+    """
+    Maximum number of tokens to generate.
+
+    When using Anthropic models with InvokeModel API, if not set, defaults to 1024.
+    """
 
     service_tier: Optional[Literal["priority", "default", "flex", "reserved"]] = None
     """Service tier for model invocation.
