@@ -397,6 +397,112 @@ def test_tool_use_with_cache_point() -> None:
         assert cache_read_input_tokens + cache_write_input_tokens != 0
 
 
+_LONG_SYSTEM_PROMPT = (
+    "You are a helpful assistant that answers concisely. "
+    "You have deep expertise in geography, climate science, demographics, "
+    "urban planning, and world history. When answering questions about cities, "
+    "provide accurate and up-to-date information. "
+    + "You should always strive to give the most helpful response possible. "
+    * 85
+)
+
+
+@tool
+def _get_weather(city: str) -> str:
+    """Simple tool for cache tests"""
+    return f"The weather in {city} is sunny and 72F."
+
+
+def test_cache_control_anthropic() -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        system=[_LONG_SYSTEM_PROMPT],
+    )
+    r1 = llm.invoke(
+        [HumanMessage(content="What is the capital of France?")],
+        cache_control={"type": "ephemeral", "ttl": "5m"},
+    )
+    assert isinstance(r1, AIMessage)
+    assert r1.usage_metadata is not None
+    details = r1.usage_metadata.get("input_token_details", {})
+    cache_read = details.get("cache_read", 0) or 0
+    cache_write = details.get("cache_creation", 0) or 0
+    assert cache_read > 0 or cache_write > 0, (
+        f"Expected cache activity, got read={cache_read} write={cache_write}"
+    )
+
+
+def test_cache_control_anthropic_multi_turn() -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        system=[_LONG_SYSTEM_PROMPT],
+    )
+    llm_with_tools = llm.bind_tools([_get_weather], tool_choice="any")
+    cache_control = {"type": "ephemeral", "ttl": "5m"}
+
+    messages: list = [HumanMessage(content="What is the weather in Seattle?")]
+    r1 = llm_with_tools.invoke(messages, cache_control=cache_control)
+    assert isinstance(r1, AIMessage)
+    assert len(r1.tool_calls) >= 1
+
+    messages.append(r1)
+    for tc in r1.tool_calls:
+        result = _get_weather.invoke(tc)
+        messages.append(result)
+
+    llm_turn2 = llm.bind_tools([_get_weather])
+    r2 = llm_turn2.invoke(messages, cache_control=cache_control)
+    assert isinstance(r2, AIMessage)
+    assert r2.content
+    assert r2.usage_metadata is not None
+    details = r2.usage_metadata.get("input_token_details", {})
+    cache_read = details.get("cache_read", 0) or 0
+    assert cache_read > 0, f"Expected cache read on turn 2, got {cache_read}"
+
+
+def test_cache_control_nova() -> None:
+    llm = ChatBedrockConverse(
+        model="us.amazon.nova-2-lite-v1:0",
+        system=[_LONG_SYSTEM_PROMPT],
+    )
+    r1 = llm.invoke(
+        [HumanMessage(content="What is the capital of France?")],
+        cache_control={"type": "ephemeral", "ttl": "5m"},
+    )
+    assert isinstance(r1, AIMessage)
+    assert r1.usage_metadata is not None
+    details = r1.usage_metadata.get("input_token_details", {})
+    cache_read = details.get("cache_read", 0) or 0
+    cache_write = details.get("cache_creation", 0) or 0
+    assert cache_read > 0 or cache_write > 0, (
+        f"Expected cache activity, got read={cache_read} write={cache_write}"
+    )
+
+
+def test_cache_control_nova_multi_turn_with_tools() -> None:
+    llm = ChatBedrockConverse(
+        model="us.amazon.nova-2-lite-v1:0",
+        system=[_LONG_SYSTEM_PROMPT],
+    )
+    llm_with_tools = llm.bind_tools([_get_weather], tool_choice="any")
+    cache_control = {"type": "ephemeral", "ttl": "5m"}
+
+    messages: list = [HumanMessage(content="What is the weather in Seattle?")]
+    r1 = llm_with_tools.invoke(messages, cache_control=cache_control)
+    assert isinstance(r1, AIMessage)
+    assert len(r1.tool_calls) >= 1
+
+    messages.append(r1)
+    for tc in r1.tool_calls:
+        result = _get_weather.invoke(tc)
+        messages.append(result)
+
+    llm_turn2 = llm.bind_tools([_get_weather])
+    r2 = llm_turn2.invoke(messages, cache_control=cache_control)
+    assert isinstance(r2, AIMessage)
+    assert r2.content
+
+
 @pytest.mark.skip(reason="Needs guardrails setup to run.")
 def test_guardrails() -> None:
     params = {
