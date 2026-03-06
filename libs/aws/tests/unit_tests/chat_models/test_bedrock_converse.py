@@ -4258,3 +4258,423 @@ def test_set_additional_properties_false_deeply_nested() -> None:
         schema["$defs"]["Address"]["properties"]["coords"]["additionalProperties"]
         is False
     )
+
+
+def test_apply_cache_points_system_and_messages() -> None:
+    system = [{"text": "You are helpful."}]
+    messages = [
+        {"role": "user", "content": [{"text": "Hello"}]},
+        {"role": "assistant", "content": [{"text": "Hi"}]},
+        {"role": "user", "content": [{"text": "How are you?"}]},
+    ]
+    ChatBedrockConverse._apply_cache_points(
+        {"type": "ephemeral", "ttl": "5m"}, system, messages
+    )
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+    assert messages[0]["content"] == [{"text": "Hello"}]
+    assert messages[1]["content"] == [{"text": "Hi"}]
+
+
+def test_apply_cache_points_no_system() -> None:
+    system: list = []
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    ChatBedrockConverse._apply_cache_points({"ttl": "5m"}, system, messages)
+    assert len(system) == 0
+    assert messages[0]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_no_ttl() -> None:
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    ChatBedrockConverse._apply_cache_points({"type": "ephemeral"}, system, messages)
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert messages[0]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_extended_ttl() -> None:
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    ChatBedrockConverse._apply_cache_points(
+        {"type": "ephemeral", "ttl": "1h"}, system, messages
+    )
+    assert system[-1] == {"cachePoint": {"type": "default", "ttl": "1h"}}
+    assert messages[0]["content"][-1] == {
+        "cachePoint": {"type": "default", "ttl": "1h"}
+    }
+
+
+def test_apply_cache_points_default_ttl_omitted() -> None:
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    ChatBedrockConverse._apply_cache_points(
+        {"type": "ephemeral", "ttl": "5m"}, system, messages
+    )
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert "ttl" not in system[-1]["cachePoint"]
+
+
+def test_apply_cache_points_none_cache_control() -> None:
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    ChatBedrockConverse._apply_cache_points(None, system, messages)
+    assert len(system) == 1
+    assert len(messages[0]["content"]) == 1
+
+
+def test_apply_cache_points_empty_messages() -> None:
+    system = [{"text": "System"}]
+    messages: list = []
+    ChatBedrockConverse._apply_cache_points({"ttl": "5m"}, system, messages)
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert len(messages) == 0
+
+
+def test_apply_cache_points_with_tools() -> None:
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    params = {
+        "toolConfig": {
+            "tools": [
+                {
+                    "toolSpec": {
+                        "name": "get_weather",
+                        "description": "Get weather",
+                        "inputSchema": {"json": {"type": "object", "properties": {}}},
+                    }
+                }
+            ]
+        }
+    }
+    ChatBedrockConverse._apply_cache_points(
+        {"type": "ephemeral", "ttl": "5m"}, system, messages, params
+    )
+    tools = params["toolConfig"]["tools"]
+    assert len(tools) == 2
+    assert tools[-1] == {"cachePoint": {"type": "default"}}
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_tools_with_extended_ttl() -> None:
+    params = {
+        "toolConfig": {
+            "tools": [
+                {"toolSpec": {"name": "t", "description": "d", "inputSchema": {}}}
+            ]
+        }
+    }
+    ChatBedrockConverse._apply_cache_points(
+        {"type": "ephemeral", "ttl": "1h"}, [], [], params
+    )
+    assert params["toolConfig"]["tools"][-1] == {
+        "cachePoint": {"type": "default", "ttl": "1h"}
+    }
+
+
+def test_apply_cache_points_no_tools() -> None:
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    params: dict = {}
+    ChatBedrockConverse._apply_cache_points(
+        {"type": "ephemeral", "ttl": "5m"}, system, messages, params
+    )
+    assert "toolConfig" not in params
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_no_params() -> None:
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    ChatBedrockConverse._apply_cache_points(
+        {"type": "ephemeral", "ttl": "5m"}, system, messages
+    )
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_skips_existing_tool_cache_point() -> None:
+    params = {
+        "toolConfig": {
+            "tools": [
+                {"toolSpec": {"name": "t", "description": "d", "inputSchema": {}}},
+                {"cachePoint": {"type": "default"}},
+            ]
+        }
+    }
+    ChatBedrockConverse._apply_cache_points(
+        {"type": "ephemeral", "ttl": "5m"}, [], [], params
+    )
+    tool_config = cast(dict[str, Any], params["toolConfig"])
+    tools = cast(list[dict[str, Any]], tool_config["tools"])
+    cache_points = [t for t in tools if "cachePoint" in t]
+    assert len(cache_points) == 1
+
+
+def test_apply_cache_points_skips_existing_system_cache_point() -> None:
+    system: list[dict[str, Any]] = [
+        {"text": "You are helpful."},
+        {"cachePoint": {"type": "default"}},
+    ]
+    messages: list[dict[str, Any]] = [{"role": "user", "content": [{"text": "Hi"}]}]
+    ChatBedrockConverse._apply_cache_points(
+        {"type": "ephemeral", "ttl": "5m"}, system, messages
+    )
+    system_cps = [b for b in system if "cachePoint" in b]
+    assert len(system_cps) == 1, (
+        f"Expected 1 cachePoint in system, got {len(system_cps)}"
+    )
+    last_content: list[dict[str, Any]] = messages[0]["content"]
+    msg_cps = [b for b in last_content if "cachePoint" in b]
+    assert len(msg_cps) == 1
+
+
+def test_apply_cache_points_skips_existing_message_cache_point() -> None:
+    system: list[dict[str, Any]] = [{"text": "You are helpful."}]
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "user",
+            "content": [
+                {"text": "Hi"},
+                {"cachePoint": {"type": "default"}},
+            ],
+        }
+    ]
+    ChatBedrockConverse._apply_cache_points(
+        {"type": "ephemeral", "ttl": "5m"}, system, messages
+    )
+    last_content: list[dict[str, Any]] = messages[0]["content"]
+    msg_cps = [b for b in last_content if "cachePoint" in b]
+    assert len(msg_cps) == 1, f"Expected 1 cachePoint in message, got {len(msg_cps)}"
+    system_cps = [b for b in system if "cachePoint" in b]
+    assert len(system_cps) == 1
+
+
+def test_generate_with_cache_control() -> None:
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        system=["You are helpful."],
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    llm.invoke(messages, cache_control={"type": "ephemeral", "ttl": "5m"})
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert call_kwargs["system"][-1] == {"cachePoint": {"type": "default"}}
+    last_msg_content = call_kwargs["messages"][-1]["content"]
+    assert last_msg_content[-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_stream_with_cache_control() -> None:
+    mocked_client = mock.MagicMock()
+    mocked_client.converse_stream.return_value = {
+        "stream": [
+            {"messageStart": {"role": "assistant"}},
+            {"contentBlockDelta": {"delta": {"text": "Hi"}, "contentBlockIndex": 0}},
+            {"messageStop": {"stopReason": "end_turn"}},
+            {
+                "metadata": {
+                    "usage": {
+                        "inputTokens": 10,
+                        "outputTokens": 5,
+                        "totalTokens": 15,
+                    }
+                }
+            },
+        ]
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        system=["You are helpful."],
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    list(llm.stream(messages, cache_control={"type": "ephemeral", "ttl": "5m"}))
+
+    call_kwargs = mocked_client.converse_stream.call_args[1]
+    assert call_kwargs["system"][-1] == {"cachePoint": {"type": "default"}}
+    last_msg_content = call_kwargs["messages"][-1]["content"]
+    assert last_msg_content[-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_generate_with_cache_control_extended_ttl() -> None:
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        system=["You are helpful."],
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    llm.invoke(messages, cache_control={"type": "ephemeral", "ttl": "1h"})
+
+    expected_cp = {"cachePoint": {"type": "default", "ttl": "1h"}}
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert call_kwargs["system"][-1] == expected_cp
+    last_msg_content = call_kwargs["messages"][-1]["content"]
+    assert last_msg_content[-1] == expected_cp
+
+
+def test_generate_with_cache_control_and_tools() -> None:
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "The weather is sunny."}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    tool_def = {
+        "name": "get_weather",
+        "description": "Get weather for a city",
+        "input_schema": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        system=["You are helpful."],
+    )
+    llm_with_tools = llm.bind_tools([tool_def])
+
+    messages = [HumanMessage(content="What's the weather?")]
+    llm_with_tools.invoke(messages, cache_control={"type": "ephemeral", "ttl": "5m"})
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert call_kwargs["system"][-1] == {"cachePoint": {"type": "default"}}
+    last_msg_content = call_kwargs["messages"][-1]["content"]
+    assert last_msg_content[-1] == {"cachePoint": {"type": "default"}}
+    tools = call_kwargs["toolConfig"]["tools"]
+    assert tools[-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_generate_with_cache_control_nova_skips_tools() -> None:
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "The weather is sunny."}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    tool_def = {
+        "name": "get_weather",
+        "description": "Get weather for a city",
+        "input_schema": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+        system=["You are helpful."],
+    )
+    llm_with_tools = llm.bind_tools([tool_def])
+
+    messages = [HumanMessage(content="What's the weather?")]
+    llm_with_tools.invoke(messages, cache_control={"type": "ephemeral", "ttl": "5m"})
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert call_kwargs["system"][-1] == {"cachePoint": {"type": "default"}}
+    last_msg_content = call_kwargs["messages"][-1]["content"]
+    assert last_msg_content[-1] == {"cachePoint": {"type": "default"}}
+    tools = call_kwargs["toolConfig"]["tools"]
+    assert not any("cachePoint" in t for t in tools)
+
+
+def test_generate_with_cache_control_nova_skips_tool_result_messages() -> None:
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "The weather is sunny."}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    tool_def = {
+        "name": "get_weather",
+        "description": "Get weather for a city",
+        "input_schema": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+        system=["You are helpful."],
+    )
+    llm_with_tools = llm.bind_tools([tool_def])
+
+    messages = [
+        HumanMessage(content="What's the weather?"),
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "get_weather",
+                    "args": {"city": "Seattle"},
+                    "id": "call_123",
+                }
+            ],
+        ),
+        ToolMessage(content="Sunny, 72F", tool_call_id="call_123"),
+    ]
+    llm_with_tools.invoke(messages, cache_control={"type": "ephemeral", "ttl": "5m"})
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert call_kwargs["system"][-1] == {"cachePoint": {"type": "default"}}
+    last_msg_content = call_kwargs["messages"][-1]["content"]
+    assert not any(
+        "cachePoint" in b for b in last_msg_content if isinstance(b, dict)
+    ), "cachePoint should not appear in toolResult messages for Nova"
+    tools = call_kwargs["toolConfig"]["tools"]
+    assert not any("cachePoint" in t for t in tools)
+
+
+def test_generate_without_cache_control() -> None:
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        system=["You are helpful."],
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    llm.invoke(messages)
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    for item in call_kwargs["system"]:
+        assert "cachePoint" not in item
+    for msg in call_kwargs["messages"]:
+        for block in msg["content"]:
+            assert "cachePoint" not in block
