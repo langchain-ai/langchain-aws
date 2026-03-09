@@ -400,7 +400,5 @@ class ValkeyVectorStore(VectorStore):
         if ids is None:
             return False
 
-        for doc_id in ids:
-            self.client.delete([doc_id])  # type: ignore[list-item, attr-defined]
-
+        self.client.delete(ids)  # type: ignore[attr-defined]
         return True
