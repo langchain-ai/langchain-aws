@@ -146,6 +146,68 @@ class ValkeyVectorStore(VectorStore):
         """Access the query embedding object if available."""
         return self._embeddings
 
+    def _create_index_if_not_exist(self, dim: int) -> None:
+        """Create index if it doesn't exist.
+
+        Args:
+            dim: Vector dimension.
+        """
+        if check_index_exists(self.client, self.index_name):
+            return
+
+        from glide_sync import ft
+        from glide_shared.commands.server_modules.ft_options.ft_create_options import (
+            DistanceMetricType,
+            FtCreateOptions,
+            VectorAlgorithm,
+            VectorField,
+            VectorFieldAttributesFlat,
+            VectorFieldAttributesHnsw,
+            VectorType,
+        )
+
+        # Update vector schema with actual dimension
+        vector_schema = self.vector_schema.copy()
+        vector_schema["dims"] = dim
+
+        # Build field definitions
+        fields = []
+
+        # Add vector field
+        vector_field_name = vector_schema.get("name", "content_vector")
+        algorithm_str = vector_schema.get("algorithm", "FLAT").upper()
+        distance_metric_str = vector_schema.get("distance_metric", "COSINE").upper()
+
+        # Map to GLIDE enums
+        distance_metric = getattr(DistanceMetricType, distance_metric_str)
+        algorithm = getattr(VectorAlgorithm, algorithm_str)
+
+        if algorithm == VectorAlgorithm.HNSW:
+            vector_attrs = VectorFieldAttributesHnsw(
+                dimensions=dim,
+                distance_metric=distance_metric,
+                type=VectorType.FLOAT32,
+            )
+        else:  # FLAT
+            vector_attrs = VectorFieldAttributesFlat(
+                dimensions=dim,
+                distance_metric=distance_metric,
+                type=VectorType.FLOAT32,
+            )
+
+        fields.append(
+            VectorField(
+                name=vector_field_name,
+                algorithm=algorithm,
+                attributes=vector_attrs,
+                alias=vector_field_name,
+            )
+        )
+
+        # Create index
+        options = FtCreateOptions(prefixes=[self.key_prefix])
+        ft.create(self.client, self.index_name, fields, options=options)
+
     def add_texts(
         self,
         texts: Iterable[str],
@@ -169,6 +231,10 @@ class ValkeyVectorStore(VectorStore):
         texts_list = list(texts)
         if embeddings is None:
             embeddings = self._embeddings.embed_documents(texts_list)
+
+        # Create index if it doesn't exist
+        if embeddings:
+            self._create_index_if_not_exist(len(embeddings[0]))
 
         if keys is None:
             keys = [f"{self.key_prefix}:{uuid.uuid4().hex}" for _ in texts_list]
