@@ -106,6 +106,7 @@ class ValkeyVectorStore(VectorStore):
         vector_schema: Optional[Dict[str, Union[str, int]]] = None,
         relevance_score_fn: Optional[Callable[[float], float]] = None,
         key_prefix: Optional[str] = None,
+        cluster_mode: Optional[bool] = None,
         **kwargs: Any,
     ):
         """Initialize Valkey vector store.
@@ -117,6 +118,9 @@ class ValkeyVectorStore(VectorStore):
             vector_schema: Vector schema configuration.
             relevance_score_fn: Function to compute relevance score.
             key_prefix: Prefix for document keys.
+            cluster_mode: If True, create cluster client. If False, create standalone
+                client. If None (default), try cluster first and fall back to
+                standalone.
             **kwargs: Additional arguments to pass to GLIDE client.
 
         Raises:
@@ -126,7 +130,9 @@ class ValkeyVectorStore(VectorStore):
         self.index_name = index_name
         self._embeddings = embedding
         try:
-            valkey_client = get_client(valkey_url=valkey_url, **kwargs)
+            valkey_client = get_client(
+                valkey_url=valkey_url, cluster_mode=cluster_mode, **kwargs
+            )
         except ValueError as e:
             raise ValueError(f"Valkey failed to connect: {e}")
 

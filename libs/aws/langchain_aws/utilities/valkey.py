@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, TypeAlias, Union
+from typing import TYPE_CHECKING, Any, TypeAlias, Union, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -11,11 +11,15 @@ if TYPE_CHECKING:
 GlideClientType: TypeAlias = Union["GlideClient", "GlideClusterClient"]
 
 
-def get_client(valkey_url: str, **kwargs: Any) -> GlideClientType:
+def get_client(
+    valkey_url: str, cluster_mode: Optional[bool] = None, **kwargs: Any
+) -> GlideClientType:
     """Get a GLIDE client from the connection url.
 
     Args:
         valkey_url: Connection URL for Valkey server.
+        cluster_mode: If True, create cluster client. If False, create standalone
+            client. If None (default), try cluster first and fall back to standalone.
         **kwargs: Additional arguments to pass to GLIDE client.
 
     Returns:
@@ -64,14 +68,26 @@ def get_client(valkey_url: str, **kwargs: Any) -> GlideClientType:
     if username and password and "credentials" not in kwargs:
         kwargs["credentials"] = ServerCredentials(password, username)
 
-    # Try cluster first, fall back to standalone
-    try:
+    # Create client based on cluster_mode
+    if cluster_mode is True:
+        # User explicitly wants cluster mode
         cluster_config = GlideClusterClientConfiguration(addresses=addresses, **kwargs)
         return GlideClusterClient.create(cluster_config)
-    except GlideError as e:
-        logger.debug(f"Cluster connection failed, falling back to standalone: {e}")
+    elif cluster_mode is False:
+        # User explicitly wants standalone mode
         standalone_config = GlideClientConfiguration(addresses=addresses, **kwargs)
         return GlideClient.create(standalone_config)
+    else:
+        # Auto-detect: try cluster first, fall back to standalone
+        try:
+            cluster_config = GlideClusterClientConfiguration(
+                addresses=addresses, **kwargs
+            )
+            return GlideClusterClient.create(cluster_config)
+        except GlideError as e:
+            logger.debug(f"Cluster connection failed, falling back to standalone: {e}")
+            standalone_config = GlideClientConfiguration(addresses=addresses, **kwargs)
+            return GlideClient.create(standalone_config)
 
 
 def _parse_valkey_url(url: str) -> tuple[str, int, bool, str | None, str | None]:
