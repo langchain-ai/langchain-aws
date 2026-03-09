@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-pytest.importorskip("valkey")
+pytest.importorskip("glide_sync")
 
 from unittest.mock import MagicMock, patch
 
