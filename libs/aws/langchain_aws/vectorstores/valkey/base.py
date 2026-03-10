@@ -155,7 +155,6 @@ class ValkeyVectorStore(VectorStore):
         if check_index_exists(self.client, self.index_name):
             return
 
-        from glide_sync import ft
         from glide_shared.commands.server_modules.ft_options.ft_create_options import (
             DistanceMetricType,
             FtCreateOptions,
@@ -165,6 +164,7 @@ class ValkeyVectorStore(VectorStore):
             VectorFieldAttributesHnsw,
             VectorType,
         )
+        from glide_sync import ft
 
         # Update vector schema with actual dimension
         vector_schema = self.vector_schema.copy()

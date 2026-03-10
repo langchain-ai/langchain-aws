@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, TypeAlias, Union, Optional
+from typing import TYPE_CHECKING, Any, Optional, TypeAlias, Union
 
 logger = logging.getLogger(__name__)
 
