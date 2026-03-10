@@ -787,6 +787,32 @@ _message_type_lookups = {
 }
 
 
+def _apply_cache_control_to_messages(
+    cache_control: Optional[Dict[str, Any]],
+    formatted_messages: Optional[List[Dict[str, Any]]],
+) -> None:
+    """Apply cache_control to the last content block of the last message."""
+    if not cache_control or not formatted_messages:
+        return
+    for fmt_msg in reversed(formatted_messages):
+        content = fmt_msg.get("content")
+        if isinstance(content, list) and content:
+            for block in reversed(content):
+                if isinstance(block, dict):
+                    block["cache_control"] = cache_control
+                    break
+            break
+        elif isinstance(content, str):
+            fmt_msg["content"] = [
+                {
+                    "type": "text",
+                    "text": content,
+                    "cache_control": cache_control,
+                }
+            ]
+            break
+
+
 class ChatBedrock(BaseChatModel, BedrockBase):
     """A chat model that uses the Bedrock API."""
 
@@ -929,34 +955,35 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             return
         provider = self._get_provider()
         prompt: Optional[str] = None
-        system: Optional[str] = None
+        system: Optional[Union[str, List[Dict[str, Any]]]] = None
         formatted_messages: Optional[List[Dict[str, Any]]] = None
 
         if provider == "anthropic":
             result = ChatPromptAdapter.format_messages(provider, messages)
+            assert isinstance(result, tuple)
             system_raw, formatted_messages = (
                 result[0],
                 cast(List[Dict[str, Any]], result[1]),
             )
-            # Convert system to string if it's a list
-            system_str: Optional[str] = None
+            # Preserve system prompt format (str or list) for cache_control support
             if system_raw:
-                if isinstance(system_raw, str):
-                    system_str = system_raw
-                elif isinstance(system_raw, list):
-                    # Convert list of dicts to string representation
-                    system_str = "\n".join(
-                        item.get("text", "") if isinstance(item, dict) else str(item)
-                        for item in system_raw
-                    )
+                system = system_raw
 
             if self.system_prompt_with_tools:
-                if system_str:
-                    system = self.system_prompt_with_tools + f"\n{system_str}"
-                else:
+                if system is None:
                     system = self.system_prompt_with_tools
-            else:
-                system = system_str
+                elif isinstance(system, str):
+                    system = f"{self.system_prompt_with_tools}\n{system}"
+                else:
+                    # Prepend tools as a content block to preserve cache_control
+                    system = [
+                        {"type": "text", "text": self.system_prompt_with_tools}
+                    ] + list(system)
+
+            # Apply cache_control to last message if provided via kwargs
+            _apply_cache_control_to_messages(
+                kwargs.pop("cache_control", None), formatted_messages
+            )
         elif provider in ("openai", "qwen"):
             formatted_messages = cast(
                 List[Dict[str, Any]],
@@ -1071,38 +1098,38 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
         else:
             prompt: Optional[str] = None
-            system: Optional[str] = None
+            system: Optional[Union[str, List[Dict[str, Any]]]] = None
             formatted_messages: Optional[List[Dict[str, Any]]] = None
             params: Dict[str, Any] = {**kwargs}
 
             if provider == "anthropic":
                 result = ChatPromptAdapter.format_messages(provider, messages)
+                assert isinstance(result, tuple)
                 system_raw, formatted_messages = (
                     result[0],
                     cast(List[Dict[str, Any]], result[1]),
                 )
-                # Convert system to string if it's a list
-                system_str: Optional[str] = None
+                # Preserve system prompt format (str or list) for cache_control support
                 if system_raw:
-                    if isinstance(system_raw, str):
-                        system_str = system_raw
-                    elif isinstance(system_raw, list):
-                        # Convert list of dicts to string representation
-                        system_str = "\n".join(
-                            item.get("text", "")
-                            if isinstance(item, dict)
-                            else str(item)
-                            for item in system_raw
-                        )
-                # use tools the new way with claude 3
+                    system = system_raw
+
                 if self.system_prompt_with_tools:
-                    if system_str:
-                        system = self.system_prompt_with_tools + f"\n{system_str}"
-                    else:
+                    if system is None:
                         system = self.system_prompt_with_tools
-                else:
-                    system = system_str
+                    elif isinstance(system, str):
+                        system = f"{self.system_prompt_with_tools}\n{system}"
+                    else:
+                        # Prepend tools as a content block to preserve cache_control
+                        system = [
+                            {"type": "text", "text": self.system_prompt_with_tools}
+                        ] + list(system)
                 citations_enabled = _citations_enabled(formatted_messages)
+
+                # Apply cache_control to last message if provided via kwargs
+                _apply_cache_control_to_messages(
+                    params.pop("cache_control", None), formatted_messages
+                )
+
             elif provider in ("openai", "qwen"):
                 formatted_messages = cast(
                     List[Dict[str, Any]],

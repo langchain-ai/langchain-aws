@@ -85,6 +85,9 @@ await code_toolkit.cleanup()
 
 For more detailed usage examples and documentation, please refer to the [LangChain docs](https://python.langchain.com/docs/integrations/platforms/aws/).
 
+> [!TIP]
+> For developing, debugging, and deploying AI agents and LLM applications, see [LangSmith](https://docs.langchain.com/langsmith/home).
+
 ### `langgraph-checkpoint-aws`
 
 You can find usage examples for `langgraph-checkpoint-aws` [in the README](https://github.com/langchain-ai/langchain-aws/blob/main/libs/langgraph-checkpoint-aws/README.md).

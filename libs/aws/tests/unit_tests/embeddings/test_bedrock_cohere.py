@@ -29,7 +29,7 @@ class TestCohereV4Fixes:
         assert embeddings._is_cohere_v4 is False
 
     def test_batch_cohere_v3_limits(self) -> None:
-        """Test that v3 batching respects 2048 character limit."""
+        """Test that v3 batching respects 2048 character limit per text."""
         # Test text under limit
         short_texts = ["hello"] * 10
         batches = list(_batch_cohere_embedding_texts(short_texts, is_v4=False))
@@ -42,8 +42,30 @@ class TestCohereV4Fixes:
             list(_batch_cohere_embedding_texts([long_text], is_v4=False))
         assert "2048 characters" in str(exc_info.value)
 
+    def test_batch_cohere_v3_max_batch_size(self) -> None:
+        """Test that v3 batching correctly handles 96 texts at max length."""
+        # 96 texts at max length (2048 chars each) should be a single batch
+        max_length_texts = ["x" * 2048] * 96
+        batches = list(_batch_cohere_embedding_texts(max_length_texts, is_v4=False))
+        assert len(batches) == 1
+        assert len(batches[0]) == 96
+
+        # 97 texts should split into two batches (96 + 1)
+        texts_97 = ["x" * 2048] * 97
+        batches = list(_batch_cohere_embedding_texts(texts_97, is_v4=False))
+        assert len(batches) == 2
+        assert len(batches[0]) == 96
+        assert len(batches[1]) == 1
+
+        # 192 texts should split into exactly two batches
+        texts_192 = ["x" * 2048] * 192
+        batches = list(_batch_cohere_embedding_texts(texts_192, is_v4=False))
+        assert len(batches) == 2
+        assert len(batches[0]) == 96
+        assert len(batches[1]) == 96
+
     def test_batch_cohere_v4_limits(self) -> None:
-        """Test that v4 batching respects higher character limit."""
+        """Test that v4 batching respects higher character limit per text."""
         # Test text that would fail on v3 but pass on v4
         medium_text = "x" * 10000  # > 2048 but << 512k
         batches = list(_batch_cohere_embedding_texts([medium_text], is_v4=True))
@@ -55,6 +77,21 @@ class TestCohereV4Fixes:
         with pytest.raises(ValueError) as exc_info:
             list(_batch_cohere_embedding_texts([huge_text], is_v4=True))
         assert "128K tokens" in str(exc_info.value)
+
+    def test_batch_cohere_v4_max_batch_size(self) -> None:
+        """Test that v4 batching correctly handles 96 texts at large lengths."""
+        # 96 texts at 10k chars each (valid for v4) should be a single batch
+        medium_text = ["x" * 10000] * 96
+        batches = list(_batch_cohere_embedding_texts(medium_text, is_v4=True))
+        assert len(batches) == 1
+        assert len(batches[0]) == 96
+
+        # 97 texts should split into two batches
+        texts_97 = ["x" * 10000] * 97
+        batches = list(_batch_cohere_embedding_texts(texts_97, is_v4=True))
+        assert len(batches) == 2
+        assert len(batches[0]) == 96
+        assert len(batches[1]) == 1
 
     @patch("langchain_aws.embeddings.bedrock.create_aws_client")
     def test_embedding_func_cohere_v3_schema(self, mock_create_client: Mock) -> None:
