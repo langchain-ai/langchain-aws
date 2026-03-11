@@ -29,6 +29,21 @@ class TestCodeInterpreterToolkit:
         assert len(tools) > 0
         assert all(isinstance(tool, BaseTool) for tool in tools)
 
+    @pytest.mark.asyncio
+    async def test_create_code_interpreter_toolkit_with_identifier(self) -> None:
+        """Test create_code_interpreter_toolkit passes code_interpreter_identifier."""
+        from langchain_aws.tools.code_interpreter_toolkit import (
+            create_code_interpreter_toolkit,
+        )
+
+        toolkit, tools = await create_code_interpreter_toolkit(
+            region="us-east-1",
+            code_interpreter_identifier="my-custom-interpreter",
+        )
+
+        assert toolkit._code_interpreter_identifier == "my-custom-interpreter"
+        assert toolkit.region == "us-east-1"
+
     def test_toolkit_initializes_with_region(self) -> None:
         """Test toolkit initializes with specified region."""
         from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
@@ -45,6 +60,18 @@ class TestCodeInterpreterToolkit:
         toolkit = CodeInterpreterToolkit()
 
         assert toolkit.region == "us-west-2"
+
+    def test_toolkit_with_code_interpreter_identifier(self) -> None:
+        """Test toolkit stores optional code_interpreter_identifier."""
+        from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
+
+        toolkit = CodeInterpreterToolkit(
+            region="us-east-1",
+            code_interpreter_identifier="my-interpreter-abc123",
+        )
+
+        assert toolkit.region == "us-east-1"
+        assert toolkit._code_interpreter_identifier == "my-interpreter-abc123"
 
     def test_get_tools_returns_list(self) -> None:
         """Test get_tools returns list of tools."""
@@ -257,8 +284,34 @@ class TestGetOrCreateInterpreter:
             mock_class.assert_called_once_with(
                 region="us-west-2", integration_source="langchain"
             )
-            mock_interpreter.start.assert_called_once()
+            mock_interpreter.start.assert_called_once_with()
             assert "thread-1" in toolkit._code_interpreters
+
+    def test_creates_interpreter_with_custom_identifier(self) -> None:
+        """Test start() called with identifier when code_interpreter_identifier set."""
+        from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
+
+        toolkit = CodeInterpreterToolkit(
+            region="us-west-2",
+            code_interpreter_identifier="custom-interpreter-id",
+        )
+
+        with patch(
+            "langchain_aws.tools.code_interpreter_toolkit.CodeInterpreter"
+        ) as mock_class:
+            mock_interpreter = MagicMock()
+            mock_interpreter.start = MagicMock()
+            mock_interpreter.session_id = "test-session"
+            mock_class.return_value = mock_interpreter
+
+            config: RunnableConfig = cast(
+                RunnableConfig, {"configurable": {"thread_id": "thread-1"}}
+            )
+            toolkit._get_or_create_interpreter(config)
+
+            mock_interpreter.start.assert_called_once_with(
+                identifier="custom-interpreter-id"
+            )
 
     def test_reuses_existing_interpreter(self) -> None:
         """Test reuses existing interpreter for same thread."""

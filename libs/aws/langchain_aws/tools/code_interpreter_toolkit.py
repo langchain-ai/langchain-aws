@@ -122,15 +122,21 @@ class CodeInterpreterToolkit:
     The toolkit lazily initializes the code interpreter session on first use.
     It supports multiple threads by maintaining separate code interpreter sessions for each thread ID.
 
-    Example:
+        Example:
         ```python
         import asyncio
         from langchain.agents import create_agent
         from langchain_aws.tools import create_code_interpreter_toolkit
 
         async def main():
-            # Create and setup the code interpreter toolkit
+            # Create and setup the code interpreter toolkit (default interpreter)
             toolkit, code_tools = await create_code_interpreter_toolkit(region="us-west-2")
+
+            # Or use a custom code interpreter (e.g. VPC-configured)
+            # toolkit, code_tools = await create_code_interpreter_toolkit(
+            #     region="us-west-2",
+            #     code_interpreter_identifier="my-interpreter-abc123",
+            # )
 
             # Create a ReAct agent using the code interpreter tools
             agent = create_agent(
@@ -162,15 +168,26 @@ class CodeInterpreterToolkit:
 
     """  # noqa: E501
 
-    def __init__(self, region: str = "us-west-2"):
+    def __init__(
+        self,
+        region: str = "us-west-2",
+        *,
+        code_interpreter_identifier: Optional[str] = None,
+    ):
         """
         Initialize the toolkit
 
         Args:
             region: AWS region for the code interpreter
+            code_interpreter_identifier: Optional identifier for the code interpreter.
+                Use the default system interpreter (e.g. ``aws.codeinterpreter.v1``)
+                when ``None``. Set to a custom interpreter ID (from
+                ``create_code_interpreter``) to use a custom interpreter, e.g. one
+                with VPC configuration.
 
         """
         self.region = region
+        self._code_interpreter_identifier = code_interpreter_identifier
         self._code_interpreters: Dict[str, CodeInterpreter] = {}
         self.tools: List[BaseTool] = []
 
@@ -220,7 +237,10 @@ class CodeInterpreterToolkit:
         code_interpreter = CodeInterpreter(
             region=self.region, integration_source="langchain"
         )
-        code_interpreter.start()
+        if self._code_interpreter_identifier is not None:
+            code_interpreter.start(identifier=self._code_interpreter_identifier)
+        else:
+            code_interpreter.start()
         logger.info(
             f"Started code interpreter with session_id:{code_interpreter.session_id} "
             f"for thread:{thread_id}"
@@ -697,11 +717,16 @@ Examples:
 
 async def create_code_interpreter_toolkit(
     region: str = "us-west-2",
+    *,
+    code_interpreter_identifier: Optional[str] = None,
 ) -> Tuple["CodeInterpreterToolkit", List[BaseTool]]:
     """Create and setup a CodeInterpreterToolkit.
 
     Args:
         region: AWS region for code interpreter
+        code_interpreter_identifier: Optional identifier for the code interpreter.
+            Use the default system interpreter when ``None``. Set to a custom
+            interpreter ID to use a custom interpreter (e.g. VPC-configured).
 
     Returns:
         Tuple of (toolkit, tools)
@@ -712,7 +737,10 @@ async def create_code_interpreter_toolkit(
         >>> agent = create_react_agent(model, tools=tools)
         >>> await toolkit.cleanup()  # When done
     """
-    toolkit = CodeInterpreterToolkit(region=region)
+    toolkit = CodeInterpreterToolkit(
+        region=region,
+        code_interpreter_identifier=code_interpreter_identifier,
+    )
     tools = await toolkit._setup()
     return toolkit, tools
 
