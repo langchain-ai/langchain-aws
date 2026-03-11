@@ -59,11 +59,11 @@ def get_client(
     # Parse URL
     host, port, use_tls, username, password = _parse_valkey_url(valkey_url)
     addresses = [NodeAddress(host, port)]
-    
+
     # Set TLS if specified in URL
     if use_tls and "use_tls" not in kwargs:
         kwargs["use_tls"] = True
-    
+
     # Set credentials if specified in URL
     if username and password and "credentials" not in kwargs:
         kwargs["credentials"] = ServerCredentials(password, username)
@@ -95,12 +95,12 @@ def _parse_valkey_url(url: str) -> tuple[str, int, bool, str | None, str | None]
     use_tls = False
     username = None
     password = None
-    
+
     # Extract protocol
     if "://" in url:
         protocol, url = url.split("://", 1)
         use_tls = protocol.endswith("ss")  # valkeyss or rediss
-    
+
     # Extract credentials if present (split from right to handle @ in password)
     if "@" in url:
         credentials, url = url.rsplit("@", 1)

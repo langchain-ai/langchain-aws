@@ -171,22 +171,26 @@ class ValkeyVectorStore(VectorStore):
         vector_schema["dims"] = dim
 
         # Build field definitions
-        fields = []
+        fields: list = []
 
         # Add vector field
-        vector_field_name = vector_schema.get("name", "content_vector")
-        algorithm_str = vector_schema.get("algorithm", "FLAT").upper()
-        distance_metric_str = vector_schema.get("distance_metric", "COSINE").upper()
+        vector_field_name = str(vector_schema.get("name", "content_vector"))
+        algorithm_str = str(vector_schema.get("algorithm", "FLAT")).upper()
+        distance_metric_str = str(
+            vector_schema.get("distance_metric", "COSINE")
+        ).upper()
 
         # Map to GLIDE enums
         distance_metric = getattr(DistanceMetricType, distance_metric_str)
         algorithm = getattr(VectorAlgorithm, algorithm_str)
 
         if algorithm == VectorAlgorithm.HNSW:
-            vector_attrs = VectorFieldAttributesHnsw(
-                dimensions=dim,
-                distance_metric=distance_metric,
-                type=VectorType.FLOAT32,
+            vector_attrs: VectorFieldAttributesFlat | VectorFieldAttributesHnsw = (
+                VectorFieldAttributesHnsw(
+                    dimensions=dim,
+                    distance_metric=distance_metric,
+                    type=VectorType.FLOAT32,
+                )
             )
         else:  # FLAT
             vector_attrs = VectorFieldAttributesFlat(
@@ -206,7 +210,7 @@ class ValkeyVectorStore(VectorStore):
 
         # Create index
         options = FtCreateOptions(prefixes=[self.key_prefix])
-        ft.create(self.client, self.index_name, fields, options=options)
+        ft.create(self.client, self.index_name, fields, options=options)  # type: ignore[arg-type]
 
     def add_texts(
         self,
@@ -472,5 +476,5 @@ class ValkeyVectorStore(VectorStore):
         if ids is None:
             return False
 
-        self.client.delete(ids)  # type: ignore[attr-defined]
+        self.client.delete(ids)  # type: ignore[arg-type,attr-defined]
         return True
