@@ -1,4 +1,5 @@
 import logging
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
@@ -172,6 +173,7 @@ class CodeInterpreterToolkit:
         """
         self.region = region
         self._code_interpreters: Dict[str, CodeInterpreter] = {}
+        self._interpreter_lock = threading.Lock()
         self.tools: List[BaseTool] = []
 
     def get_tools(self) -> List[BaseTool]:
@@ -202,6 +204,11 @@ class CodeInterpreterToolkit:
         'thread_id', otherwise it creates a session with 'default'
         thread ID.
 
+        Uses a lock so that when multiple tools are invoked concurrently
+        for the same thread_id (e.g. first AI call triggers several tools
+        at once), only one interpreter is created and stored; others
+        receive the same instance.
+
         Args:
             config: Runnable config that may contain a thread_id
 
@@ -209,26 +216,25 @@ class CodeInterpreterToolkit:
             CodeInterpreter instance for the specified thread
 
         """
-        # Extract thread ID from config if available
         thread_id = _get_thread_id(config)
 
-        if thread_id in self._code_interpreters:
-            return self._code_interpreters[thread_id]
+        with self._interpreter_lock:
+            if thread_id in self._code_interpreters:
+                return self._code_interpreters[thread_id]
 
-        # Create a new code interpreter for this thread
-        # Pass integration_source for telemetry attribution
-        code_interpreter = CodeInterpreter(
-            region=self.region, integration_source="langchain"
-        )
-        code_interpreter.start()
-        logger.info(
-            f"Started code interpreter with session_id:{code_interpreter.session_id} "
-            f"for thread:{thread_id}"
-        )
-
-        # Store the interpreter
-        self._code_interpreters[thread_id] = code_interpreter
-        return code_interpreter
+            # Create a new code interpreter for this thread
+            # Pass integration_source for telemetry attribution
+            code_interpreter = CodeInterpreter(
+                region=self.region, integration_source="langchain"
+            )
+            code_interpreter.start()
+            logger.info(
+                "Started code interpreter with session_id:%s for thread:%s",
+                code_interpreter.session_id,
+                thread_id,
+            )
+            self._code_interpreters[thread_id] = code_interpreter
+            return code_interpreter
 
     async def _setup(self) -> List[BaseTool]:
         """
@@ -668,11 +674,11 @@ Examples:
 
         """
         if thread_id:
-            # Clean up a specific thread's session
-            if thread_id in self._code_interpreters:
+            with self._interpreter_lock:
+                interpreter = self._code_interpreters.pop(thread_id, None)
+            if interpreter is not None:
                 try:
-                    self._code_interpreters[thread_id].stop()
-                    del self._code_interpreters[thread_id]
+                    interpreter.stop()
                     logger.info(
                         f"Code interpreter session for thread {thread_id} cleaned up"
                     )
@@ -681,17 +687,14 @@ Examples:
                         f"Error stopping code interpreter for thread {thread_id}: {e}"
                     )
         else:
-            # Clean up all sessions
-            thread_ids = list(self._code_interpreters.keys())
-            for tid in thread_ids:
+            with self._interpreter_lock:
+                interpreters = list(self._code_interpreters.values())
+                self._code_interpreters = {}
+            for interpreter in interpreters:
                 try:
-                    self._code_interpreters[tid].stop()
+                    interpreter.stop()
                 except Exception as e:
-                    logger.warning(
-                        f"Error stopping code interpreter for thread {tid}: {e}"
-                    )
-
-            self._code_interpreters = {}
+                    logger.warning(f"Error stopping code interpreter: {e}")
             logger.info("All code interpreter sessions cleaned up")
 
 
