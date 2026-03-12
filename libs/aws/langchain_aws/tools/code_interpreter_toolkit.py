@@ -688,13 +688,15 @@ Examples:
                     )
         else:
             with self._interpreter_lock:
-                interpreters = list(self._code_interpreters.values())
+                thread_interpreter_pairs = list(self._code_interpreters.items())
                 self._code_interpreters = {}
-            for interpreter in interpreters:
+            for tid, interpreter in thread_interpreter_pairs:
                 try:
                     interpreter.stop()
                 except Exception as e:
-                    logger.warning(f"Error stopping code interpreter: {e}")
+                    logger.warning(
+                        f"Error stopping code interpreter for thread {tid}: {e}"
+                    )
             logger.info("All code interpreter sessions cleaned up")
 
 
