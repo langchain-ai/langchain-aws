@@ -4,7 +4,6 @@ import pytest
 
 from langchain_aws.vectorstores.valkey.filters import (
     ValkeyFilter,
-    ValkeyFilterExpression,
     ValkeyFilterOperator,
     ValkeyNum,
     ValkeyTag,
