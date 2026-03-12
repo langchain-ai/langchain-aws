@@ -5,6 +5,7 @@ import pytest
 # Skip all tests in this module if optional dependencies are not installed
 pytest.importorskip("bedrock_agentcore", reason="Requires langchain-aws[tools]")
 
+import threading
 from typing import cast
 from unittest.mock import MagicMock, patch
 
@@ -328,6 +329,46 @@ class TestGetOrCreateInterpreter:
         interpreter = toolkit._get_or_create_interpreter(config)
 
         assert interpreter is mock_interpreter
+
+    def test_concurrent_get_or_create_same_thread_returns_single_interpreter(
+        self,
+    ) -> None:
+        """Concurrent calls for same thread_id create one interpreter and share it."""
+        import time
+
+        from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
+
+        results: list = []
+        config: RunnableConfig = cast(
+            RunnableConfig, {"configurable": {"thread_id": "shared-thread"}}
+        )
+
+        def get_interpreter() -> None:
+            interpreter = toolkit._get_or_create_interpreter(config)
+            results.append(interpreter)
+
+        toolkit = CodeInterpreterToolkit()
+        with patch(
+            "langchain_aws.tools.code_interpreter_toolkit.CodeInterpreter"
+        ) as mock_class:
+            mock_interpreter = MagicMock()
+            mock_interpreter.session_id = "test-session"
+
+            def slow_start() -> None:
+                time.sleep(0.05)
+
+            mock_interpreter.start = slow_start
+            mock_class.return_value = mock_interpreter
+
+            threads = [threading.Thread(target=get_interpreter) for _ in range(3)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+        assert mock_class.call_count == 1
+        assert len(results) == 3
+        assert all(r is mock_interpreter for r in results)
 
     def test_uses_default_thread_id(self) -> None:
         """Test uses 'default' thread_id when not specified."""
