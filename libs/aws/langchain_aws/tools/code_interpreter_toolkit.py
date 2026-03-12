@@ -122,7 +122,7 @@ class CodeInterpreterToolkit:
     The toolkit lazily initializes the code interpreter session on first use.
     It supports multiple threads by maintaining separate code interpreter sessions for each thread ID.
 
-        Example:
+    Example:
         ```python
         import asyncio
         from langchain.agents import create_agent
