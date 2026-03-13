@@ -904,13 +904,10 @@ class ChatBedrockConverse(BaseChatModel):
                     "claude-opus-4",
                     "claude-haiku-4",
                 )
-                thinking_params = (
-                    self.additional_model_request_fields or {}
-                )
-                if (
-                    any(model in base_model for model in thinking_claude_models)
-                    and thinking_in_params(thinking_params)
-                ):
+                thinking_params = self.additional_model_request_fields or {}
+                if any(
+                    model in base_model for model in thinking_claude_models
+                ) and thinking_in_params(thinking_params):
                     self.supports_tool_choice_values = ("auto",)
                 else:
                     self.supports_tool_choice_values = ("auto", "any", "tool")
