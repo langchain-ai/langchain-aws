@@ -1297,10 +1297,7 @@ class ChatBedrockConverse(BaseChatModel):
                 f"{self.supports_tool_choice_values}."
             )
         else:
-            msg = (
-                f"Model {base_model} does not currently support "
-                f"tool_choice."
-            )
+            msg = f"Model {base_model} does not currently support tool_choice."
 
         raise ValueError(
             f"{msg} Please see "

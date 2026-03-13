@@ -170,9 +170,7 @@ def test_anthropic_thinking_bind_tools_tool_choice(thinking_model: str) -> None:
 
     with _warnings.catch_warnings(record=True) as w:
         _warnings.simplefilter("always")
-        chat_model_with_tools = chat_model.bind_tools(
-            [GetWeather], tool_choice="any"
-        )
+        chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="any")
         assert len(w) == 1
         assert "Downgrading to tool_choice='auto'" in str(w[0].message)
     assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
