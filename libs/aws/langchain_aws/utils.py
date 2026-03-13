@@ -238,7 +238,7 @@ def create_aws_client(
 
 def thinking_in_params(params: dict) -> bool:
     """Check if the thinking parameter is enabled in the request."""
-    return params.get("thinking", {}).get("type") == "enabled"
+    return params.get("thinking", {}).get("type") in ("enabled", "adaptive")
 
 
 def trim_message_whitespace(messages: List[Any]) -> List[Any]:
