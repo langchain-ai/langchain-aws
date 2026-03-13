@@ -161,7 +161,6 @@ class TestValkeyVectorStore:
         assert not mock_ft_create.called
 
 
-
 class TestParseValkeyUrl:
     """Test URL parsing for various connection string formats."""
 
