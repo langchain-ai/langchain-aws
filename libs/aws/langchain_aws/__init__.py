@@ -19,6 +19,7 @@ from langchain_aws.vectorstores.inmemorydb import (
     InMemoryVectorStore,
 )
 from langchain_aws.vectorstores.s3_vectors import AmazonS3Vectors
+from langchain_aws.vectorstores.valkey import ValkeyVectorStore
 
 if TYPE_CHECKING:
     from langchain_aws.chat_models import ChatAnthropicBedrock
@@ -95,6 +96,7 @@ __all__ = [
     "InMemorySemanticCache",
     "AmazonS3Vectors",
     "BedrockRerank",
+    "ValkeyVectorStore",
 ]
 
 
