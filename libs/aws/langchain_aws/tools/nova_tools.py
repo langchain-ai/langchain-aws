@@ -113,41 +113,58 @@ Timeout Recommendations:
     - **Web grounding**: Default timeout is usually sufficient
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Type
+
+from langchain_core.callbacks import CallbackManagerForToolRun
+from langchain_core.tools import BaseTool
+from pydantic import BaseModel, Field
 
 
-class NovaSystemTool:
+class _EmptyInput(BaseModel):
+    """Empty input schema for Nova system tools (executed server-side)."""
+
+
+class NovaSystemTool(BaseTool):
     """Base class for Nova system tools.
 
     System tools are built-in tools provided by Nova models that execute
     server-side. Unlike custom tools, system tools don't require client-side
     implementation.
 
-    Args:
-        name: The name of the system tool (e.g., "nova_grounding")
+    This class extends ``BaseTool`` so that Nova system tools work seamlessly
+    with LangGraph's ``create_react_agent`` / ``ToolNode``, in addition to
+    ``ChatBedrockConverse.bind_tools``.
 
     Attributes:
-        name: The system tool name
-        type: Always "system_tool" to distinguish from custom tools
+        type: Always ``"system_tool"`` to distinguish from custom tools.
     """
 
-    def __init__(self, name: str) -> None:
-        """Initialize a Nova system tool.
+    type: str = Field(default="system_tool", exclude=True)
 
-        Args:
-            name: The name of the system tool
-        """
-        self.name = name
-        self.type = "system_tool"
+    args_schema: Type[BaseModel] = _EmptyInput
 
     def to_bedrock_format(self) -> Dict[str, Any]:
         """Convert to Bedrock systemTool format.
 
         Returns:
             Dictionary in the format expected by the Bedrock Converse API:
-            {"systemTool": {"name": "<tool_name>"}}
+            ``{"systemTool": {"name": "<tool_name>"}}``
         """
         return {"systemTool": {"name": self.name}}
+
+    def _run(
+        self,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+        **kwargs: Any,
+    ) -> str:
+        # System tools are executed server-side by the Bedrock Converse API.
+        # This method is only called if ToolNode invokes the tool locally,
+        # which should not happen during normal operation.
+        return (
+            f"[{self.name}] This is a Nova system tool that executes "
+            "server-side via the Bedrock Converse API. "
+            "No local execution is needed."
+        )
 
 
 class NovaGroundingTool(NovaSystemTool):
@@ -156,6 +173,9 @@ class NovaGroundingTool(NovaSystemTool):
     The nova_grounding tool enables the model to search the web for current
     information. The model autonomously decides when to invoke the tool and
     processes the results.
+
+    Compatible with both ``ChatBedrockConverse.bind_tools`` and LangGraph's
+    ``create_react_agent``.
 
     Note:
         Requires bedrock:InvokeTool IAM permission.
@@ -169,9 +189,11 @@ class NovaGroundingTool(NovaSystemTool):
         response = model_with_search.invoke("What's the latest news?")
     """
 
-    def __init__(self) -> None:
-        """Initialize the Nova grounding tool."""
-        super().__init__("nova_grounding")
+    name: str = "nova_grounding"
+    description: str = (
+        "Search the web for current information using Amazon Nova's "
+        "built-in grounding capability. Executes server-side."
+    )
 
 
 class NovaCodeInterpreterTool(NovaSystemTool):
@@ -180,6 +202,9 @@ class NovaCodeInterpreterTool(NovaSystemTool):
     The nova_code_interpreter tool enables the model to execute Python code
     in a sandboxed environment. Useful for calculations, data analysis, and
     other computational tasks.
+
+    Compatible with both ``ChatBedrockConverse.bind_tools`` and LangGraph's
+    ``create_react_agent``.
 
     Note:
         Requires bedrock:InvokeTool IAM permission.
@@ -196,6 +221,8 @@ class NovaCodeInterpreterTool(NovaSystemTool):
         )
     """
 
-    def __init__(self) -> None:
-        """Initialize the Nova code interpreter tool."""
-        super().__init__("nova_code_interpreter")
+    name: str = "nova_code_interpreter"
+    description: str = (
+        "Execute Python code in a sandboxed environment using Amazon Nova's "
+        "built-in code interpreter. Executes server-side."
+    )
