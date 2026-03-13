@@ -11,6 +11,7 @@ from pydantic import SecretStr
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
+    thinking_in_params,
     trim_message_whitespace,
 )
 
@@ -527,6 +528,21 @@ def test_api_key_takes_precedence_over_creds(
     session_mock.assert_not_called()
     client_mock.assert_called_once_with(service_name="bedrock-runtime")
     assert client == client_instance
+
+
+@pytest.mark.parametrize(
+    "params,expected",
+    [
+        ({"thinking": {"type": "enabled", "budget_tokens": 5000}}, True),
+        ({"thinking": {"type": "adaptive"}}, True),
+        ({"thinking": {"type": "disabled"}}, False),
+        ({"thinking": {}}, False),
+        ({}, False),
+        ({"other_param": "value"}, False),
+    ],
+)
+def test_thinking_in_params(params: dict, expected: bool) -> None:
+    assert thinking_in_params(params) == expected
 
 
 @pytest.mark.parametrize("api_key", [SecretStr(""), None])

@@ -72,6 +72,7 @@ from langchain_aws.tools.nova_tools import NovaSystemTool
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
+    thinking_in_params,
     trim_message_whitespace,
 )
 
@@ -903,12 +904,12 @@ class ChatBedrockConverse(BaseChatModel):
                     "claude-opus-4",
                     "claude-haiku-4",
                 )
-                thinking_params = (self.additional_model_request_fields or {}).get(
-                    "thinking", {}
+                thinking_params = (
+                    self.additional_model_request_fields or {}
                 )
                 if (
                     any(model in base_model for model in thinking_claude_models)
-                    and thinking_params.get("type") == "enabled"
+                    and thinking_in_params(thinking_params)
                 ):
                     self.supports_tool_choice_values = ("auto",)
                 else:
