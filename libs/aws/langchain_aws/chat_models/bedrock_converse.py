@@ -1236,6 +1236,74 @@ class ChatBedrockConverse(BaseChatModel):
 
     # TODO: Add async support once there are async bedrock.converse methods.
 
+    def _is_thinking_enabled(self) -> bool:
+        """Check if extended thinking is enabled via additional_model_request_fields."""
+        thinking_params = (self.additional_model_request_fields or {}).get(
+            "thinking", {}
+        )
+        return thinking_params.get("type") == "enabled"
+
+    def _resolve_tool_choice(
+        self,
+        tool_choice: Optional[Union[dict, str]],
+    ) -> Optional[Dict[str, Dict[str, str]]]:
+        """Validate and resolve tool_choice against model capabilities.
+
+        When thinking is enabled and the requested tool_choice is not
+        supported, downgrades to ``auto`` with a warning instead of
+        raising, so that callers like LangGraph ``create_agent`` work
+        transparently.
+
+        Args:
+            tool_choice: Requested tool_choice value.
+
+        Returns:
+            Formatted tool_choice dict, or ``None`` if not provided.
+
+        Raises:
+            ValueError: If tool_choice is unsupported and thinking is
+                not enabled (no safe downgrade possible).
+        """
+        if not tool_choice:
+            if "deepseek.v3" in self._get_base_model():
+                return _format_tool_choice("any")
+            return None
+
+        formatted = _format_tool_choice(tool_choice)
+        tool_choice_type = list(formatted.keys())[0]
+        supported = list(self.supports_tool_choice_values or [])
+
+        if tool_choice_type in supported:
+            return formatted
+
+        # Thinking-enabled models: downgrade to auto instead of failing.
+        if self._is_thinking_enabled() and "auto" in supported:
+            warnings.warn(
+                f"tool_choice={tool_choice!r} is not supported when thinking "
+                f"is enabled. Downgrading to tool_choice='auto'. The model "
+                f"will decide whether to call tools."
+            )
+            return _format_tool_choice("auto")
+
+        # No safe downgrade — raise.
+        base_model = self._get_base_model()
+        if self.supports_tool_choice_values:
+            msg = (
+                f"Model {base_model} does not currently support "
+                f"tool_choice of type {tool_choice_type}. "
+                f"The following tool_choice types are supported: "
+                f"{self.supports_tool_choice_values}."
+            )
+        else:
+            msg = f"Model {base_model} does not currently support tool_choice."
+
+        raise ValueError(
+            f"{msg} Please see "
+            "https://docs.aws.amazon.com/bedrock/latest/APIReference/"
+            "API_runtime_ToolChoice.html for the latest documentation "
+            "on models that support tool choice."
+        )
+
     def bind_tools(
         self,
         tools: Sequence[
@@ -1285,6 +1353,8 @@ class ChatBedrockConverse(BaseChatModel):
                         formatted["toolSpec"]["strict"] = strict  # type: ignore[assignment]
                     formatted_custom_tools.append(formatted)
 
+        resolved_tool_choice = self._resolve_tool_choice(tool_choice)
+
         if system_tools:
             # Merge system and custom tools
             all_tools = formatted_custom_tools + system_tools
@@ -1292,68 +1362,14 @@ class ChatBedrockConverse(BaseChatModel):
             # Build toolConfig directly to avoid re-formatting
             tool_config: Dict[str, Any] = {"tools": all_tools}
 
-            if tool_choice:
-                tool_choice_formatted = _format_tool_choice(tool_choice)
-                tool_choice_type = list(tool_choice_formatted.keys())[0]
-                if tool_choice_type not in list(self.supports_tool_choice_values or []):
-                    base_model = self._get_base_model()
-                    if self.supports_tool_choice_values:
-                        supported = (
-                            f"Model {base_model} does not currently support "
-                            f"tool_choice of type {tool_choice_type}. "
-                            f"The following tool_choice types are supported: "
-                            f"{self.supports_tool_choice_values}."
-                        )
-                    else:
-                        supported = (
-                            f"Model {base_model} does not currently support "
-                            f"tool_choice."
-                        )
-
-                    raise ValueError(
-                        f"{supported} Please see "
-                        "https://docs.aws.amazon.com/bedrock/latest/APIReference/"
-                        "API_runtime_ToolChoice.html for the latest documentation "
-                        "on models that support tool choice."
-                    )
-                tool_config["toolChoice"] = tool_choice_formatted
-            elif "deepseek.v3" in self._get_base_model():
-                tool_config["toolChoice"] = _format_tool_choice("any")
+            if resolved_tool_choice:
+                tool_config["toolChoice"] = resolved_tool_choice
 
             return self.bind(toolConfig=tool_config, **kwargs)
         else:
-            # Format tool_choice if provided
-            formatted_tool_choice = None
-            if tool_choice:
-                formatted_tool_choice = _format_tool_choice(tool_choice)
-                tool_choice_type = list(formatted_tool_choice.keys())[0]
-                if tool_choice_type not in list(self.supports_tool_choice_values or []):
-                    base_model = self._get_base_model()
-                    if self.supports_tool_choice_values:
-                        supported = (
-                            f"Model {base_model} does not currently support "
-                            f"tool_choice of type {tool_choice_type}. "
-                            f"The following tool_choice types are supported: "
-                            f"{self.supports_tool_choice_values}."
-                        )
-                    else:
-                        supported = (
-                            f"Model {base_model} does not currently support "
-                            f"tool_choice."
-                        )
-
-                    raise ValueError(
-                        f"{supported} Please see "
-                        "https://docs.aws.amazon.com/bedrock/latest/APIReference/"
-                        "API_runtime_ToolChoice.html for the latest documentation "
-                        "on models that support tool choice."
-                    )
-            elif "deepseek.v3" in self._get_base_model():
-                formatted_tool_choice = _format_tool_choice("any")
-
             return self.bind(
                 tools=formatted_custom_tools,
-                tool_choice=formatted_tool_choice,
+                tool_choice=resolved_tool_choice,
                 **kwargs,
             )
 
