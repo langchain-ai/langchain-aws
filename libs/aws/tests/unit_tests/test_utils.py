@@ -11,6 +11,7 @@ from pydantic import SecretStr
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
+    thinking_in_params,
     trim_message_whitespace,
 )
 
@@ -580,3 +581,20 @@ def test_api_key_overrides_existing_env_var(
     session_mock.assert_not_called()
     client_mock.assert_called_once_with(service_name="bedrock-runtime")
     assert client == client_instance
+
+
+class TestThinkingInParams:
+    def test_enabled_type(self) -> None:
+        assert thinking_in_params({"thinking": {"type": "enabled", "budget_tokens": 1024}})
+
+    def test_adaptive_type(self) -> None:
+        assert thinking_in_params({"thinking": {"type": "adaptive", "budget_tokens": 1024}})
+
+    def test_disabled_type(self) -> None:
+        assert not thinking_in_params({"thinking": {"type": "disabled"}})
+
+    def test_missing_thinking_key(self) -> None:
+        assert not thinking_in_params({})
+
+    def test_missing_type_key(self) -> None:
+        assert not thinking_in_params({"thinking": {}})
