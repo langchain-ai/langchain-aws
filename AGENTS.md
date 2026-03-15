@@ -8,6 +8,7 @@ This is a monorepo containing LangChain and LangGraph integrations for AWS servi
 
 - `langchain-aws`: Core LangChain integrations for AWS services (Bedrock, SageMaker, Kendra, etc.)
 - `langgraph-checkpoint-aws`: LangGraph checkpointing solutions using AWS services
+- `langchain-agentcore-codeinterpreter`: AgentCore Code Interpreter sandbox backend for Deep Agents
 
 ### langchain-aws Structure
 

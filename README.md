@@ -6,6 +6,7 @@ The following packages are hosted in this repository:
 
 - `langchain-aws` ([PyPI](https://pypi.org/project/langchain-aws/))
 - `langgraph-checkpoint-aws` ([PyPI](https://pypi.org/project/langgraph-checkpoint-aws/))
+- `langchain-agentcore-codeinterpreter` ([PyPI](https://pypi.org/project/langchain-agentcore-codeinterpreter/))
 
 ## Features
 
@@ -17,6 +18,7 @@ The following packages are hosted in this repository:
 - **Graphs**: Provides components for working with [AWS Neptune](https://aws.amazon.com/neptune/) graphs within LangChain.
 - **Agents**: Includes Runnables to support [Amazon Bedrock Agents](https://aws.amazon.com/bedrock/agents/), allowing you to leverage Bedrock Agents within LangChain and LangGraph.
 - **Tools**: Includes tools and toolkits to enable use of [Amazon Bedrock AgentCore](https://aws.amazon.com/bedrock/agentcore/)'s built-in tools with LangChain and LangGraph agents.
+- **Sandboxes**: Provides an [Amazon Bedrock AgentCore](https://aws.amazon.com/bedrock/agentcore/) Code Interpreter sandbox backend for [Deep Agents](https://github.com/langchain-ai/deepagents), enabling secure code execution in isolated MicroVM environments.
 
 ### LangGraph
 
@@ -39,6 +41,12 @@ The `langgraph-checkpoint-aws` package can also be installed from PyPI.
 
 ```bash
 pip install langgraph-checkpoint-aws
+```
+
+The `langchain-agentcore-codeinterpreter` package can also be installed from PyPI.
+
+```bash
+pip install langchain-agentcore-codeinterpreter
 ```
 
 ## Usage
