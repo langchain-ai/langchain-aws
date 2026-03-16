@@ -404,8 +404,7 @@ _LONG_SYSTEM_PROMPT = (
     "You have deep expertise in geography, climate science, demographics, "
     "urban planning, and world history. When answering questions about cities, "
     "provide accurate and up-to-date information. "
-    + "You should always strive to give the most helpful response possible. "
-    * 85
+    + "You should always strive to give the most helpful response possible. " * 85
     + f" Session: {uuid4().hex}"
 )
 
