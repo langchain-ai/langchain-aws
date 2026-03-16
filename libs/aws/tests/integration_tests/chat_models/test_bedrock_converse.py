@@ -3,6 +3,7 @@
 import base64
 import warnings
 from typing import Any, Literal, Optional, Type
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -405,6 +406,7 @@ _LONG_SYSTEM_PROMPT = (
     "provide accurate and up-to-date information. "
     + "You should always strive to give the most helpful response possible. "
     * 85
+    + f" Session: {uuid4().hex}"
 )
 
 

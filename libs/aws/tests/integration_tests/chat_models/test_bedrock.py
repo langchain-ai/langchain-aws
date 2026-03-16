@@ -2,7 +2,7 @@
 
 import json
 from typing import Annotated, Any, Literal, Optional, TypedDict, Union
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from langchain_core.messages import (
@@ -915,6 +915,7 @@ _LONG_SYSTEM_PROMPT = (
     "provide accurate and up-to-date information. "
     + "You should always strive to give the most helpful response possible. "
     * 85
+    + f" Session: {uuid4().hex}"
 )
 
 
