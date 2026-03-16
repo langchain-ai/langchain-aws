@@ -662,13 +662,12 @@ def test_bedrock_runtime_default_no_creds(
     with mock.patch.dict(os.environ, {}, clear=True):
         _create_client(region_name="us-east-1")
 
-    config_cls.assert_called_once_with(
-        endpoint_uri="https://bedrock-runtime.us-east-1.amazonaws.com",
-        region="us-east-1",
-        aws_access_key_id=None,
-        aws_secret_access_key=None,
-        aws_session_token=None,
+    config_cls.assert_called_once()
+    call_kwargs = config_cls.call_args[1]
+    assert (
+        call_kwargs["endpoint_uri"] == "https://bedrock-runtime.us-east-1.amazonaws.com"
     )
+    assert call_kwargs["region"] == "us-east-1"
     client_cls.assert_called_once()
 
 
@@ -685,13 +684,15 @@ def test_bedrock_runtime_explicit_keys(
             aws_secret_access_key=SecretStr("SECRET_TEST"),
         )
 
-    config_cls.assert_called_once_with(
-        endpoint_uri="https://bedrock-runtime.us-west-2.amazonaws.com",
-        region="us-west-2",
-        aws_access_key_id="AKIA_TEST",
-        aws_secret_access_key="SECRET_TEST",
-        aws_session_token=None,
+    config_cls.assert_called_once()
+    call_kwargs = config_cls.call_args[1]
+    assert (
+        call_kwargs["endpoint_uri"] == "https://bedrock-runtime.us-west-2.amazonaws.com"
     )
+    assert call_kwargs["region"] == "us-west-2"
+    assert call_kwargs["aws_access_key_id"] == "AKIA_TEST"
+    assert call_kwargs["aws_secret_access_key"] == "SECRET_TEST"
+    assert call_kwargs["aws_session_token"] is None
 
 
 def test_bedrock_runtime_explicit_keys_with_session_token(
@@ -708,13 +709,15 @@ def test_bedrock_runtime_explicit_keys_with_session_token(
             aws_session_token=SecretStr("TOKEN_TEST"),
         )
 
-    config_cls.assert_called_once_with(
-        endpoint_uri="https://bedrock-runtime.eu-west-1.amazonaws.com",
-        region="eu-west-1",
-        aws_access_key_id="AKIA_TEST",
-        aws_secret_access_key="SECRET_TEST",
-        aws_session_token="TOKEN_TEST",
+    config_cls.assert_called_once()
+    call_kwargs = config_cls.call_args[1]
+    assert (
+        call_kwargs["endpoint_uri"] == "https://bedrock-runtime.eu-west-1.amazonaws.com"
     )
+    assert call_kwargs["region"] == "eu-west-1"
+    assert call_kwargs["aws_access_key_id"] == "AKIA_TEST"
+    assert call_kwargs["aws_secret_access_key"] == "SECRET_TEST"
+    assert call_kwargs["aws_session_token"] == "TOKEN_TEST"
 
 
 def test_bedrock_runtime_profile_name(
@@ -741,13 +744,16 @@ def test_bedrock_runtime_profile_name(
         _create_client(credentials_profile_name="my-profile")
 
     session_cls.assert_called_once_with(profile_name="my-profile")
-    config_cls.assert_called_once_with(
-        endpoint_uri="https://bedrock-runtime.ap-southeast-1.amazonaws.com",
-        region="ap-southeast-1",
-        aws_access_key_id="PROFILE_KEY",
-        aws_secret_access_key="PROFILE_SECRET",
-        aws_session_token="PROFILE_TOKEN",
+    config_cls.assert_called_once()
+    call_kwargs = config_cls.call_args[1]
+    assert (
+        call_kwargs["endpoint_uri"]
+        == "https://bedrock-runtime.ap-southeast-1.amazonaws.com"
     )
+    assert call_kwargs["region"] == "ap-southeast-1"
+    assert call_kwargs["aws_access_key_id"] == "PROFILE_KEY"
+    assert call_kwargs["aws_secret_access_key"] == "PROFILE_SECRET"
+    assert call_kwargs["aws_session_token"] == "PROFILE_TOKEN"
 
 
 def test_bedrock_runtime_profile_no_credentials_raises(
@@ -800,13 +806,10 @@ def test_bedrock_runtime_custom_endpoint_url(
             endpoint_url="https://custom.endpoint.example.com",
         )
 
-    config_cls.assert_called_once_with(
-        endpoint_uri="https://custom.endpoint.example.com",
-        region="us-east-1",
-        aws_access_key_id=None,
-        aws_secret_access_key=None,
-        aws_session_token=None,
-    )
+    config_cls.assert_called_once()
+    call_kwargs = config_cls.call_args[1]
+    assert call_kwargs["endpoint_uri"] == "https://custom.endpoint.example.com"
+    assert call_kwargs["region"] == "us-east-1"
 
 
 @pytest.mark.parametrize(

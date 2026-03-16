@@ -339,6 +339,53 @@ def create_aws_bedrock_runtime_client(
                 "aws_secret_access_key must be specified."
             )
 
+    # If no explicit credentials were resolved, fall back to boto3's default
+    # credential chain (env vars, instance metadata, etc.) so the smithy-based
+    # SDK can authenticate.
+    if not has_api_key and not access_key:
+        try:
+            import boto3
+        except ImportError:
+            pass
+        else:
+            session = boto3.Session()
+            credentials = session.get_credentials()
+            if credentials:
+                creds = credentials.get_frozen_credentials()
+                access_key = creds.access_key
+                secret_key = creds.secret_key
+                session_token = creds.token
+                if not region_name and session.region_name:
+                    region_name = session.region_name
+
+    # Build a credentials identity resolver so the smithy-based SDK's SigV4
+    # auth scheme can locate credentials.  Without this, the SDK silently
+    # fails in a background task and the bidirectional stream hangs.
+    credentials_resolver = None
+    if access_key and secret_key:
+        try:
+            from smithy_aws_core.identity.components import AWSCredentialsIdentity
+        except ImportError:
+            pass
+        else:
+
+            class _StaticCredentialsResolver:
+                """Minimal resolver that returns pre-resolved credentials."""
+
+                def __init__(self, ak: str, sk: str, token: Optional[str]) -> None:
+                    self._identity = AWSCredentialsIdentity(
+                        access_key_id=ak,
+                        secret_access_key=sk,
+                        session_token=token,
+                    )
+
+                async def get_identity(self, **kwargs: Any) -> AWSCredentialsIdentity:
+                    return self._identity
+
+            credentials_resolver = _StaticCredentialsResolver(
+                access_key, secret_key, session_token
+            )
+
     config = Config(
         endpoint_uri=endpoint_url
         or (
@@ -350,6 +397,7 @@ def create_aws_bedrock_runtime_client(
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
         aws_session_token=session_token,
+        aws_credentials_identity_resolver=credentials_resolver,
     )
     return BedrockRuntimeClient(config=config)
 

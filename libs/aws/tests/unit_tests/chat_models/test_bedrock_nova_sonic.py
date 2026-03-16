@@ -327,8 +327,9 @@ class TestNovaSonicSession:
         await session.start()
 
         assert session.is_active
-        # session start + prompt start = 2 events (no system prompt)
-        assert mock_stream.input_stream.send.call_count == 2
+        # session start + prompt start + default system prompt (content start
+        # + text input + content end) = 5 events
+        assert mock_stream.input_stream.send.call_count == 5
 
     @pytest.mark.asyncio
     async def test_start_raises_if_already_active(self) -> None:

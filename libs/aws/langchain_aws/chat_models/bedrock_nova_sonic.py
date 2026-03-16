@@ -1,63 +1,4 @@
-"""Amazon Nova Sonic bidirectional streaming chat model.
-
-This module provides a LangChain integration for Amazon Nova Sonic's
-bidirectional streaming API (``InvokeModelWithBidirectionalStream``).
-Nova Sonic enables real-time speech-to-speech conversations over a
-persistent, full-duplex streaming connection.
-
-!!! warning "Experimental"
-    This integration is experimental and requires the separate
-    ``aws-sdk-bedrock-runtime`` Python package, which is still under
-    active development.
-
-Installation::
-
-    pip install "langchain-aws[nova-sonic]"
-
-Quick start::
-
-    import asyncio
-    from langchain_aws.chat_models.bedrock_nova_sonic import ChatBedrockNovaSonic
-
-    model = ChatBedrockNovaSonic(
-        model_id="amazon.nova-sonic-v1:0",
-        region_name="us-east-1",
-    )
-
-    # Text-only conversation
-    response = asyncio.run(
-        model.ainvoke("Hello, how are you?")
-    )
-    print(response.content)
-
-Audio streaming::
-
-    import asyncio
-    from langchain_aws.chat_models.bedrock_nova_sonic import (
-        ChatBedrockNovaSonic,
-        NovaSonicSession,
-    )
-
-    async def stream_audio():
-        model = ChatBedrockNovaSonic(
-            model_id="amazon.nova-sonic-v1:0",
-            region_name="us-east-1",
-            voice_id="matthew",
-        )
-
-        async with model.create_session() as session:
-            # Send audio chunks
-            await session.send_audio_chunk(audio_bytes)
-
-            # Receive responses
-            async for event in session.receive_events():
-                if event["type"] == "audio":
-                    play(event["audio"])
-                elif event["type"] == "text":
-                    print(event["text"])
-
-    asyncio.run(stream_audio())
-"""
+"""Amazon Nova Sonic bidirectional streaming chat model."""
 
 from __future__ import annotations
 
@@ -71,6 +12,7 @@ from typing import (
     Any,
     AsyncIterator,
     Dict,
+    Iterator,
     List,
     Literal,
     Optional,
@@ -103,6 +45,7 @@ DEFAULT_SAMPLE_SIZE_BITS = 16
 DEFAULT_CHANNEL_COUNT = 1
 DEFAULT_AUDIO_MEDIA_TYPE = "audio/lpcm"
 DEFAULT_TEXT_MEDIA_TYPE = "text/plain"
+DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant."
 
 # Voice IDs available in Nova Sonic v1
 _V1_VOICE_IDS = frozenset(
@@ -219,10 +162,10 @@ class NovaSonicSession:
 
         self._stream: Any = None
         self._is_active = False
+        self._input_closed = False
         self._prompt_name = str(uuid.uuid4())
         self._content_name = str(uuid.uuid4())
         self._audio_content_name = str(uuid.uuid4())
-        self._response_task: Optional[asyncio.Task[None]] = None
         self._role: Optional[str] = None
 
     @property
@@ -307,9 +250,10 @@ class NovaSonicSession:
         )
         await self._send_event(prompt_start)
 
-        # System prompt (if provided)
-        if self._system_prompt:
-            await self._send_system_prompt(self._system_prompt)
+        # System prompt — always required as the first content by Nova Sonic.
+        # Falls back to a default if none was provided.
+        system_prompt = self._system_prompt or DEFAULT_SYSTEM_PROMPT
+        await self._send_system_prompt(system_prompt)
 
     async def _send_system_prompt(self, prompt: str) -> None:
         """Send a system prompt to the session.
@@ -362,11 +306,16 @@ class NovaSonicSession:
         )
         await self._send_event(content_end)
 
-    async def send_text(self, text: str) -> None:
+    async def send_text(self, text: str, *, interactive: bool = True) -> None:
         """Send a text message as user input.
 
         Args:
             text: The user text to send.
+            interactive: If ``True`` (default), the text is part of an
+                ongoing conversation turn that relies on audio turn
+                detection.  If ``False``, the text is treated as a
+                complete turn and the model will respond immediately
+                without requiring audio input.
 
         Raises:
             RuntimeError: If the session is not active.
@@ -384,7 +333,7 @@ class NovaSonicSession:
                         "promptName": self._prompt_name,
                         "contentName": content_name,
                         "type": "TEXT",
-                        "interactive": True,
+                        "interactive": interactive,
                         "role": "USER",
                         "textInputConfiguration": {
                             "mediaType": DEFAULT_TEXT_MEDIA_TYPE,
@@ -515,11 +464,11 @@ class NovaSonicSession:
             Parsed event dictionaries.
         """
         try:
-            while self._is_active:
+            while True:
                 output = await self._stream.await_output()
                 result = await output[1].receive()
 
-                if not (result.value and result.value.bytes_):
+                if result is None or not (result.value and result.value.bytes_):
                     continue
 
                 response_data = result.value.bytes_.decode("utf-8")
@@ -558,22 +507,28 @@ class NovaSonicSession:
                 elif "contentEnd" in event:
                     yield {"type": "content_end"}
 
+                elif "usageEvent" in event:
+                    yield {
+                        "type": "usage",
+                        "usage": event["usageEvent"],
+                    }
+
         except asyncio.CancelledError:
-            logger.debug("Event receiving cancelled.")
+            pass
         except Exception as exc:
             logger.error("Error processing Nova Sonic responses: %s", exc)
             raise
 
-    async def end(self) -> None:
-        """End the session and close the stream.
+    async def close_input(self) -> None:
+        """Signal end of input to the model.
 
-        Sends prompt end and session end events, then closes the
-        input stream.
+        Sends ``promptEnd`` and ``sessionEnd`` events and closes the
+        input stream. The output stream remains readable so that
+        ``receive_events`` can continue to yield responses.
         """
-        if not self._is_active:
+        if self._input_closed:
             return
-
-        self._is_active = False
+        self._input_closed = True
 
         try:
             prompt_end = json.dumps(
@@ -592,16 +547,31 @@ class NovaSonicSession:
 
             await self._stream.input_stream.close()
         except Exception as exc:
-            logger.warning("Error ending Nova Sonic session: %s", exc)
+            logger.warning("Error closing Nova Sonic input: %s", exc)
+
+    async def end(self) -> None:
+        """End the session and close the stream.
+
+        Sends prompt end and session end events (if not already sent),
+        then marks the session as inactive.
+        """
+        if not self._is_active:
+            return
+
+        self._is_active = False
+
+        await self.close_input()
 
 
 class ChatBedrockNovaSonic(BaseChatModel):
     """Chat model for Amazon Nova Sonic bidirectional streaming.
 
-    Nova Sonic uses the ``InvokeModelWithBidirectionalStream`` API for
-    real-time speech-to-speech conversations. Unlike the Converse API used
-    by :class:`ChatBedrockConverse`, this maintains a persistent full-duplex
-    connection for continuous audio streaming.
+    This provides a LangChain integration for Amazon Nova Sonic's
+    bidirectional streaming API (``InvokeModelWithBidirectionalStream``).
+    Nova Sonic enables real-time speech-to-speech conversations over a
+    persistent, full-duplex streaming connection. Unlike the Converse API
+    used by :class:`ChatBedrockConverse`, this maintains a persistent
+    full-duplex connection for continuous audio streaming.
 
     !!! warning "Experimental"
         This integration requires the ``aws-sdk-bedrock-runtime`` package
@@ -612,21 +582,49 @@ class ChatBedrockNovaSonic(BaseChatModel):
     For full audio streaming, use :meth:`create_session` to get a
     :class:`NovaSonicSession`.
 
-    Example::
+    Quick start::
 
-        from langchain_aws.chat_models.bedrock_nova_sonic import (
-            ChatBedrockNovaSonic,
-        )
+        import asyncio
+        from langchain_aws.chat_models.bedrock_nova_sonic import ChatBedrockNovaSonic
 
         model = ChatBedrockNovaSonic(
             model_id="amazon.nova-sonic-v1:0",
             region_name="us-east-1",
-            voice_id="matthew",
         )
 
-        # Simple text conversation
-        response = await model.ainvoke("Hello!")
+        # Text-only conversation
+        response = asyncio.run(
+            model.ainvoke("Hello, how are you?")
+        )
         print(response.content)
+
+    Audio streaming::
+
+        import asyncio
+        from langchain_aws.chat_models.bedrock_nova_sonic import (
+            ChatBedrockNovaSonic,
+            NovaSonicSession,
+        )
+
+        async def stream_audio():
+            model = ChatBedrockNovaSonic(
+                model_id="amazon.nova-sonic-v1:0",
+                region_name="us-east-1",
+                voice_id="matthew",
+            )
+
+            async with model.create_session() as session:
+                # Send audio chunks
+                await session.send_audio_chunk(audio_bytes)
+
+                # Receive responses
+                async for event in session.receive_events():
+                    if event["type"] == "audio":
+                        play(event["audio"])
+                    elif event["type"] == "text":
+                        print(event["text"])
+
+        asyncio.run(stream_audio())
 
     Args:
         model_id: The Nova Sonic model identifier.
@@ -908,6 +906,19 @@ class ChatBedrockNovaSonic(BaseChatModel):
         Extracts system and user messages, sends them through a
         bidirectional session, and collects the text response.
 
+        Nova Sonic requires an active audio input stream to trigger
+        response generation via its turn-detection mechanism.  This
+        method sends user text with ``interactive=True``, opens an
+        audio stream, feeds silence, and collects the assistant's
+        text reply.
+
+        Note:
+            Only ``SystemMessage`` and ``HumanMessage`` are processed from
+            input. ``AIMessage`` and other message types are ignored because
+            Nova Sonic maintains conversation state within the bidirectional
+            stream. Previous assistant responses do not need to be sent back
+            as context.
+
         Args:
             messages: Input messages.
             stop: Stop sequences (not supported by Nova Sonic).
@@ -920,6 +931,11 @@ class ChatBedrockNovaSonic(BaseChatModel):
         system_prompt = self.system_prompt
         user_texts: List[str] = []
 
+        if stop:
+            logger.warning(
+                "stop sequences are not supported by Nova Sonic and will be ignored."
+            )
+
         for msg in messages:
             if isinstance(msg, SystemMessage):
                 system_prompt = str(msg.content)
@@ -927,6 +943,7 @@ class ChatBedrockNovaSonic(BaseChatModel):
                 user_texts.append(str(msg.content))
 
         collected_text: List[str] = []
+        usage_event: Optional[Dict[str, Any]] = None
 
         async with self.create_session(
             system_prompt=system_prompt, **kwargs
@@ -934,16 +951,85 @@ class ChatBedrockNovaSonic(BaseChatModel):
             for text in user_texts:
                 await session.send_text(text)
 
-            async for event in session.receive_events():
-                if event["type"] == "text" and event.get("role") == "ASSISTANT":
-                    collected_text.append(event["text"])
-                elif event["type"] == "content_end" and collected_text:
-                    # End of assistant turn
-                    break
+            # Nova Sonic needs an active audio input stream to trigger
+            # response generation.  Start audio, feed silence in the
+            # background, and collect the text response.
+            await session.start_audio_input()
+
+            silence_task = asyncio.ensure_future(self._feed_silence(session))
+
+            try:
+                collected_text, usage_event = await self._collect_text(session)
+            finally:
+                silence_task.cancel()
+                try:
+                    await silence_task
+                except asyncio.CancelledError:
+                    pass
+                await session.end_audio_input()
+                await session.close_input()
 
         response_text = "".join(collected_text)
-        ai_message = AIMessage(content=response_text)
+
+        ai_kwargs: Dict[str, Any] = {}
+        if usage_event:
+            ai_kwargs["usage_metadata"] = self._parse_usage(usage_event)
+        ai_kwargs["response_metadata"] = {"model_name": self.model_id}
+
+        ai_message = AIMessage(content=response_text, **ai_kwargs)
         return ChatResult(generations=[ChatGeneration(message=ai_message)])
+
+    @staticmethod
+    async def _collect_text(
+        session: "NovaSonicSession",
+    ) -> tuple[List[str], Optional[Dict[str, Any]]]:
+        """Collect assistant text and usage from a session's event stream.
+
+        Waits until audio output has been received and a ``content_end``
+        event fires after it, ensuring the model has finished its turn.
+
+        Returns:
+            A tuple of (text_chunks, usage_event_or_None).
+        """
+        collected: List[str] = []
+        usage: Optional[Dict[str, Any]] = None
+        got_audio = False
+        async for event in session.receive_events():
+            if event["type"] == "text" and event.get("role") == "ASSISTANT":
+                collected.append(event["text"])
+            elif event["type"] == "audio":
+                got_audio = True
+            elif event["type"] == "usage":
+                usage = event["usage"]
+            elif event["type"] == "content_end" and got_audio:
+                break
+        return collected, usage
+
+    @staticmethod
+    def _parse_usage(usage: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert a Nova Sonic ``usageEvent`` into LangChain usage metadata."""
+        return {
+            "input_tokens": usage.get("totalInputTokens", 0),
+            "output_tokens": usage.get("totalOutputTokens", 0),
+            "total_tokens": usage.get("totalTokens", 0),
+        }
+
+    @staticmethod
+    async def _feed_silence(session: "NovaSonicSession") -> None:
+        """Send silence audio chunks until cancelled.
+
+        Nova Sonic requires an active audio input stream to trigger
+        response generation via turn detection.  This coroutine sends
+        silent PCM frames (~32 ms each) continuously until it is
+        cancelled by the caller.
+        """
+        chunk = b"\x00\x00" * 512  # 512 samples of 16-bit silence
+        try:
+            while session.is_active:
+                await session.send_audio_chunk(chunk)
+                await asyncio.sleep(0.032)
+        except (asyncio.CancelledError, Exception):
+            pass
 
     async def _astream(
         self,
@@ -953,6 +1039,17 @@ class ChatBedrockNovaSonic(BaseChatModel):
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
         """Stream text responses from Nova Sonic.
+
+        Uses the same audio-based turn-detection approach as
+        ``_agenerate``: sends user text, opens an audio stream with
+        silence, and yields text chunks as they arrive.
+
+        Note:
+            Only ``SystemMessage`` and ``HumanMessage`` are processed from
+            input. ``AIMessage`` and other message types are ignored because
+            Nova Sonic maintains conversation state within the bidirectional
+            stream. Previous assistant responses do not need to be sent back
+            as context.
 
         Args:
             messages: Input messages.
@@ -966,6 +1063,11 @@ class ChatBedrockNovaSonic(BaseChatModel):
         system_prompt = self.system_prompt
         user_texts: List[str] = []
 
+        if stop:
+            logger.warning(
+                "stop sequences are not supported by Nova Sonic and will be ignored."
+            )
+
         for msg in messages:
             if isinstance(msg, SystemMessage):
                 system_prompt = str(msg.content)
@@ -978,13 +1080,88 @@ class ChatBedrockNovaSonic(BaseChatModel):
             for text in user_texts:
                 await session.send_text(text)
 
-            async for event in session.receive_events():
-                if event["type"] == "text" and event.get("role") == "ASSISTANT":
-                    chunk = ChatGenerationChunk(
-                        message=AIMessageChunk(content=event["text"])
-                    )
-                    if run_manager:
-                        await run_manager.on_llm_new_token(event["text"], chunk=chunk)
-                    yield chunk
-                elif event["type"] == "content_end":
+            await session.start_audio_input()
+            silence_task = asyncio.ensure_future(self._feed_silence(session))
+
+            got_audio = False
+            usage_event: Optional[Dict[str, Any]] = None
+            try:
+                async for event in session.receive_events():
+                    if event["type"] == "text" and event.get("role") == "ASSISTANT":
+                        chunk = ChatGenerationChunk(
+                            message=AIMessageChunk(content=event["text"])
+                        )
+                        if run_manager:
+                            await run_manager.on_llm_new_token(
+                                event["text"], chunk=chunk
+                            )
+                        yield chunk
+                    elif event["type"] == "audio":
+                        got_audio = True
+                    elif event["type"] == "usage":
+                        usage_event = event["usage"]
+                    elif event["type"] == "content_end" and got_audio:
+                        # Emit final chunk with usage metadata.
+                        final_kwargs: Dict[str, Any] = {
+                            "chunk_position": "last",
+                        }
+                        if usage_event:
+                            final_kwargs["usage_metadata"] = self._parse_usage(
+                                usage_event
+                            )
+                        final_kwargs["response_metadata"] = {
+                            "model_name": self.model_id,
+                        }
+                        final = ChatGenerationChunk(
+                            message=AIMessageChunk(content="", **final_kwargs)
+                        )
+                        if run_manager:
+                            await run_manager.on_llm_new_token("", chunk=final)
+                        yield final
+                        break
+            finally:
+                silence_task.cancel()
+                try:
+                    await silence_task
+                except asyncio.CancelledError:
+                    pass
+                await session.end_audio_input()
+                await session.close_input()
+
+    def _stream(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> Iterator[ChatGenerationChunk]:
+        """Synchronous streaming — collects chunks from ``_astream``.
+
+        Nova Sonic is inherently async.  This runs ``_astream`` in a
+        separate thread so that sync callers (e.g. ``stream()``) get
+        proper ``ChatGenerationChunk`` objects with ``chunk_position``
+        signaling.
+        """
+        import concurrent.futures
+        import queue as _queue
+
+        q: _queue.Queue[Optional[ChatGenerationChunk]] = _queue.Queue()
+
+        async def _pump() -> None:
+            async for chunk in self._astream(
+                messages, stop=stop, run_manager=None, **kwargs
+            ):
+                q.put(chunk)
+            q.put(None)  # sentinel
+
+        def _run() -> None:
+            asyncio.run(_pump())
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            fut = pool.submit(_run)
+            while True:
+                chunk = q.get()
+                if chunk is None:
                     break
+                yield chunk
+            fut.result()  # propagate exceptions
