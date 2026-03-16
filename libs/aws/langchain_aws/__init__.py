@@ -22,7 +22,7 @@ from langchain_aws.vectorstores.s3_vectors import AmazonS3Vectors
 from langchain_aws.vectorstores.valkey import ValkeyVectorStore
 
 if TYPE_CHECKING:
-    from langchain_aws.chat_models import ChatAnthropicBedrock
+    from langchain_aws.chat_models import ChatAnthropicBedrock, ChatBedrockNovaSonic
 
 
 def setup_logging() -> None:
@@ -84,6 +84,7 @@ __all__ = [
     "ChatAnthropicBedrock",
     "ChatBedrock",
     "ChatBedrockConverse",
+    "ChatBedrockNovaSonic",
     "SagemakerEndpoint",
     "AmazonKendraRetriever",
     "AmazonKnowledgeBasesRetriever",
@@ -102,15 +103,24 @@ __all__ = [
 
 def __getattr__(name: str) -> Any:
     """Lazy import for optional dependencies."""
-    if name == "ChatAnthropicBedrock":
+    _lazy_imports: dict[str, tuple[str, str]] = {
+        "ChatAnthropicBedrock": (
+            "langchain_aws.chat_models",
+            "pip install langchain-aws[anthropic]",
+        ),
+        "ChatBedrockNovaSonic": (
+            "langchain_aws.chat_models",
+            'pip install "langchain-aws[nova-sonic]"',
+        ),
+    }
+    if name in _lazy_imports:
+        module_path, install_hint = _lazy_imports[name]
         try:
-            from langchain_aws.chat_models import ChatAnthropicBedrock
+            import importlib
 
-            return ChatAnthropicBedrock
+            mod = importlib.import_module(module_path)
+            return getattr(mod, name)
         except ImportError as e:
-            msg = (
-                f"Cannot import {name}. "
-                "Please install it with `pip install langchain-aws[anthropic]`."
-            )
+            msg = f"Cannot import {name}. Please install it with `{install_hint}`."
             raise ImportError(msg) from e
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
