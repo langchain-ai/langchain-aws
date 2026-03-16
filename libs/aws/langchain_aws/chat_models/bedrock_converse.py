@@ -649,14 +649,12 @@ class ChatBedrockConverse(BaseChatModel):
         """
         return {"cachePoint": {"type": cache_type}}
 
-    @staticmethod
     def _apply_cache_points(
+        self,
         cache_control: Optional[Dict[str, Any]],
         system: List[Dict[str, Any]],
         bedrock_messages: List[Dict[str, Any]],
         params: Optional[Dict[str, Any]] = None,
-        *,
-        is_nova: bool = False,
     ) -> None:
         """Apply cachePoint to system, messages, and tools in Converse API format.
 
@@ -672,13 +670,11 @@ class ChatBedrockConverse(BaseChatModel):
             params: The constructed API parameters dict. If provided and
                 ``toolConfig.tools`` is present, a cachePoint block is
                 appended to the tools array (unless one already exists).
-            is_nova: If True, skip cachePoint on tools and on messages
-                whose last entry contains ``toolResult`` or ``toolUse``
-                blocks (Nova does not support cachePoint in those
-                positions).
         """
         if not cache_control:
             return
+
+        is_nova = "amazon.nova" in self.model_id.lower()
 
         cache_point: Dict[str, Any] = {"type": "default"}
         ttl = cache_control.get("ttl")
@@ -1139,13 +1135,7 @@ class ChatBedrockConverse(BaseChatModel):
                 filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
         )
-        self._apply_cache_points(
-            cache_control,
-            system,
-            bedrock_messages,
-            params,
-            is_nova="amazon.nova" in self.model_id.lower(),
-        )
+        self._apply_cache_points(cache_control, system, bedrock_messages, params)
 
         # Check for tool blocks without toolConfig and handle conversion
         if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(
@@ -1206,13 +1196,7 @@ class ChatBedrockConverse(BaseChatModel):
                 filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
         )
-        self._apply_cache_points(
-            cache_control,
-            system,
-            bedrock_messages,
-            params,
-            is_nova="amazon.nova" in self.model_id.lower(),
-        )
+        self._apply_cache_points(cache_control, system, bedrock_messages, params)
 
         # Check for tool blocks without toolConfig and handle conversion
         if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(

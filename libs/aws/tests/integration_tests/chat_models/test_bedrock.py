@@ -938,11 +938,8 @@ def test_cache_control_anthropic() -> None:
     assert isinstance(r1, AIMessage)
     assert r1.usage_metadata is not None
     details = r1.usage_metadata.get("input_token_details", {})
-    cache_read = details.get("cache_read", 0) or 0
     cache_write = details.get("cache_creation", 0) or 0
-    assert cache_read > 0 or cache_write > 0, (
-        f"Expected cache activity, got read={cache_read} write={cache_write}"
-    )
+    assert cache_write > 0, f"Expected cache write on first call, got {cache_write}"
 
 
 def test_cache_control_anthropic_with_tools() -> None:
@@ -961,8 +958,5 @@ def test_cache_control_anthropic_with_tools() -> None:
     assert len(r1.tool_calls) >= 1
     assert r1.usage_metadata is not None
     details = r1.usage_metadata.get("input_token_details", {})
-    cache_read = details.get("cache_read", 0) or 0
     cache_write = details.get("cache_creation", 0) or 0
-    assert cache_read > 0 or cache_write > 0, (
-        f"Expected cache activity, got read={cache_read} write={cache_write}"
-    )
+    assert cache_write > 0, f"Expected cache write on first call, got {cache_write}"

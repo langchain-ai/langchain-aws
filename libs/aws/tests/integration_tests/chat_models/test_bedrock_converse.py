@@ -392,9 +392,10 @@ def test_tool_use_with_cache_point() -> None:
     assert response.usage_metadata is not None
     input_token_details = response.usage_metadata.get("input_token_details")
     if input_token_details:
-        cache_read_input_tokens = input_token_details.get("cache_read", 0)
         cache_write_input_tokens = input_token_details.get("cache_creation", 0)
-        assert cache_read_input_tokens + cache_write_input_tokens != 0
+        assert cache_write_input_tokens > 0, (
+            f"Expected cache write on first call, got {cache_write_input_tokens}"
+        )
 
 
 _LONG_SYSTEM_PROMPT = (
@@ -425,11 +426,8 @@ def test_cache_control_anthropic() -> None:
     assert isinstance(r1, AIMessage)
     assert r1.usage_metadata is not None
     details = r1.usage_metadata.get("input_token_details", {})
-    cache_read = details.get("cache_read", 0) or 0
     cache_write = details.get("cache_creation", 0) or 0
-    assert cache_read > 0 or cache_write > 0, (
-        f"Expected cache activity, got read={cache_read} write={cache_write}"
-    )
+    assert cache_write > 0, f"Expected cache write on first call, got {cache_write}"
 
 
 def test_cache_control_anthropic_multi_turn() -> None:
@@ -472,11 +470,8 @@ def test_cache_control_nova() -> None:
     assert isinstance(r1, AIMessage)
     assert r1.usage_metadata is not None
     details = r1.usage_metadata.get("input_token_details", {})
-    cache_read = details.get("cache_read", 0) or 0
     cache_write = details.get("cache_creation", 0) or 0
-    assert cache_read > 0 or cache_write > 0, (
-        f"Expected cache activity, got read={cache_read} write={cache_write}"
-    )
+    assert cache_write > 0, f"Expected cache write on first call, got {cache_write}"
 
 
 def test_cache_control_nova_multi_turn_with_tools() -> None:

@@ -59,7 +59,7 @@ class BedrockPromptCachingMiddleware(AgentMiddleware):
                 this value is ignored as the Converse API always uses
                 ``"default"`` cache type.
             ttl: The time to live for the cache, only ``"5m"`` and ``"1h"``
-                are supported.
+                are supported, default is``"5m"``.
             min_messages_to_cache: The minimum number of messages until the
                 cache is used, default is 0.
             unsupported_model_behavior: The behavior to take when an

@@ -4322,9 +4322,11 @@ def test_apply_cache_points_system_and_messages() -> None:
         {"role": "assistant", "content": [{"text": "Hi"}]},
         {"role": "user", "content": [{"text": "How are you?"}]},
     ]
-    ChatBedrockConverse._apply_cache_points(
-        {"type": "ephemeral", "ttl": "5m"}, system, messages
-    )
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
     assert system[-1] == {"cachePoint": {"type": "default"}}
     assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
     assert messages[0]["content"] == [{"text": "Hello"}]
@@ -4334,7 +4336,11 @@ def test_apply_cache_points_system_and_messages() -> None:
 def test_apply_cache_points_no_system() -> None:
     system: list = []
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
-    ChatBedrockConverse._apply_cache_points({"ttl": "5m"}, system, messages)
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"ttl": "5m"}, system, messages)
     assert len(system) == 0
     assert messages[0]["content"][-1] == {"cachePoint": {"type": "default"}}
 
@@ -4342,7 +4348,11 @@ def test_apply_cache_points_no_system() -> None:
 def test_apply_cache_points_no_ttl() -> None:
     system = [{"text": "System"}]
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
-    ChatBedrockConverse._apply_cache_points({"type": "ephemeral"}, system, messages)
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral"}, system, messages)
     assert system[-1] == {"cachePoint": {"type": "default"}}
     assert messages[0]["content"][-1] == {"cachePoint": {"type": "default"}}
 
@@ -4350,9 +4360,11 @@ def test_apply_cache_points_no_ttl() -> None:
 def test_apply_cache_points_extended_ttl() -> None:
     system = [{"text": "System"}]
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
-    ChatBedrockConverse._apply_cache_points(
-        {"type": "ephemeral", "ttl": "1h"}, system, messages
-    )
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "1h"}, system, messages)
     assert system[-1] == {"cachePoint": {"type": "default", "ttl": "1h"}}
     assert messages[0]["content"][-1] == {
         "cachePoint": {"type": "default", "ttl": "1h"}
@@ -4362,9 +4374,11 @@ def test_apply_cache_points_extended_ttl() -> None:
 def test_apply_cache_points_default_ttl_omitted() -> None:
     system = [{"text": "System"}]
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
-    ChatBedrockConverse._apply_cache_points(
-        {"type": "ephemeral", "ttl": "5m"}, system, messages
-    )
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
     assert system[-1] == {"cachePoint": {"type": "default"}}
     assert "ttl" not in system[-1]["cachePoint"]
 
@@ -4372,7 +4386,11 @@ def test_apply_cache_points_default_ttl_omitted() -> None:
 def test_apply_cache_points_none_cache_control() -> None:
     system = [{"text": "System"}]
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
-    ChatBedrockConverse._apply_cache_points(None, system, messages)
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points(None, system, messages)
     assert len(system) == 1
     assert len(messages[0]["content"]) == 1
 
@@ -4380,7 +4398,11 @@ def test_apply_cache_points_none_cache_control() -> None:
 def test_apply_cache_points_empty_messages() -> None:
     system = [{"text": "System"}]
     messages: list = []
-    ChatBedrockConverse._apply_cache_points({"ttl": "5m"}, system, messages)
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"ttl": "5m"}, system, messages)
     assert system[-1] == {"cachePoint": {"type": "default"}}
     assert len(messages) == 0
 
@@ -4401,9 +4423,11 @@ def test_apply_cache_points_with_tools() -> None:
             ]
         }
     }
-    ChatBedrockConverse._apply_cache_points(
-        {"type": "ephemeral", "ttl": "5m"}, system, messages, params
-    )
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages, params)
     tools = params["toolConfig"]["tools"]
     assert len(tools) == 2
     assert tools[-1] == {"cachePoint": {"type": "default"}}
@@ -4419,9 +4443,11 @@ def test_apply_cache_points_tools_with_extended_ttl() -> None:
             ]
         }
     }
-    ChatBedrockConverse._apply_cache_points(
-        {"type": "ephemeral", "ttl": "1h"}, [], [], params
-    )
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "1h"}, [], [], params)
     assert params["toolConfig"]["tools"][-1] == {
         "cachePoint": {"type": "default", "ttl": "1h"}
     }
@@ -4431,9 +4457,11 @@ def test_apply_cache_points_no_tools() -> None:
     system = [{"text": "System"}]
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
     params: dict = {}
-    ChatBedrockConverse._apply_cache_points(
-        {"type": "ephemeral", "ttl": "5m"}, system, messages, params
-    )
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages, params)
     assert "toolConfig" not in params
     assert system[-1] == {"cachePoint": {"type": "default"}}
 
@@ -4441,9 +4469,11 @@ def test_apply_cache_points_no_tools() -> None:
 def test_apply_cache_points_no_params() -> None:
     system = [{"text": "System"}]
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
-    ChatBedrockConverse._apply_cache_points(
-        {"type": "ephemeral", "ttl": "5m"}, system, messages
-    )
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
     assert system[-1] == {"cachePoint": {"type": "default"}}
     assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
 
@@ -4457,9 +4487,11 @@ def test_apply_cache_points_skips_existing_tool_cache_point() -> None:
             ]
         }
     }
-    ChatBedrockConverse._apply_cache_points(
-        {"type": "ephemeral", "ttl": "5m"}, [], [], params
-    )
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, [], [], params)
     tool_config = cast(dict[str, Any], params["toolConfig"])
     tools = cast(list[dict[str, Any]], tool_config["tools"])
     cache_points = [t for t in tools if "cachePoint" in t]
@@ -4472,9 +4504,11 @@ def test_apply_cache_points_skips_existing_system_cache_point() -> None:
         {"cachePoint": {"type": "default"}},
     ]
     messages: list[dict[str, Any]] = [{"role": "user", "content": [{"text": "Hi"}]}]
-    ChatBedrockConverse._apply_cache_points(
-        {"type": "ephemeral", "ttl": "5m"}, system, messages
-    )
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
     system_cps = [b for b in system if "cachePoint" in b]
     assert len(system_cps) == 1, (
         f"Expected 1 cachePoint in system, got {len(system_cps)}"
@@ -4495,9 +4529,11 @@ def test_apply_cache_points_skips_existing_message_cache_point() -> None:
             ],
         }
     ]
-    ChatBedrockConverse._apply_cache_points(
-        {"type": "ephemeral", "ttl": "5m"}, system, messages
-    )
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
     last_content: list[dict[str, Any]] = messages[0]["content"]
     msg_cps = [b for b in last_content if "cachePoint" in b]
     assert len(msg_cps) == 1, f"Expected 1 cachePoint in message, got {len(msg_cps)}"
@@ -4514,7 +4550,7 @@ def test_generate_with_cache_control() -> None:
 
     llm = ChatBedrockConverse(
         client=mocked_client,
-        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         region_name="us-west-2",
         system=["You are helpful."],
     )
@@ -4549,7 +4585,7 @@ def test_stream_with_cache_control() -> None:
 
     llm = ChatBedrockConverse(
         client=mocked_client,
-        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         region_name="us-west-2",
         system=["You are helpful."],
     )
@@ -4572,7 +4608,7 @@ def test_generate_with_cache_control_extended_ttl() -> None:
 
     llm = ChatBedrockConverse(
         client=mocked_client,
-        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         region_name="us-west-2",
         system=["You are helpful."],
     )
@@ -4606,7 +4642,7 @@ def test_generate_with_cache_control_and_tools() -> None:
 
     llm = ChatBedrockConverse(
         client=mocked_client,
-        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         region_name="us-west-2",
         system=["You are helpful."],
     )
@@ -4719,7 +4755,7 @@ def test_generate_without_cache_control() -> None:
 
     llm = ChatBedrockConverse(
         client=mocked_client,
-        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
         region_name="us-west-2",
         system=["You are helpful."],
     )
