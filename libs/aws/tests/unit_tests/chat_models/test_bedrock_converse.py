@@ -160,6 +160,61 @@ def test_anthropic_thinking_bind_tools_tool_choice(thinking_model: str) -> None:
             "thinking": {"type": "enabled", "budget_tokens": 1024},
         },
     )
+    # auto is directly supported
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="auto")
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "auto": {}
+    }
+    # any/tool are downgraded to auto with a warning when thinking is enabled
+    import warnings as _warnings
+
+    with _warnings.catch_warnings(record=True) as w:
+        _warnings.simplefilter("always")
+        chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="any")
+        assert len(w) == 1
+        assert "Downgrading to tool_choice='auto'" in str(w[0].message)
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "auto": {}
+    }
+    with _warnings.catch_warnings(record=True) as w:
+        _warnings.simplefilter("always")
+        chat_model_with_tools = chat_model.bind_tools(
+            [GetWeather], tool_choice="GetWeather"
+        )
+        assert len(w) == 1
+        assert "Downgrading to tool_choice='auto'" in str(w[0].message)
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "auto": {}
+    }
+    with _warnings.catch_warnings(record=True) as w:
+        _warnings.simplefilter("always")
+        chat_model_with_tools = chat_model.bind_tools(
+            [GetWeather], tool_choice={"tool": {"name": "GetWeather"}}
+        )
+        assert len(w) == 1
+        assert "Downgrading to tool_choice='auto'" in str(w[0].message)
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "auto": {}
+    }
+
+
+@pytest.mark.parametrize(
+    "thinking_model",
+    [
+        "anthropic.claude-sonnet-4-6-20250929-v1:0",
+        "anthropic.claude-opus-4-6-20250514-v1:0",
+    ],
+)
+def test_anthropic_adaptive_thinking_bind_tools_tool_choice(
+    thinking_model: str,
+) -> None:
+    chat_model = ChatBedrockConverse(
+        model=thinking_model,
+        region_name="us-west-2",
+        additional_model_request_fields={
+            "thinking": {"type": "adaptive"},
+        },
+    )
     chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="auto")
     assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
         "auto": {}
