@@ -74,7 +74,7 @@ def async_browser_mocks() -> Generator[AsyncBrowserMocks, None, None]:
 
 
 @pytest.fixture()
-def sync_browser_mocks():
+def sync_browser_mocks() -> Generator[SyncBrowserMocks, None, None]:
     """Patch BrowserClient and sync Playwright, yielding pre-wired mocks.
 
     Yields a ``SyncBrowserMocks`` namedtuple so tests can inspect
