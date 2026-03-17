@@ -1,5 +1,6 @@
 """Unit tests for browser toolkit and tools."""
 
+from collections.abc import Generator
 from typing import NamedTuple, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
