@@ -398,9 +398,7 @@ class TestBrowserSessionManager:
 
         await manager.get_async_browser("thread-1")
 
-        async_browser_mocks.client.start.assert_called_once_with(
-            extensions=extensions
-        )
+        async_browser_mocks.client.start.assert_called_once_with(extensions=extensions)
 
     @pytest.mark.asyncio
     async def test_session_manager_passes_profile_to_start(
