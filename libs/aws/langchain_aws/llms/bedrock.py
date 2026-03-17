@@ -313,7 +313,7 @@ class LLMInputOutputAdapter:
         provider: str,
         model_kwargs: Dict[str, Any],
         prompt: Optional[str] = None,
-        system: Optional[str] = None,
+        system: Optional[Union[str, List[Dict[str, Any]]]] = None,
         messages: Optional[List[Dict]] = None,
         tools: Optional[List[AnthropicTool]] = None,
         *,
@@ -855,6 +855,11 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
+    """
+    Maximum number of tokens to generate.
+
+    When using Anthropic models with InvokeModel API, if not set, defaults to 1024.
+    """
 
     service_tier: Optional[Literal["priority", "default", "flex", "reserved"]] = None
     """Service tier for model invocation.
@@ -1032,7 +1037,7 @@ class BedrockBase(BaseLanguageModel, ABC):
     def _prepare_input_and_invoke(
         self,
         prompt: Optional[str] = None,
-        system: Optional[str] = None,
+        system: Optional[Union[str, List[Dict[str, Any]]]] = None,
         messages: Optional[List[Dict]] = None,
         stop: Optional[List[str]] = None,
         run_manager: Optional[CallbackManagerForLLMRun] = None,
@@ -1200,7 +1205,7 @@ class BedrockBase(BaseLanguageModel, ABC):
     def _prepare_input_and_invoke_stream(
         self,
         prompt: Optional[str] = None,
-        system: Optional[str] = None,
+        system: Optional[Union[str, List[Dict[str, Any]]]] = None,
         messages: Optional[List[Dict]] = None,
         stop: Optional[List[str]] = None,
         run_manager: Optional[CallbackManagerForLLMRun] = None,

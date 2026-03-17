@@ -3,6 +3,7 @@
 import base64
 import warnings
 from typing import Any, Literal, Optional, Type
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -284,6 +285,24 @@ def test_tool_calling_camel_case() -> None:
     assert full.tool_calls[0]["args"] == response.tool_calls[0]["args"]
 
 
+def test_tool_calling_strict() -> None:
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+
+    class GetWeather(BaseModel):
+        """Get the current weather in a given location."""
+
+        location: str = Field(description="The city and state, e.g. San Francisco, CA")
+
+    chat = model.bind_tools([GetWeather], strict=True, tool_choice="any")
+    response = chat.invoke("What is the weather in Paris?")
+    assert isinstance(response, AIMessage)
+    assert len(response.tool_calls) == 1
+    tool_call = response.tool_calls[0]
+    assert tool_call["name"] == "GetWeather"
+    assert isinstance(tool_call["args"], dict)
+    assert "location" in tool_call["args"]
+
+
 def test_structured_output_streaming() -> None:
     model = ChatBedrockConverse(
         model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
@@ -374,9 +393,110 @@ def test_tool_use_with_cache_point() -> None:
     assert response.usage_metadata is not None
     input_token_details = response.usage_metadata.get("input_token_details")
     if input_token_details:
-        cache_read_input_tokens = input_token_details.get("cache_read", 0)
         cache_write_input_tokens = input_token_details.get("cache_creation", 0)
-        assert cache_read_input_tokens + cache_write_input_tokens != 0
+        assert cache_write_input_tokens > 0, (
+            f"Expected cache write on first call, got {cache_write_input_tokens}"
+        )
+
+
+_LONG_SYSTEM_PROMPT = (
+    "You are a helpful assistant that answers concisely. "
+    "You have deep expertise in geography, climate science, demographics, "
+    "urban planning, and world history. When answering questions about cities, "
+    "provide accurate and up-to-date information. "
+    + "You should always strive to give the most helpful response possible. " * 85
+    + f" Session: {uuid4().hex}"
+)
+
+
+@tool
+def _get_weather(city: str) -> str:
+    """Simple tool for cache tests"""
+    return f"The weather in {city} is sunny and 72F."
+
+
+def test_cache_control_anthropic() -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        system=[_LONG_SYSTEM_PROMPT],
+    )
+    r1 = llm.invoke(
+        [HumanMessage(content="What is the capital of France?")],
+        cache_control={"type": "ephemeral", "ttl": "5m"},
+    )
+    assert isinstance(r1, AIMessage)
+    assert r1.usage_metadata is not None
+    details = r1.usage_metadata.get("input_token_details", {})
+    cache_write = details.get("cache_creation", 0) or 0
+    assert cache_write > 0, f"Expected cache write on first call, got {cache_write}"
+
+
+def test_cache_control_anthropic_multi_turn() -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        system=[_LONG_SYSTEM_PROMPT],
+    )
+    llm_with_tools = llm.bind_tools([_get_weather], tool_choice="any")
+    cache_control = {"type": "ephemeral", "ttl": "5m"}
+
+    messages: list = [HumanMessage(content="What is the weather in Seattle?")]
+    r1 = llm_with_tools.invoke(messages, cache_control=cache_control)
+    assert isinstance(r1, AIMessage)
+    assert len(r1.tool_calls) >= 1
+
+    messages.append(r1)
+    for tc in r1.tool_calls:
+        result = _get_weather.invoke(tc)
+        messages.append(result)
+
+    llm_turn2 = llm.bind_tools([_get_weather])
+    r2 = llm_turn2.invoke(messages, cache_control=cache_control)
+    assert isinstance(r2, AIMessage)
+    assert r2.content
+    assert r2.usage_metadata is not None
+    details = r2.usage_metadata.get("input_token_details", {})
+    cache_read = details.get("cache_read", 0) or 0
+    assert cache_read > 0, f"Expected cache read on turn 2, got {cache_read}"
+
+
+def test_cache_control_nova() -> None:
+    llm = ChatBedrockConverse(
+        model="us.amazon.nova-2-lite-v1:0",
+        system=[_LONG_SYSTEM_PROMPT],
+    )
+    r1 = llm.invoke(
+        [HumanMessage(content="What is the capital of France?")],
+        cache_control={"type": "ephemeral", "ttl": "5m"},
+    )
+    assert isinstance(r1, AIMessage)
+    assert r1.usage_metadata is not None
+    details = r1.usage_metadata.get("input_token_details", {})
+    cache_write = details.get("cache_creation", 0) or 0
+    assert cache_write > 0, f"Expected cache write on first call, got {cache_write}"
+
+
+def test_cache_control_nova_multi_turn_with_tools() -> None:
+    llm = ChatBedrockConverse(
+        model="us.amazon.nova-2-lite-v1:0",
+        system=[_LONG_SYSTEM_PROMPT],
+    )
+    llm_with_tools = llm.bind_tools([_get_weather], tool_choice="any")
+    cache_control = {"type": "ephemeral", "ttl": "5m"}
+
+    messages: list = [HumanMessage(content="What is the weather in Seattle?")]
+    r1 = llm_with_tools.invoke(messages, cache_control=cache_control)
+    assert isinstance(r1, AIMessage)
+    assert len(r1.tool_calls) >= 1
+
+    messages.append(r1)
+    for tc in r1.tool_calls:
+        result = _get_weather.invoke(tc)
+        messages.append(result)
+
+    llm_turn2 = llm.bind_tools([_get_weather])
+    r2 = llm_turn2.invoke(messages, cache_control=cache_control)
+    assert isinstance(r2, AIMessage)
+    assert r2.content
 
 
 @pytest.mark.skip(reason="Needs guardrails setup to run.")
@@ -899,3 +1019,88 @@ def test_request_headers(tmp_path: Any, streaming: bool) -> None:
     headers = request["headers"]
 
     assert headers["X-Foo"] == ["Bar"]
+
+
+# --- Native structured outputs integration tests ---
+
+
+class JokeSchema(BaseModel):
+    """A joke with setup and punchline."""
+
+    setup: str = Field(description="The setup of the joke")
+    punchline: str = Field(description="The punchline of the joke")
+
+
+class GetWeather(BaseModel):
+    """Get the current weather in a given location."""
+
+    location: str = Field(..., description="The city and state, e.g. San Francisco, CA")
+
+
+def test_structured_output_json_schema_pydantic() -> None:
+    """Test method='json_schema' with Pydantic model returns validated instance."""
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
+    )
+    structured = model.with_structured_output(JokeSchema, method="json_schema")
+    result = structured.invoke("Tell me a short joke about programming")
+    assert isinstance(result, JokeSchema)
+    assert result.setup
+    assert result.punchline
+
+
+def test_structured_output_json_schema_dict() -> None:
+    """Test method='json_schema' with dict schema returns matching dict."""
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
+    )
+    schema = {
+        "title": "Joke",
+        "description": "A joke with setup and punchline.",
+        "type": "object",
+        "properties": {
+            "setup": {"type": "string", "description": "The setup of the joke"},
+            "punchline": {
+                "type": "string",
+                "description": "The punchline of the joke",
+            },
+        },
+        "required": ["setup", "punchline"],
+    }
+    structured = model.with_structured_output(schema, method="json_schema")
+    result = structured.invoke("Tell me a short joke about programming")
+    assert isinstance(result, dict)
+    assert "setup" in result
+    assert "punchline" in result
+
+
+def test_structured_output_json_schema_streaming() -> None:
+    """Test that streaming works with method='json_schema'."""
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
+    )
+    structured = model.with_structured_output(JokeSchema, method="json_schema")
+    result = None
+    for chunk in structured.stream("Tell me a short joke about programming"):
+        result = chunk
+    assert isinstance(result, JokeSchema)
+    assert result.setup
+    assert result.punchline
+
+
+def test_structured_output_json_schema_include_raw() -> None:
+    """Test include_raw=True returns dict with raw, parsed, parsing_error."""
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
+    )
+    structured = model.with_structured_output(
+        JokeSchema, method="json_schema", include_raw=True
+    )
+    result = structured.invoke("Tell me a short joke about programming")
+    assert isinstance(result, dict)
+    assert "raw" in result
+    assert "parsed" in result
+    assert "parsing_error" in result
+    assert isinstance(result["raw"], AIMessage)
+    assert isinstance(result["parsed"], JokeSchema)
+    assert result["parsing_error"] is None

@@ -28,10 +28,13 @@ from langchain_aws.chat_models.bedrock_converse import (
     _camel_to_snake_keys,
     _convert_tool_blocks_to_text,
     _extract_response_metadata,
+    _format_data_content_block,
+    _format_tools,
     _has_tool_use_or_result_blocks,
     _lc_content_to_bedrock,
     _messages_to_bedrock,
     _parse_stream_event,
+    _set_additional_properties_false,
     _snake_to_camel,
     _snake_to_camel_keys,
 )
@@ -155,6 +158,61 @@ def test_anthropic_thinking_bind_tools_tool_choice(thinking_model: str) -> None:
         region_name="us-west-2",
         additional_model_request_fields={
             "thinking": {"type": "enabled", "budget_tokens": 1024},
+        },
+    )
+    # auto is directly supported
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="auto")
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "auto": {}
+    }
+    # any/tool are downgraded to auto with a warning when thinking is enabled
+    import warnings as _warnings
+
+    with _warnings.catch_warnings(record=True) as w:
+        _warnings.simplefilter("always")
+        chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="any")
+        assert len(w) == 1
+        assert "Downgrading to tool_choice='auto'" in str(w[0].message)
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "auto": {}
+    }
+    with _warnings.catch_warnings(record=True) as w:
+        _warnings.simplefilter("always")
+        chat_model_with_tools = chat_model.bind_tools(
+            [GetWeather], tool_choice="GetWeather"
+        )
+        assert len(w) == 1
+        assert "Downgrading to tool_choice='auto'" in str(w[0].message)
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "auto": {}
+    }
+    with _warnings.catch_warnings(record=True) as w:
+        _warnings.simplefilter("always")
+        chat_model_with_tools = chat_model.bind_tools(
+            [GetWeather], tool_choice={"tool": {"name": "GetWeather"}}
+        )
+        assert len(w) == 1
+        assert "Downgrading to tool_choice='auto'" in str(w[0].message)
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "auto": {}
+    }
+
+
+@pytest.mark.parametrize(
+    "thinking_model",
+    [
+        "anthropic.claude-sonnet-4-6-20250929-v1:0",
+        "anthropic.claude-opus-4-6-20250514-v1:0",
+    ],
+)
+def test_anthropic_adaptive_thinking_bind_tools_tool_choice(
+    thinking_model: str,
+) -> None:
+    chat_model = ChatBedrockConverse(
+        model=thinking_model,
+        region_name="us-west-2",
+        additional_model_request_fields={
+            "thinking": {"type": "adaptive"},
         },
     )
     chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="auto")
@@ -2821,6 +2879,103 @@ def test_bind_tools_formats_custom_tools_to_dicts() -> None:
     assert tool_def["function"].get("name") == "my_custom_tool"
 
 
+def test_bind_tools_strict_true() -> None:
+    """Test that strict=True sets the flag and applies schema transforms."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], strict=True)
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+    tools = bound_kwargs["tools"]
+    assert len(tools) == 1
+
+    func = tools[0]["function"]
+    assert func["strict"] is True
+    assert "location" in func["parameters"]["required"]
+    assert func["parameters"]["additionalProperties"] is False
+
+
+def test_bind_tools_strict_none_default() -> None:
+    """Test that default strict=None does not include strict key in tool definition."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    chat_model_with_tools = chat_model.bind_tools([GetWeather])
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+    func = bound_kwargs["tools"][0]["function"]
+    assert "strict" not in func
+
+
+def test_bind_tools_strict_false() -> None:
+    """Test that strict=False explicitly sets strict to False."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], strict=False)
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+    func = bound_kwargs["tools"][0]["function"]
+    assert func["strict"] is False
+
+
+def test_format_tools_preserves_strict() -> None:
+    """Test that _format_tools preserves strict when converting to Bedrock toolSpec."""
+    openai_tool = {
+        "type": "function",
+        "function": {
+            "name": "GetWeather",
+            "description": "Get the current weather in a given location",
+            "strict": True,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "The city and state",
+                    }
+                },
+                "required": ["location"],
+                "additionalProperties": False,
+            },
+        },
+    }
+    result = _format_tools([openai_tool])
+    assert len(result) == 1
+    tool_spec = result[0]["toolSpec"]
+    assert tool_spec["strict"] is True
+    assert tool_spec["name"] == "GetWeather"
+    assert "inputSchema" in tool_spec
+
+
+def test_bind_tools_strict_with_tool_choice() -> None:
+    """Test that strict and tool_choice work together without interference."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    chat_model_with_tools = chat_model.bind_tools(
+        [GetWeather], strict=True, tool_choice="auto"
+    )
+
+    bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
+    assert bound_kwargs["tool_choice"] == {"auto": {}}
+    func = bound_kwargs["tools"][0]["function"]
+    assert func["strict"] is True
+
+
+def test_with_structured_output_passes_strict_to_bind_tools() -> None:
+    """Test that with_structured_output passes strict through to bind_tools."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    structured = chat_model.with_structured_output(GetWeather, strict=True)
+    llm = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, llm).kwargs
+    func = bound_kwargs["tools"][0]["function"]
+    assert func["strict"] is True
+
+
 def test_reasoning_config_validation_accepts_strings() -> None:
     """Test that reasoning config validation accepts string values."""
     # Should not raise an error with string values
@@ -3195,11 +3350,11 @@ def test_service_tier_passed_to_converse_stream() -> None:
 
 def test_additional_model_request_fields_merge_no_duplicate_keys() -> None:
     """Test that additional_model_request_fields from constructor and invoke are merged
-    correctly without duplicate keys in different cases.
+    correctly when both use the same key.
 
     This test ensures that when additional_model_request_fields is provided both
     at initialization and at invocation, the final request contains only one
-    correctly cased field (snake_case), not both reasoning_effort and reasoningEffort.
+    field and the invoke value wins.
     """
     mocked_client = mock.MagicMock()
     mocked_client.converse.return_value = {
@@ -3231,7 +3386,7 @@ def test_additional_model_request_fields_merge_no_duplicate_keys() -> None:
     additional_fields = call_kwargs["additionalModelRequestFields"]
     assert isinstance(additional_fields, dict)
 
-    # Verify that the field is in snake_case (not camelCase)
+    # Verify the key is passed through exactly as provided
     assert "reasoning_effort" in additional_fields
     assert "reasoningEffort" not in additional_fields
 
@@ -3296,60 +3451,6 @@ def test_additional_model_request_fields_merge_invoke_only() -> None:
     assert additional_fields["reasoning_effort"] == "high"
 
 
-def test_additional_model_request_fields_camel_constructor_snake_invoke() -> None:
-    """Test camelCase at constructor and snake_case at invoke merge correctly."""
-    mocked_client = mock.MagicMock()
-    mocked_client.converse.return_value = {
-        "output": {"message": {"content": [{"text": "Hello!"}]}},
-        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
-    }
-
-    llm = ChatBedrockConverse(
-        client=mocked_client,
-        model="openai.gpt-oss-120b-1:0",
-        region_name="us-west-2",
-        additional_model_request_fields={"reasoningEffort": "low"},
-    )
-
-    llm.invoke(
-        [HumanMessage(content="Hi")],
-        additional_model_request_fields={"reasoning_effort": "medium"},
-    )
-
-    call_kwargs = mocked_client.converse.call_args[1]
-    additional_fields = call_kwargs["additionalModelRequestFields"]
-
-    assert list(additional_fields.keys()) == ["reasoning_effort"]
-    assert additional_fields["reasoning_effort"] == "medium"
-
-
-def test_additional_model_request_fields_snake_constructor_camel_invoke() -> None:
-    """Test snake_case at constructor and camelCase at invoke merge correctly."""
-    mocked_client = mock.MagicMock()
-    mocked_client.converse.return_value = {
-        "output": {"message": {"content": [{"text": "Hello!"}]}},
-        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
-    }
-
-    llm = ChatBedrockConverse(
-        client=mocked_client,
-        model="openai.gpt-oss-120b-1:0",
-        region_name="us-west-2",
-        additional_model_request_fields={"reasoning_effort": "low"},
-    )
-
-    llm.invoke(
-        [HumanMessage(content="Hi")],
-        additional_model_request_fields={"reasoningEffort": "high"},
-    )
-
-    call_kwargs = mocked_client.converse.call_args[1]
-    additional_fields = call_kwargs["additionalModelRequestFields"]
-
-    assert list(additional_fields.keys()) == ["reasoning_effort"]
-    assert additional_fields["reasoning_effort"] == "high"
-
-
 def test_additional_model_request_fields_invoke_overrides_constructor() -> None:
     """Test that invoke values take priority over constructor values for same key.
 
@@ -3382,6 +3483,109 @@ def test_additional_model_request_fields_invoke_overrides_constructor() -> None:
     # Verify invoke value takes priority over constructor value
     assert additional_fields["reasoning_effort"] == "invoke_value"
     assert additional_fields["reasoning_effort"] != "constructor_value"
+
+
+def test_additional_model_request_fields_camel_keys_passthrough() -> None:
+    """Test additional_model_request_fields keys are not transformed."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )
+
+    llm.invoke(
+        [HumanMessage(content="Hi")],
+        additional_model_request_fields={
+            "inferenceConfig": {"topK": 50},
+        },
+    )
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+
+    assert "inferenceConfig" in additional_fields
+    assert "inference_config" not in additional_fields
+    assert additional_fields["inferenceConfig"] == {"topK": 50}
+
+
+def test_additional_model_request_fields_keys_passthrough_stream() -> None:
+    """Test that additional_model_request_fields keys are not transformed
+    when streaming."""
+    mocked_client = mock.MagicMock()
+    mock_stream = mock.MagicMock()
+    mock_stream.__iter__ = mock.Mock(
+        return_value=iter(
+            [
+                {"messageStart": {"role": "assistant"}},
+                {
+                    "contentBlockDelta": {
+                        "delta": {"text": "Hi"},
+                        "contentBlockIndex": 0,
+                    }
+                },
+                {"messageStop": {"stopReason": "end_turn"}},
+            ]
+        )
+    )
+    mocked_client.converse_stream.return_value = {"stream": mock_stream}
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )
+
+    list(
+        llm.stream(
+            [HumanMessage(content="Hi")],
+            additional_model_request_fields={
+                "inferenceConfig": {"topK": 50},
+            },
+        )
+    )
+
+    call_kwargs = mocked_client.converse_stream.call_args[1]
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+
+    assert "inferenceConfig" in additional_fields
+    assert "inference_config" not in additional_fields
+    assert additional_fields["inferenceConfig"] == {"topK": 50}
+
+
+def test_additional_model_request_fields_mixed_formats() -> None:
+    """Test that both camelCase and snake_case keys coexist without transformation."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )
+
+    llm.invoke(
+        [HumanMessage(content="Hi")],
+        additional_model_request_fields={
+            "inferenceConfig": {"topK": 50},
+            "custom_param": "value",
+        },
+    )
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+
+    assert additional_fields["inferenceConfig"] == {"topK": 50}
+    assert additional_fields["custom_param"] == "value"
+    assert "inference_config" not in additional_fields
 
 
 def test_stream_closes_event_stream() -> None:
@@ -3714,3 +3918,854 @@ def test_streaming_tool_use_round_trip() -> None:
     tool_use_block = bedrock_content[0]["toolUse"]
     assert isinstance(tool_use_block["input"], dict)
     assert tool_use_block["input"] == {"city": "Paris"}
+
+
+def test__format_data_content_block_video_base64() -> None:
+    """Test that _format_data_content_block handles video blocks with base64 data."""
+    video_data = base64.b64encode(b"video_test_data").decode("utf-8")
+    block = {
+        "type": "video",
+        "base64": video_data,
+        "mimeType": "video/mp4",
+    }
+    result = _format_data_content_block(block)
+    assert result == {
+        "video": {
+            "format": "mp4",
+            "source": {"bytes": base64.b64decode(video_data.encode("utf-8"))},
+        }
+    }
+
+
+def test__format_data_content_block_video_source_type() -> None:
+    """Test that _format_data_content_block handles video blocks with sourceType."""
+    video_data = base64.b64encode(b"video_test_data").decode("utf-8")
+    block = {
+        "type": "video",
+        "sourceType": "base64",
+        "mimeType": "video/mp4",
+        "data": video_data,
+    }
+    result = _format_data_content_block(block)
+    assert result == {
+        "video": {
+            "format": "mp4",
+            "source": {"bytes": base64.b64decode(video_data.encode("utf-8"))},
+        }
+    }
+
+
+def test__format_data_content_block_video_missing_mime_type() -> None:
+    """Test _format_data_content_block raises for video without mimeType."""
+    block = {
+        "type": "video",
+        "base64": base64.b64encode(b"video_test_data").decode("utf-8"),
+    }
+    with pytest.raises(ValueError, match="mime_type key is required"):
+        _format_data_content_block(block)
+
+
+def test__format_data_content_block_video_no_base64() -> None:
+    """Test _format_data_content_block raises for video without base64."""
+    block = {
+        "type": "video",
+        "mimeType": "video/mp4",
+    }
+    with pytest.raises(
+        ValueError, match="Video data only supported through in-line base64 format"
+    ):
+        _format_data_content_block(block)
+
+
+def test__format_data_content_block_unsupported_type() -> None:
+    """Test that _format_data_content_block raises ValueError for unsupported types."""
+    block = {
+        "type": "audio",
+        "base64": base64.b64encode(b"audio_data").decode("utf-8"),
+        "mimeType": "audio/mp3",
+    }
+    with pytest.raises(ValueError, match="Unsupported data content block type"):
+        _format_data_content_block(block)
+
+
+# --- Native structured outputs tests ---
+
+
+def test_converse_params_output_config() -> None:
+    """Test that constructor output_config appears in _converse_params output."""
+    output_config = {
+        "textFormat": {
+            "type": "json_schema",
+            "structure": {
+                "jsonSchema": {
+                    "schema": '{"type": "object"}',
+                    "name": "test",
+                    "description": "test",
+                }
+            },
+        }
+    }
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        output_config=output_config,
+    )
+    params = llm._converse_params()
+    assert params["outputConfig"] == output_config
+
+
+def test_converse_params_output_config_kwarg_override() -> None:
+    """Test that invoke-level outputConfig overrides constructor value."""
+    constructor_config = {
+        "textFormat": {
+            "type": "json_schema",
+            "structure": {
+                "jsonSchema": {
+                    "schema": '{"type": "object"}',
+                    "name": "constructor",
+                    "description": "constructor",
+                }
+            },
+        }
+    }
+    override_config = {
+        "textFormat": {
+            "type": "json_schema",
+            "structure": {
+                "jsonSchema": {
+                    "schema": '{"type": "string"}',
+                    "name": "override",
+                    "description": "override",
+                }
+            },
+        }
+    }
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        output_config=constructor_config,
+    )
+    params = llm._converse_params(outputConfig=override_config)
+    assert params["outputConfig"] == override_config
+
+
+def test_converse_params_no_output_config() -> None:
+    """Test that outputConfig is absent when not set."""
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )
+    params = llm._converse_params()
+    assert "outputConfig" not in params
+
+
+def test_with_structured_output_method_json_schema() -> None:
+    """Test that method='json_schema' produces pipeline with outputConfig bound."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )
+    structured = chat_model.with_structured_output(GetWeather, method="json_schema")
+    # The first step should be a RunnableBinding with output_config in kwargs
+    first_step = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, first_step).kwargs
+    assert "output_config" in bound_kwargs
+    output_config = bound_kwargs["output_config"]
+    assert output_config["textFormat"]["type"] == "json_schema"
+    json_schema = output_config["textFormat"]["structure"]["jsonSchema"]
+    assert json_schema["name"] == "GetWeather"
+    assert '"location"' in json_schema["schema"]
+
+
+def test_with_structured_output_method_json_schema_dict() -> None:
+    """Test that method='json_schema' works with dict schema."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )
+    schema = {
+        "title": "Joke",
+        "description": "A joke",
+        "type": "object",
+        "properties": {
+            "setup": {"type": "string"},
+            "punchline": {"type": "string"},
+        },
+        "required": ["setup", "punchline"],
+    }
+    structured = chat_model.with_structured_output(schema, method="json_schema")
+    first_step = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, first_step).kwargs
+    assert "output_config" in bound_kwargs
+    output_config = bound_kwargs["output_config"]
+    json_schema = output_config["textFormat"]["structure"]["jsonSchema"]
+    assert json_schema["name"] == "Joke"
+    assert json_schema["description"] == "A joke"
+
+
+def test_with_structured_output_default_method() -> None:
+    """Test that default method still uses function_calling (backward compat)."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )
+    structured = chat_model.with_structured_output(GetWeather)
+    # Default method uses tool binding, so first step should have tools in kwargs
+    first_step = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, first_step).kwargs
+    assert "tools" in bound_kwargs
+    assert "output_config" not in bound_kwargs
+
+
+def test_json_schema_adds_additional_properties_false() -> None:
+    """Test that json_schema method adds additionalProperties: false to schemas."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )  # type: ignore[call-arg]
+    structured = chat_model.with_structured_output(GetWeather, method="json_schema")
+    first_step = structured.first  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, first_step).kwargs
+    output_config = bound_kwargs["output_config"]
+    import json
+
+    schema = json.loads(
+        output_config["textFormat"]["structure"]["jsonSchema"]["schema"]
+    )
+    assert schema["additionalProperties"] is False
+
+
+def test_json_schema_dict_not_mutated() -> None:
+    """Test that passing a dict schema does not mutate the original."""
+    schema = {
+        "title": "Joke",
+        "type": "object",
+        "properties": {"setup": {"type": "string"}},
+        "required": ["setup"],
+    }
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )  # type: ignore[call-arg]
+    chat_model.with_structured_output(schema, method="json_schema")
+    # Original dict should not have been modified
+    assert "additionalProperties" not in schema
+
+
+def test_set_additional_properties_false_nested_properties() -> None:
+    """Test that nested object properties get additionalProperties: false."""
+    schema: dict = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "address": {
+                "type": "object",
+                "properties": {
+                    "street": {"type": "string"},
+                    "city": {"type": "string"},
+                },
+            },
+        },
+    }
+    _set_additional_properties_false(schema)
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["address"]["additionalProperties"] is False
+    # Non-object properties should not be affected
+    assert "additionalProperties" not in schema["properties"]["name"]
+
+
+def test_set_additional_properties_false_array_items() -> None:
+    """Test that object items inside arrays get additionalProperties: false."""
+    schema: dict = {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"},
+                "label": {"type": "string"},
+            },
+        },
+    }
+    _set_additional_properties_false(schema)
+    # Top-level is an array, not an object, so no additionalProperties there
+    assert "additionalProperties" not in schema
+    # But the items object should have it
+    assert schema["items"]["additionalProperties"] is False
+
+
+def test_set_additional_properties_false_defs() -> None:
+    """Test that $defs and definitions entries get additionalProperties: false."""
+    schema: dict = {
+        "type": "object",
+        "properties": {
+            "pet": {"$ref": "#/$defs/Pet"},
+        },
+        "$defs": {
+            "Pet": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "species": {"type": "string"},
+                },
+            },
+        },
+        "definitions": {
+            "Owner": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                },
+            },
+        },
+    }
+    _set_additional_properties_false(schema)
+    assert schema["additionalProperties"] is False
+    assert schema["$defs"]["Pet"]["additionalProperties"] is False
+    assert schema["definitions"]["Owner"]["additionalProperties"] is False
+
+
+def test_set_additional_properties_false_composition_keywords() -> None:
+    """Test that allOf, anyOf, and oneOf sub-schemas get additionalProperties."""
+    schema: dict = {
+        "allOf": [
+            {
+                "type": "object",
+                "properties": {"a": {"type": "string"}},
+            },
+        ],
+        "anyOf": [
+            {
+                "type": "object",
+                "properties": {"b": {"type": "string"}},
+            },
+            {"type": "string"},
+        ],
+        "oneOf": [
+            {
+                "type": "object",
+                "properties": {"c": {"type": "integer"}},
+            },
+        ],
+    }
+    _set_additional_properties_false(schema)
+    assert schema["allOf"][0]["additionalProperties"] is False
+    assert schema["anyOf"][0]["additionalProperties"] is False
+    # Non-object sub-schemas should not be affected
+    assert "additionalProperties" not in schema["anyOf"][1]
+    assert schema["oneOf"][0]["additionalProperties"] is False
+
+
+def test_set_additional_properties_false_deeply_nested() -> None:
+    """Test a complex schema combining nested properties, items, $defs, and anyOf."""
+    schema: dict = {
+        "type": "object",
+        "properties": {
+            "people": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "contact": {
+                            "anyOf": [
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "email": {"type": "string"},
+                                    },
+                                },
+                                {"type": "null"},
+                            ],
+                        },
+                    },
+                },
+            },
+        },
+        "$defs": {
+            "Address": {
+                "type": "object",
+                "properties": {
+                    "coords": {
+                        "type": "object",
+                        "properties": {
+                            "lat": {"type": "number"},
+                            "lon": {"type": "number"},
+                        },
+                    },
+                },
+            },
+        },
+    }
+    _set_additional_properties_false(schema)
+    # Top-level object
+    assert schema["additionalProperties"] is False
+    # Array items object
+    items = schema["properties"]["people"]["items"]
+    assert items["additionalProperties"] is False
+    # anyOf branch with object type
+    assert items["properties"]["contact"]["anyOf"][0]["additionalProperties"] is False
+    # anyOf branch with null type should not be affected
+    assert "additionalProperties" not in items["properties"]["contact"]["anyOf"][1]
+    # $defs object
+    assert schema["$defs"]["Address"]["additionalProperties"] is False
+    # Nested object inside $defs
+    assert (
+        schema["$defs"]["Address"]["properties"]["coords"]["additionalProperties"]
+        is False
+    )
+
+
+def test_apply_cache_points_system_and_messages() -> None:
+    system = [{"text": "You are helpful."}]
+    messages = [
+        {"role": "user", "content": [{"text": "Hello"}]},
+        {"role": "assistant", "content": [{"text": "Hi"}]},
+        {"role": "user", "content": [{"text": "How are you?"}]},
+    ]
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+    assert messages[0]["content"] == [{"text": "Hello"}]
+    assert messages[1]["content"] == [{"text": "Hi"}]
+
+
+def test_apply_cache_points_no_system() -> None:
+    system: list = []
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"ttl": "5m"}, system, messages)
+    assert len(system) == 0
+    assert messages[0]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_no_ttl() -> None:
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral"}, system, messages)
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert messages[0]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_extended_ttl() -> None:
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "1h"}, system, messages)
+    assert system[-1] == {"cachePoint": {"type": "default", "ttl": "1h"}}
+    assert messages[0]["content"][-1] == {
+        "cachePoint": {"type": "default", "ttl": "1h"}
+    }
+
+
+def test_apply_cache_points_default_ttl_omitted() -> None:
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert "ttl" not in system[-1]["cachePoint"]
+
+
+def test_apply_cache_points_none_cache_control() -> None:
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points(None, system, messages)
+    assert len(system) == 1
+    assert len(messages[0]["content"]) == 1
+
+
+def test_apply_cache_points_empty_messages() -> None:
+    system = [{"text": "System"}]
+    messages: list = []
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"ttl": "5m"}, system, messages)
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert len(messages) == 0
+
+
+def test_apply_cache_points_with_tools() -> None:
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    params = {
+        "toolConfig": {
+            "tools": [
+                {
+                    "toolSpec": {
+                        "name": "get_weather",
+                        "description": "Get weather",
+                        "inputSchema": {"json": {"type": "object", "properties": {}}},
+                    }
+                }
+            ]
+        }
+    }
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages, params)
+    tools = params["toolConfig"]["tools"]
+    assert len(tools) == 2
+    assert tools[-1] == {"cachePoint": {"type": "default"}}
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_tools_with_extended_ttl() -> None:
+    params = {
+        "toolConfig": {
+            "tools": [
+                {"toolSpec": {"name": "t", "description": "d", "inputSchema": {}}}
+            ]
+        }
+    }
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "1h"}, [], [], params)
+    assert params["toolConfig"]["tools"][-1] == {
+        "cachePoint": {"type": "default", "ttl": "1h"}
+    }
+
+
+def test_apply_cache_points_no_tools() -> None:
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    params: dict = {}
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages, params)
+    assert "toolConfig" not in params
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_no_params() -> None:
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_skips_existing_tool_cache_point() -> None:
+    params = {
+        "toolConfig": {
+            "tools": [
+                {"toolSpec": {"name": "t", "description": "d", "inputSchema": {}}},
+                {"cachePoint": {"type": "default"}},
+            ]
+        }
+    }
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, [], [], params)
+    tool_config = cast(dict[str, Any], params["toolConfig"])
+    tools = cast(list[dict[str, Any]], tool_config["tools"])
+    cache_points = [t for t in tools if "cachePoint" in t]
+    assert len(cache_points) == 1
+
+
+def test_apply_cache_points_skips_existing_system_cache_point() -> None:
+    system: list[dict[str, Any]] = [
+        {"text": "You are helpful."},
+        {"cachePoint": {"type": "default"}},
+    ]
+    messages: list[dict[str, Any]] = [{"role": "user", "content": [{"text": "Hi"}]}]
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
+    system_cps = [b for b in system if "cachePoint" in b]
+    assert len(system_cps) == 1, (
+        f"Expected 1 cachePoint in system, got {len(system_cps)}"
+    )
+    last_content: list[dict[str, Any]] = messages[0]["content"]
+    msg_cps = [b for b in last_content if "cachePoint" in b]
+    assert len(msg_cps) == 1
+
+
+def test_apply_cache_points_skips_existing_message_cache_point() -> None:
+    system: list[dict[str, Any]] = [{"text": "You are helpful."}]
+    messages: list[dict[str, Any]] = [
+        {
+            "role": "user",
+            "content": [
+                {"text": "Hi"},
+                {"cachePoint": {"type": "default"}},
+            ],
+        }
+    ]
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
+    last_content: list[dict[str, Any]] = messages[0]["content"]
+    msg_cps = [b for b in last_content if "cachePoint" in b]
+    assert len(msg_cps) == 1, f"Expected 1 cachePoint in message, got {len(msg_cps)}"
+    system_cps = [b for b in system if "cachePoint" in b]
+    assert len(system_cps) == 1
+
+
+def test_generate_with_cache_control() -> None:
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        system=["You are helpful."],
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    llm.invoke(messages, cache_control={"type": "ephemeral", "ttl": "5m"})
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert call_kwargs["system"][-1] == {"cachePoint": {"type": "default"}}
+    last_msg_content = call_kwargs["messages"][-1]["content"]
+    assert last_msg_content[-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_stream_with_cache_control() -> None:
+    mocked_client = mock.MagicMock()
+    mocked_client.converse_stream.return_value = {
+        "stream": [
+            {"messageStart": {"role": "assistant"}},
+            {"contentBlockDelta": {"delta": {"text": "Hi"}, "contentBlockIndex": 0}},
+            {"messageStop": {"stopReason": "end_turn"}},
+            {
+                "metadata": {
+                    "usage": {
+                        "inputTokens": 10,
+                        "outputTokens": 5,
+                        "totalTokens": 15,
+                    }
+                }
+            },
+        ]
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        system=["You are helpful."],
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    list(llm.stream(messages, cache_control={"type": "ephemeral", "ttl": "5m"}))
+
+    call_kwargs = mocked_client.converse_stream.call_args[1]
+    assert call_kwargs["system"][-1] == {"cachePoint": {"type": "default"}}
+    last_msg_content = call_kwargs["messages"][-1]["content"]
+    assert last_msg_content[-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_generate_with_cache_control_extended_ttl() -> None:
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        system=["You are helpful."],
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    llm.invoke(messages, cache_control={"type": "ephemeral", "ttl": "1h"})
+
+    expected_cp = {"cachePoint": {"type": "default", "ttl": "1h"}}
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert call_kwargs["system"][-1] == expected_cp
+    last_msg_content = call_kwargs["messages"][-1]["content"]
+    assert last_msg_content[-1] == expected_cp
+
+
+def test_generate_with_cache_control_and_tools() -> None:
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "The weather is sunny."}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    tool_def = {
+        "name": "get_weather",
+        "description": "Get weather for a city",
+        "input_schema": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        system=["You are helpful."],
+    )
+    llm_with_tools = llm.bind_tools([tool_def])
+
+    messages = [HumanMessage(content="What's the weather?")]
+    llm_with_tools.invoke(messages, cache_control={"type": "ephemeral", "ttl": "5m"})
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert call_kwargs["system"][-1] == {"cachePoint": {"type": "default"}}
+    last_msg_content = call_kwargs["messages"][-1]["content"]
+    assert last_msg_content[-1] == {"cachePoint": {"type": "default"}}
+    tools = call_kwargs["toolConfig"]["tools"]
+    assert tools[-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_generate_with_cache_control_nova_skips_tools() -> None:
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "The weather is sunny."}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    tool_def = {
+        "name": "get_weather",
+        "description": "Get weather for a city",
+        "input_schema": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+        system=["You are helpful."],
+    )
+    llm_with_tools = llm.bind_tools([tool_def])
+
+    messages = [HumanMessage(content="What's the weather?")]
+    llm_with_tools.invoke(messages, cache_control={"type": "ephemeral", "ttl": "5m"})
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert call_kwargs["system"][-1] == {"cachePoint": {"type": "default"}}
+    last_msg_content = call_kwargs["messages"][-1]["content"]
+    assert last_msg_content[-1] == {"cachePoint": {"type": "default"}}
+    tools = call_kwargs["toolConfig"]["tools"]
+    assert not any("cachePoint" in t for t in tools)
+
+
+def test_generate_with_cache_control_nova_skips_tool_result_messages() -> None:
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "The weather is sunny."}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    tool_def = {
+        "name": "get_weather",
+        "description": "Get weather for a city",
+        "input_schema": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+        system=["You are helpful."],
+    )
+    llm_with_tools = llm.bind_tools([tool_def])
+
+    messages = [
+        HumanMessage(content="What's the weather?"),
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "get_weather",
+                    "args": {"city": "Seattle"},
+                    "id": "call_123",
+                }
+            ],
+        ),
+        ToolMessage(content="Sunny, 72F", tool_call_id="call_123"),
+    ]
+    llm_with_tools.invoke(messages, cache_control={"type": "ephemeral", "ttl": "5m"})
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert call_kwargs["system"][-1] == {"cachePoint": {"type": "default"}}
+    last_msg_content = call_kwargs["messages"][-1]["content"]
+    assert not any(
+        "cachePoint" in b for b in last_msg_content if isinstance(b, dict)
+    ), "cachePoint should not appear in toolResult messages for Nova"
+    tools = call_kwargs["toolConfig"]["tools"]
+    assert not any("cachePoint" in t for t in tools)
+
+
+def test_generate_without_cache_control() -> None:
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        system=["You are helpful."],
+    )
+
+    messages = [HumanMessage(content="Hi")]
+    llm.invoke(messages)
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    for item in call_kwargs["system"]:
+        assert "cachePoint" not in item
+    for msg in call_kwargs["messages"]:
+        for block in msg["content"]:
+            assert "cachePoint" not in block

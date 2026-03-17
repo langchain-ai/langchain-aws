@@ -1,4 +1,5 @@
 import base64
+import copy
 import functools
 import json
 import logging
@@ -71,6 +72,7 @@ from langchain_aws.tools.nova_tools import NovaSystemTool
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
+    thinking_in_params,
     trim_message_whitespace,
 )
 
@@ -282,6 +284,16 @@ class ChatBedrockConverse(BaseChatModel):
 
         ```python
         Joke(setup='What do you call a cat that gets all dressed up?', punchline='A purrfessional!', rating=7)
+        ```
+
+        Native JSON schema output (requires supported models, e.g. Claude 4.5+):
+        ```python
+        structured_model = model.with_structured_output(Joke, method="json_schema")
+        structured_model.invoke("Tell me a joke about cats")
+        ```
+
+        ```python
+        Joke(setup='Why was the cat sitting on the computer?', punchline='To keep an eye on the mouse!', rating=6)
         ```
 
         See `ChatBedrockConverse.with_structured_output()` for more.
@@ -545,8 +557,11 @@ class ChatBedrockConverse(BaseChatModel):
     additional_model_request_fields: Optional[Dict[str, Any]] = None
     """Additional inference parameters that the model supports.
 
-    Parameters beyond the base set of inference parameters that Converse supports in the
-    inferenceConfig field.
+    Parameters beyond the base set of inference parameters that Converse
+    supports in the additionalModelRequestFields field. Keys must match
+    the exact format expected by the target model (e.g., inferenceConfig,
+    not inference_config). Refer to the model's AWS documentation for
+    supported parameters.
 
     """
 
@@ -596,6 +611,14 @@ class ChatBedrockConverse(BaseChatModel):
         """,
     )
 
+    output_config: Optional[Dict[str, Any]] = None
+    """Output configuration for structured model responses.
+
+    Configures native JSON schema output format via the Bedrock ``outputConfig``
+    parameter. Only supported on select models (Claude 4.5+, select open-weight).
+    See https://docs.aws.amazon.com/bedrock/latest/userguide/structured-output.html
+    """
+
     request_metadata: Optional[Dict[str, str]] = None
     """Key-Value pairs that you can use to filter invocation logs."""
 
@@ -625,6 +648,59 @@ class ChatBedrockConverse(BaseChatModel):
 
         """
         return {"cachePoint": {"type": cache_type}}
+
+    def _apply_cache_points(
+        self,
+        cache_control: Optional[Dict[str, Any]],
+        system: List[Dict[str, Any]],
+        bedrock_messages: List[Dict[str, Any]],
+        params: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Apply cachePoint to system, messages, and tools in Converse API format.
+
+        Args:
+            cache_control: Cache control settings dict. Expected keys:
+                - ``ttl`` (optional): Time-to-live for the cache
+                  (e.g., ``"5m"``, ``"1h"``).
+                The ``type`` key is ignored; the Converse API always uses
+                ``"default"``.
+                If None, no cache points are applied.
+            system: The system message list in Converse API format.
+            bedrock_messages: The messages list in Converse API format.
+            params: The constructed API parameters dict. If provided and
+                ``toolConfig.tools`` is present, a cachePoint block is
+                appended to the tools array (unless one already exists).
+        """
+        if not cache_control:
+            return
+
+        is_nova = "amazon.nova" in self.model_id.lower()
+
+        cache_point: Dict[str, Any] = {"type": "default"}
+        ttl = cache_control.get("ttl")
+        if ttl and ttl != "5m" and not is_nova:
+            cache_point["ttl"] = ttl
+        cache_block = {"cachePoint": cache_point}
+
+        if system and not any(_is_cache_point(b) for b in system):
+            system.append(cache_block)
+
+        if bedrock_messages:
+            last_content = bedrock_messages[-1].get("content")
+            if isinstance(last_content, list):
+                has_tool_block = is_nova and any(
+                    isinstance(b, dict) and ("toolResult" in b or "toolUse" in b)
+                    for b in last_content
+                )
+                if not has_tool_block and not any(
+                    _is_cache_point(b) for b in last_content
+                ):
+                    last_content.append(cache_block)
+
+        if params and not is_nova:
+            tools = params.get("toolConfig", {}).get("tools")
+            if tools and not any(_is_cache_point(t) for t in tools):
+                tools.append(cache_block)
 
     @model_validator(mode="before")
     @classmethod
@@ -881,13 +957,10 @@ class ChatBedrockConverse(BaseChatModel):
                     "claude-opus-4",
                     "claude-haiku-4",
                 )
-                thinking_params = (self.additional_model_request_fields or {}).get(
-                    "thinking", {}
-                )
-                if (
-                    any(model in base_model for model in thinking_claude_models)
-                    and thinking_params.get("type") == "enabled"
-                ):
+                thinking_params = self.additional_model_request_fields or {}
+                if any(
+                    model in base_model for model in thinking_claude_models
+                ) and thinking_in_params(thinking_params):
                     self.supports_tool_choice_values = ("auto",)
                 else:
                     self.supports_tool_choice_values = ("auto", "any", "tool")
@@ -1053,12 +1126,16 @@ class ChatBedrockConverse(BaseChatModel):
         logger.debug(f"System message to bedrock: {system}")
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
+        additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
+        cache_control = filtered_kwargs.pop("cache_control", None)
         params = self._converse_params(
             stop=stop,
+            additionalModelRequestFields=additional_fields,
             **_snake_to_camel_keys(
                 filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
         )
+        self._apply_cache_points(cache_control, system, bedrock_messages, params)
 
         # Check for tool blocks without toolConfig and handle conversion
         if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(
@@ -1110,12 +1187,16 @@ class ChatBedrockConverse(BaseChatModel):
 
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
+        additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
+        cache_control = filtered_kwargs.pop("cache_control", None)
         params = self._converse_params(
             stop=stop,
+            additionalModelRequestFields=additional_fields,
             **_snake_to_camel_keys(
                 filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
         )
+        self._apply_cache_points(cache_control, system, bedrock_messages, params)
 
         # Check for tool blocks without toolConfig and handle conversion
         if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(
@@ -1212,6 +1293,74 @@ class ChatBedrockConverse(BaseChatModel):
 
     # TODO: Add async support once there are async bedrock.converse methods.
 
+    def _is_thinking_enabled(self) -> bool:
+        """Check if extended thinking is enabled via additional_model_request_fields."""
+        thinking_params = (self.additional_model_request_fields or {}).get(
+            "thinking", {}
+        )
+        return thinking_params.get("type") == "enabled"
+
+    def _resolve_tool_choice(
+        self,
+        tool_choice: Optional[Union[dict, str]],
+    ) -> Optional[Dict[str, Dict[str, str]]]:
+        """Validate and resolve tool_choice against model capabilities.
+
+        When thinking is enabled and the requested tool_choice is not
+        supported, downgrades to ``auto`` with a warning instead of
+        raising, so that callers like LangGraph ``create_agent`` work
+        transparently.
+
+        Args:
+            tool_choice: Requested tool_choice value.
+
+        Returns:
+            Formatted tool_choice dict, or ``None`` if not provided.
+
+        Raises:
+            ValueError: If tool_choice is unsupported and thinking is
+                not enabled (no safe downgrade possible).
+        """
+        if not tool_choice:
+            if "deepseek.v3" in self._get_base_model():
+                return _format_tool_choice("any")
+            return None
+
+        formatted = _format_tool_choice(tool_choice)
+        tool_choice_type = list(formatted.keys())[0]
+        supported = list(self.supports_tool_choice_values or [])
+
+        if tool_choice_type in supported:
+            return formatted
+
+        # Thinking-enabled models: downgrade to auto instead of failing.
+        if self._is_thinking_enabled() and "auto" in supported:
+            warnings.warn(
+                f"tool_choice={tool_choice!r} is not supported when thinking "
+                f"is enabled. Downgrading to tool_choice='auto'. The model "
+                f"will decide whether to call tools."
+            )
+            return _format_tool_choice("auto")
+
+        # No safe downgrade — raise.
+        base_model = self._get_base_model()
+        if self.supports_tool_choice_values:
+            msg = (
+                f"Model {base_model} does not currently support "
+                f"tool_choice of type {tool_choice_type}. "
+                f"The following tool_choice types are supported: "
+                f"{self.supports_tool_choice_values}."
+            )
+        else:
+            msg = f"Model {base_model} does not currently support tool_choice."
+
+        raise ValueError(
+            f"{msg} Please see "
+            "https://docs.aws.amazon.com/bedrock/latest/APIReference/"
+            "API_runtime_ToolChoice.html for the latest documentation "
+            "on models that support tool choice."
+        )
+
     def bind_tools(
         self,
         tools: Sequence[
@@ -1221,6 +1370,7 @@ class ChatBedrockConverse(BaseChatModel):
         ],
         *,
         tool_choice: Optional[Union[dict, str, Literal["auto", "any"]]] = None,
+        strict: Optional[bool] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, AIMessage]:
         # Separate system tools from custom tools
@@ -1251,9 +1401,16 @@ class ChatBedrockConverse(BaseChatModel):
                 formatted_custom_tools.append(tool)
             else:
                 try:
-                    formatted_custom_tools.append(convert_to_openai_tool(tool))
+                    formatted_custom_tools.append(
+                        convert_to_openai_tool(tool, strict=strict)
+                    )
                 except Exception:
-                    formatted_custom_tools.append(_format_tools([tool])[0])
+                    formatted = _format_tools([tool])[0]
+                    if strict is not None and "toolSpec" in formatted:
+                        formatted["toolSpec"]["strict"] = strict  # type: ignore[assignment]
+                    formatted_custom_tools.append(formatted)
+
+        resolved_tool_choice = self._resolve_tool_choice(tool_choice)
 
         if system_tools:
             # Merge system and custom tools
@@ -1262,68 +1419,14 @@ class ChatBedrockConverse(BaseChatModel):
             # Build toolConfig directly to avoid re-formatting
             tool_config: Dict[str, Any] = {"tools": all_tools}
 
-            if tool_choice:
-                tool_choice_formatted = _format_tool_choice(tool_choice)
-                tool_choice_type = list(tool_choice_formatted.keys())[0]
-                if tool_choice_type not in list(self.supports_tool_choice_values or []):
-                    base_model = self._get_base_model()
-                    if self.supports_tool_choice_values:
-                        supported = (
-                            f"Model {base_model} does not currently support "
-                            f"tool_choice of type {tool_choice_type}. "
-                            f"The following tool_choice types are supported: "
-                            f"{self.supports_tool_choice_values}."
-                        )
-                    else:
-                        supported = (
-                            f"Model {base_model} does not currently support "
-                            f"tool_choice."
-                        )
-
-                    raise ValueError(
-                        f"{supported} Please see "
-                        "https://docs.aws.amazon.com/bedrock/latest/APIReference/"
-                        "API_runtime_ToolChoice.html for the latest documentation "
-                        "on models that support tool choice."
-                    )
-                tool_config["toolChoice"] = tool_choice_formatted
-            elif "deepseek.v3" in self._get_base_model():
-                tool_config["toolChoice"] = _format_tool_choice("any")
+            if resolved_tool_choice:
+                tool_config["toolChoice"] = resolved_tool_choice
 
             return self.bind(toolConfig=tool_config, **kwargs)
         else:
-            # Format tool_choice if provided
-            formatted_tool_choice = None
-            if tool_choice:
-                formatted_tool_choice = _format_tool_choice(tool_choice)
-                tool_choice_type = list(formatted_tool_choice.keys())[0]
-                if tool_choice_type not in list(self.supports_tool_choice_values or []):
-                    base_model = self._get_base_model()
-                    if self.supports_tool_choice_values:
-                        supported = (
-                            f"Model {base_model} does not currently support "
-                            f"tool_choice of type {tool_choice_type}. "
-                            f"The following tool_choice types are supported: "
-                            f"{self.supports_tool_choice_values}."
-                        )
-                    else:
-                        supported = (
-                            f"Model {base_model} does not currently support "
-                            f"tool_choice."
-                        )
-
-                    raise ValueError(
-                        f"{supported} Please see "
-                        "https://docs.aws.amazon.com/bedrock/latest/APIReference/"
-                        "API_runtime_ToolChoice.html for the latest documentation "
-                        "on models that support tool choice."
-                    )
-            elif "deepseek.v3" in self._get_base_model():
-                formatted_tool_choice = _format_tool_choice("any")
-
             return self.bind(
                 tools=formatted_custom_tools,
-                tool_choice=formatted_tool_choice,
+                tool_choice=resolved_tool_choice,
                 **kwargs,
             )
 
@@ -1332,6 +1435,23 @@ class ChatBedrockConverse(BaseChatModel):
         schema: _DictOrPydanticClass,
         *,
         include_raw: bool = False,
+        method: Literal["function_calling", "json_schema"] = "function_calling",
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
+        if method == "json_schema":
+            return self._with_structured_output_json_schema(
+                schema, include_raw=include_raw, **kwargs
+            )
+        return self._with_structured_output_function_calling(
+            schema, include_raw=include_raw, **kwargs
+        )
+
+    def _with_structured_output_function_calling(
+        self,
+        schema: _DictOrPydanticClass,
+        *,
+        include_raw: bool = False,
+        strict: Optional[bool] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
         supports_tool_choice_values = self.supports_tool_choice_values or ()
@@ -1359,13 +1479,14 @@ class ChatBedrockConverse(BaseChatModel):
                 llm = self.bind_tools(
                     [schema],
                     tool_choice=tool_choice,
+                    strict=strict,
                     ls_structured_output_format={
                         "kwargs": {"method": "function_calling"},
                         "schema": convert_to_openai_tool(schema),
                     },
                 )
             except Exception:
-                llm = self.bind_tools([schema], tool_choice=tool_choice)
+                llm = self.bind_tools([schema], tool_choice=tool_choice, strict=strict)
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             if self.disable_streaming:
                 output_parser: OutputParserLike = ToolsOutputParser(
@@ -1384,6 +1505,80 @@ class ChatBedrockConverse(BaseChatModel):
                 output_parser = JsonOutputKeyToolsParser(
                     key_name=tool_name, first_tool_only=True
                 )
+
+        if include_raw:
+            parser_assign = RunnablePassthrough.assign(
+                parsed=itemgetter("raw") | output_parser, parsing_error=lambda _: None
+            )
+            parser_none = RunnablePassthrough.assign(parsed=lambda _: None)
+            parser_with_fallback = parser_assign.with_fallbacks(
+                [parser_none], exception_key="parsing_error"
+            )
+            return RunnableMap(raw=llm) | parser_with_fallback
+        else:
+            return llm | output_parser
+
+    def _with_structured_output_json_schema(
+        self,
+        schema: _DictOrPydanticClass,
+        *,
+        include_raw: bool = False,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
+        if isinstance(schema, type) and is_basemodel_subclass(schema):
+            json_schema = schema.model_json_schema()
+            schema_name = schema.__name__
+            schema_description = schema.__doc__ or schema_name
+        elif isinstance(schema, dict):
+            json_schema = copy.deepcopy(schema)
+            schema_name = str(schema.get("title", schema.get("name", "output_schema")))
+            schema_description = str(schema.get("description", schema_name))
+        else:
+            msg = (
+                f"Unsupported schema type: {type(schema)}. "
+                "Expected a Pydantic model class or a dict."
+            )
+            raise ValueError(msg)
+
+        # Bedrock structured outputs require additionalProperties: false on all
+        # object-type schemas. Recursively ensure compliance.
+        _set_additional_properties_false(json_schema)
+
+        output_config = {
+            "textFormat": {
+                "type": "json_schema",
+                "structure": {
+                    "jsonSchema": {
+                        "schema": json.dumps(json_schema),
+                        "name": schema_name,
+                        "description": schema_description,
+                    }
+                },
+            }
+        }
+
+        try:
+            llm = self.bind(
+                output_config=output_config,
+                ls_structured_output_format={
+                    "kwargs": {"method": "json_schema"},
+                    "schema": json_schema,
+                },
+                **kwargs,
+            )
+        except Exception:
+            llm = self.bind(output_config=output_config, **kwargs)
+
+        if isinstance(schema, type) and is_basemodel_subclass(schema):
+            from langchain_core.output_parsers import PydanticOutputParser
+
+            output_parser: OutputParserLike = PydanticOutputParser(
+                pydantic_object=schema
+            )
+        else:
+            from langchain_core.output_parsers import JsonOutputParser
+
+            output_parser = JsonOutputParser()
 
         if include_raw:
             parser_assign = RunnablePassthrough.assign(
@@ -1418,6 +1613,7 @@ class ChatBedrockConverse(BaseChatModel):
             Literal["priority", "default", "flex", "reserved"]
         ] = None,
         requestMetadata: Optional[dict] = None,
+        outputConfig: Optional[dict] = None,
         stream: Optional[bool] = True,
     ) -> Dict[str, Any]:
         if not inferenceConfig:
@@ -1450,26 +1646,16 @@ class ChatBedrockConverse(BaseChatModel):
         tier = serviceTier or self.service_tier
 
         # Merge additional_model_request_fields: invoke-level values override
-        # constructor defaults.
-        # Both sides must be normalized to snake_case before merging to ensure
-        # that keys like "reasoningEffort" and "reasoning_effort" are treated
-        # as the same key. The final result stays in snake_case for the API.
+        # constructor defaults. Values are passed through without key
+        # transformation -- the user is responsible for providing keys in
+        # the specific format that the target model expects.
         constructor_fields = self.additional_model_request_fields
         invoke_fields = additionalModelRequestFields
-        excluded = {"reasoningConfig", "inputSchema", "properties", "thinking"}
 
         if constructor_fields or invoke_fields:
             merged_additional_fields = {
-                **(
-                    _camel_to_snake_keys(constructor_fields, excluded_keys=excluded)
-                    if constructor_fields
-                    else {}
-                ),
-                **(
-                    _camel_to_snake_keys(invoke_fields, excluded_keys=excluded)
-                    if invoke_fields
-                    else {}
-                ),
+                **(constructor_fields or {}),
+                **(invoke_fields or {}),
             }
         else:
             merged_additional_fields = {}
@@ -1490,6 +1676,7 @@ class ChatBedrockConverse(BaseChatModel):
                 "performanceConfig": performanceConfig or self.performance_config,
                 "serviceTier": {"type": tier} if tier else None,
                 "requestMetadata": requestMetadata or self.request_metadata,
+                "outputConfig": outputConfig or self.output_config,
             }
         )
 
@@ -1589,6 +1776,27 @@ class ChatBedrockConverse(BaseChatModel):
         except Exception as e:
             logger.warning(f"count_tokens API failed: {e}. Using fallback.")
             return super().get_num_tokens_from_messages(messages, tools=tools)
+
+
+_base_wso_doc = BaseChatModel.with_structured_output.__doc__ or ""
+_method_doc = """\
+    method: The method for structured output generation. Supported
+        options are ``"function_calling"`` and ``"json_schema"``.
+
+        - ``"function_calling"`` (default): Uses forced tool calling to
+          generate structured output.
+        - ``"json_schema"``: Uses Bedrock's native ``outputConfig``
+          with ``textFormat`` to constrain model output to a JSON schema.
+          Only supported on select models (e.g., Claude 4.5 and later,
+          select open-weight models). See the `Bedrock structured output
+          documentation
+          <https://docs.aws.amazon.com/bedrock/latest/userguide/structured-output.html>`_
+          for the latest supported models.
+
+"""
+ChatBedrockConverse.with_structured_output.__doc__ = _base_wso_doc.replace(
+    "Raises:", _method_doc + "Raises:", 1
+)
 
 
 def _handle_bedrock_error(error: ClientError) -> None:
@@ -1911,6 +2119,32 @@ def _format_data_content_block(block: dict) -> dict:
         else:
             error_message = "File data only supported through in-line base64 format."
             raise ValueError(error_message)
+
+    elif block["type"] == "video":
+        if "base64" in block or block.get("sourceType") == "base64":
+            if "mimeType" not in block:
+                error_message = "mime_type key is required for base64 data."
+                raise ValueError(error_message)
+            formatted_block = {
+                "video": {
+                    "format": _mime_type_to_format(block["mimeType"]),
+                    "source": {
+                        "bytes": _b64str_to_bytes(
+                            block.get("base64") or block.get("data", "")
+                        )
+                    },
+                }
+            }
+        else:
+            error_message = "Video data only supported through in-line base64 format."
+            raise ValueError(error_message)
+
+    else:
+        error_message = (
+            f"Unsupported data content block type: '{block['type']}'. "
+            f"Supported types are: 'image', 'file', 'video'."
+        )
+        raise ValueError(error_message)
 
     return formatted_block
 
@@ -2280,6 +2514,30 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 f"'reasoning_content' keys. Received:\n\n{block}"
             )
     return lc_content
+
+
+def _set_additional_properties_false(schema: dict) -> None:
+    """Recursively set ``additionalProperties: false`` on object-type schemas.
+
+    Bedrock structured outputs require this on every object in the JSON schema.
+    Modifies *schema* in place. Also walks ``$defs``/``definitions``,
+    ``properties``, ``items``, and ``allOf``/``anyOf``/``oneOf``.
+    """
+    if schema.get("type") == "object":
+        schema["additionalProperties"] = False
+        for prop_schema in (schema.get("properties") or {}).values():
+            if isinstance(prop_schema, dict):
+                _set_additional_properties_false(prop_schema)
+    if "items" in schema and isinstance(schema["items"], dict):
+        _set_additional_properties_false(schema["items"])
+    for keyword in ("$defs", "definitions"):
+        for def_schema in (schema.get(keyword) or {}).values():
+            if isinstance(def_schema, dict):
+                _set_additional_properties_false(def_schema)
+    for keyword in ("allOf", "anyOf", "oneOf"):
+        for sub_schema in schema.get(keyword) or []:
+            if isinstance(sub_schema, dict):
+                _set_additional_properties_false(sub_schema)
 
 
 def _format_tools(

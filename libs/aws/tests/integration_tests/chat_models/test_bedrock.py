@@ -2,7 +2,7 @@
 
 import json
 from typing import Annotated, Any, Literal, Optional, TypedDict, Union
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from langchain_core.messages import (
@@ -906,3 +906,57 @@ def test_guardrails_streaming_trace() -> None:
             "Neither invoke nor streaming captured guardrail traces - "
             "check guardrail setup"
         )
+
+
+_LONG_SYSTEM_PROMPT = (
+    "You are a helpful assistant that answers concisely. "
+    "You have deep expertise in geography, climate science, demographics, "
+    "urban planning, and world history. When answering questions about cities, "
+    "provide accurate and up-to-date information. "
+    + "You should always strive to give the most helpful response possible. " * 85
+    + f" Session: {uuid4().hex}"
+)
+
+
+@tool
+def _get_weather(city: str) -> str:
+    """Simple tool for cache tests"""
+    return f"The weather in {city} is sunny and 72F."
+
+
+def test_cache_control_anthropic() -> None:
+    llm = ChatBedrock(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    )
+    r1 = llm.invoke(
+        [
+            SystemMessage(content=_LONG_SYSTEM_PROMPT),
+            HumanMessage(content="What is the capital of France?"),
+        ],
+        cache_control={"type": "ephemeral"},
+    )
+    assert isinstance(r1, AIMessage)
+    assert r1.usage_metadata is not None
+    details = r1.usage_metadata.get("input_token_details", {})
+    cache_write = details.get("cache_creation", 0) or 0
+    assert cache_write > 0, f"Expected cache write on first call, got {cache_write}"
+
+
+def test_cache_control_anthropic_with_tools() -> None:
+    llm = ChatBedrock(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    )
+    llm_with_tools = llm.bind_tools([_get_weather], tool_choice="any")
+    r1 = llm_with_tools.invoke(
+        [
+            SystemMessage(content=_LONG_SYSTEM_PROMPT),
+            HumanMessage(content="What is the weather in Seattle?"),
+        ],
+        cache_control={"type": "ephemeral"},
+    )
+    assert isinstance(r1, AIMessage)
+    assert len(r1.tool_calls) >= 1
+    assert r1.usage_metadata is not None
+    details = r1.usage_metadata.get("input_token_details", {})
+    cache_write = details.get("cache_creation", 0) or 0
+    assert cache_write > 0, f"Expected cache write on first call, got {cache_write}"

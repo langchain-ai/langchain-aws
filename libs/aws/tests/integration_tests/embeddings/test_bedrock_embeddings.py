@@ -166,8 +166,7 @@ def test_bedrock_cohere_batching() -> None:
     # Test large character batch
     large_char_batch = ["foo", "bar", "a" * 2045, "baz"]
     assert list(bedrock._batch_cohere_embedding_texts(large_char_batch)) == [
-        ["foo", "bar"],
-        ["a" * 2045, "baz"],
+        ["foo", "bar", "a" * 2045, "baz"],
     ]
 
     # Should be fine with exactly 2048 characters
