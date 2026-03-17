@@ -111,7 +111,7 @@ class BrowserToolkit:
                                 "port": 8080,
                                 "credentials": {
                                     "basicAuth": {
-                                        "secretArn": "arn:aws:secretsmanager:us-west-2:123456789012:secret:my-proxy-creds"
+                                        "secretArn": "arn:aws:secretsmanager:..."
                                     }
                                 },
                             }
