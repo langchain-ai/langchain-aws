@@ -58,6 +58,25 @@ class BrowserSessionManager:
         self._async_sessions: Dict[str, Tuple[BrowserClient, AsyncBrowser, bool]] = {}
         self._sync_sessions: Dict[str, Tuple[BrowserClient, SyncBrowser, bool]] = {}
 
+    def _build_start_kwargs(self) -> Dict[str, Any]:
+        """Build keyword arguments for ``BrowserClient.start()``.
+
+        Collects the optional proxy, extensions, and profile configuration
+        into a dict, omitting any that are ``None``.
+
+        Returns:
+            Dict of keyword arguments to unpack into ``start()``.
+
+        """
+        kwargs: Dict[str, Any] = {}
+        if self.proxy_configuration is not None:
+            kwargs["proxy_configuration"] = self.proxy_configuration
+        if self.extensions is not None:
+            kwargs["extensions"] = self.extensions
+        if self.profile_configuration is not None:
+            kwargs["profile_configuration"] = self.profile_configuration
+        return kwargs
+
     async def get_async_browser(self, thread_id: str) -> AsyncBrowser:
         """
         Get or create an async browser for the specified thread.
@@ -130,17 +149,8 @@ class BrowserSessionManager:
         )
 
         try:
-            # Build start kwargs with optional parameters
-            start_kwargs: Dict[str, Any] = {}
-            if self.proxy_configuration is not None:
-                start_kwargs["proxy_configuration"] = self.proxy_configuration
-            if self.extensions is not None:
-                start_kwargs["extensions"] = self.extensions
-            if self.profile_configuration is not None:
-                start_kwargs["profile_configuration"] = self.profile_configuration
-
-            # Start browser session
-            browser_client.start(**start_kwargs)
+            # Start browser session with optional parameters
+            browser_client.start(**self._build_start_kwargs())
 
             # Get WebSocket connection info
             ws_url, headers = browser_client.generate_ws_headers()
@@ -199,17 +209,8 @@ class BrowserSessionManager:
         )
 
         try:
-            # Build start kwargs with optional parameters
-            start_kwargs: Dict[str, Any] = {}
-            if self.proxy_configuration is not None:
-                start_kwargs["proxy_configuration"] = self.proxy_configuration
-            if self.extensions is not None:
-                start_kwargs["extensions"] = self.extensions
-            if self.profile_configuration is not None:
-                start_kwargs["profile_configuration"] = self.profile_configuration
-
-            # Start browser session
-            browser_client.start(**start_kwargs)
+            # Start browser session with optional parameters
+            browser_client.start(**self._build_start_kwargs())
 
             # Get WebSocket connection info
             ws_url, headers = browser_client.generate_ws_headers()

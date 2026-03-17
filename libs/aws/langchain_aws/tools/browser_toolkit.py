@@ -102,13 +102,46 @@ class BrowserToolkit:
             region: AWS region for the browser client.
             proxy_configuration: Proxy routing config. Accepts a
                 ``ProxyConfiguration`` dataclass or equivalent dict with
-                ``proxies`` and optional ``bypass`` keys.
+                ``proxies`` and optional ``bypass`` keys. Example::
+
+                    {
+                        "proxies": [{
+                            "externalProxy": {
+                                "server": "proxy.example.com",
+                                "port": 8080,
+                                "credentials": {
+                                    "basicAuth": {
+                                        "secretArn": "arn:aws:secretsmanager:us-west-2:123456789012:secret:my-proxy-creds"
+                                    }
+                                },
+                            }
+                        }],
+                        "bypass": {
+                            "domainPatterns": ["169.254.169.254"]
+                        },
+                    }
+
             extensions: Browser extensions to load. Accepts a list of
                 ``BrowserExtension`` dataclasses or equivalent dicts with
-                an S3 ``location``.
+                an S3 ``location``. Example::
+
+                    [
+                        {
+                            "location": {
+                                "s3": {
+                                    "bucket": "my-extensions-bucket",
+                                    "prefix": "tampermonkey.zip",
+                                }
+                            }
+                        }
+                    ]
+
             profile_configuration: Profile for persisting browser state
                 across sessions. Accepts a ``ProfileConfiguration``
                 dataclass or dict with a ``profileIdentifier`` key.
+                Example::
+
+                    {"profileIdentifier": "my-browser-profile-id"}
 
         """
         self.region = region
