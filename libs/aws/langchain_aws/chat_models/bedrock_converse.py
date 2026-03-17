@@ -1074,6 +1074,13 @@ class ChatBedrockConverse(BaseChatModel):
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
         additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
+
+        response_format = filtered_kwargs.pop("response_format", None)
+        if response_format and "output_config" not in filtered_kwargs:
+            filtered_kwargs["output_config"] = _response_format_to_output_config(
+                response_format
+            )
+
         params = self._converse_params(
             stop=stop,
             additionalModelRequestFields=additional_fields,
@@ -1133,6 +1140,13 @@ class ChatBedrockConverse(BaseChatModel):
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
         additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
+
+        response_format = filtered_kwargs.pop("response_format", None)
+        if response_format and "output_config" not in filtered_kwargs:
+            filtered_kwargs["output_config"] = _response_format_to_output_config(
+                response_format
+            )
+
         params = self._converse_params(
             stop=stop,
             additionalModelRequestFields=additional_fields,
@@ -2457,6 +2471,44 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 f"'reasoning_content' keys. Received:\n\n{block}"
             )
     return lc_content
+
+
+def _response_format_to_output_config(
+    response_format: Dict[str, Any],
+) -> Dict[str, Any]:
+    fmt_type = response_format.get("type")
+    if fmt_type != "json_schema":
+        msg = (
+            f"Unsupported response_format type: {fmt_type!r}. "
+            "Only 'json_schema' is supported for Bedrock Converse API."
+        )
+        raise ValueError(msg)
+
+    json_schema_block = response_format.get(
+        "jsonSchema", response_format.get("json_schema", {})
+    )
+    schema = json_schema_block.get("schema", {})
+    name = json_schema_block.get("name", "output_schema")
+    description = json_schema_block.get("description", name)
+
+    if isinstance(schema, str):
+        schema = json.loads(schema)
+
+    schema = copy.deepcopy(schema)
+    _set_additional_properties_false(schema)
+
+    return {
+        "textFormat": {
+            "type": "json_schema",
+            "structure": {
+                "jsonSchema": {
+                    "schema": json.dumps(schema),
+                    "name": name,
+                    "description": description,
+                }
+            },
+        }
+    }
 
 
 def _set_additional_properties_false(schema: dict) -> None:
