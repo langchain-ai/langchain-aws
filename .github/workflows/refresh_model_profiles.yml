@@ -21,7 +21,7 @@ jobs:
     with:
       providers: >-
         [
-          {"provider":"anthropic", "data_dir":"libs/aws/langchain_aws/data"}
+          {"provider":"amazon-bedrock", "data_dir":"libs/aws/langchain_aws/data"}
         ]
     secrets:
       MODEL_PROFILE_BOT_APP_ID: ${{ secrets.MODEL_PROFILE_BOT_APP_ID }}
