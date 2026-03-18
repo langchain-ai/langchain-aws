@@ -169,11 +169,23 @@ def _stream_response_to_generation_chunk(
                 content_block["type"] = "thinking"
                 return AIMessageChunk(content=[content_block])
         elif msg_type == "message_delta":
+            provider = self._get_provider()
+
+            # Get the correct key (e.g., 'stopSequences' for Amazon)
+            # Default to "stop_sequence" if the provider is unknown
+            stop_key = provider_stop_sequence_key_name_map.get(provider, "stop_sequence")
+    
+            delta = stream_response.get("delta", {})
+            
             return AIMessageChunk(
                 content="",
                 response_metadata={
-                    "stop_reason": stream_response["delta"].get("stop_reason"),
-                    "stop_sequence": stream_response["delta"].get("stop_sequence"),
+                    "stop_reason": delta.get("stop_reason"),
+                    # CRITICAL: Use .get(stop_key) to return None if Guardrails 
+                    # stripped the field from the response.
+                    "stop_sequence": delta.get(stop_key),
+                    #"stop_reason": stream_response["delta"].get("stop_reason"),
+                    #"stop_sequence": stream_response["delta"].get("stop_sequence"),
                 },
             )
         else:
