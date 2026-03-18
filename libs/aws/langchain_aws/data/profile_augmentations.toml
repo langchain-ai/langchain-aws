@@ -1,4 +1,4 @@
-provider = "anthropic"
+provider = "amazon-bedrock"
 
 [overrides]
 image_url_inputs = true
