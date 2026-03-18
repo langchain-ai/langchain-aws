@@ -19,9 +19,11 @@ from pydantic import BaseModel, Field
 from langchain_aws import ChatBedrock
 from langchain_aws.chat_models.bedrock import (
     ChatPromptAdapter,
+    _convert_one_message_to_text_qwen,
     _format_anthropic_messages,
     _merge_messages,
     convert_messages_to_prompt_anthropic,
+    convert_messages_to_prompt_qwen,
 )
 from langchain_aws.function_calling import convert_to_anthropic_tool
 
@@ -1342,6 +1344,12 @@ def test__format_anthropic_messages_preserves_content_order() -> None:
             "deepseek",
             "<|begin_of_sentence|>",
         ),
+        (
+            "qwen.qwen3-32b-v1:0",
+            "qwen.qwen3-32b-v1:0",
+            "qwen",
+            "<|im_start|>",
+        ),
     ],
 )
 def test_chat_prompt_adapter_with_model_detection(
@@ -2264,3 +2272,58 @@ def test_stream_cache_control_kwarg_applied() -> None:
         "type": "ephemeral",
         "ttl": "5m",
     }
+
+
+def test_convert_one_message_to_text_qwen_system() -> None:
+    """Test that SystemMessage is converted to ChatML system format."""
+    message = SystemMessage(content="You are a helpful assistant")
+    result = _convert_one_message_to_text_qwen(message)
+    assert result == "<|im_start|>system\nYou are a helpful assistant<|im_end|>"
+
+
+def test_convert_one_message_to_text_qwen_human() -> None:
+    """Test that HumanMessage is converted to ChatML user format."""
+    message = HumanMessage(content="Hello")
+    result = _convert_one_message_to_text_qwen(message)
+    assert result == "<|im_start|>user\nHello<|im_end|>"
+
+
+def test_convert_one_message_to_text_qwen_ai() -> None:
+    """Test that AIMessage is converted to ChatML assistant format."""
+    message = AIMessage(content="Hi there")
+    result = _convert_one_message_to_text_qwen(message)
+    assert result == "<|im_start|>assistant\nHi there<|im_end|>"
+
+
+def test_convert_one_message_to_text_qwen_unknown_type() -> None:
+    """Test that unknown message types raise ValueError."""
+    message = ToolMessage(content="result", tool_call_id="123")
+    with pytest.raises(ValueError, match="Got unknown type"):
+        _convert_one_message_to_text_qwen(message)
+
+
+def test_convert_messages_to_prompt_qwen() -> None:
+    """Test multi-turn conversation is formatted in ChatML with suffix."""
+    messages = [
+        SystemMessage(content="You are a helpful assistant"),
+        HumanMessage(content="What is 1+1?"),
+        AIMessage(content="2"),
+        HumanMessage(content="And 2+2?"),
+    ]
+    result = convert_messages_to_prompt_qwen(messages)
+    expected = (
+        "<|im_start|>system\nYou are a helpful assistant<|im_end|>\n"
+        "<|im_start|>user\nWhat is 1+1?<|im_end|>\n"
+        "<|im_start|>assistant\n2<|im_end|>\n"
+        "<|im_start|>user\nAnd 2+2?<|im_end|>\n"
+        "<|im_start|>assistant\n"
+    )
+    assert result == expected
+
+
+def test_convert_messages_to_prompt_qwen_single_message() -> None:
+    """Test single user message produces valid ChatML prompt."""
+    messages = [HumanMessage(content="Hello")]
+    result = convert_messages_to_prompt_qwen(messages)
+    expected = "<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n"
+    assert result == expected

@@ -1,15 +1,9 @@
-"""Bedrock Anthropic prompt caching middleware.
-
-Requires:
-    - langchain: For agent middleware framework
-    - langchain-aws: For ChatBedrock model (already a dependency)
-"""
-
 from collections.abc import Awaitable, Callable
-from typing import Literal
+from typing import Literal, Union
 from warnings import warn
 
 from langchain_aws.chat_models.bedrock import ChatBedrock
+from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 
 try:
     from langchain.agents.middleware.types import (
@@ -27,24 +21,27 @@ except ImportError as e:
     raise ImportError(msg) from e
 
 
-def _is_anthropic_model(model: ChatBedrock) -> bool:
-    """Check if the model is an Anthropic model on Bedrock."""
+def _is_supported_model(model: Union[ChatBedrock, ChatBedrockConverse]) -> bool:
+    """Check if the model supports prompt caching on Bedrock."""
     model_id = getattr(model, "model_id", "") or getattr(model, "model", "")
-    return "anthropic" in model_id.lower()
+    return any(name in model_id.lower() for name in ("anthropic", "amazon.nova"))
 
 
 class BedrockPromptCachingMiddleware(AgentMiddleware):
-    """Prompt Caching Middleware for ChatBedrock (InvokeModel API).
+    """Prompt Caching Middleware for ChatBedrock and ChatBedrockConverse.
 
-    Optimizes API usage by caching conversation prefixes for Anthropic models
-    on AWS Bedrock. Adds cache_control to the last message, caching the entire
-    conversation prefix (including system prompt) for improved cache hits in
-    multi-turn conversations.
+    Optimizes API usage by caching conversation prefixes for supported models
+    on AWS Bedrock. Supports Anthropic Claude and Amazon Nova models.
+
+    For ChatBedrock (InvokeModel API), adds ``cache_control`` to the last
+    message's content block. For ChatBedrockConverse (Converse API), appends
+    ``cachePoint`` blocks to the system prompt and last message.
 
     Requires both 'langchain' and 'langchain-aws' packages to be installed.
 
-    Learn more about Anthropic prompt caching
-    [here](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching).
+    Learn more about prompt caching at:
+    - `Anthropic <https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching>`
+    - `AWS Bedrock <https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html>`
     """
 
     def __init__(
@@ -57,16 +54,19 @@ class BedrockPromptCachingMiddleware(AgentMiddleware):
         """Initialize the middleware with cache control settings.
 
         Args:
-            type: The type of cache to use, only "ephemeral" is supported.
-            ttl: The time to live for the cache, only "5m" and "1h" are
-                supported.
+            type: The type of cache to use. For ChatBedrock, only
+                ``"ephemeral"`` is supported. For ChatBedrockConverse,
+                this value is ignored as the Converse API always uses
+                ``"default"`` cache type.
+            ttl: The time to live for the cache, only ``"5m"`` and ``"1h"``
+                are supported, default is``"5m"``.
             min_messages_to_cache: The minimum number of messages until the
                 cache is used, default is 0.
             unsupported_model_behavior: The behavior to take when an
-                unsupported model is used. "ignore" will ignore the unsupported
-                model and continue without caching. "warn" will warn the user
-                and continue without caching. "raise" will raise an error and
-                stop the agent.
+                unsupported model is used. ``"ignore"`` will ignore the
+                unsupported model and continue without caching. ``"warn"``
+                will warn the user and continue without caching. ``"raise"``
+                will raise an error and stop the agent.
         """
         self.type = type
         self.ttl = ttl
@@ -75,25 +75,27 @@ class BedrockPromptCachingMiddleware(AgentMiddleware):
 
     def _should_apply_caching(self, request: ModelRequest) -> bool:
         """Check if caching should be applied to the request."""
-        if not isinstance(request.model, ChatBedrock):
-            msg = (
-                f"BedrockPromptCachingMiddleware only supports ChatBedrock, "
-                f"not {type(request.model).__name__}. "
-                f"Converse API prompt caching support is planned for a future release."
+        if not isinstance(request.model, (ChatBedrock, ChatBedrockConverse)):
+            err = (
+                f"BedrockPromptCachingMiddleware only supports ChatBedrock and "
+                f"ChatBedrockConverse, not {type(request.model).__name__}."
             )
             if self.unsupported_model_behavior == "raise":
-                raise ValueError(msg)
+                raise ValueError(err)
             if self.unsupported_model_behavior == "warn":
-                warn(msg, stacklevel=3)
+                warn(err, stacklevel=3)
             return False
 
-        if not _is_anthropic_model(request.model):
+        if not _is_supported_model(request.model):
             model_id = getattr(request.model, "model_id", "unknown")
-            msg = f"Prompt caching only supported for Anthropic models: {model_id}"
+            err = (
+                f"Prompt caching is only supported for Anthropic and "
+                f"Amazon Nova models, got: {model_id}"
+            )
             if self.unsupported_model_behavior == "raise":
-                raise ValueError(msg)
+                raise ValueError(err)
             if self.unsupported_model_behavior == "warn":
-                warn(msg, stacklevel=3)
+                warn(err, stacklevel=3)
             return False
 
         messages_count = (
@@ -116,7 +118,7 @@ class BedrockPromptCachingMiddleware(AgentMiddleware):
         if self._should_apply_caching(request):
             # Pass cache_control through model_settings instead of modifying messages.
             # This prevents cache_control from accumulating in checkpoints across turns.
-            # ChatBedrock will apply this at API call time.
+            # The model class applies this at API call time.
             new_model_settings = {
                 **request.model_settings,
                 "cache_control": self._get_cache_control_settings(),
@@ -133,7 +135,7 @@ class BedrockPromptCachingMiddleware(AgentMiddleware):
         if self._should_apply_caching(request):
             # Pass cache_control through model_settings instead of modifying messages.
             # This prevents cache_control from accumulating in checkpoints across turns.
-            # ChatBedrock will apply this at API call time.
+            # The model class applies this at API call time.
             new_model_settings = {
                 **request.model_settings,
                 "cache_control": self._get_cache_control_settings(),
