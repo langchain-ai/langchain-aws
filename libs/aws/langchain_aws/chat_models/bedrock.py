@@ -296,6 +296,47 @@ def convert_messages_to_prompt_writer(messages: List[BaseMessage]) -> str:
     )
 
 
+def _convert_one_message_to_text_qwen(message: BaseMessage) -> str:
+    """Convert a single message to ChatML format for Qwen models.
+
+    Args:
+        message: The message to convert.
+
+    Returns:
+        The message formatted in ChatML syntax.
+
+    Raises:
+        ValueError: If the message type is not supported.
+    """
+    if isinstance(message, SystemMessage):
+        message_text = f"<|im_start|>system\n{message.content}<|im_end|>"
+    elif isinstance(message, ChatMessage):
+        message_text = f"<|im_start|>{message.role}\n{message.content}<|im_end|>"
+    elif isinstance(message, HumanMessage):
+        message_text = f"<|im_start|>user\n{message.content}<|im_end|>"
+    elif isinstance(message, AIMessage):
+        message_text = f"<|im_start|>assistant\n{message.content}<|im_end|>"
+    else:
+        raise ValueError(f"Got unknown type {message}")
+
+    return message_text
+
+
+def convert_messages_to_prompt_qwen(messages: List[BaseMessage]) -> str:
+    """Convert a list of messages to a ChatML prompt for Qwen models.
+
+    Args:
+        messages: List of messages to convert.
+
+    Returns:
+        The formatted ChatML prompt string.
+    """
+    return "\n".join(
+        [_convert_one_message_to_text_qwen(message) for message in messages]
+        + ["<|im_start|>assistant\n"]
+    )
+
+
 def _convert_one_message_to_text_openai(message: BaseMessage) -> str:
     if isinstance(message, SystemMessage):
         message_text = f"<|start|>system<|message|>{message.content}<|end|>"
@@ -757,6 +798,8 @@ class ChatPromptAdapter:
             prompt = convert_messages_to_prompt_writer(messages=messages)
         elif provider == "openai":
             prompt = convert_messages_to_prompt_openai(messages=messages)
+        elif provider == "qwen":
+            prompt = convert_messages_to_prompt_qwen(messages=messages)
         else:
             raise NotImplementedError(
                 f"Provider {provider} model does not support chat."
