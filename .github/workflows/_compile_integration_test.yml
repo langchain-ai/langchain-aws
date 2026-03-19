@@ -44,7 +44,6 @@ jobs:
           else
             echo "Skipping: Python $CUR_PY < required $MIN_PY"
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            uv cache clean
           fi
 
       - name: Install integration dependencies
