@@ -36,6 +36,13 @@ The package is organized by AWS service integration type:
 - **AgentCore Integration**: Memory service integration for LangGraph agents
 - **Session Management**: AWS Bedrock session management integration
 
+### langchain-agentcore-codeinterpreter Structure
+
+Amazon Bedrock AgentCore Code Interpreter sandbox backend for Deep Agents. Lives in `libs/agentcore-codeinterpreter/`.
+
+- **Sandbox**: `sandbox.py` - `AgentCoreSandbox` class implementing `BaseSandbox` protocol (execute, upload/download files)
+- **Stream Parsing**: Internal helpers for extracting text, exit codes, and files from AgentCore response streams
+
 ### Development tools & commands**
 
 - `uv` – Fast Python package installer and resolver (replaces pip/poetry)

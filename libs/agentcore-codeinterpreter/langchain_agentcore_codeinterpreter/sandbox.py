@@ -266,7 +266,7 @@ class AgentCoreSandbox(BaseSandbox):
                 )
             return [FileUploadResponse(path=path, error=None) for path, _ in files]
         except Exception:
-            logger.exception("Error uploading files")
+            logger.exception("Error uploading files: %s", [p for p, _ in files])
             return [
                 FileUploadResponse(path=path, error="permission_denied")
                 for path, _ in files

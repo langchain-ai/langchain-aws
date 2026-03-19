@@ -76,8 +76,13 @@ from langchain_agentcore_codeinterpreter import AgentCoreSandbox
 interpreter = CodeInterpreter(region="us-west-2")
 interpreter.start()
 
+model = ChatBedrockConverse(
+  model="us.anthropic.claude-sonnet-4-6",
+  region_name="us-west-2",
+)
 backend = AgentCoreSandbox(interpreter=interpreter)
 agent = create_deep_agent(
+    model=model,
     backend=backend,
     system_prompt="You are a coding assistant with sandbox access.",
 )
