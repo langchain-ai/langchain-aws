@@ -15,6 +15,7 @@ on:
         options:
           - libs/aws
           - libs/langgraph-checkpoint-aws
+          - libs/agentcore-codeinterpreter
       dangerous-nonmaster-release:
         required: false
         type: boolean
