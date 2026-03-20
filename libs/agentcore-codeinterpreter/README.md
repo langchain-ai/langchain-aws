@@ -72,6 +72,7 @@ from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 from deepagents import create_deep_agent
 
 from langchain_agentcore_codeinterpreter import AgentCoreSandbox
+from langchain_aws import ChatBedrockConverse
 
 interpreter = CodeInterpreter(region="us-west-2")
 interpreter.start()
