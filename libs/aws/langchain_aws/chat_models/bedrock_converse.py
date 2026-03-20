@@ -1395,6 +1395,23 @@ class ChatBedrockConverse(BaseChatModel):
         if system_tools:
             kwargs["disable_streaming"] = True
 
+        resolved_tool_choice = self._resolve_tool_choice(tool_choice)
+
+        if system_tools:
+            bedrock_custom_tools: List[Any] = _format_tools(custom_tools)
+            if strict is not None:
+                for formatted_tool in bedrock_custom_tools:
+                    if (
+                        isinstance(formatted_tool, dict)
+                        and "toolSpec" in formatted_tool
+                    ):
+                        formatted_tool["toolSpec"]["strict"] = strict  # type: ignore[assignment]
+            all_tools: List[Any] = bedrock_custom_tools + system_tools
+            tool_config: Dict[str, Any] = {"tools": all_tools}
+            if resolved_tool_choice:
+                tool_config["toolChoice"] = resolved_tool_choice
+            return self.bind(toolConfig=tool_config, **kwargs)
+
         formatted_custom_tools: List[Any] = []
         for tool in custom_tools:
             if _is_cache_point(tool):
@@ -1410,25 +1427,11 @@ class ChatBedrockConverse(BaseChatModel):
                         formatted["toolSpec"]["strict"] = strict  # type: ignore[assignment]
                     formatted_custom_tools.append(formatted)
 
-        resolved_tool_choice = self._resolve_tool_choice(tool_choice)
-
-        if system_tools:
-            # Merge system and custom tools
-            all_tools = formatted_custom_tools + system_tools
-
-            # Build toolConfig directly to avoid re-formatting
-            tool_config: Dict[str, Any] = {"tools": all_tools}
-
-            if resolved_tool_choice:
-                tool_config["toolChoice"] = resolved_tool_choice
-
-            return self.bind(toolConfig=tool_config, **kwargs)
-        else:
-            return self.bind(
-                tools=formatted_custom_tools,
-                tool_choice=resolved_tool_choice,
-                **kwargs,
-            )
+        return self.bind(
+            tools=formatted_custom_tools,
+            tool_choice=resolved_tool_choice,
+            **kwargs,
+        )
 
     def with_structured_output(
         self,
