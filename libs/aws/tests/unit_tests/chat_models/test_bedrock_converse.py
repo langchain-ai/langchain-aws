@@ -2772,12 +2772,52 @@ def test_bind_tools_with_mixed_system_and_custom_tools() -> None:
     tools = cast(RunnableBinding, chat_model_with_mixed).kwargs["toolConfig"]["tools"]
     assert len(tools) == 2
 
-    # First tool should be the custom tool (GetWeather)
-    assert "function" in tools[0]
-    assert tools[0]["function"]["name"] == "GetWeather"
+    # First tool: Bedrock Converse expects toolSpec
+    assert "toolSpec" in tools[0]
+    assert tools[0]["toolSpec"]["name"] == "GetWeather"
+    assert "inputSchema" in tools[0]["toolSpec"]
 
     # Second tool should be the system tool
     assert tools[1] == {"systemTool": {"name": "nova_grounding"}}
+
+
+def test_bind_tools_mixed_system_custom_no_openai_tool_keys() -> None:
+    """Test bind_tools with mixed system and custom tools."""
+    from langchain_core.tools import tool
+
+    from langchain_aws.tools import NovaGroundingTool
+
+    @tool
+    def dummy_add(a: int, b: int) -> int:
+        """Add two integers."""
+        return a + b
+
+    chat_model = ChatBedrockConverse(
+        model="us.amazon.nova-premier-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    bound = chat_model.bind_tools([NovaGroundingTool(), dummy_add])
+    tools = cast(RunnableBinding, bound).kwargs["toolConfig"]["tools"]
+    assert len(tools) == 2
+    for entry in tools:
+        assert "type" not in entry
+        assert "function" not in entry
+    assert "toolSpec" in tools[0]
+    assert tools[0]["toolSpec"]["name"] == "dummy_add"
+    assert tools[1] == {"systemTool": {"name": "nova_grounding"}}
+
+
+def test_bind_tools_mixed_system_custom_strict_on_tool_spec() -> None:
+    """Test ``strict`` is applied to toolSpec when merging."""
+    from langchain_aws.tools import NovaGroundingTool
+
+    chat_model = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+
+    bound = chat_model.bind_tools([GetWeather, NovaGroundingTool()], strict=True)
+    tools = cast(RunnableBinding, bound).kwargs["toolConfig"]["tools"]
+    assert tools[0]["toolSpec"]["strict"] is True
 
 
 def test_bind_tools_system_tools_with_tool_choice() -> None:
@@ -2830,9 +2870,9 @@ def test_bind_tools_toolconfig_structure_with_system_tools() -> None:
     tools = tool_config["tools"]
     assert len(tools) == 3
 
-    # Verify custom tool format
-    assert "function" in tools[0]
-    assert tools[0]["function"]["name"] == "GetWeather"
+    # Verify custom tool uses Bedrock toolSpec (not OpenAI type/function)
+    assert "toolSpec" in tools[0]
+    assert tools[0]["toolSpec"]["name"] == "GetWeather"
 
     # Verify system tools format
     assert tools[1] == {"systemTool": {"name": "nova_grounding"}}
