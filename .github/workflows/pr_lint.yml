@@ -82,6 +82,7 @@ jobs:
           scopes: |
             aws
             langgraph-checkpoint-aws
+            agentcore-codeinterpreter
             model-profiles
           requireScope: false
           disallowScopes: |

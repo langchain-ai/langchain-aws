@@ -9,6 +9,7 @@ on:
         options:
           - libs/aws
           - libs/langgraph-checkpoint-aws
+          - libs/agentcore-codeinterpreter
       fork:
         required: true
         type: string
