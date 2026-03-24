@@ -551,6 +551,16 @@ class ChatBedrockConverse(BaseChatModel):
     config: Any = None
     """An optional botocore.config.Config instance to pass to the client."""
 
+    timeout: Optional[int] = None
+    """Request timeout in seconds. Sets both connect_timeout and read_timeout
+    on the botocore Config. If ``config`` is also provided, these values are
+    merged on top of it."""
+
+    max_retries: Optional[int] = None
+    """Maximum number of retry attempts. Sets retries.max_attempts on the
+    botocore Config. If ``config`` is also provided, these values are merged
+    on top of it."""
+
     guardrail_config: Optional[Dict[str, Any]] = Field(default=None, alias="guardrails")
     """Configuration information for a guardrail that you want to use in the request."""
 
@@ -875,9 +885,32 @@ class ChatBedrockConverse(BaseChatModel):
 
         return values
 
+    def _get_effective_config(self) -> Any:
+        """Merge timeout/max_retries into botocore Config if set."""
+        if self.timeout is None and self.max_retries is None:
+            return self.config
+
+        from botocore.config import Config
+
+        override = Config(
+            connect_timeout=self.timeout,
+            read_timeout=self.timeout,
+            retries=(
+                {"max_attempts": self.max_retries}
+                if self.max_retries is not None
+                else None
+            ),
+        )
+
+        if self.config is not None:
+            return self.config.merge(override)
+        return override
+
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
+
+        effective_config = self._get_effective_config()
 
         # Skip creating new client if passed in constructor
         if self.client is None:
@@ -888,7 +921,7 @@ class ChatBedrockConverse(BaseChatModel):
                 aws_secret_access_key=self.aws_secret_access_key,
                 aws_session_token=self.aws_session_token,
                 endpoint_url=self.endpoint_url,
-                config=self.config,
+                config=effective_config,
                 service_name="bedrock-runtime",
                 api_key=self.bedrock_api_key,
             )
@@ -906,7 +939,7 @@ class ChatBedrockConverse(BaseChatModel):
                 aws_secret_access_key=self.aws_secret_access_key,
                 aws_session_token=self.aws_session_token,
                 endpoint_url=self.endpoint_url,
-                config=self.config,
+                config=effective_config,
                 service_name="bedrock",
                 api_key=self.bedrock_api_key,
             )
