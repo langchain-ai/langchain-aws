@@ -5,10 +5,13 @@ import re
 from functools import cached_property
 from typing import Any, cast
 
+import anthropic
 from anthropic import AnthropicBedrock, AsyncAnthropicBedrock
 from langchain_anthropic.chat_models import ChatAnthropic
 from langchain_core.language_models import ModelProfile, ModelProfileRegistry
 from langchain_core.language_models.chat_models import LangSmithParams
+from langchain_core.messages import AIMessageChunk
+from langchain_core.messages.ai import InputTokenDetails, UsageMetadata
 from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
@@ -193,3 +196,62 @@ class ChatAnthropicBedrock(ChatAnthropic):
             model = re.sub(r"^[A-Za-z]{2}\.", "", self.model)
             self.profile = _get_default_model_profile(model)
         return self
+
+    def _make_message_chunk_from_anthropic_event(
+        self,
+        event: anthropic.types.RawMessageStreamEvent,
+        *,
+        stream_usage: bool = True,
+        coerce_content_to_string: bool,
+        block_start_event: anthropic.types.RawMessageStreamEvent | None = None,
+    ) -> tuple[AIMessageChunk | None, anthropic.types.RawMessageStreamEvent | None]:
+        """Override to capture input_tokens from message_start events.
+
+        Bedrock reports input_tokens on message_start (not message_delta),
+        so we attach usage_metadata to the message_start chunk and zero out
+        input_tokens on the message_delta chunk to avoid double-counting.
+        """
+        msg, block_start_event = super()._make_message_chunk_from_anthropic_event(
+            event,
+            stream_usage=stream_usage,
+            coerce_content_to_string=coerce_content_to_string,
+            block_start_event=block_start_event,
+        )
+        if msg is None or not stream_usage:
+            return msg, block_start_event
+
+        if event.type == "message_start":
+            usage = getattr(event.message, "usage", None)
+            if usage is not None:
+                input_token_details: dict = {
+                    "cache_read": getattr(usage, "cache_read_input_tokens", None),
+                    "cache_creation": getattr(
+                        usage, "cache_creation_input_tokens", None
+                    ),
+                }
+                input_tokens = (
+                    (getattr(usage, "input_tokens", 0) or 0)
+                    + (input_token_details["cache_read"] or 0)
+                    + (input_token_details["cache_creation"] or 0)
+                )
+                msg.usage_metadata = UsageMetadata(
+                    input_tokens=input_tokens,
+                    output_tokens=0,
+                    total_tokens=input_tokens,
+                    input_token_details=InputTokenDetails(
+                        **{
+                            k: v
+                            for k, v in input_token_details.items()
+                            if v is not None
+                        },
+                    ),
+                )
+        elif event.type == "message_delta" and msg.usage_metadata is not None:
+            output_tokens = msg.usage_metadata.get("output_tokens", 0)
+            msg.usage_metadata = UsageMetadata(
+                input_tokens=0,
+                output_tokens=output_tokens,
+                total_tokens=output_tokens,
+            )
+
+        return msg, block_start_event
