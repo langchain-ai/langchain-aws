@@ -1004,7 +1004,7 @@ class ChatBedrockConverse(BaseChatModel):
     def _set_model_profile(self) -> Self:
         """Set model profile if not overridden."""
         if self.profile is None:
-            model_id = re.sub(r"^[A-Za-z]{2}\.", "", self.model_id)
+            model_id = self._get_base_model()
             self.profile = _get_default_model_profile(model_id)
         return self
 

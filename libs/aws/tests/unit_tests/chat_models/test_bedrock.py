@@ -844,6 +844,34 @@ def test_beta_use_converse_api_with_inference_profile_as_nova_model(
     assert chat.beta_use_converse_api is True
 
 
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_profile_with_application_inference_profile(mock_create_aws_client):
+    """Test _set_model_profile resolves profile correctly for AIP ARNs."""
+    mock_bedrock_client = mock.MagicMock()
+    mock_bedrock_client.get_inference_profile.return_value = {
+        "models": [
+            {
+                "modelArn": (
+                    "arn:aws:bedrock:us-west-2::foundation-model/"
+                    "anthropic.claude-sonnet-4-5-20250929-v1:0"
+                )
+            }
+        ]
+    }
+    mock_create_aws_client.return_value = mock_bedrock_client
+
+    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"  # noqa: E501
+    chat = ChatBedrock(
+        model=aip_model_id,
+        region="us-west-2",
+        bedrock_client=mock_bedrock_client,
+    )  # type: ignore[call-arg]
+
+    # Profile should be resolved from the base model, not the ARN
+    assert chat.profile
+    assert chat.profile["reasoning_output"]
+
+
 @pytest.mark.parametrize(
     "model_id, provider, expected_provider, expectation, region_name",
     [
