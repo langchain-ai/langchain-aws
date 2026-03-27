@@ -4931,3 +4931,109 @@ def test_generate_without_cache_control() -> None:
     for msg in call_kwargs["messages"]:
         for block in msg["content"]:
             assert "cachePoint" not in block
+
+
+# ---------------------------------------------------------------------------
+# _get_effective_config tests
+# ---------------------------------------------------------------------------
+
+
+def test_get_effective_config_no_overrides() -> None:
+    """When timeout and max_retries are None, returns self.config as-is."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+    assert llm._get_effective_config() is None
+
+    from botocore.config import Config
+
+    existing = Config(connect_timeout=10)
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        config=existing,
+    )
+    assert llm._get_effective_config() is existing
+
+
+def test_get_effective_config_timeout_only() -> None:
+    """timeout sets both connect_timeout and read_timeout."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        timeout=120,
+    )
+    cfg = llm._get_effective_config()
+    assert cfg.connect_timeout == 120
+    assert cfg.read_timeout == 120
+
+
+def test_get_effective_config_max_retries_only() -> None:
+    """max_retries sets retries.max_attempts."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        max_retries=5,
+    )
+    cfg = llm._get_effective_config()
+    assert cfg.retries["max_attempts"] == 5
+
+
+def test_get_effective_config_both() -> None:
+    """Both timeout and max_retries produce a combined Config."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        timeout=60,
+        max_retries=3,
+    )
+    cfg = llm._get_effective_config()
+    assert cfg.connect_timeout == 60
+    assert cfg.read_timeout == 60
+    assert cfg.retries["max_attempts"] == 3
+
+
+def test_get_effective_config_merges_with_existing() -> None:
+    """Overrides merge on top of an existing Config."""
+    from botocore.config import Config
+
+    existing = Config(
+        connect_timeout=10,
+        user_agent_extra="my-app",
+    )
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        config=existing,
+        timeout=120,
+        max_retries=2,
+    )
+    cfg = llm._get_effective_config()
+    # timeout overrides connect_timeout from existing config
+    assert cfg.connect_timeout == 120
+    assert cfg.read_timeout == 120
+    assert cfg.retries["max_attempts"] == 2
+    # user_agent_extra from existing config is preserved
+    assert cfg.user_agent_extra == "my-app"
+
+
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_timeout_retries_passed_to_client(mock_create_client: mock.Mock) -> None:
+    """Verify timeout/max_retries are reflected in the config passed to create_aws_client."""
+    mock_create_client.return_value = mock.Mock()
+
+    ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        timeout=90,
+        max_retries=1,
+    )
+
+    # create_aws_client is called twice (runtime + control plane)
+    assert mock_create_client.call_count == 2
+    for call in mock_create_client.call_args_list:
+        cfg = call.kwargs["config"]
+        assert cfg.connect_timeout == 90
+        assert cfg.read_timeout == 90
+        assert cfg.retries["max_attempts"] == 1
