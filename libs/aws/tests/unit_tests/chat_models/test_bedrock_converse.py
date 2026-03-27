@@ -1,6 +1,7 @@
 """Test chat model integration."""
 
 import base64
+import copy
 import os
 from typing import Any, Dict, Iterator, List, Literal, Tuple, Type, Union, cast
 from unittest import mock
@@ -2881,6 +2882,36 @@ def test_bind_tools_toolconfig_structure_with_system_tools() -> None:
     # Verify toolChoice is present in toolConfig
     assert "toolChoice" in tool_config
     assert tool_config["toolChoice"] == {"auto": {}}
+
+
+def test_adjust_nova_structured_agent_tool_choice_any_to_auto() -> None:
+    """Nova + system tools + custom toolSpec: bound ``any`` becomes ``auto``."""
+    from langchain_aws.tools import NovaGroundingTool
+
+    chat_model = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0",
+        region_name="us-east-1",
+    )  # type: ignore[call-arg]
+    bound = chat_model.bind_tools([GetWeather, NovaGroundingTool()], tool_choice="any")
+    tool_config = copy.deepcopy(cast(RunnableBinding, bound).kwargs["toolConfig"])
+    params: dict = {"toolConfig": tool_config}
+    chat_model._adjust_nova_structured_agent_tool_choice(params)
+    assert params["toolConfig"]["toolChoice"] == {"auto": {}}
+
+
+def test_adjust_nova_structured_agent_tool_choice_skips_non_nova() -> None:
+    """Non-Nova base models do not rewrite toolChoice."""
+    from langchain_aws.tools import NovaGroundingTool
+
+    chat_model = ChatBedrockConverse(
+        model="anthropic.claude-3-5-sonnet-20241022-v2:0",
+        region_name="us-east-1",
+    )  # type: ignore[call-arg]
+    bound = chat_model.bind_tools([GetWeather, NovaGroundingTool()], tool_choice="any")
+    tool_config = copy.deepcopy(cast(RunnableBinding, bound).kwargs["toolConfig"])
+    params: dict = {"toolConfig": tool_config}
+    chat_model._adjust_nova_structured_agent_tool_choice(params)
+    assert params["toolConfig"]["toolChoice"] == {"any": {}}
 
 
 def test_bind_tools_formats_custom_tools_to_dicts() -> None:
