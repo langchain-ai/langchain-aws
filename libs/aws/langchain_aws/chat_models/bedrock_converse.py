@@ -1093,13 +1093,19 @@ class ChatBedrockConverse(BaseChatModel):
         for msg in reversed(messages):
             if msg.get("role") == "user":
                 new_content = []
+                has_guard_content = False
                 for block in msg["content"]:
                     if "text" in block:
+                        has_guard_content = True
                         new_content.append(
                             {"guardContent": {"text": {"text": block["text"]}}}
                         )
                     else:
                         new_content.append(block)
+                if not has_guard_content:
+                    new_content.append(
+                        {"guardContent": {"text": {"text": EMPTY_CONTENT}}}
+                    )
                 msg["content"] = new_content
                 break
 
