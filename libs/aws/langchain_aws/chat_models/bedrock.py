@@ -52,7 +52,6 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 from langchain_core.utils.utils import _build_model_kwargs
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from typing_extensions import Self
 
 from langchain_aws.chat_models._compat import _convert_from_v1_to_anthropic
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
@@ -944,13 +943,10 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             }
         return values
 
-    @model_validator(mode="after")
-    def _set_model_profile(self) -> Self:
-        """Set model profile if not overridden."""
-        if self.profile is None:
-            model_id = self.base_model_id if self.base_model_id else self.model_id
-            self.profile = _get_default_model_profile(model_id)
-        return self
+    def _resolve_model_profile(self) -> ModelProfile | None:
+        """Return the default model profile for this model."""
+        model_id = self.base_model_id if self.base_model_id else self.model_id
+        return _get_default_model_profile(model_id)
 
     @property
     def lc_attributes(self) -> Dict[str, Any]:
