@@ -944,13 +944,10 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             }
         return values
 
-    @model_validator(mode="after")
-    def _set_model_profile(self) -> Self:
-        """Set model profile if not overridden."""
-        if self.profile is None:
-            model_id = self.base_model_id if self.base_model_id else self.model_id
-            self.profile = _get_default_model_profile(model_id)
-        return self
+    def _resolve_model_profile(self) -> ModelProfile | None:
+        """Return the default model profile for this model."""
+        model_id = self.base_model_id if self.base_model_id else self.model_id
+        return _get_default_model_profile(model_id)
 
     @property
     def lc_attributes(self) -> Dict[str, Any]:

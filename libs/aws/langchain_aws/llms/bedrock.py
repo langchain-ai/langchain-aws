@@ -953,6 +953,9 @@ class BedrockBase(BaseLanguageModel, ABC):
                 # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
                 self.base_model_id = model_arn.split("/")[-1]
 
+        if hasattr(self, "profile") and not self.profile:
+            self.profile = self._resolve_model_profile()
+
         return self
 
     @property
