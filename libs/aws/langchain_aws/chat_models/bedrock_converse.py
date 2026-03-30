@@ -1109,32 +1109,6 @@ class ChatBedrockConverse(BaseChatModel):
                 msg["content"] = new_content
                 break
 
-    def _adjust_nova_structured_agent_tool_choice(
-        self,
-        params: Dict[str, Any],
-    ) -> None:
-        """Map toolChoice ``any`` to ``auto`` for Nova with system + custom tools."""
-        if "nova" not in self._get_base_model().lower():
-            return
-        tool_config = params.get("toolConfig")
-        if not isinstance(tool_config, dict):
-            return
-        tools_block = tool_config.get("tools")
-        if not isinstance(tools_block, list):
-            return
-        has_system_tool = any(
-            isinstance(b, dict) and "systemTool" in b for b in tools_block
-        )
-        has_custom_tool = any(
-            isinstance(b, dict) and "toolSpec" in b for b in tools_block
-        )
-        if not has_system_tool or not has_custom_tool:
-            return
-        tool_choice = tool_config.get("toolChoice")
-        if not isinstance(tool_choice, dict) or list(tool_choice.keys()) != ["any"]:
-            return
-        tool_config["toolChoice"] = _format_tool_choice("auto")
-
     def _generate(
         self,
         messages: List[BaseMessage],
@@ -1168,7 +1142,6 @@ class ChatBedrockConverse(BaseChatModel):
             ),
         )
         self._apply_cache_points(cache_control, system, bedrock_messages, params)
-        self._adjust_nova_structured_agent_tool_choice(params)
 
         # Check for tool blocks without toolConfig and handle conversion
         if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(
@@ -1230,7 +1203,6 @@ class ChatBedrockConverse(BaseChatModel):
             ),
         )
         self._apply_cache_points(cache_control, system, bedrock_messages, params)
-        self._adjust_nova_structured_agent_tool_choice(params)
 
         # Check for tool blocks without toolConfig and handle conversion
         if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(
@@ -1430,6 +1402,19 @@ class ChatBedrockConverse(BaseChatModel):
             kwargs["disable_streaming"] = True
 
         resolved_tool_choice = self._resolve_tool_choice(tool_choice)
+        if (
+            system_tools
+            and not custom_tools
+            and resolved_tool_choice
+            and "nova" in self._get_base_model().lower()
+        ):
+            tool_choice_type = list(resolved_tool_choice.keys())[0]
+            if tool_choice_type in ("any", "tool"):
+                warnings.warn(
+                    f"tool_choice={tool_choice_type} is not supported when using only "
+                    "systemTools. Downgrading to tool_choice='auto'."
+                )
+                resolved_tool_choice = _format_tool_choice("auto")
 
         if system_tools:
             bedrock_custom_tools: List[Any] = _format_tools(custom_tools)
