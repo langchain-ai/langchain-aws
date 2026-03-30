@@ -998,15 +998,15 @@ class ChatBedrockConverse(BaseChatModel):
         # Validate reasoning configuration for Nova 2 models
         self._validate_nova_reasoning_config()
 
+        if not self.profile:
+            self.profile = self._resolve_model_profile()
+
         return self
 
-    @model_validator(mode="after")
-    def _set_model_profile(self) -> Self:
-        """Set model profile if not overridden."""
-        if self.profile is None:
-            model_id = re.sub(r"^[A-Za-z]{2}\.", "", self.model_id)
-            self.profile = _get_default_model_profile(model_id)
-        return self
+    def _resolve_model_profile(self) -> ModelProfile | None:
+        """Return the default model profile for this model."""
+        model_id = self._get_base_model()
+        return _get_default_model_profile(model_id)
 
     def _get_base_model(self) -> str:
         """Return base model id, stripping any regional prefix."""
