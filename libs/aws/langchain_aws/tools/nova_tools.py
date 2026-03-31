@@ -113,41 +113,65 @@ Timeout Recommendations:
     - **Web grounding**: Default timeout is usually sufficient
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Type
+
+from langchain_core.tools import BaseTool
+from pydantic import BaseModel, Field
 
 
-class NovaSystemTool:
+class _EmptyInput(BaseModel):
+    """Empty input schema for server-side system tools."""
+
+
+class NovaSystemTool(BaseTool):
     """Base class for Nova system tools.
 
     System tools are built-in tools provided by Nova models that execute
-    server-side. Unlike custom tools, system tools don't require client-side
-    implementation.
+    server-side within the Bedrock API. Unlike custom tools, system tools
+    don't require client-side implementation — the model invokes them
+    internally, and results are returned as part of the response.
+
+    This class extends ``BaseTool`` so that system tools are accepted by
+    LangGraph's ``ToolNode`` and ``create_react_agent``. During normal
+    operation, ``_run`` is never called because the Bedrock API returns
+    system tool results as ``server_tool_use`` / ``server_tool_result``
+    content blocks, which do not appear in ``AIMessage.tool_calls``.
 
     Args:
-        name: The name of the system tool (e.g., "nova_grounding")
-
-    Attributes:
-        name: The system tool name
-        type: Always "system_tool" to distinguish from custom tools
+        name: The name of the system tool (e.g., "nova_grounding").
+        description: A description of the system tool.
     """
 
-    def __init__(self, name: str) -> None:
-        """Initialize a Nova system tool.
+    type: str = Field(default="system_tool", exclude=True)
+    """Marker to distinguish system tools from custom tools."""
 
-        Args:
-            name: The name of the system tool
-        """
-        self.name = name
-        self.type = "system_tool"
+    args_schema: Type[BaseModel] = _EmptyInput
+    """System tools require no client-side arguments."""
 
     def to_bedrock_format(self) -> Dict[str, Any]:
         """Convert to Bedrock systemTool format.
 
         Returns:
             Dictionary in the format expected by the Bedrock Converse API:
-            {"systemTool": {"name": "<tool_name>"}}
+            ``{"systemTool": {"name": "<tool_name>"}}``
         """
         return {"systemTool": {"name": self.name}}
+
+    def _run(self, **kwargs: Any) -> str:
+        """No-op implementation for server-side system tools.
+
+        System tools execute within the Bedrock API and never need local
+        invocation. This method exists only to satisfy the ``BaseTool``
+        abstract interface.
+
+        Returns:
+            A message indicating server-side execution.
+        """
+        msg = (
+            f"[{self.name}] is a server-side system tool that executes "
+            f"within the Bedrock API. No local execution is needed."
+        )
+        return msg
 
 
 class NovaGroundingTool(NovaSystemTool):
@@ -161,17 +185,21 @@ class NovaGroundingTool(NovaSystemTool):
         Requires bedrock:InvokeTool IAM permission.
 
     Example:
-        from langchain_aws import ChatBedrockConverse
-        from langchain_aws.tools import NovaGroundingTool
+        .. code-block:: python
 
-        model = ChatBedrockConverse(model="amazon.nova-2-lite-v1:0")
-        model_with_search = model.bind_tools([NovaGroundingTool()])
-        response = model_with_search.invoke("What's the latest news?")
+            from langchain_aws import ChatBedrockConverse
+            from langchain_aws.tools import NovaGroundingTool
+
+            model = ChatBedrockConverse(model="amazon.nova-2-lite-v1:0")
+            model_with_search = model.bind_tools([NovaGroundingTool()])
+            response = model_with_search.invoke("What's the latest news?")
     """
 
-    def __init__(self) -> None:
-        """Initialize the Nova grounding tool."""
-        super().__init__("nova_grounding")
+    name: str = "nova_grounding"
+    description: str = (
+        "Nova web grounding system tool. Searches the web for current "
+        "information. Executes server-side within the Bedrock API."
+    )
 
 
 class NovaCodeInterpreterTool(NovaSystemTool):
@@ -186,16 +214,20 @@ class NovaCodeInterpreterTool(NovaSystemTool):
         Consider increasing timeout for complex code execution.
 
     Example:
-        from langchain_aws import ChatBedrockConverse
-        from langchain_aws.tools import NovaCodeInterpreterTool
+        .. code-block:: python
 
-        model = ChatBedrockConverse(model="amazon.nova-2-lite-v1:0")
-        model_with_code = model.bind_tools([NovaCodeInterpreterTool()])
-        response = model_with_code.invoke(
-            "Calculate the square root of 475878756857"
-        )
+            from langchain_aws import ChatBedrockConverse
+            from langchain_aws.tools import NovaCodeInterpreterTool
+
+            model = ChatBedrockConverse(model="amazon.nova-2-lite-v1:0")
+            model_with_code = model.bind_tools([NovaCodeInterpreterTool()])
+            response = model_with_code.invoke(
+                "Calculate the square root of 475878756857"
+            )
     """
 
-    def __init__(self) -> None:
-        """Initialize the Nova code interpreter tool."""
-        super().__init__("nova_code_interpreter")
+    name: str = "nova_code_interpreter"
+    description: str = (
+        "Nova code interpreter system tool. Executes Python code in a "
+        "sandboxed environment. Executes server-side within the Bedrock API."
+    )

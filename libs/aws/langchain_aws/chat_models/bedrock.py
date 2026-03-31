@@ -52,7 +52,6 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 from langchain_core.utils.utils import _build_model_kwargs
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from typing_extensions import Self
 
 from langchain_aws.chat_models._compat import _convert_from_v1_to_anthropic
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
@@ -293,6 +292,47 @@ def convert_messages_to_prompt_writer(messages: List[BaseMessage]) -> str:
 
     return "\n".join(
         [_convert_one_message_to_text_writer(message) for message in messages]
+    )
+
+
+def _convert_one_message_to_text_qwen(message: BaseMessage) -> str:
+    """Convert a single message to ChatML format for Qwen models.
+
+    Args:
+        message: The message to convert.
+
+    Returns:
+        The message formatted in ChatML syntax.
+
+    Raises:
+        ValueError: If the message type is not supported.
+    """
+    if isinstance(message, SystemMessage):
+        message_text = f"<|im_start|>system\n{message.content}<|im_end|>"
+    elif isinstance(message, ChatMessage):
+        message_text = f"<|im_start|>{message.role}\n{message.content}<|im_end|>"
+    elif isinstance(message, HumanMessage):
+        message_text = f"<|im_start|>user\n{message.content}<|im_end|>"
+    elif isinstance(message, AIMessage):
+        message_text = f"<|im_start|>assistant\n{message.content}<|im_end|>"
+    else:
+        raise ValueError(f"Got unknown type {message}")
+
+    return message_text
+
+
+def convert_messages_to_prompt_qwen(messages: List[BaseMessage]) -> str:
+    """Convert a list of messages to a ChatML prompt for Qwen models.
+
+    Args:
+        messages: List of messages to convert.
+
+    Returns:
+        The formatted ChatML prompt string.
+    """
+    return "\n".join(
+        [_convert_one_message_to_text_qwen(message) for message in messages]
+        + ["<|im_start|>assistant\n"]
     )
 
 
@@ -757,6 +797,8 @@ class ChatPromptAdapter:
             prompt = convert_messages_to_prompt_writer(messages=messages)
         elif provider == "openai":
             prompt = convert_messages_to_prompt_openai(messages=messages)
+        elif provider == "qwen":
+            prompt = convert_messages_to_prompt_qwen(messages=messages)
         else:
             raise NotImplementedError(
                 f"Provider {provider} model does not support chat."
@@ -901,13 +943,10 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             }
         return values
 
-    @model_validator(mode="after")
-    def _set_model_profile(self) -> Self:
-        """Set model profile if not overridden."""
-        if self.profile is None:
-            model_id = re.sub(r"^[A-Za-z]{2}\.", "", self.model_id)
-            self.profile = _get_default_model_profile(model_id)
-        return self
+    def _resolve_model_profile(self) -> ModelProfile | None:
+        """Return the default model profile for this model."""
+        model_id = self.base_model_id if self.base_model_id else self.model_id
+        return _get_default_model_profile(model_id)
 
     @property
     def lc_attributes(self) -> Dict[str, Any]:

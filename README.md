@@ -6,6 +6,7 @@ The following packages are hosted in this repository:
 
 - `langchain-aws` ([PyPI](https://pypi.org/project/langchain-aws/))
 - `langgraph-checkpoint-aws` ([PyPI](https://pypi.org/project/langgraph-checkpoint-aws/))
+- `langchain-agentcore-codeinterpreter` ([PyPI](https://pypi.org/project/langchain-agentcore-codeinterpreter/))
 
 ## Features
 
@@ -23,6 +24,10 @@ The following packages are hosted in this repository:
 - **Checkpointers**: Provides custom checkpointing solutions for LangGraph agents using several AWS services, including [Bedrock AgentCore Memory](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html), [Bedrock Session Management](https://docs.aws.amazon.com/bedrock/latest/userguide/sessions.html), [DynamoDB](https://aws.amazon.com/dynamodb/), and [ElastiCache Valkey](https://aws.amazon.com/elasticache/).
 - **Memory Stores** - Provides memory store solutions for saving, processing, and retrieving intelligent long term memories using services like [Bedrock AgentCore Memory](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html) and [ElastiCache Valkey](https://aws.amazon.com/elasticache/).
 
+### Deep Agents
+
+- **Sandboxes**: Provides an [Amazon Bedrock AgentCore](https://aws.amazon.com/bedrock/agentcore/) Code Interpreter sandbox backend for [Deep Agents](https://github.com/langchain-ai/deepagents), enabling secure code execution in isolated MicroVM environments.
+
 ...and more to come. This repository will continue to expand and offer additional components for various AWS services as development progresses.
 
 **Note**: This repository will replace all AWS integrations currently present in the `langchain-community` package. Users are encouraged to migrate to this repository as soon as possible.
@@ -39,6 +44,12 @@ The `langgraph-checkpoint-aws` package can also be installed from PyPI.
 
 ```bash
 pip install langgraph-checkpoint-aws
+```
+
+The `langchain-agentcore-codeinterpreter` package can also be installed from PyPI.
+
+```bash
+pip install langchain-agentcore-codeinterpreter
 ```
 
 ## Usage
@@ -91,6 +102,22 @@ For more detailed usage examples and documentation, please refer to the [LangCha
 ### `langgraph-checkpoint-aws`
 
 You can find usage examples for `langgraph-checkpoint-aws` [in the README](https://github.com/langchain-ai/langchain-aws/blob/main/libs/langgraph-checkpoint-aws/README.md).
+
+### `langchain-agentcore-codeinterpreter`
+
+```python
+from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
+from langchain_agentcore_codeinterpreter import AgentCoreSandbox
+
+interpreter = CodeInterpreter(region="us-west-2")
+interpreter.start()
+
+backend = AgentCoreSandbox(interpreter=interpreter)
+result = backend.execute("echo hello")
+print(result.output)  # hello
+
+interpreter.stop()
+```
 
 ## Contributing
 

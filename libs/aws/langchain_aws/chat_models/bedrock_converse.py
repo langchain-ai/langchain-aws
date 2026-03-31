@@ -649,6 +649,59 @@ class ChatBedrockConverse(BaseChatModel):
         """
         return {"cachePoint": {"type": cache_type}}
 
+    def _apply_cache_points(
+        self,
+        cache_control: Optional[Dict[str, Any]],
+        system: List[Dict[str, Any]],
+        bedrock_messages: List[Dict[str, Any]],
+        params: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Apply cachePoint to system, messages, and tools in Converse API format.
+
+        Args:
+            cache_control: Cache control settings dict. Expected keys:
+                - ``ttl`` (optional): Time-to-live for the cache
+                  (e.g., ``"5m"``, ``"1h"``).
+                The ``type`` key is ignored; the Converse API always uses
+                ``"default"``.
+                If None, no cache points are applied.
+            system: The system message list in Converse API format.
+            bedrock_messages: The messages list in Converse API format.
+            params: The constructed API parameters dict. If provided and
+                ``toolConfig.tools`` is present, a cachePoint block is
+                appended to the tools array (unless one already exists).
+        """
+        if not cache_control:
+            return
+
+        is_nova = "amazon.nova" in self.model_id.lower()
+
+        cache_point: Dict[str, Any] = {"type": "default"}
+        ttl = cache_control.get("ttl")
+        if ttl and ttl != "5m" and not is_nova:
+            cache_point["ttl"] = ttl
+        cache_block = {"cachePoint": cache_point}
+
+        if system and not any(_is_cache_point(b) for b in system):
+            system.append(cache_block)
+
+        if bedrock_messages:
+            last_content = bedrock_messages[-1].get("content")
+            if isinstance(last_content, list):
+                has_tool_block = is_nova and any(
+                    isinstance(b, dict) and ("toolResult" in b or "toolUse" in b)
+                    for b in last_content
+                )
+                if not has_tool_block and not any(
+                    _is_cache_point(b) for b in last_content
+                ):
+                    last_content.append(cache_block)
+
+        if params and not is_nova:
+            tools = params.get("toolConfig", {}).get("tools")
+            if tools and not any(_is_cache_point(t) for t in tools):
+                tools.append(cache_block)
+
     @model_validator(mode="before")
     @classmethod
     def build_extra(cls, values: dict[str, Any]) -> Any:
@@ -945,15 +998,15 @@ class ChatBedrockConverse(BaseChatModel):
         # Validate reasoning configuration for Nova 2 models
         self._validate_nova_reasoning_config()
 
+        if not self.profile:
+            self.profile = self._resolve_model_profile()
+
         return self
 
-    @model_validator(mode="after")
-    def _set_model_profile(self) -> Self:
-        """Set model profile if not overridden."""
-        if self.profile is None:
-            model_id = re.sub(r"^[A-Za-z]{2}\.", "", self.model_id)
-            self.profile = _get_default_model_profile(model_id)
-        return self
+    def _resolve_model_profile(self) -> ModelProfile | None:
+        """Return the default model profile for this model."""
+        model_id = self._get_base_model()
+        return _get_default_model_profile(model_id)
 
     def _get_base_model(self) -> str:
         """Return base model id, stripping any regional prefix."""
@@ -1040,13 +1093,19 @@ class ChatBedrockConverse(BaseChatModel):
         for msg in reversed(messages):
             if msg.get("role") == "user":
                 new_content = []
+                has_guard_content = False
                 for block in msg["content"]:
                     if "text" in block:
+                        has_guard_content = True
                         new_content.append(
                             {"guardContent": {"text": {"text": block["text"]}}}
                         )
                     else:
                         new_content.append(block)
+                if not has_guard_content:
+                    new_content.append(
+                        {"guardContent": {"text": {"text": EMPTY_CONTENT}}}
+                    )
                 msg["content"] = new_content
                 break
 
@@ -1081,6 +1140,7 @@ class ChatBedrockConverse(BaseChatModel):
                 response_format
             )
 
+        cache_control = filtered_kwargs.pop("cache_control", None)
         params = self._converse_params(
             stop=stop,
             additionalModelRequestFields=additional_fields,
@@ -1088,6 +1148,7 @@ class ChatBedrockConverse(BaseChatModel):
                 filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
         )
+        self._apply_cache_points(cache_control, system, bedrock_messages, params)
 
         # Check for tool blocks without toolConfig and handle conversion
         if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(
@@ -1147,6 +1208,7 @@ class ChatBedrockConverse(BaseChatModel):
                 response_format
             )
 
+        cache_control = filtered_kwargs.pop("cache_control", None)
         params = self._converse_params(
             stop=stop,
             additionalModelRequestFields=additional_fields,
@@ -1154,6 +1216,7 @@ class ChatBedrockConverse(BaseChatModel):
                 filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
         )
+        self._apply_cache_points(cache_control, system, bedrock_messages, params)
 
         # Check for tool blocks without toolConfig and handle conversion
         if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(
@@ -1352,6 +1415,36 @@ class ChatBedrockConverse(BaseChatModel):
         if system_tools:
             kwargs["disable_streaming"] = True
 
+        resolved_tool_choice = self._resolve_tool_choice(tool_choice)
+        if (
+            system_tools
+            and not custom_tools
+            and resolved_tool_choice
+            and "nova" in self._get_base_model().lower()
+        ):
+            tool_choice_type = list(resolved_tool_choice.keys())[0]
+            if tool_choice_type in ("any", "tool"):
+                warnings.warn(
+                    f"tool_choice={tool_choice_type} is not supported when using only "
+                    "systemTools. Downgrading to tool_choice='auto'."
+                )
+                resolved_tool_choice = _format_tool_choice("auto")
+
+        if system_tools:
+            bedrock_custom_tools: List[Any] = _format_tools(custom_tools)
+            if strict is not None:
+                for formatted_tool in bedrock_custom_tools:
+                    if (
+                        isinstance(formatted_tool, dict)
+                        and "toolSpec" in formatted_tool
+                    ):
+                        formatted_tool["toolSpec"]["strict"] = strict  # type: ignore[assignment]
+            all_tools: List[Any] = bedrock_custom_tools + system_tools
+            tool_config: Dict[str, Any] = {"tools": all_tools}
+            if resolved_tool_choice:
+                tool_config["toolChoice"] = resolved_tool_choice
+            return self.bind(toolConfig=tool_config, **kwargs)
+
         formatted_custom_tools: List[Any] = []
         for tool in custom_tools:
             if _is_cache_point(tool):
@@ -1367,25 +1460,11 @@ class ChatBedrockConverse(BaseChatModel):
                         formatted["toolSpec"]["strict"] = strict  # type: ignore[assignment]
                     formatted_custom_tools.append(formatted)
 
-        resolved_tool_choice = self._resolve_tool_choice(tool_choice)
-
-        if system_tools:
-            # Merge system and custom tools
-            all_tools = formatted_custom_tools + system_tools
-
-            # Build toolConfig directly to avoid re-formatting
-            tool_config: Dict[str, Any] = {"tools": all_tools}
-
-            if resolved_tool_choice:
-                tool_config["toolChoice"] = resolved_tool_choice
-
-            return self.bind(toolConfig=tool_config, **kwargs)
-        else:
-            return self.bind(
-                tools=formatted_custom_tools,
-                tool_choice=resolved_tool_choice,
-                **kwargs,
-            )
+        return self.bind(
+            tools=formatted_custom_tools,
+            tool_choice=resolved_tool_choice,
+            **kwargs,
+        )
 
     def with_structured_output(
         self,

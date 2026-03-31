@@ -2,7 +2,7 @@ import json
 import sys
 from typing import Dict
 
-LIB_DIRS = ["libs/aws", "libs/langgraph-checkpoint-aws"]
+LIB_DIRS = ["libs/aws", "libs/langgraph-checkpoint-aws", "libs/agentcore-codeinterpreter"]
 
 if __name__ == "__main__":
     files = sys.argv[1:]
