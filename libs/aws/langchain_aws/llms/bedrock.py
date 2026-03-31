@@ -788,7 +788,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         "amazon": "stopSequences",
         "ai21": "stop_sequences",
         "cohere": "stop_sequences",
-        "mistral": "stop_sequences",
+        "mistral": "stop",
     }
 
     provider_stop_reason_key_map: Mapping[str, str] = {
