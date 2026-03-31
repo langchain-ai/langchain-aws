@@ -2998,12 +2998,13 @@ def test_bind_tools_system_tools_with_tool_choice() -> None:
     ] == {"auto": {}}
 
     # Test with any tool choice
-    chat_model_with_tools = chat_model.bind_tools(
-        [NovaGroundingTool()], tool_choice="any"
-    )
+    with pytest.warns(UserWarning, match="tool_choice=any"):
+        chat_model_with_tools = chat_model.bind_tools(
+            [NovaGroundingTool()], tool_choice="any"
+        )
     assert cast(RunnableBinding, chat_model_with_tools).kwargs["toolConfig"][
         "toolChoice"
-    ] == {"any": {}}
+    ] == {"auto": {}}
 
 
 def test_bind_tools_toolconfig_structure_with_system_tools() -> None:
