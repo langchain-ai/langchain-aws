@@ -4898,7 +4898,7 @@ def test_get_effective_config_merges_with_existing() -> None:
 
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
 def test_timeout_retries_passed_to_client(mock_create_client: mock.Mock) -> None:
-    """Verify timeout/max_retries are reflected in the config passed to create_aws_client."""
+    """Timeout/max_retries are reflected in the config passed to create_aws_client."""
     mock_create_client.return_value = mock.Mock()
 
     ChatBedrockConverse(
