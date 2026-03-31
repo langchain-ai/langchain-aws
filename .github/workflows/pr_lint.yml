@@ -26,7 +26,7 @@
 #   • release    — prepare a new release
 #
 # Allowed Scope(s) (optional):
-#   aws, langgraph-checkpoint-aws, infra
+#   aws, langgraph-checkpoint-aws, model-profiles, infra
 #
 # Multiple scopes can be used by separating them with a comma.
 #
@@ -82,6 +82,8 @@ jobs:
           scopes: |
             aws
             langgraph-checkpoint-aws
+            agentcore-codeinterpreter
+            model-profiles
           requireScope: false
           disallowScopes: |
             release

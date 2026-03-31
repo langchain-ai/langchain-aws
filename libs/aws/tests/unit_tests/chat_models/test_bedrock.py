@@ -19,9 +19,11 @@ from pydantic import BaseModel, Field
 from langchain_aws import ChatBedrock
 from langchain_aws.chat_models.bedrock import (
     ChatPromptAdapter,
+    _convert_one_message_to_text_qwen,
     _format_anthropic_messages,
     _merge_messages,
     convert_messages_to_prompt_anthropic,
+    convert_messages_to_prompt_qwen,
 )
 from langchain_aws.function_calling import convert_to_anthropic_tool
 
@@ -842,6 +844,34 @@ def test_beta_use_converse_api_with_inference_profile_as_nova_model(
     assert chat.beta_use_converse_api is True
 
 
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_profile_with_application_inference_profile(mock_create_aws_client):
+    """Test _set_model_profile resolves profile correctly for AIP ARNs."""
+    mock_bedrock_client = mock.MagicMock()
+    mock_bedrock_client.get_inference_profile.return_value = {
+        "models": [
+            {
+                "modelArn": (
+                    "arn:aws:bedrock:us-west-2::foundation-model/"
+                    "anthropic.claude-sonnet-4-5-20250929-v1:0"
+                )
+            }
+        ]
+    }
+    mock_create_aws_client.return_value = mock_bedrock_client
+
+    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"  # noqa: E501
+    chat = ChatBedrock(
+        model=aip_model_id,
+        region="us-west-2",
+        bedrock_client=mock_bedrock_client,
+    )  # type: ignore[call-arg]
+
+    # Profile should be resolved from the base model, not the ARN
+    assert chat.profile
+    assert chat.profile["reasoning_output"]
+
+
 @pytest.mark.parametrize(
     "model_id, provider, expected_provider, expectation, region_name",
     [
@@ -1341,6 +1371,12 @@ def test__format_anthropic_messages_preserves_content_order() -> None:
             "deepseek.r1-v1:0",
             "deepseek",
             "<|begin_of_sentence|>",
+        ),
+        (
+            "qwen.qwen3-32b-v1:0",
+            "qwen.qwen3-32b-v1:0",
+            "qwen",
+            "<|im_start|>",
         ),
     ],
 )
@@ -2264,3 +2300,58 @@ def test_stream_cache_control_kwarg_applied() -> None:
         "type": "ephemeral",
         "ttl": "5m",
     }
+
+
+def test_convert_one_message_to_text_qwen_system() -> None:
+    """Test that SystemMessage is converted to ChatML system format."""
+    message = SystemMessage(content="You are a helpful assistant")
+    result = _convert_one_message_to_text_qwen(message)
+    assert result == "<|im_start|>system\nYou are a helpful assistant<|im_end|>"
+
+
+def test_convert_one_message_to_text_qwen_human() -> None:
+    """Test that HumanMessage is converted to ChatML user format."""
+    message = HumanMessage(content="Hello")
+    result = _convert_one_message_to_text_qwen(message)
+    assert result == "<|im_start|>user\nHello<|im_end|>"
+
+
+def test_convert_one_message_to_text_qwen_ai() -> None:
+    """Test that AIMessage is converted to ChatML assistant format."""
+    message = AIMessage(content="Hi there")
+    result = _convert_one_message_to_text_qwen(message)
+    assert result == "<|im_start|>assistant\nHi there<|im_end|>"
+
+
+def test_convert_one_message_to_text_qwen_unknown_type() -> None:
+    """Test that unknown message types raise ValueError."""
+    message = ToolMessage(content="result", tool_call_id="123")
+    with pytest.raises(ValueError, match="Got unknown type"):
+        _convert_one_message_to_text_qwen(message)
+
+
+def test_convert_messages_to_prompt_qwen() -> None:
+    """Test multi-turn conversation is formatted in ChatML with suffix."""
+    messages = [
+        SystemMessage(content="You are a helpful assistant"),
+        HumanMessage(content="What is 1+1?"),
+        AIMessage(content="2"),
+        HumanMessage(content="And 2+2?"),
+    ]
+    result = convert_messages_to_prompt_qwen(messages)
+    expected = (
+        "<|im_start|>system\nYou are a helpful assistant<|im_end|>\n"
+        "<|im_start|>user\nWhat is 1+1?<|im_end|>\n"
+        "<|im_start|>assistant\n2<|im_end|>\n"
+        "<|im_start|>user\nAnd 2+2?<|im_end|>\n"
+        "<|im_start|>assistant\n"
+    )
+    assert result == expected
+
+
+def test_convert_messages_to_prompt_qwen_single_message() -> None:
+    """Test single user message produces valid ChatML prompt."""
+    messages = [HumanMessage(content="Hello")]
+    result = convert_messages_to_prompt_qwen(messages)
+    expected = "<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n"
+    assert result == expected

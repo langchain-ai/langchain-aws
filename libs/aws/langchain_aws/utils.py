@@ -236,9 +236,175 @@ def create_aws_client(
         raise ValueError(f"Error raised by service:\n\n{e}") from e
 
 
+def create_aws_bedrock_runtime_client(
+    region_name: Optional[str] = None,
+    credentials_profile_name: Optional[str] = None,
+    aws_access_key_id: Optional[SecretStr] = None,
+    aws_secret_access_key: Optional[SecretStr] = None,
+    aws_session_token: Optional[SecretStr] = None,
+    endpoint_url: Optional[str] = None,
+    api_key: Optional[SecretStr] = None,
+) -> Any:
+    """Create a ``BedrockRuntimeClient`` from ``aws-sdk-bedrock-runtime``.
+
+    This mirrors ``create_aws_client`` but targets the smithy-based
+    ``aws-sdk-bedrock-runtime`` package required for bidirectional streaming
+    APIs (e.g. Nova Sonic).
+
+    Args:
+        region_name: AWS region name. Falls back to ``AWS_REGION`` /
+            ``AWS_DEFAULT_REGION`` environment variables.
+        credentials_profile_name: Named profile in ``~/.aws/credentials``.
+        aws_access_key_id: Explicit AWS access key ID.
+        aws_secret_access_key: Explicit AWS secret access key.
+        aws_session_token: Optional session token for temporary credentials.
+        endpoint_url: Custom endpoint URL. If not provided, the SDK's
+            built-in regional endpoint resolver is used.
+        api_key: Bedrock API key for bearer-token authentication.
+            If provided, sets the ``AWS_BEARER_TOKEN_BEDROCK`` env variable.
+
+    Returns:
+        A configured ``BedrockRuntimeClient`` instance.
+
+    Raises:
+        ModuleNotFoundError: If ``aws-sdk-bedrock-runtime`` is not installed.
+        ValueError: If credentials are incomplete or invalid.
+    """
+    try:
+        from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient
+        from aws_sdk_bedrock_runtime.config import Config
+    except ImportError as e:
+        raise ModuleNotFoundError(
+            "Could not import aws-sdk-bedrock-runtime. "
+            'Please install it via: pip install "langchain-aws[nova-sonic]"'
+        ) from e
+
+    region_name = (
+        region_name or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
+    )
+
+    has_aws_credentials = bool(
+        credentials_profile_name
+        or aws_access_key_id
+        or aws_secret_access_key
+        or aws_session_token
+    )
+    has_api_key = bool(api_key and api_key.get_secret_value())
+
+    if has_api_key and has_aws_credentials:
+        logger.warning(
+            "Both api_key and AWS credentials were provided. "
+            "Using api_key for authentication; AWS credentials "
+            "will be ignored."
+        )
+
+    if has_api_key:
+        os.environ["AWS_BEARER_TOKEN_BEDROCK"] = api_key.get_secret_value()  # type: ignore[union-attr]
+
+    # Resolve credentials: profile-based via boto3, explicit keys directly,
+    # or fall back to the SDK's default credential chain.
+    access_key: Optional[str] = None
+    secret_key: Optional[str] = None
+    session_token: Optional[str] = None
+
+    if not has_api_key and has_aws_credentials:
+        if credentials_profile_name:
+            try:
+                import boto3
+            except ImportError as e:
+                raise ModuleNotFoundError(
+                    "boto3 is required when using credentials_profile_name."
+                ) from e
+            session = boto3.Session(profile_name=credentials_profile_name)
+            credentials = session.get_credentials()
+            if not credentials:
+                raise ValueError(
+                    f"Could not load credentials for profile "
+                    f"'{credentials_profile_name}'."
+                )
+            creds = credentials.get_frozen_credentials()
+            access_key = creds.access_key
+            secret_key = creds.secret_key
+            session_token = creds.token
+            if not region_name and session.region_name:
+                region_name = session.region_name
+        elif aws_access_key_id and aws_secret_access_key:
+            access_key = aws_access_key_id.get_secret_value()
+            secret_key = aws_secret_access_key.get_secret_value()
+            if aws_session_token:
+                session_token = aws_session_token.get_secret_value()
+        else:
+            raise ValueError(
+                "If providing credentials, both aws_access_key_id and "
+                "aws_secret_access_key must be specified."
+            )
+
+    # If no explicit credentials were resolved, fall back to boto3's default
+    # credential chain (env vars, instance metadata, etc.) so the smithy-based
+    # SDK can authenticate.
+    if not has_api_key and not access_key:
+        try:
+            import boto3
+        except ImportError:
+            pass
+        else:
+            session = boto3.Session()
+            credentials = session.get_credentials()
+            if credentials:
+                creds = credentials.get_frozen_credentials()
+                access_key = creds.access_key
+                secret_key = creds.secret_key
+                session_token = creds.token
+                if not region_name and session.region_name:
+                    region_name = session.region_name
+
+    # Build a credentials identity resolver so the smithy-based SDK's SigV4
+    # auth scheme can locate credentials.  Without this, the SDK silently
+    # fails in a background task and the bidirectional stream hangs.
+    credentials_resolver = None
+    if access_key and secret_key:
+        try:
+            from smithy_aws_core.identity.components import AWSCredentialsIdentity
+        except ImportError:
+            pass
+        else:
+
+            class _StaticCredentialsResolver:
+                """Minimal resolver that returns pre-resolved credentials."""
+
+                def __init__(self, ak: str, sk: str, token: Optional[str]) -> None:
+                    self._identity = AWSCredentialsIdentity(
+                        access_key_id=ak,
+                        secret_access_key=sk,
+                        session_token=token,
+                    )
+
+                async def get_identity(self, **kwargs: Any) -> AWSCredentialsIdentity:
+                    return self._identity
+
+            credentials_resolver = _StaticCredentialsResolver(
+                access_key, secret_key, session_token
+            )
+
+    config = Config(
+        endpoint_uri=endpoint_url
+        or (
+            f"https://bedrock-runtime.{region_name}.amazonaws.com"
+            if region_name
+            else None
+        ),
+        region=region_name,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        aws_session_token=session_token,
+        aws_credentials_identity_resolver=credentials_resolver,
+    )
+    return BedrockRuntimeClient(config=config)
+
+
 def thinking_in_params(params: dict) -> bool:
     """Check if the thinking parameter is enabled in the request."""
-    return params.get("thinking", {}).get("type") == "enabled"
+    return params.get("thinking", {}).get("type") in ("enabled", "adaptive")
 
 
 def trim_message_whitespace(messages: List[Any]) -> List[Any]:

@@ -72,6 +72,7 @@ from langchain_aws.tools.nova_tools import NovaSystemTool
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
+    thinking_in_params,
     trim_message_whitespace,
 )
 
@@ -648,6 +649,59 @@ class ChatBedrockConverse(BaseChatModel):
         """
         return {"cachePoint": {"type": cache_type}}
 
+    def _apply_cache_points(
+        self,
+        cache_control: Optional[Dict[str, Any]],
+        system: List[Dict[str, Any]],
+        bedrock_messages: List[Dict[str, Any]],
+        params: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Apply cachePoint to system, messages, and tools in Converse API format.
+
+        Args:
+            cache_control: Cache control settings dict. Expected keys:
+                - ``ttl`` (optional): Time-to-live for the cache
+                  (e.g., ``"5m"``, ``"1h"``).
+                The ``type`` key is ignored; the Converse API always uses
+                ``"default"``.
+                If None, no cache points are applied.
+            system: The system message list in Converse API format.
+            bedrock_messages: The messages list in Converse API format.
+            params: The constructed API parameters dict. If provided and
+                ``toolConfig.tools`` is present, a cachePoint block is
+                appended to the tools array (unless one already exists).
+        """
+        if not cache_control:
+            return
+
+        is_nova = "amazon.nova" in self.model_id.lower()
+
+        cache_point: Dict[str, Any] = {"type": "default"}
+        ttl = cache_control.get("ttl")
+        if ttl and ttl != "5m" and not is_nova:
+            cache_point["ttl"] = ttl
+        cache_block = {"cachePoint": cache_point}
+
+        if system and not any(_is_cache_point(b) for b in system):
+            system.append(cache_block)
+
+        if bedrock_messages:
+            last_content = bedrock_messages[-1].get("content")
+            if isinstance(last_content, list):
+                has_tool_block = is_nova and any(
+                    isinstance(b, dict) and ("toolResult" in b or "toolUse" in b)
+                    for b in last_content
+                )
+                if not has_tool_block and not any(
+                    _is_cache_point(b) for b in last_content
+                ):
+                    last_content.append(cache_block)
+
+        if params and not is_nova:
+            tools = params.get("toolConfig", {}).get("tools")
+            if tools and not any(_is_cache_point(t) for t in tools):
+                tools.append(cache_block)
+
     @model_validator(mode="before")
     @classmethod
     def build_extra(cls, values: dict[str, Any]) -> Any:
@@ -903,13 +957,10 @@ class ChatBedrockConverse(BaseChatModel):
                     "claude-opus-4",
                     "claude-haiku-4",
                 )
-                thinking_params = (self.additional_model_request_fields or {}).get(
-                    "thinking", {}
-                )
-                if (
-                    any(model in base_model for model in thinking_claude_models)
-                    and thinking_params.get("type") == "enabled"
-                ):
+                thinking_params = self.additional_model_request_fields or {}
+                if any(
+                    model in base_model for model in thinking_claude_models
+                ) and thinking_in_params(thinking_params):
                     self.supports_tool_choice_values = ("auto",)
                 else:
                     self.supports_tool_choice_values = ("auto", "any", "tool")
@@ -947,15 +998,15 @@ class ChatBedrockConverse(BaseChatModel):
         # Validate reasoning configuration for Nova 2 models
         self._validate_nova_reasoning_config()
 
+        if not self.profile:
+            self.profile = self._resolve_model_profile()
+
         return self
 
-    @model_validator(mode="after")
-    def _set_model_profile(self) -> Self:
-        """Set model profile if not overridden."""
-        if self.profile is None:
-            model_id = re.sub(r"^[A-Za-z]{2}\.", "", self.model_id)
-            self.profile = _get_default_model_profile(model_id)
-        return self
+    def _resolve_model_profile(self) -> ModelProfile | None:
+        """Return the default model profile for this model."""
+        model_id = self._get_base_model()
+        return _get_default_model_profile(model_id)
 
     def _get_base_model(self) -> str:
         """Return base model id, stripping any regional prefix."""
@@ -1042,13 +1093,19 @@ class ChatBedrockConverse(BaseChatModel):
         for msg in reversed(messages):
             if msg.get("role") == "user":
                 new_content = []
+                has_guard_content = False
                 for block in msg["content"]:
                     if "text" in block:
+                        has_guard_content = True
                         new_content.append(
                             {"guardContent": {"text": {"text": block["text"]}}}
                         )
                     else:
                         new_content.append(block)
+                if not has_guard_content:
+                    new_content.append(
+                        {"guardContent": {"text": {"text": EMPTY_CONTENT}}}
+                    )
                 msg["content"] = new_content
                 break
 
@@ -1076,6 +1133,7 @@ class ChatBedrockConverse(BaseChatModel):
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
         additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
+        cache_control = filtered_kwargs.pop("cache_control", None)
         params = self._converse_params(
             stop=stop,
             additionalModelRequestFields=additional_fields,
@@ -1083,6 +1141,7 @@ class ChatBedrockConverse(BaseChatModel):
                 filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
         )
+        self._apply_cache_points(cache_control, system, bedrock_messages, params)
 
         # Check for tool blocks without toolConfig and handle conversion
         if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(
@@ -1135,6 +1194,7 @@ class ChatBedrockConverse(BaseChatModel):
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
         additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
+        cache_control = filtered_kwargs.pop("cache_control", None)
         params = self._converse_params(
             stop=stop,
             additionalModelRequestFields=additional_fields,
@@ -1142,6 +1202,7 @@ class ChatBedrockConverse(BaseChatModel):
                 filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
         )
+        self._apply_cache_points(cache_control, system, bedrock_messages, params)
 
         # Check for tool blocks without toolConfig and handle conversion
         if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(
@@ -1238,6 +1299,74 @@ class ChatBedrockConverse(BaseChatModel):
 
     # TODO: Add async support once there are async bedrock.converse methods.
 
+    def _is_thinking_enabled(self) -> bool:
+        """Check if extended thinking is enabled via additional_model_request_fields."""
+        thinking_params = (self.additional_model_request_fields or {}).get(
+            "thinking", {}
+        )
+        return thinking_params.get("type") == "enabled"
+
+    def _resolve_tool_choice(
+        self,
+        tool_choice: Optional[Union[dict, str]],
+    ) -> Optional[Dict[str, Dict[str, str]]]:
+        """Validate and resolve tool_choice against model capabilities.
+
+        When thinking is enabled and the requested tool_choice is not
+        supported, downgrades to ``auto`` with a warning instead of
+        raising, so that callers like LangGraph ``create_agent`` work
+        transparently.
+
+        Args:
+            tool_choice: Requested tool_choice value.
+
+        Returns:
+            Formatted tool_choice dict, or ``None`` if not provided.
+
+        Raises:
+            ValueError: If tool_choice is unsupported and thinking is
+                not enabled (no safe downgrade possible).
+        """
+        if not tool_choice:
+            if "deepseek.v3" in self._get_base_model():
+                return _format_tool_choice("any")
+            return None
+
+        formatted = _format_tool_choice(tool_choice)
+        tool_choice_type = list(formatted.keys())[0]
+        supported = list(self.supports_tool_choice_values or [])
+
+        if tool_choice_type in supported:
+            return formatted
+
+        # Thinking-enabled models: downgrade to auto instead of failing.
+        if self._is_thinking_enabled() and "auto" in supported:
+            warnings.warn(
+                f"tool_choice={tool_choice!r} is not supported when thinking "
+                f"is enabled. Downgrading to tool_choice='auto'. The model "
+                f"will decide whether to call tools."
+            )
+            return _format_tool_choice("auto")
+
+        # No safe downgrade — raise.
+        base_model = self._get_base_model()
+        if self.supports_tool_choice_values:
+            msg = (
+                f"Model {base_model} does not currently support "
+                f"tool_choice of type {tool_choice_type}. "
+                f"The following tool_choice types are supported: "
+                f"{self.supports_tool_choice_values}."
+            )
+        else:
+            msg = f"Model {base_model} does not currently support tool_choice."
+
+        raise ValueError(
+            f"{msg} Please see "
+            "https://docs.aws.amazon.com/bedrock/latest/APIReference/"
+            "API_runtime_ToolChoice.html for the latest documentation "
+            "on models that support tool choice."
+        )
+
     def bind_tools(
         self,
         tools: Sequence[
@@ -1272,6 +1401,36 @@ class ChatBedrockConverse(BaseChatModel):
         if system_tools:
             kwargs["disable_streaming"] = True
 
+        resolved_tool_choice = self._resolve_tool_choice(tool_choice)
+        if (
+            system_tools
+            and not custom_tools
+            and resolved_tool_choice
+            and "nova" in self._get_base_model().lower()
+        ):
+            tool_choice_type = list(resolved_tool_choice.keys())[0]
+            if tool_choice_type in ("any", "tool"):
+                warnings.warn(
+                    f"tool_choice={tool_choice_type} is not supported when using only "
+                    "systemTools. Downgrading to tool_choice='auto'."
+                )
+                resolved_tool_choice = _format_tool_choice("auto")
+
+        if system_tools:
+            bedrock_custom_tools: List[Any] = _format_tools(custom_tools)
+            if strict is not None:
+                for formatted_tool in bedrock_custom_tools:
+                    if (
+                        isinstance(formatted_tool, dict)
+                        and "toolSpec" in formatted_tool
+                    ):
+                        formatted_tool["toolSpec"]["strict"] = strict  # type: ignore[assignment]
+            all_tools: List[Any] = bedrock_custom_tools + system_tools
+            tool_config: Dict[str, Any] = {"tools": all_tools}
+            if resolved_tool_choice:
+                tool_config["toolChoice"] = resolved_tool_choice
+            return self.bind(toolConfig=tool_config, **kwargs)
+
         formatted_custom_tools: List[Any] = []
         for tool in custom_tools:
             if _is_cache_point(tool):
@@ -1287,77 +1446,11 @@ class ChatBedrockConverse(BaseChatModel):
                         formatted["toolSpec"]["strict"] = strict  # type: ignore[assignment]
                     formatted_custom_tools.append(formatted)
 
-        if system_tools:
-            # Merge system and custom tools
-            all_tools = formatted_custom_tools + system_tools
-
-            # Build toolConfig directly to avoid re-formatting
-            tool_config: Dict[str, Any] = {"tools": all_tools}
-
-            if tool_choice:
-                tool_choice_formatted = _format_tool_choice(tool_choice)
-                tool_choice_type = list(tool_choice_formatted.keys())[0]
-                if tool_choice_type not in list(self.supports_tool_choice_values or []):
-                    base_model = self._get_base_model()
-                    if self.supports_tool_choice_values:
-                        supported = (
-                            f"Model {base_model} does not currently support "
-                            f"tool_choice of type {tool_choice_type}. "
-                            f"The following tool_choice types are supported: "
-                            f"{self.supports_tool_choice_values}."
-                        )
-                    else:
-                        supported = (
-                            f"Model {base_model} does not currently support "
-                            f"tool_choice."
-                        )
-
-                    raise ValueError(
-                        f"{supported} Please see "
-                        "https://docs.aws.amazon.com/bedrock/latest/APIReference/"
-                        "API_runtime_ToolChoice.html for the latest documentation "
-                        "on models that support tool choice."
-                    )
-                tool_config["toolChoice"] = tool_choice_formatted
-            elif "deepseek.v3" in self._get_base_model():
-                tool_config["toolChoice"] = _format_tool_choice("any")
-
-            return self.bind(toolConfig=tool_config, **kwargs)
-        else:
-            # Format tool_choice if provided
-            formatted_tool_choice = None
-            if tool_choice:
-                formatted_tool_choice = _format_tool_choice(tool_choice)
-                tool_choice_type = list(formatted_tool_choice.keys())[0]
-                if tool_choice_type not in list(self.supports_tool_choice_values or []):
-                    base_model = self._get_base_model()
-                    if self.supports_tool_choice_values:
-                        supported = (
-                            f"Model {base_model} does not currently support "
-                            f"tool_choice of type {tool_choice_type}. "
-                            f"The following tool_choice types are supported: "
-                            f"{self.supports_tool_choice_values}."
-                        )
-                    else:
-                        supported = (
-                            f"Model {base_model} does not currently support "
-                            f"tool_choice."
-                        )
-
-                    raise ValueError(
-                        f"{supported} Please see "
-                        "https://docs.aws.amazon.com/bedrock/latest/APIReference/"
-                        "API_runtime_ToolChoice.html for the latest documentation "
-                        "on models that support tool choice."
-                    )
-            elif "deepseek.v3" in self._get_base_model():
-                formatted_tool_choice = _format_tool_choice("any")
-
-            return self.bind(
-                tools=formatted_custom_tools,
-                tool_choice=formatted_tool_choice,
-                **kwargs,
-            )
+        return self.bind(
+            tools=formatted_custom_tools,
+            tool_choice=resolved_tool_choice,
+            **kwargs,
+        )
 
     def with_structured_output(
         self,
