@@ -4,6 +4,7 @@ import functools
 import json
 import logging
 import re
+import uuid
 import warnings
 from operator import itemgetter
 from typing import (
@@ -2171,6 +2172,7 @@ def _format_data_content_block(block: dict) -> dict:
                     "'mime_type': 'application/pdf', 'base64': '...', "
                     "'name': 'my-pdf'}"
                 )
+                formatted_block["document"]["name"] = uuid.uuid4().hex[:12]
         else:
             error_message = "File data only supported through in-line base64 format."
             raise ValueError(error_message)
