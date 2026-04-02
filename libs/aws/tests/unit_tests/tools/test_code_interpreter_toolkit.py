@@ -371,7 +371,7 @@ class TestGetOrCreateInterpreter:
         assert all(r is mock_interpreter for r in results)
 
     def test_uses_default_thread_id(self) -> None:
-        """Test uses 'default' thread_id when not specified."""
+        """Test uses 'default' thread_id when not specified in configurable."""
         from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
 
         toolkit = CodeInterpreterToolkit()
@@ -385,9 +385,37 @@ class TestGetOrCreateInterpreter:
             mock_class.return_value = mock_interpreter
 
             config: RunnableConfig = cast(RunnableConfig, {"configurable": {}})
-            # This should raise KeyError since thread_id is required
-            with pytest.raises(KeyError):
-                toolkit._get_or_create_interpreter(config)
+            interpreter = toolkit._get_or_create_interpreter(config)
+
+            assert interpreter is mock_interpreter
+            assert "default" in toolkit._code_interpreters
+
+    def test_uses_checkpoint_ns_for_session_key(self) -> None:
+        """Test session key includes checkpoint_ns for subagent isolation."""
+        from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
+
+        toolkit = CodeInterpreterToolkit()
+
+        with patch(
+            "langchain_aws.tools.code_interpreter_toolkit.CodeInterpreter"
+        ) as mock_class:
+            mock_interpreter = MagicMock()
+            mock_interpreter.start = MagicMock()
+            mock_interpreter.session_id = "test-session"
+            mock_class.return_value = mock_interpreter
+
+            config: RunnableConfig = cast(
+                RunnableConfig,
+                {
+                    "configurable": {
+                        "thread_id": "thread-1",
+                        "checkpoint_ns": "research-acme:abc123",
+                    }
+                },
+            )
+            toolkit._get_or_create_interpreter(config)
+
+            assert "thread-1:research-acme:abc123" in toolkit._code_interpreters
 
 
 class TestGetThreadId:
@@ -411,6 +439,32 @@ class TestGetThreadId:
         thread_id = _get_thread_id(None)
 
         assert thread_id == "default"
+
+    def test_returns_default_when_no_thread_id(self) -> None:
+        """Test returns 'default' when configurable has no thread_id."""
+        from langchain_aws.tools.code_interpreter_toolkit import _get_thread_id
+
+        config: RunnableConfig = cast(RunnableConfig, {"configurable": {}})
+        thread_id = _get_thread_id(config)
+
+        assert thread_id == "default"
+
+    def test_includes_checkpoint_ns(self) -> None:
+        """Test includes checkpoint_ns in session key."""
+        from langchain_aws.tools.code_interpreter_toolkit import _get_thread_id
+
+        config: RunnableConfig = cast(
+            RunnableConfig,
+            {
+                "configurable": {
+                    "thread_id": "thread-1",
+                    "checkpoint_ns": "subagent:xyz",
+                }
+            },
+        )
+        thread_id = _get_thread_id(config)
+
+        assert thread_id == "thread-1:subagent:xyz"
 
 
 class TestExtractOutputFromStream:
