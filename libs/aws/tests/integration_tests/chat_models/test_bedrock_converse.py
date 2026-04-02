@@ -44,6 +44,10 @@ class TestBedrockStandard(ChatModelIntegrationTests):
     def supports_image_inputs(self) -> bool:
         return True
 
+    @property
+    def supports_pdf_tool_message(self) -> bool:
+        return True
+
 
 class TestBedrockMistralStandard(ChatModelIntegrationTests):
     @property
