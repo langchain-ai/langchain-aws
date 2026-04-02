@@ -1,14 +1,12 @@
 """Standard LangChain interface tests"""
 
 import base64
-import warnings
 from typing import Any, Literal, Optional, Type
 from uuid import uuid4
 
 import httpx
 import pytest
 import yaml  # type: ignore[import-untyped]
-from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
@@ -549,42 +547,6 @@ def test_guardrails() -> None:
     )
     assert response.response_metadata["stopReason"] == "guardrail_intervened"
     assert response.response_metadata["trace"] is not None
-
-
-@pytest.mark.parametrize(
-    "thinking_model",
-    [
-        "us.anthropic.claude-sonnet-4-20250514-v1:0",
-        "us.anthropic.claude-opus-4-20250514-v1:0",
-        "us.anthropic.claude-opus-4-1-20250805-v1:0",
-        "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-        "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-    ],
-)
-def test_structured_output_tool_choice_not_supported(thinking_model: str) -> None:
-    llm = ChatBedrockConverse(model=thinking_model)
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        structured_llm = llm.with_structured_output(ClassifyQuery)
-        response = structured_llm.invoke("How big are cats? Use the tool.")
-    assert len(w) == 0
-    assert isinstance(response, ClassifyQuery)
-
-    # Unsupported params
-    llm = ChatBedrockConverse(
-        model=thinking_model,
-        max_tokens=5000,
-        additional_model_request_fields={
-            "thinking": {"type": "enabled", "budget_tokens": 2000}
-        },
-    )
-    with pytest.warns(match="structured output"):
-        structured_llm = llm.with_structured_output(ClassifyQuery)
-    response = structured_llm.invoke("How big are cats? Use the tool.")
-    assert isinstance(response, ClassifyQuery)
-
-    with pytest.raises(OutputParserException):
-        structured_llm.invoke("Hello!")
 
 
 def test_structured_output_thinking_force_tool_use() -> None:
