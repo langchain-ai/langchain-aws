@@ -1,6 +1,7 @@
 """Standard LangChain interface tests"""
 
 import base64
+import time
 import warnings
 from typing import Any, Literal, Optional, Type
 from uuid import uuid4
@@ -454,6 +455,7 @@ def test_cache_control_anthropic_multi_turn() -> None:
         messages.append(result)
 
     llm_turn2 = llm.bind_tools([_get_weather])
+    time.sleep(5)
     r2 = llm_turn2.invoke(messages, cache_control=cache_control)
     assert isinstance(r2, AIMessage)
     assert r2.content
