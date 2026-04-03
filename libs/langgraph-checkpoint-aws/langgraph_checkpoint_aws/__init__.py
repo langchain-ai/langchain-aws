@@ -15,6 +15,9 @@ from langgraph_checkpoint_aws.agentcore.store import (
 from langgraph_checkpoint_aws.checkpoint.dynamodb import (
     DynamoDBSaver,
 )
+from langgraph_checkpoint_aws.deferred_saver import (
+    DeferredCheckpointSaver,
+)
 from langgraph_checkpoint_aws.store.dynamodb import (
     DynamoDBStore,
 )
@@ -89,6 +92,7 @@ SDK_USER_AGENT = f"LangGraphCheckpointAWS#{__version__}"
 # Expose the saver class at the package level
 __all__ = [
     "AgentCoreMemorySaver",
+    "DeferredCheckpointSaver",
     "AgentCoreMemoryStore",
     "AgentCoreValkeySaver",
     "AsyncValkeySaver",
