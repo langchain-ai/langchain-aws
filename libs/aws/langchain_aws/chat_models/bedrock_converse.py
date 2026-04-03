@@ -1133,13 +1133,7 @@ class ChatBedrockConverse(BaseChatModel):
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
         additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
-
-        response_format = filtered_kwargs.pop("response_format", None)
-        if response_format and "output_config" not in filtered_kwargs:
-            filtered_kwargs["output_config"] = _response_format_to_output_config(
-                response_format
-            )
-
+        _apply_response_format(filtered_kwargs)
         cache_control = filtered_kwargs.pop("cache_control", None)
         params = self._converse_params(
             stop=stop,
@@ -1201,13 +1195,7 @@ class ChatBedrockConverse(BaseChatModel):
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
         additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
-
-        response_format = filtered_kwargs.pop("response_format", None)
-        if response_format and "output_config" not in filtered_kwargs:
-            filtered_kwargs["output_config"] = _response_format_to_output_config(
-                response_format
-            )
-
+        _apply_response_format(filtered_kwargs)
         cache_control = filtered_kwargs.pop("cache_control", None)
         params = self._converse_params(
             stop=stop,
@@ -2550,6 +2538,12 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 f"'reasoning_content' keys. Received:\n\n{block}"
             )
     return lc_content
+
+
+def _apply_response_format(kwargs: Dict[str, Any]) -> None:
+    response_format = kwargs.pop("response_format", None)
+    if response_format and "output_config" not in kwargs:
+        kwargs["output_config"] = _response_format_to_output_config(response_format)
 
 
 def _response_format_to_output_config(

@@ -4621,6 +4621,114 @@ def test_response_format_without_response_format() -> None:
     assert "outputConfig" not in call_kwargs
 
 
+def _mock_stream_response() -> dict:
+    return {
+        "stream": [
+            {"messageStart": {"role": "assistant"}},
+            {
+                "contentBlockDelta": {
+                    "delta": {"text": '{"name": "test"}'},
+                    "contentBlockIndex": 0,
+                }
+            },
+            {"messageStop": {"stopReason": "end_turn"}},
+            {
+                "metadata": {
+                    "usage": {
+                        "inputTokens": 10,
+                        "outputTokens": 5,
+                        "totalTokens": 15,
+                    }
+                }
+            },
+        ]
+    }
+
+
+def test_response_format_stream_translates_to_output_config() -> None:
+    """response_format kwarg is translated to outputConfig in streaming path."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse_stream.return_value = _mock_stream_response()
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )
+
+    list(
+        llm.stream(
+            [HumanMessage(content="Hi")],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "TestOutput",
+                    "schema": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                        "required": ["name"],
+                    },
+                },
+            },
+        )
+    )
+
+    call_kwargs = mocked_client.converse_stream.call_args[1]
+    assert "responseFormat" not in call_kwargs
+    assert "response_format" not in call_kwargs
+    oc = call_kwargs["outputConfig"]
+    tf = oc["textFormat"]
+    assert tf["type"] == "json_schema"
+    js = tf["structure"]["jsonSchema"]
+    assert js["name"] == "TestOutput"
+    parsed_schema = json.loads(js["schema"])
+    assert parsed_schema["additionalProperties"] is False
+
+
+def test_response_format_stream_does_not_override_output_config() -> None:
+    """Explicit outputConfig takes precedence over response_format in streaming."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse_stream.return_value = _mock_stream_response()
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )
+
+    explicit_config = {"textFormat": {"type": "text"}}
+    list(
+        llm.stream(
+            [HumanMessage(content="Hi")],
+            output_config=explicit_config,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "X", "schema": {"type": "object"}},
+            },
+        )
+    )
+
+    call_kwargs = mocked_client.converse_stream.call_args[1]
+    assert call_kwargs["outputConfig"] == explicit_config
+
+
+def test_response_format_stream_without_response_format() -> None:
+    """No outputConfig generated when response_format is absent in streaming."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse_stream.return_value = _mock_stream_response()
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )
+
+    list(llm.stream([HumanMessage(content="Hi")]))
+
+    call_kwargs = mocked_client.converse_stream.call_args[1]
+    assert "outputConfig" not in call_kwargs
+
+
 def test_apply_cache_points_system_and_messages() -> None:
     system = [{"text": "You are helpful."}]
     messages = [
