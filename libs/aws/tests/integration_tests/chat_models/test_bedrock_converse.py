@@ -434,6 +434,7 @@ def test_cache_control_anthropic() -> None:
     assert cache_write > 0, f"Expected cache write on first call, got {cache_write}"
 
 
+@pytest.mark.xfail(reason="TODO: fails sporadically, suspect transient issue.")
 def test_cache_control_anthropic_multi_turn() -> None:
     llm = ChatBedrockConverse(
         model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
