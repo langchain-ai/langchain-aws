@@ -242,6 +242,97 @@ class TestBrowserToolkit:
         assert toolkit.session_manager.extensions == extensions
         assert toolkit.session_manager.profile_configuration == profile_config
 
+    def test_get_active_sessions_empty(self) -> None:
+        """Test get_active_sessions returns empty dict when no sessions."""
+        from langchain_aws.tools.browser_toolkit import BrowserToolkit
+
+        toolkit = BrowserToolkit()
+        sessions = toolkit.get_active_sessions()
+
+        assert sessions == {}
+
+    def test_get_active_sessions_with_async_sessions(self) -> None:
+        """Test get_active_sessions returns metadata for async sessions."""
+        from langchain_aws.tools.browser_toolkit import BrowserToolkit
+
+        toolkit = BrowserToolkit()
+
+        mock_client = MagicMock()
+        mock_client.session_id = "browser-session-xyz"
+        mock_client.identifier = "aws.browser.v1"
+        mock_browser = AsyncMock()
+        toolkit.session_manager._async_sessions["thread-1"] = (
+            mock_client,
+            mock_browser,
+            False,
+        )
+
+        sessions = toolkit.get_active_sessions()
+
+        assert "thread-1" in sessions
+        assert sessions["thread-1"]["session_id"] == "browser-session-xyz"
+        assert sessions["thread-1"]["identifier"] == "aws.browser.v1"
+
+    def test_get_active_sessions_with_sync_sessions(self) -> None:
+        """Test get_active_sessions returns metadata for sync sessions."""
+        from langchain_aws.tools.browser_toolkit import BrowserToolkit
+
+        toolkit = BrowserToolkit()
+
+        mock_client = MagicMock()
+        mock_client.session_id = "sync-session-abc"
+        mock_client.identifier = "aws.browser.v1"
+        mock_browser = MagicMock()
+        toolkit.session_manager._sync_sessions["thread-2"] = (
+            mock_client,
+            mock_browser,
+            False,
+        )
+
+        sessions = toolkit.get_active_sessions()
+
+        assert "thread-2" in sessions
+        assert sessions["thread-2"]["session_id"] == "sync-session-abc"
+
+    def test_get_active_sessions_skips_no_session_id(self) -> None:
+        """Test get_active_sessions skips clients without session_id."""
+        from langchain_aws.tools.browser_toolkit import BrowserToolkit
+
+        toolkit = BrowserToolkit()
+
+        mock_client = MagicMock()
+        mock_client.session_id = None
+        mock_browser = AsyncMock()
+        toolkit.session_manager._async_sessions["thread-1"] = (
+            mock_client,
+            mock_browser,
+            False,
+        )
+
+        sessions = toolkit.get_active_sessions()
+
+        assert sessions == {}
+
+    def test_get_active_sessions_identifier_none_becomes_empty(self) -> None:
+        """Test get_active_sessions uses empty string when identifier is None."""
+        from langchain_aws.tools.browser_toolkit import BrowserToolkit
+
+        toolkit = BrowserToolkit()
+
+        mock_client = MagicMock()
+        mock_client.session_id = "session-123"
+        mock_client.identifier = None
+        mock_browser = AsyncMock()
+        toolkit.session_manager._async_sessions["thread-1"] = (
+            mock_client,
+            mock_browser,
+            False,
+        )
+
+        sessions = toolkit.get_active_sessions()
+
+        assert sessions["thread-1"]["identifier"] == ""
+
 
 class TestBrowserSessionManager:
     """Tests for BrowserSessionManager class."""
@@ -289,19 +380,48 @@ class TestBrowserSessionManager:
         assert manager._async_sessions["thread-1"][2] is True
 
     @pytest.mark.asyncio
-    async def test_get_async_browser_raises_if_in_use(self) -> None:
-        """Test get_async_browser raises error if session is in use."""
+    async def test_get_async_browser_waits_then_acquires(self) -> None:
+        """Test get_async_browser waits for in-use session to be released."""
+        import asyncio
+
         from langchain_aws.tools.browser_session_manager import BrowserSessionManager
 
         manager = BrowserSessionManager(region="us-west-2")
 
-        # Add a session that's in use
         mock_client = MagicMock()
         mock_browser = AsyncMock()
         manager._async_sessions["thread-1"] = (mock_client, mock_browser, True)
 
-        with pytest.raises(RuntimeError, match="already in use"):
-            await manager.get_async_browser("thread-1")
+        async def release_after_delay() -> None:
+            await asyncio.sleep(0.3)
+            manager._async_sessions["thread-1"] = (mock_client, mock_browser, False)
+
+        # Release the session after a short delay
+        asyncio.create_task(release_after_delay())
+
+        browser = await manager.get_async_browser("thread-1")
+
+        assert browser is mock_browser
+        assert manager._async_sessions["thread-1"][2] is True
+
+    @pytest.mark.asyncio
+    async def test_get_async_browser_times_out_if_not_released(self) -> None:
+        """Test get_async_browser raises after timeout if session stays in use."""
+        from langchain_aws.tools.browser_session_manager import BrowserSessionManager
+
+        manager = BrowserSessionManager(region="us-west-2")
+
+        mock_client = MagicMock()
+        mock_browser = AsyncMock()
+        manager._async_sessions["thread-1"] = (mock_client, mock_browser, True)
+
+        # Patch asyncio.sleep to skip real waiting
+        with patch(
+            "langchain_aws.tools.browser_session_manager.asyncio.sleep",
+            new_callable=AsyncMock,
+        ):
+            with pytest.raises(RuntimeError, match="timed out"):
+                await manager.get_async_browser("thread-1")
 
     @pytest.mark.asyncio
     async def test_release_async_browser(self) -> None:
@@ -557,6 +677,48 @@ class TestThreadAwareBaseTool:
 
         assert thread_id == "default"
 
+    def test_get_thread_id_with_checkpoint_ns(self) -> None:
+        """Test thread_id includes checkpoint_ns for subagent isolation."""
+        from langchain_aws.tools.browser_session_manager import BrowserSessionManager
+        from langchain_aws.tools.browser_tools import ThreadAwareNavigateTool
+
+        manager = BrowserSessionManager()
+        tool = ThreadAwareNavigateTool(_session_manager=manager)
+
+        config: RunnableConfig = cast(
+            RunnableConfig,
+            {
+                "configurable": {
+                    "thread_id": "thread-1",
+                    "checkpoint_ns": "research-acme:abc123",
+                }
+            },
+        )
+        thread_id = tool.get_thread_id(config)
+
+        assert thread_id == "thread-1:research-acme:abc123"
+
+    def test_get_thread_id_empty_checkpoint_ns(self) -> None:
+        """Test thread_id ignores empty checkpoint_ns."""
+        from langchain_aws.tools.browser_session_manager import BrowserSessionManager
+        from langchain_aws.tools.browser_tools import ThreadAwareNavigateTool
+
+        manager = BrowserSessionManager()
+        tool = ThreadAwareNavigateTool(_session_manager=manager)
+
+        config: RunnableConfig = cast(
+            RunnableConfig,
+            {
+                "configurable": {
+                    "thread_id": "thread-1",
+                    "checkpoint_ns": "",
+                }
+            },
+        )
+        thread_id = tool.get_thread_id(config)
+
+        assert thread_id == "thread-1"
+
 
 class TestNavigateTool:
     """Tests for NavigateTool."""
@@ -600,3 +762,72 @@ class TestNavigateTool:
                         url="ftp://invalid.com",
                         config=config,
                     )
+
+
+class TestGetSessionKey:
+    """Tests for the get_session_key utility function."""
+
+    def test_returns_default_when_config_none(self) -> None:
+        """Test returns 'default' when config is None."""
+        from langchain_aws.tools.utils import get_session_key
+
+        assert get_session_key(None) == "default"
+
+    def test_returns_default_when_config_not_dict(self) -> None:
+        """Test returns 'default' when config is not a dict."""
+        from langchain_aws.tools.utils import get_session_key
+
+        assert get_session_key("not-a-dict") == "default"  # type: ignore[arg-type]
+
+    def test_returns_thread_id_only(self) -> None:
+        """Test returns thread_id when no checkpoint_ns."""
+        from langchain_aws.tools.utils import get_session_key
+
+        config: RunnableConfig = cast(
+            RunnableConfig, {"configurable": {"thread_id": "thread-1"}}
+        )
+        assert get_session_key(config) == "thread-1"
+
+    def test_returns_thread_id_with_checkpoint_ns(self) -> None:
+        """Test returns thread_id:checkpoint_ns when both present."""
+        from langchain_aws.tools.utils import get_session_key
+
+        config: RunnableConfig = cast(
+            RunnableConfig,
+            {
+                "configurable": {
+                    "thread_id": "thread-1",
+                    "checkpoint_ns": "subagent-a:abc123",
+                }
+            },
+        )
+        assert get_session_key(config) == "thread-1:subagent-a:abc123"
+
+    def test_ignores_empty_checkpoint_ns(self) -> None:
+        """Test ignores empty checkpoint_ns string."""
+        from langchain_aws.tools.utils import get_session_key
+
+        config: RunnableConfig = cast(
+            RunnableConfig,
+            {
+                "configurable": {
+                    "thread_id": "thread-1",
+                    "checkpoint_ns": "",
+                }
+            },
+        )
+        assert get_session_key(config) == "thread-1"
+
+    def test_returns_default_when_no_thread_id(self) -> None:
+        """Test returns 'default' when configurable has no thread_id."""
+        from langchain_aws.tools.utils import get_session_key
+
+        config: RunnableConfig = cast(RunnableConfig, {"configurable": {}})
+        assert get_session_key(config) == "default"
+
+    def test_returns_default_when_no_configurable(self) -> None:
+        """Test returns 'default' when config has no configurable key."""
+        from langchain_aws.tools.utils import get_session_key
+
+        config: RunnableConfig = cast(RunnableConfig, {})
+        assert get_session_key(config) == "default"
