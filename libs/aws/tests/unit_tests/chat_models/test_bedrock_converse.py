@@ -2,7 +2,19 @@
 
 import base64
 import os
-from typing import Any, Dict, Iterator, List, Literal, Tuple, Type, Union, cast
+import warnings
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    Type,
+    Union,
+    cast,
+)
 from unittest import mock
 
 import pytest
@@ -5077,3 +5089,108 @@ def test_timeout_retries_passed_to_client(mock_create_client: mock.Mock) -> None
         assert cfg.connect_timeout == 90
         assert cfg.read_timeout == 90
         assert cfg.retries["max_attempts"] == 1
+
+
+class ClassifyQuery(BaseModel):
+    """Classify a query."""
+
+    query_type: Literal["cat", "dog"] = Field(
+        description="Classify a query as related to cats or dogs."
+    )
+
+
+def _tool_call_converse_response(
+    tool_name: str = "ClassifyQuery",
+    tool_input: Optional[Dict] = None,
+    tool_use_id: str = "tool_1",
+) -> Dict[str, Any]:
+    if tool_input is None:
+        tool_input = {"query_type": "cat"}
+    return {
+        "output": {
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "toolUse": {
+                            "toolUseId": tool_use_id,
+                            "name": tool_name,
+                            "input": tool_input,
+                        }
+                    }
+                ],
+            }
+        },
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+
+@pytest.mark.parametrize(
+    "thinking_model",
+    [
+        "us.anthropic.claude-sonnet-4-20250514-v1:0",
+        "us.anthropic.claude-opus-4-20250514-v1:0",
+        "us.anthropic.claude-opus-4-1-20250805-v1:0",
+        "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    ],
+)
+def test_structured_output_tool_choice_not_supported(thinking_model: str) -> None:
+    mocked_client = mock.MagicMock()
+
+    # --- Case 1: thinking NOT enabled ---
+    # supports_tool_choice_values should be ("auto", "any", "tool"),
+    # so with_structured_output should force tool_choice to a specific tool
+    # and should NOT warn.
+    mocked_client.converse.return_value = _tool_call_converse_response()
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model=thinking_model,
+        region_name="us-east-1",
+    )
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        structured_llm = llm.with_structured_output(ClassifyQuery)
+    assert len(w) == 0
+
+    response = structured_llm.invoke("How big are cats? Use the tool.")
+    assert isinstance(response, ClassifyQuery)
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    tool_config = call_kwargs.get("toolConfig")
+    assert tool_config is not None
+    assert tool_config["toolChoice"] == {"tool": {"name": "ClassifyQuery"}}
+    assert len(tool_config["tools"]) == 1
+    tool_spec = tool_config["tools"][0]["toolSpec"]
+    assert tool_spec["name"] == "ClassifyQuery"
+
+    # --- Case 2: thinking ENABLED ---
+    # supports_tool_choice_values should be ("auto",) only,
+    # so with_structured_output should warn and NOT force tool_choice.
+    mocked_client.reset_mock()
+    mocked_client.converse.return_value = _tool_call_converse_response()
+
+    llm_thinking = ChatBedrockConverse(
+        client=mocked_client,
+        model=thinking_model,
+        region_name="us-east-1",
+        max_tokens=5000,
+        additional_model_request_fields={
+            "thinking": {"type": "enabled", "budget_tokens": 2000}
+        },
+    )
+    with pytest.warns(match="structured output"):
+        structured_llm_thinking = llm_thinking.with_structured_output(ClassifyQuery)
+
+    response = structured_llm_thinking.invoke("How big are cats? Use the tool.")
+    assert isinstance(response, ClassifyQuery)
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    tool_config = call_kwargs.get("toolConfig")
+    assert tool_config is not None
+    assert tool_config.get("toolChoice") is None
+    assert len(tool_config["tools"]) == 1
+    tool_spec = tool_config["tools"][0]["toolSpec"]
+    assert tool_spec["name"] == "ClassifyQuery"
+    assert call_kwargs["additionalModelRequestFields"]["thinking"]["type"] == "enabled"
