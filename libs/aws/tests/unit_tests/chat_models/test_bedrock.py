@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from langchain_aws import ChatBedrock
 from langchain_aws.chat_models.bedrock import (
     ChatPromptAdapter,
+    _convert_one_message_to_text_openai,
     _convert_one_message_to_text_qwen,
     _format_anthropic_messages,
     _merge_messages,
@@ -2355,3 +2356,24 @@ def test_convert_messages_to_prompt_qwen_single_message() -> None:
     result = convert_messages_to_prompt_qwen(messages)
     expected = "<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n"
     assert result == expected
+
+
+@pytest.mark.parametrize(
+    "name,tool_call_id,expected_prefix",
+    [
+        ("get_weather", "call_123", "get_weather"),
+        (None, "call_123", "call_123"),
+        (None, "", "tool"),
+    ],
+)
+def test_convert_one_message_to_text_openai_tool_message(
+    name, tool_call_id, expected_prefix
+):
+    """Test ToolMessage formats per Harmony spec with fallbacks."""
+    message = ToolMessage(content="result", tool_call_id=tool_call_id, name=name)
+    result = _convert_one_message_to_text_openai(message)
+    assert result == (
+        f"<|start|>{expected_prefix} to=assistant"
+        f"<|channel|>commentary"
+        f"<|message|>result<|end|>"
+    )
