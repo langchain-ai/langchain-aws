@@ -1976,7 +1976,7 @@ def _messages_to_bedrock(
 
 
 def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:
-    response_metadata = response
+    response_metadata = _camel_to_snake_keys(response)
     # response_metadata only supports string, list or dict
     if "metrics" in response and "latencyMs" in response["metrics"]:
         response_metadata["metrics"]["latencyMs"] = [response["metrics"]["latencyMs"]]
@@ -2081,8 +2081,9 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         # TODO: needed?
         return AIMessageChunk(content=[])
     elif "messageStop" in event:
-        # TODO: snake case response metadata?
-        return AIMessageChunk(content="", response_metadata=event["messageStop"])
+        return AIMessageChunk(
+            content="", response_metadata=_camel_to_snake_keys(event["messageStop"])
+        )
     elif "metadata" in event:
         usage = _extract_usage_metadata(event["metadata"])
         return AIMessageChunk(
