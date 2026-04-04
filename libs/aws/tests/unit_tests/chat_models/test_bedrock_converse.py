@@ -5406,3 +5406,38 @@ def test_structured_output_tool_choice_not_supported(thinking_model: str) -> Non
     tool_spec = tool_config["tools"][0]["toolSpec"]
     assert tool_spec["name"] == "ClassifyQuery"
     assert call_kwargs["additionalModelRequestFields"]["thinking"]["type"] == "enabled"
+    
+def test_extract_response_metadata_snake_case() -> None:
+    """Test that response metadata keys are converted to snake_case."""
+    mock_response = {
+        "ResponseMetadata": {
+            "RequestId": "xxxxxx",
+            "HTTPStatusCode": 200,
+            "HTTPHeaders": {"date": "Wed, 06 Nov 2024"},
+            "RetryAttempts": 0,
+        },
+        "stopReason": "end_turn",
+        "metrics": {"latencyMs": 191},
+    }
+    metadata = _extract_response_metadata(mock_response)
+    
+    assert "response_metadata" in metadata
+    assert "stop_reason" in metadata
+    assert "request_id" in metadata["response_metadata"]
+    assert "http_status_code" in metadata["response_metadata"]
+    assert metadata["response_metadata"]["http_status_code"] == 200
+
+def test_parse_stream_event_message_stop_snake_case() -> None:
+    """Test that streaming messageStop metadata keys are converted to snake_case."""
+    event = {
+        "messageStop": {
+            "stopReason": "end_turn",
+            "additionalModelResponseFields": {"someField": "value"}
+        }
+    }
+    chunk = _parse_stream_event(event)
+    
+    assert chunk is not None
+    assert "stop_reason" in chunk.response_metadata
+    assert "additional_model_response_fields" in chunk.response_metadata
+    assert chunk.response_metadata["stop_reason"] == "end_turn"
