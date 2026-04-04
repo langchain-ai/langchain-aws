@@ -349,13 +349,12 @@ def _convert_one_message_to_text_openai(message: BaseMessage) -> str:
             f"<|start|>assistant<|channel|>final<|message|>{message.content}<|end|>"
         )
     elif isinstance(message, ToolMessage):
-        # TODO: Tool messages in the OpenAI format should use
-        # "<|start|>{toolname} to=assistant<|message|>"
-        # Need to extract the tool name from the ToolMessage content or tool_call_id
-        # For now using generic "to=assistant" format as placeholder until we implement
-        # tool calling
-        # Will be resolved in follow-up PR with full tool support
-        message_text = f"<|start|>to=assistant<|channel|>commentary<|message|>{message.content}<|end|>"  # noqa: E501
+        tool_name = message.name or message.tool_call_id or "tool"
+
+        message_text = (
+            f"<|start|>{tool_name} to=assistant<|channel|>commentary"
+            f"<|message|>{message.content}<|end|>"
+        )
     else:
         raise ValueError(f"Got unknown type {message}")
 
