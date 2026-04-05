@@ -4037,6 +4037,72 @@ def test__lc_content_to_bedrock_server_tool_use_string_input_parsed() -> None:
     ]
 
 
+def test__lc_content_to_bedrock_function_call_string_arguments_openai_responses() -> None:
+    """OpenAI Responses API function_call blocks map to Bedrock toolUse."""
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "function_call",
+            "id": "call_abc",
+            "name": "get_weather",
+            "arguments": '{"city": "Paris"}',
+        }
+    ]
+    result = _lc_content_to_bedrock(content)
+    assert result == [
+        {
+            "toolUse": {
+                "toolUseId": "call_abc",
+                "name": "get_weather",
+                "input": {"city": "Paris"},
+            }
+        }
+    ]
+
+
+def test__lc_content_to_bedrock_function_call_uses_call_id() -> None:
+    """function_call may use call_id instead of id (snake_case input)."""
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "function_call",
+            "call_id": "call_xyz",
+            "name": "search",
+            "arguments": "{}",
+        }
+    ]
+    result = _lc_content_to_bedrock(content)
+    assert result == [
+        {
+            "toolUse": {
+                "toolUseId": "call_xyz",
+                "name": "search",
+                "input": {},
+            }
+        }
+    ]
+
+
+def test__lc_content_to_bedrock_function_call_dict_arguments() -> None:
+    """function_call arguments may already be a dict."""
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "function_call",
+            "id": "c1",
+            "name": "noop",
+            "arguments": {"x": 1},
+        }
+    ]
+    result = _lc_content_to_bedrock(content)
+    assert result == [
+        {
+            "toolUse": {
+                "toolUseId": "c1",
+                "name": "noop",
+                "input": {"x": 1},
+            }
+        }
+    ]
+
+
 def test_content_block_start_tool_call_chunk_args_type() -> None:
     """contentBlockStart should produce tool_call_chunk with string/None args."""
     event = {

@@ -2340,6 +2340,30 @@ def _lc_content_to_bedrock(
                     }
                 }
             )
+        elif block["type"] == "function_call":
+            # OpenAI Responses API (e.g. AzureChatOpenAI use_responses_api=True) uses
+            # function_call blocks; Bedrock expects the same toolUse shape as tool_use.
+            raw_args = block.get("arguments", "{}")
+            if isinstance(raw_args, str):
+                tool_input = parse_partial_json(raw_args) if raw_args else {}
+            elif isinstance(raw_args, dict):
+                tool_input = raw_args
+            elif raw_args is None:
+                tool_input = {}
+            else:
+                tool_input = {}
+            tool_use_id = (
+                block.get("id") or block.get("callId") or block.get("call_id") or ""
+            )
+            bedrock_content.append(
+                {
+                    "toolUse": {
+                        "toolUseId": tool_use_id,
+                        "input": tool_input,
+                        "name": block["name"],
+                    }
+                }
+            )
         elif block["type"] == "tool_result":
             bedrock_content.append(
                 {
