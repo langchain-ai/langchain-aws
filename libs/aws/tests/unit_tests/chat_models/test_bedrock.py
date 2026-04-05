@@ -11,7 +11,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langchain_core.runnables import RunnableBinding
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
@@ -753,6 +759,37 @@ def test_standard_tracing_params() -> None:
         "ls_model_name": "foo",
         "ls_temperature": 0.1,
     }
+
+
+def test_generate_response_metadata_provider_matches_ls_provider() -> None:
+    llm = ChatBedrock(model_id="anthropic.claude-v2", region_name="us-west-2")
+    expected_provider = llm._get_ls_params()["ls_provider"]
+
+    with patch.object(
+        llm,
+        "_prepare_input_and_invoke",
+        return_value=("OK", [], {}, {}),
+    ):
+        result = llm._generate([HumanMessage("Say OK")])  # type: ignore[misc]
+
+    message = result.generations[0].message
+    assert message.response_metadata["model_provider"] == expected_provider
+    assert message.response_metadata["model_name"] == llm.model_id
+
+
+def test_stream_response_metadata_provider_matches_ls_provider() -> None:
+    llm = ChatBedrock(model_id="amazon.titan-text-express-v1", region_name="us-west-2")
+    expected_provider = llm._get_ls_params()["ls_provider"]
+    stream_chunk = AIMessageChunk(content="OK", response_metadata={"foo": "bar"})
+
+    with patch.object(
+        llm, "_prepare_input_and_invoke_stream", return_value=iter([stream_chunk])
+    ):
+        chunks = list(llm._stream([HumanMessage("Say OK")]))  # type: ignore[misc]
+
+    assert len(chunks) == 1
+    assert chunks[0].message.response_metadata["model_provider"] == expected_provider
+    assert chunks[0].message.response_metadata["foo"] == "bar"
 
 
 def test_beta_use_converse_api() -> None:

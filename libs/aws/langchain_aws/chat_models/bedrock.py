@@ -1045,7 +1045,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             **kwargs,
         ):
             if isinstance(chunk, AIMessageChunk):
-                chunk.response_metadata["model_provider"] = "bedrock"
+                chunk.response_metadata["model_provider"] = "amazon_bedrock"
                 generation_chunk = ChatGenerationChunk(message=chunk)
                 if run_manager:
                     run_manager.on_llm_new_token(
@@ -1078,7 +1078,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     if response_metadata is not None
                     else AIMessageChunk(content=delta)
                 )
-                generation_chunk.message.response_metadata["model_provider"] = "bedrock"
+                generation_chunk.message.response_metadata["model_provider"] = (
+                    "amazon_bedrock"
+                )
                 if run_manager:
                     run_manager.on_llm_new_token(
                         generation_chunk.text, chunk=generation_chunk
@@ -1223,7 +1225,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             tool_calls=cast(List[ToolCall], tool_calls),
             usage_metadata=usage_metadata,
             response_metadata={
-                "model_provider": "bedrock",
+                "model_provider": "amazon_bedrock",
                 "model_name": self.model_id,
             },
         )
