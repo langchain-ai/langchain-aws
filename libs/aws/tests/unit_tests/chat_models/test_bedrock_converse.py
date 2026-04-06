@@ -4037,7 +4037,7 @@ def test__lc_content_to_bedrock_server_tool_use_string_input_parsed() -> None:
     ]
 
 
-def test__lc_content_to_bedrock_function_call_string_arguments_openai_responses() -> None:
+def test__lc_content_to_bedrock_function_call_openai_responses() -> None:
     """OpenAI Responses API function_call blocks map to Bedrock toolUse."""
     content: List[Union[str, Dict[str, Any]]] = [
         {
@@ -4100,6 +4100,30 @@ def test__lc_content_to_bedrock_function_call_dict_arguments() -> None:
                 "input": {"x": 1},
             }
         }
+    ]
+
+
+def test__lc_content_to_bedrock_function_call_mixed_with_text() -> None:
+    """function_call alongside a text block converts both blocks correctly."""
+    content: List[Union[str, Dict[str, Any]]] = [
+        {"type": "text", "text": "Sure, let me look that up."},
+        {
+            "type": "function_call",
+            "id": "call_mixed",
+            "name": "get_weather",
+            "arguments": '{"city": "London"}',
+        },
+    ]
+    result = _lc_content_to_bedrock(content)
+    assert result == [
+        {"text": "Sure, let me look that up."},
+        {
+            "toolUse": {
+                "toolUseId": "call_mixed",
+                "name": "get_weather",
+                "input": {"city": "London"},
+            }
+        },
     ]
 
 
