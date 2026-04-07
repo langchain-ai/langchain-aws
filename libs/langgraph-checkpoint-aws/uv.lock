@@ -59,7 +59,6 @@ dependencies = [
     { name = "jmespath" },
     { name = "s3transfer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/72/56/3909516140653c389214d01f15660fa76514a9a9e30da1cb9e894f01051e/boto3-1.42.79.tar.gz", hash = "sha256:286c4220785e4fbe46aaea04d005b0dcdd8aaf5b885d92b2609c934d794ec5d9", size = 112818, upload-time = "2026-03-30T19:44:40.497Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ce/c0/d018824c2859976753cc4b78c48e1be641cf734b7d84e455b0f7f9b9d66d/boto3-1.42.79-py3-none-any.whl", hash = "sha256:2336d744dfe9017d6b96b8e40fdd445295ca6a67f02f1c8c488edeb92c4b7918", size = 140555, upload-time = "2026-03-30T19:44:37.326Z" },
 ]
@@ -73,7 +72,6 @@ dependencies = [
     { name = "types-s3transfer" },
     { name = "typing-extensions", marker = "python_full_version < '3.12'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ca/32/a4c0ffc850ca94bb0e6a0f9c6fa7d10a6b4000b18603008047c6805bc836/boto3_stubs-1.42.79.tar.gz", hash = "sha256:5f1fbe16f98293a67ce59769e670938605d59e444221c1b08a3a0d78c395077b", size = 101797, upload-time = "2026-03-30T19:50:11.107Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/44/59/27b488c9eb868ad8be153d2a8509d456c4831108c9b8d566aece816f76a1/boto3_stubs-1.42.79-py3-none-any.whl", hash = "sha256:785a745a8ada037eb34c42f885217b786e8015bb241db4bff71d806093934433", size = 70246, upload-time = "2026-03-30T19:50:02.306Z" },
 ]
@@ -358,7 +356,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -579,7 +577,6 @@ lint = [
 ]
 test = [
     { name = "fakeredis" },
-    { name = "langgraph-checkpoint-conformance" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -615,7 +612,6 @@ dev = [
 lint = [{ name = "ruff", specifier = ">=0.12.10" }]
 test = [
     { name = "fakeredis", specifier = ">=2.25.1" },
-    { name = "langgraph-checkpoint-conformance" },
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest-asyncio", specifier = ">=0.26.0" },
     { name = "pytest-cov", specifier = ">=6.2.1" },
@@ -630,18 +626,6 @@ test-integration = [
 typing = [
     { name = "boto3-stubs", extras = ["dynamodb", "s3"], specifier = ">=1.40.19" },
     { name = "mypy", specifier = ">=1.17.1" },
-]
-
-[[package]]
-name = "langgraph-checkpoint-conformance"
-version = "0.0.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "langgraph-checkpoint" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/7a/97/3c75a87365e59cb435043fe1f49bd5530a38d0c09783a36614686c0f60a5/langgraph_checkpoint_conformance-0.0.1.tar.gz", hash = "sha256:2e735962b21cfb43233f31df06e10232a690df117eb788d332a5ba7bdd16125a", size = 93961, upload-time = "2026-02-17T18:24:06.871Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/23/52/b0cf5a0b7556f1e3f166ae75e5a9840eb1148ff4cb69910de6e9e09a6896/langgraph_checkpoint_conformance-0.0.1-py3-none-any.whl", hash = "sha256:8527ea1b0d96b5458bb480c2113f931dcb6a545c2f3d99cf0a0b4d36ab68ba1a", size = 28610, upload-time = "2026-02-17T18:24:05.207Z" },
 ]
 
 [[package]]

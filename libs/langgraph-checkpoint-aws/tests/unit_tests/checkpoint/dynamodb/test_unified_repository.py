@@ -366,34 +366,6 @@ class TestListCheckpoints:
         with pytest.raises(ClientError):
             list(repo.list_checkpoints(TEST_THREAD_ID, TEST_CHECKPOINT_NS))
 
-    def test_list_checkpoints_scan_preserves_checkpoint_ns_filter(self):
-        """Test cross-thread scan applies checkpoint namespace filtering."""
-        mock_client = Mock()
-        mock_serializer = Mock()
-        mock_storage = Mock()
-        mock_client.scan.return_value = {"Items": []}
-
-        repo = UnifiedRepository(
-            dynamodb_client=mock_client,
-            table_name=TEST_TABLE_NAME,
-            serializer=mock_serializer,
-            storage_strategy=mock_storage,
-        )
-
-        checkpoints = list(repo.list_checkpoints(checkpoint_ns=TEST_CHECKPOINT_NS))
-
-        assert checkpoints == []
-        mock_client.scan.assert_called_once()
-        call_kwargs = mock_client.scan.call_args.kwargs
-        assert (
-            call_kwargs["FilterExpression"]
-            == "begins_with(PK, :cp_prefix) AND ns = :checkpoint_ns"
-        )
-        assert call_kwargs["ExpressionAttributeValues"] == {
-            ":cp_prefix": {"S": "CHECKPOINT_"},
-            ":checkpoint_ns": {"S": TEST_CHECKPOINT_NS},
-        }
-
 
 class TestGetCheckpointLatest:
     """Tests for getting latest checkpoint without checkpoint_id."""

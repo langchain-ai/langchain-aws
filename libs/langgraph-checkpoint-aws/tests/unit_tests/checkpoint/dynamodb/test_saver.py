@@ -252,27 +252,8 @@ class TestDynamoDBSaverList:
         """Test listing rejects malformed configs without thread_id."""
         saver = DynamoDBSaver(table_name=TEST_TABLE_NAME)
 
-        with pytest.raises(ValueError, match="Thread_id must be configured"):
+        with pytest.raises(ValueError, match="Runnable config must contain thread_id"):
             list(saver.list({"configurable": {}}))
-
-    def test_list_allows_global_listing_when_config_is_none(
-        self, mock_saver_dependencies
-    ):
-        """Test listing across all threads when config is None."""
-        mock_repo = Mock()
-        mock_saver_dependencies["repo"].return_value = mock_repo
-        mock_repo.list_checkpoints.return_value = iter([])
-
-        saver = DynamoDBSaver(table_name=TEST_TABLE_NAME)
-
-        assert list(saver.list(None)) == []
-        mock_repo.list_checkpoints.assert_called_once_with(
-            thread_id=None,
-            checkpoint_ns=None,
-            before_checkpoint_id=None,
-            limit=None,
-            filter=None,
-        )
 
 
 class TestDynamoDBSaverAsyncMethods:

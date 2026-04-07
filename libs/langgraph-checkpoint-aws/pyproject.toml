@@ -40,8 +40,7 @@ test = [
     "pytest-asyncio>=0.26.0",
     "pytest-mock>=3.15.1",
     "pytest-xdist>=3.8.0,<4.0.0",
-    "fakeredis>=2.25.1",
-    "langgraph-checkpoint-conformance",
+    "fakeredis>=2.25.1"
 ]
 test_integration = [
     "langchain>=1.0.0",
