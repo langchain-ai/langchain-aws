@@ -181,6 +181,37 @@ class BrowserToolkit:
         """
         return {tool.name: tool for tool in self.tools}
 
+    def get_active_sessions(self) -> Dict[str, Dict[str, str]]:
+        """Return metadata for all active browser sessions.
+
+        Useful for debugging and UI display — shows which session keys
+        have active AgentCore Browser MicroVMs and their session IDs.
+
+        Returns:
+            Dict mapping session keys to metadata::
+
+                {
+                    "thread-1:subagent-a:abc": {
+                        "session_id": "browser-session-xyz",
+                        "identifier": "aws.browser.v1",
+                    },
+                    ...
+                }
+
+        """
+        sessions: Dict[str, Dict[str, str]] = {}
+        for store in (
+            self.session_manager._async_sessions,
+            self.session_manager._sync_sessions,
+        ):
+            for key, (client, browser, in_use) in store.items():
+                if client.session_id:
+                    sessions[key] = {
+                        "session_id": client.session_id,
+                        "identifier": client.identifier or "",
+                    }
+        return sessions
+
     async def cleanup(self) -> None:
         """Clean up all browser sessions"""
         await self.session_manager.close_all_browsers()

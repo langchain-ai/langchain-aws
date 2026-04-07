@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Tuple, Union
 
@@ -41,6 +42,7 @@ class BrowserSessionManager:
         profile_configuration: Optional[
             Union[ProfileConfiguration, Dict[str, Any]]
         ] = None,
+        session_wait_timeout: float = 10.0,
     ):
         """
         Initialize the browser session manager.
@@ -55,6 +57,7 @@ class BrowserSessionManager:
         self.proxy_configuration = proxy_configuration
         self.extensions = extensions
         self.profile_configuration = profile_configuration
+        self.session_wait_timeout = session_wait_timeout
         self._async_sessions: Dict[str, Tuple[BrowserClient, AsyncBrowser, bool]] = {}
         self._sync_sessions: Dict[str, Tuple[BrowserClient, SyncBrowser, bool]] = {}
 
@@ -94,10 +97,26 @@ class BrowserSessionManager:
         if thread_id in self._async_sessions:
             client, browser, in_use = self._async_sessions[thread_id]
             if in_use:
-                raise RuntimeError(
-                    f"Browser session for thread {thread_id} is already in use. "
-                    "Use a different thread_id for concurrent operations."
-                )
+                # Wait for the current operation to release the session.
+                # This happens when LangGraph runs multiple browser tool
+                # calls concurrently (e.g., navigate + extract_text in
+                # the same LLM turn via asyncio.gather).
+                max_attempts = int(self.session_wait_timeout / 0.1)
+                for _ in range(max_attempts):  # 10 second timeout
+                    await asyncio.sleep(0.1)
+                    _, _, still_in_use = self._async_sessions.get(
+                        thread_id, (None, None, False)
+                    )
+                    if not still_in_use:
+                        break
+                else:
+                    raise RuntimeError(
+                        f"Browser session for thread {thread_id} timed out "
+                        "waiting for previous operation to complete "
+                        f"({self.session_wait_timeout}s). "
+                        "Use a different thread_id for truly concurrent operations."
+                    )
+                client, browser, _ = self._async_sessions[thread_id]
             self._async_sessions[thread_id] = (client, browser, True)
             return browser
 
