@@ -369,8 +369,9 @@ class DynamoDBSaver(BaseCheckpointSaver):
         """List checkpoints from the data store.
 
         Args:
-            config: The config to use for listing the checkpoints.
-                Must contain thread_id.
+            config: The config to use for listing the checkpoints. If provided,
+                it must contain `thread_id`. If `None`, checkpoints are listed
+                across all threads.
             filter: Additional filtering criteria for metadata. Defaults to None.
             before: If provided, only checkpoints before the specified
                 checkpoint ID are returned. Defaults to None.
@@ -380,7 +381,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
             Iterator[CheckpointTuple]: An iterator of checkpoint tuples.
 
         Raises:
-            ValueError: If config is None or doesn't contain thread_id.
+            ValueError: If config is provided but doesn't contain `thread_id`.
 
         Examples:
             >>> config = {"configurable": {"thread_id": "1"}}
@@ -388,12 +389,13 @@ class DynamoDBSaver(BaseCheckpointSaver):
             >>> print(checkpoints)
             [CheckpointTuple(...), CheckpointTuple(...)]
         """
-        thread_id = config.get("configurable", {}).get("thread_id") if config else None
-        if thread_id is None:
-            raise ValueError("Runnable config must contain thread_id")
+        configurable = config.get("configurable", {}) if config else None
+        thread_id = configurable.get("thread_id") if configurable is not None else None
+        if config is not None and thread_id is None:
+            raise ValueError("Thread_id must be configured")
 
         checkpoint_ns = (
-            config.get("configurable", {}).get("checkpoint_ns") if config else None
+            configurable.get("checkpoint_ns") if configurable is not None else None
         )
 
         before_checkpoint_id = None

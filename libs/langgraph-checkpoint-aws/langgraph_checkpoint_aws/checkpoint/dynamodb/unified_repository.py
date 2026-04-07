@@ -120,29 +120,37 @@ class UnifiedRepository:
         query_params: dict,
         limit: int | None = None,
         filter_fn: Callable[[dict, bytes], bool] | None = None,
+        *,
+        use_scan: bool = False,
     ) -> Iterator[tuple[dict, bytes]]:
         """Find checkpoints with valid payload up to limit.
 
         Args:
+            query_params: DynamoDB query or scan parameters.
             limit: Maximum number of valid checkpoints to return (None = no limit)
             filter_fn: Optional callback to filter (base_item, payload_data) tuples
+            use_scan: If True, use DynamoDB scan instead of query.
 
-        Returns:
-            List of (base_item, payload_data) tuples
+        Yields:
+            (base_item, payload_data) tuples
         """
-
-        # Only use limit if no filter function is provided
-        use_limit = filter_fn is None and limit is not None
-        if use_limit:
+        # Only apply DynamoDB-level Limit when there's no client-side filtering
+        has_filter_expression = "FilterExpression" in query_params
+        use_db_limit = (
+            filter_fn is None and not has_filter_expression and limit is not None
+        )
+        if use_db_limit:
             query_params["Limit"] = limit
+
+        db_op = self.dynamodb_client.scan if use_scan else self.dynamodb_client.query
 
         results_count = 0
         first_attempt = True
 
         while True:
-            response = self.dynamodb_client.query(**query_params)
+            response = db_op(**query_params)
             items = response.get("Items", [])
-            if not items:
+            if not items and "LastEvaluatedKey" not in response:
                 break
 
             for base_item in items:
@@ -169,7 +177,7 @@ class UnifiedRepository:
             # for subsequent queries
             if (
                 first_attempt
-                and use_limit
+                and use_db_limit
                 and limit is not None
                 and results_count < limit
             ):
@@ -382,7 +390,7 @@ class UnifiedRepository:
 
     def list_checkpoints(
         self,
-        thread_id: str,
+        thread_id: str | None = None,
         checkpoint_ns: str | None = None,
         before_checkpoint_id: str | None = None,
         limit: int | None = None,
@@ -391,10 +399,11 @@ class UnifiedRepository:
         """List checkpoints from storage with optional filtering.
 
         Args:
-            thread_id: Thread identifier
+            thread_id: Thread identifier. If None, searches across all threads.
             checkpoint_ns: Optional namespace filter
             before_checkpoint_id: Optional filter for checkpoints before this ID
             limit: Optional maximum number of checkpoints to return
+            filter: Optional metadata filter dictionary
 
         Yields:
             Dictionary containing checkpoint data, metadata, and identifiers
@@ -403,36 +412,61 @@ class UnifiedRepository:
             ClientError: If query or retrieval operations fail
         """
         try:
-            pk = _checkpoint_pk(thread_id)
+            projection = (
+                "PK, id, ns, #t, ref_key, ref_loc, compression, parent_checkpoint_id"
+            )
+            expr_attr_names = {"#t": "type"}
 
-            # Build query parameters
-            query_params = {
-                "TableName": self.table_name,
-                "ProjectionExpression": (
-                    "id, ns, #t, ref_key, ref_loc, compression, parent_checkpoint_id"
-                ),
-                "ExpressionAttributeNames": {"#t": "type"},
-                "ScanIndexForward": False,
-            }
+            use_scan = thread_id is None
 
-            # Key condition and attribute values based on checkpoint_ns presence
-            if checkpoint_ns is not None:
-                query_params["KeyConditionExpression"] = (
-                    "PK = :pk AND begins_with(SK, :ns_prefix)"
-                )
-                query_params["ExpressionAttributeValues"] = {
-                    ":pk": {"S": pk},
-                    ":ns_prefix": {"S": f"{checkpoint_ns}#"},
+            if use_scan:
+                # Full table scan for cross-thread search
+                query_params: dict[str, Any] = {
+                    "TableName": self.table_name,
+                    "ProjectionExpression": projection,
+                    "ExpressionAttributeNames": expr_attr_names,
+                    "FilterExpression": "begins_with(PK, :cp_prefix)",
+                    "ExpressionAttributeValues": {
+                        ":cp_prefix": {"S": "CHECKPOINT_"},
+                    },
                 }
+                if checkpoint_ns is not None:
+                    attr_values = cast(dict, query_params["ExpressionAttributeValues"])
+                    query_params["FilterExpression"] += " AND ns = :checkpoint_ns"
+                    attr_values[":checkpoint_ns"] = {"S": checkpoint_ns}
             else:
-                query_params["KeyConditionExpression"] = "PK = :pk"
-                query_params["ExpressionAttributeValues"] = {":pk": {"S": pk}}
+                pk = _checkpoint_pk(thread_id)
+
+                query_params = {
+                    "TableName": self.table_name,
+                    "ProjectionExpression": projection,
+                    "ExpressionAttributeNames": expr_attr_names,
+                    "ScanIndexForward": False,
+                }
+
+                # Key condition based on checkpoint_ns presence
+                if checkpoint_ns is not None:
+                    query_params["KeyConditionExpression"] = (
+                        "PK = :pk AND begins_with(SK, :ns_prefix)"
+                    )
+                    query_params["ExpressionAttributeValues"] = {
+                        ":pk": {"S": pk},
+                        ":ns_prefix": {"S": f"{checkpoint_ns}#"},
+                    }
+                else:
+                    query_params["KeyConditionExpression"] = "PK = :pk"
+                    query_params["ExpressionAttributeValues"] = {":pk": {"S": pk}}
 
             # Add filter expression for before_checkpoint_id
             if before_checkpoint_id:
-                query_params["FilterExpression"] = "id < :before_checkpoint_id"
-                if "ExpressionAttributeValues" not in query_params:
-                    query_params["ExpressionAttributeValues"] = {}
+                filter_expr = "id < :before_checkpoint_id"
+                existing_filter = query_params.get("FilterExpression")
+                if existing_filter:
+                    query_params["FilterExpression"] = (
+                        f"{existing_filter} AND {filter_expr}"
+                    )
+                else:
+                    query_params["FilterExpression"] = filter_expr
                 attr_values = cast(dict, query_params["ExpressionAttributeValues"])
                 attr_values[":before_checkpoint_id"] = {"S": before_checkpoint_id}
 
@@ -455,7 +489,7 @@ class UnifiedRepository:
 
             # Yield deserialized results
             for base_item, payload_data in self._find_checkpoints_with_valid_payload(
-                query_params, limit, metadata_filter
+                query_params, limit, metadata_filter, use_scan=use_scan
             ):
                 payload_type = base_item["type"]["S"]
                 compression_str = base_item.get("compression", {}).get("S")
@@ -467,12 +501,17 @@ class UnifiedRepository:
                     payload_type, payload_data, compression_type
                 )
 
+                # Extract thread_id from PK when scanning
+                item_thread_id = thread_id
+                if item_thread_id is None:
+                    item_thread_id = base_item["PK"]["S"].removeprefix("CHECKPOINT_")
+
                 yield {
                     "checkpoint": checkpoint_value["checkpoint"],
                     "metadata": checkpoint_value["metadata"],
                     "checkpoint_id": base_item["id"]["S"],
                     "checkpoint_ns": base_item["ns"]["S"],
-                    "thread_id": thread_id,
+                    "thread_id": item_thread_id,
                     "parent_checkpoint_id": base_item.get(
                         "parent_checkpoint_id", {}
                     ).get("S"),
