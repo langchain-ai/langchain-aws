@@ -200,26 +200,16 @@ class BrowserToolkit:
 
         """
         sessions: Dict[str, Dict[str, str]] = {}
-        for key, (
-            client,
-            browser,
-            in_use,
-        ) in self.session_manager._async_sessions.items():
-            if client.session_id:
-                sessions[key] = {
-                    "session_id": client.session_id,
-                    "identifier": client.identifier or "",
-                }
-        for key, (
-            sync_client,
-            sync_browser,
-            sync_in_use,
-        ) in self.session_manager._sync_sessions.items():
-            if sync_client.session_id:
-                sessions[key] = {
-                    "session_id": sync_client.session_id,
-                    "identifier": sync_client.identifier or "",
-                }
+        for store in (
+            self.session_manager._async_sessions,
+            self.session_manager._sync_sessions,
+        ):
+            for key, (client, browser, in_use) in store.items():
+                if client.session_id:
+                    sessions[key] = {
+                        "session_id": client.session_id,
+                        "identifier": client.identifier or "",
+                    }
         return sessions
 
     async def cleanup(self) -> None:
