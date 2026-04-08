@@ -389,8 +389,6 @@ class DynamoDBSaver(BaseCheckpointSaver):
             [CheckpointTuple(...), CheckpointTuple(...)]
         """
         thread_id = config.get("configurable", {}).get("thread_id") if config else None
-        if thread_id is None:
-            raise ValueError("Runnable config must contain thread_id")
 
         checkpoint_ns = (
             config.get("configurable", {}).get("checkpoint_ns") if config else None
