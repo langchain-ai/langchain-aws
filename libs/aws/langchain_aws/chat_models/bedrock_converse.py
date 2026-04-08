@@ -1206,6 +1206,7 @@ class ChatBedrockConverse(BaseChatModel):
         logger.debug(f"Response from Bedrock: {response}")
         response_message = _parse_response(response)
         response_message.response_metadata["model_provider"] = "bedrock_converse"
+        response_message.response_metadata["ls_provider"] = "amazon_bedrock"
         response_message.response_metadata["model_name"] = self.model_id
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
@@ -1282,6 +1283,7 @@ class ChatBedrockConverse(BaseChatModel):
                     message_chunk.response_metadata["model_provider"] = (
                         "bedrock_converse"
                     )
+                    message_chunk.response_metadata["ls_provider"] = "amazon_bedrock"
                     generation_chunk = ChatGenerationChunk(message=message_chunk)
                     if run_manager:
                         run_manager.on_llm_new_token(
