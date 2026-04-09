@@ -40,6 +40,7 @@ from langgraph_checkpoint_aws.agentcore.models import (
     WriteItem,
     WritesEvent,
 )
+from langgraph_checkpoint_aws.sanitization import sanitize_checkpoint
 
 RunnableConfigDict: TypeAlias = dict[str, Any]
 
@@ -53,6 +54,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
     Args:
         memory_id: the ID of the memory resource created in AgentCore Memory
         serde: serialization protocol to be used. Defaults to JSONPlusSerializer
+        sanitize_tool_calls: if True, sanitize tool_call args on checkpoint load.
+            Fixes Bedrock Converse API serialization bug where tool_call args are
+            stored as JSON strings instead of dicts. Default: True
         limit: maximum number of events to parse from ListEvents.
         max_results: maximum number of results to retrieve from AgentCore Memory.
         max_retries: maximum number of retry attempts for retryable errors.
@@ -65,6 +69,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         memory_id: str,
         *,
         serde: SerializerProtocol | None = None,
+        sanitize_tool_calls: bool = True,
         limit: int | None = None,
         max_results: int | None = 100,
         max_retries: int = DEFAULT_MAX_RETRIES,
@@ -75,6 +80,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         super().__init__(serde=serde)
 
         self.memory_id = memory_id
+        self._sanitize_tool_calls = sanitize_tool_calls
         self.limit = limit
         self.max_results = max_results
         self.serializer = EventSerializer(self.serde)
@@ -87,6 +93,15 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             **boto3_kwargs,
         )
         self.processor = EventProcessor()
+
+    def _maybe_sanitize(self, result: CheckpointTuple) -> CheckpointTuple:
+        """Apply checkpoint sanitization if enabled."""
+        if not self._sanitize_tool_calls:
+            return result
+        sanitized = sanitize_checkpoint(result.checkpoint)
+        if sanitized is not result.checkpoint:
+            return result._replace(checkpoint=cast(Checkpoint, sanitized))
+        return result
 
     def get_tuple(
         self,
@@ -132,9 +147,10 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
 
         # Build and return checkpoint tuple
         writes = writes_by_checkpoint.get(checkpoint_event.checkpoint_id, [])
-        return self.processor.build_checkpoint_tuple(
+        result = self.processor.build_checkpoint_tuple(
             checkpoint_event, writes, channel_data, checkpoint_config
         )
+        return self._maybe_sanitize(result)
 
     def list(
         self,
@@ -183,9 +199,10 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
 
             writes = writes_by_checkpoint.get(checkpoint_id, [])
 
-            yield self.processor.build_checkpoint_tuple(
+            result = self.processor.build_checkpoint_tuple(
                 checkpoint_event, writes, channel_data, checkpoint_config
             )
+            yield self._maybe_sanitize(result)
 
             count += 1
 
