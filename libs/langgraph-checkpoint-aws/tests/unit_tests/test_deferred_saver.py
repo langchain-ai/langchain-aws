@@ -1,17 +1,4 @@
-"""Unit tests for DeferredCheckpointSaver.
-
-Covers the 10 correctness properties from the design document:
-1. After flush() succeeds, is_empty is True
-2. After flush() fails on checkpoint, has_buffered_checkpoint is still True
-3. After flush() fails on write N, writes 0..N-1 removed, N..end remain
-4. get_tuple() returns buffered data when thread_id + checkpoint_ns match
-5. get_tuple() delegates to underlying saver when buffer doesn't match
-6. list() never returns buffered data
-7. Context managers flush in finally — even on exception
-8. Concurrent put() + get_tuple() from different threads never raises
-9. DeferredCheckpointSaver(DeferredCheckpointSaver(x)) raises ValueError
-10. clear() discards all buffered data without persisting
-"""
+"""Unit tests for DeferredCheckpointSaver."""
 
 from __future__ import annotations
 
@@ -29,20 +16,18 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from langgraph_checkpoint_aws.deferred_saver import DeferredCheckpointSaver
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _make_config(
     thread_id: str = "thread-1",
     checkpoint_ns: str = "",
     checkpoint_id: str | None = None,
+    **extra: Any,
 ) -> RunnableConfig:
     cfg: RunnableConfig = {
         "configurable": {
             "thread_id": thread_id,
             "checkpoint_ns": checkpoint_ns,
+            **extra,
         }
     }
     if checkpoint_id is not None:
@@ -70,11 +55,6 @@ def _make_metadata(step: int = 0) -> CheckpointMetadata:
     )
 
 
-# ---------------------------------------------------------------------------
-# Init tests
-# ---------------------------------------------------------------------------
-
-
 class TestInit:
     """Initialization and nesting prevention."""
 
@@ -93,11 +73,6 @@ class TestInit:
         assert buffered.is_empty
         assert not buffered.has_buffered_checkpoint
         assert not buffered.has_buffered_writes
-
-
-# ---------------------------------------------------------------------------
-# Buffering tests
-# ---------------------------------------------------------------------------
 
 
 class TestBuffering:
@@ -157,11 +132,6 @@ class TestBuffering:
                 "task-1",
             )
             mock_pw.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# get_tuple tests
-# ---------------------------------------------------------------------------
 
 
 class TestGetTuple:
@@ -259,11 +229,6 @@ class TestGetTuple:
         buffered = DeferredCheckpointSaver(memory_saver)
         result = buffered.get_tuple(_make_config())
         assert result is None
-
-
-# ---------------------------------------------------------------------------
-# Flush tests
-# ---------------------------------------------------------------------------
 
 
 class TestFlush:
@@ -379,11 +344,6 @@ class TestFlush:
         assert buffered.is_empty
 
 
-# ---------------------------------------------------------------------------
-# Context manager tests
-# ---------------------------------------------------------------------------
-
-
 class TestContextManagers:
     """flush_on_exit and aflush_on_exit."""
 
@@ -449,11 +409,6 @@ class TestContextManagers:
         assert buffered.is_empty
 
 
-# ---------------------------------------------------------------------------
-# Clear tests
-# ---------------------------------------------------------------------------
-
-
 class TestClear:
     """Property 10: clear() discards all buffered data without persisting."""
 
@@ -485,11 +440,6 @@ class TestClear:
             mock_put.assert_not_called()
 
 
-# ---------------------------------------------------------------------------
-# list() tests
-# ---------------------------------------------------------------------------
-
-
 class TestList:
     """Property 6: list() never returns buffered data."""
 
@@ -512,11 +462,6 @@ class TestList:
         assert len(results) == 1
 
 
-# ---------------------------------------------------------------------------
-# get_next_version delegation
-# ---------------------------------------------------------------------------
-
-
 class TestGetNextVersion:
     """get_next_version always delegates to the underlying saver."""
 
@@ -531,11 +476,6 @@ class TestGetNextVersion:
         v_buffered = buffered.get_next_version(None, None)
         v_saver = memory_saver.get_next_version(None, None)
         assert type(v_buffered) is type(v_saver)
-
-
-# ---------------------------------------------------------------------------
-# Config preservation
-# ---------------------------------------------------------------------------
 
 
 class TestConfigPreservation:
@@ -569,10 +509,43 @@ class TestConfigPreservation:
         assert result is not None
         assert result.config["configurable"]["checkpoint_id"] == "ckpt-1"
 
+    def test_extra_configurable_keys_preserved_in_put(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        """Extra keys like actor_id must survive through put() and get_tuple()."""
+        buffered = DeferredCheckpointSaver(memory_saver)
+        config = _make_config(thread_id="t1", actor_id="actor-42", custom_key="val")
+        result = buffered.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), {})
 
-# ---------------------------------------------------------------------------
-# Parent config
-# ---------------------------------------------------------------------------
+        assert result["configurable"]["actor_id"] == "actor-42"
+        assert result["configurable"]["custom_key"] == "val"
+
+    def test_extra_configurable_keys_preserved_in_get_tuple(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        """get_tuple result config preserves extra keys from the original put."""
+        buffered = DeferredCheckpointSaver(memory_saver)
+        config = _make_config(thread_id="t1", actor_id="actor-42")
+        buffered.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), {})
+
+        result = buffered.get_tuple(_make_config(thread_id="t1"))
+        assert result is not None
+        assert result.config["configurable"]["actor_id"] == "actor-42"
+
+    def test_extra_configurable_keys_preserved_in_parent_config(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        """parent_config preserves extra keys from the original config."""
+        buffered = DeferredCheckpointSaver(memory_saver)
+        config = _make_config(
+            thread_id="t1", checkpoint_id="parent-ckpt", actor_id="actor-42"
+        )
+        buffered.put(config, _make_checkpoint("ckpt-2"), _make_metadata(), {})
+
+        result = buffered.get_tuple(_make_config(thread_id="t1"))
+        assert result is not None
+        assert result.parent_config is not None
+        assert result.parent_config["configurable"]["actor_id"] == "actor-42"
 
 
 class TestParentConfig:
@@ -601,11 +574,6 @@ class TestParentConfig:
         result = buffered.get_tuple(_make_config(thread_id="t1"))
         assert result is not None
         assert result.parent_config is None
-
-
-# ---------------------------------------------------------------------------
-# Thread safety
-# ---------------------------------------------------------------------------
 
 
 class TestThreadSafety:
@@ -678,11 +646,6 @@ class TestThreadSafety:
         assert buffered.has_buffered_writes
 
 
-# ---------------------------------------------------------------------------
-# Async tests
-# ---------------------------------------------------------------------------
-
-
 class TestAsync:
     """Async variants delegate correctly."""
 
@@ -753,11 +716,6 @@ class TestAsync:
         assert len(results) == 0
 
 
-# ---------------------------------------------------------------------------
-# Multi-session
-# ---------------------------------------------------------------------------
-
-
 class TestMultiSession:
     """Each flush_on_exit block handles one session independently."""
 
@@ -777,11 +735,6 @@ class TestMultiSession:
         r2 = list(buffered.list(_make_config(thread_id="session-2")))
         assert len(r1) == 1
         assert len(r2) == 1
-
-
-# ---------------------------------------------------------------------------
-# Clear with combined checkpoint + writes
-# ---------------------------------------------------------------------------
 
 
 class TestClearCombined:
@@ -828,11 +781,6 @@ class TestClearCombined:
         result = buffered.flush()
         assert result is None
         assert len(list(memory_saver.list(_make_config(thread_id="t1")))) == 0
-
-
-# ---------------------------------------------------------------------------
-# get_tuple delegation with pre-populated backend
-# ---------------------------------------------------------------------------
 
 
 class TestGetTupleDelegation:
@@ -884,11 +832,6 @@ class TestGetTupleDelegation:
         result = await buffered.aget_tuple(_make_config(thread_id="thread-B"))
         assert result is not None
         assert result.checkpoint["id"] == "ckpt-B"
-
-
-# ---------------------------------------------------------------------------
-# list() with filter, before, and limit parameters
-# ---------------------------------------------------------------------------
 
 
 class TestListParameters:
@@ -967,11 +910,6 @@ class TestListParameters:
         assert len(results) == 2
 
 
-# ---------------------------------------------------------------------------
-# Flush write-drain identity guard (gap #5)
-# ---------------------------------------------------------------------------
-
-
 class TestFlushWriteDrainIdentityGuard:
     """The pop after successful write I/O uses ``is`` identity comparison.
 
@@ -1037,11 +975,6 @@ class TestFlushWriteDrainIdentityGuard:
         assert deferred.is_empty
 
 
-# ---------------------------------------------------------------------------
-# Concurrent flush() + flush() (gap #15)
-# ---------------------------------------------------------------------------
-
-
 class TestConcurrentFlush:
     """Two threads calling flush() concurrently must not double-persist."""
 
@@ -1103,11 +1036,6 @@ class TestConcurrentFlush:
         assert put_writes_call_count == 1
 
 
-# ---------------------------------------------------------------------------
-# Async flush — write failure keeps remaining (gap #6)
-# ---------------------------------------------------------------------------
-
-
 class TestAsyncFlushWriteFailure:
     """aflush() partial write failure must keep remaining writes in buffer."""
 
@@ -1145,11 +1073,6 @@ class TestAsyncFlushWriteFailure:
         # First write succeeded and was removed; second failed and remains
         # along with the third.
         assert buffered.has_buffered_writes
-
-
-# ---------------------------------------------------------------------------
-# Async flush — checkpoint failure race guard (gap #7)
-# ---------------------------------------------------------------------------
 
 
 class TestAsyncFlushCheckpointRace:

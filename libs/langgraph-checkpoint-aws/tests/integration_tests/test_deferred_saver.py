@@ -1,13 +1,3 @@
-"""Integration tests for DeferredCheckpointSaver.
-
-Tests the wrapper against all available backend savers:
-- AgentCoreMemorySaver (creates memory if AGENTCORE_MEMORY_ID not set)
-- DynamoDBSaver (creates table if not exists)
-- BedrockSessionSaver (requires BEDROCK_SESSION_REGION env var)
-
-Resources are created automatically when possible and cleaned up after.
-"""
-
 from __future__ import annotations
 
 import datetime
@@ -36,18 +26,14 @@ from tests.integration_tests.utils import (
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
+
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 AGENTCORE_MEMORY_ID = os.getenv("AGENTCORE_MEMORY_ID", "langgraph_deferred_saver_integ")
 DYNAMODB_TABLE = os.getenv("DYNAMODB_TABLE_NAME", "langgraph-deferred-saver-integ")
 BEDROCK_SESSION_REGION = os.getenv("BEDROCK_SESSION_REGION", "us-east-1")
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+
 
 _SaverAndCleanup = tuple[BaseCheckpointSaver, Callable[[str, str], None], str | None]
 
@@ -79,10 +65,6 @@ def _make_checkpoint() -> Checkpoint:
     )
 
 
-# ---------------------------------------------------------------------------
-# Resource setup — AgentCore memory
-# ---------------------------------------------------------------------------
-
 
 @pytest.fixture(scope="module")
 def agentcore_memory_id() -> str:
@@ -95,11 +77,6 @@ def agentcore_memory_id() -> str:
         return ensure_agentcore_memory(AGENTCORE_MEMORY_ID, AWS_REGION)
     except Exception as exc:
         pytest.skip(f"AgentCore memory unavailable: {exc}")
-
-
-# ---------------------------------------------------------------------------
-# Resource setup — DynamoDB table
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
@@ -115,9 +92,6 @@ def dynamodb_table() -> str:
         pytest.skip(f"DynamoDB table unavailable: {exc}")
 
 
-# ---------------------------------------------------------------------------
-# Backend saver factories
-# ---------------------------------------------------------------------------
 
 
 def _make_agentcore(memory_id: str) -> _SaverAndCleanup:
@@ -187,10 +161,6 @@ def saver_and_cleanup(
     msg = f"Unknown backend: {name}"
     raise ValueError(msg)
 
-
-# ---------------------------------------------------------------------------
-# Tests — run once per backend saver
-# ---------------------------------------------------------------------------
 
 
 class TestDeferredCheckpointSaver:
@@ -651,9 +621,6 @@ class TestDeferredCheckpointSaver:
         finally:
             cleanup(thread_id, actor_id)
 
-    # ------------------------------------------------------------------
-    # Checkpoint namespace isolation
-    # ------------------------------------------------------------------
 
     def test_checkpoint_ns_isolation(self, saver_and_cleanup: _SaverAndCleanup) -> None:
         """Checkpoints with different namespaces on the same thread stay isolated."""
@@ -738,9 +705,6 @@ class TestDeferredCheckpointSaver:
         finally:
             cleanup(thread_id, actor_id)
 
-    # ------------------------------------------------------------------
-    # Pending writes retrievable after flush
-    # ------------------------------------------------------------------
 
     def test_pending_writes_retrievable_after_flush(
         self, saver_and_cleanup: _SaverAndCleanup
@@ -792,9 +756,6 @@ class TestDeferredCheckpointSaver:
         finally:
             cleanup(thread_id, actor_id)
 
-    # ------------------------------------------------------------------
-    # Multiple task_ids flushed correctly
-    # ------------------------------------------------------------------
 
     def test_multiple_task_ids_flushed(
         self, saver_and_cleanup: _SaverAndCleanup
@@ -860,10 +821,6 @@ class TestDeferredCheckpointSaver:
             assert len(flushed_task_ids) >= 1
         finally:
             cleanup(thread_id, actor_id)
-
-    # ------------------------------------------------------------------
-    # Async paths against real backends
-    # ------------------------------------------------------------------
 
     @pytest.mark.asyncio
     async def test_async_flush_persists_to_backend(
@@ -1016,9 +973,6 @@ class TestDeferredCheckpointSaver:
         finally:
             cleanup(thread_id, actor_id)
 
-    # ------------------------------------------------------------------
-    # Writes-only flush (no checkpoint)
-    # ------------------------------------------------------------------
 
     def test_writes_only_flush_no_checkpoint(
         self, saver_and_cleanup: _SaverAndCleanup

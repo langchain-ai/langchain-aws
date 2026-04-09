@@ -1,25 +1,3 @@
-"""Deferred checkpoint saver that defers persistence until explicit flush.
-
-Wraps any ``BaseCheckpointSaver`` and defers ``put()`` / ``put_writes()``
-calls in memory, reducing API calls from dozens per workflow to a single
-batch on flush.  Designed for use cases (chatbots, single-turn agents) that
-only need the final conversation state persisted for session continuity.
-
-.. warning::
-    Mid-workflow crash recovery is **not** available when using this wrapper.
-    Buffered data is only persisted when ``flush()`` / ``aflush()`` is called
-    or a ``flush_on_exit()`` / ``aflush_on_exit()`` context manager exits.
-
-Example::
-
-    saver = AgentCoreMemorySaver(memory_id, region_name="us-east-1")
-    deferred = DeferredCheckpointSaver(saver)
-    graph = create_react_agent(model, tools=tools, checkpointer=deferred)
-
-    with deferred.flush_on_exit():
-        response = graph.invoke({"messages": [user_input]}, config)
-"""
-
 from __future__ import annotations
 
 import contextlib
@@ -36,26 +14,6 @@ from langgraph.checkpoint.base import (
     CheckpointTuple,
     V,
 )
-
-# ---------------------------------------------------------------------------
-# Internal buffer entry types
-# ---------------------------------------------------------------------------
-# NamedTuple was chosen over the alternatives for these internal types:
-#
-#   - Plain tuple: works but positional-only access (entry[0]) hurts
-#     readability in the flush/match logic.
-#   - TypedDict: mutable dict at runtime with hash-table overhead and no
-#     immutability guarantee — wrong fit for a lock-protected buffer where
-#     entries must not be modified after creation.
-#   - dataclass (mutable): allows accidental mutation of buffered state,
-#     which would introduce subtle concurrency bugs.
-#   - dataclass (frozen=True, slots=True): immutable and memory-efficient,
-#     but cannot be unpacked with ``a, b, c = entry`` and has slightly
-#     higher object-creation cost than a tuple.
-#
-# NamedTuple gives us named fields (``entry.config``), immutability,
-# zero overhead vs plain tuples, and tuple-compatible unpacking — the
-# best balance for simple internal containers guarded by a lock.
 
 
 class _PendingCheckpoint(NamedTuple):
@@ -104,9 +62,9 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
     Example::
 
         deferred = DeferredCheckpointSaver(my_saver)
-        graph = workflow.compile(checkpointer=buffered)
+        graph = workflow.compile(checkpointer=deferred)
 
-        with buffered.flush_on_exit():
+        with deferred.flush_on_exit():
             graph.invoke(input, config)
     """
 
@@ -123,10 +81,6 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
         self._pending_checkpoint: _PendingCheckpoint | None = None
         self._pending_writes: list[_PendingWrite] = []
         self._last_config: RunnableConfig | None = None
-
-    # ------------------------------------------------------------------
-    # Read-only properties
-    # ------------------------------------------------------------------
 
     @property
     def saver(self) -> BaseCheckpointSaver:
@@ -150,10 +104,6 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
         """Whether the buffer contains no pending data."""
         with self._lock:
             return self._pending_checkpoint is None and len(self._pending_writes) == 0
-
-    # ------------------------------------------------------------------
-    # BaseCheckpointSaver interface — buffered writes
-    # ------------------------------------------------------------------
 
     def put(
         self,
@@ -181,6 +131,7 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
         checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
         result_config: RunnableConfig = {
             "configurable": {
+                **config["configurable"],
                 "thread_id": thread_id,
                 "checkpoint_ns": checkpoint_ns,
                 "checkpoint_id": checkpoint["id"],
@@ -260,10 +211,6 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
         """
         self.put_writes(config, writes, task_id, task_path)
 
-    # ------------------------------------------------------------------
-    # BaseCheckpointSaver interface — reads (buffer-first)
-    # ------------------------------------------------------------------
-
     def _get_buffered_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         """Return a ``CheckpointTuple`` from the buffer if it matches *config*.
 
@@ -321,6 +268,7 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
         if parent_id:
             parent_config = {
                 "configurable": {
+                    **buf_config["configurable"],
                     "thread_id": buf_thread,
                     "checkpoint_ns": buf_ns,
                     "checkpoint_id": parent_id,
@@ -329,6 +277,7 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
 
         result_config: RunnableConfig = {
             "configurable": {
+                **buf_config["configurable"],
                 "thread_id": buf_thread,
                 "checkpoint_ns": buf_ns,
                 "checkpoint_id": buf_ckpt_id,
@@ -436,10 +385,6 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
         """
         return self._saver.get_next_version(current, channel)
 
-    # ------------------------------------------------------------------
-    # Flush mechanics
-    # ------------------------------------------------------------------
-
     def flush(self) -> RunnableConfig | None:
         """Persist all buffered data to the underlying saver.
 
@@ -498,15 +443,12 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
                     break
                 write_entry = self._pending_writes[0]
 
-            try:
-                self._saver.put_writes(
-                    write_entry.config,
-                    write_entry.writes,
-                    write_entry.task_id,
-                    write_entry.task_path,
-                )
-            except Exception:
-                raise
+            self._saver.put_writes(
+                write_entry.config,
+                write_entry.writes,
+                write_entry.task_id,
+                write_entry.task_path,
+            )
 
             with self._lock:
                 if self._pending_writes and self._pending_writes[0] is write_entry:
@@ -555,25 +497,18 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
                     break
                 write_entry = self._pending_writes[0]
 
-            try:
-                await self._saver.aput_writes(
-                    write_entry.config,
-                    write_entry.writes,
-                    write_entry.task_id,
-                    write_entry.task_path,
-                )
-            except Exception:
-                raise
+            await self._saver.aput_writes(
+                write_entry.config,
+                write_entry.writes,
+                write_entry.task_id,
+                write_entry.task_path,
+            )
 
             with self._lock:
                 if self._pending_writes and self._pending_writes[0] is write_entry:
                     self._pending_writes.pop(0)
 
         return result_config
-
-    # ------------------------------------------------------------------
-    # Context managers
-    # ------------------------------------------------------------------
 
     @contextlib.contextmanager
     def flush_on_exit(self) -> Iterator[DeferredCheckpointSaver]:
@@ -611,10 +546,6 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
             yield self
         finally:
             await self.aflush()
-
-    # ------------------------------------------------------------------
-    # Buffer management
-    # ------------------------------------------------------------------
 
     def clear(self) -> None:
         """Discard all buffered data without persisting.
