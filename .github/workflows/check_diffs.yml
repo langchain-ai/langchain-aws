@@ -82,9 +82,19 @@ jobs:
     with:
       working-directory: ${{ matrix.working-directory }}
     secrets: inherit
+
+  conformance-test:
+    name: cd libs/langgraph-checkpoint-aws
+    needs: [build]
+    if: ${{ contains(fromJson(needs.build.outputs.dirs-to-test || '[]'), 'libs/langgraph-checkpoint-aws') }}
+    uses: ./.github/workflows/_test_conformance.yml
+    with:
+      working-directory: libs/langgraph-checkpoint-aws
+    secrets: inherit
+
   ci_success:
     name: "CI Success"
-    needs: [build, lint, test, test-optional-dependencies, compile-integration-tests]
+    needs: [build, lint, test, test-optional-dependencies, compile-integration-tests, conformance-test]
     if: |
       always()
     runs-on: ubuntu-latest
