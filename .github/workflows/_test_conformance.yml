@@ -46,4 +46,4 @@ jobs:
       - name: Run conformance tests
         shell: bash
         run: |
-          uv run --group test pytest tests/unit_tests/checkpoint/dynamodb/test_conformance.py -xvs
+          uv run --group test pytest tests/integration_tests/checkpoint/dynamodb/test_conformance.py -xvs
