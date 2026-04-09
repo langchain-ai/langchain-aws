@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncGenerator
+from typing import Any
 from uuid import uuid4
 
 import boto3
@@ -22,16 +23,19 @@ DYNAMODB_REGION = "us-east-1"
 TABLE_NAME = f"conformance-{uuid4().hex[:8]}"
 
 
+def _make_client() -> Any:
+    return boto3.client(
+        "dynamodb",
+        region_name=DYNAMODB_REGION,
+        endpoint_url=DYNAMODB_ENDPOINT,
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+    )
+
+
 def _dynamodb_available() -> bool:
     try:
-        client = boto3.client(
-            "dynamodb",
-            region_name=DYNAMODB_REGION,
-            endpoint_url=DYNAMODB_ENDPOINT,
-            aws_access_key_id="test",
-            aws_secret_access_key="test",
-        )
-        client.list_tables(Limit=1)
+        _make_client().list_tables(Limit=1)
         return True
     except Exception:
         return False
@@ -47,13 +51,7 @@ pytestmark = [
 
 
 def _create_table() -> None:
-    client = boto3.client(
-        "dynamodb",
-        region_name=DYNAMODB_REGION,
-        endpoint_url=DYNAMODB_ENDPOINT,
-        aws_access_key_id="test",
-        aws_secret_access_key="test",
-    )
+    client = _make_client()
     client.create_table(
         TableName=TABLE_NAME,
         KeySchema=[
@@ -71,15 +69,8 @@ def _create_table() -> None:
 
 
 def _delete_table() -> None:
-    client = boto3.client(
-        "dynamodb",
-        region_name=DYNAMODB_REGION,
-        endpoint_url=DYNAMODB_ENDPOINT,
-        aws_access_key_id="test",
-        aws_secret_access_key="test",
-    )
     try:
-        client.delete_table(TableName=TABLE_NAME)
+        _make_client().delete_table(TableName=TABLE_NAME)
     except Exception:
         pass
 

@@ -433,14 +433,7 @@ class UnifiedRepository:
 
             # Add filter expression for before_checkpoint_id
             if before_checkpoint_id:
-                filter_expr = "id < :before_checkpoint_id"
-                existing_filter = query_params.get("FilterExpression")
-                if existing_filter:
-                    query_params["FilterExpression"] = (
-                        f"{existing_filter} AND {filter_expr}"
-                    )
-                else:
-                    query_params["FilterExpression"] = filter_expr
+                query_params["FilterExpression"] = "id < :before_checkpoint_id"
                 attr_values = cast(dict, query_params["ExpressionAttributeValues"])
                 attr_values[":before_checkpoint_id"] = {"S": before_checkpoint_id}
 
