@@ -33,8 +33,6 @@ DYNAMODB_TABLE = os.getenv("DYNAMODB_TABLE_NAME", "langgraph-deferred-saver-inte
 BEDROCK_SESSION_REGION = os.getenv("BEDROCK_SESSION_REGION", "us-east-1")
 
 
-
-
 _SaverAndCleanup = tuple[BaseCheckpointSaver, Callable[[str, str], None], str | None]
 
 
@@ -65,7 +63,6 @@ def _make_checkpoint() -> Checkpoint:
     )
 
 
-
 @pytest.fixture(scope="module")
 def agentcore_memory_id() -> str:
     """Ensure the AgentCore memory exists, creating it if needed.
@@ -90,8 +87,6 @@ def dynamodb_table() -> str:
         return ensure_dynamodb_table(DYNAMODB_TABLE, AWS_REGION)
     except Exception as exc:
         pytest.skip(f"DynamoDB table unavailable: {exc}")
-
-
 
 
 def _make_agentcore(memory_id: str) -> _SaverAndCleanup:
@@ -160,7 +155,6 @@ def saver_and_cleanup(
 
     msg = f"Unknown backend: {name}"
     raise ValueError(msg)
-
 
 
 class TestDeferredCheckpointSaver:
@@ -621,7 +615,6 @@ class TestDeferredCheckpointSaver:
         finally:
             cleanup(thread_id, actor_id)
 
-
     def test_checkpoint_ns_isolation(self, saver_and_cleanup: _SaverAndCleanup) -> None:
         """Checkpoints with different namespaces on the same thread stay isolated."""
         saver, cleanup, thread_id, actor_id = self._unpack(saver_and_cleanup)
@@ -705,7 +698,6 @@ class TestDeferredCheckpointSaver:
         finally:
             cleanup(thread_id, actor_id)
 
-
     def test_pending_writes_retrievable_after_flush(
         self, saver_and_cleanup: _SaverAndCleanup
     ) -> None:
@@ -755,7 +747,6 @@ class TestDeferredCheckpointSaver:
             assert "messages" in channels
         finally:
             cleanup(thread_id, actor_id)
-
 
     def test_multiple_task_ids_flushed(
         self, saver_and_cleanup: _SaverAndCleanup
@@ -972,7 +963,6 @@ class TestDeferredCheckpointSaver:
             assert len(post_flush) >= 1
         finally:
             cleanup(thread_id, actor_id)
-
 
     def test_writes_only_flush_no_checkpoint(
         self, saver_and_cleanup: _SaverAndCleanup
