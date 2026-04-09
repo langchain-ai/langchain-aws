@@ -7,6 +7,7 @@ Start one with:  docker run -d -p 8000:8000 amazon/dynamodb-local
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import uuid4
@@ -33,21 +34,35 @@ def _make_client() -> Any:
     )
 
 
-def _dynamodb_available() -> bool:
-    try:
-        _make_client().list_tables(Limit=1)
-        return True
-    except Exception:
-        return False
-
-
 pytestmark = [
-    pytest.mark.skipif(
-        not _dynamodb_available(),
-        reason="DynamoDB Local not available",
-    ),
     pytest.mark.allow_hosts(["127.0.0.1", "localhost", "::1"]),
 ]
+
+
+def _wait_for_dynamodb(
+    *, timeout_seconds: float = 30.0, poll_interval_seconds: float = 1.0
+) -> None:
+    """Wait for DynamoDB Local to become reachable before running conformance."""
+    deadline = time.monotonic() + timeout_seconds
+    last_error: Exception | None = None
+
+    while True:
+        try:
+            _make_client().list_tables(Limit=1)
+            return
+        except Exception as exc:
+            last_error = exc
+
+        if time.monotonic() >= deadline:
+            break
+
+        time.sleep(poll_interval_seconds)
+
+    msg = (
+        "DynamoDB Local did not become reachable before the conformance test "
+        f"started. endpoint={DYNAMODB_ENDPOINT!r}"
+    )
+    raise RuntimeError(msg) from last_error
 
 
 def _create_table() -> None:
@@ -95,6 +110,7 @@ async def dynamodb_checkpointer() -> AsyncGenerator[DynamoDBSaver, None]:
 
 @pytest.mark.asyncio
 async def test_conformance() -> None:
+    _wait_for_dynamodb()
     report = await validate(
         dynamodb_checkpointer,
         progress=ProgressCallbacks.verbose(),
