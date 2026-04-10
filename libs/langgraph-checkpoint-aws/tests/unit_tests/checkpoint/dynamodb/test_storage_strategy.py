@@ -882,3 +882,139 @@ class TestStorageStrategyIntegration:
         assert retrieved_after_delete_1 is None
         retrieved_after_delete_2 = strategy.retrieve_data("test_key_2", "DYNAMODB")
         assert retrieved_after_delete_2 is None
+
+
+class TestS3KeyPrefix:
+    """Test S3 key prefix support in StorageStrategy."""
+
+    def test_init_with_key_prefix(self):
+        """Test initialization stores and normalizes key_prefix."""
+        mock_dynamodb = Mock()
+        mock_s3 = Mock()
+
+        # No prefix
+        strategy = StorageStrategy(
+            dynamodb_client=mock_dynamodb,
+            table_name="test_chunks",
+            s3_client=mock_s3,
+            s3_bucket="test-bucket",
+        )
+        assert strategy.s3_key_prefix is None
+
+        # Simple prefix
+        strategy = StorageStrategy(
+            dynamodb_client=mock_dynamodb,
+            table_name="test_chunks",
+            s3_client=mock_s3,
+            s3_bucket="test-bucket",
+            s3_key_prefix="my-app/langgraph",
+        )
+        assert strategy.s3_key_prefix == "my-app/langgraph"
+
+        # Prefix with leading/trailing slashes is stripped
+        strategy = StorageStrategy(
+            dynamodb_client=mock_dynamodb,
+            table_name="test_chunks",
+            s3_client=mock_s3,
+            s3_bucket="test-bucket",
+            s3_key_prefix="/my-app/langgraph/",
+        )
+        assert strategy.s3_key_prefix == "my-app/langgraph"
+
+        # Empty string treated as no prefix
+        strategy = StorageStrategy(
+            dynamodb_client=mock_dynamodb,
+            table_name="test_chunks",
+            s3_client=mock_s3,
+            s3_bucket="test-bucket",
+            s3_key_prefix="",
+        )
+        assert strategy.s3_key_prefix is None
+
+    def test_prefixed_s3_key_without_prefix(self):
+        """Test _prefixed_s3_key returns original key when no prefix set."""
+        mock_dynamodb = Mock()
+        strategy = StorageStrategy(
+            dynamodb_client=mock_dynamodb,
+            table_name="test_chunks",
+        )
+        assert strategy._prefixed_s3_key("thread/checkpoints/ns/id") == (
+            "thread/checkpoints/ns/id"
+        )
+
+    def test_prefixed_s3_key_with_prefix(self):
+        """Test _prefixed_s3_key prepends prefix to key."""
+        mock_dynamodb = Mock()
+        mock_s3 = Mock()
+        strategy = StorageStrategy(
+            dynamodb_client=mock_dynamodb,
+            table_name="test_chunks",
+            s3_client=mock_s3,
+            s3_bucket="test-bucket",
+            s3_key_prefix="my-app",
+        )
+        assert strategy._prefixed_s3_key("thread/checkpoints/ns/id") == (
+            "my-app/thread/checkpoints/ns/id"
+        )
+
+    def test_store_to_s3_uses_prefix(self):
+        """Test that storing to S3 applies the key prefix."""
+        mock_dynamodb = Mock()
+        mock_s3 = Mock()
+        strategy = StorageStrategy(
+            dynamodb_client=mock_dynamodb,
+            table_name="test_chunks",
+            s3_client=mock_s3,
+            s3_bucket="test-bucket",
+            s3_key_prefix="my-app",
+        )
+
+        large_data = b"x" * (S3_OFFLOAD_THRESHOLD + 1)
+        strategy.store_data("chunk_key", "s3_key", large_data, allow_overwrite=True)
+
+        mock_s3.put_object.assert_called_once()
+        call_args = mock_s3.put_object.call_args[1]
+        assert call_args["Key"] == "my-app/s3_key"
+
+    def test_retrieve_from_s3_uses_prefix(self):
+        """Test that retrieving from S3 applies the key prefix."""
+        mock_dynamodb = Mock()
+        mock_s3 = Mock()
+        mock_s3.get_object.return_value = {"Body": Mock(read=lambda: b"data")}
+
+        strategy = StorageStrategy(
+            dynamodb_client=mock_dynamodb,
+            table_name="test_chunks",
+            s3_client=mock_s3,
+            s3_bucket="test-bucket",
+            s3_key_prefix="my-app",
+        )
+
+        strategy.retrieve_data("s3_key", "S3")
+
+        mock_s3.get_object.assert_called_once_with(
+            Bucket="test-bucket", Key="my-app/s3_key"
+        )
+
+    def test_batch_delete_from_s3_uses_prefix(self):
+        """Test that batch deleting from S3 applies the key prefix."""
+        mock_dynamodb = Mock()
+        mock_s3 = Mock()
+        mock_s3.delete_objects.return_value = {
+            "Deleted": [{"Key": "my-app/key1"}, {"Key": "my-app/key2"}]
+        }
+
+        strategy = StorageStrategy(
+            dynamodb_client=mock_dynamodb,
+            table_name="test_chunks",
+            s3_client=mock_s3,
+            s3_bucket="test-bucket",
+            s3_key_prefix="my-app",
+        )
+
+        result = strategy.batch_delete_data([("key1", "S3"), ("key2", "S3")])
+
+        assert result == {"failed": []}
+        call_args = mock_s3.delete_objects.call_args[1]
+        objects = call_args["Delete"]["Objects"]
+        assert objects == [{"Key": "my-app/key1"}, {"Key": "my-app/key2"}]
