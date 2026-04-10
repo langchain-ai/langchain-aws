@@ -151,8 +151,12 @@ def create_aws_client(
         aws_session_token: AWS session token.
         endpoint_url: The complete URL to use for the constructed client.
         config: Advanced client configuration options.
-        api_key: Bedrock API key for bearer token authentication.
-            If provided, sets AWS_BEARER_TOKEN_BEDROCK env variable.
+        api_key: Bedrock API key for bearer-token authentication.
+            If provided, sets the ``AWS_BEARER_TOKEN_BEDROCK`` environment
+            variable at the process level. **Not compatible with multi-tenant
+            deployments** where different clients in the same process need
+            different API keys, as each call overwrites the previous value.
+
     Returns:
         boto3.client: An AWS service client instance.
 
@@ -261,7 +265,10 @@ def create_aws_bedrock_runtime_client(
         endpoint_url: Custom endpoint URL. If not provided, the SDK's
             built-in regional endpoint resolver is used.
         api_key: Bedrock API key for bearer-token authentication.
-            If provided, sets the ``AWS_BEARER_TOKEN_BEDROCK`` env variable.
+            If provided, sets the ``AWS_BEARER_TOKEN_BEDROCK`` environment
+            variable at the process level. **Not compatible with multi-tenant
+            deployments** where different clients in the same process need
+            different API keys, as each call overwrites the previous value.
 
     Returns:
         A configured ``BedrockRuntimeClient`` instance.
