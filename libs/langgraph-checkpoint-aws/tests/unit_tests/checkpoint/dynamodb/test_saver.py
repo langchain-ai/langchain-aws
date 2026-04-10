@@ -57,6 +57,32 @@ class TestDynamoDBSaverInitialization:
         assert call_kwargs["s3_client"] == mock_s3
         assert call_kwargs["s3_bucket"] == TEST_S3_BUCKET
 
+    def test_init_with_s3_key_prefix(self, mock_saver_dependencies):
+        """Test initialization passes key_prefix to StorageStrategy."""
+        mock_s3 = Mock()
+        mock_saver_dependencies["create_s3_client"].return_value = mock_s3
+
+        # With key_prefix
+        DynamoDBSaver(
+            table_name=TEST_TABLE_NAME,
+            s3_offload_config={
+                "bucket_name": TEST_S3_BUCKET,
+                "key_prefix": "my-app/langgraph",
+            },
+        )
+
+        call_kwargs = mock_saver_dependencies["storage"].call_args[1]
+        assert call_kwargs["s3_key_prefix"] == "my-app/langgraph"
+
+        # Without key_prefix
+        DynamoDBSaver(
+            table_name=TEST_TABLE_NAME,
+            s3_offload_config={"bucket_name": TEST_S3_BUCKET},
+        )
+
+        call_kwargs = mock_saver_dependencies["storage"].call_args[1]
+        assert call_kwargs["s3_key_prefix"] is None
+
     def test_init_with_all_aws_parameters(self, mock_saver_dependencies):
         """Test initialization with all AWS configuration parameters."""
         mock_s3 = Mock()
