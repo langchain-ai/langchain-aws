@@ -678,7 +678,12 @@ class ChatBedrockNovaSonic(BaseChatModel):
     bedrock_api_key: Optional[SecretStr] = Field(
         default_factory=secret_from_env("AWS_BEARER_TOKEN_BEDROCK", default=None),
         alias="api_key",
-        description="Bedrock API key for bearer-token authentication.",
+        description=(
+            "Bedrock API key for bearer-token authentication. "
+            "Warning: sets the AWS_BEARER_TOKEN_BEDROCK environment variable "
+            "at the process level, so it is not compatible with multi-tenant "
+            "deployments using different API keys in the same process."
+        ),
     )
     voice_id: str = Field(
         default="matthew",
