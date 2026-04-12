@@ -15,3 +15,10 @@ def test_import_package() -> None:
 def test_import_sandbox_class() -> None:
     """The public AgentCoreSandbox class should be importable."""
     assert AgentCoreSandbox is not None
+
+
+def test_import_session_expired_error() -> None:
+    """SessionExpiredError should be importable from the sandbox module."""
+    from langchain_agentcore_codeinterpreter.sandbox import SessionExpiredError
+
+    assert SessionExpiredError is not None
