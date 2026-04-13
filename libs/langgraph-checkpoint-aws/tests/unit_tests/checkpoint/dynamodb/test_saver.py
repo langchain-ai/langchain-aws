@@ -248,6 +248,13 @@ class TestDynamoDBSaverList:
         assert result[1].checkpoint["id"] == "cp2"
         assert result[1].parent_config is not None
 
+    def test_list_raises_for_config_without_thread_id(self, mock_saver_dependencies):
+        """Test listing rejects malformed configs without thread_id."""
+        saver = DynamoDBSaver(table_name=TEST_TABLE_NAME)
+
+        with pytest.raises(ValueError, match="Runnable config must contain thread_id"):
+            list(saver.list({"configurable": {}}))
+
 
 class TestDynamoDBSaverAsyncMethods:
     """Tests for async methods."""

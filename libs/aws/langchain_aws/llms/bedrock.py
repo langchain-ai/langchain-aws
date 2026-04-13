@@ -738,15 +738,22 @@ class BedrockBase(BaseLanguageModel, ABC):
     """Bedrock API key.
 
     Enables authentication using Bedrock API keys instead of standard AWS
-    credentials. When provided, the key is set as the AWS_BEARER_TOKEN_BEDROCK
+    credentials. When provided, the key is set as the ``AWS_BEARER_TOKEN_BEDROCK``
     environment variable.
+
+    .. warning::
+        Because this sets a **process-wide environment variable**, using
+        ``api_key`` is not compatible with multi-tenant deployments where
+        different model instances in the same process need different API keys.
+        Each new client creation overwrites the previous value. Use standard
+        AWS credentials (IAM roles, profiles, etc.) for multi-tenant scenarios.
 
     See: https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-use.html
 
-    If not provided, will be read from `AWS_BEARER_TOKEN_BEDROCK` environment variable.
+    If not provided, will be read from ``AWS_BEARER_TOKEN_BEDROCK`` environment
+    variable (if it exists).
 
     If both an API key and AWS credentials are present, the API key takes precedence.
-
     """
 
     config: Any = None

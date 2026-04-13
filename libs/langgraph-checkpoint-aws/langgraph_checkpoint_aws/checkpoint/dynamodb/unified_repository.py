@@ -124,16 +124,19 @@ class UnifiedRepository:
         """Find checkpoints with valid payload up to limit.
 
         Args:
+            query_params: DynamoDB query parameters.
             limit: Maximum number of valid checkpoints to return (None = no limit)
             filter_fn: Optional callback to filter (base_item, payload_data) tuples
 
-        Returns:
-            List of (base_item, payload_data) tuples
+        Yields:
+            (base_item, payload_data) tuples
         """
-
-        # Only use limit if no filter function is provided
-        use_limit = filter_fn is None and limit is not None
-        if use_limit:
+        # Only apply DynamoDB-level Limit when there's no client-side filtering
+        has_filter_expression = "FilterExpression" in query_params
+        use_db_limit = (
+            filter_fn is None and not has_filter_expression and limit is not None
+        )
+        if use_db_limit:
             query_params["Limit"] = limit
 
         results_count = 0
@@ -142,7 +145,7 @@ class UnifiedRepository:
         while True:
             response = self.dynamodb_client.query(**query_params)
             items = response.get("Items", [])
-            if not items:
+            if not items and "LastEvaluatedKey" not in response:
                 break
 
             for base_item in items:
@@ -169,7 +172,7 @@ class UnifiedRepository:
             # for subsequent queries
             if (
                 first_attempt
-                and use_limit
+                and use_db_limit
                 and limit is not None
                 and results_count < limit
             ):
@@ -395,6 +398,7 @@ class UnifiedRepository:
             checkpoint_ns: Optional namespace filter
             before_checkpoint_id: Optional filter for checkpoints before this ID
             limit: Optional maximum number of checkpoints to return
+            filter: Optional metadata filter dictionary
 
         Yields:
             Dictionary containing checkpoint data, metadata, and identifiers
@@ -405,7 +409,6 @@ class UnifiedRepository:
         try:
             pk = _checkpoint_pk(thread_id)
 
-            # Build query parameters
             query_params = {
                 "TableName": self.table_name,
                 "ProjectionExpression": (
@@ -431,8 +434,6 @@ class UnifiedRepository:
             # Add filter expression for before_checkpoint_id
             if before_checkpoint_id:
                 query_params["FilterExpression"] = "id < :before_checkpoint_id"
-                if "ExpressionAttributeValues" not in query_params:
-                    query_params["ExpressionAttributeValues"] = {}
                 attr_values = cast(dict, query_params["ExpressionAttributeValues"])
                 attr_values[":before_checkpoint_id"] = {"S": before_checkpoint_id}
 

@@ -7,6 +7,8 @@ from langchain_core.runnables.config import RunnableConfig
 from langchain_core.tools import BaseTool, StructuredTool
 from pydantic import BaseModel, Field
 
+from .utils import get_session_key
+
 logger = logging.getLogger(__name__)
 
 
@@ -751,12 +753,8 @@ async def create_code_interpreter_toolkit(
 
 
 def _get_thread_id(config: Optional[RunnableConfig] = None) -> str:
-    thread_id = "default"
-
-    if config and isinstance(config, dict):
-        thread_id = config.get("configurable", {})["thread_id"]
-
-    return thread_id
+    """Extract session key, using checkpoint_ns for subagent isolation."""
+    return get_session_key(config)
 
 
 def _extract_output_from_stream(response: Any) -> str:
