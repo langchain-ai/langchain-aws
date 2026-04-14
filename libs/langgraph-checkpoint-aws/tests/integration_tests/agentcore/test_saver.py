@@ -57,9 +57,7 @@ class TestAgentCoreMemorySaver:
 
     @pytest.fixture
     def model(self):
-        return ChatBedrock(
-            model="anthropic.claude-3-sonnet-20240229-v1:0", region="us-west-2"
-        )
+        return ChatBedrock(model="us.anthropic.claude-sonnet-4-6", region="us-west-2")
 
     @pytest.fixture
     def memory_id(self):
