@@ -6,10 +6,19 @@ AWS credential requirements.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Iterator
 from typing import Any
 from unittest.mock import MagicMock
 
+import pytest
+from botocore.exceptions import ClientError
+
 from langchain_agentcore_codeinterpreter import AgentCoreSandbox
+from langchain_agentcore_codeinterpreter.sandbox import (
+    _AGENTCORE_EXECUTOR,
+    SessionExpiredError,
+)
 
 
 def _make_sandbox(
@@ -20,6 +29,22 @@ def _make_sandbox(
     interpreter = MagicMock()
     interpreter.session_id = session_id
     interpreter.invoke.return_value = invoke_return or {"stream": []}
+    return AgentCoreSandbox(interpreter=interpreter), interpreter
+
+
+def _make_expired_sandbox() -> tuple[AgentCoreSandbox, MagicMock]:
+    """Create a sandbox whose interpreter raises ResourceNotFoundException."""
+    interpreter = MagicMock()
+    interpreter.session_id = "expired-session"
+    interpreter.invoke.side_effect = ClientError(
+        {
+            "Error": {
+                "Code": "ResourceNotFoundException",
+                "Message": "Session not found",
+            }
+        },
+        "InvokeCodeInterpreter",
+    )
     return AgentCoreSandbox(interpreter=interpreter), interpreter
 
 
@@ -86,6 +111,14 @@ def test_execute_handles_exception() -> None:
     assert "connection lost" in result.output
 
 
+def test_execute_handles_session_expiry() -> None:
+    """ResourceNotFoundException should produce a clear expiry message."""
+    sandbox, _ = _make_expired_sandbox()
+    result = sandbox.execute("echo hello")
+    assert result.exit_code == 1
+    assert "expired" in result.output.lower()
+
+
 # ------------------------------------------------------------------
 # upload_files()
 # ------------------------------------------------------------------
@@ -127,6 +160,13 @@ def test_upload_files_handles_exception() -> None:
     """SDK errors during upload should return permission_denied."""
     sandbox, mock = _make_sandbox()
     mock.invoke.side_effect = RuntimeError("write failed")
+    result = sandbox.upload_files([("/a.txt", b"data")])
+    assert result[0].error == "permission_denied"
+
+
+def test_upload_files_handles_session_expiry() -> None:
+    """Session expiry during upload should return permission_denied."""
+    sandbox, _ = _make_expired_sandbox()
     result = sandbox.upload_files([("/a.txt", b"data")])
     assert result[0].error == "permission_denied"
 
@@ -181,6 +221,13 @@ def test_download_files_handles_exception() -> None:
     assert results[0].error == "file_not_found"
 
 
+def test_download_files_handles_session_expiry() -> None:
+    """Session expiry during download should return permission_denied."""
+    sandbox, _ = _make_expired_sandbox()
+    results = sandbox.download_files(["/a.txt"])
+    assert results[0].error == "permission_denied"
+
+
 # ------------------------------------------------------------------
 # _to_relative_path()
 # ------------------------------------------------------------------
@@ -204,3 +251,223 @@ def test_keyword_only_init() -> None:
     interpreter.session_id = "s"
     sandbox = AgentCoreSandbox(interpreter=interpreter)
     assert sandbox.id == "s"
+
+
+# ------------------------------------------------------------------
+# _invoke() — eager stream consumption
+# ------------------------------------------------------------------
+
+
+def test_invoke_eagerly_consumes_stream() -> None:
+    """_invoke() should materialize a lazy stream iterator into a list."""
+
+    def lazy_stream() -> Iterator[dict[str, Any]]:
+        yield {
+            "result": {
+                "exitCode": 0,
+                "content": [{"type": "text", "text": "hello"}],
+            }
+        }
+
+    sandbox, mock = _make_sandbox()
+    mock.invoke.return_value = {"stream": lazy_stream()}
+
+    response = sandbox._invoke(method="executeCommand", params={"command": "echo"})
+    # Stream should be a list, not a generator
+    assert isinstance(response["stream"], list)
+    assert len(response["stream"]) == 1
+
+
+def test_invoke_handles_no_stream_key() -> None:
+    """_invoke() should work when response has no 'stream' key."""
+    sandbox, mock = _make_sandbox()
+    mock.invoke.return_value = {"metadata": "ok"}
+
+    response = sandbox._invoke(method="listFiles", params={})
+    assert "stream" not in response
+    assert response["metadata"] == "ok"
+
+
+def test_invoke_raises_session_expired_error() -> None:
+    """_invoke() should raise SessionExpiredError for ResourceNotFoundException."""
+    sandbox, _ = _make_expired_sandbox()
+    with pytest.raises(SessionExpiredError) as exc_info:
+        sandbox._invoke(method="executeCommand", params={"command": "echo"})
+    assert "expired" in str(exc_info.value).lower()
+    assert exc_info.value.session_id == "expired-session"
+
+
+def test_invoke_reraises_other_client_errors() -> None:
+    """_invoke() should reraise non-ResourceNotFound ClientErrors."""
+    sandbox, mock = _make_sandbox()
+    mock.invoke.side_effect = ClientError(
+        {"Error": {"Code": "ThrottlingException", "Message": "Rate exceeded"}},
+        "InvokeCodeInterpreter",
+    )
+    with pytest.raises(ClientError) as exc_info:
+        sandbox._invoke(method="executeCommand", params={"command": "echo"})
+    assert exc_info.value.response["Error"]["Code"] == "ThrottlingException"
+
+
+# ------------------------------------------------------------------
+# SessionExpiredError
+# ------------------------------------------------------------------
+
+
+def test_session_expired_error_attributes() -> None:
+    """SessionExpiredError should store session_id and original exception."""
+    original = ClientError(
+        {"Error": {"Code": "ResourceNotFoundException", "Message": "Gone"}},
+        "InvokeCodeInterpreter",
+    )
+    err = SessionExpiredError("sess-123", original)
+    assert err.session_id == "sess-123"
+    assert err.original is original
+    assert "sess-123" in str(err)
+
+
+# ------------------------------------------------------------------
+# Async overrides — verify they use dedicated executor
+# ------------------------------------------------------------------
+
+
+def test_aexecute_uses_dedicated_executor() -> None:
+    """aexecute() should run on the agentcore executor, not the default."""
+    invoke_return = {
+        "stream": [
+            {
+                "result": {
+                    "exitCode": 0,
+                    "content": [{"type": "text", "text": "async ok"}],
+                }
+            }
+        ]
+    }
+    sandbox, mock = _make_sandbox(invoke_return)
+
+    import threading
+
+    thread_names: list[str] = []
+    canned_response = invoke_return
+
+    def tracking_invoke(**kwargs: Any) -> dict[str, Any]:
+        thread_names.append(threading.current_thread().name)
+        return canned_response
+
+    mock.invoke.side_effect = tracking_invoke
+
+    result = asyncio.run(sandbox.aexecute("echo async"))
+    assert result.output == "async ok"
+    assert result.exit_code == 0
+    assert any("agentcore-sandbox" in name for name in thread_names)
+
+
+def test_awrite_runs_on_dedicated_executor() -> None:
+    """awrite() should not use the default asyncio executor."""
+    sandbox, mock = _make_sandbox(
+        {
+            "stream": [
+                {
+                    "result": {
+                        "exitCode": 0,
+                        "content": [{"type": "text", "text": ""}],
+                    }
+                }
+            ]
+        }
+    )
+
+    import threading
+
+    thread_names: list[str] = []
+    canned_response: dict[str, Any] = {"stream": []}
+
+    def tracking_invoke(**kwargs: Any) -> dict[str, Any]:
+        thread_names.append(threading.current_thread().name)
+        return canned_response
+
+    mock.invoke.side_effect = tracking_invoke
+
+    try:
+        asyncio.run(sandbox.awrite("/test.txt", "content"))
+    except Exception:
+        pass
+
+    if thread_names:
+        assert any("agentcore-sandbox" in name for name in thread_names)
+
+
+def test_aupload_files_uses_dedicated_executor() -> None:
+    """aupload_files() should run on the agentcore executor."""
+    sandbox, mock = _make_sandbox()
+
+    import threading
+
+    thread_names: list[str] = []
+    canned_response: dict[str, Any] = {"stream": []}
+
+    def tracking_invoke(**kwargs: Any) -> dict[str, Any]:
+        thread_names.append(threading.current_thread().name)
+        return canned_response
+
+    mock.invoke.side_effect = tracking_invoke
+
+    result = asyncio.run(sandbox.aupload_files([("/test.txt", b"data")]))
+    assert result[0].error is None
+    assert any("agentcore-sandbox" in name for name in thread_names)
+
+
+def test_adownload_files_uses_dedicated_executor() -> None:
+    """adownload_files() should run on the agentcore executor."""
+    canned_response: dict[str, Any] = {
+        "stream": [
+            {
+                "result": {
+                    "content": [
+                        {
+                            "type": "resource",
+                            "resource": {
+                                "uri": "file:///test.txt",
+                                "text": "content",
+                            },
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+    sandbox, mock = _make_sandbox(canned_response)
+
+    import threading
+
+    thread_names: list[str] = []
+
+    def tracking_invoke(**kwargs: Any) -> dict[str, Any]:
+        thread_names.append(threading.current_thread().name)
+        return canned_response
+
+    mock.invoke.side_effect = tracking_invoke
+
+    results = asyncio.run(sandbox.adownload_files(["/test.txt"]))
+    assert results[0].content == b"content"
+    assert any("agentcore-sandbox" in name for name in thread_names)
+
+
+def test_aexecute_handles_session_expiry() -> None:
+    """aexecute() should handle session expiry gracefully."""
+    sandbox, _ = _make_expired_sandbox()
+    result = asyncio.run(sandbox.aexecute("echo hello"))
+    assert result.exit_code == 1
+    assert "expired" in result.output.lower()
+
+
+# ------------------------------------------------------------------
+# Executor configuration
+# ------------------------------------------------------------------
+
+
+def test_dedicated_executor_exists() -> None:
+    """The module-level executor should be configured."""
+    assert _AGENTCORE_EXECUTOR is not None
+    assert _AGENTCORE_EXECUTOR._max_workers == 4
+    assert _AGENTCORE_EXECUTOR._thread_name_prefix == "agentcore-sandbox"

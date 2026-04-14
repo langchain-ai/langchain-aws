@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
+from botocore.exceptions import ClientError
 from deepagents.backends.protocol import (
+    EditResult,
     ExecuteResponse,
     FileDownloadResponse,
     FileUploadResponse,
+    ReadResult,
+    WriteResult,
 )
 from deepagents.backends.sandbox import BaseSandbox
 
@@ -17,6 +23,25 @@ if TYPE_CHECKING:
     from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 
 logger = logging.getLogger(__name__)
+
+# Dedicated thread pool for AgentCore boto3 calls. Isolates sandbox I/O
+# from the default asyncio executor so long-running stream reads don't
+# starve other async work (LLM calls, tool dispatch, etc.).
+_AGENTCORE_EXECUTOR = ThreadPoolExecutor(
+    max_workers=4, thread_name_prefix="agentcore-sandbox"
+)
+
+
+class SessionExpiredError(Exception):
+    """Raised when the AgentCore session has expired or been terminated."""
+
+    def __init__(self, session_id: str, original: ClientError) -> None:
+        self.session_id = session_id
+        self.original = original
+        super().__init__(
+            f"AgentCore session '{session_id}' has expired or was terminated. "
+            f"Start a new session to continue."
+        )
 
 
 def _extract_text_from_stream(response: dict[str, Any]) -> tuple[str, int | None]:
@@ -118,6 +143,10 @@ class AgentCoreSandbox(BaseSandbox):
     ``download_files()``, and ``upload_files()`` methods using AgentCore's
     streaming API.
 
+    Async methods (``aexecute``, ``awrite``, etc.) use a dedicated thread
+    pool executor to avoid blocking the default ``asyncio`` executor with
+    long-running boto3 stream reads.
+
     The caller is responsible for managing the interpreter lifecycle
     (``start()`` / ``stop()``).
 
@@ -159,10 +188,47 @@ class AgentCoreSandbox(BaseSandbox):
         """
         return path.lstrip("/")
 
+    def _invoke(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Invoke the interpreter and eagerly consume the response stream.
+
+        AgentCore's ``invoke_code_interpreter`` returns a lazy EventStream
+        that holds the HTTP connection open until fully iterated. Consuming
+        it eagerly releases the connection promptly, which prevents thread
+        starvation when multiple sandbox calls are in-flight under
+        ``asyncio.to_thread`` or a thread pool executor.
+
+        Args:
+            method: The interpreter method name (e.g. ``executeCommand``).
+            params: Parameters to pass to the method.
+
+        Returns:
+            Response dict with the ``"stream"`` key materialized as a list.
+
+        Raises:
+            SessionExpiredError: If the session has expired or been terminated.
+        """
+        try:
+            response = self._interpreter.invoke(method=method, params=params)
+        except ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "")
+            if error_code == "ResourceNotFoundException":
+                raise SessionExpiredError(self.id, exc) from exc
+            raise
+
+        # Eagerly consume the lazy EventStream to release the HTTP connection.
+        if "stream" in response:
+            response["stream"] = list(response["stream"])
+
+        return response
+
     @property
     def id(self) -> str:
         """Return the AgentCore session ID."""
         return self._interpreter.session_id or ""
+
+    # ------------------------------------------------------------------
+    # Sync methods
+    # ------------------------------------------------------------------
 
     def execute(
         self,
@@ -183,13 +249,26 @@ class AgentCoreSandbox(BaseSandbox):
             flag.
         """
         try:
-            response = self._interpreter.invoke(
+            response = self._invoke(
                 method="executeCommand", params={"command": command}
             )
             output, exit_code = _extract_text_from_stream(response)
             return ExecuteResponse(
                 output=output,
                 exit_code=exit_code if exit_code is not None else 0,
+                truncated=False,
+            )
+        except SessionExpiredError:
+            logger.error(
+                "AgentCore session expired while executing command: %s",
+                command[:80],
+            )
+            return ExecuteResponse(
+                output=(
+                    "Error: AgentCore session has expired. "
+                    "Start a new session to continue."
+                ),
+                exit_code=1,
                 truncated=False,
             )
         except Exception as exc:
@@ -216,7 +295,7 @@ class AgentCoreSandbox(BaseSandbox):
         """
         try:
             relative_paths = [self._to_relative_path(p) for p in paths]
-            response = self._interpreter.invoke(
+            response = self._invoke(
                 method="readFiles", params={"paths": relative_paths}
             )
             file_contents = _extract_files_from_stream(response, paths)
@@ -227,6 +306,12 @@ class AgentCoreSandbox(BaseSandbox):
                     content=file_contents.get(path),
                     error=None if path in file_contents else "file_not_found",
                 )
+                for path in paths
+            ]
+        except SessionExpiredError:
+            logger.error("AgentCore session expired while downloading files: %s", paths)
+            return [
+                FileDownloadResponse(path=path, content=None, error="permission_denied")
                 for path in paths
             ]
         except Exception:
@@ -261,13 +346,160 @@ class AgentCoreSandbox(BaseSandbox):
 
         try:
             if file_list:
-                self._interpreter.invoke(
-                    method="writeFiles", params={"content": file_list}
-                )
+                self._invoke(method="writeFiles", params={"content": file_list})
             return [FileUploadResponse(path=path, error=None) for path, _ in files]
+        except SessionExpiredError:
+            logger.error(
+                "AgentCore session expired while uploading files: %s",
+                [p for p, _ in files],
+            )
+            return [
+                FileUploadResponse(path=path, error="permission_denied")
+                for path, _ in files
+            ]
         except Exception:
             logger.exception("Error uploading files: %s", [p for p, _ in files])
             return [
                 FileUploadResponse(path=path, error="permission_denied")
                 for path, _ in files
             ]
+
+    # ------------------------------------------------------------------
+    # Async overrides — use a dedicated executor to avoid starving the
+    # default asyncio thread pool with long-running boto3 stream reads.
+    # ------------------------------------------------------------------
+
+    async def aexecute(
+        self,
+        command: str,
+        *,
+        timeout: int | None = None,
+    ) -> ExecuteResponse:
+        """Async version of :meth:`execute`.
+
+        Runs the sync method in a dedicated thread pool executor to avoid
+        blocking the default ``asyncio`` executor.
+
+        Args:
+            command: Shell command string to execute.
+            timeout: Unused. Accepted for interface compatibility.
+
+        Returns:
+            Response containing the command output, exit code, and truncation
+            flag.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _AGENTCORE_EXECUTOR,
+            lambda: self.execute(command, timeout=timeout),
+        )
+
+    async def aread(
+        self,
+        file_path: str,
+        offset: int = 0,
+        limit: int = 2000,
+    ) -> ReadResult:
+        """Async version of :meth:`read`.
+
+        Runs the sync method in a dedicated thread pool executor.
+
+        Args:
+            file_path: Absolute path to the file to read.
+            offset: Starting line number (0-indexed).
+            limit: Maximum number of lines to return.
+
+        Returns:
+            ``ReadResult`` with ``file_data`` on success or ``error`` on
+            failure.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _AGENTCORE_EXECUTOR,
+            lambda: self.read(file_path, offset, limit),
+        )
+
+    async def awrite(
+        self,
+        file_path: str,
+        content: str,
+    ) -> WriteResult:
+        """Async version of :meth:`write`.
+
+        Runs the sync method in a dedicated thread pool executor.
+
+        Args:
+            file_path: Absolute path for the new file.
+            content: UTF-8 text content to write.
+
+        Returns:
+            ``WriteResult`` with ``path`` on success or ``error`` on failure.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _AGENTCORE_EXECUTOR,
+            lambda: self.write(file_path, content),
+        )
+
+    async def aedit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,  # noqa: FBT001, FBT002
+    ) -> EditResult:
+        """Async version of :meth:`edit`.
+
+        Runs the sync method in a dedicated thread pool executor.
+
+        Args:
+            file_path: Absolute path to the file to edit.
+            old_string: The exact substring to find.
+            new_string: The replacement string.
+            replace_all: If ``True``, replace every occurrence.
+
+        Returns:
+            ``EditResult`` with ``path`` and ``occurrences`` on success,
+            or ``error`` on failure.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _AGENTCORE_EXECUTOR,
+            lambda: self.edit(file_path, old_string, new_string, replace_all),
+        )
+
+    async def aupload_files(
+        self, files: list[tuple[str, bytes]]
+    ) -> list[FileUploadResponse]:
+        """Async version of :meth:`upload_files`.
+
+        Runs the sync method in a dedicated thread pool executor.
+
+        Args:
+            files: List of ``(path, content)`` tuples to upload.
+
+        Returns:
+            List of :class:`FileUploadResponse` objects.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _AGENTCORE_EXECUTOR,
+            lambda: self.upload_files(files),
+        )
+
+    async def adownload_files(self, paths: list[str]) -> list[FileDownloadResponse]:
+        """Async version of :meth:`download_files`.
+
+        Runs the sync method in a dedicated thread pool executor.
+
+        Args:
+            paths: List of file paths to download.
+
+        Returns:
+            List of :class:`FileDownloadResponse` objects.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _AGENTCORE_EXECUTOR,
+            lambda: self.download_files(paths),
+        )

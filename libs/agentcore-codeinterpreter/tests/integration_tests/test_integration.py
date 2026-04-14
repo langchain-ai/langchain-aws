@@ -6,8 +6,9 @@ Code Interpreter service is available.
 
 from __future__ import annotations
 
+import asyncio
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -15,7 +16,6 @@ from langchain_agentcore_codeinterpreter import AgentCoreSandbox
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-
 
 _SKIP_REASON = "AWS credentials not configured (set AWS_REGION or AWS_DEFAULT_REGION)"
 
@@ -83,15 +83,55 @@ class TestAgentCoreSandboxIntegration:
 
     def test_binary_roundtrip(self, sandbox: AgentCoreSandbox) -> None:
         """Binary content uploaded via base64 may be returned as base64 text."""
+        import base64
+
         content = b"\x00\x01\x02\xff\xfe\xfd"
         sandbox.upload_files([("binary_test.bin", content)])
         results = sandbox.download_files(["binary_test.bin"])
         assert results[0].error is None
         # AgentCore returns blob uploads as text containing the base64 string
-        import base64
-
         assert results[0].content in (content, base64.b64encode(content))
 
     def test_session_id(self, sandbox: AgentCoreSandbox) -> None:
         """The sandbox should have a non-empty session ID."""
         assert sandbox.id != ""
+
+    # ------------------------------------------------------------------
+    # Async integration tests
+    # ------------------------------------------------------------------
+
+    def test_aexecute_echo(self, sandbox: AgentCoreSandbox) -> None:
+        """aexecute() should work against a live session."""
+        result = asyncio.run(sandbox.aexecute("echo async hello"))
+        assert result.exit_code == 0
+        assert "async hello" in result.output
+
+    def test_aexecute_python(self, sandbox: AgentCoreSandbox) -> None:
+        """aexecute() should handle Python execution."""
+        result = asyncio.run(sandbox.aexecute("python3 -c \"print('async works')\""))
+        assert result.exit_code == 0
+        assert "async works" in result.output
+
+    def test_aupload_and_adownload_roundtrip(self, sandbox: AgentCoreSandbox) -> None:
+        """Async upload and download should produce identical content."""
+        content = b"async round trip content"
+        upload_result = asyncio.run(
+            sandbox.aupload_files([("async_roundtrip.txt", content)])
+        )
+        assert upload_result[0].error is None
+
+        download_result = asyncio.run(sandbox.adownload_files(["async_roundtrip.txt"]))
+        assert download_result[0].error is None
+        assert download_result[0].content == content
+
+    def test_concurrent_aexecute(self, sandbox: AgentCoreSandbox) -> None:
+        """Multiple concurrent async executions should not deadlock."""
+
+        async def run_concurrent() -> list[Any]:
+            tasks = [sandbox.aexecute(f"echo concurrent-{i}") for i in range(3)]
+            return await asyncio.gather(*tasks)
+
+        results = asyncio.run(run_concurrent())
+        for i, result in enumerate(results):
+            assert result.exit_code == 0
+            assert f"concurrent-{i}" in result.output
