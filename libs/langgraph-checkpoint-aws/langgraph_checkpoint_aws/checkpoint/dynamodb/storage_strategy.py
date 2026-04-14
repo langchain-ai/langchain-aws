@@ -12,7 +12,11 @@ if TYPE_CHECKING:
         WriteRequestTypeDef,
     )
     from mypy_boto3_s3.client import S3Client
-    from mypy_boto3_s3.type_defs import DeleteTypeDef, ObjectIdentifierTypeDef
+    from mypy_boto3_s3.type_defs import (
+        DeleteTypeDef,
+        LifecycleRuleFilterOutputTypeDef,
+        ObjectIdentifierTypeDef,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -400,7 +404,10 @@ class StorageStrategy:
             # Calculate expiration days (always round up, minimum 1 day)
             # S3 Lifecycle expiration: convert seconds to days (ceil, min 1 day)
             expiration_days = max(1, (self.ttl_seconds + 86399) // 86400)
-            rule_id = f"ttl-expiration-{expiration_days}d"
+            id_prefix = (
+                self.s3_key_prefix.replace("/", "-") if self.s3_key_prefix else "root"
+            )
+            rule_id = f"{id_prefix}-ttl-expiration-{expiration_days}d"
 
             # Get existing rules
             assert self.s3_bucket is not None  # Already checked by s3_enabled
@@ -423,13 +430,29 @@ class StorageStrategy:
                 existing_rules = []
 
             # Add new rule with tag filter for this specific TTL
+            lifecycle_filter: LifecycleRuleFilterOutputTypeDef
+            if self.s3_key_prefix:
+                lifecycle_filter = {
+                    "And": {
+                        "Prefix": self.s3_key_prefix + "/",
+                        "Tags": [
+                            {
+                                "Key": "ttl-days",
+                                "Value": str(expiration_days),
+                            }
+                        ],
+                    }
+                }
+            else:
+                lifecycle_filter = {
+                    "Tag": {"Key": "ttl-days", "Value": str(expiration_days)}
+                }
+
             existing_rules.append(
                 {
                     "ID": rule_id,
                     "Status": "Enabled",
-                    "Filter": {
-                        "Tag": {"Key": "ttl-days", "Value": str(expiration_days)}
-                    },
+                    "Filter": lifecycle_filter,
                     "Expiration": {"Days": expiration_days},
                 }
             )
