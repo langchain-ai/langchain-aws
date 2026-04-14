@@ -12,7 +12,11 @@ if TYPE_CHECKING:
         WriteRequestTypeDef,
     )
     from mypy_boto3_s3.client import S3Client
-    from mypy_boto3_s3.type_defs import DeleteTypeDef, ObjectIdentifierTypeDef
+    from mypy_boto3_s3.type_defs import (
+        DeleteTypeDef,
+        LifecycleRuleFilterOutputTypeDef,
+        ObjectIdentifierTypeDef,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -426,7 +430,7 @@ class StorageStrategy:
                 existing_rules = []
 
             # Add new rule with tag filter for this specific TTL
-            lifecycle_filter: dict[str, Any]
+            lifecycle_filter: LifecycleRuleFilterOutputTypeDef
             if self.s3_key_prefix:
                 lifecycle_filter = {
                     "And": {

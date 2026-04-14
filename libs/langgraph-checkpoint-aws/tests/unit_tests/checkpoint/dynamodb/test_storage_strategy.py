@@ -185,7 +185,7 @@ class TestStoreData:
         mock_s3.put_bucket_lifecycle_configuration.assert_called_once()
         call_args = mock_s3.put_bucket_lifecycle_configuration.call_args[1]
         rule = call_args["LifecycleConfiguration"]["Rules"][0]
-        assert rule["ID"] == "ttl-expiration-1d"
+        assert rule["ID"] == "root-ttl-expiration-1d"
         assert rule["Expiration"]["Days"] == 1
         assert rule["Filter"] == {"Tag": {"Key": "ttl-days", "Value": "1"}}
 
@@ -207,7 +207,7 @@ class TestStoreData:
         mock_s3.get_bucket_lifecycle_configuration.return_value = {
             "Rules": [
                 {
-                    "ID": "ttl-expiration-1d",
+                    "ID": "root-ttl-expiration-1d",
                     "Status": "Enabled",
                     "Filter": {"Tag": {"Key": "ttl-days", "Value": "1"}},
                     "Expiration": {"Days": 1},
@@ -223,6 +223,34 @@ class TestStoreData:
         )
         mock_s3.get_bucket_lifecycle_configuration.assert_called_once()
         mock_s3.put_bucket_lifecycle_configuration.assert_not_called()
+
+    def test_s3_lifecycle_policy_scoped_to_prefix(self):
+        """Test S3 lifecycle rule is scoped to key prefix when configured."""
+        mock_dynamodb = Mock()
+        mock_s3 = Mock()
+
+        mock_s3.get_bucket_lifecycle_configuration.side_effect = ClientError(
+            {"Error": {"Code": "NoSuchLifecycleConfiguration"}},
+            "GetBucketLifecycleConfiguration",
+        )
+        StorageStrategy(
+            dynamodb_client=mock_dynamodb,
+            table_name="test_chunks",
+            s3_client=mock_s3,
+            s3_bucket="test-bucket",
+            s3_key_prefix="my-app/langgraph",
+            ttl_seconds=7200,
+        )
+        mock_s3.put_bucket_lifecycle_configuration.assert_called_once()
+        call_args = mock_s3.put_bucket_lifecycle_configuration.call_args[1]
+        rule = call_args["LifecycleConfiguration"]["Rules"][0]
+        assert rule["ID"] == "my-app-langgraph-ttl-expiration-1d"
+        assert rule["Filter"] == {
+            "And": {
+                "Prefix": "my-app/langgraph/",
+                "Tags": [{"Key": "ttl-days", "Value": "1"}],
+            }
+        }
 
     def test_s3_objects_tagged_with_ttl(self):
         """Test S3 objects tagged with TTL for lifecycle filtering."""
