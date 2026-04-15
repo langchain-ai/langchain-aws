@@ -171,6 +171,21 @@ def test_nova_model_accepted_chatbedrock() -> None:
     assert middleware._should_apply_caching(request) is True
 
 
+def test_inference_profile_resolved_via_base_model_id() -> None:
+    middleware = BedrockPromptCachingMiddleware()
+
+    request = MagicMock()
+    request.model = MagicMock(spec=ChatBedrockConverse)
+    request.model.model_id = (
+        "arn:aws:bedrock:us-east-1:123456:application-inference-profile/abc"
+    )
+    request.model.base_model_id = "anthropic.claude-sonnet-4-20250514-v1:0"
+    request.system_prompt = "You are helpful."
+    request.messages = [HumanMessage(content="Hello")]
+
+    assert middleware._should_apply_caching(request) is True
+
+
 def test_unsupported_model_id_with_converse() -> None:
     middleware = BedrockPromptCachingMiddleware(unsupported_model_behavior="ignore")
 

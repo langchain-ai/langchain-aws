@@ -23,7 +23,12 @@ except ImportError as e:
 
 def _is_supported_model(model: Union[ChatBedrock, ChatBedrockConverse]) -> bool:
     """Check if the model supports prompt caching on Bedrock."""
-    model_id = getattr(model, "model_id", "") or getattr(model, "model", "")
+    model_id = (
+        getattr(model, "base_model_id", None)
+        or getattr(model, "model_id", "")
+        or getattr(model, "model", "")
+        or ""
+    )
     return any(name in model_id.lower() for name in ("anthropic", "amazon.nova"))
 
 
