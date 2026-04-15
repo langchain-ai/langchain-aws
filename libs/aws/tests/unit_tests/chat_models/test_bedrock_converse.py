@@ -2157,7 +2157,7 @@ def test_generate_guard_last_turn_only_tool_continuation() -> None:
     guard_blocks = [b for b in last_user_msg["content"] if "guardContent" in b]
     assert len(tool_result_blocks) == 1
     assert len(guard_blocks) == 1
-    assert guard_blocks[0] == {"guardContent": {"text": {"text": "."}}}
+    assert guard_blocks[0] == {"guardContent": {"text": {"text": "[tool_result]"}}}
 
 
 def test_generate_guard_last_turn_only_mixed_content() -> None:
@@ -2236,7 +2236,7 @@ def test_stream_guard_last_turn_only_tool_continuation() -> None:
     assert last_user_msg["role"] == "user"
     guard_blocks = [b for b in last_user_msg["content"] if "guardContent" in b]
     assert len(guard_blocks) == 1
-    assert guard_blocks[0] == {"guardContent": {"text": {"text": "."}}}
+    assert guard_blocks[0] == {"guardContent": {"text": {"text": "[tool_result]"}}}
 
 
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")

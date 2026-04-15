@@ -1146,7 +1146,7 @@ class ChatBedrockConverse(BaseChatModel):
                         new_content.append(block)
                 if not has_guard_content:
                     new_content.append(
-                        {"guardContent": {"text": {"text": EMPTY_CONTENT}}}
+                        {"guardContent": {"text": {"text": "[tool_result]"}}}
                     )
                 msg["content"] = new_content
                 break
