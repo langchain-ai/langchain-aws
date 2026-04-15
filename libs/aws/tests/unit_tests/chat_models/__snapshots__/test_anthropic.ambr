@@ -16,9 +16,32 @@
         'type': 'secret',
       }),
       'anthropic_api_url': 'https://api.anthropic.com',
+      'anthropic_proxy': None,
+      'aws_access_key_id': dict({
+        'id': list([
+          'AWS_ACCESS_KEY_ID',
+        ]),
+        'lc': 1,
+        'type': 'secret',
+      }),
+      'aws_secret_access_key': dict({
+        'id': list([
+          'AWS_SECRET_ACCESS_KEY',
+        ]),
+        'lc': 1,
+        'type': 'secret',
+      }),
+      'aws_session_token': dict({
+        'id': list([
+          'AWS_SESSION_TOKEN',
+        ]),
+        'lc': 1,
+        'type': 'secret',
+      }),
       'max_retries': 2,
       'max_tokens': 100,
       'model': 'anthropic.claude-3-sonnet-20240229-v1:0',
+      'output_version': None,
       'stop_sequences': list([
       ]),
       'stream_usage': True,
