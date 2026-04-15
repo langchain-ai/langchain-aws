@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "langchain-agentcore-codeinterpreter"
-version = "0.0.1"
+version = "0.0.2"
 description = "Amazon Bedrock AgentCore Code Interpreter sandbox integration for Deep Agents"
 readme = "README.md"
 license = "MIT"
