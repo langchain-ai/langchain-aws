@@ -174,6 +174,44 @@ def test__format_anthropic_messages_with_tool_calls() -> None:
     assert expected == actual
 
 
+def test__format_anthropic_messages_strips_streaming_fields_on_invalid_tool() -> None:
+    """Regression for langchain-ai/langchain#31208."""
+    ai = AIMessage(
+        content=[
+            {
+                "type": "tool_use",
+                "id": "toolu_bad",
+                "name": "web_search",
+                "input": {},
+                "index": 2,
+                "partial_json": '{"bad": json}',
+            },
+        ],
+        tool_calls=[],
+        invalid_tool_calls=[
+            {
+                "type": "invalid_tool_call",
+                "id": "toolu_bad",
+                "name": "web_search",
+                "args": '{"bad": json}',
+                "error": "JSONDecodeError",
+            }
+        ],
+    )
+    _, formatted = _format_anthropic_messages([HumanMessage("go"), ai])
+    tool_use_block = next(
+        b for b in formatted[1]["content"] if b.get("type") == "tool_use"
+    )
+    assert "index" not in tool_use_block
+    assert "partial_json" not in tool_use_block
+    assert tool_use_block == {
+        "type": "tool_use",
+        "id": "toolu_bad",
+        "name": "web_search",
+        "input": {},
+    }
+
+
 def test__format_anthropic_messages_with_str_content_and_tool_calls() -> None:
     system = SystemMessage("fuzz")  # type: ignore[misc]
     human = HumanMessage("foo")  # type: ignore[misc]
