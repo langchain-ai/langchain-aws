@@ -357,7 +357,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
     "anthropic.claude-opus-4-6-v1": {
         "name": "Claude Opus 4.6",
         "release_date": "2026-02-05",
-        "last_updated": "2026-03-18",
+        "last_updated": "2026-03-13",
         "open_weights": False,
         "max_input_tokens": 1000000,
         "max_output_tokens": 128000,
@@ -603,7 +603,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
     "eu.anthropic.claude-opus-4-6-v1": {
         "name": "Claude Opus 4.6 (EU)",
         "release_date": "2026-02-05",
-        "last_updated": "2026-03-18",
+        "last_updated": "2026-03-13",
         "open_weights": False,
         "max_input_tokens": 1000000,
         "max_output_tokens": 128000,
@@ -776,7 +776,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
     "global.anthropic.claude-opus-4-6-v1": {
         "name": "Claude Opus 4.6 (Global)",
         "release_date": "2026-02-05",
-        "last_updated": "2026-03-18",
+        "last_updated": "2026-03-13",
         "open_weights": False,
         "max_input_tokens": 1000000,
         "max_output_tokens": 128000,
@@ -2031,7 +2031,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
     "us.anthropic.claude-opus-4-6-v1": {
         "name": "Claude Opus 4.6 (US)",
         "release_date": "2026-02-05",
-        "last_updated": "2026-03-18",
+        "last_updated": "2026-03-13",
         "open_weights": False,
         "max_input_tokens": 1000000,
         "max_output_tokens": 128000,
