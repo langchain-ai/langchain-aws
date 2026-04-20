@@ -152,10 +152,9 @@ def create_aws_client(
         endpoint_url: The complete URL to use for the constructed client.
         config: Advanced client configuration options.
         api_key: Bedrock API key for bearer-token authentication.
-            If provided, sets the ``AWS_BEARER_TOKEN_BEDROCK`` environment
-            variable at the process level. **Not compatible with multi-tenant
-            deployments** where different clients in the same process need
-            different API keys, as each call overwrites the previous value.
+            If provided, injects a static token provider into the botocore session
+            to use HTTP Bearer authentication. This approach is compatible with
+            multi-tenant deployments where different clients need different API keys.
 
     Returns:
         boto3.client: An AWS service client instance.
@@ -164,6 +163,9 @@ def create_aws_client(
 
     try:
         import boto3
+        from botocore.config import Config as BotocoreConfig
+        from botocore.session import get_session
+        from botocore.tokens import FrozenAuthToken
 
         region_name = (
             region_name or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
@@ -185,7 +187,54 @@ def create_aws_client(
             )
 
         if has_api_key:
-            os.environ["AWS_BEARER_TOKEN_BEDROCK"] = api_key.get_secret_value()  # type: ignore[union-attr]
+
+            class _StaticTokenProvider:
+                """Token provider that returns a static bearer token."""
+
+                METHOD = "static"
+
+                def __init__(self, token: str) -> None:
+                    self._token = token
+
+                def load_token(self, **kwargs: Any) -> FrozenAuthToken:
+                    return FrozenAuthToken(self._token)
+
+            # Create a botocore session and inject the static token provider
+            bc_session = get_session()
+            token_provider_chain = bc_session.get_component("token_provider")
+            static_provider = _StaticTokenProvider(api_key.get_secret_value())  # type: ignore[union-attr]
+            # NOTE: botocore does not expose a public API for inserting a
+            # provider into the token provider chain, so we mutate the private
+            # ``_providers`` list. This is intentional and is the same approach
+            # recommended for static-token workarounds; it may need to be
+            # revisited if botocore changes this internal structure.
+            token_provider_chain._providers.insert(0, static_provider)
+
+            # Configure client to prefer HTTP Bearer auth, merging with any
+            # user-provided config. ``Config.merge`` is the documented way to
+            # combine two Config objects; values in the argument take
+            # precedence, so our bearer preference wins.
+            # ``auth_scheme_preference`` is a valid botocore Config option but
+            # may be missing from installed type stubs.
+            bearer_config = BotocoreConfig(
+                auth_scheme_preference="httpBearerAuth",  # type: ignore[call-arg]
+            )
+            if config is not None:
+                bearer_config = config.merge(bearer_config)
+
+            bearer_client_params = {
+                "service_name": service_name,
+                "region_name": region_name,
+                "endpoint_url": endpoint_url,
+                "config": bearer_config,
+            }
+            bearer_client_params = {k: v for k, v in bearer_client_params.items() if v}
+
+            # Create session with our custom botocore session
+            boto3_session = boto3.Session(botocore_session=bc_session)
+            # bearer_client_params contains valid boto3 client kwargs but type
+            # stubs are overly restrictive about the dict value types.
+            return boto3_session.client(**bearer_client_params)  # type: ignore[call-overload]
 
         client_params = {
             "service_name": service_name,
