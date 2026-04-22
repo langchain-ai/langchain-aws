@@ -5,11 +5,24 @@ from abc import abstractmethod
 from typing import Any, Dict, Generic, Iterator, List, Literal, Optional, TypeVar, Union
 
 from botocore.exceptions import BotoCoreError, UnknownServiceError
+from botocore.tokens import FrozenAuthToken
 from langchain_core.messages import AIMessage
 from packaging import version
 from pydantic import SecretStr
 
 logger = logging.getLogger(__name__)
+
+
+class _StaticTokenProvider:
+    """Token provider that returns a static bearer token."""
+
+    METHOD = "static"
+
+    def __init__(self, token: str) -> None:
+        self._token = token
+
+    def load_token(self, **kwargs: Any) -> FrozenAuthToken:
+        return FrozenAuthToken(self._token)
 
 MESSAGE_ROLES = Literal["system", "user", "assistant"]
 MESSAGE_FORMAT = Dict[Literal["role", "content"], Union[MESSAGE_ROLES, str]]
@@ -165,7 +178,6 @@ def create_aws_client(
         import boto3
         from botocore.config import Config as BotocoreConfig
         from botocore.session import get_session
-        from botocore.tokens import FrozenAuthToken
 
         region_name = (
             region_name or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
@@ -187,18 +199,6 @@ def create_aws_client(
             )
 
         if has_api_key:
-
-            class _StaticTokenProvider:
-                """Token provider that returns a static bearer token."""
-
-                METHOD = "static"
-
-                def __init__(self, token: str) -> None:
-                    self._token = token
-
-                def load_token(self, **kwargs: Any) -> FrozenAuthToken:
-                    return FrozenAuthToken(self._token)
-
             # Create a botocore session and inject the static token provider
             bc_session = get_session()
             token_provider_chain = bc_session.get_component("token_provider")
@@ -208,7 +208,13 @@ def create_aws_client(
             # ``_providers`` list. This is intentional and is the same approach
             # recommended for static-token workarounds; it may need to be
             # revisited if botocore changes this internal structure.
-            token_provider_chain._providers.insert(0, static_provider)
+            try:
+                token_provider_chain._providers.insert(0, static_provider)  # type: ignore[union-attr]
+            except AttributeError:
+                raise RuntimeError(
+                    "Bearer token injection is no longer supported."
+                    "Please open an issue on `langchain-aws` for help."
+                ) from None
 
             # Configure client to prefer HTTP Bearer auth, merging with any
             # user-provided config. ``Config.merge`` is the documented way to
