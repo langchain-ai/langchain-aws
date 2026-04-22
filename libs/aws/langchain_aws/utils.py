@@ -24,6 +24,7 @@ class _StaticTokenProvider:
     def load_token(self, **kwargs: Any) -> FrozenAuthToken:
         return FrozenAuthToken(self._token)
 
+
 MESSAGE_ROLES = Literal["system", "user", "assistant"]
 MESSAGE_FORMAT = Dict[Literal["role", "content"], Union[MESSAGE_ROLES, str]]
 
