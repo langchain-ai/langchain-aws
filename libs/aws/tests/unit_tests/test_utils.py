@@ -460,9 +460,10 @@ def test_count_tokens_api_supported_for_model(
     assert result == expected_result
 
 
-def test_api_key_sets_env_var(
+def test_api_key_uses_token_provider(
     mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
+    """Test that api_key uses token provider injection instead of env var."""
     session_mock, client_mock, client_instance = mock_boto3
 
     with mock.patch.dict(os.environ, {}, clear=True):
@@ -470,16 +471,119 @@ def test_api_key_sets_env_var(
             "bedrock-runtime",
             api_key=SecretStr("test-api-key"),
         )
-        assert os.environ.get("AWS_BEARER_TOKEN_BEDROCK") == "test-api-key"
+        # Should NOT set the environment variable anymore
+        assert os.environ.get("AWS_BEARER_TOKEN_BEDROCK") is None
 
-    session_mock.assert_not_called()
-    client_mock.assert_called_once_with(service_name="bedrock-runtime")
+    # The new implementation uses boto3.Session with a custom botocore_session
+    session_mock.assert_called_once()
+    # Verify botocore_session was passed (contains the token provider)
+    call_kwargs = session_mock.call_args[1]
+    assert "botocore_session" in call_kwargs
+
+    # The client should be created via session.client() with bearer auth config
+    session_instance = session_mock.return_value
+    session_instance.client.assert_called_once()
+    client_call_kwargs = session_instance.client.call_args[1]
+    assert client_call_kwargs["service_name"] == "bedrock-runtime"
+    # Check that auth_scheme_preference is set in config
+    assert hasattr(client_call_kwargs.get("config"), "auth_scheme_preference")
     assert client == client_instance
+
+
+def test_api_key_token_provider_actually_injected() -> None:
+    """Verify the token provider is actually injected and returns the token."""
+
+    # Create a client with api_key - this will create a real botocore session
+    # but we mock the client creation to avoid needing real credentials
+    with (
+        mock.patch.dict(os.environ, {}, clear=True),
+        mock.patch("boto3.Session") as mock_session,
+    ):
+        mock_session_instance = mock.MagicMock()
+        mock_session_instance.region_name = "us-west-2"
+        mock_client_instance = mock.MagicMock()
+        mock_session_instance.client.return_value = mock_client_instance
+        mock_session.return_value = mock_session_instance
+
+        create_aws_client(
+            "bedrock-runtime",
+            api_key=SecretStr("my-test-bearer-token"),
+        )
+
+        # Verify that boto3.Session was called with a botocore_session
+        session_call_kwargs = mock_session.call_args[1]
+        assert "botocore_session" in session_call_kwargs
+        bc_session = session_call_kwargs["botocore_session"]
+
+        # Verify the token provider was injected
+        token_provider_chain = bc_session.get_component("token_provider")
+        providers = token_provider_chain._providers
+
+        # The first provider should be our static token provider
+        assert len(providers) > 0
+        static_provider = providers[0]
+
+        # Verify it returns the correct token
+        from botocore.tokens import FrozenAuthToken
+
+        token = static_provider.load_token()
+        assert isinstance(token, FrozenAuthToken)
+        assert token.token == "my-test-bearer-token"
+
+
+def test_api_key_multi_tenant_isolation() -> None:
+    """Test that multiple clients with different API keys do not interfere."""
+    with mock.patch.dict(os.environ, {}, clear=True):
+        # Mock boto3.Session to capture the botocore_session passed to it
+        sessions_created: list[dict[str, Any]] = []
+
+        def capture_session(*args: Any, **kwargs: Any) -> mock.MagicMock:
+            mock_session_instance = mock.MagicMock()
+            mock_session_instance.region_name = "us-west-2"
+            mock_client_instance = mock.MagicMock()
+            mock_session_instance.client.return_value = mock_client_instance
+            sessions_created.append(
+                {"args": args, "kwargs": kwargs, "instance": mock_session_instance}
+            )
+            return mock_session_instance
+
+        with mock.patch("boto3.Session", side_effect=capture_session):
+            # Create first client with first API key
+            create_aws_client(
+                "bedrock-runtime",
+                api_key=SecretStr("tenant-a-api-key"),
+            )
+
+            # Create second client with different API key
+            create_aws_client(
+                "bedrock-runtime",
+                api_key=SecretStr("tenant-b-api-key"),
+            )
+
+        # Verify two separate sessions were created
+        assert len(sessions_created) == 2
+
+        # Verify each session has its own token provider with the correct token
+        for i, (session_data, expected_token) in enumerate(
+            zip(sessions_created, ["tenant-a-api-key", "tenant-b-api-key"])
+        ):
+            bc_session = session_data["kwargs"].get("botocore_session")
+            assert bc_session is not None, f"Session {i} missing botocore_session"
+
+            token_provider_chain = bc_session.get_component("token_provider")
+            static_provider = token_provider_chain._providers[0]
+
+            token = static_provider.load_token()
+            assert token.token == expected_token, f"Session {i} has wrong token"
+
+        # Verify environment variable was never set
+        assert os.environ.get("AWS_BEARER_TOKEN_BEDROCK") is None
 
 
 def test_api_key_with_region(
     mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
+    """Test that api_key works with region_name."""
     session_mock, client_mock, client_instance = mock_boto3
 
     with mock.patch.dict(os.environ, {}, clear=True):
@@ -489,11 +593,13 @@ def test_api_key_with_region(
             api_key=SecretStr("test-api-key"),
         )
 
-    session_mock.assert_not_called()
-    client_mock.assert_called_once_with(
-        service_name="bedrock-runtime",
-        region_name="us-west-2",
-    )
+    # The new implementation uses boto3.Session with a custom botocore_session
+    session_mock.assert_called_once()
+    session_instance = session_mock.return_value
+    session_instance.client.assert_called_once()
+    client_call_kwargs = session_instance.client.call_args[1]
+    assert client_call_kwargs["service_name"] == "bedrock-runtime"
+    assert client_call_kwargs["region_name"] == "us-west-2"
     assert client == client_instance
 
 
@@ -512,6 +618,7 @@ def test_api_key_takes_precedence_over_creds(
     conflicting_creds: Dict[str, Any],
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Test that api_key takes precedence over AWS credentials."""
     session_mock, client_mock, client_instance = mock_boto3
 
     with mock.patch.dict(os.environ, {}, clear=True):
@@ -520,13 +627,18 @@ def test_api_key_takes_precedence_over_creds(
             api_key=SecretStr("test-api-key"),
             **conflicting_creds,
         )
-        assert os.environ.get("AWS_BEARER_TOKEN_BEDROCK") == "test-api-key"
+        # Should NOT set the environment variable anymore
+        assert os.environ.get("AWS_BEARER_TOKEN_BEDROCK") is None
 
     # Verify warning was logged
     assert "Both api_key and AWS credentials were provided" in caplog.text
 
-    session_mock.assert_not_called()
-    client_mock.assert_called_once_with(service_name="bedrock-runtime")
+    # The new implementation uses boto3.Session with a custom botocore_session
+    session_mock.assert_called_once()
+    session_instance = session_mock.return_value
+    session_instance.client.assert_called_once()
+    client_call_kwargs = session_instance.client.call_args[1]
+    assert client_call_kwargs["service_name"] == "bedrock-runtime"
     assert client == client_instance
 
 
@@ -582,6 +694,7 @@ def test_api_key_from_env_var_preserved_when_not_provided(
 def test_api_key_overrides_existing_env_var(
     mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
+    """Test that api_key is used for auth without modifying env var."""
     session_mock, client_mock, client_instance = mock_boto3
 
     with mock.patch.dict(
@@ -591,10 +704,14 @@ def test_api_key_overrides_existing_env_var(
             "bedrock-runtime",
             api_key=SecretStr("new-api-key"),
         )
-        assert os.environ.get("AWS_BEARER_TOKEN_BEDROCK") == "new-api-key"
+        # Should NOT modify the environment variable anymore
+        # The token is injected via the token provider chain instead
+        assert os.environ.get("AWS_BEARER_TOKEN_BEDROCK") == "old-env-key"
 
-    session_mock.assert_not_called()
-    client_mock.assert_called_once_with(service_name="bedrock-runtime")
+    # The new implementation uses boto3.Session with a custom botocore_session
+    session_mock.assert_called_once()
+    session_instance = session_mock.return_value
+    session_instance.client.assert_called_once()
     assert client == client_instance
 
 
@@ -612,39 +729,24 @@ def mock_bedrock_runtime_sdk() -> Generator[
     Tuple[mock.MagicMock, mock.MagicMock], None, None
 ]:
     """Mock aws_sdk_bedrock_runtime so create_aws_bedrock_runtime_client works."""
+    mock_config_cls = mock.MagicMock(return_value=_mock_config_instance)
+    mock_client_cls = mock.MagicMock(return_value=_mock_client_instance)
+
     with (
         mock.patch.dict(
             "sys.modules",
             {
                 "aws_sdk_bedrock_runtime": mock.MagicMock(),
-                "aws_sdk_bedrock_runtime.client": mock.MagicMock(),
-                "aws_sdk_bedrock_runtime.config": mock.MagicMock(),
+                "aws_sdk_bedrock_runtime.client": mock.MagicMock(
+                    BedrockRuntimeClient=mock_client_cls
+                ),
+                "aws_sdk_bedrock_runtime.config": mock.MagicMock(
+                    Config=mock_config_cls
+                ),
             },
         ),
-        mock.patch(
-            "langchain_aws.utils.create_aws_bedrock_runtime_client.__module__",
-            create=True,
-        ),
     ):
-        # We need to patch at the point of import inside the function
-        mock_config_cls = mock.MagicMock(return_value=_mock_config_instance)
-        mock_client_cls = mock.MagicMock(return_value=_mock_client_instance)
-
-        with (
-            mock.patch.dict(
-                "sys.modules",
-                {
-                    "aws_sdk_bedrock_runtime": mock.MagicMock(),
-                    "aws_sdk_bedrock_runtime.client": mock.MagicMock(
-                        BedrockRuntimeClient=mock_client_cls
-                    ),
-                    "aws_sdk_bedrock_runtime.config": mock.MagicMock(
-                        Config=mock_config_cls
-                    ),
-                },
-            ),
-        ):
-            yield mock_config_cls, mock_client_cls
+        yield mock_config_cls, mock_client_cls
 
 
 def _create_client(**kwargs: Any) -> Any:
