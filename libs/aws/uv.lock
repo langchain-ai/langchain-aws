@@ -120,6 +120,18 @@ wheels = [
 ]
 
 [[package]]
+name = "aws-bedrock-token-generator"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "botocore" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fb/39/cf1c2e12bc5a84af0f96a546481213f81fa6e7927d2bbabd81758c6558ca/aws_bedrock_token_generator-1.1.0.tar.gz", hash = "sha256:95ccb07f63a91ac486561f6df05cc4e04784c8ff5086dc687ed9c5fd3ab1b5ba", size = 19123, upload-time = "2025-07-29T19:53:19.511Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f9/fd/745ece98870c3824d294bcdce5dc5e15381188a41bc80832c246b205e40e/aws_bedrock_token_generator-1.1.0-py3-none-any.whl", hash = "sha256:bd12854f7c7e52dde5d980d369379f12d0cc5f0855099d87f38688b0f9de5cd4", size = 10291, upload-time = "2025-07-29T19:53:18.704Z" },
+]
+
+[[package]]
 name = "aws-sdk-bedrock-runtime"
 version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1031,6 +1043,10 @@ anthropic = [
     { name = "anthropic", extra = ["bedrock"] },
     { name = "langchain-anthropic" },
 ]
+mantle = [
+    { name = "aws-bedrock-token-generator" },
+    { name = "openai" },
+]
 nova-sonic = [
     { name = "aws-sdk-bedrock-runtime", marker = "python_full_version >= '3.12'" },
 ]
@@ -1070,8 +1086,10 @@ test = [
 ]
 test-integration = [
     { name = "anthropic", extra = ["bedrock"] },
+    { name = "aws-bedrock-token-generator" },
     { name = "aws-sdk-bedrock-runtime", marker = "python_full_version >= '3.12'" },
     { name = "langchain-anthropic" },
+    { name = "openai" },
 ]
 typing = [
     { name = "langchain-anthropic" },
@@ -1082,6 +1100,7 @@ typing = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", extras = ["bedrock"], marker = "extra == 'anthropic'" },
+    { name = "aws-bedrock-token-generator", marker = "extra == 'mantle'", specifier = ">=1.1.0" },
     { name = "aws-sdk-bedrock-runtime", marker = "python_full_version >= '3.12' and extra == 'nova-sonic'" },
     { name = "beautifulsoup4", marker = "extra == 'tools'", specifier = ">=4.13.4" },
     { name = "bedrock-agentcore", marker = "python_full_version >= '3.10' and extra == 'tools'", specifier = ">=1.4.0" },
@@ -1089,11 +1108,12 @@ requires-dist = [
     { name = "langchain-anthropic", marker = "extra == 'anthropic'" },
     { name = "langchain-core", specifier = ">=1.4.7" },
     { name = "numpy", specifier = ">=1.0.0,<3" },
+    { name = "openai", marker = "extra == 'mantle'", specifier = ">=1.106.0" },
     { name = "playwright", marker = "extra == 'tools'", specifier = ">=1.53.0" },
     { name = "pydantic", specifier = ">=2.10.6,<3" },
     { name = "valkey-glide-sync", marker = "extra == 'valkey'", specifier = ">=2.0.0" },
 ]
-provides-extras = ["tools", "anthropic", "valkey", "nova-sonic"]
+provides-extras = ["tools", "anthropic", "valkey", "nova-sonic", "mantle"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1120,8 +1140,10 @@ test = [
 ]
 test-integration = [
     { name = "anthropic", extras = ["bedrock"] },
+    { name = "aws-bedrock-token-generator", specifier = ">=1.1.0" },
     { name = "aws-sdk-bedrock-runtime", marker = "python_full_version >= '3.12'" },
     { name = "langchain-anthropic" },
+    { name = "openai", specifier = ">=1.106.0" },
 ]
 typing = [
     { name = "langchain-anthropic" },
@@ -1659,6 +1681,25 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/94/a8/f98e50356cf167df656c526c2dfeec2d7dde182f2a3da4b458a5938e2776/numpy-2.5.1-cp314-cp314t-win32.whl", hash = "sha256:6eab239876581b2b3c5a242281b6007bbdbcd1c7085d7709bb57c5929b11e6bf", size = 6263298, upload-time = "2026-07-04T17:07:53.445Z" },
     { url = "https://files.pythonhosted.org/packages/72/ac/96ae880cdecad0b3275d9359fcec72667b49a4863c9f12942e43679dda02/numpy-2.5.1-cp314-cp314t-win_amd64.whl", hash = "sha256:83ce9c80d5b521b0d77ddcbe5447c218d247929b6cc056ca5351342accfff0af", size = 12748623, upload-time = "2026-07-04T17:07:55.384Z" },
     { url = "https://files.pythonhosted.org/packages/a1/5a/4d2b1601df3602dba7a14f3348ba9bfe94a18adb428e693df6154c293831/numpy-2.5.1-cp314-cp314t-win_arm64.whl", hash = "sha256:5a6db61f9aaa57e369905c67d852045d3c4f7126405b29d09b19dec118e9c9cb", size = 10697674, upload-time = "2026-07-04T17:07:58.506Z" },
+]
+
+[[package]]
+name = "openai"
+version = "2.30.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "jiter" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "tqdm" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/88/15/52580c8fbc16d0675d516e8749806eda679b16de1e4434ea06fb6feaa610/openai-2.30.0.tar.gz", hash = "sha256:92f7661c990bda4b22a941806c83eabe4896c3094465030dd882a71abe80c885", size = 676084, upload-time = "2026-03-25T22:08:59.96Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/9e/5bfa2270f902d5b92ab7d41ce0475b8630572e71e349b2a4996d14bdda93/openai-2.30.0-py3-none-any.whl", hash = "sha256:9a5ae616888eb2748ec5e0c5b955a51592e0b201a11f4262db920f2a78c5231d", size = 1146656, upload-time = "2026-03-25T22:08:58.2Z" },
 ]
 
 [[package]]
@@ -2588,6 +2629,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/12/64/da524626d3b9cc40c168a13da8335fe1c51be12c0a63685cc6db7308daae/tomli-2.4.1-cp314-cp314t-win_amd64.whl", hash = "sha256:2c1c351919aca02858f740c6d33adea0c5deea37f9ecca1cc1ef9e884a619d26", size = 121196, upload-time = "2026-03-25T20:22:01.169Z" },
     { url = "https://files.pythonhosted.org/packages/5a/cd/e80b62269fc78fc36c9af5a6b89c835baa8af28ff5ad28c7028d60860320/tomli-2.4.1-cp314-cp314t-win_arm64.whl", hash = "sha256:eab21f45c7f66c13f2a9e0e1535309cee140182a9cdae1e041d02e47291e8396", size = 100393, upload-time = "2026-03-25T20:22:02.137Z" },
     { url = "https://files.pythonhosted.org/packages/7b/61/cceae43728b7de99d9b847560c262873a1f6c98202171fd5ed62640b494b/tomli-2.4.1-py3-none-any.whl", hash = "sha256:0d85819802132122da43cb86656f8d1f8c6587d54ae7dcaf30e90533028b49fe", size = 14583, upload-time = "2026-03-25T20:22:03.012Z" },
+]
+
+[[package]]
+name = "tqdm"
+version = "4.67.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/09/a9/6ba95a270c6f1fbcd8dac228323f2777d886cb206987444e4bce66338dd4/tqdm-4.67.3.tar.gz", hash = "sha256:7d825f03f89244ef73f1d4ce193cb1774a8179fd96f31d7e1dcde62092b960bb", size = 169598, upload-time = "2026-02-03T17:35:53.048Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/16/e1/3079a9ff9b8e11b846c6ac5c8b5bfb7ff225eee721825310c91b3b50304f/tqdm-4.67.3-py3-none-any.whl", hash = "sha256:ee1e4c0e59148062281c49d80b25b67771a127c85fc9676d3be5f243206826bf", size = 78374, upload-time = "2026-02-03T17:35:50.982Z" },
 ]
 
 [[package]]
