@@ -5,12 +5,14 @@ from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 
 if TYPE_CHECKING:
     from langchain_aws.chat_models.anthropic import ChatAnthropicBedrock
+    from langchain_aws.chat_models.bedrock_mantle import ChatBedrockMantle
     from langchain_aws.chat_models.bedrock_nova_sonic import ChatBedrockNovaSonic
 
 __all__ = [
     "ChatAnthropicBedrock",
     "ChatBedrock",
     "ChatBedrockConverse",
+    "ChatBedrockMantle",
     "ChatBedrockNovaSonic",
 ]
 
@@ -21,6 +23,10 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "ChatAnthropicBedrock": (
         "langchain_aws.chat_models.anthropic",
         'pip install "langchain-aws[anthropic]"',
+    ),
+    "ChatBedrockMantle": (
+        "langchain_aws.chat_models.bedrock_mantle",
+        'pip install "langchain-aws[mantle]"',
     ),
     "ChatBedrockNovaSonic": (
         "langchain_aws.chat_models.bedrock_nova_sonic",
