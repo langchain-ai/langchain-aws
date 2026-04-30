@@ -475,7 +475,11 @@ class DynamoDBSaver(BaseCheckpointSaver):
         Returns:
             AsyncIterator[CheckpointTuple]: An iterator of checkpoint tuples.
         """
-        for item in self.list(config, filter=filter, before=before, limit=limit):
+        items = await run_in_executor(
+            None,
+            lambda: list(self.list(config, filter=filter, before=before, limit=limit)),
+        )
+        for item in items:
             yield item
 
     def delete_thread(self, thread_id: str) -> None:

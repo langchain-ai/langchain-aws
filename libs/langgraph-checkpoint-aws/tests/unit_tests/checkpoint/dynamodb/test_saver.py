@@ -1,6 +1,6 @@
 """Comprehensive unit tests for DynamoDBSaver."""
 
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from botocore.config import Config
@@ -393,3 +393,28 @@ class TestDynamoDBSaverAsyncList:
 
         assert len(result) == 1
         assert result[0].checkpoint["id"] == "cp1"
+
+    @pytest.mark.asyncio
+    async def test_alist_uses_run_in_executor(self, mock_saver_dependencies):
+        """Test that alist delegates blocking list() calls to a thread-pool executor."""
+        mock_repo = Mock()
+        mock_saver_dependencies["repo"].return_value = mock_repo
+        mock_repo.list_checkpoints.return_value = iter([])
+        mock_repo.get_pending_writes.return_value = []
+
+        saver = DynamoDBSaver(table_name=TEST_TABLE_NAME)
+        config = {
+            "configurable": {
+                "thread_id": TEST_THREAD_ID,
+                "checkpoint_ns": TEST_CHECKPOINT_NS,
+            }
+        }
+
+        with patch(
+            "langgraph_checkpoint_aws.checkpoint.dynamodb.saver.run_in_executor"
+        ) as mock_executor:
+            mock_executor.return_value = []
+            result = [item async for item in saver.alist(config)]
+
+        mock_executor.assert_awaited_once()
+        assert result == []
