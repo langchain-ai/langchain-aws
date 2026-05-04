@@ -41,6 +41,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _camel_to_snake_keys,
     _convert_tool_blocks_to_text,
     _extract_response_metadata,
+    _extract_usage_metadata,
     _format_data_content_block,
     _format_tools,
     _has_tool_use_or_result_blocks,
@@ -809,6 +810,28 @@ def test__extract_response_metadata() -> None:
     }
     response_metadata = _extract_response_metadata(response)
     assert response_metadata["metrics"]["latencyMs"] == [191]
+
+
+def test__extract_usage_metadata_with_prompt_caching() -> None:
+    response = {
+        "usage": {
+            "inputTokens": 2,
+            "outputTokens": 316,
+            "totalTokens": 3148,
+            "cacheReadInputTokens": 2830,
+            "cacheWriteInputTokens": 0,
+        }
+    }
+
+    usage_metadata = _extract_usage_metadata(response)
+
+    assert usage_metadata["input_tokens"] == 2832
+    assert usage_metadata["output_tokens"] == 316
+    assert usage_metadata["total_tokens"] == 3148
+    assert usage_metadata["input_token_details"] == {
+        "cache_read": 2830,
+        "cache_creation": 0,
+    }
 
 
 @mock.patch.dict(os.environ, {"AWS_REGION": "us-west-1"})
