@@ -1997,11 +1997,14 @@ def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:
 def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
     usage_dict = response.pop("usage")
 
-    input_tokens = usage_dict.get("inputTokens", 0)
+    bedrock_input_tokens = usage_dict.get("inputTokens", 0)
     output_tokens = usage_dict.get("outputTokens", 0)
-    total_tokens = usage_dict.get("totalTokens", 0)
     cache_read_input_tokens = usage_dict.get("cacheReadInputTokens", 0)
     cache_write_input_tokens = usage_dict.get("cacheWriteInputTokens", 0)
+    input_tokens = (
+        bedrock_input_tokens + cache_read_input_tokens + cache_write_input_tokens
+    )
+    total_tokens = usage_dict.get("totalTokens", input_tokens + output_tokens)
 
     usage = UsageMetadata(
         input_tokens=input_tokens,
