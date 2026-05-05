@@ -53,7 +53,12 @@ from langchain_core.messages.tool import tool_call_chunk
 from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
 from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
+from langchain_core.runnables import (
+    Runnable,
+    RunnableLambda,
+    RunnableMap,
+    RunnablePassthrough,
+)
 from langchain_core.tools import BaseTool
 from langchain_core.utils import get_pydantic_field_names, secret_from_env
 from langchain_core.utils.function_calling import (
@@ -1503,11 +1508,17 @@ class ChatBedrockConverse(BaseChatModel):
         schema: _DictOrPydanticClass,
         *,
         include_raw: bool = False,
-        method: Literal["function_calling", "json_schema"] = "function_calling",
+        method: Literal[
+            "function_calling", "json_schema", "prompt_prefill"
+        ] = "function_calling",
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
         if method == "json_schema":
             return self._with_structured_output_json_schema(
+                schema, include_raw=include_raw, **kwargs
+            )
+        if method == "prompt_prefill":
+            return self._with_structured_output_prompt_prefill(
                 schema, include_raw=include_raw, **kwargs
             )
         return self._with_structured_output_function_calling(
@@ -1659,6 +1670,76 @@ class ChatBedrockConverse(BaseChatModel):
             return RunnableMap(raw=llm) | parser_with_fallback
         else:
             return llm | output_parser
+
+    def _with_structured_output_prompt_prefill(
+        self,
+        schema: _DictOrPydanticClass,
+        *,
+        include_raw: bool = False,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
+        """Structured output via assistant-message prefill and a stop sequence.
+
+        Targets models that lack native JSON-schema or adequate performance in forced tool-calling mode
+        (notably Amazon Nova). The system message is augmented with the JSON schema,
+        an assistant turn is prefilled with ``\\`\\`\\`json`` to force the model to
+        start a JSON code block, and ``stop=["\\`\\`\\`"]`` halts generation at the
+        closing fence. The resulting text is parsed against ``schema``.
+        """
+        if isinstance(schema, type) and is_basemodel_subclass(schema):
+            json_schema = schema.model_json_schema()
+        elif isinstance(schema, dict):
+            json_schema = copy.deepcopy(schema)
+        else:
+            msg = (
+                f"Unsupported schema type: {type(schema)}. "
+                "Expected a Pydantic model class or a dict."
+            )
+            raise ValueError(msg)
+
+        instructions = _prompt_prefill_instructions(json_schema)
+
+        def _prepare(inp: LanguageModelInput) -> List[BaseMessage]:
+            messages = self._convert_input(inp).to_messages()
+            messages = _append_to_system_message(messages, instructions)
+            return [*messages, AIMessage(content=_PROMPT_PREFILL_VALUE)]
+
+        prepare = RunnableLambda(_prepare)
+
+        try:
+            llm = self.bind(
+                stop=[_PROMPT_PREFILL_STOP],
+                ls_structured_output_format={
+                    "kwargs": {"method": "prompt_prefill"},
+                    "schema": json_schema,
+                },
+                **kwargs,
+            )
+        except Exception:
+            llm = self.bind(stop=[_PROMPT_PREFILL_STOP], **kwargs)
+
+        if isinstance(schema, type) and is_basemodel_subclass(schema):
+            from langchain_core.output_parsers import PydanticOutputParser
+
+            text_parser: OutputParserLike = PydanticOutputParser(pydantic_object=schema)
+        else:
+            from langchain_core.output_parsers import JsonOutputParser
+
+            text_parser = JsonOutputParser()
+
+        extract_then_parse = RunnableLambda(_extract_prompt_prefill_text) | text_parser
+
+        if include_raw:
+            parser_assign = RunnablePassthrough.assign(
+                parsed=itemgetter("raw") | extract_then_parse,
+                parsing_error=lambda _: None,
+            )
+            parser_none = RunnablePassthrough.assign(parsed=lambda _: None)
+            parser_with_fallback = parser_assign.with_fallbacks(
+                [parser_none], exception_key="parsing_error"
+            )
+            return prepare | RunnableMap(raw=llm) | parser_with_fallback
+        return prepare | llm | extract_then_parse
 
     def _converse_params(
         self,
@@ -1849,7 +1930,8 @@ class ChatBedrockConverse(BaseChatModel):
 _base_wso_doc = BaseChatModel.with_structured_output.__doc__ or ""
 _method_doc = """\
     method: The method for structured output generation. Supported
-        options are ``"function_calling"`` and ``"json_schema"``.
+        options are ``"function_calling"``, ``"json_schema"``, and
+        ``"prompt_prefill"``.
 
         - ``"function_calling"`` (default): Uses forced tool calling to
           generate structured output.
@@ -1860,11 +1942,85 @@ _method_doc = """\
           documentation
           <https://docs.aws.amazon.com/bedrock/latest/userguide/structured-output.html>`_
           for the latest supported models.
+        - ``"prompt_prefill"``: Augments the system message with the JSON
+          schema, prefills an assistant turn with a ``\\`\\`\\`json`` fence
+          and stops generation at the closing fence. Useful for models
+          without native JSON-schema (Amazon Nova)).
 
 """
 ChatBedrockConverse.with_structured_output.__doc__ = _base_wso_doc.replace(
     "Raises:", _method_doc + "Raises:", 1
 )
+
+
+_PROMPT_PREFILL_VALUE = "```json"
+_PROMPT_PREFILL_STOP = "```"
+
+
+def _prompt_prefill_instructions(json_schema: dict) -> str:
+    return (
+        "You MUST respond with a single JSON object matching the schema below. "
+        "Do not include any preamble, explanation, or text outside the JSON. "
+        "Wrap the JSON in a ```json ... ``` fenced code block.\n\n"
+        "## Response Schema:\n"
+        f"```json\n{json.dumps(json_schema, indent=2)}\n```"
+    )
+
+
+def _append_to_system_message(
+    messages: List[BaseMessage], text: str
+) -> List[BaseMessage]:
+    """Append ``text`` to the existing leading SystemMessage, or prepend one.
+
+    For block-style content, appends to the *last* text block (rather than as a
+    new trailing block) so any subsequent cache-point blocks continue to cover
+    the appended text.
+    """
+    if not messages or not isinstance(messages[0], SystemMessage):
+        return [SystemMessage(content=text), *messages]
+
+    system_message = messages[0]
+    existing = system_message.content
+    if isinstance(existing, str):
+        new_content: Any = existing + "\n\n" + text
+    else:
+        new_content = list(existing)
+        last_text_idx = next(
+            (
+                i
+                for i in range(len(new_content) - 1, -1, -1)
+                if isinstance(new_content[i], dict) and "text" in new_content[i]
+            ),
+            None,
+        )
+        if last_text_idx is None:
+            new_content.append({"text": text})
+        else:
+            block = dict(new_content[last_text_idx])
+            block["text"] = block["text"] + "\n\n" + text
+            new_content[last_text_idx] = block
+
+    return [SystemMessage(content=new_content), *messages[1:]]
+
+
+def _extract_prompt_prefill_text(message: AIMessage) -> str:
+    """Extract JSON text from a Nova prompt-prefill response."""
+    content = message.content
+    if isinstance(content, list):
+        text_parts = [
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") in (None, "text")
+        ]
+        text = "".join(text_parts)
+    else:
+        text = content or ""
+    return (
+        text.strip()
+        .removeprefix(_PROMPT_PREFILL_VALUE)
+        .removesuffix(_PROMPT_PREFILL_STOP)
+        .strip()
+    )
 
 
 def _handle_bedrock_error(error: ClientError) -> None:

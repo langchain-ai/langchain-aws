@@ -5429,3 +5429,160 @@ def test_structured_output_tool_choice_not_supported(thinking_model: str) -> Non
     tool_spec = tool_config["tools"][0]["toolSpec"]
     assert tool_spec["name"] == "ClassifyQuery"
     assert call_kwargs["additionalModelRequestFields"]["thinking"]["type"] == "enabled"
+
+
+def test_with_structured_output_prompt_prefill_pydantic() -> None:
+    """method='prompt_prefill' wraps the LLM with prep + stop binding + parser."""
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+    from langchain_core.runnables import RunnableLambda
+
+    from langchain_aws.chat_models.bedrock_converse import (
+        _PROMPT_PREFILL_STOP,
+        _PROMPT_PREFILL_VALUE,
+    )
+
+    chat_model = ChatBedrockConverse(
+        model="us.amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )
+    structured = chat_model.with_structured_output(GetWeather, method="prompt_prefill")
+
+    # Pipeline: prepare(RunnableLambda) | bound_llm | extract+parse
+    first_step = structured.first  # type: ignore[attr-defined]
+    assert isinstance(first_step, RunnableLambda)
+
+    bound = structured.middle[0]  # type: ignore[attr-defined]
+    bound_kwargs = cast(RunnableBinding, bound).kwargs
+    assert bound_kwargs.get("stop") == [_PROMPT_PREFILL_STOP]
+    assert bound_kwargs["ls_structured_output_format"]["kwargs"]["method"] == (
+        "prompt_prefill"
+    )
+
+    # Prep prepends a SystemMessage with schema, leaves user input alone, and
+    # appends an AIMessage prefill.
+    prepared = first_step.invoke([HumanMessage(content="What's the weather?")])
+    assert len(prepared) == 3
+    assert isinstance(prepared[0], SystemMessage)
+    assert "Response Schema" in prepared[0].content
+    assert "location" in prepared[0].content
+    assert isinstance(prepared[1], HumanMessage)
+    assert prepared[1].content == "What's the weather?"
+    assert isinstance(prepared[-1], AIMessage)
+    assert prepared[-1].content == _PROMPT_PREFILL_VALUE
+
+
+def test_with_structured_output_prompt_prefill_accepts_string_input() -> None:
+    """A bare string input is coerced via _convert_input — no SystemMessage needed."""
+    chat_model = ChatBedrockConverse(
+        model="us.amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )
+    structured = chat_model.with_structured_output(GetWeather, method="prompt_prefill")
+    prepared = structured.first.invoke("What's the weather?")  # type: ignore[attr-defined]
+    assert len(prepared) == 3
+    assert "Response Schema" in prepared[0].content
+
+
+def test_with_structured_output_prompt_prefill_appends_to_existing_system() -> None:
+    """Schema is appended to an existing string-content SystemMessage."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    chat_model = ChatBedrockConverse(
+        model="us.amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )
+    structured = chat_model.with_structured_output(GetWeather, method="prompt_prefill")
+    prepared = structured.first.invoke(  # type: ignore[attr-defined]
+        [
+            SystemMessage(content="You are a weather bot."),
+            HumanMessage(content="hi"),
+        ]
+    )
+    assert len(prepared) == 3
+    assert isinstance(prepared[0], SystemMessage)
+    assert prepared[0].content.startswith("You are a weather bot.")
+    assert "Response Schema" in prepared[0].content
+
+
+def test_with_structured_output_prompt_prefill_appends_inside_last_text_block() -> None:
+    """For block-style system content, schema is merged into the last text block.
+
+    This keeps any trailing cachePoint block covering the appended schema text.
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    chat_model = ChatBedrockConverse(
+        model="us.amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )
+    structured = chat_model.with_structured_output(GetWeather, method="prompt_prefill")
+    cache_point = ChatBedrockConverse.create_cache_point()
+    prepared = structured.first.invoke(  # type: ignore[attr-defined]
+        [
+            SystemMessage(content=[{"text": "You are a weather bot."}, cache_point]),
+            HumanMessage(content="hi"),
+        ]
+    )
+    sys_blocks = prepared[0].content
+    assert isinstance(sys_blocks, list)
+    assert len(sys_blocks) == 2
+    # Schema text merged into the existing text block.
+    assert sys_blocks[0]["text"].startswith("You are a weather bot.")
+    assert "Response Schema" in sys_blocks[0]["text"]
+    # Cache-point block remains last so it covers the appended schema.
+    assert sys_blocks[1] == cache_point
+
+
+def test_with_structured_output_prompt_prefill_dict_schema() -> None:
+    """method='prompt_prefill' accepts a dict JSON-schema."""
+    schema = {
+        "title": "Joke",
+        "type": "object",
+        "properties": {"setup": {"type": "string"}},
+        "required": ["setup"],
+    }
+    chat_model = ChatBedrockConverse(
+        model="us.amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )
+    structured = chat_model.with_structured_output(schema, method="prompt_prefill")
+    prepared = structured.first.invoke("hi")  # type: ignore[attr-defined]
+    assert "setup" in prepared[0].content
+    # Original dict not mutated.
+    assert "Response Schema" not in json.dumps(schema)
+
+
+def test_with_structured_output_prompt_prefill_extract_text() -> None:
+    """The text extractor strips fences and concatenates text blocks."""
+    from langchain_core.messages import AIMessage
+
+    from langchain_aws.chat_models.bedrock_converse import (
+        _extract_prompt_prefill_text,
+    )
+
+    msg = AIMessage(content='\n{"location": "NYC"}\n```')
+    assert _extract_prompt_prefill_text(msg) == '{"location": "NYC"}'
+
+    msg2 = AIMessage(
+        content=[
+            {"text": '```json\n{"location": '},
+            {"text": '"NYC"}\n```'},
+        ]
+    )
+    assert _extract_prompt_prefill_text(msg2) == '{"location": "NYC"}'
+
+
+def test_with_structured_output_prompt_prefill_include_raw() -> None:
+    """include_raw=True wraps the LLM in a RunnableMap with raw + parsed keys."""
+    chat_model = ChatBedrockConverse(
+        model="us.amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )
+    structured = chat_model.with_structured_output(
+        GetWeather, method="prompt_prefill", include_raw=True
+    )
+    # Pipeline shape: prepare | RunnableMap(raw=llm) | parser_with_fallback
+    assert structured.first is not None  # type: ignore[attr-defined]
+    last = structured.last  # type: ignore[attr-defined]
+    # Last step should reference the "parsed" / "parsing_error" keys via fallback.
+    assert "parsing_error" in repr(last) or "parsed" in repr(last)
