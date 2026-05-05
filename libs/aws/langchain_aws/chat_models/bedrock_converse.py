@@ -1680,8 +1680,9 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
         """Structured output via assistant-message prefill and a stop sequence.
 
-        Targets models that lack native JSON-schema or adequate performance in forced tool-calling mode
-        (notably Amazon Nova). The system message is augmented with the JSON schema,
+        Targets models that lack native JSON-schema support or adequate
+        performance in forced tool-calling mode (notably Amazon Nova). The
+        system message is augmented with the JSON schema,
         an assistant turn is prefilled with ``\\`\\`\\`json`` to force the model to
         start a JSON code block, and ``stop=["\\`\\`\\`"]`` halts generation at the
         closing fence. The resulting text is parsed against ``schema``.
