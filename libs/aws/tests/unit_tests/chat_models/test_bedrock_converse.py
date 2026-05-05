@@ -5500,8 +5500,10 @@ def test_with_structured_output_prompt_prefill_appends_to_existing_system() -> N
     )
     assert len(prepared) == 3
     assert isinstance(prepared[0], SystemMessage)
-    assert prepared[0].content.startswith("You are a weather bot.")
-    assert "Response Schema" in prepared[0].content
+    sys_content = prepared[0].content
+    assert isinstance(sys_content, str)
+    assert sys_content.startswith("You are a weather bot.")
+    assert "Response Schema" in sys_content
 
 
 def test_with_structured_output_prompt_prefill_appends_inside_last_text_block() -> None:
