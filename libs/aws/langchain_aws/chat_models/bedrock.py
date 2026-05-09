@@ -628,8 +628,13 @@ def _format_anthropic_messages(
                                 )
                             )
                         else:
-                            item.pop("text", None)
-                            tool_blocks.append(item)
+                            tool_blocks.append(
+                                {
+                                    k: v
+                                    for k, v in item.items()
+                                    if k not in ("text", "index", "partial_json")
+                                }
+                            )
                     elif item["type"] in ["thinking", "redacted_thinking"]:
                         # Store thinking blocks separately
                         thinking_blocks.append(
