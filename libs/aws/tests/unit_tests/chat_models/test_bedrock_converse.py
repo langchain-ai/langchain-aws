@@ -1698,6 +1698,54 @@ def test__lc_content_to_bedrock_mime_types_invalid() -> None:
         )
 
 
+def test__lc_content_to_bedrock_image_standard_format() -> None:
+    """type='image' with base64/mime_type keys (langchain-core cross-provider format)."""
+    image_data = base64.b64encode(b"image_test_data").decode("utf-8")
+
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "image",
+            "base64": image_data,
+            "mime_type": "image/jpeg",
+        }
+    ]
+
+    expected = [
+        {
+            "image": {
+                "format": "jpeg",
+                "source": {"bytes": base64.b64decode(image_data)},
+            }
+        }
+    ]
+
+    assert _lc_content_to_bedrock(content) == expected
+
+
+def test__lc_content_to_bedrock_video_standard_format() -> None:
+    """type='video' with base64/mime_type keys (langchain-core cross-provider format)."""
+    video_data = base64.b64encode(b"video_test_data").decode("utf-8")
+
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "video",
+            "base64": video_data,
+            "mime_type": "video/mp4",
+        }
+    ]
+
+    expected = [
+        {
+            "video": {
+                "format": "mp4",
+                "source": {"bytes": base64.b64decode(video_data)},
+            }
+        }
+    ]
+
+    assert _lc_content_to_bedrock(content) == expected
+
+
 def test__lc_content_to_bedrock_document_standard_format() -> None:
     """type='document' with base64/mime_type keys should work like type='file'."""
     doc_data = base64.b64encode(b"pdf_test_data").decode("utf-8")
