@@ -1698,6 +1698,81 @@ def test__lc_content_to_bedrock_mime_types_invalid() -> None:
         )
 
 
+def test__lc_content_to_bedrock_document_standard_format() -> None:
+    """type='document' with base64/mime_type keys should work like type='file'."""
+    doc_data = base64.b64encode(b"pdf_test_data").decode("utf-8")
+
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "document",
+            "base64": doc_data,
+            "mime_type": "application/pdf",
+            "name": "report.pdf",
+        }
+    ]
+
+    expected = [
+        {
+            "document": {
+                "format": "pdf",
+                "name": "report.pdf",
+                "source": {"bytes": base64.b64decode(doc_data)},
+            }
+        }
+    ]
+
+    assert _lc_content_to_bedrock(content) == expected
+
+
+def test__lc_content_to_bedrock_document_standard_format_no_name() -> None:
+    """type='document' without a name should warn and auto-generate one."""
+    doc_data = base64.b64encode(b"pdf_test_data").decode("utf-8")
+
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "document",
+            "base64": doc_data,
+            "mime_type": "application/pdf",
+        }
+    ]
+
+    import warnings as _warnings
+
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter("always")
+        result = _lc_content_to_bedrock(content)
+
+    assert len(caught) == 1
+    assert "filename" in str(caught[0].message).lower()
+    assert "name" in result[0]["document"]
+
+
+def test__lc_content_to_bedrock_document_bedrock_format_unchanged() -> None:
+    """Existing Bedrock-format document blocks must continue to work."""
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "document",
+            "document": {
+                "format": "pdf",
+                "name": "existing.pdf",
+                "source": {"bytes": b"raw"},
+            },
+        }
+    ]
+
+    expected = [
+        {
+            "document": {
+                "format": "pdf",
+                "name": "existing.pdf",
+                "source": {"bytes": b"raw"},
+            }
+        }
+    ]
+
+    assert _lc_content_to_bedrock(content) == expected
+
+
 def test__lc_content_to_bedrock_empty_content() -> None:
     content: List[Union[str, Dict[str, Any]]] = []
 
