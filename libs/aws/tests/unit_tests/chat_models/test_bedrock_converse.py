@@ -1699,7 +1699,7 @@ def test__lc_content_to_bedrock_mime_types_invalid() -> None:
 
 
 def test__lc_content_to_bedrock_image_standard_format() -> None:
-    """type='image' with base64/mime_type keys (langchain-core cross-provider format)."""
+    """type='image' with base64/mime_type keys (langchain-core format)."""
     image_data = base64.b64encode(b"image_test_data").decode("utf-8")
 
     content: List[Union[str, Dict[str, Any]]] = [
@@ -1723,7 +1723,7 @@ def test__lc_content_to_bedrock_image_standard_format() -> None:
 
 
 def test__lc_content_to_bedrock_video_standard_format() -> None:
-    """type='video' with base64/mime_type keys (langchain-core cross-provider format)."""
+    """type='video' with base64/mime_type keys (langchain-core format)."""
     video_data = base64.b64encode(b"video_test_data").decode("utf-8")
 
     content: List[Union[str, Dict[str, Any]]] = [

@@ -2228,7 +2228,9 @@ def _format_data_content_block(block: dict) -> dict:
                 )
                 formatted_block["document"]["name"] = uuid.uuid4().hex[:12]
         else:
-            error_message = "Document data only supported through in-line base64 format."
+            error_message = (
+                "Document data only supported through in-line base64 format."
+            )
             raise ValueError(error_message)
 
     elif block["type"] == "video":
