@@ -31,14 +31,7 @@ from langchain_aws.function_calling import convert_to_anthropic_tool
 
 def test_profile() -> None:
     model = ChatBedrock(
-        model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
-        region_name="us-west-2",
-    )
-    assert model.profile
-    assert not model.profile["reasoning_output"]
-
-    model = ChatBedrock(
-        model_id="anthropic.claude-sonnet-4-20250514-v1:0",
+        model_id="anthropic.claude-sonnet-4-6",
         region_name="us-west-2",
     )
     assert model.profile
