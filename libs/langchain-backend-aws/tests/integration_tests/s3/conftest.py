@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import uuid
 from collections.abc import Iterator
+from typing import Any
 
 import boto3
 import pytest
@@ -33,7 +34,7 @@ skip_without_credentials = pytest.mark.skipif(
 
 
 @pytest.fixture(scope="module")
-def s3_client() -> boto3.client:
+def s3_client() -> Any:
     return boto3.client(
         "s3",
         endpoint_url=ENDPOINT_URL,
@@ -45,7 +46,12 @@ def s3_client() -> boto3.client:
 
 
 @pytest.fixture(scope="module", autouse=True)
-def ensure_bucket(s3_client: boto3.client) -> None:
+def ensure_bucket(request: pytest.FixtureRequest) -> None:
+    # Skip bucket setup for compile-only tests and when credentials are absent;
+    # compile tests just verify imports and must not require AWS access.
+    if not REQUIRED_VARS_PRESENT:
+        return
+    s3_client = request.getfixturevalue("s3_client")
     try:
         s3_client.head_bucket(Bucket=BUCKET)
     except ClientError:
@@ -53,7 +59,7 @@ def ensure_bucket(s3_client: boto3.client) -> None:
 
 
 @pytest.fixture
-def prefix(s3_client: boto3.client) -> Iterator[str]:
+def prefix(s3_client: Any) -> Iterator[str]:
     p = f"it/{uuid.uuid4().hex}"
     yield p
     paginator = s3_client.get_paginator("list_objects_v2")

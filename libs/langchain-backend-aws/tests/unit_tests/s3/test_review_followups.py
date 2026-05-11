@@ -99,9 +99,7 @@ class TestClientCertAuditLog:
                     },
                 },
             )
-        records = [
-            rec for rec in caplog.records if "proxy_client_cert" in rec.message
-        ]
+        records = [rec for rec in caplog.records if "proxy_client_cert" in rec.message]
         assert records, "expected an audit warning for configured proxy_client_cert"
         # Raw filesystem paths must not appear in the audit log; only
         # SHA-256 fingerprints (12-char hex) are emitted so log
@@ -115,9 +113,7 @@ class TestClientCertAuditLog:
         config_logger = "langchain_backend_aws.s3._config"
         with caplog.at_level(logging.WARNING, logger=config_logger):
             S3BackendConfig(bucket="b")
-        assert not any(
-            "proxy_client_cert" in rec.message for rec in caplog.records
-        )
+        assert not any("proxy_client_cert" in rec.message for rec in caplog.records)
 
 
 class TestProxiesConfigTupleShape:
@@ -139,6 +135,8 @@ class TestExplicitKeyDroppedWarning:
     """Explicit boto keys passed via ``extra_boto_config`` warn at WARNING."""
 
     def test_dropped_key_emits_warning(self, caplog: pytest.LogCaptureFixture) -> None:
+        from unittest.mock import patch
+
         from langchain_backend_aws.s3._config import build_client
 
         config_logger = "langchain_backend_aws.s3._config"
@@ -146,7 +144,13 @@ class TestExplicitKeyDroppedWarning:
             bucket="b",
             extra_boto_config={"retries": {"max_attempts": 99}},
         )
-        with caplog.at_level(logging.WARNING, logger=config_logger):
+        with (
+            caplog.at_level(logging.WARNING, logger=config_logger),
+            patch(
+                "langchain_backend_aws.s3._config.boto3.client",
+                return_value=MagicMock(),
+            ),
+        ):
             build_client(config)
         assert any(
             "retries" in rec.getMessage() and rec.levelname == "WARNING"

@@ -115,9 +115,9 @@ class TestBinaryReadModeOffsetLimitWarning:
             "LastModified": MagicMock(),
             "ETag": '"deadbeef"',
         }
-        client.get_object.return_value["LastModified"].astimezone.return_value = (
-            MagicMock()
-        )
+        client.get_object.return_value[
+            "LastModified"
+        ].astimezone.return_value = MagicMock()
         return client
 
     def test_non_default_offset_warns(self, caplog: pytest.LogCaptureFixture) -> None:
@@ -158,5 +158,3 @@ class TestBinaryReadModeOffsetLimitWarning:
             if rec.levelname == "WARNING" and "non-UTF-8" in rec.getMessage()
         ]
         assert not warnings, "default offset/limit must not warn"
-
-

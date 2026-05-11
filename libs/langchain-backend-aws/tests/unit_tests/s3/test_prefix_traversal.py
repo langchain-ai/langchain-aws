@@ -8,6 +8,8 @@ config raises rather than masquerading as a working backend.
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from langchain_backend_aws import S3Backend, S3BackendConfig
@@ -31,7 +33,9 @@ class TestPrefixTraversal:
             S3Backend(S3BackendConfig(bucket="b", prefix="foo//bar"))
 
     def test_clean_prefix_accepted(self) -> None:
-        backend = S3Backend(S3BackendConfig(bucket="b", prefix="tenant/abc"))
+        backend = S3Backend(
+            S3BackendConfig(bucket="b", prefix="tenant/abc"), client=MagicMock()
+        )
         # ``_prefix`` always ends with a trailing slash on a non-empty
         # prefix; clean input survives normalization unchanged.
         assert backend._prefix == "tenant/abc/"  # noqa: SLF001
@@ -39,7 +43,7 @@ class TestPrefixTraversal:
     def test_empty_prefix_still_allowed_with_warning(self) -> None:
         # Empty prefix is allowed unless ``require_prefix=True``; the
         # traversal guard must not trip on the empty string.
-        backend = S3Backend(S3BackendConfig(bucket="b", prefix=""))
+        backend = S3Backend(S3BackendConfig(bucket="b", prefix=""), client=MagicMock())
         assert backend._prefix == ""  # noqa: SLF001
 
     def test_empty_bucket_rejected(self) -> None:

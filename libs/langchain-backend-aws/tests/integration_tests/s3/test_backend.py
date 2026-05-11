@@ -23,6 +23,7 @@ from __future__ import annotations
 import os
 import uuid
 from collections.abc import Iterator
+from typing import Any
 
 import boto3
 import pytest
@@ -49,7 +50,7 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture(scope="module")
-def s3_client() -> boto3.client:
+def s3_client() -> Any:
     """Build a low-level boto3 S3 client for fixture setup/teardown."""
     return boto3.client(
         "s3",
@@ -62,7 +63,7 @@ def s3_client() -> boto3.client:
 
 
 @pytest.fixture(scope="module", autouse=True)
-def ensure_bucket(s3_client: boto3.client) -> None:
+def ensure_bucket(s3_client: Any) -> None:
     """Create the test bucket if it does not exist."""
     try:
         s3_client.head_bucket(Bucket=BUCKET)
@@ -71,7 +72,7 @@ def ensure_bucket(s3_client: boto3.client) -> None:
 
 
 @pytest.fixture
-def backend(s3_client: boto3.client) -> Iterator[S3Backend]:
+def backend(s3_client: Any) -> Iterator[S3Backend]:
     """Provide an S3Backend rooted at a unique per-test prefix.
 
     The prefix is cleaned up after the test, leaving the bucket reusable
@@ -150,7 +151,7 @@ def test_edit_replaces_string(backend: S3Backend) -> None:
 
 
 def test_edit_conflict_on_concurrent_modification(
-    backend: S3Backend, s3_client: boto3.client
+    backend: S3Backend, s3_client: Any
 ) -> None:
     """A concurrent writer between read and write must produce a conflict.
 
