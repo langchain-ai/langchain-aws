@@ -111,7 +111,7 @@ and stays visible in the import list.
 | `grep_max_pattern_metachars` | Maximum count of regex metacharacters (`()[]{}*+?\|\`) in the user-supplied grep pattern (default 200). Caps compile cost and nested-quantifier ReDoS surface even when the source string is shorter than `grep_max_pattern_length`. |
 | `binary_read_mode` | How `read` handles non-UTF-8 bodies. `"base64"` (default) returns the full body base64-encoded; `"error"` returns an error directing the caller to `download_files`, avoiding several MiB of base64 in the agent context window. |
 | `download_concurrency` | Maximum number of concurrent `download_files` fetches (default 8). Capped at runtime by `max_pool_connections`, so a `max_pool_connections=1` deployment forces sequential fetches even when `download_concurrency` is higher. Set to `1` explicitly to opt out of the thread pool entirely. |
-| `extra_boto_config` | Extra kwargs forwarded to `botocore.config.Config` (allowlist: `signature_version`, `s3`, `proxies`, `proxies_config`, `user_agent`, `user_agent_extra`, `client_cert`, `tcp_keepalive`, `parameter_validation`, `inject_host_prefix`, `endpoint_discovery_enabled`, `request_min_compression_size_bytes`, `disable_request_compression`). `proxies` URLs go through the same SSRF allow-list as `endpoint_url` (http/https only; loopback / link-local / RFC1918 hosts rejected unless `allow_private_endpoints=True`). |
+| `extra_boto_config` | Extra kwargs forwarded to `botocore.config.Config` (allowlist: `signature_version`, `s3`, `proxies`, `proxies_config`, `user_agent_extra`, `client_cert`, `tcp_keepalive`, `parameter_validation`, `inject_host_prefix`, `endpoint_discovery_enabled`, `request_min_compression_size_bytes`, `disable_request_compression`). The full `user_agent` override is intentionally rejected so the parent `langchain-aws` framework user-agent header is preserved; operators who need a different base user-agent should build their own `BotoConfig` and pass a pre-built `client=` to `S3Backend`. `proxies` URLs go through the same SSRF allow-list as `endpoint_url` (http/https only; loopback / link-local / RFC1918 hosts rejected unless `allow_private_endpoints=True`). |
 | `allow_private_endpoints` | When `True`, both `endpoint_url` and `extra_boto_config['proxies']` may point at loopback / RFC1918 / link-local hosts (LocalStack, MinIO). Defaults to `False` so a misconfigured endpoint cannot reach IMDS or a sidecar. |
 
 ## Supported operations
@@ -137,21 +137,24 @@ and stays visible in the import list.
   replaced span are preserved byte-for-byte. Callers that need
   byte-exact reads should use `download_files`.
 
-- **`oversize` is reported as `permission_denied` for upload/download.**
-  deepagents' `FileOperationError` Literal does not include an
-  `"oversize"` member, so when `upload_files` or `download_files` rejects
-  a file for exceeding `max_file_size_mb` the response is set to
-  `error="permission_denied"`. The actual cause (file path and byte
-  count) is logged at ERROR. Tracked as a TODO for an upstream change in
-  deepagents.
+- **`oversize` is reported as the backend-specific `"oversize"` tag for
+  upload/download.** deepagents' `FileOperationError` Literal does not
+  yet include an `"oversize"` member, so when `upload_files` or
+  `download_files` rejects a file for exceeding `max_file_size_mb` the
+  response is set to `error="oversize"` (the `OVERSIZE_ERROR_TAG`
+  sentinel) via a deliberate `type: ignore`. The actual cause (file
+  path and byte count) is also logged at ERROR. This is tracked as a
+  TODO for an upstream change in deepagents; once `"oversize"` is
+  accepted into the upstream Literal the `type: ignore` and this
+  limitation note will be removed.
 
-  **Triage tip:** `permission_denied` from `upload_files` /
-  `download_files` is overloaded — it may signal genuine `AccessDenied`,
-  a transient 5xx from S3, *or* an oversize rejection. The ERROR-level
-  log line (look for `S3 upload refused` / `S3 download refused` or the
-  per-code `S3 upload/download failed ...`) carries the real cause.
-  Filter logs by `langchain_backend_aws.s3` before assuming an IAM
-  problem.
+  **Triage tip:** an `"oversize"` error is unambiguous — it always
+  means the file exceeded `max_file_size_mb`. Genuine `AccessDenied` /
+  transient S3 errors are surfaced separately as `permission_denied`;
+  the ERROR-level log line (look for `S3 upload refused` /
+  `S3 download refused` or the per-code `S3 upload/download failed ...`)
+  carries the underlying cause. Filter logs by
+  `langchain_backend_aws.s3` to inspect the real error.
 
 ### Memory profile
 
@@ -171,18 +174,21 @@ together if you need a tighter envelope.
 
 ### Glob/grep regex cache
 
-`glob` patterns are translated to anchored regex via a process-global
-`functools.lru_cache(maxsize=256)`. The translation is a pure function
-of the pattern string, so the cache is safely shared across `S3Backend`
-instances and tenants — the same pattern always compiles to the same
-regex.
+`glob` patterns are translated to anchored regex via a **per-instance**
+`functools.lru_cache(maxsize=256)` built by `make_glob_compiler()` in
+`S3Backend.__init__`. Each `S3Backend` owns its own cache, so two
+backends configured for different tenants never share compiled-regex
+entries — eviction pressure in one tenant cannot evict another
+tenant's hot pattern.
 
-The trade-off is eviction-based: a tenant cycling through many distinct
-one-off patterns can evict another tenant's hot pattern, costing the
-victim a re-compile on the next match. This affects throughput, not
-correctness. The `glob_max_pattern_length` and
-`glob_max_pattern_metachars` caps bound per-entry size, so an attacker
-cannot inflate cache footprint to evict more than ~256 entries.
+The trade-off is the opposite of a shared cache: identical patterns
+issued through two separate `S3Backend` instances each pay their own
+compile cost on first use. This is intentional — sharing a process-
+global cache across tenants would create a cross-tenant signal
+(timing of hits/misses) that the per-instance design avoids. The
+`glob_max_pattern_length` and `glob_max_pattern_metachars` caps bound
+per-entry size, so a single tenant's cache footprint is bounded at
+roughly `256 × (pattern + compiled regex)`.
 
 ### Endpoint URL and SSRF
 

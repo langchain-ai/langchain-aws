@@ -9,8 +9,14 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from asyncio import CancelledError
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from asyncio import CancelledError as AsyncioCancelledError
+from concurrent.futures import (
+    CancelledError as FuturesCancelledError,
+)
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    as_completed,
+)
 from typing import Any, Callable
 
 from botocore.exceptions import ClientError
@@ -141,13 +147,14 @@ def download_files(
     must not be flattened into ``permission_denied``: callers (sync
     Ctrl-C or an outer asyncio cancel scope) must see them so they can
     stop submitting more work. Both are collected and re-raised after
-    the executor finishes draining; the first observed wins. Note that
-    :class:`concurrent.futures.CancelledError` is the same class as
-    :class:`asyncio.CancelledError` on Python 3.8+, so the first ``except``
-    clause already covers both forms. Any other ``BaseException``
-    subclass (e.g. an exotic third-party teardown base) is folded into
-    a per-slot ``permission_denied`` so it does not abort the whole
-    batch; ``SystemExit`` is re-raised explicitly.
+    the executor finishes draining; the first observed wins. On
+    Python 3.11 (the package's minimum) :class:`asyncio.CancelledError`
+    inherits directly from :class:`BaseException` while
+    :class:`concurrent.futures.CancelledError` inherits from
+    :class:`Exception`; they are distinct classes, so the teardown
+    ``except`` clause names both explicitly. ``SystemExit`` is allowed
+    to propagate naturally (no clause catches it) so process-exit
+    signals are not delayed past the draining loop.
     """
     if not paths:
         return []
@@ -176,7 +183,11 @@ def download_files(
             idx = future_to_index[future]
             try:
                 results[idx] = future.result()
-            except (KeyboardInterrupt, CancelledError) as exc:
+            except (
+                KeyboardInterrupt,
+                AsyncioCancelledError,
+                FuturesCancelledError,
+            ) as exc:
                 # User-driven Ctrl-C or an outer asyncio cancel scope
                 # surfacing through a worker future. We do NOT flatten
                 # these into ``permission_denied`` because they

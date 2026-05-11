@@ -98,6 +98,24 @@ def ls_listing(
     except ClientError as exc:
         logger.exception("Error listing '%s'", path)
         return LsResult(error=f"Error listing '{path}': {sanitize_error_code(exc)}")
+    except Exception:  # noqa: BLE001
+        # Fail closed on unexpected paginator response shapes. The body
+        # of the loop indexes directly into ``obj["Key"]`` / ``obj["LastModified"]``
+        # / ``prefix_entry["Prefix"]``, so a malformed or stubbed S3
+        # response can raise ``KeyError`` / ``TypeError``. The
+        # ``BackendProtocol`` contract is "return error, do not raise",
+        # so we surface a generic listing error rather than letting an
+        # implementation detail propagate across the protocol boundary.
+        # ``logger.exception`` captures the real cause for triage.
+        logger.exception(
+            "ls: unexpected response shape while listing '%s'; failing closed",
+            path[:LOG_TRIM],
+        )
+        return LsResult(
+            error=(
+                f"Error listing '{path}': malformed listing response (failing closed)."
+            )
+        )
 
     if prefix_violation is not None:
         logger.error(

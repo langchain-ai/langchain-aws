@@ -134,6 +134,26 @@ def glob_search(
                 f"(catastrophic backtracking suspected): {exc}"
             )
         )
+    except Exception:  # noqa: BLE001
+        # Fail closed on unexpected paginator response shapes. The loop
+        # indexes directly into ``obj["Key"]`` / ``obj["LastModified"]``,
+        # so a malformed or stubbed S3 response can raise
+        # ``KeyError`` / ``TypeError``. The ``BackendProtocol`` contract
+        # is "return error, do not raise", so we surface a generic glob
+        # error rather than letting an implementation detail propagate
+        # across the protocol boundary. ``logger.exception`` captures
+        # the real cause for triage.
+        logger.exception(
+            "glob: unexpected response shape for pattern '%s' at '%s'; failing closed",
+            pattern[:LOG_TRIM],
+            path[:LOG_TRIM],
+        )
+        return GlobResult(
+            error=(
+                f"Error during glob '{pattern}' at '{path}': malformed "
+                f"listing response (failing closed)."
+            )
+        )
 
     if prefix_violation is not None:
         # Trim the offending key/prefix/pattern/path before logging so a
