@@ -217,9 +217,7 @@ class TestBinaryReadMode:
 
     def test_binary_read_mode_error_returns_error(self) -> None:
         mock_client = MagicMock()
-        mock_client.get_object.return_value = _s3_object_response(
-            b"\xff\xfe\x00binary"
-        )
+        mock_client.get_object.return_value = _s3_object_response(b"\xff\xfe\x00binary")
         config = S3BackendConfig(bucket="b", prefix="p/", binary_read_mode="error")
         backend = S3Backend(config, client=mock_client)
 
@@ -232,9 +230,7 @@ class TestBinaryReadMode:
 
     def test_binary_read_mode_base64_default(self) -> None:
         mock_client = MagicMock()
-        mock_client.get_object.return_value = _s3_object_response(
-            b"\xff\xfe\x00binary"
-        )
+        mock_client.get_object.return_value = _s3_object_response(b"\xff\xfe\x00binary")
         backend = S3Backend.from_kwargs(bucket="b", prefix="p/", client=mock_client)
 
         result = backend.read("/bin.dat")
@@ -356,9 +352,7 @@ def _make_get_object(body: bytes) -> Any:
         "LastModified": MagicMock(),
         "ETag": '"deadbeef"',
     }
-    client.get_object.return_value["LastModified"].astimezone.return_value = (
-        MagicMock()
-    )
+    client.get_object.return_value["LastModified"].astimezone.return_value = MagicMock()
     return client
 
 

@@ -298,9 +298,7 @@ class TestEndpointUrlValidation:
         # Public hostname over http is accepted without opt-in. MinIO/
         # LocalStack on localhost requires ``allow_private_endpoints``;
         # see ``test_localhost_requires_opt_in`` below.
-        config = S3BackendConfig(
-            bucket="b", endpoint_url="http://s3.example.com:9000"
-        )
+        config = S3BackendConfig(bucket="b", endpoint_url="http://s3.example.com:9000")
         assert config.endpoint_url == "http://s3.example.com:9000"
 
     def test_localhost_rejected_by_default(self) -> None:
@@ -364,9 +362,7 @@ class TestEndpointUrlValidation:
 
     def test_gce_metadata_dns_rejected(self) -> None:
         with pytest.raises(ValueError, match="private, loopback"):
-            S3BackendConfig(
-                bucket="b", endpoint_url="http://metadata.google.internal/"
-            )
+            S3BackendConfig(bucket="b", endpoint_url="http://metadata.google.internal/")
 
     def test_gce_metadata_short_dns_rejected(self) -> None:
         with pytest.raises(ValueError, match="private, loopback"):
@@ -407,9 +403,7 @@ class TestEndpointUrlValidation:
 
     def test_ipv4_mapped_ipv6_loopback_rejected(self) -> None:
         with pytest.raises(ValueError, match="private, loopback"):
-            S3BackendConfig(
-                bucket="b", endpoint_url="http://[::ffff:127.0.0.1]:9000"
-            )
+            S3BackendConfig(bucket="b", endpoint_url="http://[::ffff:127.0.0.1]:9000")
 
     def test_ipv4_mapped_ipv6_imds_rejected(self) -> None:
         with pytest.raises(ValueError, match="private, loopback"):
@@ -658,9 +652,7 @@ class TestProxiesConfigTupleShape:
 class TestClientCertAuditLog:
     """Configured ``client_cert`` paths must be logged at WARNING."""
 
-    def test_client_cert_emits_warning(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_client_cert_emits_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         config_logger = "langchain_backend_aws.s3._config"
         with caplog.at_level(logging.WARNING, logger=config_logger):
             S3BackendConfig(
@@ -674,9 +666,7 @@ class TestClientCertAuditLog:
                     },
                 },
             )
-        records = [
-            rec for rec in caplog.records if "proxy_client_cert" in rec.message
-        ]
+        records = [rec for rec in caplog.records if "proxy_client_cert" in rec.message]
         assert records, "expected an audit warning for configured proxy_client_cert"
         # Raw filesystem paths must not appear in the audit log; only
         # SHA-256 fingerprints (12-char hex) are emitted so log
@@ -686,15 +676,11 @@ class TestClientCertAuditLog:
             assert "/etc/ssl/key.pem" not in rec.getMessage()
             assert "sha256:" in rec.getMessage()
 
-    def test_no_client_cert_no_warning(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_no_client_cert_no_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         config_logger = "langchain_backend_aws.s3._config"
         with caplog.at_level(logging.WARNING, logger=config_logger):
             S3BackendConfig(bucket="b")
-        assert not any(
-            "proxy_client_cert" in rec.message for rec in caplog.records
-        )
+        assert not any("proxy_client_cert" in rec.message for rec in caplog.records)
 
 
 # ------------------------------------------------------------------
@@ -736,9 +722,7 @@ class TestExtraBotoConfigS3Shape:
 class TestExplicitKeyDroppedWarning:
     """Explicit boto keys passed via ``extra_boto_config`` warn at WARNING."""
 
-    def test_dropped_key_emits_warning(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_dropped_key_emits_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         config_logger = "langchain_backend_aws.s3._config"
         config = S3BackendConfig(
             bucket="b",
