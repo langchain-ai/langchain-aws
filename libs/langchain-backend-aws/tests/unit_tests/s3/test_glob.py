@@ -1,4 +1,8 @@
-"""Unit tests for S3Backend (split from monolithic test_backend.py)."""
+"""Unit tests for S3Backend glob path.
+
+Covers ``glob``, the LRU cache, ``**`` translation, and the pattern
+length / wildcard metachar caps (ReDoS amplification guards).
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,7 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 from langchain_backend_aws import S3Backend
+from langchain_backend_aws.s3._internal import _compile_glob_regex_uncached
 
 from ._helpers import _client_error, _make_backend
 
@@ -271,3 +276,133 @@ class TestGlob:
 
         result = backend.glob("*.py")
         assert result.error is not None
+
+
+# ------------------------------------------------------------------
+# Public ``clear_glob_cache`` empties the per-instance LRU.
+# ------------------------------------------------------------------
+
+
+class TestClearGlobCache:
+    def test_clear_glob_cache_empties_cache(self) -> None:
+        backend = S3Backend.from_kwargs(bucket="b", client=MagicMock())
+        backend._compile_glob("*.py")
+        backend._compile_glob("*.md")
+        info_before = backend._compile_glob.cache_info()  # type: ignore[attr-defined]
+        assert info_before.currsize >= 2
+
+        backend.clear_glob_cache()
+
+        info_after = backend._compile_glob.cache_info()  # type: ignore[attr-defined]
+        assert info_after.currsize == 0
+
+    def test_clear_glob_cache_idempotent(self) -> None:
+        backend = S3Backend.from_kwargs(bucket="b", client=MagicMock())
+        backend.clear_glob_cache()
+        backend.clear_glob_cache()  # second call must not raise
+
+
+# ------------------------------------------------------------------
+# ``**`` translation. ``**`` followed by ``/`` is the only form that
+# crosses path separators; bare ``**`` collapses to a single ``*`` so it
+# stays within one segment.
+# ------------------------------------------------------------------
+
+
+class TestGlobDoubleStar:
+    def test_recursive_double_star_slash_matches_across_segments(self) -> None:
+        compiled = _compile_glob_regex_uncached("src/**/foo.py")
+        assert compiled.match("src/foo.py") is not None
+        assert compiled.match("src/a/foo.py") is not None
+        assert compiled.match("src/a/b/foo.py") is not None
+        assert compiled.match("other/foo.py") is None
+
+    def test_bare_double_star_does_not_cross_slash(self) -> None:
+        # ``a**b`` must behave as a single-segment match — ``a/x/b``
+        # used to match because ``**`` expanded to ``.*`` and crossed
+        # ``/``. The fix collapses bare ``**`` to ``[^/]*`` so it
+        # behaves like a single ``*``.
+        compiled = _compile_glob_regex_uncached("a**b")
+        assert compiled.match("ab") is not None
+        assert compiled.match("aXXXb") is not None
+        assert compiled.match("a/b") is None
+        assert compiled.match("a/x/b") is None
+
+    def test_bare_double_star_equivalent_to_single_star(self) -> None:
+        bare = _compile_glob_regex_uncached("foo**")
+        single = _compile_glob_regex_uncached("foo*")
+        for sample in ("foo", "foobar", "foobarbaz"):
+            assert bool(bare.match(sample)) == bool(single.match(sample))
+        # Both must reject anything that crosses ``/``.
+        assert bare.match("foo/bar") is None
+        assert single.match("foo/bar") is None
+
+
+# ------------------------------------------------------------------
+# Glob pattern length cap (ReDoS-style amplification guard).
+# ------------------------------------------------------------------
+
+
+class TestGlobMaxPatternLength:
+    def test_glob_rejects_overlong_pattern(self) -> None:
+        backend, mock = _make_backend()
+        long_pattern = "a" * 2000
+        result = backend.glob(long_pattern)
+        assert result.matches is None
+        assert result.error is not None
+        assert "glob_max_pattern_length" in result.error
+        # Cap is enforced before any S3 call.
+        mock.get_paginator.assert_not_called()
+
+    def test_grep_rejects_overlong_glob_filter(self) -> None:
+        backend, mock = _make_backend()
+        long_glob = "a" * 2000
+        result = backend.grep("needle", glob=long_glob)
+        assert result.matches is None
+        assert result.error is not None
+        assert "glob_max_pattern_length" in result.error
+        mock.get_paginator.assert_not_called()
+
+
+# ------------------------------------------------------------------
+# Glob wildcard metachar cap. A long ``****…`` pattern under the
+# source-length cap still translates to a regex with many stacked
+# ``[^/]*`` runs that ``regex.Pattern.match`` backtracks on
+# catastrophically. The metachar cap is the orthogonal shape bound.
+# ------------------------------------------------------------------
+
+
+class TestGlobMaxPatternMetachars:
+    def test_glob_rejects_overstuffed_wildcards(self) -> None:
+        backend, mock = _make_backend()
+        # 100 stars: under the 1000-char source-length cap but well over
+        # the default 50-wildcard metachar cap.
+        pattern = "*" * 100
+        result = backend.glob(pattern)
+        assert result.matches is None
+        assert result.error is not None
+        assert "glob_max_pattern_metachars" in result.error
+        mock.get_paginator.assert_not_called()
+
+    def test_grep_rejects_overstuffed_glob_filter(self) -> None:
+        backend, mock = _make_backend()
+        glob_filter = "*" * 100
+        result = backend.grep("needle", glob=glob_filter)
+        assert result.matches is None
+        assert result.error is not None
+        assert "glob_max_pattern_metachars" in result.error
+        mock.get_paginator.assert_not_called()
+
+    def test_glob_question_marks_count_too(self) -> None:
+        backend, _ = _make_backend()
+        pattern = "?" * 100
+        result = backend.glob(pattern)
+        assert result.error is not None
+        assert "glob_max_pattern_metachars" in result.error
+
+    def test_glob_under_metachar_cap_still_runs(self) -> None:
+        backend, mock = _make_backend()
+        mock.get_paginator.return_value.paginate.return_value = []
+        # 10 wildcards is well under the 50 default cap.
+        result = backend.glob("*.py")
+        assert result.error is None

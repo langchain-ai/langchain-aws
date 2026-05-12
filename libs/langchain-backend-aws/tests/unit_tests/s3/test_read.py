@@ -1,9 +1,23 @@
-"""Unit tests for S3Backend (split from monolithic test_backend.py)."""
+"""Unit tests for S3Backend read path (split from monolithic test_backend.py).
+
+Covers ``read``, ``binary_read_mode``, the underlying ``read_capped_object``
+helper (body close-paths and non-bytes body defense), and the
+offset/limit warning on the base64 fall-back.
+"""
 
 from __future__ import annotations
 
+import contextlib
+import io
+import logging
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import MagicMock
+
+import pytest
+
+from langchain_backend_aws import S3Backend, S3BackendConfig
+from langchain_backend_aws.s3._internal import OversizeError, read_capped_object
 
 from ._helpers import _client_error, _make_backend, _s3_object_response
 
@@ -191,3 +205,197 @@ class TestRead:
         result = backend.read("/big.txt")
         assert result.error is not None
         assert "max_file_size_mb" in result.error
+
+
+# ------------------------------------------------------------------
+# binary_read_mode (base64 vs error)
+# ------------------------------------------------------------------
+
+
+class TestBinaryReadMode:
+    """``S3BackendConfig.binary_read_mode`` selects base64 vs explicit error."""
+
+    def test_binary_read_mode_error_returns_error(self) -> None:
+        mock_client = MagicMock()
+        mock_client.get_object.return_value = _s3_object_response(
+            b"\xff\xfe\x00binary"
+        )
+        config = S3BackendConfig(bucket="b", prefix="p/", binary_read_mode="error")
+        backend = S3Backend(config, client=mock_client)
+
+        result = backend.read("/bin.dat")
+
+        assert result.error is not None
+        assert "not UTF-8" in result.error
+        assert "download_files" in result.error
+        assert result.file_data is None
+
+    def test_binary_read_mode_base64_default(self) -> None:
+        mock_client = MagicMock()
+        mock_client.get_object.return_value = _s3_object_response(
+            b"\xff\xfe\x00binary"
+        )
+        backend = S3Backend.from_kwargs(bucket="b", prefix="p/", client=mock_client)
+
+        result = backend.read("/bin.dat")
+
+        assert result.error is None
+        assert result.file_data is not None
+        assert result.file_data["encoding"] == "base64"
+
+
+# ------------------------------------------------------------------
+# read_capped_object: non-bytes body defense
+# ------------------------------------------------------------------
+
+
+def _response_with_str_body(body: str) -> dict[str, Any]:
+    """Build a get_object response whose ``Body.read()`` returns a str."""
+    stream = MagicMock()
+    stream.read.return_value = body
+    return {
+        "Body": stream,
+        "ContentLength": len(body),
+        "ETag": '"x"',
+        "LastModified": datetime(2025, 3, 7, tzinfo=UTC),
+    }
+
+
+class TestNonBytesBodyDefense:
+    """``read_capped_object`` must surface a ``TypeError`` for non-bytes.
+
+    Defense-in-depth: a custom boto stub that returns a ``str`` body would
+    silently corrupt the downstream encoding path without this check.
+    """
+
+    def test_str_body_raises_type_error(self) -> None:
+        client = MagicMock()
+        client.get_object.return_value = _response_with_str_body("not-bytes")
+
+        with pytest.raises(TypeError, match="bytes-like"):
+            read_capped_object(client, "b", "k", max_bytes=1024)
+
+
+# ------------------------------------------------------------------
+# read_capped_object close-path coverage: the streaming body must be
+# closed for every exit path (including a malformed ContentLength
+# header) so the underlying connection is returned to the pool.
+# ------------------------------------------------------------------
+
+
+class TestReadCappedObjectClose:
+    def test_body_closed_when_content_length_invalid(self) -> None:
+        body = MagicMock()
+        body.read.return_value = b"x"
+        client = MagicMock()
+        client.get_object.return_value = {
+            "Body": body,
+            # Intentionally non-numeric: forces ``int(...)`` to raise
+            # ValueError. ``read_capped_object`` wraps that into
+            # ``OversizeError(None)`` so a hostile S3-compatible server
+            # cannot smuggle an uncategorized exception past the size
+            # cap. The body must still be closed before raising.
+            "ContentLength": "not-a-number",
+            "ETag": '"x"',
+            "LastModified": datetime(2025, 1, 1, tzinfo=UTC),
+        }
+
+        with contextlib.suppress(OversizeError):
+            read_capped_object(client, "bucket", "key", max_bytes=1024)
+
+        body.close.assert_called_once()
+
+    def test_body_closed_when_oversize_by_header(self) -> None:
+        body = MagicMock()
+        body.read.return_value = b""
+        client = MagicMock()
+        client.get_object.return_value = {
+            "Body": body,
+            "ContentLength": 9999,
+            "ETag": '"x"',
+            "LastModified": datetime(2025, 1, 1, tzinfo=UTC),
+        }
+
+        with contextlib.suppress(OversizeError):
+            read_capped_object(client, "bucket", "key", max_bytes=10)
+
+        body.close.assert_called_once()
+
+    def test_body_without_close_method_is_tolerated(self) -> None:
+        """Some S3-compatible stubs return a body without ``close()``;
+        the helper must not crash on them.
+        """
+
+        class _BodyWithoutClose:
+            def read(self, _: int) -> bytes:
+                return b"hello"
+
+        client = MagicMock()
+        client.get_object.return_value = {
+            "Body": _BodyWithoutClose(),
+            "ContentLength": 5,
+            "ETag": '"x"',
+            "LastModified": datetime(2025, 1, 1, tzinfo=UTC),
+        }
+        result = read_capped_object(client, "bucket", "key", max_bytes=1024)
+        assert result.raw_bytes == b"hello"
+
+
+# ------------------------------------------------------------------
+# offset/limit warning on the base64 fall-back path: operators must see
+# a WARNING so the silent ignoring of the requested slice does not look
+# like a successful slice.
+# ------------------------------------------------------------------
+
+
+def _make_get_object(body: bytes) -> Any:
+    client = MagicMock()
+    client.get_object.return_value = {
+        "Body": io.BytesIO(body),
+        "ContentLength": len(body),
+        "LastModified": MagicMock(),
+        "ETag": '"deadbeef"',
+    }
+    client.get_object.return_value["LastModified"].astimezone.return_value = (
+        MagicMock()
+    )
+    return client
+
+
+class TestBinaryReadModeOffsetLimitWarning:
+    """Non-default ``offset``/``limit`` warn on the base64 path."""
+
+    def test_non_default_offset_warns(self, caplog: pytest.LogCaptureFixture) -> None:
+        client = _make_get_object(b"\xff\xfe\x00\x01binary")
+        backend = S3Backend(
+            S3BackendConfig(bucket="b", binary_read_mode="base64"),
+            client=client,
+        )
+        with caplog.at_level(logging.WARNING, logger="langchain_backend_aws.s3._read"):
+            result = backend.read("/binary.bin", offset=10, limit=5)
+        assert result.file_data is not None
+        warnings = [
+            rec
+            for rec in caplog.records
+            if rec.levelname == "WARNING"
+            and "non-UTF-8" in rec.getMessage()
+            and "offset=10" in rec.getMessage()
+        ]
+        assert warnings, "expected a warning when offset/limit ignored on binary body"
+
+    def test_default_offset_limit_no_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        client = _make_get_object(b"\xff\xfe\x00\x01binary")
+        backend = S3Backend(
+            S3BackendConfig(bucket="b", binary_read_mode="base64"),
+            client=client,
+        )
+        with caplog.at_level(logging.WARNING, logger="langchain_backend_aws.s3._read"):
+            backend.read("/binary.bin")  # use defaults
+        warnings = [
+            rec
+            for rec in caplog.records
+            if rec.levelname == "WARNING" and "non-UTF-8" in rec.getMessage()
+        ]
+        assert not warnings, "default offset/limit must not warn"

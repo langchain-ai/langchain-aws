@@ -1,11 +1,15 @@
-"""Unit tests for S3Backend (split from monolithic test_backend.py)."""
+"""Unit tests for S3Backend grep path.
+
+Covers ``grep`` happy paths, the ReDoS metachar cap, and robustness
+against malformed S3 ``GetObject`` responses.
+"""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
-from langchain_backend_aws import S3Backend
+from langchain_backend_aws import S3Backend, S3BackendConfig
 
 from ._helpers import _client_error, _make_backend, _s3_object_response
 
@@ -351,3 +355,104 @@ class TestGrep:
         assert result.error is not None
         assert "grep_max_objects" in result.error
         assert mock.get_object.call_count == 2
+
+
+# ------------------------------------------------------------------
+# ``grep_max_pattern_metachars`` ReDoS guard.
+# ------------------------------------------------------------------
+
+
+class TestGrepMetacharCap:
+    def test_grep_metachar_cap_rejects_stacked_quantifiers(self) -> None:
+        backend = S3Backend.from_kwargs(bucket="b", prefix="p/", client=MagicMock())
+        backend._config = S3BackendConfig(
+            bucket="b", prefix="p/", grep_max_pattern_metachars=10
+        )
+        pattern = "(" * 6 + "a" + ")" * 6 + "+"  # 13 metachars, source length 14
+
+        result = backend.grep(pattern)
+
+        assert result.error is not None
+        assert "metacharacter" in result.error
+
+    def test_grep_metachar_cap_allows_realistic_patterns(self) -> None:
+        mock_client = MagicMock()
+        mock_client.get_paginator.return_value.paginate.return_value = iter([])
+        backend = S3Backend.from_kwargs(bucket="b", prefix="p/", client=mock_client)
+
+        result = backend.grep(r"def\s+\w+\(")
+
+        assert result.error is None
+
+
+# ------------------------------------------------------------------
+# Robustness against malformed ``GetObject`` responses. A missing
+# ``Body``/``LastModified`` must not propagate as an unhandled exception
+# across the ``BackendProtocol`` boundary; ``grep`` should fail closed
+# with a sanitized error string so callers can distinguish a crash from
+# "no match".
+# ------------------------------------------------------------------
+
+
+def _backend_with_listing(
+    objects: list[dict[str, object]],
+) -> tuple[S3Backend, MagicMock]:
+    """Create an S3Backend whose paginator yields ``objects``."""
+    mock_client = MagicMock()
+    paginator = MagicMock()
+    paginator.paginate.return_value = iter([{"Contents": objects}])
+    mock_client.get_paginator.return_value = paginator
+    backend = S3Backend(
+        S3BackendConfig(bucket="b", prefix="tenant/a"),
+        client=mock_client,
+    )
+    return backend, mock_client
+
+
+class TestGrepMalformedResponse:
+    def test_grep_missing_body_fails_closed(self) -> None:
+        backend, mock = _backend_with_listing(
+            [{"Key": "tenant/a/notes.txt", "Size": 5}]
+        )
+        # ``Body`` missing — ``read_capped_object`` classifies this as
+        # :class:`OversizeError` (fail-closed) so the
+        # ClientError/Oversize disjoint hierarchy stays clean.
+        # ``_fetch_object`` then surfaces the backend-specific
+        # ``"oversize"`` tag and ``_visit_object`` fail-closes the
+        # entire grep run rather than silently dropping the object.
+        mock.get_object.return_value = {
+            "ContentLength": 5,
+            "ETag": '"x"',
+            "LastModified": datetime(2025, 1, 1, tzinfo=UTC),
+        }
+
+        result = backend.grep("foo")
+
+        assert result.matches is None or result.matches == []
+        assert result.error is not None
+        # The error message must not leak the stack trace; "oversize"
+        # (from the OversizeError mapping) and "unexpected error"
+        # (legacy broad-guard path) are both acceptable sanitized
+        # surfaces.
+        lowered = result.error.lower()
+        assert (
+            "oversize" in lowered
+            or "unexpected error" in lowered
+            or "keyerror" in lowered
+        )
+
+    def test_grep_malformed_listing_entry_fails_closed(self) -> None:
+        # ``Size`` missing or non-numeric on a Contents entry must be
+        # caught by the broad-except guard in ``_safe_visit`` and
+        # surface as a sanitized error rather than an unhandled
+        # ``KeyError``/``ValueError`` across the protocol boundary.
+        backend, _mock = _backend_with_listing(
+            [{"Key": "tenant/a/notes.txt"}]  # missing Size
+        )
+
+        result = backend.grep("foo")
+
+        # No matches; error must be sanitized (not a raw traceback).
+        assert result.matches is None or result.matches == []
+        assert result.error is not None
+        assert "Traceback" not in result.error
