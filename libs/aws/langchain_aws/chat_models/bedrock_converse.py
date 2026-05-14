@@ -1707,9 +1707,13 @@ class ChatBedrockConverse(BaseChatModel):
 
         prepare = RunnableLambda(_prepare)
 
+        user_stops = kwargs.pop("stop", None) or []
+        existing_stops = self.stop_sequences or []
+        merged_stops = list(set(existing_stops + user_stops + [_PROMPT_PREFILL_STOP]))
+
         try:
             llm = self.bind(
-                stop=[_PROMPT_PREFILL_STOP],
+                stop=merged_stops,
                 ls_structured_output_format={
                     "kwargs": {"method": "prompt_prefill"},
                     "schema": json_schema,
@@ -1717,7 +1721,7 @@ class ChatBedrockConverse(BaseChatModel):
                 **kwargs,
             )
         except Exception:
-            llm = self.bind(stop=[_PROMPT_PREFILL_STOP], **kwargs)
+            llm = self.bind(stop=merged_stops, **kwargs)
 
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             from langchain_core.output_parsers import PydanticOutputParser
