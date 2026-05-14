@@ -2353,6 +2353,47 @@ def _format_data_content_block(block: dict) -> dict:
             error_message = "File data only supported through in-line base64 format."
             raise ValueError(error_message)
 
+    elif block["type"] == "document":
+        if "base64" in block or block.get("sourceType") == "base64":
+            if "mimeType" not in block:
+                error_message = "mime_type key is required for base64 data."
+                raise ValueError(error_message)
+            formatted_block = {
+                "document": {
+                    "format": _mime_type_to_format(block["mimeType"]),
+                    "source": {
+                        "bytes": _b64str_to_bytes(
+                            block.get("base64") or block.get("data", "")
+                        )
+                    },
+                }
+            }
+            if citations := block.get("citations"):
+                formatted_block["document"]["citations"] = citations
+            if name := block.get("name"):
+                formatted_block["document"]["name"] = name
+            elif name := block.get("filename"):
+                formatted_block["document"]["name"] = name
+            elif (metadata := block.get("metadata")) and "name" in metadata:
+                formatted_block["document"]["name"] = metadata["name"]
+            elif (extras := block.get("extras")) and "name" in extras:
+                formatted_block["document"]["name"] = extras["name"]
+            elif (extras := block.get("extras")) and "filename" in extras:
+                formatted_block["document"]["name"] = extras["filename"]
+            else:
+                warnings.warn(
+                    "Bedrock Converse may require a filename for document inputs. "
+                    "Specify a filename in the content block: {'type': 'document', "
+                    "'mime_type': 'application/pdf', 'base64': '...', "
+                    "'name': 'my-pdf'}"
+                )
+                formatted_block["document"]["name"] = uuid.uuid4().hex[:12]
+        else:
+            error_message = (
+                "Document data only supported through in-line base64 format."
+            )
+            raise ValueError(error_message)
+
     elif block["type"] == "video":
         if "base64" in block or block.get("sourceType") == "base64":
             if "mimeType" not in block:
@@ -2375,7 +2416,7 @@ def _format_data_content_block(block: dict) -> dict:
     else:
         error_message = (
             f"Unsupported data content block type: '{block['type']}'. "
-            f"Supported types are: 'image', 'file', 'video'."
+            f"Supported types are: 'image', 'document', 'file', 'video'."
         )
         raise ValueError(error_message)
 
@@ -2485,8 +2526,12 @@ def _lc_content_to_bedrock(
                 {"video": _format_openai_video_url(block["videoUrl"]["url"])}
             )
         elif block["type"] == "document":
-            # Assume block in bedrock document format
-            bedrock_content.append({"document": block["document"]})
+            if "document" in block:
+                # Assume block is already in bedrock format.
+                bedrock_content.append({"document": block["document"]})
+            else:
+                # Standard format with base64/mime_type keys.
+                bedrock_content.append(_format_data_content_block(block))
         elif block["type"] == "tool_use":
             tool_input = block["input"]
             if isinstance(tool_input, str):
