@@ -1946,7 +1946,7 @@ _method_doc = """\
         - ``"prompt_prefill"``: Augments the system message with the JSON
           schema, prefills an assistant turn with a ``\\`\\`\\`json`` fence
           and stops generation at the closing fence. Useful for models
-          without native JSON-schema (Amazon Nova)).
+          without native JSON-schema (Amazon Nova).
 
 """
 ChatBedrockConverse.with_structured_output.__doc__ = _base_wso_doc.replace(
