@@ -698,7 +698,7 @@ class ChatBedrockConverse(BaseChatModel):
         if not cache_control:
             return
 
-        is_nova = "amazon.nova" in self.model_id.lower()
+        is_nova = "amazon.nova" in self._get_base_model().lower()
 
         cache_point: Dict[str, Any] = {"type": "default"}
         ttl = cache_control.get("ttl")
@@ -1219,7 +1219,11 @@ class ChatBedrockConverse(BaseChatModel):
         logger.debug(f"Response from Bedrock: {response}")
         response_message = _parse_response(response)
         response_message.response_metadata["model_provider"] = "bedrock_converse"
-        response_message.response_metadata["model_name"] = self.model_id
+        response_message.response_metadata["model_name"] = (
+            self.base_model_id or self.model_id
+        )
+        if "application-inference-profile" in self.model_id:
+            response_message.response_metadata["inference_profile_id"] = self.model_id
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
     def _stream(
@@ -1286,7 +1290,13 @@ class ChatBedrockConverse(BaseChatModel):
                         and message_chunk.usage_metadata
                         and not added_model_name
                     ):
-                        message_chunk.response_metadata["model_name"] = self.model_id
+                        message_chunk.response_metadata["model_name"] = (
+                            self.base_model_id or self.model_id
+                        )
+                        if "application-inference-profile" in self.model_id:
+                            message_chunk.response_metadata["inference_profile_id"] = (
+                                self.model_id
+                            )
                         if metadata := response.get("ResponseMetadata"):
                             message_chunk.response_metadata["ResponseMetadata"] = (
                                 metadata
@@ -1839,7 +1849,7 @@ class ChatBedrockConverse(BaseChatModel):
         params = self._get_invocation_params(stop=stop, **kwargs)
         ls_params = LangSmithParams(
             ls_provider="amazon_bedrock",
-            ls_model_name=self.model_id,
+            ls_model_name=self.base_model_id or self.model_id,
             ls_model_type="chat",
             ls_temperature=params.get("temperature", self.temperature),
         )
