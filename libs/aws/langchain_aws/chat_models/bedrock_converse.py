@@ -1726,17 +1726,17 @@ class ChatBedrockConverse(BaseChatModel):
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             from langchain_core.output_parsers import PydanticOutputParser
 
-            text_parser: OutputParserLike = PydanticOutputParser(pydantic_object=schema)
+            output_parser: OutputParserLike = PydanticOutputParser(
+                pydantic_object=schema
+            )
         else:
             from langchain_core.output_parsers import JsonOutputParser
 
-            text_parser = JsonOutputParser()
-
-        extract_then_parse = RunnableLambda(_extract_prompt_prefill_text) | text_parser
+            output_parser = JsonOutputParser()
 
         if include_raw:
             parser_assign = RunnablePassthrough.assign(
-                parsed=itemgetter("raw") | extract_then_parse,
+                parsed=itemgetter("raw") | output_parser,
                 parsing_error=lambda _: None,
             )
             parser_none = RunnablePassthrough.assign(parsed=lambda _: None)
@@ -1744,7 +1744,7 @@ class ChatBedrockConverse(BaseChatModel):
                 [parser_none], exception_key="parsing_error"
             )
             return prepare | RunnableMap(raw=llm) | parser_with_fallback
-        return prepare | llm | extract_then_parse
+        return prepare | llm | output_parser
 
     def _converse_params(
         self,
@@ -2006,26 +2006,6 @@ def _append_to_system_message(
             new_content[last_text_idx] = block
 
     return [SystemMessage(content=new_content), *messages[1:]]
-
-
-def _extract_prompt_prefill_text(message: AIMessage) -> str:
-    """Extract JSON text from a Nova prompt-prefill response."""
-    content = message.content
-    if isinstance(content, list):
-        text_parts = [
-            block.get("text", "")
-            for block in content
-            if isinstance(block, dict) and block.get("type") in (None, "text")
-        ]
-        text = "".join(text_parts)
-    else:
-        text = content or ""
-    return (
-        text.strip()
-        .removeprefix(_PROMPT_PREFILL_VALUE)
-        .removesuffix(_PROMPT_PREFILL_STOP)
-        .strip()
-    )
 
 
 def _handle_bedrock_error(error: ClientError) -> None:
