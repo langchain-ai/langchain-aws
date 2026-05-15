@@ -5547,24 +5547,24 @@ def test_with_structured_output_prompt_prefill_dict_schema() -> None:
     assert "Response Schema" not in json.dumps(schema)
 
 
-def test_with_structured_output_prompt_prefill_extract_text() -> None:
-    """The text extractor strips fences and concatenates text blocks."""
-    from langchain_core.messages import AIMessage
+def test_with_structured_output_prompt_prefill_stop_sequence_merge() -> None:
+    """Stop sequences are merged, not replaced, when using prompt_prefill."""
+    from typing import cast
 
-    from langchain_aws.chat_models.bedrock_converse import (
-        _extract_prompt_prefill_text,
+    from langchain_core.runnables import RunnableBinding
+
+    from langchain_aws.chat_models.bedrock_converse import _PROMPT_PREFILL_STOP
+
+    chat_model = ChatBedrockConverse(
+        model="us.amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+        stop_sequences=["END"],
     )
-
-    msg = AIMessage(content='\n{"location": "NYC"}\n```')
-    assert _extract_prompt_prefill_text(msg) == '{"location": "NYC"}'
-
-    msg2 = AIMessage(
-        content=[
-            {"text": '```json\n{"location": '},
-            {"text": '"NYC"}\n```'},
-        ]
-    )
-    assert _extract_prompt_prefill_text(msg2) == '{"location": "NYC"}'
+    structured = chat_model.with_structured_output(GetWeather, method="prompt_prefill")
+    bound = cast(RunnableBinding, structured.middle[0])
+    bound_stops = bound.kwargs.get("stop")
+    assert _PROMPT_PREFILL_STOP in bound_stops
+    assert "END" in bound_stops
 
 
 def test_with_structured_output_prompt_prefill_include_raw() -> None:
