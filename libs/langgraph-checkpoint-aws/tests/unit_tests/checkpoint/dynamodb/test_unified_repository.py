@@ -1,6 +1,6 @@
 """Comprehensive tests for UnifiedRepository."""
 
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from botocore.exceptions import ClientError
@@ -471,6 +471,8 @@ class TestPendingWrites:
         mock_serializer = Mock()
         mock_storage = Mock()
 
+        mock_client.batch_write_item.return_value = {"UnprocessedItems": {}}
+
         repo = UnifiedRepository(
             dynamodb_client=mock_client,
             table_name=TEST_TABLE_NAME,
@@ -847,6 +849,8 @@ class TestMetadataBeforePayloadOrdering:
         # Setup storage to indicate small payload (DYNAMODB storage)
         mock_storage.should_offload_to_s3.return_value = False
 
+        mock_dynamodb.batch_write_item.return_value = {"UnprocessedItems": {}}
+
         return {
             "dynamodb": mock_dynamodb,
             "serializer": mock_serializer,
@@ -963,17 +967,22 @@ class TestMetadataBeforePayloadOrdering:
         # Track call order with details
         call_order = []
 
-        def track_put_item(**kwargs):
-            item = kwargs.get("Item", {})
-            channel = item.get("channel", {}).get("S", "unknown")
-            call_order.append(("put_item", channel))
+        def track_batch_write(**kwargs):
+            for reqs in kwargs.get("RequestItems", {}).values():
+                for req in reqs:
+                    item = req.get("PutRequest", {}).get("Item", {})
+                    channel = item.get("channel", {}).get("S", "unknown")
+                    call_order.append(("batch_write_item", channel))
+            return {"UnprocessedItems": {}}
 
         def track_store_data(*args, **kwargs):
             # Extract channel info from chunk_key
             chunk_key = kwargs.get("chunk_key", "")
             call_order.append(("store_data", chunk_key))
 
-        mock_repo_components["dynamodb"].put_item.side_effect = track_put_item
+        mock_repo_components[
+            "dynamodb"
+        ].batch_write_item.side_effect = track_batch_write
         mock_repo_components["storage"].store_data.side_effect = track_store_data
 
         # Act
@@ -988,22 +997,13 @@ class TestMetadataBeforePayloadOrdering:
         # Assert
         assert len(call_order) == 6, "Expected 3 metadata + 3 payload calls"
 
-        # Verify alternating pattern: metadata, payload, metadata, payload, ...
-        for i in range(0, len(call_order), 2):
-            assert call_order[i][0] == "put_item", (
-                f"Call {i} should be put_item (metadata)"
-            )
-            assert call_order[i + 1][0] == "store_data", (
-                f"Call {i + 1} should be store_data (payload)"
-            )
-
-        # Verify each write's metadata comes before its payload
-        assert call_order[0] == ("put_item", "channel1")
-        assert "CHUNK_" in call_order[1][1]  # store_data with chunk_key
-        assert call_order[2] == ("put_item", "channel2")
-        assert "CHUNK_" in call_order[3][1]
-        assert call_order[4] == ("put_item", "channel3")
-        assert "CHUNK_" in call_order[5][1]
+        # All metadata is committed (in a single batch) before any payload.
+        assert call_order[0] == ("batch_write_item", "channel1")
+        assert call_order[1] == ("batch_write_item", "channel2")
+        assert call_order[2] == ("batch_write_item", "channel3")
+        for i in range(3, 6):
+            assert call_order[i][0] == "store_data"
+            assert "CHUNK_" in call_order[i][1]
 
     def test_put_writes_sequential_not_parallel(self, repo, mock_repo_components):
         """Test that writes are processed sequentially, not in parallel."""
@@ -1013,15 +1013,20 @@ class TestMetadataBeforePayloadOrdering:
         # Track execution order with timestamps
         execution_log = []
 
-        def track_put_item(**kwargs):
-            item = kwargs.get("Item", {})
-            channel = item.get("channel", {}).get("S", "unknown")
-            execution_log.append(f"metadata_{channel}")
+        def track_batch_write(**kwargs):
+            for reqs in kwargs.get("RequestItems", {}).values():
+                for req in reqs:
+                    item = req.get("PutRequest", {}).get("Item", {})
+                    channel = item.get("channel", {}).get("S", "unknown")
+                    execution_log.append(f"metadata_{channel}")
+            return {"UnprocessedItems": {}}
 
         def track_store_data(*args, **kwargs):
             execution_log.append("payload")
 
-        mock_repo_components["dynamodb"].put_item.side_effect = track_put_item
+        mock_repo_components[
+            "dynamodb"
+        ].batch_write_item.side_effect = track_batch_write
         mock_repo_components["storage"].store_data.side_effect = track_store_data
 
         # Act
@@ -1033,11 +1038,11 @@ class TestMetadataBeforePayloadOrdering:
             task_id=TEST_TASK_ID,
         )
 
-        # Assert - verify sequential execution pattern
+        # Assert - all metadata is committed (in a single batch) before any payload
         expected_order = [
             "metadata_channel1",
-            "payload",
             "metadata_channel2",
+            "payload",
             "payload",
         ]
         assert execution_log == expected_order
@@ -1071,16 +1076,11 @@ class TestMetadataBeforePayloadOrdering:
         # Arrange
         writes = [("channel1", "value1"), ("channel2", "value2")]
 
-        # Make second put_item fail
+        # Make batch_write_item fail
         error_response = {"Error": {"Code": "InternalServerError", "Message": "Test"}}
-        call_count = [0]
-
-        def failing_put_item(**kwargs):
-            call_count[0] += 1
-            if call_count[0] == 2:  # Fail on second call
-                raise ClientError(error_response, "PutItem")
-
-        mock_repo_components["dynamodb"].put_item.side_effect = failing_put_item
+        mock_repo_components["dynamodb"].batch_write_item.side_effect = ClientError(
+            error_response, "BatchWriteItem"
+        )
 
         # Act & Assert
         with pytest.raises(ClientError):
@@ -1092,29 +1092,29 @@ class TestMetadataBeforePayloadOrdering:
                 task_id=TEST_TASK_ID,
             )
 
-        # Verify store_data was called only once (for first write)
-        assert mock_repo_components["storage"].store_data.call_count == 1
+        # Metadata batch failed before any payload — store_data must not run.
+        assert mock_repo_components["storage"].store_data.call_count == 0
 
     def test_put_single_write_item_called_before_storage(
         self, repo, mock_repo_components
     ):
-        """Test that put_single_write_item is called before storage.store_data."""
+        """Test that batch_write_item is called before storage.store_data."""
         # Arrange
         writes = [("channel1", "value1")]
 
         # Track method calls
         call_order = []
 
-        original_put_single = repo.put_single_write_item
-
-        def tracked_put_single(*args, **kwargs):
-            call_order.append("put_single_write_item")
-            return original_put_single(*args, **kwargs)
+        def tracked_batch_write(**kwargs):
+            call_order.append("batch_write_item")
+            return {"UnprocessedItems": {}}
 
         def tracked_store_data(*args, **kwargs):
             call_order.append("store_data")
 
-        repo.put_single_write_item = tracked_put_single
+        mock_repo_components[
+            "dynamodb"
+        ].batch_write_item.side_effect = tracked_batch_write
         mock_repo_components["storage"].store_data.side_effect = tracked_store_data
 
         # Act
@@ -1127,7 +1127,39 @@ class TestMetadataBeforePayloadOrdering:
         )
 
         # Assert
-        assert call_order == ["put_single_write_item", "store_data"]
+        assert call_order == ["batch_write_item", "store_data"]
+
+    def test_put_writes_retries_unprocessed_items(self, repo, mock_repo_components):
+        """UnprocessedItems returned by batch_write_item are re-submitted."""
+        # Arrange — first response holds one item back, second drains the batch.
+        writes = [("channel1", "value1"), ("channel2", "value2")]
+
+        mock_repo_components["dynamodb"].batch_write_item.side_effect = [
+            {
+                "UnprocessedItems": {
+                    TEST_TABLE_NAME: [
+                        {"PutRequest": {"Item": {"PK": {"S": "x"}, "SK": {"S": "y"}}}}
+                    ]
+                }
+            },
+            {"UnprocessedItems": {}},
+        ]
+
+        # Act — patch sleep so the backoff doesn't slow the test.
+        with patch(
+            "langgraph_checkpoint_aws.checkpoint.dynamodb.unified_repository.time.sleep"
+        ):
+            repo.put_writes(
+                thread_id=TEST_THREAD_ID,
+                checkpoint_ns=TEST_CHECKPOINT_NS,
+                checkpoint_id=TEST_CHECKPOINT_ID,
+                writes=writes,
+                task_id=TEST_TASK_ID,
+            )
+
+        # Assert — initial batch + 1 retry, all payloads stored exactly once.
+        assert mock_repo_components["dynamodb"].batch_write_item.call_count == 2
+        assert mock_repo_components["storage"].store_data.call_count == 2
 
 
 class TestDetermineStorageLocation:
@@ -1139,6 +1171,8 @@ class TestDetermineStorageLocation:
         mock_dynamodb = Mock()
         mock_serializer = Mock()
         mock_storage = Mock()
+
+        mock_dynamodb.batch_write_item.return_value = {"UnprocessedItems": {}}
 
         return UnifiedRepository(
             dynamodb_client=mock_dynamodb,
@@ -1232,7 +1266,8 @@ class TestDetermineStorageLocation:
         # Assert - verify should_offload_to_s3 was called
         repo.storage.should_offload_to_s3.assert_called_once()
 
-        # Verify put_item was called with DYNAMODB location
-        put_item_call = repo.dynamodb_client.put_item.call_args
-        item = put_item_call[1]["Item"]
+        # Verify batch_write_item was called with a DYNAMODB-located item
+        batch_call = repo.dynamodb_client.batch_write_item.call_args
+        write_requests = next(iter(batch_call[1]["RequestItems"].values()))
+        item = write_requests[0]["PutRequest"]["Item"]
         assert item["ref_loc"]["S"] == "DYNAMODB"
