@@ -5549,20 +5549,17 @@ def test_with_structured_output_prompt_prefill_dict_schema() -> None:
 
 def test_with_structured_output_prompt_prefill_stop_sequence_merge() -> None:
     """Stop sequences are merged, not replaced, when using prompt_prefill."""
-    from typing import cast
-
-    from langchain_core.runnables import RunnableBinding
-
     from langchain_aws.chat_models.bedrock_converse import _PROMPT_PREFILL_STOP
 
     chat_model = ChatBedrockConverse(
         model="us.amazon.nova-pro-v1:0",
         region_name="us-west-2",
-        stop_sequences=["END"],
+        stop=["END"],
     )
     structured = chat_model.with_structured_output(GetWeather, method="prompt_prefill")
-    bound = cast(RunnableBinding, structured.middle[0])
-    bound_stops = bound.kwargs.get("stop")
+    bound = structured.middle[0]  # type: ignore[attr-defined]
+    bound_stops = bound.kwargs.get("stop")  # type: ignore[attr-defined]
+    assert bound_stops is not None
     assert _PROMPT_PREFILL_STOP in bound_stops
     assert "END" in bound_stops
 
