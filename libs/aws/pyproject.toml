@@ -27,6 +27,7 @@ tools = ["bedrock-agentcore>=1.4.0; python_version>='3.10'", "playwright>=1.53.0
 anthropic = ["langchain-anthropic", "anthropic[bedrock]"]
 valkey = ["valkey-glide-sync>=2.0.0"]
 nova-sonic = ["aws-sdk-bedrock-runtime; python_version>='3.12'"]
+mantle = ["openai>=1.106.0", "aws-bedrock-token-generator>=1.1.0"]  # openai>=1.106.0 for callable api_key support (short-term tokens)
 
 [dependency-groups]
 test = [
@@ -49,6 +50,8 @@ test_integration = [
     "langchain-anthropic",
     "anthropic[bedrock]",
     "aws-sdk-bedrock-runtime; python_version>='3.12'",
+    "openai>=1.106.0",
+    "aws-bedrock-token-generator>=1.1.0",
 ]
 lint = ["ruff>=0.13.0"]
 typing = [
