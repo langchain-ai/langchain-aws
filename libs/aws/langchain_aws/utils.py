@@ -537,6 +537,31 @@ def trim_message_whitespace(messages: List[Any]) -> List[Any]:
     return messages
 
 
+class _StaticCredentialProvider:
+    """Wraps resolved botocore credentials in the shape ``provide_token`` expects.
+
+    ``aws_bedrock_token_generator.provide_token`` accepts an
+    ``aws_credentials_provider`` that must expose a ``.load()`` method
+    returning a ``botocore.credentials.Credentials`` (or subclass). This
+    class adapts a pre-resolved credentials object to that contract.
+    """
+
+    METHOD = "explicit"
+
+    def __init__(self, credentials: Any) -> None:
+        self._credentials = credentials
+
+    def load(self) -> Any:
+        return self._credentials
+
+
+#: Server-side maximum lifetime (in seconds) of a short-term Bedrock API
+#: key issued by ``aws-bedrock-token-generator``. Bedrock rejects longer
+#: expiries at the token-verification layer, so this is both the default
+#: and the upper-bound of the ``ttl_seconds`` knob.
+_BEDROCK_API_KEY_MAX_TTL_SECONDS = 43200  # 12 h
+
+
 class _BedrockApiKeyProvider:
     """Generates and caches short-term Bedrock API keys.
 
@@ -549,18 +574,28 @@ class _BedrockApiKeyProvider:
     See: https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-generate.html
     """
 
-    # Bedrock short-term API keys have a 12 h max lifetime as of 2026-04.
-    # If the service changes this, update accordingly or parse the actual
-    # expiry from the token response when available.
-    _TTL_SECONDS = 43200  # 12 h max
     # Matches botocore's _DEFAULT_ADVISORY_REFRESH_TIMEOUT (900s) and
     # _DEFAULT_MANDATORY_REFRESH_TIMEOUT (600s) for credential refresh.
     _ADVISORY_REFRESH_SECONDS = 900  # try to refresh 15 min before expiry
     _MANDATORY_REFRESH_SECONDS = 600  # must refresh 10 min before expiry
 
-    def __init__(self, region: str) -> None:
+    def __init__(
+        self,
+        region: str,
+        *,
+        ttl_seconds: int = _BEDROCK_API_KEY_MAX_TTL_SECONDS,
+        aws_access_key_id: Optional[str] = None,
+        aws_secret_access_key: Optional[str] = None,
+        aws_session_token: Optional[str] = None,
+        credentials_profile_name: Optional[str] = None,
+    ) -> None:
         self._region = region
-        self._token: Optional[str] = None
+        self._ttl_seconds = ttl_seconds
+        self._aws_access_key_id = aws_access_key_id
+        self._aws_secret_access_key = aws_secret_access_key
+        self._aws_session_token = aws_session_token
+        self._credentials_profile_name = credentials_profile_name
+        self._token: str = ""
         self._expires_at: float = 0.0
         self._lock = threading.Lock()
 
@@ -575,17 +610,17 @@ class _BedrockApiKeyProvider:
           completes or raise on failure.
         """
         if not self._refresh_needed(self._ADVISORY_REFRESH_SECONDS):
-            return self._token  # type: ignore[return-value]
+            return self._token
 
         if self._lock.acquire(blocking=False):
             try:
                 # Re-check: another thread may have refreshed before we
                 # acquired the lock.
                 if not self._refresh_needed(self._ADVISORY_REFRESH_SECONDS):
-                    return self._token  # type: ignore[return-value]
+                    return self._token
                 is_mandatory = self._refresh_needed(self._MANDATORY_REFRESH_SECONDS)
                 self._protected_refresh(is_mandatory=is_mandatory)
-                return self._token  # type: ignore[return-value]
+                return self._token
             finally:
                 self._lock.release()
         elif self._refresh_needed(self._MANDATORY_REFRESH_SECONDS):
@@ -594,19 +629,19 @@ class _BedrockApiKeyProvider:
                 # Re-check: another thread may have refreshed while we
                 # were waiting for the lock.
                 if not self._refresh_needed(self._MANDATORY_REFRESH_SECONDS):
-                    return self._token  # type: ignore[return-value]
+                    return self._token
                 self._protected_refresh(is_mandatory=True)
-                return self._token  # type: ignore[return-value]
+                return self._token
 
-        # Another thread is refreshing; return current token.
-        # Note: self._token is never None here because when _token is None,
-        # _refresh_needed() returns True for the mandatory threshold, so the
-        # elif branch above always triggers and blocks until a token exists.
-        return self._token  # type: ignore[return-value]
+        # Another thread is refreshing; return current token. self._token is
+        # never empty here because when it is, _refresh_needed() returns True
+        # for the mandatory threshold, so the elif branch above always
+        # triggers and blocks until a token exists.
+        return self._token
 
     def _refresh_needed(self, refresh_in: int) -> bool:
         """Check if a refresh is needed within ``refresh_in`` seconds."""
-        if self._token is None:
+        if not self._token:
             return True
         return time.monotonic() >= self._expires_at - refresh_in
 
@@ -632,12 +667,86 @@ class _BedrockApiKeyProvider:
 
         return await asyncio.to_thread(self)
 
+    @staticmethod
+    def _credentials_seconds_remaining(credentials: Any) -> Optional[int]:
+        """Return remaining lifetime (s) for ``RefreshableCredentials``.
+
+        Uses botocore's ``_seconds_remaining`` — a private method, but
+        stable across botocore versions and the one botocore's own auth
+        code uses internally. If botocore ever renames or removes it,
+        the resulting ``AttributeError`` is swallowed and the caller
+        degrades to its configured TTL.
+
+        Args:
+            credentials: A boto3 / botocore ``Credentials`` instance
+                (any subclass).
+
+        Returns:
+            Remaining seconds if the credentials are a
+            ``RefreshableCredentials`` and report a positive value;
+            ``None`` for static credentials or on any error.
+        """
+        from botocore.credentials import RefreshableCredentials
+
+        if not isinstance(credentials, RefreshableCredentials):
+            return None
+        try:
+            remaining = credentials._seconds_remaining()  # type: ignore[attr-defined]
+        except Exception:
+            logger.debug(
+                "RefreshableCredentials._seconds_remaining() raised; "
+                "falling back to configured TTL.",
+                exc_info=True,
+            )
+            return None
+        return int(remaining) if remaining > 0 else None
+
     def _do_refresh(self) -> None:
         from aws_bedrock_token_generator import provide_token
+        from botocore.credentials import Credentials
+        from botocore.session import Session as BotocoreSession
+
+        # Resolve credentials with precedence:
+        # explicit access_key + secret_key > profile > default chain.
+        credentials: Any = None
+        if self._aws_access_key_id and self._aws_secret_access_key:
+            credentials = Credentials(
+                access_key=self._aws_access_key_id,
+                secret_key=self._aws_secret_access_key,
+                token=self._aws_session_token,
+            )
+        else:
+            try:
+                if self._credentials_profile_name:
+                    session = BotocoreSession(profile=self._credentials_profile_name)
+                else:
+                    session = BotocoreSession()
+                credentials = session.get_credentials()
+            except Exception:
+                logger.debug(
+                    "Could not resolve credentials via botocore session; "
+                    "provide_token will fall back to its own default chain.",
+                    exc_info=True,
+                )
+                credentials = None
+
+        # Cap TTL by underlying credential lifetime for refreshable creds
+        # (AssumeRole, SSO, IRSA, etc.). Static creds have no expiry
+        # metadata so we use the configured TTL directly.
+        effective_ttl = self._ttl_seconds
+        remaining = self._credentials_seconds_remaining(credentials)
+        if remaining is not None:
+            effective_ttl = min(self._ttl_seconds, remaining)
+
+        # Wrap the resolved credentials in a CredentialProvider shape so
+        # provide_token uses them; passing None lets provide_token fall
+        # back to its own default resolution.
+        provider = _StaticCredentialProvider(credentials) if credentials else None
 
         token = provide_token(
             region=self._region,
-            expiry=timedelta(seconds=self._TTL_SECONDS),
+            expiry=timedelta(seconds=effective_ttl),
+            aws_credentials_provider=provider,
         )
         self._token = token
-        self._expires_at = time.monotonic() + self._TTL_SECONDS
+        self._expires_at = time.monotonic() + effective_ttl

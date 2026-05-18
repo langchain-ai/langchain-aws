@@ -1,20 +1,18 @@
-"""Integration tests for ChatBedrockMantle.
-
-These tests require:
-  - pip install "langchain-aws[mantle]"
-  - Valid AWS credentials with Bedrock access
-  - Access to Mantle models in the configured region
-
-Run with:
-  AWS_REGION=us-east-1 \
-    uv run --group test --group test_integration \
-    pytest tests/integration_tests/chat_models/test_bedrock_mantle.py -v
-"""
+"""Integration tests for ChatBedrockMantle."""
 
 import os
+from typing import Type
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    HumanMessage,
+    SystemMessage,
+)
+from langchain_core.tools import BaseTool
+from langchain_tests.integration_tests import ChatModelIntegrationTests
 
 try:
     from langchain_aws import ChatBedrockMantle
@@ -29,6 +27,132 @@ pytestmark = pytest.mark.skipif(
 )
 
 REGION = os.environ.get("AWS_REGION", "us-east-1")
+
+
+# ── Standard LangChain interface tests ──────────────────────────────
+
+
+_STANDARD_MAX_TOKENS = 5000  # matches ChatBedrockConverse's config
+
+
+@pytest.mark.skipif(
+    not MANTLE_AVAILABLE,
+    reason="Mantle deps not installed or CI lacks Mantle API permissions.",
+)
+class TestBedrockMantleStandardOpenWeights(ChatModelIntegrationTests):
+    """Conformance run against an open-weight OpenAI model on ``/v1``.
+
+    ``openai.gpt-oss-120b`` serves both Chat Completions and Responses
+    at the default ``/v1`` base URL. It does not currently accept
+    ``tool_choice="required"`` on this path, so we disable the
+    ``has_tool_choice`` capability flag for this model.
+    """
+
+    @property
+    def chat_model_class(self) -> Type[BaseChatModel]:
+        return ChatBedrockMantle
+
+    @property
+    def chat_model_params(self) -> dict:
+        return {
+            "model": "openai.gpt-oss-120b",
+            "region_name": REGION,
+        }
+
+    @property
+    def standard_chat_model_params(self) -> dict:
+        return {"max_tokens": _STANDARD_MAX_TOKENS}
+
+    @property
+    def has_tool_choice(self) -> bool:
+        # Mantle rejects ``tool_choice="required"`` for gpt-oss-* on
+        # ``/v1/responses`` with a 400 validation error.
+        return False
+
+    @property
+    def has_structured_output(self) -> bool:
+        # ``openai.gpt-oss-120b`` does not strictly honor
+        # ``strict=True`` for ``response_format={"type": "json_schema"}``
+        # — it often prefixes free-form text (e.g. ``"Why{...}"``)
+        # before the JSON payload, breaking the output parser. The
+        # class-level structured-output plumbing is exercised by
+        # ``TestBedrockMantleStandardFrontier`` against ``gpt-5.5``.
+        return False
+
+    # These two tests internally use ``tool_choice="any"`` (which the
+    # class maps to ``tool_choice="required"``). Mantle rejects
+    # ``tool_choice="required"`` for ``openai.gpt-oss-120b`` on
+    # ``/v1/responses`` — same underlying limitation as
+    # ``has_tool_choice=False``, but this pair of tests uses
+    # ``tool_choice`` as a means to a different end so the flag
+    # doesn't skip them.
+    @pytest.mark.xfail(
+        reason=(
+            "openai.gpt-oss-120b rejects tool_choice='required' on "
+            "/v1/responses; exercised by TestBedrockMantleStandardFrontier "
+            "against a model that supports it."
+        )
+    )
+    def test_unicode_tool_call_integration(
+        self,
+        model: BaseChatModel,
+        *,
+        tool_choice: str | None = None,
+        force_tool_call: bool = True,
+    ) -> None:
+        super().test_unicode_tool_call_integration(
+            model, tool_choice=tool_choice, force_tool_call=force_tool_call
+        )
+
+    @pytest.mark.xfail(
+        reason=(
+            "openai.gpt-oss-120b rejects tool_choice='required' on "
+            "/v1/responses; exercised by TestBedrockMantleStandardFrontier "
+            "against a model that supports it."
+        )
+    )
+    def test_structured_few_shot_examples(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        super().test_structured_few_shot_examples(model, my_adder_tool)
+
+
+@pytest.mark.skipif(
+    not MANTLE_AVAILABLE,
+    reason="Mantle deps not installed or CI lacks Mantle API permissions.",
+)
+class TestBedrockMantleStandardFrontier(ChatModelIntegrationTests):
+    """Conformance run against a frontier OpenAI model on ``/openai/v1``.
+
+    ``openai.gpt-5.5`` lives on ``/openai/v1`` and supports the
+    Responses API only (no Chat Completions). Users select it by
+    passing an explicit ``base_url``. Frontier models allocate a
+    portion of the budget to internal reasoning, so we use a larger
+    ``max_tokens`` to ensure text output is produced.
+    """
+
+    @property
+    def chat_model_class(self) -> Type[BaseChatModel]:
+        return ChatBedrockMantle
+
+    @property
+    def chat_model_params(self) -> dict:
+        return {
+            "model": "openai.gpt-5.5",
+            "region_name": REGION,
+            "base_url": f"https://bedrock-mantle.{REGION}.api.aws/openai/v1",
+            # gpt-5.x is Responses-API-only — pin routing so structured
+            # output and other Chat-Completions-hinted params don't
+            # trigger a fallback to an endpoint the model doesn't serve.
+            "use_responses_api": True,
+        }
+
+    @property
+    def standard_chat_model_params(self) -> dict:
+        return {"max_tokens": _STANDARD_MAX_TOKENS}
+
+
+# ── Custom integration tests ────────────────────────────────────────
 
 MODELS = [
     "openai.gpt-oss-20b",
@@ -166,7 +290,9 @@ class TestToolCalling:
         assert len(chunks) > 0
         # At least one chunk should have tool call info or text
         has_content = any(isinstance(c.content, str) and c.content for c in chunks)
-        has_tool_chunks = any(c.tool_call_chunks for c in chunks)
+        has_tool_chunks = any(
+            isinstance(c, AIMessageChunk) and c.tool_call_chunks for c in chunks
+        )
         assert has_content or has_tool_chunks
 
 
@@ -337,5 +463,97 @@ class TestRetryAndTimeout:
     def test_custom_max_retries(self) -> None:
         llm = ChatBedrockMantle(model=MODELS[0], region_name=REGION, max_retries=3)
         response = llm.invoke("Say hi")
+        assert isinstance(response, AIMessage)
+        assert response.content
+
+
+# ── Explicit AWS credentials & configurable TTL ─────────────────────
+
+
+class TestExplicitCredsAndTTL:
+    """Live tests for the credential kwargs + TTL knob added in this
+    revision. Each test resolves creds from the ambient chain and passes
+    them explicitly, exercising the ``aws_access_key_id`` / secret / token
+    path end-to-end against a real Bedrock Mantle endpoint.
+    """
+
+    def _resolve_ambient_creds(self) -> dict:
+        """Snapshot the current default-chain creds for reuse as explicit kwargs."""
+        import boto3
+        from pydantic import SecretStr
+
+        creds = boto3.Session().get_credentials()
+        if creds is None:
+            pytest.skip("No AWS credentials available in this environment.")
+        frozen = creds.get_frozen_credentials()
+        if not frozen.access_key or not frozen.secret_key:
+            pytest.skip("Ambient AWS credentials missing access/secret key.")
+        result: dict = {
+            "aws_access_key_id": SecretStr(frozen.access_key),
+            "aws_secret_access_key": SecretStr(frozen.secret_key),
+        }
+        if frozen.token:
+            result["aws_session_token"] = SecretStr(frozen.token)
+        return result
+
+    def test_invoke_with_explicit_creds(self) -> None:
+        """End-to-end: explicit access_key + secret_key (+ session token if
+        present) produce a working short-term Bedrock API key."""
+        explicit_creds = self._resolve_ambient_creds()
+        llm = ChatBedrockMantle(
+            model=MODELS[0],
+            region_name=REGION,
+            **explicit_creds,
+        )
+        response = llm.invoke("Say hi in one word")
+        assert isinstance(response, AIMessage)
+        assert response.content
+
+    def test_invoke_with_custom_ttl(self) -> None:
+        """Non-default TTL propagates to the token generator and the
+        generated key still works."""
+        llm = ChatBedrockMantle(
+            model=MODELS[0],
+            region_name=REGION,
+            bedrock_api_key_ttl_seconds=3600,  # 1 hour instead of default 12h
+        )
+        response = llm.invoke("Say hi in one word")
+        assert isinstance(response, AIMessage)
+        assert response.content
+
+    def test_invoke_with_explicit_creds_and_custom_ttl(self) -> None:
+        """Combined: explicit creds + custom TTL both flow through."""
+        explicit_creds = self._resolve_ambient_creds()
+        llm = ChatBedrockMantle(
+            model=MODELS[0],
+            region_name=REGION,
+            bedrock_api_key_ttl_seconds=1800,  # 30 min
+            **explicit_creds,
+        )
+        response = llm.invoke("Say hi in one word")
+        assert isinstance(response, AIMessage)
+        assert response.content
+
+    def test_invoke_with_profile_name(self) -> None:
+        """Profile-only path: BotocoreSession(profile=...) resolves creds."""
+        profile = os.environ.get("LANGCHAIN_AWS_MANTLE_TEST_PROFILE") or os.environ.get(
+            "AWS_PROFILE"
+        )
+        if not profile:
+            pytest.skip("Set AWS_PROFILE or LANGCHAIN_AWS_MANTLE_TEST_PROFILE to run.")
+        # Verify the profile actually exists in ~/.aws/config.
+        import botocore.session
+
+        try:
+            botocore.session.Session(profile=profile).get_credentials()
+        except Exception as exc:
+            pytest.skip(f"Profile {profile!r} not resolvable: {exc}")
+
+        llm = ChatBedrockMantle(
+            model=MODELS[0],
+            region_name=REGION,
+            credentials_profile_name=profile,
+        )
+        response = llm.invoke("Say hi in one word")
         assert isinstance(response, AIMessage)
         assert response.content
