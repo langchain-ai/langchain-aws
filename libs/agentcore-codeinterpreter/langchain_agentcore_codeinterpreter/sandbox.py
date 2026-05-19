@@ -32,6 +32,21 @@ _AGENTCORE_EXECUTOR = ThreadPoolExecutor(
 )
 
 
+def _normalize_relative_path(path: str) -> str:
+    """Strip leading slashes and ``./`` prefixes to a canonical relative path.
+
+    Args:
+        path: File path (absolute or relative).
+
+    Returns:
+        Canonical relative path string with no leading ``/`` or ``./``.
+    """
+    path = path.lstrip("/")
+    while path.startswith("./"):
+        path = path[2:]
+    return path
+
+
 class SessionExpiredError(Exception):
     """Raised when the AgentCore session has expired or been terminated."""
 
@@ -104,8 +119,7 @@ def _extract_files_from_stream(
     """
     path_lookup: dict[str, str] = {}
     for path in requested_paths:
-        stripped = path.lstrip("/")
-        path_lookup[stripped] = path
+        path_lookup[_normalize_relative_path(path)] = path
 
     files: dict[str, bytes] = {}
 
@@ -117,13 +131,16 @@ def _extract_files_from_stream(
                 continue
             resource = item.get("resource", {})
             uri = resource.get("uri", "")
-            file_path = uri.replace("file://", "").lstrip("/")
+            file_path = _normalize_relative_path(uri.replace("file://", ""))
 
             content: bytes | None = None
             if "text" in resource:
                 content = resource["text"].encode("utf-8")
             elif "blob" in resource:
-                content = base64.b64decode(resource["blob"])
+                blob = resource["blob"]
+                # The AgentCore stream may deliver blob as already-decoded bytes.
+                # Only base64-decode when it arrives as encoded text.
+                content = blob if isinstance(blob, bytes) else base64.b64decode(blob)
 
             if content is not None:
                 original_path = path_lookup.get(file_path, file_path)
@@ -178,7 +195,7 @@ class AgentCoreSandbox(BaseSandbox):
 
     @staticmethod
     def _to_relative_path(path: str) -> str:
-        """Strip leading slashes so paths are relative for AgentCore APIs.
+        """Strip leading slashes and ``./`` prefixes for AgentCore APIs.
 
         Args:
             path: File path (absolute or relative).
@@ -186,7 +203,7 @@ class AgentCoreSandbox(BaseSandbox):
         Returns:
             Relative path string.
         """
-        return path.lstrip("/")
+        return _normalize_relative_path(path)
 
     def _invoke(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         """Invoke the interpreter and eagerly consume the response stream.

@@ -228,6 +228,36 @@ def test_download_files_handles_session_expiry() -> None:
     assert results[0].error == "permission_denied"
 
 
+def test_download_files_dot_slash_path() -> None:
+    """./-prefixed paths must round-trip through readFiles and lookup."""
+    fake_png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+    sandbox, mock = _make_sandbox(
+        {
+            "stream": [
+                {
+                    "result": {
+                        "content": [
+                            {
+                                "type": "resource",
+                                "resource": {
+                                    "uri": "file:///data/foo.png",
+                                    "blob": fake_png,
+                                },
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    )
+    results = sandbox.download_files(["./data/foo.png"])
+    mock.invoke.assert_called_once_with(
+        method="readFiles", params={"paths": ["data/foo.png"]}
+    )
+    assert results[0].error is None
+    assert results[0].content == fake_png
+
+
 # ------------------------------------------------------------------
 # _to_relative_path()
 # ------------------------------------------------------------------
@@ -238,6 +268,13 @@ def test_relative_path_stripping() -> None:
     assert AgentCoreSandbox._to_relative_path("/abs/path.txt") == "abs/path.txt"
     assert AgentCoreSandbox._to_relative_path("rel/path.txt") == "rel/path.txt"
     assert AgentCoreSandbox._to_relative_path("///triple.txt") == "triple.txt"
+
+
+def test_relative_path_strips_dot_slash() -> None:
+    """./ and repeated ././ prefixes should be stripped."""
+    assert AgentCoreSandbox._to_relative_path("./data/foo.png") == "data/foo.png"
+    assert AgentCoreSandbox._to_relative_path("././foo.png") == "foo.png"
+    assert AgentCoreSandbox._to_relative_path("/./data/foo.png") == "data/foo.png"
 
 
 # ------------------------------------------------------------------
