@@ -2389,6 +2389,59 @@ def test_get_base_model_without_application_inference_profile(
 
 
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_tracing_params_with_application_inference_profile(
+    mock_create_client: mock.Mock,
+) -> None:
+    """LangSmith params should report the resolved base model for AIPs.
+
+    The AIP ARN is opaque and not in LangSmith's price table, so leaving it in
+    `ls_model_name` silently breaks cost computation. Use the resolved
+    `base_model_id` instead.
+    """
+    aip_arn = (
+        "arn:aws:bedrock:us-east-1:123456789012:"
+        "application-inference-profile/test-profile"
+    )
+    mock_bedrock_client = mock.Mock()
+    mock_bedrock_client.get_inference_profile.return_value = {
+        "models": [
+            {
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "anthropic.claude-sonnet-4-5-20250929-v1:0"
+                )
+            }
+        ]
+    }
+
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        return mock.Mock()
+
+    mock_create_client.side_effect = side_effect
+
+    chat_model = ChatBedrockConverse(
+        model=aip_arn,
+        region_name="us-west-2",
+        provider="anthropic",
+    )
+
+    ls_params = chat_model._get_ls_params()
+    assert ls_params["ls_model_name"] == "anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+
+def test_tracing_params_without_application_inference_profile() -> None:
+    """Non-AIP usage: `ls_model_name` mirrors the configured model id."""
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )
+    ls_params = chat_model._get_ls_params()
+    assert ls_params["ls_model_name"] == "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
 def test_configure_streaming_for_resolved_model(mock_create_client: mock.Mock) -> None:
     """Test _configure_streaming_for_resolved_model method."""
     mock_bedrock_client = mock.Mock()
