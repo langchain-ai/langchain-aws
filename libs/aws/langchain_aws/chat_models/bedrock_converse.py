@@ -1696,7 +1696,7 @@ class ChatBedrockConverse(BaseChatModel):
         closing fence. The resulting text is parsed against ``schema``.
         """
         if isinstance(schema, type) and is_basemodel_subclass(schema):
-            json_schema = schema.model_json_schema()
+            json_schema = dict(schema.model_json_schema().items())
         elif isinstance(schema, dict):
             json_schema = copy.deepcopy(schema)
         else:
@@ -1969,14 +1969,26 @@ ChatBedrockConverse.with_structured_output.__doc__ = _base_wso_doc.replace(
 _PROMPT_PREFILL_VALUE = "```json"
 _PROMPT_PREFILL_STOP = "```"
 
+_PROMPT_PREFILL_INSTRUCTIONS = """You MUST respond with a single JSON object matching the schema provided. For this schema you'll be provided with all the "properties" and their types, as well as the required properties.
+
+As an example, for the schema {{"properties": {{"foo": {{"title": "Foo", "description": "a list of strings", "type": "array", "items": {{"type": "string"}}}}}}, "required": ["foo"]}}
+the object {{"foo": ["bar", "baz"]}} is a well-formatted instance of the schema. The object {{"properties": {{"foo": ["bar", "baz"]}}}} is NOT well-formatted.
+
+Do not include any preamble, explanation, or text outside the JSON. Wrap the JSON in a ```json ... ``` fenced code block.
+
+## Response Schema:
+{schema}
+"""  # noqa: E501
+
 
 def _prompt_prefill_instructions(json_schema: dict) -> str:
-    return (
-        "You MUST respond with a single JSON object matching the schema below. "
-        "Do not include any preamble, explanation, or text outside the JSON. "
-        "Wrap the JSON in a ```json ... ``` fenced code block.\n\n"
-        "## Response Schema:\n"
-        f"```json\n{json.dumps(json_schema, indent=2)}\n```"
+    if "title" in json_schema:
+        del json_schema["title"]
+    if "type" in json_schema:
+        del json_schema["type"]
+
+    return _PROMPT_PREFILL_INSTRUCTIONS.format(
+        schema=json.dumps(json_schema, indent=2, ensure_ascii=True)
     )
 
 
