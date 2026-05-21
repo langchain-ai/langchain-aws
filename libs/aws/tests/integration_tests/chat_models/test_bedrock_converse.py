@@ -355,6 +355,12 @@ def test_tool_use_with_cache_point() -> None:
     # Define a large number of tools to exceed 1024 tokens
     tool_classes = []
 
+    # Bedrock dedupes byte-identical cache prefixes across separate calls for the
+    # cache TTL (5m default), so a re-run within that window would return a cache
+    # read instead of a write and break the assertion below. Salt one tool's
+    # docstring with a per-run unique value so each run sends a fresh prefix.
+    session = uuid4().hex
+
     # Each tool is simple but we'll define many of them
     for i in range(1, 20):
         # Creating a unique class for each tool
@@ -369,7 +375,10 @@ def test_tool_use_with_cache_point() -> None:
                     description=f"Operation {i} to perform on the numbers"
                 )
 
-            ToolClass.__doc__ = f"A tool to calculate the {i}th mathematical operation"
+            ToolClass.__doc__ = (
+                f"A tool to calculate the {i}th mathematical operation "
+                f"(session {session})"
+            )
             return ToolClass
 
         tool_class = create_tool_class(i)
