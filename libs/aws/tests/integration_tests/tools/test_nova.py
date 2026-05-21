@@ -352,13 +352,15 @@ class TestNovaCodeInterpreterTool:
         model_with_tools = nova_model.bind_tools([NovaCodeInterpreterTool()])
 
         # First turn
-        message1 = HumanMessage("Calculate 15 * 20")
+        message1 = HumanMessage("Use Python to calculate 15 * 20")
         response1 = model_with_tools.invoke([message1])
         assert isinstance(response1, AIMessage)
         assert "300" in str(response1.content)
 
         # Second turn - follow-up calculation
-        message2 = HumanMessage("Now add 50 to that result")
+        message2 = HumanMessage(
+            "Use Python to add 50 to that result. State the final number."
+        )
         response2 = model_with_tools.invoke([message1, response1, message2])
         assert isinstance(response2, AIMessage)
         assert len(response2.content) > 0
