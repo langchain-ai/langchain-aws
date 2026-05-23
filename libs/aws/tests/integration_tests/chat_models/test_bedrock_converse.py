@@ -7,7 +7,6 @@ from uuid import uuid4
 
 import httpx
 import pytest
-import yaml  # type: ignore[import-untyped]
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
@@ -1059,7 +1058,7 @@ def test_request_headers(tmp_path: Any, streaming: bool) -> None:
     cassette_path = tmp_path / "headers.yaml"
 
     vcr = VCR(record_mode="all")
-    with vcr.use_cassette(str(cassette_path)):
+    with vcr.use_cassette(str(cassette_path)) as cassette:
         model = ChatBedrockConverse(
             model="us.anthropic.claude-haiku-4-5-20251001-v1:0",
             default_headers={"X-Foo": "Bar"},
@@ -1069,12 +1068,9 @@ def test_request_headers(tmp_path: Any, streaming: bool) -> None:
         else:
             _ = model.invoke("hi")
 
-    cassette = yaml.safe_load(cassette_path.read_text())
-    interactions = cassette["interactions"]
-    request = interactions[0]["request"]
-    headers = request["headers"]
+        headers = cassette.requests[0].headers
 
-    assert headers["X-Foo"] == ["Bar"]
+    assert headers["X-Foo"] == "Bar"
 
 
 # --- Native structured outputs integration tests ---
