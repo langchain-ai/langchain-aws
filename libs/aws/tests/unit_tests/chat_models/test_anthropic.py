@@ -236,6 +236,7 @@ def test_chat_anthropic_bedrock_get_ls_params() -> None:
 def test_chat_anthropic_bedrock_region_inference_from_env() -> None:
     """Test ChatAnthropicBedrock region inference from environment variables."""
     with MonkeyPatch().context() as m:
+        m.delenv("AWS_DEFAULT_REGION", raising=False)
         m.setenv("AWS_REGION", "us-west-2")
         model = ChatAnthropicBedrock(  # type: ignore[call-arg]
             model=BEDROCK_MODEL_NAME,
@@ -249,6 +250,7 @@ def test_chat_anthropic_bedrock_region_inference_from_env() -> None:
 def test_chat_anthropic_bedrock_region_inference_from_default_env() -> None:
     """Test ChatAnthropicBedrock region inference from AWS_DEFAULT_REGION."""
     with MonkeyPatch().context() as m:
+        m.delenv("AWS_REGION", raising=False)
         m.setenv("AWS_DEFAULT_REGION", "eu-west-1")
         model = ChatAnthropicBedrock(  # type: ignore[call-arg]
             model=BEDROCK_MODEL_NAME,
