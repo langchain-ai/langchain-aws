@@ -1068,7 +1068,15 @@ def test_request_headers(tmp_path: Any, streaming: bool) -> None:
         else:
             _ = model.invoke("hi")
 
-        headers = cassette.requests[0].headers
+        # Credential resolution (STS/SSO/IMDS) can produce VCR-captured
+        # requests that precede the Converse call; the custom-headers hook
+        # is only registered for bedrock-runtime Converse/ConverseStream,
+        # so pick the matching request rather than indexing position 0.
+        converse_requests = [
+            r for r in cassette.requests if "bedrock-runtime" in r.uri
+        ]
+        assert converse_requests, "no bedrock-runtime request captured"
+        headers = converse_requests[0].headers
 
     assert headers["X-Foo"] == "Bar"
 
