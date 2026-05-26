@@ -2,6 +2,7 @@
 
 import base64
 import time
+import warnings
 from typing import Any, Literal, Optional, Type
 from uuid import uuid4
 
@@ -45,6 +46,18 @@ class TestBedrockStandard(ChatModelIntegrationTests):
     @property
     def supports_pdf_tool_message(self) -> bool:
         return True
+
+    def test_pdf_tool_message(self, model: BaseChatModel) -> None:
+        # The standard test sends a PDF without a filename, which intentionally
+        # triggers a UserWarning from `_format_data_content_block`. Suppress it
+        # so test output stays clean.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="Bedrock Converse may require a filename for file inputs.*",
+                category=UserWarning,
+            )
+            super().test_pdf_tool_message(model)
 
 
 class TestBedrockMistralStandard(ChatModelIntegrationTests):
