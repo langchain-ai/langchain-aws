@@ -31,7 +31,7 @@ from valkey.asyncio import Valkey as AsyncValkey
 from valkey.connection import ConnectionPool
 from valkey.exceptions import ConnectionError, TimeoutError, ValkeyError
 
-from ...checkpoint.valkey.utils import set_client_info
+from ...checkpoint.valkey.utils import set_client_info, set_client_name
 from ..constants import InvalidConfigError
 from ..helpers import EventSerializer
 from .models import (
@@ -101,6 +101,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         # Set client info for library identification
         if not self.is_async:
             set_client_info(client)
+            set_client_name(client)
 
         # Validate configuration
         if ttl is not None and ttl <= 0:

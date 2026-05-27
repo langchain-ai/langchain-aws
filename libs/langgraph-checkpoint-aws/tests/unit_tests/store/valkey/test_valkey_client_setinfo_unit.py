@@ -24,7 +24,9 @@ from langgraph_checkpoint_aws.checkpoint.valkey.utils import (
     LIBRARY_NAME,
     LIBRARY_VERSION,
     aset_client_info,
+    aset_client_name,
     set_client_info,
+    set_client_name,
 )
 
 
@@ -130,36 +132,116 @@ class TestClientSetInfoUtils:
         )
 
 
-class TestSaverClientSetInfo:
-    """Test CLIENT SETINFO is called in checkpoint savers."""
+class TestClientSetName:
+    """Test the CLIENT SETNAME utility functions."""
 
+    def test_set_client_name_when_no_name_set(self, mock_valkey_client: Mock):
+        """Test that set_client_name sets the name when none is set."""
+        mock_valkey_client.execute_command.return_value = None
+
+        set_client_name(mock_valkey_client)
+
+        expected_calls = [
+            call("CLIENT", "GETNAME"),
+            call("CLIENT", "SETNAME", LIBRARY_NAME),
+        ]
+        mock_valkey_client.execute_command.assert_has_calls(expected_calls)
+
+    def test_set_client_name_preserves_existing_name(self, mock_valkey_client: Mock):
+        """Test that set_client_name does not overwrite a user-set name."""
+        mock_valkey_client.execute_command.return_value = "my-app"
+
+        set_client_name(mock_valkey_client)
+
+        mock_valkey_client.execute_command.assert_called_once_with(
+            "CLIENT", "GETNAME"
+        )
+
+    def test_set_client_name_failure_handling(self, mock_valkey_client: Mock):
+        """Test that set_client_name handles failures gracefully."""
+        mock_valkey_client.execute_command.side_effect = Exception("Command failed")
+
+        # Should not raise an exception
+        set_client_name(mock_valkey_client)
+
+    @pytest.mark.asyncio
+    async def test_aset_client_name_when_no_name_set(
+        self, mock_async_valkey_client: AsyncMock
+    ):
+        """Test that aset_client_name sets the name when none is set."""
+        mock_async_valkey_client.execute_command.return_value = None
+
+        await aset_client_name(mock_async_valkey_client)
+
+        expected_calls = [
+            call("CLIENT", "GETNAME"),
+            call("CLIENT", "SETNAME", LIBRARY_NAME),
+        ]
+        mock_async_valkey_client.execute_command.assert_has_calls(expected_calls)
+
+    @pytest.mark.asyncio
+    async def test_aset_client_name_preserves_existing_name(
+        self, mock_async_valkey_client: AsyncMock
+    ):
+        """Test that aset_client_name does not overwrite a user-set name."""
+        mock_async_valkey_client.execute_command.return_value = "my-app"
+
+        await aset_client_name(mock_async_valkey_client)
+
+        mock_async_valkey_client.execute_command.assert_called_once_with(
+            "CLIENT", "GETNAME"
+        )
+
+    @pytest.mark.asyncio
+    async def test_aset_client_name_failure_handling(
+        self, mock_async_valkey_client: AsyncMock
+    ):
+        """Test that aset_client_name handles failures gracefully."""
+
+        async def failing_command(*args, **kwargs):
+            raise Exception("Command failed")
+
+        mock_async_valkey_client.execute_command.side_effect = failing_command
+
+        # Should not raise an exception
+        await aset_client_name(mock_async_valkey_client)
+
+
+class TestSaverClientSetInfo:
+    """Test CLIENT SETINFO and SETNAME are called in checkpoint savers."""
+
+    @patch("langgraph_checkpoint_aws.checkpoint.valkey.base.set_client_name")
     @patch("langgraph_checkpoint_aws.checkpoint.valkey.base.set_client_info")
     def test_sync_saver_direct_init(
-        self, mock_set_client_info: Mock, mock_valkey_client: Mock
+        self, mock_set_client_info: Mock, mock_set_client_name: Mock,
+        mock_valkey_client: Mock
     ):
-        """Test CLIENT SETINFO is called when directly initializing
+        """Test CLIENT SETINFO and SETNAME are called when directly initializing
         ValkeySaver."""
         ValkeySaver(mock_valkey_client)
         mock_set_client_info.assert_called_once_with(mock_valkey_client)
+        mock_set_client_name.assert_called_once_with(mock_valkey_client)
 
+    @patch("langgraph_checkpoint_aws.checkpoint.valkey.base.set_client_name")
     @patch("langgraph_checkpoint_aws.checkpoint.valkey.base.set_client_info")
     def test_async_saver_direct_init(
-        self, mock_set_client_info: Mock, mock_async_valkey_client: Mock
+        self, mock_set_client_info: Mock, mock_set_client_name: Mock,
+        mock_async_valkey_client: Mock
     ):
-        """Test CLIENT SETINFO is NOT called when directly initializing
+        """Test CLIENT SETINFO/SETNAME are NOT called when directly initializing
         AsyncValkeySaver with async client."""
         AsyncValkeySaver(mock_async_valkey_client)
 
-        # set_client_info should NOT be called for async clients to avoid
-        # unawaited coroutines
-        # The base class should detect the async client and skip the sync
-        # set_client_info call
+        # Should NOT be called for async clients to avoid unawaited coroutines
         mock_set_client_info.assert_not_called()
+        mock_set_client_name.assert_not_called()
 
     @patch("valkey.connection.ConnectionPool.from_url")
+    @patch("langgraph_checkpoint_aws.checkpoint.valkey.base.set_client_name")
     @patch("langgraph_checkpoint_aws.checkpoint.valkey.base.set_client_info")
     def test_sync_saver_from_conn_string(
-        self, mock_set_client_info: Mock, mock_pool_from_url: Mock, valkey_url: str
+        self, mock_set_client_info: Mock, mock_set_client_name: Mock,
+        mock_pool_from_url: Mock, valkey_url: str
     ):
         # Set up mock pool with required attributes
         mock_pool = Mock(spec=ConnectionPool)
@@ -174,67 +256,78 @@ class TestSaverClientSetInfo:
 
             with ValkeySaver.from_conn_string(valkey_url) as saver:
                 # Should be called once: only in __init__ (base class)
-                # The actual client passed will be the real Valkey instance,
-                # not our mock
                 mock_set_client_info.assert_called_once()
+                mock_set_client_name.assert_called_once()
                 assert saver is not None
 
     @patch("valkey.asyncio.Valkey.from_url")
+    @patch("langgraph_checkpoint_aws.checkpoint.valkey.async_saver.aset_client_name")
     @patch("langgraph_checkpoint_aws.checkpoint.valkey.async_saver.aset_client_info")
+    @patch("langgraph_checkpoint_aws.checkpoint.valkey.base.set_client_name")
     @patch("langgraph_checkpoint_aws.checkpoint.valkey.base.set_client_info")
     @pytest.mark.asyncio
     async def test_async_saver_from_conn_string(
         self,
         mock_set_client_info: Mock,
+        mock_set_client_name: Mock,
         mock_aset_client_info: AsyncMock,
+        mock_aset_client_name: AsyncMock,
         mock_from_url: Mock,
         valkey_url: str,
     ):
-        """Test CLIENT SETINFO is called when using async from_conn_string."""
+        """Test CLIENT SETINFO and SETNAME are called when using async
+        from_conn_string."""
         mock_client = AsyncMock(spec=AsyncValkey)
         mock_client.aclose = AsyncMock()
         mock_from_url.return_value = mock_client
 
         async with AsyncValkeySaver.from_conn_string(valkey_url):
             # Should be called in from_conn_string but NOT in __init__
-            # (async client detection)
             mock_aset_client_info.assert_called_once_with(mock_client)
-            # set_client_info should NOT be called for async clients to avoid
-            # unawaited coroutines
+            mock_aset_client_name.assert_called_once_with(mock_client)
+            # Sync versions should NOT be called for async clients
             mock_set_client_info.assert_not_called()
+            mock_set_client_name.assert_not_called()
 
 
 class TestStoreClientSetInfo:
-    """Test CLIENT SETINFO is called in store implementations."""
+    """Test CLIENT SETINFO and SETNAME are called in store implementations."""
 
+    @patch("langgraph_checkpoint_aws.store.valkey.base.set_client_name")
     @patch("langgraph_checkpoint_aws.store.valkey.base.set_client_info")
     def test_sync_store_direct_init(
-        self, mock_set_client_info: Mock, mock_valkey_client: Mock
+        self, mock_set_client_info: Mock, mock_set_client_name: Mock,
+        mock_valkey_client: Mock
     ):
-        """Test CLIENT SETINFO is called when directly initializing ValkeyStore."""
+        """Test CLIENT SETINFO and SETNAME are called when directly initializing
+        ValkeyStore."""
         ValkeyStore(mock_valkey_client)
         mock_set_client_info.assert_called_once_with(mock_valkey_client)
+        mock_set_client_name.assert_called_once_with(mock_valkey_client)
 
+    @patch("langgraph_checkpoint_aws.store.valkey.base.set_client_name")
     @patch("langgraph_checkpoint_aws.store.valkey.base.set_client_info")
     def test_async_store_direct_init(
-        self, mock_set_client_info: Mock, mock_async_valkey_client: Mock
+        self, mock_set_client_info: Mock, mock_set_client_name: Mock,
+        mock_async_valkey_client: Mock
     ):
-        """Test CLIENT SETINFO is NOT called when directly initializing
+        """Test CLIENT SETINFO/SETNAME are NOT called when directly initializing
         AsyncValkeyStore with async client."""
         AsyncValkeyStore(mock_async_valkey_client)
 
-        # set_client_info should NOT be called for async clients to avoid
-        # unawaited coroutines
-        # The base class should detect the async client and skip the sync
-        # set_client_info call
+        # Should NOT be called for async clients
         mock_set_client_info.assert_not_called()
+        mock_set_client_name.assert_not_called()
 
     @patch("valkey.Valkey.from_url")
+    @patch("langgraph_checkpoint_aws.store.valkey.base.set_client_name")
     @patch("langgraph_checkpoint_aws.store.valkey.base.set_client_info")
     def test_sync_store_from_conn_string(
-        self, mock_set_client_info: Mock, mock_from_url: Mock, valkey_url: str
+        self, mock_set_client_info: Mock, mock_set_client_name: Mock,
+        mock_from_url: Mock, valkey_url: str
     ):
-        """Test CLIENT SETINFO is called when using store from_conn_string."""
+        """Test CLIENT SETINFO and SETNAME are called when using store
+        from_conn_string."""
         mock_client = Mock(spec=Valkey)
         mock_client.__enter__ = Mock(return_value=mock_client)
         mock_client.__exit__ = Mock(return_value=None)
@@ -243,6 +336,7 @@ class TestStoreClientSetInfo:
         with ValkeyStore.from_conn_string(valkey_url) as store:
             # Should be called once: only in __init__ (base class)
             mock_set_client_info.assert_called_once_with(mock_client)
+            mock_set_client_name.assert_called_once_with(mock_client)
             assert store is not None
 
 

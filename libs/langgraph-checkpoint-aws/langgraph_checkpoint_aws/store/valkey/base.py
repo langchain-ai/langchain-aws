@@ -24,7 +24,7 @@ from langgraph.store.base.embed import ensure_embeddings
 from valkey import Valkey
 from valkey.connection import ConnectionPool
 
-from ...checkpoint.valkey.utils import aset_client_info, set_client_info
+from ...checkpoint.valkey.utils import aset_client_info, set_client_info, set_client_name
 from .constants import (
     DEFAULT_COLLECTION_NAME,
     DEFAULT_DISTANCE_METRIC,
@@ -146,6 +146,7 @@ class BaseValkeyStore(BaseStore):
             # This is a sync client, safe to call set_client_info
             try:
                 set_client_info(client)
+                set_client_name(client)
             except Exception as e:
                 raise ValkeyConnectionError(f"Failed to set client info: {e}") from e
 
