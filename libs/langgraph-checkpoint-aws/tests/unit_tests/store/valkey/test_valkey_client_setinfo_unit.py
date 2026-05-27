@@ -153,9 +153,7 @@ class TestClientSetName:
 
         set_client_name(mock_valkey_client)
 
-        mock_valkey_client.execute_command.assert_called_once_with(
-            "CLIENT", "GETNAME"
-        )
+        mock_valkey_client.execute_command.assert_called_once_with("CLIENT", "GETNAME")
 
     def test_set_client_name_failure_handling(self, mock_valkey_client: Mock):
         """Test that set_client_name handles failures gracefully."""
@@ -213,8 +211,10 @@ class TestSaverClientSetInfo:
     @patch("langgraph_checkpoint_aws.checkpoint.valkey.base.set_client_name")
     @patch("langgraph_checkpoint_aws.checkpoint.valkey.base.set_client_info")
     def test_sync_saver_direct_init(
-        self, mock_set_client_info: Mock, mock_set_client_name: Mock,
-        mock_valkey_client: Mock
+        self,
+        mock_set_client_info: Mock,
+        mock_set_client_name: Mock,
+        mock_valkey_client: Mock,
     ):
         """Test CLIENT SETINFO and SETNAME are called when directly initializing
         ValkeySaver."""
@@ -225,8 +225,10 @@ class TestSaverClientSetInfo:
     @patch("langgraph_checkpoint_aws.checkpoint.valkey.base.set_client_name")
     @patch("langgraph_checkpoint_aws.checkpoint.valkey.base.set_client_info")
     def test_async_saver_direct_init(
-        self, mock_set_client_info: Mock, mock_set_client_name: Mock,
-        mock_async_valkey_client: Mock
+        self,
+        mock_set_client_info: Mock,
+        mock_set_client_name: Mock,
+        mock_async_valkey_client: Mock,
     ):
         """Test CLIENT SETINFO/SETNAME are NOT called when directly initializing
         AsyncValkeySaver with async client."""
@@ -240,8 +242,11 @@ class TestSaverClientSetInfo:
     @patch("langgraph_checkpoint_aws.checkpoint.valkey.base.set_client_name")
     @patch("langgraph_checkpoint_aws.checkpoint.valkey.base.set_client_info")
     def test_sync_saver_from_conn_string(
-        self, mock_set_client_info: Mock, mock_set_client_name: Mock,
-        mock_pool_from_url: Mock, valkey_url: str
+        self,
+        mock_set_client_info: Mock,
+        mock_set_client_name: Mock,
+        mock_pool_from_url: Mock,
+        valkey_url: str,
     ):
         # Set up mock pool with required attributes
         mock_pool = Mock(spec=ConnectionPool)
@@ -296,8 +301,10 @@ class TestStoreClientSetInfo:
     @patch("langgraph_checkpoint_aws.store.valkey.base.set_client_name")
     @patch("langgraph_checkpoint_aws.store.valkey.base.set_client_info")
     def test_sync_store_direct_init(
-        self, mock_set_client_info: Mock, mock_set_client_name: Mock,
-        mock_valkey_client: Mock
+        self,
+        mock_set_client_info: Mock,
+        mock_set_client_name: Mock,
+        mock_valkey_client: Mock,
     ):
         """Test CLIENT SETINFO and SETNAME are called when directly initializing
         ValkeyStore."""
@@ -308,8 +315,10 @@ class TestStoreClientSetInfo:
     @patch("langgraph_checkpoint_aws.store.valkey.base.set_client_name")
     @patch("langgraph_checkpoint_aws.store.valkey.base.set_client_info")
     def test_async_store_direct_init(
-        self, mock_set_client_info: Mock, mock_set_client_name: Mock,
-        mock_async_valkey_client: Mock
+        self,
+        mock_set_client_info: Mock,
+        mock_set_client_name: Mock,
+        mock_async_valkey_client: Mock,
     ):
         """Test CLIENT SETINFO/SETNAME are NOT called when directly initializing
         AsyncValkeyStore with async client."""
@@ -323,8 +332,11 @@ class TestStoreClientSetInfo:
     @patch("langgraph_checkpoint_aws.store.valkey.base.set_client_name")
     @patch("langgraph_checkpoint_aws.store.valkey.base.set_client_info")
     def test_sync_store_from_conn_string(
-        self, mock_set_client_info: Mock, mock_set_client_name: Mock,
-        mock_from_url: Mock, valkey_url: str
+        self,
+        mock_set_client_info: Mock,
+        mock_set_client_name: Mock,
+        mock_from_url: Mock,
+        valkey_url: str,
     ):
         """Test CLIENT SETINFO and SETNAME are called when using store
         from_conn_string."""
