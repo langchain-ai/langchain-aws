@@ -179,7 +179,10 @@ class TestAsyncValkeySaverInit:
             async with AsyncValkeySaver.from_pool(mock_pool, ttl_seconds=3600) as saver:
                 assert saver.client == mock_client
                 assert saver.ttl == 3600.0
-                mock_valkey_class.assert_called_once_with(connection_pool=mock_pool)
+                mock_valkey_class.assert_called_once_with(
+                    connection_pool=mock_pool,
+                    client_name="langchain_aws_checkpoint_client",
+                )
 
     @pytest.mark.asyncio
     @pytest.mark.timeout(10)

@@ -128,7 +128,12 @@ class AsyncValkeySaver(BaseValkeySaver):
             ...     # Use the memory instance
             ...     pass
         """
-        client = AsyncValkey.from_url(conn_string, max_connections=pool_size, client_name=DEFAULT_CLIENT_NAME, **kwargs)
+        client = AsyncValkey.from_url(
+            conn_string,
+            max_connections=pool_size,
+            client_name=DEFAULT_CLIENT_NAME,
+            **kwargs,
+        )
         try:
             # Set client info for library identification
             await aset_client_info(client)
