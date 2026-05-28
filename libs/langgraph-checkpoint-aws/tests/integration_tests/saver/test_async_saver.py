@@ -7,8 +7,11 @@ from langchain_aws import ChatBedrock
 from langchain_core.tools import tool
 from langgraph.checkpoint.base import Checkpoint, uuid6
 
-from langgraph_checkpoint_aws.async_saver import AsyncBedrockSessionSaver
-from langgraph_checkpoint_aws.models import DeleteSessionRequest, EndSessionRequest
+from langgraph_checkpoint_aws import AsyncBedrockSessionSaver
+from langgraph_checkpoint_aws.checkpoint.bedrock_sessions.models import (
+    DeleteSessionRequest,
+    EndSessionRequest,
+)
 
 
 @tool

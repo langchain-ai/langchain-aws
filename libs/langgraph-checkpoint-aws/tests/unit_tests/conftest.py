@@ -10,8 +10,11 @@ from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import TASKS
 
-from langgraph_checkpoint_aws.constants import CHECKPOINT_PREFIX, WRITES_PREFIX
-from langgraph_checkpoint_aws.models import (
+from langgraph_checkpoint_aws.checkpoint.bedrock_sessions.constants import (
+    CHECKPOINT_PREFIX,
+    WRITES_PREFIX,
+)
+from langgraph_checkpoint_aws.checkpoint.bedrock_sessions.models import (
     BedrockSessionContentBlock,
     InvocationStepPayload,
     SessionCheckpoint,

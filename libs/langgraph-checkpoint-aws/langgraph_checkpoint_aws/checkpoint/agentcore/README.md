@@ -1,4 +1,4 @@
-# LangGraph Checkpoint AWS
+# AgentCore Memory Saver
 
 A custom LangChain checkpointer implementation that uses Bedrock AgentCore Memory to enable stateful and resumable LangGraph agents through efficient state persistence and retrieval.
 
@@ -138,55 +138,6 @@ response = graph.invoke(
 )
 ```
 
-## Development
-
-Setting Up Development Environment
-
-* Clone the repository:
-
-```bash
-git clone <repository-url>
-cd libs/aws/langgraph-checkpoint-aws
-```
-
-* Install development dependencies:
-
-```bash
-make install_all
-```
-
-* Or install specific components:
-
-```bash
-make install_dev        # Basic development tools
-make install_test       # Testing tools
-make install_lint       # Linting tools
-make install_typing     # Type checking tools
-make install_codespell  # Spell checking tools
-```
-
-## Running Tests
-
-```bash
-make tests         # Run all tests
-make test_watch   # Run tests in watch mode
-
-```
-
-## Code Quality
-
-```bash
-make lint           # Run linter
-make format         # Format code
-make spell_check    # Check spelling
-```
-
-## Clean Up
-
-```bash
-make clean          # Remove all generated files
-```
-
 ## AWS Configuration
 
 Ensure you have AWS credentials configured using one of these methods:
@@ -208,7 +159,7 @@ Ensure you have AWS credentials configured using one of these methods:
             "Action": [
                 "bedrock-agentcore:CreateEvent",
                 "bedrock-agentcore:ListEvents",
-                "bedrock-agentcore:GetEvent",
+                "bedrock-agentcore:GetEvent"
             ],
             "Resource": [
                 "*"
@@ -228,15 +179,7 @@ Ensure you have AWS credentials configured using one of these methods:
 
 ## Contributing
 
-* Fork the repository
-* Create a feature branch
-* Make your changes
-* Run tests and linting
-* Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+See the [contributing guide](https://github.com/langchain-ai/langchain-aws/blob/main/.github/CONTRIBUTING.md) for instructions on how to contribute to this project.
 
 ## Acknowledgments
 

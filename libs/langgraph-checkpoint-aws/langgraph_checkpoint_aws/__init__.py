@@ -3,20 +3,31 @@ LangGraph Checkpoint AWS - A LangChain checkpointer implementation using
 Bedrock Session Management Service and Valkey.
 """
 
-from importlib.metadata import version
 from typing import Any
 
-from langgraph_checkpoint_aws.agentcore.saver import (
+from langgraph_checkpoint_aws.checkpoint.agentcore.saver import (
     AgentCoreMemorySaver,
 )
-from langgraph_checkpoint_aws.agentcore.store import (
-    AgentCoreMemoryStore,
+from langgraph_checkpoint_aws.checkpoint.bedrock_sessions.async_saver import (
+    AsyncBedrockSessionSaver,
+)
+from langgraph_checkpoint_aws.checkpoint.bedrock_sessions.async_session import (
+    AsyncBedrockAgentRuntimeSessionClient,
+)
+from langgraph_checkpoint_aws.checkpoint.bedrock_sessions.saver import (
+    BedrockSessionSaver,
+)
+from langgraph_checkpoint_aws.checkpoint.bedrock_sessions.session import (
+    BedrockAgentRuntimeSessionClient,
+)
+from langgraph_checkpoint_aws.checkpoint.deferred_saver import (
+    DeferredCheckpointSaver,
 )
 from langgraph_checkpoint_aws.checkpoint.dynamodb import (
     DynamoDBSaver,
 )
-from langgraph_checkpoint_aws.deferred_saver import (
-    DeferredCheckpointSaver,
+from langgraph_checkpoint_aws.store.agentcore.store import (
+    AgentCoreMemoryStore,
 )
 from langgraph_checkpoint_aws.store.dynamodb import (
     DynamoDBStore,
@@ -24,9 +35,12 @@ from langgraph_checkpoint_aws.store.dynamodb import (
 
 # Conditional imports for Valkey functionality
 try:
-    from langgraph_checkpoint_aws.agentcore import AgentCoreValkeySaver
     from langgraph_checkpoint_aws.cache import ValkeyCache
-    from langgraph_checkpoint_aws.checkpoint import AsyncValkeySaver, ValkeySaver
+    from langgraph_checkpoint_aws.checkpoint import (
+        AgentCoreValkeySaver,
+        AsyncValkeySaver,
+        ValkeySaver,
+    )
     from langgraph_checkpoint_aws.store import (
         AsyncValkeyStore,
         ValkeyIndexConfig,
@@ -82,34 +96,37 @@ except ImportError as e:
     ValkeyValidationError: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
 
     valkey_available = False
-try:
-    __version__ = version("langgraph-checkpoint-aws")
-except Exception:
-    # Fallback version if package is not installed
-    __version__ = "1.0.0"
-SDK_USER_AGENT = f"LangGraphCheckpointAWS#{__version__}"
+
+from langgraph_checkpoint_aws._version import (  # noqa: E402, F401
+    SDK_USER_AGENT,
+    __version__,
+)
 
 # Expose the saver class at the package level
 __all__ = [
     "AgentCoreMemorySaver",
-    "DeferredCheckpointSaver",
     "AgentCoreMemoryStore",
     "AgentCoreValkeySaver",
+    "AsyncBedrockAgentRuntimeSessionClient",
+    "AsyncBedrockSessionSaver",
     "AsyncValkeySaver",
     "AsyncValkeyStore",
+    "BedrockAgentRuntimeSessionClient",
+    "BedrockSessionSaver",
+    "DeferredCheckpointSaver",
+    "DynamoDBSaver",
+    "DynamoDBStore",
+    "SDK_USER_AGENT",
+    "ValkeyCache",
     "ValkeyConnectionError",
     "ValkeyDocumentParsingError",
     "ValkeyEmbeddingGenerationError",
     "ValkeyIndexConfig",
+    "ValkeySaver",
     "ValkeySearchIndexError",
     "ValkeyStore",
     "ValkeyStoreError",
     "ValkeyTTLConfigurationError",
     "ValkeyValidationError",
-    "ValkeySaver",
-    "ValkeyCache",
-    "DynamoDBSaver",
-    "DynamoDBStore",
-    "SDK_USER_AGENT",
     "valkey_available",
 ]

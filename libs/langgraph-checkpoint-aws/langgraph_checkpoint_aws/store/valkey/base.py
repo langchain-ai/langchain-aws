@@ -24,7 +24,10 @@ from langgraph.store.base.embed import ensure_embeddings
 from valkey import Valkey
 from valkey.connection import ConnectionPool
 
-from ...checkpoint.valkey.utils import aset_client_info, set_client_info
+from ...checkpoint.valkey.utils import (
+    aset_client_info,
+    set_client_info,
+)
 from .constants import (
     DEFAULT_COLLECTION_NAME,
     DEFAULT_DISTANCE_METRIC,

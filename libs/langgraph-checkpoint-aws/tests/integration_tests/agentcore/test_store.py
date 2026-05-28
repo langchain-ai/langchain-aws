@@ -15,7 +15,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.store.base import GetOp, PutOp, SearchOp
 
-from langgraph_checkpoint_aws.agentcore.store import AgentCoreMemoryStore
+from langgraph_checkpoint_aws.store.agentcore.store import AgentCoreMemoryStore
 
 
 def generate_valid_actor_id():

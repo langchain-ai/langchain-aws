@@ -25,7 +25,7 @@ Do you use AWS Bedrock AgentCore Memory APIs?
 
 | Aspect | **AgentCoreValkeySaver** | **ValkeySaver** |
 |--------|-------------------------|-----------------|
-| **Import Path** | `langgraph_checkpoint_aws.agentcore.valkey` | `langgraph_checkpoint_aws.checkpoint.valkey` |
+| **Import Path** | `langgraph_checkpoint_aws.checkpoint.agentcore.valkey` | `langgraph_checkpoint_aws.checkpoint.valkey` |
 | **Config Requirements** | `thread_id`, **`actor_id`**, `checkpoint_ns` | `thread_id`, `checkpoint_ns` |
 | **Key Prefix** | `agentcore:checkpoint:{session_id}:{actor_id}:` | `checkpoint:{thread_id}:` |
 | **AgentCore Compatible** | ✅ Yes | ❌ No |
@@ -473,7 +473,7 @@ config = {
 from langgraph_checkpoint_aws import AgentCoreValkeySaver
 
 # ✅ ALSO WORKS: Direct import from submodule
-from langgraph_checkpoint_aws.agentcore.valkey import AgentCoreValkeySaver
+from langgraph_checkpoint_aws.checkpoint.agentcore.valkey import AgentCoreValkeySaver
 
 # ❌ ERROR: This is the WRONG saver
 from langgraph_checkpoint_aws.checkpoint.valkey import ValkeySaver  # Not AgentCore compatible!
@@ -530,7 +530,7 @@ from langgraph_checkpoint_aws import AgentCoreMemorySaver
 checkpointer = AgentCoreMemorySaver(memory_id, region_name="us-west-2")
 
 # After: AgentCoreValkeySaver
-from langgraph_checkpoint_aws.agentcore.valkey import AgentCoreValkeySaver
+from langgraph_checkpoint_aws.checkpoint.agentcore.valkey import AgentCoreValkeySaver
 
 checkpointer = AgentCoreValkeySaver.from_conn_string("valkey://localhost:6379")
 
@@ -740,27 +740,11 @@ def cleanup_old_sessions(checkpointer, cutoff_days=30):
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
----
+See the [contributing guide](https://github.com/langchain-ai/langchain-aws/blob/main/.github/CONTRIBUTING.md) for instructions on how to contribute to this project.
 
 ## 📚 Additional Resources
 
 - [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)
 - [Valkey Documentation](https://valkey.io/docs/)
 - [AWS Bedrock AgentCore](https://docs.aws.amazon.com/bedrock/latest/userguide/agents.html)
-- [Main Package README](../../../README.md)
-
-## 🆘 Support
-
-- **Issues:** [GitHub Issues](https://github.com/langchain-ai/langchain-aws/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/langchain-ai/langchain-aws/discussions)
-- **Documentation:** [Official Docs](https://python.langchain.com/docs/integrations/providers/aws)
+- [Main Package README](../../../../README.md)
