@@ -42,6 +42,9 @@ except ImportError as e:
 
 logger = logging.getLogger(__name__)
 
+# Default client name for connection identification via CLIENT SETNAME
+DEFAULT_CLIENT_NAME = "langchain_aws_checkpoint_client"
+
 
 class ValkeySaver(BaseValkeySaver):
     """A checkpoint saver that stores checkpoints in Valkey (Redis-compatible).
@@ -119,7 +122,7 @@ class ValkeySaver(BaseValkeySaver):
         """
         # Create connection pool first, then client
         pool = ConnectionPool.from_url(conn_string, max_connections=pool_size)
-        client = Valkey(connection_pool=pool, **kwargs)
+        client = Valkey(connection_pool=pool, client_name=DEFAULT_CLIENT_NAME, **kwargs)
         try:
             yield cls(client, ttl=ttl_seconds)
         finally:

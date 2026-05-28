@@ -19,6 +19,7 @@ from langgraph.checkpoint.base import (
 from langgraph.checkpoint.serde.base import SerializerProtocol
 
 from .base import BaseValkeySaver
+from .saver import DEFAULT_CLIENT_NAME
 from .utils import aset_client_info
 
 # Conditional imports for optional dependencies
@@ -127,7 +128,7 @@ class AsyncValkeySaver(BaseValkeySaver):
             ...     # Use the memory instance
             ...     pass
         """
-        client = AsyncValkey.from_url(conn_string, max_connections=pool_size, **kwargs)
+        client = AsyncValkey.from_url(conn_string, max_connections=pool_size, client_name=DEFAULT_CLIENT_NAME, **kwargs)
         try:
             # Set client info for library identification
             await aset_client_info(client)
@@ -162,7 +163,7 @@ class AsyncValkeySaver(BaseValkeySaver):
             ...     # Use the memory instance
             ...     pass
         """
-        client = AsyncValkey(connection_pool=pool)
+        client = AsyncValkey(connection_pool=pool, client_name=DEFAULT_CLIENT_NAME)
         try:
             # Set client info for library identification
             await aset_client_info(client)
