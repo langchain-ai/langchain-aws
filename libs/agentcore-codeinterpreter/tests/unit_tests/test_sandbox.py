@@ -425,7 +425,7 @@ def test_write_lazy_cwd_detection() -> None:
 
 
 def test_write_returns_resolved_path_not_virtual_path() -> None:
-    """WriteResult.path must be the resolved absolute path, not the caller-supplied virtual path.
+    """WriteResult.path must be the resolved absolute path, not the virtual path.
 
     Regression test for the execute()-after-write() mismatch: when the LLM writes
     to "/tmp/script.py" and then runs execute("python /tmp/script.py"), it must
