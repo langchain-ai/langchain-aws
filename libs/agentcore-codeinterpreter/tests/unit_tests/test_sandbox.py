@@ -424,6 +424,30 @@ def test_write_lazy_cwd_detection() -> None:
     assert result.path == "/opt/sandbox/workspace/hello.py"
 
 
+def test_write_returns_resolved_path_not_virtual_path() -> None:
+    """WriteResult.path must be the resolved absolute path, not the caller-supplied virtual path.
+
+    Regression test for the execute()-after-write() mismatch: when the LLM writes
+    to "/tmp/script.py" and then runs execute("python /tmp/script.py"), it must
+    use the same path that was returned by write() — otherwise the shell cannot
+    find the file because AgentCore resolves uploads relative to cwd, not to "/".
+    """
+    cwd = "/opt/amazon/genesis1p-tools/var"
+    sandbox, mock = _make_sandbox(cwd=cwd)
+    mock.invoke.side_effect = _make_successful_invoke(cwd)
+
+    result = sandbox.write("/tmp/script.py", "print('hello')")
+
+    # The returned path must be the real location so execute() can find the file.
+    assert result.path == f"{cwd}/tmp/script.py"
+    write_files_calls = [
+        c for c in mock.invoke.call_args_list if c.kwargs.get("method") == "writeFiles"
+    ]
+    uploaded_path = write_files_calls[0].kwargs["params"]["content"][0]["path"]
+    # AgentCore receives a cwd-relative path, resolving to {cwd}/tmp/script.py.
+    assert uploaded_path == "tmp/script.py"
+
+
 def test_write_root_cwd_preserves_existing_behavior() -> None:
     """When cwd is /, write() should behave as it did before the fix."""
     sandbox, mock = _make_sandbox(cwd="/")
