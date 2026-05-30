@@ -24,12 +24,13 @@ from langchain_agentcore_codeinterpreter.sandbox import (
 def _make_sandbox(
     invoke_return: dict[str, Any] | None = None,
     session_id: str = "test-session-123",
+    cwd: str | None = None,
 ) -> tuple[AgentCoreSandbox, MagicMock]:
     """Create a sandbox with a mocked interpreter."""
     interpreter = MagicMock()
     interpreter.session_id = session_id
     interpreter.invoke.return_value = invoke_return or {"stream": []}
-    return AgentCoreSandbox(interpreter=interpreter), interpreter
+    return AgentCoreSandbox(interpreter=interpreter, cwd=cwd), interpreter
 
 
 def _make_expired_sandbox() -> tuple[AgentCoreSandbox, MagicMock]:
@@ -265,16 +266,32 @@ def test_download_files_dot_slash_path() -> None:
 
 def test_relative_path_stripping() -> None:
     """Leading slashes should be stripped; relative paths left as-is."""
-    assert AgentCoreSandbox._to_relative_path("/abs/path.txt") == "abs/path.txt"
-    assert AgentCoreSandbox._to_relative_path("rel/path.txt") == "rel/path.txt"
-    assert AgentCoreSandbox._to_relative_path("///triple.txt") == "triple.txt"
+    sandbox, _ = _make_sandbox()
+    assert sandbox._to_relative_path("/abs/path.txt") == "abs/path.txt"
+    assert sandbox._to_relative_path("rel/path.txt") == "rel/path.txt"
+    assert sandbox._to_relative_path("///triple.txt") == "triple.txt"
 
 
 def test_relative_path_strips_dot_slash() -> None:
     """./ and repeated ././ prefixes should be stripped."""
-    assert AgentCoreSandbox._to_relative_path("./data/foo.png") == "data/foo.png"
-    assert AgentCoreSandbox._to_relative_path("././foo.png") == "foo.png"
-    assert AgentCoreSandbox._to_relative_path("/./data/foo.png") == "data/foo.png"
+    sandbox, _ = _make_sandbox()
+    assert sandbox._to_relative_path("./data/foo.png") == "data/foo.png"
+    assert sandbox._to_relative_path("././foo.png") == "foo.png"
+    assert sandbox._to_relative_path("/./data/foo.png") == "data/foo.png"
+
+
+def test_relative_path_strips_cwd_prefix() -> None:
+    """When cwd is known, paths under cwd should have the prefix stripped."""
+    sandbox, _ = _make_sandbox(cwd="/opt/sandbox")
+    result = sandbox._to_relative_path("/opt/sandbox/workspace/hello.py")
+    assert result == "workspace/hello.py"
+    assert sandbox._to_relative_path("/opt/sandbox/hello.py") == "hello.py"
+
+
+def test_relative_path_virtual_path_falls_back_to_strip() -> None:
+    """Paths outside cwd should fall back to leading-slash stripping."""
+    sandbox, _ = _make_sandbox(cwd="/opt/sandbox")
+    assert sandbox._to_relative_path("/workspace/hello.py") == "workspace/hello.py"
 
 
 # ------------------------------------------------------------------
@@ -288,6 +305,138 @@ def test_keyword_only_init() -> None:
     interpreter.session_id = "s"
     sandbox = AgentCoreSandbox(interpreter=interpreter)
     assert sandbox.id == "s"
+
+
+def test_cwd_constructor_stores_stripped_cwd() -> None:
+    """cwd passed at construction should be stored with trailing slash removed."""
+    sandbox, _ = _make_sandbox(cwd="/opt/sandbox/")
+    assert sandbox._cwd == "/opt/sandbox"
+
+
+def test_cwd_defaults_to_none() -> None:
+    """When cwd is not passed, _cwd should start as None (lazy detection)."""
+    sandbox, _ = _make_sandbox()
+    assert sandbox._cwd is None
+
+
+# ------------------------------------------------------------------
+# _to_absolute_path()
+# ------------------------------------------------------------------
+
+
+def test_to_absolute_path_already_under_cwd() -> None:
+    """Paths already under the cwd should be returned unchanged."""
+    sandbox, _ = _make_sandbox(cwd="/opt/sandbox")
+    path = "/opt/sandbox/workspace/hello.py"
+    assert sandbox._to_absolute_path(path) == path
+
+
+def test_to_absolute_path_virtual_path_prepends_cwd() -> None:
+    """Virtual paths like /workspace/hello.py should be resolved under cwd."""
+    sandbox, _ = _make_sandbox(cwd="/opt/sandbox")
+    result = sandbox._to_absolute_path("/workspace/hello.py")
+    assert result == "/opt/sandbox/workspace/hello.py"
+
+
+def test_to_absolute_path_relative_path_prepends_cwd() -> None:
+    """Relative paths should be resolved under cwd."""
+    sandbox, _ = _make_sandbox(cwd="/opt/sandbox")
+    result = sandbox._to_absolute_path("workspace/hello.py")
+    assert result == "/opt/sandbox/workspace/hello.py"
+
+
+def test_to_absolute_path_root_cwd_returns_as_is() -> None:
+    """When cwd is / (stored as empty string), absolute paths are returned as-is."""
+    sandbox, _ = _make_sandbox(cwd="/")
+    assert sandbox._to_absolute_path("/workspace/hello.py") == "/workspace/hello.py"
+
+
+# ------------------------------------------------------------------
+# write() — path normalization (issue #1055)
+# ------------------------------------------------------------------
+
+
+def _make_successful_invoke(cwd: str = "") -> Any:
+    """Return an invoke side_effect that succeeds for all methods."""
+
+    def invoke(**kwargs: Any) -> dict[str, Any]:
+        if kwargs.get("method") == "executeCommand":
+            return {
+                "stream": [
+                    {
+                        "result": {
+                            "exitCode": 0,
+                            "content": [{"type": "text", "text": cwd}],
+                        }
+                    }
+                ]
+            }
+        return {"stream": []}
+
+    return invoke
+
+
+def test_write_strips_cwd_prefix_from_upload_path() -> None:
+    """upload path must be cwd-relative so writeFiles doesn't double the prefix."""
+    cwd = "/opt/amazon/genesis1p-tools/var"
+    sandbox, mock = _make_sandbox(cwd=cwd)
+    mock.invoke.side_effect = _make_successful_invoke(cwd)
+
+    abs_path = f"{cwd}/workspace/hello.py"
+    result = sandbox.write(abs_path, "hello")
+
+    write_files_calls = [
+        c for c in mock.invoke.call_args_list if c.kwargs.get("method") == "writeFiles"
+    ]
+    assert len(write_files_calls) == 1
+    uploaded_path = write_files_calls[0].kwargs["params"]["content"][0]["path"]
+    assert uploaded_path == "workspace/hello.py"
+    assert result.path == abs_path
+
+
+def test_write_resolves_virtual_path_for_preflight() -> None:
+    """Virtual paths must be resolved to real absolute paths before preflight."""
+    cwd = "/opt/sandbox"
+    sandbox, mock = _make_sandbox(cwd=cwd)
+    mock.invoke.side_effect = _make_successful_invoke(cwd)
+
+    result = sandbox.write("/workspace/hello.py", "hello")
+
+    # The resolved absolute path should be returned and used for the upload.
+    assert result.path == "/opt/sandbox/workspace/hello.py"
+    write_files_calls = [
+        c for c in mock.invoke.call_args_list if c.kwargs.get("method") == "writeFiles"
+    ]
+    assert len(write_files_calls) == 1
+    uploaded_path = write_files_calls[0].kwargs["params"]["content"][0]["path"]
+    assert uploaded_path == "workspace/hello.py"
+
+
+def test_write_lazy_cwd_detection() -> None:
+    """When cwd is not passed at construction, write() detects it via pwd."""
+    cwd = "/opt/sandbox"
+    sandbox, mock = _make_sandbox()
+    mock.invoke.side_effect = _make_successful_invoke(cwd)
+
+    result = sandbox.write("/workspace/hello.py", "hello")
+
+    assert sandbox._cwd == cwd
+    assert result.path == "/opt/sandbox/workspace/hello.py"
+
+
+def test_write_root_cwd_preserves_existing_behavior() -> None:
+    """When cwd is /, write() should behave as it did before the fix."""
+    sandbox, mock = _make_sandbox(cwd="/")
+    mock.invoke.side_effect = _make_successful_invoke("/")
+
+    result = sandbox.write("/hello.py", "hello")
+
+    assert result.path == "/hello.py"
+    write_files_calls = [
+        c for c in mock.invoke.call_args_list if c.kwargs.get("method") == "writeFiles"
+    ]
+    uploaded_path = write_files_calls[0].kwargs["params"]["content"][0]["path"]
+    assert uploaded_path == "hello.py"
 
 
 # ------------------------------------------------------------------

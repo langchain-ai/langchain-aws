@@ -167,6 +167,15 @@ class AgentCoreSandbox(BaseSandbox):
     The caller is responsible for managing the interpreter lifecycle
     (``start()`` / ``stop()``).
 
+    !!! note
+
+        When the sandbox working directory is not ``/`` (e.g.
+        ``/opt/amazon/genesis1p-tools/var/``), paths must be resolved
+        against the real cwd before shell preflight commands and stripped of
+        the cwd prefix before the AgentCore ``writeFiles``/``readFiles`` APIs.
+        Pass the known cwd via the ``cwd`` constructor argument, or let the
+        sandbox detect it automatically on the first ``write()`` call.
+
     Example:
         .. code-block:: python
 
@@ -185,25 +194,113 @@ class AgentCoreSandbox(BaseSandbox):
             interpreter.stop()
     """
 
-    def __init__(self, *, interpreter: CodeInterpreter) -> None:
+    def __init__(
+        self,
+        *,
+        interpreter: CodeInterpreter,
+        cwd: str | None = None,
+    ) -> None:
         """Create a backend wrapping an active CodeInterpreter session.
 
         Args:
             interpreter: A started :class:`CodeInterpreter` instance.
+            cwd: The sandbox working directory (e.g.
+                ``"/opt/amazon/genesis1p-tools/var"``). When provided,
+                ``write()`` uses it to resolve virtual paths to real absolute
+                paths and to strip the prefix before the AgentCore
+                ``writeFiles`` API. When omitted, the cwd is detected
+                automatically on the first ``write()`` call via ``pwd``.
         """
         self._interpreter = interpreter
+        self._cwd: str | None = cwd.rstrip("/") if cwd is not None else None
 
-    @staticmethod
-    def _to_relative_path(path: str) -> str:
-        """Strip leading slashes and ``./`` prefixes for AgentCore APIs.
+    def _get_cwd(self) -> str:
+        """Return the sandbox working directory, detecting it lazily if needed.
+
+        Returns:
+            The working directory with any trailing slash stripped.
+        """
+        if self._cwd is None:
+            result = self.execute("pwd")
+            self._cwd = result.output.strip().rstrip("/")
+        return self._cwd
+
+    def _to_relative_path(self, path: str) -> str:
+        """Strip the cwd prefix (or leading slashes) for AgentCore file APIs.
+
+        When the sandbox cwd is known and ``path`` starts with it, the cwd
+        prefix is removed so the AgentCore ``writeFiles``/``readFiles`` APIs
+        receive a cwd-relative path. For paths that do not start with the cwd,
+        the standard leading-slash stripping is applied.
 
         Args:
             path: File path (absolute or relative).
 
         Returns:
-            Relative path string.
+            Path relative to the sandbox cwd, with no leading ``/`` or ``./``.
         """
+        if self._cwd is not None:
+            cwd_prefix = self._cwd + "/"
+            if path.startswith(cwd_prefix):
+                return path[len(cwd_prefix) :]
         return _normalize_relative_path(path)
+
+    def _to_absolute_path(self, path: str) -> str:
+        """Resolve a path to a real absolute path under the sandbox cwd.
+
+        Paths already under the cwd are returned unchanged. Virtual paths
+        (e.g. ``/workspace/hello.py``) and relative paths are prepended with
+        the cwd so that shell commands (``makedirs``, etc.) operate on the
+        real filesystem location.
+
+        Args:
+            path: File path to resolve.
+
+        Returns:
+            Absolute path under the sandbox cwd.
+        """
+        cwd = self._get_cwd()
+        if not cwd:
+            return path
+        if path.startswith(cwd + "/") or path == cwd:
+            return path
+        return cwd + "/" + path.lstrip("/")
+
+    def write(self, file_path: str, content: str) -> WriteResult:
+        """Create a new file in the sandbox, failing if it already exists.
+
+        Normalizes ``file_path`` to a real absolute path under the sandbox cwd
+        before the preflight shell command (so ``makedirs`` operates on the
+        correct location) and before uploading (so the AgentCore ``writeFiles``
+        API receives a cwd-relative path rather than a doubled absolute path).
+
+        Args:
+            file_path: Destination path for the new file. May be a real
+                absolute path under the sandbox cwd, a virtual absolute path
+                (e.g. ``/workspace/hello.py``), or a relative path.
+            content: UTF-8 text content to write.
+
+        Returns:
+            ``WriteResult`` with ``path`` set to the resolved absolute path on
+            success, or ``error`` on failure.
+        """
+        abs_path = self._to_absolute_path(file_path)
+        preflight_error = self._write_preflight(abs_path)
+        if preflight_error is not None:
+            return preflight_error
+        responses = self.upload_files([(abs_path, content.encode("utf-8"))])
+        if not responses:
+            msg = (
+                f"Responses was expected to return 1 result, but it returned "
+                f"{len(responses)} with type {type(responses)}"
+            )
+            raise AssertionError(msg)
+        response = responses[0]
+        if response.error:
+            return WriteResult(
+                error=f"Failed to write file '{abs_path}': {response.error}"
+            )
+        return WriteResult(path=abs_path)
 
     def _invoke(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         """Invoke the interpreter and eagerly consume the response stream.
