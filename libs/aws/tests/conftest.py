@@ -1,3 +1,4 @@
+import io
 from typing import Any
 
 import pytest
@@ -11,10 +12,47 @@ def remove_request_headers(request: Any) -> Any:
     return request
 
 
+def _coerce_bytesio(value: Any) -> Any:
+    """Recursively replace `BytesIO` objects with their raw bytes.
+
+    Streaming Bedrock responses (notably the legacy
+    `invoke_model_with_response_stream` API) surface their body as a
+    `BytesIO` object, which the YAML cassette serializer cannot represent.
+    `getvalue()` returns the full buffer independent of the read position and
+    leaves that position unchanged, so the live `BytesIO` remains fully
+    readable by the test while the cassette stores plain bytes.
+
+    Any other stream-like object (e.g. a `botocore` `StreamingBody` exposing
+    `read()`, or an `EventStream` exposing only `__iter__`) is rejected loudly
+    rather than passed through: silently leaving it in place would either crash
+    the serializer later or, worse, record an empty/garbage body that passes on
+    replay against meaningless data.
+    """
+    if isinstance(value, io.BytesIO):
+        return value.getvalue()
+    if isinstance(value, dict):
+        return {k: _coerce_bytesio(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return type(value)(_coerce_bytesio(v) for v in value)
+    # Byte/text payloads are iterable but already serializable, so leave them be.
+    if isinstance(value, (bytes, bytearray, str)):
+        return value
+    # Anything still exposing a stream/iterator interface can't be serialized
+    # safely; fail loudly at record time rather than write a corrupt cassette.
+    if any(hasattr(value, attr) for attr in ("read", "getvalue", "__iter__")):
+        msg = (
+            f"Unhandled stream-like response body of type {type(value).__name__!r}; "
+            "it cannot be safely serialized to a VCR cassette without risking "
+            "data loss. Add explicit coercion in _coerce_bytesio."
+        )
+        raise TypeError(msg)
+    return value
+
+
 def remove_response_headers(response: dict) -> dict:
     for k in response["headers"]:
         response["headers"][k] = "**REDACTED**"
-    return response
+    return _coerce_bytesio(response)
 
 
 @pytest.fixture(scope="session")
