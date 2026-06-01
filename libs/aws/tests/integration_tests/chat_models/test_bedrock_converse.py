@@ -824,7 +824,6 @@ def test_streaming_tool_use_round_trip() -> None:
     assert isinstance(response, AIMessage)
 
 
-@pytest.mark.default_cassette("test_thinking.yaml.gz")
 @pytest.mark.vcr
 @pytest.mark.parametrize("output_version", ["v0", "v1"])
 def test_thinking(output_version: Literal["v0", "v1"]) -> None:
