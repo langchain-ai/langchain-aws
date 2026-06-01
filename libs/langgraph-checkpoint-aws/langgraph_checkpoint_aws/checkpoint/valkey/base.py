@@ -19,7 +19,7 @@ from langgraph.checkpoint.base import (
     get_checkpoint_metadata,
 )
 
-from .utils import set_client_info
+from .utils import set_client_info, set_client_name
 
 
 class BaseValkeySaver(BaseCheckpointSaver[str]):
@@ -56,6 +56,7 @@ class BaseValkeySaver(BaseCheckpointSaver[str]):
         else:
             # This is a sync client, safe to call set_client_info
             set_client_info(client)
+            set_client_name(client)
 
     def _make_checkpoint_key(
         self, thread_id: str, checkpoint_ns: str, checkpoint_id: str
