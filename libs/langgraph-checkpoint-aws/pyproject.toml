@@ -24,7 +24,7 @@ repository = "https://github.com/langchain-ai/langchain-aws"
 
 [project.optional-dependencies]
 valkey = [
-    "valkey>=6.1.1",
+    "valkey>=6.1.1,>=6.0.0rc1",
     "orjson>=3.11.3",
 ]
 
@@ -56,7 +56,7 @@ typing = [
 ]
 
 [tool.uv]
-prerelease = "allow"
+prerelease = "if-necessary-or-explicit"
 
 [tool.ruff]
 lint.select = [
