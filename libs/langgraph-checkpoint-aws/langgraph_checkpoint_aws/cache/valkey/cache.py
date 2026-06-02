@@ -21,7 +21,7 @@ except ImportError as e:
         "Install it with: pip install 'langgraph-checkpoint-aws[valkey]'"
     ) from e
 
-from ...checkpoint.valkey.utils import set_client_info
+from ...checkpoint.valkey.utils import set_client_info, set_client_name
 
 if TYPE_CHECKING:
     pass
@@ -112,6 +112,7 @@ class ValkeyCache(BaseCache[ValueT]):
         self.prefix = prefix
         self.ttl = int(ttl) if ttl else None
         set_client_info(client)
+        set_client_name(client)
 
     @classmethod
     @contextmanager

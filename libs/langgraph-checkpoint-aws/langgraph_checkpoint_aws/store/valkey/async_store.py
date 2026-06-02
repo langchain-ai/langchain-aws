@@ -27,7 +27,7 @@ from langgraph.store.base.embed import get_text_at_path
 from valkey import Valkey
 from valkey.connection import ConnectionPool
 
-from ...checkpoint.valkey.utils import aset_client_info
+from ...checkpoint.valkey.utils import aset_client_info, aset_client_name
 from .base import BaseValkeyStore, ValkeyIndexConfig
 from .document_utils import DocumentProcessor, FilterProcessor, ScoreCalculator
 from .exceptions import EmbeddingGenerationError
@@ -302,6 +302,7 @@ class AsyncValkeyStore(BaseValkeyStore):
                 client = Valkey.from_url(conn_string)
 
             await aset_client_info(client)
+            await aset_client_name(client)
             store = cls(client, index=index, ttl=ttl)
             yield store
         finally:
@@ -326,6 +327,7 @@ class AsyncValkeyStore(BaseValkeyStore):
         try:
             client = Valkey.from_pool(connection_pool=pool)
             await aset_client_info(client)
+            await aset_client_name(client)
             store = cls(client, index=index, ttl=ttl)
             yield store
         finally:

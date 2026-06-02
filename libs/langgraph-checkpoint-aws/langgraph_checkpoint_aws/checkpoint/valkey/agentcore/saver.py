@@ -36,6 +36,7 @@ from ...agentcore.helpers import EventSerializer
 from ..utils import (
     aset_client_info,
     set_client_info,
+    set_client_name,
 )
 from .models import (
     StoredChannelData,
@@ -104,6 +105,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         # Set client info for library identification
         if not self.is_async:
             set_client_info(client)
+            set_client_name(client)
 
         # Validate configuration
         if ttl is not None and ttl <= 0:

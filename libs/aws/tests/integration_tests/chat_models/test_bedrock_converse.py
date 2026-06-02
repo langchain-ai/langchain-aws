@@ -20,7 +20,6 @@ from langchain_core.tools import BaseTool, tool
 from langchain_tests.integration_tests import ChatModelIntegrationTests
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated, TypedDict
-from vcr import VCR
 
 from langchain_aws import ChatBedrockConverse
 
@@ -825,7 +824,6 @@ def test_streaming_tool_use_round_trip() -> None:
     assert isinstance(response, AIMessage)
 
 
-@pytest.mark.default_cassette("test_thinking.yaml.gz")
 @pytest.mark.vcr
 @pytest.mark.parametrize("output_version", ["v0", "v1"])
 def test_thinking(output_version: Literal["v0", "v1"]) -> None:
@@ -1060,30 +1058,38 @@ def test_get_num_tokens_from_messages_integration() -> None:
 
 
 @pytest.mark.parametrize("streaming", [False, True])
-def test_request_headers(tmp_path: Any, streaming: bool) -> None:
-    # Test that we can attach headers to requests
-    cassette_path = tmp_path / "headers.yaml"
+def test_request_headers(streaming: bool) -> None:
+    # Test that we can attach headers to requests. Capture headers via a
+    # botocore `before-send` hook rather than VCR; VCR's urllib3 interception
+    # has proven flaky here (non-streaming Converse calls were not always
+    # recorded in CI), and an event hook fires at the exact wire-level moment
+    # we care about: right after `_add_custom_headers` has applied them.
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        default_headers={"X-Foo": "Bar"},
+    )
 
-    vcr = VCR(record_mode="all")
-    with vcr.use_cassette(str(cassette_path)) as cassette:
-        model = ChatBedrockConverse(
-            model="us.anthropic.claude-haiku-4-5-20251001-v1:0",
-            default_headers={"X-Foo": "Bar"},
-        )
+    captured: list[dict[str, str]] = []
+
+    def _capture(request: Any, **_: Any) -> None:
+        captured.append(dict(request.headers))
+
+    event = (
+        "before-send.bedrock-runtime.ConverseStream"
+        if streaming
+        else "before-send.bedrock-runtime.Converse"
+    )
+    model.client.meta.events.register_last(event, _capture)
+    try:
         if streaming:
             _ = list(model.stream("hi"))
         else:
             _ = model.invoke("hi")
+    finally:
+        model.client.meta.events.unregister(event, _capture)
 
-        # Credential resolution (STS/SSO/IMDS) can produce VCR-captured
-        # requests that precede the Converse call; the custom-headers hook
-        # is only registered for bedrock-runtime Converse/ConverseStream,
-        # so pick the matching request rather than indexing position 0.
-        converse_requests = [r for r in cassette.requests if "bedrock-runtime" in r.uri]
-        assert converse_requests, "no bedrock-runtime request captured"
-        headers = converse_requests[0].headers
-
-    assert headers["X-Foo"] == "Bar"
+    assert captured, "no bedrock-runtime request observed"
+    assert captured[0]["X-Foo"] == "Bar"
 
 
 # --- Native structured outputs integration tests ---

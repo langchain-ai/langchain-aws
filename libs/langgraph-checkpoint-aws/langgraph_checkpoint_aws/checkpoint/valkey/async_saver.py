@@ -19,7 +19,7 @@ from langgraph.checkpoint.base import (
 from langgraph.checkpoint.serde.base import SerializerProtocol
 
 from .base import BaseValkeySaver
-from .utils import aset_client_info
+from .utils import aset_client_info, aset_client_name
 
 # Conditional imports for optional dependencies
 try:
@@ -131,6 +131,7 @@ class AsyncValkeySaver(BaseValkeySaver):
         try:
             # Set client info for library identification
             await aset_client_info(client)
+            await aset_client_name(client)
             yield cls(client, ttl=ttl_seconds, serde=serde)
         finally:
             await client.aclose()
@@ -166,6 +167,7 @@ class AsyncValkeySaver(BaseValkeySaver):
         try:
             # Set client info for library identification
             await aset_client_info(client)
+            await aset_client_name(client)
             yield cls(client, ttl=ttl_seconds)
         finally:
             await client.aclose()

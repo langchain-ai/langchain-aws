@@ -475,7 +475,15 @@ class DynamoDBSaver(BaseCheckpointSaver):
         Returns:
             AsyncIterator[CheckpointTuple]: An iterator of checkpoint tuples.
         """
-        for item in self.list(config, filter=filter, before=before, limit=limit):
+        # ``list`` is backed by blocking boto3 calls, so it is driven from a
+        # background thread one item at a time to avoid blocking the event loop
+        # while still yielding lazily (no need to materialize all results).
+        iterator = self.list(config, filter=filter, before=before, limit=limit)
+
+        def next_item() -> CheckpointTuple | None:
+            return next(iterator, None)
+
+        while (item := await run_in_executor(None, next_item)) is not None:
             yield item
 
     def delete_thread(self, thread_id: str) -> None:
