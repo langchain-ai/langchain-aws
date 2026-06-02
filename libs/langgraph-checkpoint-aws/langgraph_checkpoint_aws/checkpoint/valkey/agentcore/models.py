@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..models import CheckpointerConfig
+from ...agentcore.models import CheckpointerConfig
 
 
 class ValkeyCheckpointerConfig(CheckpointerConfig):

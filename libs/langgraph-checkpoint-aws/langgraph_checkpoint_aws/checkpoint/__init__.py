@@ -7,9 +7,13 @@ _import_error: ImportError | None = None
 
 # Conditional imports for optional dependencies
 try:
-    from langgraph_checkpoint_aws.checkpoint.valkey import AsyncValkeySaver, ValkeySaver
+    from langgraph_checkpoint_aws.checkpoint.valkey import (
+        AgentCoreValkeySaver,
+        AsyncValkeySaver,
+        ValkeySaver,
+    )
 
-    __all__ = ["AsyncValkeySaver", "ValkeySaver"]
+    __all__ = ["AgentCoreValkeySaver", "AsyncValkeySaver", "ValkeySaver"]
 except ImportError as e:
     # Store the error for later use
     _import_error = e
@@ -23,7 +27,8 @@ except ImportError as e:
 
     # Create placeholder classes that raise helpful errors
     # Use type: ignore to suppress mypy errors for this intentional pattern
+    AgentCoreValkeySaver: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
     AsyncValkeySaver: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
     ValkeySaver: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
 
-    __all__ = ["AsyncValkeySaver", "ValkeySaver"]
+    __all__ = ["AgentCoreValkeySaver", "AsyncValkeySaver", "ValkeySaver"]

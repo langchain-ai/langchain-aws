@@ -27,7 +27,7 @@ from langgraph.store.base import (
     SearchOp,
 )
 
-from langgraph_checkpoint_aws.agentcore.helpers import (
+from ...checkpoint.agentcore.helpers import (
     convert_langchain_messages_to_event_messages,
 )
 

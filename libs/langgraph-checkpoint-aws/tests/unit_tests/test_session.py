@@ -2,7 +2,8 @@ from unittest.mock import ANY, Mock, patch
 
 import pytest
 
-from langgraph_checkpoint_aws.models import (
+from langgraph_checkpoint_aws import BedrockAgentRuntimeSessionClient
+from langgraph_checkpoint_aws.checkpoint.bedrock_sessions.models import (
     CreateInvocationRequest,
     CreateInvocationResponse,
     CreateSessionRequest,
@@ -21,7 +22,6 @@ from langgraph_checkpoint_aws.models import (
     PutInvocationStepRequest,
     PutInvocationStepResponse,
 )
-from langgraph_checkpoint_aws.saver import BedrockAgentRuntimeSessionClient
 
 
 class TestBedrockAgentRuntimeSessionClient:

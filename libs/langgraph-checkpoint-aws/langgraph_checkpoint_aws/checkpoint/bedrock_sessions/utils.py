@@ -21,9 +21,10 @@ from langgraph.checkpoint.serde.base import SerializerProtocol
 from langgraph.constants import TASKS
 from pydantic import BaseModel, SecretStr
 
-from langgraph_checkpoint_aws import SDK_USER_AGENT
-from langgraph_checkpoint_aws.constants import CHECKPOINT_PREFIX, WRITES_PREFIX
-from langgraph_checkpoint_aws.models import (
+from langgraph_checkpoint_aws._version import SDK_USER_AGENT
+
+from .constants import CHECKPOINT_PREFIX, WRITES_PREFIX
+from .models import (
     BedrockSessionContentBlock,
     SessionCheckpoint,
     SessionPendingWrite,

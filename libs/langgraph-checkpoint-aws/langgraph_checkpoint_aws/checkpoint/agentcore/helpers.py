@@ -25,11 +25,11 @@ from langgraph.checkpoint.base import (
     SerializerProtocol,
 )
 
-from langgraph_checkpoint_aws.agentcore.constants import (
+from .constants import (
     EMPTY_CHANNEL_VALUE,
     EventDecodingError,
 )
-from langgraph_checkpoint_aws.agentcore.models import (
+from .models import (
     ChannelDataEvent,
     CheckpointerConfig,
     CheckpointEvent,

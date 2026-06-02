@@ -4,7 +4,9 @@ Unit tests for patch_orphan_tool_calls function.
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from langgraph_checkpoint_aws.agentcore.helpers import patch_orphan_tool_calls
+from langgraph_checkpoint_aws.checkpoint.agentcore.helpers import (
+    patch_orphan_tool_calls,
+)
 
 
 class TestPatchOrphanToolCalls:

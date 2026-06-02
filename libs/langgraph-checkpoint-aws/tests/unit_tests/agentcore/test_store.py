@@ -18,7 +18,7 @@ from langgraph.store.base import (
     SearchOp,
 )
 
-from langgraph_checkpoint_aws.agentcore.store import AgentCoreMemoryStore
+from langgraph_checkpoint_aws.store.agentcore.store import AgentCoreMemoryStore
 
 
 class TestAgentCoreMemoryStore:

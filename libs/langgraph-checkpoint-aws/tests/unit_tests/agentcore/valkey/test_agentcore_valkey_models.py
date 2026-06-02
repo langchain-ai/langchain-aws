@@ -9,7 +9,7 @@ pytest.importorskip("pydantic")
 
 from pydantic import ValidationError
 
-from langgraph_checkpoint_aws.agentcore.valkey.models import (
+from langgraph_checkpoint_aws.checkpoint.valkey.agentcore.models import (
     StoredChannelData,
     StoredCheckpoint,
     StoredWrite,

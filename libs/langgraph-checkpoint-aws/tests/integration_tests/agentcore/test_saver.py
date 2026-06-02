@@ -10,7 +10,7 @@ from langchain_aws import ChatBedrock
 from langchain_core.tools import tool
 from langgraph.checkpoint.base import Checkpoint, uuid6
 
-from langgraph_checkpoint_aws.agentcore.saver import AgentCoreMemorySaver
+from langgraph_checkpoint_aws.checkpoint.agentcore.saver import AgentCoreMemorySaver
 
 
 def generate_valid_session_id():

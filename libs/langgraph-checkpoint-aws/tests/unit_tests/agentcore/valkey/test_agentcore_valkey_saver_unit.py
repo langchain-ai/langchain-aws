@@ -14,9 +14,9 @@ pytest.importorskip("orjson")
 from langgraph.checkpoint.base import CheckpointTuple
 from valkey.exceptions import ConnectionError, TimeoutError, ValkeyError
 
-from langgraph_checkpoint_aws.agentcore.constants import InvalidConfigError
-from langgraph_checkpoint_aws.agentcore.valkey import AgentCoreValkeySaver
-from langgraph_checkpoint_aws.agentcore.valkey.models import (
+from langgraph_checkpoint_aws.checkpoint.agentcore.constants import InvalidConfigError
+from langgraph_checkpoint_aws.checkpoint.valkey import AgentCoreValkeySaver
+from langgraph_checkpoint_aws.checkpoint.valkey.agentcore.models import (
     StoredCheckpoint,
     StoredWrite,
     ValkeyCheckpointerConfig,
@@ -220,10 +220,10 @@ class TestAgentCoreValkeySaver:
         """Test creating saver from connection string."""
         with (
             patch(
-                "langgraph_checkpoint_aws.agentcore.valkey.saver.ConnectionPool.from_url"
+                "langgraph_checkpoint_aws.checkpoint.valkey.agentcore.saver.ConnectionPool.from_url"
             ) as mock_pool_from_url,
             patch(
-                "langgraph_checkpoint_aws.agentcore.valkey.saver.Valkey"
+                "langgraph_checkpoint_aws.checkpoint.valkey.agentcore.saver.Valkey"
             ) as mock_valkey,
         ):
             mock_pool = MagicMock()
@@ -246,7 +246,7 @@ class TestAgentCoreValkeySaver:
     def test_from_pool(self):
         """Test creating saver from connection pool."""
         with patch(
-            "langgraph_checkpoint_aws.agentcore.valkey.saver.Valkey"
+            "langgraph_checkpoint_aws.checkpoint.valkey.agentcore.saver.Valkey"
         ) as mock_valkey:
             mock_pool = MagicMock()
             mock_client = MagicMock()
@@ -930,7 +930,7 @@ class TestAgentCoreValkeySaver:
         mock_async_valkey_client.delete = MagicMock(return_value=1)
 
         with patch(
-            "langgraph_checkpoint_aws.agentcore.valkey.saver.logger"
+            "langgraph_checkpoint_aws.checkpoint.valkey.agentcore.saver.logger"
         ) as mock_logger:
             async_saver.delete_thread(thread_id, actor_id)
             mock_logger.warning.assert_called_with(

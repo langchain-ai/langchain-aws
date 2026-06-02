@@ -31,9 +31,13 @@ from valkey.asyncio import Valkey as AsyncValkey
 from valkey.connection import ConnectionPool
 from valkey.exceptions import ConnectionError, TimeoutError, ValkeyError
 
-from ...checkpoint.valkey.utils import set_client_info, set_client_name
-from ..constants import InvalidConfigError
-from ..helpers import EventSerializer
+from ...agentcore.constants import InvalidConfigError
+from ...agentcore.helpers import EventSerializer
+from ..utils import (
+    aset_client_info,
+    set_client_info,
+    set_client_name,
+)
 from .models import (
     StoredChannelData,
     StoredCheckpoint,
@@ -61,7 +65,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
 
     Examples:
         >>> from valkey import Valkey
-        >>> from langgraph_checkpoint_aws.agentcore.valkey import AgentCoreValkeySaver
+        >>> from langgraph_checkpoint_aws import AgentCoreValkeySaver
         >>>
         >>> client = Valkey.from_url("valkey://localhost:6379")
         >>> checkpointer = AgentCoreValkeySaver(client, ttl=3600)  # 1 hour TTL
@@ -207,6 +211,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         pool = ConnectionPool.from_url(conn_string, max_connections=pool_size)
         client = Valkey(connection_pool=pool, **kwargs)
         try:
+            set_client_info(client)
             yield cls(client, ttl=ttl_seconds)
         finally:
             client.close()
@@ -230,6 +235,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         """
         client = Valkey(connection_pool=pool)
         try:
+            set_client_info(client)
             yield cls(client, ttl=ttl_seconds)
         finally:
             client.close()
@@ -267,6 +273,7 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         pool = AsyncConnectionPool.from_url(conn_string, max_connections=pool_size)
         client = AsyncValkey(connection_pool=pool, **kwargs)
         try:
+            await aset_client_info(client)
             yield cls(client, ttl=ttl_seconds)
         finally:
             await client.aclose()

@@ -9,10 +9,10 @@ from langgraph.checkpoint.serde.base import SerializerProtocol
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from langgraph_checkpoint_aws import SDK_USER_AGENT
-from langgraph_checkpoint_aws.models import (
+from langgraph_checkpoint_aws.checkpoint.bedrock_sessions.models import (
     CreateSessionRequest,
 )
-from langgraph_checkpoint_aws.utils import (
+from langgraph_checkpoint_aws.checkpoint.bedrock_sessions.utils import (
     construct_checkpoint_tuple,
     deserialize_from_base64,
     generate_checkpoint_id,
@@ -87,7 +87,9 @@ class TestUtils:
         deserialized = deserialize_from_base64(json_serializer, *serialized)
         assert deserialized == sample_dict
 
-    @patch("langgraph_checkpoint_aws.utils.deserialize_from_base64")
+    @patch(
+        "langgraph_checkpoint_aws.checkpoint.bedrock_sessions.utils.deserialize_from_base64"
+    )
     def test__construct_checkpoint_tuple(
         self,
         mock_deserialize_from_base64,
