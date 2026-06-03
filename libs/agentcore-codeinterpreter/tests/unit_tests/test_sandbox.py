@@ -33,7 +33,7 @@ def _make_sandbox(
     return AgentCoreSandbox(interpreter=interpreter, cwd=cwd), interpreter
 
 
-def _make_expired_sandbox() -> tuple[AgentCoreSandbox, MagicMock]:
+def _make_expired_sandbox(cwd: str | None = None) -> tuple[AgentCoreSandbox, MagicMock]:
     """Create a sandbox whose interpreter raises ResourceNotFoundException."""
     interpreter = MagicMock()
     interpreter.session_id = "expired-session"
@@ -46,7 +46,7 @@ def _make_expired_sandbox() -> tuple[AgentCoreSandbox, MagicMock]:
         },
         "InvokeCodeInterpreter",
     )
-    return AgentCoreSandbox(interpreter=interpreter), interpreter
+    return AgentCoreSandbox(interpreter=interpreter, cwd=cwd), interpreter
 
 
 # ------------------------------------------------------------------
@@ -196,7 +196,8 @@ def test_download_files() -> None:
                     }
                 }
             ]
-        }
+        },
+        cwd="/",
     )
     results = sandbox.download_files(["/test.txt"])
     mock.invoke.assert_called_once_with(
@@ -208,7 +209,7 @@ def test_download_files() -> None:
 
 def test_download_files_missing() -> None:
     """Missing files should be reported as file_not_found."""
-    sandbox, _ = _make_sandbox({"stream": [{"result": {"content": []}}]})
+    sandbox, _ = _make_sandbox({"stream": [{"result": {"content": []}}]}, cwd="/")
     results = sandbox.download_files(["/missing.txt"])
     assert results[0].error == "file_not_found"
     assert results[0].content is None
@@ -216,7 +217,7 @@ def test_download_files_missing() -> None:
 
 def test_download_files_handles_exception() -> None:
     """SDK errors during download should return file_not_found."""
-    sandbox, mock = _make_sandbox()
+    sandbox, mock = _make_sandbox(cwd="/")
     mock.invoke.side_effect = RuntimeError("read failed")
     results = sandbox.download_files(["/a.txt"])
     assert results[0].error == "file_not_found"
@@ -224,7 +225,7 @@ def test_download_files_handles_exception() -> None:
 
 def test_download_files_handles_session_expiry() -> None:
     """Session expiry during download should return permission_denied."""
-    sandbox, _ = _make_expired_sandbox()
+    sandbox, _ = _make_expired_sandbox(cwd="/")
     results = sandbox.download_files(["/a.txt"])
     assert results[0].error == "permission_denied"
 
@@ -249,7 +250,8 @@ def test_download_files_dot_slash_path() -> None:
                     }
                 }
             ]
-        }
+        },
+        cwd="/",
     )
     results = sandbox.download_files(["./data/foo.png"])
     mock.invoke.assert_called_once_with(
@@ -257,6 +259,111 @@ def test_download_files_dot_slash_path() -> None:
     )
     assert results[0].error is None
     assert results[0].content == fake_png
+
+
+def test_download_files_strips_cwd_prefix() -> None:
+    """Absolute paths under cwd should have the prefix stripped for readFiles."""
+    cwd = "/opt/sandbox"
+    sandbox, mock = _make_sandbox(
+        {
+            "stream": [
+                {
+                    "result": {
+                        "content": [
+                            {
+                                "type": "resource",
+                                "resource": {
+                                    "uri": "file:///workspace/hello.py",
+                                    "text": "hello",
+                                },
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        cwd=cwd,
+    )
+    results = sandbox.download_files([f"{cwd}/workspace/hello.py"])
+    mock.invoke.assert_called_once_with(
+        method="readFiles", params={"paths": ["workspace/hello.py"]}
+    )
+    assert results[0].content == b"hello"
+    assert results[0].error is None
+    assert results[0].path == f"{cwd}/workspace/hello.py"
+
+
+def test_download_files_virtual_path_with_cwd() -> None:
+    """Virtual paths not under cwd should fall back to leading-slash stripping."""
+    sandbox, mock = _make_sandbox(
+        {
+            "stream": [
+                {
+                    "result": {
+                        "content": [
+                            {
+                                "type": "resource",
+                                "resource": {
+                                    "uri": "file:///workspace/hello.py",
+                                    "text": "hello",
+                                },
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        cwd="/opt/sandbox",
+    )
+    results = sandbox.download_files(["/workspace/hello.py"])
+    mock.invoke.assert_called_once_with(
+        method="readFiles", params={"paths": ["workspace/hello.py"]}
+    )
+    assert results[0].content == b"hello"
+    assert results[0].error is None
+
+
+def test_download_files_lazy_cwd_detection() -> None:
+    """When cwd is not provided, download_files should detect it via pwd."""
+    cwd = "/opt/sandbox"
+
+    def invoke(**kwargs: Any) -> dict[str, Any]:
+        if kwargs.get("method") == "executeCommand":
+            return {
+                "stream": [
+                    {
+                        "result": {
+                            "exitCode": 0,
+                            "content": [{"type": "text", "text": cwd}],
+                        }
+                    }
+                ]
+            }
+        return {
+            "stream": [
+                {
+                    "result": {
+                        "content": [
+                            {
+                                "type": "resource",
+                                "resource": {
+                                    "uri": "file:///workspace/hello.py",
+                                    "text": "hello",
+                                },
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+
+    sandbox, mock = _make_sandbox()
+    mock.invoke.side_effect = invoke
+
+    results = sandbox.download_files([f"{cwd}/workspace/hello.py"])
+    assert sandbox._cwd == cwd
+    assert results[0].content == b"hello"
+    assert results[0].error is None
 
 
 # ------------------------------------------------------------------
@@ -646,7 +753,7 @@ def test_adownload_files_uses_dedicated_executor() -> None:
             }
         ]
     }
-    sandbox, mock = _make_sandbox(canned_response)
+    sandbox, mock = _make_sandbox(canned_response, cwd="/")
 
     import threading
 

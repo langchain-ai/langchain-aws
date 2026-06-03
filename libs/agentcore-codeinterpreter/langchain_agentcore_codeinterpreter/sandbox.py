@@ -408,19 +408,20 @@ class AgentCoreSandbox(BaseSandbox):
             as the input paths.
         """
         try:
+            self._get_cwd()
             relative_paths = [self._to_relative_path(p) for p in paths]
             response = self._invoke(
                 method="readFiles", params={"paths": relative_paths}
             )
-            file_contents = _extract_files_from_stream(response, paths)
+            file_contents = _extract_files_from_stream(response, relative_paths)
 
             return [
                 FileDownloadResponse(
-                    path=path,
-                    content=file_contents.get(path),
-                    error=None if path in file_contents else "file_not_found",
+                    path=original,
+                    content=file_contents.get(rel),
+                    error=None if rel in file_contents else "file_not_found",
                 )
-                for path in paths
+                for original, rel in zip(paths, relative_paths)
             ]
         except SessionExpiredError:
             logger.error("AgentCore session expired while downloading files: %s", paths)
