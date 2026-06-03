@@ -222,6 +222,11 @@ class AgentCoreSandbox(BaseSandbox):
         """
         if self._cwd is None:
             result = self.execute("pwd")
+            if result.exit_code != 0 or not result.output.strip():
+                raise RuntimeError(
+                    f"Failed to detect sandbox working directory: "
+                    f"exit_code={result.exit_code}, output={result.output!r}"
+                )
             self._cwd = result.output.strip().rstrip("/")
         return self._cwd
 
