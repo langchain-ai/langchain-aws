@@ -289,12 +289,7 @@ class AgentCoreSandbox(BaseSandbox):
         if preflight_error is not None:
             return preflight_error
         responses = self.upload_files([(abs_path, content.encode("utf-8"))])
-        if not responses:
-            msg = (
-                f"Responses was expected to return 1 result, but it returned "
-                f"{len(responses)} with type {type(responses)}"
-            )
-            raise AssertionError(msg)
+        assert responses, "upload_files returned no responses"
         response = responses[0]
         if response.error:
             return WriteResult(
