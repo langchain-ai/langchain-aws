@@ -55,6 +55,53 @@ def remove_response_headers(response: dict) -> dict:
     return _coerce_bytesio(response)
 
 
+def _debug_body_matcher(r1: Any, r2: Any) -> None:
+    """Body matcher that enriches VCR's mismatch message with the actual bodies.
+
+    TEMPORARY DEBUG AID (remove once captured). It delegates to VCR's built-in
+    ``body`` matcher first, so it raises ``AssertionError`` on mismatch and
+    returns ``None`` on match exactly as the default does -- it never changes
+    which tests pass or fail. On a genuine mismatch it re-raises with a message
+    containing both request bodies, their byte lengths, and the first differing
+    offset. VCR surfaces that message in its ``body - assertion failure : ...``
+    output, letting the scheduled integration run capture the exact outgoing
+    request body for an intermittent, locally-unreproducible cassette mismatch
+    (currently ``test_agent_loop[v1]`` on Python 3.13).
+    """
+    from vcr.matchers import body as _vcr_body
+    from vcr.matchers import read_body
+
+    try:
+        _vcr_body(r1, r2)
+    except AssertionError:
+        pass
+    else:
+        return
+
+    def _as_bytes(value: Any) -> bytes:
+        if isinstance(value, bytes):
+            return value
+        if isinstance(value, str):
+            return value.encode("utf-8")
+        return repr(value).encode("utf-8")
+
+    raw1 = _as_bytes(read_body(r1))
+    raw2 = _as_bytes(read_body(r2))
+    first_diff = next(
+        (i for i, (x, y) in enumerate(zip(raw1, raw2)) if x != y),
+        min(len(raw1), len(raw2)),
+    )
+    msg = (
+        "\n----- VCR BODY MISMATCH (debug) -----\n"
+        f"outgoing len={len(raw1)} recorded len={len(raw2)} "
+        f"first_diff_offset={first_diff}\n"
+        f"outgoing : {raw1!r}\n"
+        f"recorded : {raw2!r}\n"
+        "----- END VCR BODY MISMATCH -----"
+    )
+    raise AssertionError(msg)
+
+
 @pytest.fixture(scope="session")
 def vcr_config() -> dict:
     """Extend the default configuration coming from langchain_tests."""
@@ -70,3 +117,7 @@ def vcr_config() -> dict:
 def pytest_recording_configure(config: dict, vcr: VCR) -> None:
     vcr.register_persister(CustomPersister())
     vcr.register_serializer("yaml.gz", CustomSerializer())
+    # TEMPORARY DEBUG: override the built-in "body" matcher to log the actual
+    # bodies on mismatch. Remove with the rest of this debug aid once the
+    # intermittent test_agent_loop[v1] body diff has been captured in CI.
+    vcr.register_matcher("body", _debug_body_matcher)
