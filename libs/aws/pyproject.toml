@@ -121,6 +121,12 @@ directory = "htmlcov"
 # https://github.com/tophat/syrupy
 # --snapshot-warn-unused    Prints a warning on unused snapshots rather than fail the test suite.
 addopts = "--snapshot-warn-unused --strict-markers --strict-config --durations=5"
+filterwarnings = [
+    # `bedrock-agentcore` (third-party) still uses class-based pydantic `Config`
+    # in `bedrock_agentcore.runtime.context.RequestContext`. Remove once upstream
+    # migrates to `ConfigDict`.
+    "ignore:Support for class-based .config. is deprecated:DeprecationWarning",
+]
 # Registering custom markers.
 # https://docs.pytest.org/en/7.1.x/example/markers.html#registering-markers
 markers = [
