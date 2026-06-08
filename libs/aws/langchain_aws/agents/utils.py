@@ -110,7 +110,7 @@ def parse_agent_response(response: Any) -> OutputType:
             trace_log_elements.append(event["trace"])
 
         if "returnControl" in event:
-            response_text = json.dumps(event)
+            response_text = json.dumps(event, ensure_ascii=False)
             break
 
         if "chunk" in event:
@@ -119,7 +119,7 @@ def parse_agent_response(response: Any) -> OutputType:
         if "files" in event:
             files = event["files"]["files"]
 
-    trace_log = json.dumps(trace_log_elements, default=_json_serial)
+    trace_log = json.dumps(trace_log_elements, default=_json_serial, ensure_ascii=False)
 
     agent_finish = BedrockAgentFinish(
         return_values={"output": response_text, "files": files},
