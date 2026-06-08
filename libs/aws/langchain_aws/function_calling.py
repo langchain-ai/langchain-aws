@@ -99,6 +99,46 @@ def _lc_tool_calls_to_anthropic_tool_use_blocks(
     return blocks
 
 
+class _OpenAIFunction(TypedDict):
+    name: str
+    arguments: str
+
+
+class _OpenAIToolCall(TypedDict):
+    """OpenAI-style tool call format."""
+
+    id: str
+    type: Literal["function"]
+    function: _OpenAIFunction
+
+
+def lc_tool_calls_to_openai_tool_calls(
+    tool_calls: List[ToolCall],
+) -> List[_OpenAIToolCall]:
+    """Convert LangChain ToolCall objects to OpenAI-style tool call format.
+
+    Args:
+        tool_calls: List of LangChain ToolCall objects.
+
+    Returns:
+        List of OpenAI-style tool call dicts with format:
+        [{"id": "...", "type": "function", "function": {"name": "...", "arguments": "..."}}]
+    """  # noqa: E501
+    result = []
+    for tool_call in tool_calls:
+        result.append(
+            _OpenAIToolCall(
+                id=tool_call.get("id") or "",
+                type="function",
+                function=_OpenAIFunction(
+                    name=tool_call.get("name") or "",
+                    arguments=json.dumps(tool_call.get("args") or {}),
+                ),
+            )
+        )
+    return result
+
+
 def _get_type(parameter: Dict[str, Any]) -> str:
     if "type" in parameter:
         return parameter["type"]
