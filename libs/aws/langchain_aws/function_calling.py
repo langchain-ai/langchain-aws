@@ -103,10 +103,10 @@ def _get_type(parameter: Dict[str, Any]) -> str:
     if "type" in parameter:
         return parameter["type"]
     if "anyOf" in parameter:
-        return json.dumps({"anyOf": parameter["anyOf"]})
+        return json.dumps({"anyOf": parameter["anyOf"]}, ensure_ascii=False)
     if "allOf" in parameter:
-        return json.dumps({"allOf": parameter["allOf"]})
-    return json.dumps(parameter)
+        return json.dumps({"allOf": parameter["allOf"]}, ensure_ascii=False)
+    return json.dumps(parameter, ensure_ascii=False)
 
 
 def get_system_message(tools: List[AnthropicTool]) -> str:

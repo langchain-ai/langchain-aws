@@ -1636,7 +1636,7 @@ class ChatBedrockConverse(BaseChatModel):
                 "type": "json_schema",
                 "structure": {
                     "jsonSchema": {
-                        "schema": json.dumps(json_schema),
+                        "schema": json.dumps(json_schema, ensure_ascii=False),
                         "name": schema_name,
                         "description": schema_description,
                     }
@@ -1988,7 +1988,7 @@ def _prompt_prefill_instructions(json_schema: dict) -> str:
         del json_schema["type"]
 
     return _PROMPT_PREFILL_INSTRUCTIONS.format(
-        schema=json.dumps(json_schema, indent=2, ensure_ascii=True)
+        schema=json.dumps(json_schema, indent=2, ensure_ascii=False)
     )
 
 
@@ -2264,9 +2264,8 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         )
     elif "Exception" in list(event.keys())[0]:
         name, info = list(event.items())[0]
-        raise ValueError(
-            f"Received AWS exception {name}:\n\n{json.dumps(info, indent=2)}"
-        )
+        info_text = json.dumps(info, indent=2, ensure_ascii=False)
+        raise ValueError(f"Received AWS exception {name}:\n\n{info_text}")
     else:
         raise ValueError(f"Received unsupported stream event:\n\n{event}")
 
@@ -2784,7 +2783,7 @@ def _response_format_to_output_config(
             "type": "json_schema",
             "structure": {
                 "jsonSchema": {
-                    "schema": json.dumps(schema),
+                    "schema": json.dumps(schema, ensure_ascii=False),
                     "name": name,
                     "description": description,
                 }
@@ -3044,7 +3043,7 @@ def _convert_tool_blocks_to_text(
                 if tool_inputs:
                     tool_text = (
                         f"[Called {tool_name} with parameters: "
-                        f"{json.dumps(tool_inputs)}]"
+                        f"{json.dumps(tool_inputs, ensure_ascii=False)}]"
                     )
                 else:
                     tool_text = f"[Called {tool_name}]"
@@ -3059,7 +3058,9 @@ def _convert_tool_blocks_to_text(
                     if "text" in content_block:
                         content_parts.append(content_block["text"])
                     elif "json" in content_block:
-                        content_parts.append(json.dumps(content_block["json"]))
+                        content_parts.append(
+                            json.dumps(content_block["json"], ensure_ascii=False)
+                        )
                     # skip other internal content types
                 result_content = "".join(content_parts)
 
