@@ -7,6 +7,7 @@ AWS credential requirements.
 from __future__ import annotations
 
 import asyncio
+import base64
 from collections.abc import Iterator
 from typing import Any
 from unittest.mock import MagicMock
@@ -141,12 +142,41 @@ def test_upload_files_text() -> None:
 
 
 def test_upload_files_binary_uses_blob() -> None:
-    """Non-UTF-8 content should be base64-encoded as a blob."""
+    """Non-UTF-8 content should be uploaded as raw blob bytes."""
     sandbox, mock = _make_sandbox()
-    sandbox.upload_files([("/data.bin", b"\x80\x81\x82")])
+    binary_content = b"\x80\x81\x82"
+    base64_content = base64.b64encode(binary_content)
+
+    sandbox.upload_files([("/data.bin", binary_content)])
+
     content = mock.invoke.call_args.kwargs["params"]["content"][0]
     assert "blob" in content
     assert "text" not in content
+    assert content["blob"] == binary_content
+    assert isinstance(content["blob"], bytes)
+    assert content["blob"] != base64_content
+    assert content["blob"] != base64_content.decode("ascii")
+
+
+def test_upload_files_mixed_text_and_binary() -> None:
+    """Text and binary files should use the correct writeFiles fields."""
+    sandbox, mock = _make_sandbox()
+    binary_content = b"\x00\xff\xfe"
+
+    result = sandbox.upload_files(
+        [
+            ("/hello.py", b"print('hi')"),
+            ("/data.bin", binary_content),
+        ]
+    )
+
+    uploaded = mock.invoke.call_args.kwargs["params"]["content"]
+    assert uploaded == [
+        {"path": "hello.py", "text": "print('hi')"},
+        {"path": "data.bin", "blob": binary_content},
+    ]
+    assert [response.path for response in result] == ["/hello.py", "/data.bin"]
+    assert [response.error for response in result] == [None, None]
 
 
 def test_upload_files_empty_list() -> None:
@@ -732,6 +762,21 @@ def test_aupload_files_uses_dedicated_executor() -> None:
     result = asyncio.run(sandbox.aupload_files([("/test.txt", b"data")]))
     assert result[0].error is None
     assert any("agentcore-sandbox" in name for name in thread_names)
+
+
+def test_aupload_files_binary_uses_raw_blob() -> None:
+    """aupload_files() should preserve raw blob bytes for binary uploads."""
+    sandbox, mock = _make_sandbox()
+    binary_content = b"\x80\x81\x82"
+    base64_content = base64.b64encode(binary_content)
+
+    result = asyncio.run(sandbox.aupload_files([("/data.bin", binary_content)]))
+
+    content = mock.invoke.call_args.kwargs["params"]["content"][0]
+    assert result[0].error is None
+    assert content == {"path": "data.bin", "blob": binary_content}
+    assert content["blob"] != base64_content
+    assert content["blob"] != base64_content.decode("ascii")
 
 
 def test_adownload_files_uses_dedicated_executor() -> None:
