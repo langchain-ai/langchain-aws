@@ -48,6 +48,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _lc_content_to_bedrock,
     _messages_to_bedrock,
     _parse_stream_event,
+    _response_format_to_output_config,
     _set_additional_properties_false,
     _snake_to_camel,
     _snake_to_camel_keys,
@@ -5631,3 +5632,69 @@ def test_with_structured_output_prompt_prefill_include_raw() -> None:
     last = structured.last  # type: ignore[attr-defined]
     # Last step should reference the "parsed" / "parsing_error" keys via fallback.
     assert "parsing_error" in repr(last) or "parsed" in repr(last)
+
+
+class TestNonAsciiPreservation:
+    """Regression tests: non-ASCII characters must survive JSON serialization."""
+
+    _CJK = "日本語テスト"
+
+    def test_convert_tool_blocks_to_text_tool_use(self) -> None:
+        messages = [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "toolUse": {
+                            "name": "search",
+                            "toolUseId": "t1",
+                            "input": {"query": self._CJK},
+                        }
+                    }
+                ],
+            }
+        ]
+        converted = _convert_tool_blocks_to_text(messages)
+        text = converted[0]["content"][0]["text"]
+        assert self._CJK in text
+        assert "\\u" not in text
+
+    def test_convert_tool_blocks_to_text_tool_result_json(self) -> None:
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "toolResult": {
+                            "toolUseId": "t1",
+                            "content": [{"json": {"answer": self._CJK}}],
+                        }
+                    }
+                ],
+            }
+        ]
+        converted = _convert_tool_blocks_to_text(messages)
+        text = converted[0]["content"][0]["text"]
+        assert self._CJK in text
+        assert "\\u" not in text
+
+    def test_response_format_schema(self) -> None:
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "output",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "result": {
+                            "type": "string",
+                            "description": self._CJK,
+                        }
+                    },
+                },
+            },
+        }
+        config = _response_format_to_output_config(response_format)
+        schema_str = config["textFormat"]["structure"]["jsonSchema"]["schema"]
+        assert self._CJK in schema_str
+        assert "\\u" not in schema_str
