@@ -7,7 +7,6 @@ AWS credential requirements.
 from __future__ import annotations
 
 import asyncio
-import base64
 from collections.abc import Iterator
 from typing import Any
 from unittest.mock import MagicMock
