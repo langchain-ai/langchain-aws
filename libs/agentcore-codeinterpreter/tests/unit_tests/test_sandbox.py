@@ -141,12 +141,37 @@ def test_upload_files_text() -> None:
 
 
 def test_upload_files_binary_uses_blob() -> None:
-    """Non-UTF-8 content should be base64-encoded as a blob."""
+    """Non-UTF-8 content should be uploaded as raw blob bytes."""
     sandbox, mock = _make_sandbox()
-    sandbox.upload_files([("/data.bin", b"\x80\x81\x82")])
+    binary_content = b"\x80\x81\x82"
+
+    sandbox.upload_files([("/data.bin", binary_content)])
+
     content = mock.invoke.call_args.kwargs["params"]["content"][0]
     assert "blob" in content
     assert "text" not in content
+    assert content["blob"] == binary_content
+
+
+def test_upload_files_mixed_text_and_binary() -> None:
+    """Text and binary files should use the correct writeFiles fields."""
+    sandbox, mock = _make_sandbox()
+    binary_content = b"\x00\xff\xfe"
+
+    result = sandbox.upload_files(
+        [
+            ("/hello.py", b"print('hi')"),
+            ("/data.bin", binary_content),
+        ]
+    )
+
+    uploaded = mock.invoke.call_args.kwargs["params"]["content"]
+    assert uploaded == [
+        {"path": "hello.py", "text": "print('hi')"},
+        {"path": "data.bin", "blob": binary_content},
+    ]
+    assert [response.path for response in result] == ["/hello.py", "/data.bin"]
+    assert [response.error for response in result] == [None, None]
 
 
 def test_upload_files_empty_list() -> None:

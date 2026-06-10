@@ -82,15 +82,12 @@ class TestAgentCoreSandboxIntegration:
         assert results[0].error is not None
 
     def test_binary_roundtrip(self, sandbox: AgentCoreSandbox) -> None:
-        """Binary content uploaded via base64 may be returned as base64 text."""
-        import base64
-
+        """Binary content uploaded as a blob should round-trip unchanged."""
         content = b"\x00\x01\x02\xff\xfe\xfd"
         sandbox.upload_files([("binary_test.bin", content)])
         results = sandbox.download_files(["binary_test.bin"])
         assert results[0].error is None
-        # AgentCore returns blob uploads as text containing the base64 string
-        assert results[0].content in (content, base64.b64encode(content))
+        assert results[0].content == content
 
     def test_session_id(self, sandbox: AgentCoreSandbox) -> None:
         """The sandbox should have a non-empty session ID."""
