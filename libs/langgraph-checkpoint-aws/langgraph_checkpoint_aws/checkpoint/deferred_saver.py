@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import threading
 from collections.abc import AsyncIterator, Iterator, Sequence
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Protocol, runtime_checkable
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
@@ -40,6 +40,47 @@ class _PendingWrite(NamedTuple):
     task_path: str
 
 
+class PendingWrite(NamedTuple):
+    """A single pending write entry passed to batch flush methods.
+
+    This is the public type used in the ``SyncBatchFlushable`` and
+    ``AsyncBatchFlushable`` protocol signatures.
+    """
+
+    config: RunnableConfig
+    writes: list[tuple[str, Any]]
+    task_id: str
+    task_path: str
+
+
+@runtime_checkable
+class SyncBatchFlushable(Protocol):
+    """Protocol for savers that can persist checkpoint + writes in one sync call."""
+
+    def put_with_writes(
+        self,
+        config: RunnableConfig,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: ChannelVersions,
+        pending_writes: list[PendingWrite],
+    ) -> RunnableConfig: ...
+
+
+@runtime_checkable
+class AsyncBatchFlushable(Protocol):
+    """Protocol for savers that can persist checkpoint + writes in one async call."""
+
+    async def aput_with_writes(
+        self,
+        config: RunnableConfig,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: ChannelVersions,
+        pending_writes: list[PendingWrite],
+    ) -> RunnableConfig: ...
+
+
 class DeferredCheckpointSaver(BaseCheckpointSaver):
     """Checkpoint saver wrapper that buffers writes and flushes on demand.
 
@@ -54,6 +95,10 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
 
     Args:
         saver: The underlying checkpoint saver to delegate persistence to.
+        batch_writes: When ``True`` and the underlying saver implements
+            ``SyncBatchFlushable`` or ``AsyncBatchFlushable``, flush uses
+            a single ``put_with_writes`` call instead of 1 + N sequential
+            calls.  Defaults to ``False`` for backward compatibility.
 
     Raises:
         ValueError: If *saver* is itself a ``DeferredCheckpointSaver``
@@ -61,14 +106,16 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
 
     Example::
 
-        deferred = DeferredCheckpointSaver(my_saver)
+        deferred = DeferredCheckpointSaver(my_saver, batch_writes=True)
         graph = workflow.compile(checkpointer=deferred)
 
         with deferred.flush_on_exit():
             graph.invoke(input, config)
     """
 
-    def __init__(self, saver: BaseCheckpointSaver) -> None:
+    def __init__(
+        self, saver: BaseCheckpointSaver, *, batch_writes: bool = False
+    ) -> None:
         if isinstance(saver, DeferredCheckpointSaver):
             msg = (
                 "Nesting DeferredCheckpointSaver is not supported. "
@@ -77,6 +124,7 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
             raise ValueError(msg)
         super().__init__()
         self._saver = saver
+        self._batch_writes = batch_writes
         self._lock = threading.Lock()
         self._pending_checkpoint: _PendingCheckpoint | None = None
         self._pending_writes: list[_PendingWrite] = []
@@ -388,21 +436,83 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
     def flush(self) -> RunnableConfig | None:
         """Persist all buffered data to the underlying saver.
 
-        Flushes the buffered checkpoint first, then all accumulated writes.
+        When ``batch_writes=True`` and the saver implements
+        ``SyncBatchFlushable``, the checkpoint and all writes are persisted
+        in a single ``put_with_writes()`` call (fast path).  Otherwise the
+        checkpoint is flushed first, then writes are drained one at a time
+        (fallback path).
+
         The lock is never held during network I/O.
 
-        On checkpoint flush failure the checkpoint is restored to the buffer
-        and the exception is re-raised.  On write flush failure, successfully
-        flushed writes are removed; remaining writes stay in the buffer.
+        On failure the buffered data is restored (unless a newer ``put()``
+        raced in) and the exception is re-raised.
 
         Returns:
-            The config returned by the underlying saver's ``put()``, or
-            ``None`` if no checkpoint was buffered.
+            The config returned by the underlying saver's ``put()`` or
+            ``put_with_writes()``, or ``None`` if no checkpoint was buffered.
 
         Raises:
             Exception: Any exception raised by the underlying saver during
                 persistence is propagated after restoring unflushed data.
         """
+        # --- Fast path: saver supports sync batching ---
+        if self._batch_writes and isinstance(self._saver, SyncBatchFlushable):
+            return self._flush_batched()
+
+        # --- Fallback path: existing 1 + N behavior ---
+        return self._flush_sequential()
+
+    def _flush_batched(self) -> RunnableConfig | None:
+        """Fast path: persist checkpoint + writes in one call."""
+        with self._lock:
+            pending_cp = self._pending_checkpoint
+            pending_writes = list(self._pending_writes)
+            self._pending_checkpoint = None
+            self._pending_writes.clear()
+
+        if pending_cp is None:
+            if pending_writes:
+                with self._lock:
+                    self._pending_writes = pending_writes + self._pending_writes
+            return None
+
+        public_writes = [
+            PendingWrite(
+                config=w.config,
+                writes=w.writes,
+                task_id=w.task_id,
+                task_path=w.task_path,
+            )
+            for w in pending_writes
+        ]
+
+        try:
+            result_config = self._saver.put_with_writes(  # type: ignore[attr-defined]
+                pending_cp.config,
+                pending_cp.checkpoint,
+                pending_cp.metadata,
+                pending_cp.new_versions,
+                public_writes,
+            )
+        except Exception:
+            with self._lock:
+                if self._pending_checkpoint is None:
+                    self._pending_checkpoint = pending_cp
+                self._pending_writes = [
+                    _PendingWrite(
+                        config=w.config,
+                        writes=w.writes,
+                        task_id=w.task_id,
+                        task_path=w.task_path,
+                    )
+                    for w in pending_writes
+                ] + self._pending_writes
+            raise
+
+        return result_config
+
+    def _flush_sequential(self) -> RunnableConfig | None:
+        """Fallback path: flush checkpoint then drain writes one at a time."""
         result_config: RunnableConfig | None = None
 
         # --- Flush checkpoint ---
@@ -459,18 +569,79 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
     async def aflush(self) -> RunnableConfig | None:
         """Async version of :meth:`flush`.
 
+        When ``batch_writes=True`` and the saver implements
+        ``AsyncBatchFlushable``, uses ``aput_with_writes()`` (fast path).
+        Otherwise falls back to sequential ``aput()`` + N ``aput_writes()``.
+
         Returns:
-            The config returned by the underlying saver's ``aput()``, or
-            ``None`` if no checkpoint was buffered.
+            The config returned by the underlying saver, or ``None`` if no
+            checkpoint was buffered.
 
         Raises:
             Exception: Any exception raised by the underlying saver during
                 persistence is propagated after restoring unflushed data.
         """
+        # --- Fast path: saver supports async batching ---
+        if self._batch_writes and isinstance(self._saver, AsyncBatchFlushable):
+            return await self._aflush_batched()
+
+        # --- Fallback path: existing 1 + N behavior ---
+        return await self._aflush_sequential()
+
+    async def _aflush_batched(self) -> RunnableConfig | None:
+        """Async fast path: persist checkpoint + writes in one call."""
+        with self._lock:
+            pending_cp = self._pending_checkpoint
+            pending_writes = list(self._pending_writes)
+            self._pending_checkpoint = None
+            self._pending_writes.clear()
+
+        if pending_cp is None:
+            if pending_writes:
+                with self._lock:
+                    self._pending_writes = pending_writes + self._pending_writes
+            return None
+
+        public_writes = [
+            PendingWrite(
+                config=w.config,
+                writes=w.writes,
+                task_id=w.task_id,
+                task_path=w.task_path,
+            )
+            for w in pending_writes
+        ]
+
+        try:
+            result_config = await self._saver.aput_with_writes(  # type: ignore[attr-defined]
+                pending_cp.config,
+                pending_cp.checkpoint,
+                pending_cp.metadata,
+                pending_cp.new_versions,
+                public_writes,
+            )
+        except Exception:
+            with self._lock:
+                if self._pending_checkpoint is None:
+                    self._pending_checkpoint = pending_cp
+                self._pending_writes = [
+                    _PendingWrite(
+                        config=w.config,
+                        writes=w.writes,
+                        task_id=w.task_id,
+                        task_path=w.task_path,
+                    )
+                    for w in pending_writes
+                ] + self._pending_writes
+            raise
+
+        return result_config
+
+    async def _aflush_sequential(self) -> RunnableConfig | None:
+        """Async fallback path: flush checkpoint then drain writes."""
         result_config: RunnableConfig | None = None
 
         # --- Flush checkpoint ---
-        # Same race-condition-safe pattern as flush(). See comments there.
         with self._lock:
             pending_cp = self._pending_checkpoint
             self._pending_checkpoint = None
@@ -490,7 +661,6 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
                 raise
 
         # --- Flush writes one at a time ---
-        # Same peek-then-pop pattern as flush(). See comments there.
         while True:
             with self._lock:
                 if not self._pending_writes:

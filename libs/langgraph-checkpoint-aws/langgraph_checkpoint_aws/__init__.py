@@ -21,7 +21,10 @@ from langgraph_checkpoint_aws.checkpoint.bedrock_sessions.session import (
     BedrockAgentRuntimeSessionClient,
 )
 from langgraph_checkpoint_aws.checkpoint.deferred_saver import (
+    AsyncBatchFlushable,
     DeferredCheckpointSaver,
+    PendingWrite,
+    SyncBatchFlushable,
 )
 from langgraph_checkpoint_aws.checkpoint.dynamodb import (
     DynamoDBSaver,
@@ -107,6 +110,7 @@ __all__ = [
     "AgentCoreMemorySaver",
     "AgentCoreMemoryStore",
     "AgentCoreValkeySaver",
+    "AsyncBatchFlushable",
     "AsyncBedrockAgentRuntimeSessionClient",
     "AsyncBedrockSessionSaver",
     "AsyncValkeySaver",
@@ -116,7 +120,9 @@ __all__ = [
     "DeferredCheckpointSaver",
     "DynamoDBSaver",
     "DynamoDBStore",
+    "PendingWrite",
     "SDK_USER_AGENT",
+    "SyncBatchFlushable",
     "ValkeyCache",
     "ValkeyConnectionError",
     "ValkeyDocumentParsingError",

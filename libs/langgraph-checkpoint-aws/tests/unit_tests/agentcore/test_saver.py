@@ -608,6 +608,145 @@ class TestAgentCoreMemorySaver:
 
         assert "checkpoint_id is required" in str(exc_info.value)
 
+    def test_put_with_writes_success(
+        self,
+        saver,
+        mock_boto_client,
+        runnable_config,
+        sample_checkpoint,
+        sample_checkpoint_metadata,
+    ):
+        """put_with_writes sends checkpoint + writes in a single create_event."""
+        from langgraph_checkpoint_aws.checkpoint.deferred_saver import PendingWrite
+
+        new_versions = {"default": "v2", "tasks": "v3"}
+        pending_writes = [
+            PendingWrite(
+                config=runnable_config,
+                writes=[("channel_1", "value_1"), ("channel_2", "value_2")],
+                task_id="task_1",
+                task_path="/path/1",
+            ),
+            PendingWrite(
+                config=runnable_config,
+                writes=[(TASKS, {"task": "data"})],
+                task_id="task_2",
+                task_path="/path/2",
+            ),
+        ]
+
+        result = saver.put_with_writes(
+            runnable_config,
+            sample_checkpoint,
+            sample_checkpoint_metadata,
+            new_versions,
+            pending_writes,
+        )
+
+        assert result["configurable"]["checkpoint_id"] == "checkpoint_123"
+        assert result["configurable"]["thread_id"] == "test_thread_id"
+        assert result["configurable"]["actor_id"] == "test_actor_id"
+        assert result["configurable"]["checkpoint_ns"] == "test_namespace"
+
+        mock_boto_client.create_event.assert_called_once()
+        call_args = mock_boto_client.create_event.call_args[1]
+        assert call_args["memoryId"] == saver.memory_id
+        assert call_args["actorId"] == "test_actor_id"
+        # 2 channels + 1 checkpoint + 2 writes events = 5 blobs
+        assert len(call_args["payload"]) == 5
+
+    def test_put_with_writes_no_pending_writes(
+        self,
+        saver,
+        mock_boto_client,
+        runnable_config,
+        sample_checkpoint,
+        sample_checkpoint_metadata,
+    ):
+        """put_with_writes with empty writes list behaves like put."""
+        new_versions = {"default": "v2"}
+
+        result = saver.put_with_writes(
+            runnable_config,
+            sample_checkpoint,
+            sample_checkpoint_metadata,
+            new_versions,
+            [],
+        )
+
+        assert result["configurable"]["checkpoint_id"] == "checkpoint_123"
+        mock_boto_client.create_event.assert_called_once()
+        call_args = mock_boto_client.create_event.call_args[1]
+        # 1 channel + 1 checkpoint = 2 blobs (no writes)
+        assert len(call_args["payload"]) == 2
+
+    def test_put_with_writes_preserves_channel_data(
+        self,
+        saver,
+        mock_boto_client,
+        runnable_config,
+        sample_checkpoint_metadata,
+    ):
+        """put_with_writes serializes channel values from checkpoint."""
+        checkpoint = Checkpoint(
+            v=1,
+            id="checkpoint_456",
+            ts="2024-01-01T00:00:00Z",
+            channel_values={"messages": ["hello", "world"], "state": 42},
+            channel_versions={"messages": "v1", "state": "v1"},
+            versions_seen={},
+            pending_sends=[],
+        )
+        new_versions = {"messages": "v2", "state": "v2"}
+
+        saver.put_with_writes(
+            runnable_config,
+            checkpoint,
+            sample_checkpoint_metadata,
+            new_versions,
+            [],
+        )
+
+        mock_boto_client.create_event.assert_called_once()
+        call_args = mock_boto_client.create_event.call_args[1]
+        # 2 channels + 1 checkpoint = 3 blobs
+        assert len(call_args["payload"]) == 3
+
+    async def test_aput_with_writes_delegates_to_sync(
+        self,
+        saver,
+        mock_boto_client,
+        runnable_config,
+        sample_checkpoint,
+        sample_checkpoint_metadata,
+    ):
+        """aput_with_writes runs put_with_writes in executor."""
+        from langgraph_checkpoint_aws.checkpoint.deferred_saver import PendingWrite
+
+        new_versions = {"default": "v2"}
+        pending_writes = [
+            PendingWrite(
+                config=runnable_config,
+                writes=[("channel_1", "value_1")],
+                task_id="task_1",
+                task_path="",
+            ),
+        ]
+
+        result = await saver.aput_with_writes(
+            runnable_config,
+            sample_checkpoint,
+            sample_checkpoint_metadata,
+            new_versions,
+            pending_writes,
+        )
+
+        assert result["configurable"]["checkpoint_id"] == "checkpoint_123"
+        mock_boto_client.create_event.assert_called_once()
+        call_args = mock_boto_client.create_event.call_args[1]
+        # 1 channel + 1 checkpoint + 1 writes event = 3 blobs
+        assert len(call_args["payload"]) == 3
+
     def test_delete_thread_success(
         self,
         saver,
@@ -1058,6 +1197,323 @@ class TestAgentCoreEventClient:
         mock_boto_client.create_event.assert_called_once()
         call_args = mock_boto_client.create_event.call_args[1]
         assert len(call_args["payload"]) == 2
+
+    def test_store_blob_events_batch_chunks_by_item_count(
+        self,
+        client,
+        mock_boto_client,
+        sample_channel_data_event,
+    ):
+        """Batches exceeding max_payload_items are split into multiple calls."""
+        # Create 5 events but set max to 2 items per call
+        events = [sample_channel_data_event] * 5
+        client.store_blob_events_batch(
+            events, "session_id", "actor_id", max_payload_items=2
+        )
+
+        # Should produce 3 API calls: [2, 2, 1]
+        assert mock_boto_client.create_event.call_count == 3
+        calls = mock_boto_client.create_event.call_args_list
+        assert len(calls[0][1]["payload"]) == 2
+        assert len(calls[1][1]["payload"]) == 2
+        assert len(calls[2][1]["payload"]) == 1
+
+    def test_store_blob_events_batch_chunks_by_byte_size(
+        self,
+        client,
+        mock_boto_client,
+        sample_checkpoint_event,
+    ):
+        """Batches exceeding max_payload_bytes are split into multiple calls."""
+        # Serialize one event to measure its size
+        serialized = client.serializer.serialize_event(sample_checkpoint_event)
+        blob_size = len(serialized.encode("utf-8"))
+
+        # Set max bytes to fit at most 2 blobs
+        max_bytes = blob_size * 2 + 1
+        events = [sample_checkpoint_event] * 5
+
+        client.store_blob_events_batch(
+            events, "session_id", "actor_id", max_payload_bytes=max_bytes
+        )
+
+        # Should produce 3 API calls: [2, 2, 1]
+        assert mock_boto_client.create_event.call_count == 3
+        calls = mock_boto_client.create_event.call_args_list
+        assert len(calls[0][1]["payload"]) == 2
+        assert len(calls[1][1]["payload"]) == 2
+        assert len(calls[2][1]["payload"]) == 1
+
+    def test_store_blob_events_batch_single_oversized_blob(
+        self,
+        client,
+        mock_boto_client,
+        sample_checkpoint_event,
+    ):
+        """A single blob that exceeds max_payload_bytes still gets its own call."""
+        # Set max bytes smaller than one blob
+        events = [sample_checkpoint_event]
+        client.store_blob_events_batch(
+            events, "session_id", "actor_id", max_payload_bytes=1
+        )
+
+        # Still sends one call (a single blob is always in its own chunk)
+        mock_boto_client.create_event.assert_called_once()
+        assert len(mock_boto_client.create_event.call_args[1]["payload"]) == 1
+
+    def test_store_blob_events_batch_within_limits_single_call(
+        self,
+        client,
+        mock_boto_client,
+        sample_channel_data_event,
+    ):
+        """Batch within limits sends a single API call."""
+        events = [sample_channel_data_event] * 50
+        client.store_blob_events_batch(events, "session_id", "actor_id")
+
+        # Default limit is 100 items, so 50 stays within one call
+        mock_boto_client.create_event.assert_called_once()
+        assert len(mock_boto_client.create_event.call_args[1]["payload"]) == 50
+
+    def test_store_blob_events_batch_empty_list(
+        self,
+        client,
+        mock_boto_client,
+    ):
+        """Empty event list makes no API calls."""
+        client.store_blob_events_batch([], "session_id", "actor_id")
+        mock_boto_client.create_event.assert_not_called()
+
+    def test_store_blob_events_batch_exactly_at_limit(
+        self,
+        client,
+        mock_boto_client,
+        sample_channel_data_event,
+    ):
+        """Exactly 100 events fit in one call (the max)."""
+        events = [sample_channel_data_event] * 100
+        client.store_blob_events_batch(events, "session_id", "actor_id")
+
+        mock_boto_client.create_event.assert_called_once()
+        assert len(mock_boto_client.create_event.call_args[1]["payload"]) == 100
+
+    def test_store_blob_events_batch_101_events_splits(
+        self,
+        client,
+        mock_boto_client,
+        sample_channel_data_event,
+    ):
+        """101 events split into two calls: [100, 1]."""
+        events = [sample_channel_data_event] * 101
+        client.store_blob_events_batch(events, "session_id", "actor_id")
+
+        assert mock_boto_client.create_event.call_count == 2
+        calls = mock_boto_client.create_event.call_args_list
+        assert len(calls[0][1]["payload"]) == 100
+        assert len(calls[1][1]["payload"]) == 1
+
+    def test_store_blob_events_batch_both_limits_hit(
+        self,
+        client,
+        mock_boto_client,
+        sample_checkpoint_event,
+    ):
+        """When both item count and byte size limits apply, the stricter wins."""
+        serialized = client.serializer.serialize_event(sample_checkpoint_event)
+        blob_size = len(serialized.encode("utf-8"))
+
+        # max_payload_items=3 but byte size only allows 1
+        events = [sample_checkpoint_event] * 4
+        client.store_blob_events_batch(
+            events,
+            "session_id",
+            "actor_id",
+            max_payload_items=3,
+            max_payload_bytes=blob_size + 1,
+        )
+
+        # Byte limit forces 1 per chunk = 4 calls
+        assert mock_boto_client.create_event.call_count == 4
+        for call_entry in mock_boto_client.create_event.call_args_list:
+            assert len(call_entry[1]["payload"]) == 1
+
+    def test_store_blob_events_batch_preserves_order(
+        self,
+        client,
+        mock_boto_client,
+        sample_checkpoint_event,
+        sample_channel_data_event,
+        sample_writes_event,
+    ):
+        """Chunked events preserve their original order across calls."""
+        events = [
+            sample_channel_data_event,
+            sample_checkpoint_event,
+            sample_writes_event,
+        ]
+        client.store_blob_events_batch(
+            events, "session_id", "actor_id", max_payload_items=1
+        )
+
+        assert mock_boto_client.create_event.call_count == 3
+        calls = mock_boto_client.create_event.call_args_list
+
+        # Deserialize each payload blob to verify order
+        blob_0 = calls[0][1]["payload"][0]["blob"]
+        blob_1 = calls[1][1]["payload"][0]["blob"]
+        blob_2 = calls[2][1]["payload"][0]["blob"]
+
+        event_0 = client.serializer.deserialize_event(blob_0)
+        event_1 = client.serializer.deserialize_event(blob_1)
+        event_2 = client.serializer.deserialize_event(blob_2)
+
+        assert isinstance(event_0, ChannelDataEvent)
+        assert isinstance(event_1, CheckpointEvent)
+        assert isinstance(event_2, WritesEvent)
+
+    def test_store_blob_events_batch_uses_same_timestamp(
+        self,
+        client,
+        mock_boto_client,
+        sample_channel_data_event,
+    ):
+        """All chunked calls use the same eventTimestamp."""
+        events = [sample_channel_data_event] * 5
+        client.store_blob_events_batch(
+            events, "session_id", "actor_id", max_payload_items=2
+        )
+
+        assert mock_boto_client.create_event.call_count == 3
+        timestamps = [
+            call_entry[1]["eventTimestamp"]
+            for call_entry in mock_boto_client.create_event.call_args_list
+        ]
+        # All timestamps should be identical
+        assert timestamps[0] == timestamps[1] == timestamps[2]
+
+    def test_store_blob_events_batch_uses_correct_session_and_actor(
+        self,
+        client,
+        mock_boto_client,
+        sample_channel_data_event,
+    ):
+        """All chunked calls use the same session_id, actor_id, and memory_id."""
+        events = [sample_channel_data_event] * 3
+        client.store_blob_events_batch(
+            events, "my-session", "my-actor", max_payload_items=1
+        )
+
+        assert mock_boto_client.create_event.call_count == 3
+        for call_entry in mock_boto_client.create_event.call_args_list:
+            kwargs = call_entry[1]
+            assert kwargs["memoryId"] == "test-memory-id"
+            assert kwargs["sessionId"] == "my-session"
+            assert kwargs["actorId"] == "my-actor"
+
+
+class TestChunkPayload:
+    """Direct unit tests for AgentCoreEventClient._chunk_payload static method."""
+
+    def test_empty_input(self):
+        result = AgentCoreEventClient._chunk_payload([], 100, 10_000_000)
+        assert result == []
+
+    def test_single_blob_within_limits(self):
+        result = AgentCoreEventClient._chunk_payload(["hello"], 100, 10_000_000)
+        assert result == [["hello"]]
+
+    def test_splits_by_item_count(self):
+        blobs = ["a", "b", "c", "d", "e"]
+        result = AgentCoreEventClient._chunk_payload(blobs, 2, 10_000_000)
+        assert result == [["a", "b"], ["c", "d"], ["e"]]
+
+    def test_splits_by_byte_size(self):
+        # Each blob is 10 bytes UTF-8
+        blobs = ["x" * 10] * 5
+        # Allow at most 25 bytes per chunk (fits 2 blobs of 10 bytes each)
+        result = AgentCoreEventClient._chunk_payload(blobs, 100, 25)
+        assert result == [["x" * 10, "x" * 10], ["x" * 10, "x" * 10], ["x" * 10]]
+
+    def test_single_blob_exceeds_byte_limit(self):
+        """A blob larger than max_bytes still gets its own chunk."""
+        big_blob = "x" * 1000
+        result = AgentCoreEventClient._chunk_payload([big_blob], 100, 10)
+        assert result == [[big_blob]]
+
+    def test_multiple_oversized_blobs(self):
+        """Each oversized blob gets its own chunk."""
+        blobs = ["x" * 100, "y" * 100, "z" * 100]
+        result = AgentCoreEventClient._chunk_payload(blobs, 100, 50)
+        assert result == [["x" * 100], ["y" * 100], ["z" * 100]]
+
+    def test_mixed_sizes(self):
+        """Mix of small and large blobs chunk correctly."""
+        small = "s"  # 1 byte
+        big = "B" * 50  # 50 bytes
+        blobs = [small, small, big, small, big]
+        # Chunk 1: s(1) + s(1) + B*50(50) + s(1) = 53 bytes, fits in 60
+        # Adding next big(50) would be 103 > 60, so new chunk
+        # Chunk 2: B*50(50) = 50 bytes
+        result = AgentCoreEventClient._chunk_payload(blobs, 100, 60)
+        assert result == [[small, small, big, small], [big]]
+
+    def test_item_limit_one(self):
+        """Max 1 item per chunk gives one chunk per blob."""
+        blobs = ["a", "b", "c"]
+        result = AgentCoreEventClient._chunk_payload(blobs, 1, 10_000_000)
+        assert result == [["a"], ["b"], ["c"]]
+
+    def test_exact_byte_boundary(self):
+        """Blob that exactly fills the byte budget starts a new chunk."""
+        # Each blob is exactly 5 bytes
+        blobs = ["12345", "67890", "abcde"]
+        # Max 10 bytes: first two fit exactly, third starts new chunk
+        result = AgentCoreEventClient._chunk_payload(blobs, 100, 10)
+        assert result == [["12345", "67890"], ["abcde"]]
+
+    def test_unicode_byte_counting(self):
+        """Byte size accounts for multi-byte UTF-8 characters."""
+        # Each emoji is 4 bytes in UTF-8
+        emoji_blob = "\U0001f600"  # single emoji, 4 bytes
+        blobs = [emoji_blob] * 3
+        # Max 8 bytes: fits 2 emoji blobs (4 + 4 = 8), third starts new chunk
+        result = AgentCoreEventClient._chunk_payload(blobs, 100, 8)
+        assert result == [[emoji_blob, emoji_blob], [emoji_blob]]
+
+    def test_preserves_blob_order(self):
+        blobs = ["first", "second", "third", "fourth", "fifth"]
+        result = AgentCoreEventClient._chunk_payload(blobs, 2, 10_000_000)
+        flat = [blob for chunk in result for blob in chunk]
+        assert flat == blobs
+
+    def test_default_limits_no_split_for_typical_payload(self):
+        """Typical small payloads stay in one chunk with default limits."""
+        blobs = ["x" * 200] * 50  # 50 blobs of 200 bytes = 10 KB total
+        result = AgentCoreEventClient._chunk_payload(blobs, 100, 10_000_000)
+        assert len(result) == 1
+        assert len(result[0]) == 50
+
+
+class TestAgentCoreEventClientGetAndDelete:
+    """Continuation of AgentCoreEventClient tests for get/delete operations."""
+
+    @pytest.fixture
+    def mock_boto_client(self):
+        mock_client = Mock()
+        mock_client.create_event = MagicMock()
+        mock_client.list_events = MagicMock()
+        mock_client.delete_event = MagicMock()
+        return mock_client
+
+    @pytest.fixture
+    def serializer(self):
+        return EventSerializer(JsonPlusSerializer())
+
+    @pytest.fixture
+    def client(self, mock_boto_client, serializer):
+        with patch("boto3.client") as mock_boto3_client:
+            mock_boto3_client.return_value = mock_boto_client
+            yield AgentCoreEventClient("test-memory-id", serializer)
 
     def test_get_events(
         self, client, mock_boto_client, serializer, sample_checkpoint_event

@@ -21,6 +21,8 @@ from langgraph.checkpoint.base import (
     get_checkpoint_metadata,
 )
 
+from langgraph_checkpoint_aws.checkpoint.deferred_saver import PendingWrite
+
 from .constants import (
     EMPTY_CHANNEL_VALUE,
     InvalidConfigError,
@@ -281,6 +283,123 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
 
         self.checkpoint_event_client.store_blob_event(
             writes_event, checkpoint_config.session_id, checkpoint_config.actor_id
+        )
+
+    def put_with_writes(
+        self,
+        config: RunnableConfig,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: ChannelVersions,
+        pending_writes: Sequence[PendingWrite],
+    ) -> RunnableConfig:
+        """Persist checkpoint and all pending writes in a single API call.
+
+        Args:
+            config: The runnable config associated with this checkpoint.
+            checkpoint: The checkpoint data to persist.
+            metadata: Metadata associated with the checkpoint.
+            new_versions: Channel version information.
+            pending_writes: All buffered writes to persist alongside the
+                checkpoint.
+
+        Returns:
+            A config pointing to the persisted checkpoint.
+        """
+        checkpoint_config = CheckpointerConfig.from_runnable_config(
+            RunnableConfigDict(config)
+        )
+
+        checkpoint_copy = dict(checkpoint)
+        channel_values: dict[str, Any] = {}
+        if "channel_values" in checkpoint_copy:
+            channel_values_obj = checkpoint_copy.pop("channel_values")
+            if isinstance(channel_values_obj, dict):
+                channel_values = channel_values_obj.copy()
+
+        events_to_store: list[CheckpointEvent | ChannelDataEvent | WritesEvent] = []
+
+        for channel, version in new_versions.items():
+            channel_event = ChannelDataEvent(
+                channel=channel,
+                version=str(version),
+                value=channel_values.get(channel, EMPTY_CHANNEL_VALUE),
+                thread_id=checkpoint_config.thread_id,
+                checkpoint_ns=checkpoint_config.checkpoint_ns,
+            )
+            events_to_store.append(channel_event)
+
+        checkpoint_event = CheckpointEvent(
+            checkpoint_id=checkpoint["id"],
+            checkpoint_data=checkpoint_copy,
+            metadata=dict(get_checkpoint_metadata(config, metadata)),
+            parent_checkpoint_id=checkpoint_config.checkpoint_id,
+            thread_id=checkpoint_config.thread_id,
+            checkpoint_ns=checkpoint_config.checkpoint_ns,
+        )
+        events_to_store.append(checkpoint_event)
+
+        for pw in pending_writes:
+            write_items = [
+                WriteItem(
+                    task_id=pw.task_id,
+                    channel=channel,
+                    value=value,
+                    task_path=pw.task_path,
+                )
+                for channel, value in pw.writes
+            ]
+            writes_event = WritesEvent(
+                checkpoint_id=checkpoint["id"],
+                writes=write_items,
+            )
+            events_to_store.append(writes_event)
+
+        typed_events = cast(
+            list[CheckpointEvent | ChannelDataEvent | WritesEvent], events_to_store
+        )
+        self.checkpoint_event_client.store_blob_events_batch(
+            typed_events, checkpoint_config.session_id, checkpoint_config.actor_id
+        )
+
+        return {
+            "configurable": {
+                "thread_id": checkpoint_config.thread_id,
+                "actor_id": checkpoint_config.actor_id,
+                "checkpoint_ns": checkpoint_config.checkpoint_ns,
+                "checkpoint_id": checkpoint["id"],
+            }
+        }
+
+    async def aput_with_writes(
+        self,
+        config: RunnableConfig,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: ChannelVersions,
+        pending_writes: Sequence[PendingWrite],
+    ) -> RunnableConfig:
+        """Async version of :meth:`put_with_writes`.
+
+        Args:
+            config: The runnable config associated with this checkpoint.
+            checkpoint: The checkpoint data to persist.
+            metadata: Metadata associated with the checkpoint.
+            new_versions: Channel version information.
+            pending_writes: All buffered writes to persist alongside the
+                checkpoint.
+
+        Returns:
+            A config pointing to the persisted checkpoint.
+        """
+        return await run_in_executor(
+            None,
+            self.put_with_writes,
+            config,
+            checkpoint,
+            metadata,
+            new_versions,
+            pending_writes,
         )
 
     def delete_thread(self, thread_id: str, actor_id: str = "") -> None:
