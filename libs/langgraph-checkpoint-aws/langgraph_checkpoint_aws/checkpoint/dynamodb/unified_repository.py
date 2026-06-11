@@ -3,6 +3,7 @@
 import logging
 import time
 from collections.abc import Callable, Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, cast
 
 from botocore.exceptions import ClientError
@@ -607,15 +608,20 @@ class UnifiedRepository:
         all_special = all(w[0] in WRITES_IDX_MAP for w in writes)
 
         # Build all write items with payload storage
-        for base_item, ref_item in self._build_write_items(
-            thread_id,
-            checkpoint_ns,
-            checkpoint_id,
-            writes,
-            task_id,
-            task_path,
-            allow_overwrites=all_special,
-        ):
+        write_items = list(
+            self._build_write_items(
+                thread_id,
+                checkpoint_ns,
+                checkpoint_id,
+                writes,
+                task_id,
+                task_path,
+                allow_overwrites=all_special,
+            )
+        )
+
+        def _store_write_item(item_pair: tuple[dict[str, Any], dict[str, Any]]) -> None:
+            base_item, ref_item = item_pair
             # Store metadata to base table
             self.put_single_write_item(
                 checkpoint_id, base_item, allow_overwrites=all_special
@@ -628,6 +634,26 @@ class UnifiedRepository:
                 serialized_data=ref_item["value_data"],
                 allow_overwrite=all_special,
             )
+
+        if len(write_items) == 1:
+            _store_write_item(write_items[0])
+            return
+
+        # Each write targets an independent item, so the per-item conditional
+        # put (`attribute_not_exists`) semantics are unaffected by ordering.
+        # Concurrency is capped at boto3's default connection-pool size to
+        # avoid exhausting the shared client's urllib3 pool.
+        max_workers = min(len(write_items), 10)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(_store_write_item, item_pair)
+                for item_pair in write_items
+            ]
+            for future in futures:
+                # Propagate the first failure (matches the sequential
+                # behavior of raising on error; earlier writes may have
+                # already been persisted in both versions).
+                future.result()
 
     def _build_write_items(
         self,

@@ -528,6 +528,114 @@ class TestPendingWrites:
                 task_id="task1",
             )
 
+    def test_put_writes_executes_concurrently(self):
+        """Multiple writes must run concurrently, not sequentially.
+
+        `aput_writes` delegates to `put_writes` via `run_in_executor`; with N
+        graph-state updates the old implementation issued N*2 sequential
+        `put_item` calls, serializing what DynamoDB happily accepts in
+        parallel (#766).
+
+        A `threading.Barrier` sized to the number of writes proves
+        concurrency behaviorally: every `put_item` blocks until all writes
+        have entered the call. A sequential implementation deadlocks on the
+        first write and trips the barrier timeout, failing the test.
+        """
+        import threading
+
+        num_writes = 3
+        barrier = threading.Barrier(num_writes, timeout=10)
+
+        mock_client = Mock()
+        mock_serializer = Mock()
+        mock_storage = Mock()
+        mock_serializer.serialize.return_value = ("msgpack", b"data", False)
+        mock_storage.store_data.return_value = "DYNAMODB"
+
+        def blocking_put_item(**kwargs):
+            # Passes only if all writes arrive here concurrently.
+            barrier.wait()
+            return {}
+
+        mock_client.put_item.side_effect = blocking_put_item
+
+        repo = UnifiedRepository(
+            dynamodb_client=mock_client,
+            table_name=TEST_TABLE_NAME,
+            serializer=mock_serializer,
+            storage_strategy=mock_storage,
+        )
+
+        writes = [(f"channel{i}", {"value": i}) for i in range(num_writes)]
+        repo.put_writes(
+            TEST_THREAD_ID,
+            TEST_CHECKPOINT_NS,
+            TEST_CHECKPOINT_ID,
+            writes,
+            task_id="task1",
+        )
+
+        assert mock_client.put_item.call_count == num_writes
+        assert mock_storage.store_data.call_count == num_writes
+
+    def test_put_writes_single_write_runs_inline(self):
+        """A single write must not pay thread-pool overhead and must still
+        store both the base item and the chunk payload."""
+        mock_client = Mock()
+        mock_serializer = Mock()
+        mock_storage = Mock()
+        mock_serializer.serialize.return_value = ("msgpack", b"data", False)
+        mock_storage.store_data.return_value = "DYNAMODB"
+
+        repo = UnifiedRepository(
+            dynamodb_client=mock_client,
+            table_name=TEST_TABLE_NAME,
+            serializer=mock_serializer,
+            storage_strategy=mock_storage,
+        )
+
+        repo.put_writes(
+            TEST_THREAD_ID,
+            TEST_CHECKPOINT_NS,
+            TEST_CHECKPOINT_ID,
+            [("channel1", {"value": 1})],
+            task_id="task1",
+        )
+
+        assert mock_client.put_item.call_count == 1
+        assert mock_storage.store_data.call_count == 1
+
+    def test_put_writes_concurrent_error_propagates(self):
+        """A failure in any concurrent write must propagate to the caller,
+        matching the sequential behavior of raising on error."""
+        mock_client = Mock()
+        mock_serializer = Mock()
+        mock_storage = Mock()
+        mock_serializer.serialize.return_value = ("msgpack", b"data", False)
+        mock_storage.store_data.return_value = "DYNAMODB"
+
+        mock_client.put_item.side_effect = ClientError(
+            {"Error": {"Code": "ProvisionedThroughputExceededException"}},
+            "PutItem",
+        )
+
+        repo = UnifiedRepository(
+            dynamodb_client=mock_client,
+            table_name=TEST_TABLE_NAME,
+            serializer=mock_serializer,
+            storage_strategy=mock_storage,
+        )
+
+        writes = [(f"channel{i}", {"value": i}) for i in range(3)]
+        with pytest.raises(ClientError):
+            repo.put_writes(
+                TEST_THREAD_ID,
+                TEST_CHECKPOINT_NS,
+                TEST_CHECKPOINT_ID,
+                writes,
+                task_id="task1",
+            )
+
 
 class TestDeleteOperations:
     """Tests for delete operations."""
@@ -952,26 +1060,30 @@ class TestMetadataBeforePayloadOrdering:
     def test_put_writes_metadata_before_payload_per_write(
         self, repo, mock_repo_components
     ):
-        """Test that each write's metadata is stored before its payload."""
-        # Arrange
+        """Each write's metadata must be stored before its own payload.
+
+        Writes execute concurrently (#766), so cross-write call ordering is
+        unspecified — the crash-consistency invariant is *per write*: a
+        payload chunk must never exist without its metadata row. Each write
+        runs on a single worker thread, so per-thread call order proves the
+        per-write ordering deterministically.
+        """
+        import threading
+
         writes = [
             ("channel1", "value1"),
             ("channel2", "value2"),
             ("channel3", "value3"),
         ]
 
-        # Track call order with details
-        call_order = []
+        # Track per-thread call sequences (list.append is atomic under GIL)
+        call_log = []
 
         def track_put_item(**kwargs):
-            item = kwargs.get("Item", {})
-            channel = item.get("channel", {}).get("S", "unknown")
-            call_order.append(("put_item", channel))
+            call_log.append((threading.get_ident(), "put_item"))
 
         def track_store_data(*args, **kwargs):
-            # Extract channel info from chunk_key
-            chunk_key = kwargs.get("chunk_key", "")
-            call_order.append(("store_data", chunk_key))
+            call_log.append((threading.get_ident(), "store_data"))
 
         mock_repo_components["dynamodb"].put_item.side_effect = track_put_item
         mock_repo_components["storage"].store_data.side_effect = track_store_data
@@ -986,61 +1098,22 @@ class TestMetadataBeforePayloadOrdering:
         )
 
         # Assert
-        assert len(call_order) == 6, "Expected 3 metadata + 3 payload calls"
+        assert len(call_log) == 6, "Expected 3 metadata + 3 payload calls"
 
-        # Verify alternating pattern: metadata, payload, metadata, payload, ...
-        for i in range(0, len(call_order), 2):
-            assert call_order[i][0] == "put_item", (
-                f"Call {i} should be put_item (metadata)"
-            )
-            assert call_order[i + 1][0] == "store_data", (
-                f"Call {i + 1} should be store_data (payload)"
-            )
-
-        # Verify each write's metadata comes before its payload
-        assert call_order[0] == ("put_item", "channel1")
-        assert "CHUNK_" in call_order[1][1]  # store_data with chunk_key
-        assert call_order[2] == ("put_item", "channel2")
-        assert "CHUNK_" in call_order[3][1]
-        assert call_order[4] == ("put_item", "channel3")
-        assert "CHUNK_" in call_order[5][1]
-
-    def test_put_writes_sequential_not_parallel(self, repo, mock_repo_components):
-        """Test that writes are processed sequentially, not in parallel."""
-        # Arrange
-        writes = [("channel1", "value1"), ("channel2", "value2")]
-
-        # Track execution order with timestamps
-        execution_log = []
-
-        def track_put_item(**kwargs):
-            item = kwargs.get("Item", {})
-            channel = item.get("channel", {}).get("S", "unknown")
-            execution_log.append(f"metadata_{channel}")
-
-        def track_store_data(*args, **kwargs):
-            execution_log.append("payload")
-
-        mock_repo_components["dynamodb"].put_item.side_effect = track_put_item
-        mock_repo_components["storage"].store_data.side_effect = track_store_data
-
-        # Act
-        repo.put_writes(
-            thread_id=TEST_THREAD_ID,
-            checkpoint_ns=TEST_CHECKPOINT_NS,
-            checkpoint_id=TEST_CHECKPOINT_ID,
-            writes=writes,
-            task_id=TEST_TASK_ID,
-        )
-
-        # Assert - verify sequential execution pattern
-        expected_order = [
-            "metadata_channel1",
-            "payload",
-            "metadata_channel2",
-            "payload",
-        ]
-        assert execution_log == expected_order
+        # Within every worker thread, calls must strictly alternate
+        # put_item -> store_data (metadata before payload for each write).
+        per_thread: dict[int, list[str]] = {}
+        for thread_ident, event in call_log:
+            per_thread.setdefault(thread_ident, []).append(event)
+        for thread_ident, events in per_thread.items():
+            assert len(events) % 2 == 0
+            for i in range(0, len(events), 2):
+                assert events[i] == "put_item", (
+                    f"Thread {thread_ident}: call {i} should be metadata"
+                )
+                assert events[i + 1] == "store_data", (
+                    f"Thread {thread_ident}: call {i + 1} should be payload"
+                )
 
     def test_put_checkpoint_failure_no_payload_stored(self, repo, mock_repo_components):
         """Test that payload is not stored if metadata write fails."""
@@ -1066,18 +1139,29 @@ class TestMetadataBeforePayloadOrdering:
         # Verify store_data was never called
         mock_repo_components["storage"].store_data.assert_not_called()
 
-    def test_put_writes_failure_stops_at_failed_write(self, repo, mock_repo_components):
-        """Test that write processing stops if metadata write fails."""
-        # Arrange
+    def test_put_writes_failed_write_never_stores_its_payload(
+        self, repo, mock_repo_components
+    ):
+        """A write whose metadata put fails must never store its payload,
+        and the failure must propagate to the caller.
+
+        Writes execute concurrently (#766), so sibling writes may still
+        complete — that matches DynamoDB semantics (items are independent;
+        the sequential implementation also left earlier writes persisted on
+        failure). The per-write invariant is what crash consistency needs:
+        no payload chunk without its metadata row.
+
+        The failure is keyed on the write's channel (deterministic under
+        concurrency), not on a shared call counter (racy).
+        """
         writes = [("channel1", "value1"), ("channel2", "value2")]
 
-        # Make second put_item fail
         error_response = {"Error": {"Code": "InternalServerError", "Message": "Test"}}
-        call_count = [0]
 
         def failing_put_item(**kwargs):
-            call_count[0] += 1
-            if call_count[0] == 2:  # Fail on second call
+            item = kwargs.get("Item", {})
+            channel = item.get("channel", {}).get("S", "")
+            if channel == "channel2":
                 raise ClientError(error_response, "PutItem")
 
         mock_repo_components["dynamodb"].put_item.side_effect = failing_put_item
@@ -1092,8 +1176,18 @@ class TestMetadataBeforePayloadOrdering:
                 task_id=TEST_TASK_ID,
             )
 
-        # Verify store_data was called only once (for first write)
-        assert mock_repo_components["storage"].store_data.call_count == 1
+        # The failed write (idx 1 / channel2) must not have stored a payload.
+        stored_chunk_keys = [
+            call.kwargs.get("chunk_key", "")
+            for call in mock_repo_components["storage"].store_data.call_args_list
+        ]
+        assert not any(key.endswith("#1") for key in stored_chunk_keys), (
+            f"channel2's payload (idx 1) must not be stored after its metadata "
+            f"put failed; stored chunk keys: {stored_chunk_keys}"
+        )
+        # channel1's payload may or may not have completed depending on
+        # scheduling, but never more than one payload total here.
+        assert mock_repo_components["storage"].store_data.call_count <= 1
 
     def test_put_single_write_item_called_before_storage(
         self, repo, mock_repo_components
