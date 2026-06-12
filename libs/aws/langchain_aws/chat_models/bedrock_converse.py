@@ -1793,12 +1793,37 @@ class ChatBedrockConverse(BaseChatModel):
                 ):
                     should_unset_max_tokens = True
 
+            resolved_temperature = (
+                self.temperature if temperature is None else temperature
+            )
+            resolved_top_p = self.top_p if topP is None else topP
+
+            # Some models (e.g. Claude Opus 4.7+) no longer accept ``temperature``
+            # or ``topP`` and reject any request that includes them. When the model
+            # profile reports temperature is unsupported, drop both rather than let
+            # Bedrock fail the call with a validation error.
+            if self.profile and self.profile.get("temperature") is False:
+                ignored = []
+                if resolved_temperature is not None:
+                    ignored.append("temperature")
+                if resolved_top_p is not None:
+                    ignored.append("top_p")
+                if ignored:
+                    warnings.warn(
+                        f"Model {self._get_base_model()} does not support "
+                        f"{' or '.join(ignored)}; ignoring the provided "
+                        f"value{'s' if len(ignored) > 1 else ''}.",
+                        stacklevel=2,
+                    )
+                resolved_temperature = None
+                resolved_top_p = None
+
             inferenceConfig = {
                 "maxTokens": None
                 if should_unset_max_tokens
                 else (maxTokens or self.max_tokens),
-                "temperature": self.temperature if temperature is None else temperature,
-                "topP": self.top_p if topP is None else topP,
+                "temperature": resolved_temperature,
+                "topP": resolved_top_p,
                 "stopSequences": stop or stopSequences or self.stop_sequences,
             }
         if not toolConfig and tools:

@@ -3579,6 +3579,44 @@ def test_service_tier_none_not_in_params() -> None:
     assert "serviceTier" not in params
 
 
+def test_temperature_omitted_when_unsupported() -> None:
+    """Models with ``temperature: False`` profile drop temperature/topP.
+
+    Claude Opus 4.7+ rejects requests that include ``temperature`` or ``topP``
+    with a Bedrock ValidationException. When the model profile reports that
+    temperature is unsupported, both values must be dropped from the request.
+    """
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-opus-4-8",
+        region_name="us-west-2",
+        temperature=0,
+        top_p=0.9,
+    )
+    assert llm.profile and llm.profile.get("temperature") is False
+
+    with pytest.warns(UserWarning, match="does not support"):
+        params = llm._converse_params()
+
+    assert "temperature" not in params["inferenceConfig"]
+    assert "topP" not in params["inferenceConfig"]
+
+
+def test_temperature_kept_when_supported() -> None:
+    """Models that support temperature keep the provided value (no warning)."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-sonnet-4-6",
+        region_name="us-west-2",
+        temperature=0,
+    )
+    assert llm.profile and llm.profile.get("temperature") is True
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        params = llm._converse_params()
+
+    assert params["inferenceConfig"]["temperature"] == 0
+
+
 def test_service_tier_passed_to_converse() -> None:
     """Test that service_tier is passed to the converse API call."""
     mocked_client = mock.MagicMock()
