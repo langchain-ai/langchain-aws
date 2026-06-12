@@ -54,12 +54,16 @@ def get_current_page(browser: SyncBrowser) -> SyncPage:
     return context.pages[-1]
 
 
-def get_session_key(config: Optional[RunnableConfig] = None) -> str:
+def get_session_key(
+    config: Optional[RunnableConfig] = None,
+    *,
+    include_checkpoint_ns: bool = True,
+) -> str:
     """Build a session key from RunnableConfig.
 
     Uses thread_id as the base key and appends checkpoint_ns
-    when present.  This ensures parallel LangGraph subgraphs get
-    separate sessions even when they share a thread_id.
+    when present and requested. This ensures parallel LangGraph
+    subgraphs can get separate sessions even when they share a thread_id.
 
     Examples::
 
@@ -69,6 +73,7 @@ def get_session_key(config: Optional[RunnableConfig] = None) -> str:
 
     Args:
         config: LangGraph ``RunnableConfig`` passed to tool invocations.
+        include_checkpoint_ns: Whether to append ``checkpoint_ns`` when present.
 
     Returns:
         String key for indexing session dictionaries.
@@ -80,6 +85,6 @@ def get_session_key(config: Optional[RunnableConfig] = None) -> str:
     thread_id = configurable.get("thread_id", "default")
     checkpoint_ns = configurable.get("checkpoint_ns", "")
 
-    if checkpoint_ns:
+    if include_checkpoint_ns and checkpoint_ns:
         return f"{thread_id}:{checkpoint_ns}"
     return thread_id

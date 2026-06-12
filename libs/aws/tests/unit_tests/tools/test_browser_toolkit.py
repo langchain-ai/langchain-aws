@@ -803,6 +803,21 @@ class TestGetSessionKey:
         )
         assert get_session_key(config) == "thread-1:subagent-a:abc123"
 
+    def test_can_ignore_checkpoint_ns_when_requested(self) -> None:
+        """Test returns thread_id only when checkpoint_ns is explicitly disabled."""
+        from langchain_aws.tools.utils import get_session_key
+
+        config: RunnableConfig = cast(
+            RunnableConfig,
+            {
+                "configurable": {
+                    "thread_id": "thread-1",
+                    "checkpoint_ns": "subagent-a:abc123",
+                }
+            },
+        )
+        assert get_session_key(config, include_checkpoint_ns=False) == "thread-1"
+
     def test_ignores_empty_checkpoint_ns(self) -> None:
         """Test ignores empty checkpoint_ns string."""
         from langchain_aws.tools.utils import get_session_key

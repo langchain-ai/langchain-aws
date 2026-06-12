@@ -390,8 +390,8 @@ class TestGetOrCreateInterpreter:
             assert interpreter is mock_interpreter
             assert "default" in toolkit._code_interpreters
 
-    def test_uses_checkpoint_ns_for_session_key(self) -> None:
-        """Test session key includes checkpoint_ns for subagent isolation."""
+    def test_ignores_checkpoint_ns_for_session_key(self) -> None:
+        """Test session key ignores checkpoint_ns for persistence across tools."""
         from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
 
         toolkit = CodeInterpreterToolkit()
@@ -415,7 +415,48 @@ class TestGetOrCreateInterpreter:
             )
             toolkit._get_or_create_interpreter(config)
 
-            assert "thread-1:research-acme:abc123" in toolkit._code_interpreters
+            assert "thread-1" in toolkit._code_interpreters
+            assert "thread-1:research-acme:abc123" not in toolkit._code_interpreters
+
+    def test_reuses_interpreter_across_checkpoint_namespaces(self) -> None:
+        """Same thread_id with different checkpoint_ns values shares a session."""
+        from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
+
+        toolkit = CodeInterpreterToolkit()
+
+        with patch(
+            "langchain_aws.tools.code_interpreter_toolkit.CodeInterpreter"
+        ) as mock_class:
+            mock_interpreter = MagicMock()
+            mock_interpreter.start = MagicMock()
+            mock_interpreter.session_id = "test-session"
+            mock_class.return_value = mock_interpreter
+
+            first_config: RunnableConfig = cast(
+                RunnableConfig,
+                {
+                    "configurable": {
+                        "thread_id": "thread-1",
+                        "checkpoint_ns": "tools:first",
+                    }
+                },
+            )
+            second_config: RunnableConfig = cast(
+                RunnableConfig,
+                {
+                    "configurable": {
+                        "thread_id": "thread-1",
+                        "checkpoint_ns": "tools:second",
+                    }
+                },
+            )
+
+            first_interpreter = toolkit._get_or_create_interpreter(first_config)
+            second_interpreter = toolkit._get_or_create_interpreter(second_config)
+
+            assert first_interpreter is second_interpreter
+            assert mock_class.call_count == 1
+            assert list(toolkit._code_interpreters) == ["thread-1"]
 
 
 class TestGetThreadId:
@@ -449,8 +490,8 @@ class TestGetThreadId:
 
         assert thread_id == "default"
 
-    def test_includes_checkpoint_ns(self) -> None:
-        """Test includes checkpoint_ns in session key."""
+    def test_ignores_checkpoint_ns(self) -> None:
+        """Test ignores checkpoint_ns in session key."""
         from langchain_aws.tools.code_interpreter_toolkit import _get_thread_id
 
         config: RunnableConfig = cast(
@@ -464,7 +505,7 @@ class TestGetThreadId:
         )
         thread_id = _get_thread_id(config)
 
-        assert thread_id == "thread-1:subagent:xyz"
+        assert thread_id == "thread-1"
 
 
 class TestExtractOutputFromStream:

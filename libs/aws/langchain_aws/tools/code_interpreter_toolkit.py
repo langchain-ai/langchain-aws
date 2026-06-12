@@ -753,8 +753,12 @@ async def create_code_interpreter_toolkit(
 
 
 def _get_thread_id(config: Optional[RunnableConfig] = None) -> str:
-    """Extract session key, using checkpoint_ns for subagent isolation."""
-    return get_session_key(config)
+    """Extract the code interpreter session key.
+
+    Code interpreter state should persist across tool calls within the same
+    LangGraph thread, even when LangGraph injects a per-tool checkpoint_ns.
+    """
+    return get_session_key(config, include_checkpoint_ns=False)
 
 
 def _extract_output_from_stream(response: Any) -> str:
