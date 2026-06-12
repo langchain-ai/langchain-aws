@@ -828,6 +828,86 @@ def test__extract_usage_metadata_with_prompt_caching() -> None:
     }
 
 
+def test__extract_usage_metadata_with_per_ttl_cache_details() -> None:
+    """Test that cacheDetails per-TTL breakdown populates ephemeral_* keys."""
+    response = {
+        "usage": {
+            "inputTokens": 100,
+            "outputTokens": 50,
+            "totalTokens": 850,
+            "cacheReadInputTokens": 200,
+            "cacheWriteInputTokens": 500,
+            "cacheDetails": [
+                {"inputTokens": 300, "ttl": "5m"},
+                {"inputTokens": 200, "ttl": "1h"},
+            ],
+        }
+    }
+
+    usage_metadata = _extract_usage_metadata(response)
+
+    assert usage_metadata["input_tokens"] == 800  # 100 + 200 + 500
+    assert usage_metadata["output_tokens"] == 50
+    assert usage_metadata["total_tokens"] == 850
+    assert usage_metadata["input_token_details"]["cache_read"] == 200
+    assert usage_metadata["input_token_details"]["cache_creation"] == 500
+    assert usage_metadata["input_token_details"]["ephemeral_5m_input_tokens"] == 300  # type: ignore[typeddict-item]
+    assert usage_metadata["input_token_details"]["ephemeral_1h_input_tokens"] == 200  # type: ignore[typeddict-item]
+
+
+def test__extract_usage_metadata_without_cache_details() -> None:
+    """Test that missing cacheDetails doesn't break existing behavior."""
+    response = {
+        "usage": {
+            "inputTokens": 100,
+            "outputTokens": 50,
+            "totalTokens": 150,
+            "cacheReadInputTokens": 0,
+            "cacheWriteInputTokens": 0,
+        }
+    }
+
+    usage_metadata = _extract_usage_metadata(response)
+
+    assert usage_metadata["input_tokens"] == 100
+    assert usage_metadata["output_tokens"] == 50
+    assert usage_metadata["input_token_details"] == {
+        "cache_read": 0,
+        "cache_creation": 0,
+    }
+    # ephemeral_* keys should not be present when cacheDetails is absent
+    assert "ephemeral_5m_input_tokens" not in usage_metadata["input_token_details"]
+    assert "ephemeral_1h_input_tokens" not in usage_metadata["input_token_details"]
+
+
+def test__extract_usage_metadata_with_malformed_cache_details() -> None:
+    """Test that malformed cacheDetails entries are handled gracefully."""
+    response = {
+        "usage": {
+            "inputTokens": 100,
+            "outputTokens": 50,
+            "totalTokens": 650,
+            "cacheReadInputTokens": 200,
+            "cacheWriteInputTokens": 300,
+            "cacheDetails": [
+                {"inputTokens": 100, "ttl": "5m"},
+                {"ttl": "5m"},  # Missing inputTokens - should default to 0
+                {"inputTokens": 50, "ttl": "1h"},
+            ],
+        }
+    }
+
+    usage_metadata = _extract_usage_metadata(response)
+
+    assert usage_metadata["input_tokens"] == 600  # 100 + 200 + 300
+    assert usage_metadata["output_tokens"] == 50
+    assert usage_metadata["input_token_details"]["cache_read"] == 200
+    assert usage_metadata["input_token_details"]["cache_creation"] == 300
+    # 100 from first entry, 0 from second entry (missing inputTokens)
+    assert usage_metadata["input_token_details"]["ephemeral_5m_input_tokens"] == 100  # type: ignore[typeddict-item]
+    assert usage_metadata["input_token_details"]["ephemeral_1h_input_tokens"] == 50  # type: ignore[typeddict-item]
+
+
 @mock.patch.dict(os.environ, {"AWS_REGION": "us-west-1"})
 def test_chat_bedrock_converse_different_regions() -> None:
     region = "ap-south-2"
