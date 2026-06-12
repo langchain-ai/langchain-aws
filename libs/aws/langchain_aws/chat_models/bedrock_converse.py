@@ -1803,10 +1803,16 @@ class ChatBedrockConverse(BaseChatModel):
             # profile reports temperature is unsupported, drop both rather than let
             # Bedrock fail the call with a validation error.
             if self.profile and self.profile.get("temperature") is False:
-                if resolved_temperature is not None or resolved_top_p is not None:
+                ignored = []
+                if resolved_temperature is not None:
+                    ignored.append("temperature")
+                if resolved_top_p is not None:
+                    ignored.append("top_p")
+                if ignored:
                     warnings.warn(
                         f"Model {self._get_base_model()} does not support "
-                        "`temperature` or `top_p`; ignoring the provided value(s).",
+                        f"{' or '.join(ignored)}; ignoring the provided "
+                        f"value{'s' if len(ignored) > 1 else ''}.",
                         stacklevel=2,
                     )
                 resolved_temperature = None
