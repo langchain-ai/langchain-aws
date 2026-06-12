@@ -696,7 +696,6 @@ def test_structured_output_thinking_force_tool_use() -> None:
         llm.client.converse(messages=messages, **params)
 
 
-@pytest.mark.default_cassette("test_agent_loop.yaml.gz")
 @pytest.mark.vcr
 @pytest.mark.parametrize("output_version", ["v0", "v1"])
 def test_agent_loop(output_version: Literal["v0", "v1"]) -> None:
@@ -728,7 +727,6 @@ def test_agent_loop(output_version: Literal["v0", "v1"]) -> None:
     assert isinstance(response, AIMessage)
 
 
-@pytest.mark.default_cassette("test_agent_loop_streaming.yaml.gz")
 @pytest.mark.vcr
 @pytest.mark.parametrize("output_version", ["v0", "v1"])
 def test_agent_loop_streaming(output_version: Literal["v0", "v1"]) -> None:
@@ -958,7 +956,6 @@ def test_citations(document: dict[str, Any]) -> None:
     assert any(block.get("citations") for block in response.content)  # type: ignore[union-attr]
 
 
-@pytest.mark.default_cassette("test_citations[document0].yaml.gz")
 @pytest.mark.vcr
 @pytest.mark.parametrize("output_version", ["v0", "v1"])
 def test_citations_v1(output_version: Literal["v0", "v1"]) -> None:
