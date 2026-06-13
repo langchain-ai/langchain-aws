@@ -2181,8 +2181,12 @@ def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
         cache_1h = sum(
             d.get("inputTokens", 0) for d in cache_details if d.get("ttl") == "1h"
         )
-        input_token_details["ephemeral_5m_input_tokens"] = cache_5m
-        input_token_details["ephemeral_1h_input_tokens"] = cache_1h
+        if cache_5m:
+            input_token_details["ephemeral_5m_input_tokens"] = cache_5m
+        if cache_1h:
+            input_token_details["ephemeral_1h_input_tokens"] = cache_1h
+        if cache_5m + cache_1h > 0:
+            input_token_details["cache_creation"] = 0
 
     usage = UsageMetadata(
         input_tokens=input_tokens,
