@@ -81,6 +81,92 @@ from langchain_aws.utils import (
 logger = logging.getLogger(__name__)
 
 
+def _extract_thinking_tags_from_content(
+    content: Any,
+) -> Any:
+    """Extract <thinking>...</thinking> tags from text content and convert to reasoning_content blocks.
+
+    Some models (e.g. Amazon Nova Pro) return thinking/reasoning output wrapped in
+    <thinking>...</thinking> HTML-like tags within plain text, instead of using the
+    native Bedrock reasoning_content response format. This function detects those
+    tags, extracts the inner text into a reasoning_content block, and leaves the
+    remaining text as-is.
+
+    Args:
+        content: The message content, which can be a string or a list of content blocks.
+
+    Returns:
+        The content with thinking tags extracted into reasoning_content blocks.
+    """
+    _thinking_pattern = re.compile(r"<thinking>(.*?)</thinking>", re.DOTALL)
+
+    if isinstance(content, str):
+        matches = list(_thinking_pattern.finditer(content))
+        if not matches:
+            return content
+
+        # Extract thinking text and remaining text
+        new_blocks: list = []
+        last_end = 0
+        for match in matches:
+            # Add any text before this thinking block
+            before = content[last_end : match.start()].strip()
+            if before:
+                new_blocks.append({"type": "text", "text": before})
+
+            # Add the thinking content as reasoning_content
+            thinking_text = match.group(1).strip()
+            if thinking_text:
+                new_blocks.append(
+                    {
+                        "type": "reasoning_content",
+                        "reasoning_content": {"text": thinking_text},
+                    }
+                )
+            last_end = match.end()
+
+        # Add any text after the last thinking block
+        after = content[last_end:].strip()
+        if after:
+            new_blocks.append({"type": "text", "text": after})
+
+        return new_blocks if new_blocks else content
+
+    elif isinstance(content, list):
+        new_content = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = block.get("text", "")
+                matches = list(_thinking_pattern.finditer(text))
+                if matches:
+                    last_end = 0
+                    for match in matches:
+                        before = text[last_end : match.start()].strip()
+                        if before:
+                            new_content.append({"type": "text", "text": before})
+
+                        thinking_text = match.group(1).strip()
+                        if thinking_text:
+                            new_content.append(
+                                {
+                                    "type": "reasoning_content",
+                                    "reasoning_content": {"text": thinking_text},
+                                }
+                            )
+                        last_end = match.end()
+
+                    after = text[last_end:].strip()
+                    if after:
+                        new_content.append({"type": "text", "text": after})
+                else:
+                    new_content.append(block)
+            else:
+                new_content.append(block)
+        return new_content
+
+    return content
+
+
 _MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
 
 
@@ -1221,6 +1307,10 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             (_ := llm_output.pop("thinking", None)) or citations_enabled
         ):
             content = response_content
+
+        # Extract <thinking> tags from models (e.g. Nova Pro) that return
+        # reasoning output as inline text tags instead of native reasoning_content.
+        content = _extract_thinking_tags_from_content(content)
 
         msg = AIMessage(
             content=content,
