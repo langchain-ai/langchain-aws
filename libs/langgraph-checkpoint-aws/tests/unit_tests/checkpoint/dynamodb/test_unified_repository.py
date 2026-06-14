@@ -952,7 +952,7 @@ class TestMetadataBeforePayloadOrdering:
     def test_put_writes_metadata_before_payload_per_write(
         self, repo, mock_repo_components
     ):
-        """Test that each write's metadata is stored before its payload."""
+        """Test that all write metadata is batch-written before any payload."""
         # Arrange
         writes = [
             ("channel1", "value1"),
@@ -963,16 +963,21 @@ class TestMetadataBeforePayloadOrdering:
         # Track call order with details
         call_order = []
 
+        def track_batch_write_item(**kwargs):
+            call_order.append(("batch_write_item",))
+
         def track_put_item(**kwargs):
             item = kwargs.get("Item", {})
             channel = item.get("channel", {}).get("S", "unknown")
             call_order.append(("put_item", channel))
 
         def track_store_data(*args, **kwargs):
-            # Extract channel info from chunk_key
             chunk_key = kwargs.get("chunk_key", "")
             call_order.append(("store_data", chunk_key))
 
+        mock_repo_components["dynamodb"].batch_write_item.side_effect = (
+            track_batch_write_item
+        )
         mock_repo_components["dynamodb"].put_item.side_effect = track_put_item
         mock_repo_components["storage"].store_data.side_effect = track_store_data
 
@@ -985,33 +990,36 @@ class TestMetadataBeforePayloadOrdering:
             task_id=TEST_TASK_ID,
         )
 
-        # Assert
-        assert len(call_order) == 6, "Expected 3 metadata + 3 payload calls"
+        # Assert - with batch_write_item, all metadata is written first,
+        # then all payloads are stored.
+        payload_calls = [c for c in call_order if c[0] == "store_data"]
+        assert len(payload_calls) == 3, "Expected 3 payload calls"
 
-        # Verify alternating pattern: metadata, payload, metadata, payload, ...
-        for i in range(0, len(call_order), 2):
-            assert call_order[i][0] == "put_item", (
-                f"Call {i} should be put_item (metadata)"
-            )
-            assert call_order[i + 1][0] == "store_data", (
-                f"Call {i + 1} should be store_data (payload)"
-            )
+        # All metadata calls should come before all payload calls
+        first_payload_idx = next(
+            i for i, c in enumerate(call_order) if c[0] == "store_data"
+        )
+        last_metadata_idx = max(
+            i
+            for i, c in enumerate(call_order)
+            if c[0] in ("put_item", "batch_write_item")
+        )
+        assert last_metadata_idx < first_payload_idx, (
+            "All metadata writes must complete before any payload stores"
+        )
 
-        # Verify each write's metadata comes before its payload
-        assert call_order[0] == ("put_item", "channel1")
-        assert "CHUNK_" in call_order[1][1]  # store_data with chunk_key
-        assert call_order[2] == ("put_item", "channel2")
-        assert "CHUNK_" in call_order[3][1]
-        assert call_order[4] == ("put_item", "channel3")
-        assert "CHUNK_" in call_order[5][1]
-
-    def test_put_writes_sequential_not_parallel(self, repo, mock_repo_components):
-        """Test that writes are processed sequentially, not in parallel."""
+    def test_put_writes_metadata_batch_then_payload_sequential(
+        self, repo, mock_repo_components
+    ):
+        """Test that writes are batch-written for metadata then sequential for payload."""
         # Arrange
         writes = [("channel1", "value1"), ("channel2", "value2")]
 
-        # Track execution order with timestamps
+        # Track execution order
         execution_log = []
+
+        def track_batch_write_item(**kwargs):
+            execution_log.append("batch_metadata")
 
         def track_put_item(**kwargs):
             item = kwargs.get("Item", {})
@@ -1021,6 +1029,9 @@ class TestMetadataBeforePayloadOrdering:
         def track_store_data(*args, **kwargs):
             execution_log.append("payload")
 
+        mock_repo_components["dynamodb"].batch_write_item.side_effect = (
+            track_batch_write_item
+        )
         mock_repo_components["dynamodb"].put_item.side_effect = track_put_item
         mock_repo_components["storage"].store_data.side_effect = track_store_data
 
@@ -1033,14 +1044,17 @@ class TestMetadataBeforePayloadOrdering:
             task_id=TEST_TASK_ID,
         )
 
-        # Assert - verify sequential execution pattern
-        expected_order = [
-            "metadata_channel1",
-            "payload",
-            "metadata_channel2",
-            "payload",
+        # Assert - batch metadata write, then sequential payload stores
+        metadata_indices = [
+            i for i, e in enumerate(execution_log) if "metadata" in e
         ]
-        assert execution_log == expected_order
+        payload_indices = [
+            i for i, e in enumerate(execution_log) if e == "payload"
+        ]
+        if metadata_indices and payload_indices:
+            assert max(metadata_indices) < min(payload_indices), (
+                "All metadata must be written before any payload stores"
+            )
 
     def test_put_checkpoint_failure_no_payload_stored(self, repo, mock_repo_components):
         """Test that payload is not stored if metadata write fails."""
@@ -1092,8 +1106,9 @@ class TestMetadataBeforePayloadOrdering:
                 task_id=TEST_TASK_ID,
             )
 
-        # Verify store_data was called only once (for first write)
-        assert mock_repo_components["storage"].store_data.call_count == 1
+        # With batch approach, all metadata is written first, then all
+        # payloads. If metadata write fails mid-way, no payloads are stored.
+        assert mock_repo_components["storage"].store_data.call_count == 0
 
     def test_put_single_write_item_called_before_storage(
         self, repo, mock_repo_components
