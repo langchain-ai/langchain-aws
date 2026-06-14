@@ -36,6 +36,8 @@ from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
+from langchain_aws._version import _add_langchain_aws_version
+
 logger = logging.getLogger(__name__)
 
 # Default audio configuration constants
@@ -762,6 +764,7 @@ class ChatBedrockNovaSonic(BaseChatModel):
                 endpoint_url=self.endpoint_url,
                 api_key=self.bedrock_api_key,
             )
+        _add_langchain_aws_version(self)
         return self
 
     @asynccontextmanager

@@ -30,6 +30,7 @@ from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
+from langchain_aws._version import _add_langchain_aws_version
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
     anthropic_tokens_supported,
@@ -993,6 +994,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
                 self.base_model_id = model_arn.split("/")[-1]
 
+        _add_langchain_aws_version(self)
         return self
 
     @property
