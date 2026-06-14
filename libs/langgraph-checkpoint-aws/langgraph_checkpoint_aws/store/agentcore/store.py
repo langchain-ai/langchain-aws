@@ -153,9 +153,7 @@ class AgentCoreMemoryStore(BaseStore):
         event_id = response.get("event", {}).get("eventId")
         if event_id and op.key:
             self._key_to_event_id[op.key] = event_id
-            logger.debug(
-                f"Mapped op.key={op.key} to eventId={event_id}"
-            )
+            logger.debug(f"Mapped op.key={op.key} to eventId={event_id}")
 
         logger.debug(f"Created event for message in namespace {op.namespace}")
 
@@ -166,9 +164,7 @@ class AgentCoreMemoryStore(BaseStore):
         # AgentCore event ID returned by create_event.
         resolved_key = self._key_to_event_id.get(op.key, op.key)
         if resolved_key != op.key:
-            logger.debug(
-                f"Resolved op.key={op.key} to eventId={resolved_key}"
-            )
+            logger.debug(f"Resolved op.key={op.key} to eventId={resolved_key}")
 
         try:
             response = self.client.get_memory_record(
