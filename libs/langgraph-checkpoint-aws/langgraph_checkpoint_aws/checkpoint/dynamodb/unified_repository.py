@@ -681,9 +681,7 @@ class UnifiedRepository:
             request_items: dict[str, list[WriteRequestTypeDef]] = {
                 self.table_name: batch
             }
-            response = self.dynamodb_client.batch_write_item(
-                RequestItems=request_items
-            )
+            response = self.dynamodb_client.batch_write_item(RequestItems=request_items)
 
             # Handle unprocessed items by retrying with exponential backoff
             unprocessed = response.get("UnprocessedItems", {})
