@@ -672,9 +672,7 @@ class UnifiedRepository:
 
         # Use batch_write_item for overwrites (no condition needed)
         BATCH_SIZE = 25  # DynamoDB batch_write_item limit
-        write_requests = [
-            {"PutRequest": {"Item": base_item}} for base_item, _ in items
-        ]
+        write_requests = [{"PutRequest": {"Item": base_item}} for base_item, _ in items]
 
         for batch_start in range(0, len(write_requests), BATCH_SIZE):
             batch = write_requests[batch_start : batch_start + BATCH_SIZE]
