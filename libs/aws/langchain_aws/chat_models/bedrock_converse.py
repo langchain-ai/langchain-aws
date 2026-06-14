@@ -71,6 +71,7 @@ from langchain_core.utils.utils import _build_model_kwargs
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
+from langchain_aws._version import _add_langchain_aws_version
 from langchain_aws.chat_models._compat import _convert_from_v1_to_converse
 from langchain_aws.data._profiles import _PROFILES
 from langchain_aws.function_calling import ToolsOutputParser
@@ -1048,6 +1049,7 @@ class ChatBedrockConverse(BaseChatModel):
         if not self.profile:
             self.profile = self._resolve_model_profile()
 
+        _add_langchain_aws_version(self)
         return self
 
     def _resolve_model_profile(self) -> ModelProfile | None:
