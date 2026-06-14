@@ -2615,9 +2615,7 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             # Extract <thinking>...</thinking> tags from models (e.g. Amazon Nova Pro)
             # that return reasoning output as inline text tags instead of native
             # reasoning_content response format.
-            _thinking_pattern = re.compile(
-                r"<thinking>(.*?)</thinking>", re.DOTALL
-            )
+            _thinking_pattern = re.compile(r"<thinking>(.*?)</thinking>", re.DOTALL)
             matches = list(_thinking_pattern.finditer(text))
             if matches:
                 last_end = 0
