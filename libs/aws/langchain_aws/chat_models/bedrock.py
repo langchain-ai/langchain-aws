@@ -84,7 +84,8 @@ logger = logging.getLogger(__name__)
 def _extract_thinking_tags_from_content(
     content: Any,
 ) -> Any:
-    """Extract <thinking>...</thinking> tags from text content and convert to reasoning_content blocks.
+    """Extract <thinking> tags from text content and convert to
+    reasoning_content blocks.
 
     Some models (e.g. Amazon Nova Pro) return thinking/reasoning output wrapped in
     <thinking>...</thinking> HTML-like tags within plain text, instead of using the

@@ -2611,7 +2611,34 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         excluded_keys={"input"},  # exclude 'input' key, which contains tool call args
     ):
         if "text" in block:
-            lc_content.append({"type": "text", "text": block["text"]})
+            text = block["text"]
+            # Extract <thinking>...</thinking> tags from models (e.g. Amazon Nova Pro)
+            # that return reasoning output as inline text tags instead of native
+            # reasoning_content response format.
+            _thinking_pattern = re.compile(
+                r"<thinking>(.*?)</thinking>", re.DOTALL
+            )
+            matches = list(_thinking_pattern.finditer(text))
+            if matches:
+                last_end = 0
+                for match in matches:
+                    before = text[last_end : match.start()].strip()
+                    if before:
+                        lc_content.append({"type": "text", "text": before})
+                    thinking_text = match.group(1).strip()
+                    if thinking_text:
+                        lc_content.append(
+                            {
+                                "type": "reasoning_content",
+                                "reasoning_content": {"text": thinking_text},
+                            }
+                        )
+                    last_end = match.end()
+                after = text[last_end:].strip()
+                if after:
+                    lc_content.append({"type": "text", "text": after})
+            else:
+                lc_content.append({"type": "text", "text": text})
         elif "tool_use" in block:
             block["tool_use"]["id"] = block["tool_use"].pop("tool_use_id", None)
             lc_content.append({"type": "tool_use", **block["tool_use"]})
