@@ -20,8 +20,8 @@ from langchain_core.outputs import ChatGeneration, Generation
 from langchain_core.prompts.chat import AIMessage
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
-from langchain_core.utils.pydantic import TypeBaseModel
-from pydantic import BaseModel, ConfigDict, SkipValidation
+from langchain_core.utils.pydantic import PydanticBaseModel, TypeBaseModel
+from pydantic import ConfigDict, SkipValidation
 from typing_extensions import TypedDict
 
 PYTHON_TO_JSON_TYPES = {
@@ -198,7 +198,7 @@ class ToolsOutputParser(BaseGenerationOutputParser):
         else:
             return tool_calls
 
-    def _pydantic_parse(self, tool_call: ToolCall) -> BaseModel:
+    def _pydantic_parse(self, tool_call: ToolCall) -> PydanticBaseModel:
         cls_ = {schema.__name__: schema for schema in self.pydantic_schemas or []}[
             tool_call["name"]
         ]

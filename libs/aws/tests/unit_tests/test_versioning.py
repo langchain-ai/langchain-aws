@@ -52,7 +52,7 @@ def test_bedrock_models_add_langchain_aws_version_metadata() -> None:
 
     _assert_langchain_aws_version(
         ChatBedrock(
-            model_id="anthropic.claude-v2",
+            model="anthropic.claude-v2",
             client=MagicMock(),
             bedrock_client=MagicMock(),
             metadata=metadata,
@@ -60,7 +60,7 @@ def test_bedrock_models_add_langchain_aws_version_metadata() -> None:
     )
     _assert_langchain_aws_version(
         ChatBedrockConverse(
-            model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+            model="anthropic.claude-3-sonnet-20240229-v1:0",
             client=MagicMock(),
             bedrock_client=MagicMock(),
             metadata=metadata,
@@ -68,7 +68,7 @@ def test_bedrock_models_add_langchain_aws_version_metadata() -> None:
     )
     _assert_langchain_aws_version(
         BedrockLLM(
-            model_id="amazon.titan-text-express-v1",
+            model="amazon.titan-text-express-v1",
             client=MagicMock(),
             bedrock_client=MagicMock(),
             metadata=metadata,
@@ -99,8 +99,10 @@ def test_sagemaker_models_add_langchain_aws_version_metadata() -> None:
 
 def test_anthropic_bedrock_adds_langchain_aws_version_metadata() -> None:
     model = ChatAnthropicBedrock(
-        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_name="anthropic.claude-3-sonnet-20240229-v1:0",
         metadata={"lc_versions": {"user-package": "1.2.3"}},
+        timeout=None,
+        stop=None,
     )
 
     _assert_langchain_aws_version(model)
