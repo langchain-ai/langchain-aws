@@ -587,7 +587,11 @@ class UnifiedRepository:
         task_id: str,
         task_path: str = "",
     ) -> None:
-        """Store writes with intelligent offloading and parallel execution.
+        """Store writes with intelligent offloading and batch execution.
+
+        Uses DynamoDB batch_write_item to write multiple items in a single
+        API call (up to 25 items per batch) instead of individual put_item
+        calls, significantly improving performance for multi-write operations.
 
         Args:
             thread_id: Thread identifier
@@ -606,28 +610,101 @@ class UnifiedRepository:
         # Check if all writes are special (can be overwritten)
         all_special = all(w[0] in WRITES_IDX_MAP for w in writes)
 
-        # Build all write items with payload storage
-        for base_item, ref_item in self._build_write_items(
-            thread_id,
-            checkpoint_ns,
-            checkpoint_id,
-            writes,
-            task_id,
-            task_path,
-            allow_overwrites=all_special,
-        ):
-            # Store metadata to base table
-            self.put_single_write_item(
-                checkpoint_id, base_item, allow_overwrites=all_special
+        # Build all write items with payload storage first
+        all_items = list(
+            self._build_write_items(
+                thread_id,
+                checkpoint_ns,
+                checkpoint_id,
+                writes,
+                task_id,
+                task_path,
+                allow_overwrites=all_special,
             )
+        )
 
-            # Store Chunks for the record
+        # Batch write metadata items to DynamoDB using batch_write_item
+        # for improved performance over sequential put_item calls.
+        self._batch_put_write_items(checkpoint_id, all_items, all_special)
+
+        # Store payload data (chunks/S3) for each write
+        for _base_item, ref_item in all_items:
             self.storage.store_data(
                 chunk_key=ref_item["chunk_key"],
                 s3_key=ref_item["s3_key"],
                 serialized_data=ref_item["value_data"],
                 allow_overwrite=all_special,
             )
+
+    def _batch_put_write_items(
+        self,
+        checkpoint_id: str,
+        items: list[tuple[dict[str, Any], dict[str, Any]]],
+        allow_overwrites: bool = False,
+    ) -> None:
+        """Batch write metadata items to DynamoDB using batch_write_item.
+
+        Uses batch_write_item for improved performance over sequential
+        put_item calls. Falls back to sequential put_item for items
+        that require conditional expressions (when allow_overwrites is False),
+        since batch_write_item does not support ConditionExpression.
+
+        Args:
+            checkpoint_id: Checkpoint identifier for logging
+            items: List of (base_item, ref_item) tuples
+            allow_overwrites: If True, always overwrite existing items
+
+        Raises:
+            ClientError: If batch write operations fail
+        """
+        if not items:
+            return
+
+        # batch_write_item does not support ConditionExpression,
+        # so when we need conditional writes (allow_overwrites=False),
+        # we must fall back to sequential put_item for correctness.
+        if not allow_overwrites:
+            for base_item, _ref_item in items:
+                self.put_single_write_item(
+                    checkpoint_id, base_item, allow_overwrites=False
+                )
+            return
+
+        # Use batch_write_item for overwrites (no condition needed)
+        BATCH_SIZE = 25  # DynamoDB batch_write_item limit
+        write_requests = [
+            {"PutRequest": {"Item": base_item}} for base_item, _ in items
+        ]
+
+        for batch_start in range(0, len(write_requests), BATCH_SIZE):
+            batch = write_requests[batch_start : batch_start + BATCH_SIZE]
+            response = self.dynamodb_client.batch_write_item(
+                RequestItems={self.table_name: batch}
+            )
+
+            # Handle unprocessed items by retrying with exponential backoff
+            unprocessed = response.get("UnprocessedItems", {})
+            retries = 0
+            max_retries = 5
+            while unprocessed and retries < max_retries:
+                table_unprocessed = unprocessed.get(self.table_name, [])
+                if not table_unprocessed:
+                    break
+
+                # Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms
+                time.sleep(0.05 * (2**retries))
+                response = self.dynamodb_client.batch_write_item(
+                    RequestItems=unprocessed
+                )
+                unprocessed = response.get("UnprocessedItems", {})
+                retries += 1
+
+            if unprocessed:
+                logger.warning(
+                    f"Failed to write {len(unprocessed.get(self.table_name, []))} "
+                    f"items after {max_retries} retries for "
+                    f"checkpoint_id={checkpoint_id}"
+                )
 
     def _build_write_items(
         self,
