@@ -672,12 +672,17 @@ class UnifiedRepository:
 
         # Use batch_write_item for overwrites (no condition needed)
         BATCH_SIZE = 25  # DynamoDB batch_write_item limit
-        write_requests = [{"PutRequest": {"Item": base_item}} for base_item, _ in items]
+        write_requests: list[WriteRequestTypeDef] = [
+            {"PutRequest": {"Item": base_item}} for base_item, _ in items
+        ]
 
         for batch_start in range(0, len(write_requests), BATCH_SIZE):
             batch = write_requests[batch_start : batch_start + BATCH_SIZE]
+            request_items: dict[str, list[WriteRequestTypeDef]] = {
+                self.table_name: batch
+            }
             response = self.dynamodb_client.batch_write_item(
-                RequestItems={self.table_name: batch}
+                RequestItems=request_items
             )
 
             # Handle unprocessed items by retrying with exponential backoff
@@ -691,8 +696,12 @@ class UnifiedRepository:
 
                 # Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms
                 time.sleep(0.05 * (2**retries))
+                unprocessed_typed = {
+                    k: cast("list[WriteRequestTypeDef]", list(v))
+                    for k, v in unprocessed.items()
+                }
                 response = self.dynamodb_client.batch_write_item(
-                    RequestItems=unprocessed
+                    RequestItems=unprocessed_typed
                 )
                 unprocessed = response.get("UnprocessedItems", {})
                 retries += 1
