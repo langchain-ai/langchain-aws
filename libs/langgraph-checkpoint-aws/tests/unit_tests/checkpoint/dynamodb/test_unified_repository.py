@@ -975,9 +975,9 @@ class TestMetadataBeforePayloadOrdering:
             chunk_key = kwargs.get("chunk_key", "")
             call_order.append(("store_data", chunk_key))
 
-        mock_repo_components["dynamodb"].batch_write_item.side_effect = (
-            track_batch_write_item
-        )
+        mock_repo_components[
+            "dynamodb"
+        ].batch_write_item.side_effect = track_batch_write_item
         mock_repo_components["dynamodb"].put_item.side_effect = track_put_item
         mock_repo_components["storage"].store_data.side_effect = track_store_data
 
@@ -1011,7 +1011,7 @@ class TestMetadataBeforePayloadOrdering:
     def test_put_writes_metadata_batch_then_payload_sequential(
         self, repo, mock_repo_components
     ):
-        """Test that writes are batch-written for metadata then sequential for payload."""
+        """Test batch metadata writes then sequential payload writes."""
         # Arrange
         writes = [("channel1", "value1"), ("channel2", "value2")]
 
@@ -1029,9 +1029,9 @@ class TestMetadataBeforePayloadOrdering:
         def track_store_data(*args, **kwargs):
             execution_log.append("payload")
 
-        mock_repo_components["dynamodb"].batch_write_item.side_effect = (
-            track_batch_write_item
-        )
+        mock_repo_components[
+            "dynamodb"
+        ].batch_write_item.side_effect = track_batch_write_item
         mock_repo_components["dynamodb"].put_item.side_effect = track_put_item
         mock_repo_components["storage"].store_data.side_effect = track_store_data
 
@@ -1045,12 +1045,8 @@ class TestMetadataBeforePayloadOrdering:
         )
 
         # Assert - batch metadata write, then sequential payload stores
-        metadata_indices = [
-            i for i, e in enumerate(execution_log) if "metadata" in e
-        ]
-        payload_indices = [
-            i for i, e in enumerate(execution_log) if e == "payload"
-        ]
+        metadata_indices = [i for i, e in enumerate(execution_log) if "metadata" in e]
+        payload_indices = [i for i, e in enumerate(execution_log) if e == "payload"]
         if metadata_indices and payload_indices:
             assert max(metadata_indices) < min(payload_indices), (
                 "All metadata must be written before any payload stores"
