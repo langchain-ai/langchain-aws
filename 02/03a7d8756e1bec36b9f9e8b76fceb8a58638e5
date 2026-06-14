@@ -1,0 +1,58 @@
+libs/aws/tests/unit_tests/test_versioning.py
+  s_ab6312ac089557::t_03f7e078878e57 46-47,51,80,103
+  s_2fec72a7f39da3::t_cf3284180fbb99 1-45,48-50,52-79,81-102,104-106
+libs/aws/langchain_aws/_version.py
+  s_83a82efc664405::t_2da38f0ae7366d 3,5-6,9,13-14,16-17,19-22
+  s_2fec72a7f39da3::t_cf3284180fbb99 1-2,4,7-8,10-12,15,18
+libs/aws/tests/unit_tests/chat_models/test_bedrock_nova_sonic.py
+  s_ab6312ac089557::t_03f7e078878e57 102,105-106
+  s_2fec72a7f39da3::t_cf3284180fbb99 8-9,99-101,103-104
+libs/aws/langchain_aws/chat_models/sagemaker_endpoint.py
+  s_2fec72a7f39da3::t_cf3284180fbb99 25,329
+libs/aws/langchain_aws/chat_models/anthropic.py
+  s_2fec72a7f39da3::t_cf3284180fbb99 19,199
+libs/aws/langchain_aws/__init__.py
+  s_2fec72a7f39da3::t_cf3284180fbb99 3,83
+libs/aws/langchain_aws/chat_models/bedrock_converse.py
+  s_2fec72a7f39da3::t_cf3284180fbb99 74,1052
+libs/aws/langchain_aws/llms/bedrock.py
+  s_2fec72a7f39da3::t_cf3284180fbb99 33,997
+libs/aws/langchain_aws/chat_models/bedrock_nova_sonic.py
+  s_2fec72a7f39da3::t_cf3284180fbb99 39-40,767
+libs/aws/langchain_aws/llms/sagemaker_endpoint.py
+  s_2fec72a7f39da3::t_cf3284180fbb99 22,307
+libs/aws/pyproject.toml
+  s_2fec72a7f39da3::t_cf3284180fbb99 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "0203a7d8756e1bec36b9f9e8b76fceb8a58638e5",
+  "prompts": {},
+  "sessions": {
+    "s_2fec72a7f39da3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "397b7bdc-239e-4923-b096-4eb5a511e877",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Mason Daugherty <github@mdrxy.com>"
+    },
+    "s_83a82efc664405": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1e751be0-b682-4913-b083-56a4c565a11b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Mason Daugherty <github@mdrxy.com>"
+    },
+    "s_ab6312ac089557": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ec846-d9c2-76e2-a9f7-74f7570553cd",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Mason Daugherty <github@mdrxy.com>"
+    }
+  }
+}
