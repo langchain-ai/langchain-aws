@@ -76,6 +76,10 @@ class AgentCoreMemoryStore(BaseStore):
         )
         self.client = boto3.client("bedrock-agentcore", config=config, **boto3_kwargs)
 
+        # Mapping from op.key to AgentCore event ID, so that
+        # _handle_get can retrieve events by the key that was used in _handle_put.
+        self._key_to_event_id: dict[str, str] = {}
+
     def batch(self, ops: Iterable[Op]) -> list[Result]:
         """Execute multiple operations in a single batch."""
         results: list[Result] = []
@@ -136,20 +140,39 @@ class AgentCoreMemoryStore(BaseStore):
                 {"conversational": {"content": {"text": text}, "role": role}}
             )
 
-        self.client.create_event(
+        response = self.client.create_event(
             memoryId=self.memory_id,
             actorId=actor_id,
             sessionId=session_id,
             eventTimestamp=datetime.now(timezone.utc),
             payload=conversational_payloads,
         )
+
+        # Store mapping from op.key to the event ID returned by AgentCore,
+        # so that subsequent _handle_get calls can retrieve the event by key.
+        event_id = response.get("event", {}).get("eventId")
+        if event_id and op.key:
+            self._key_to_event_id[op.key] = event_id
+            logger.debug(
+                f"Mapped op.key={op.key} to eventId={event_id}"
+            )
+
         logger.debug(f"Created event for message in namespace {op.namespace}")
 
     def _handle_get(self, op: GetOp) -> Result:
         """Handle GetOp by retrieving a specific memory record from AgentCore Memory."""
+        # Resolve the actual event ID from the op.key mapping.
+        # If op.key was previously used in a PutOp, we map it to the
+        # AgentCore event ID returned by create_event.
+        resolved_key = self._key_to_event_id.get(op.key, op.key)
+        if resolved_key != op.key:
+            logger.debug(
+                f"Resolved op.key={op.key} to eventId={resolved_key}"
+            )
+
         try:
             response = self.client.get_memory_record(
-                memoryId=self.memory_id, memoryRecordId=op.key
+                memoryId=self.memory_id, memoryRecordId=resolved_key
             )
 
             memory_record = response.get("memoryRecord")
