@@ -481,21 +481,6 @@ class AgentCoreSandbox(BaseSandbox):
                 for path, _ in files
             ]
 
-    # ------------------------------------------------------------------
-    # Read-plane overrides — resolve virtual/relative paths against the
-    # sandbox cwd before the inherited ``BaseSandbox`` shell operations,
-    # which would otherwise run against the literal path.
-    #
-    # ``write()`` and ``download_files()`` already resolve paths to the real
-    # cwd, but ``BaseSandbox.ls``/``read``/``grep``/``glob``/``edit`` execute
-    # shell commands against the path verbatim. When the sandbox cwd is not
-    # ``/`` (e.g. ``/opt/amazon/genesis1p-tools/var``), an absolute virtual
-    # path like ``/workspace/file.py`` — which is exactly what the deepagents
-    # filesystem tools produce via ``validate_path`` — does not exist on disk
-    # and these operations fail. Resolving against the cwd here keeps the
-    # read plane symmetric with the write plane.
-    # ------------------------------------------------------------------
-
     def ls(self, path: str) -> LsResult:
         """List a directory, resolving ``path`` against the sandbox cwd."""
         return super().ls(self._to_absolute_path(path))
