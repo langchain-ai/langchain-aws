@@ -200,6 +200,29 @@ class TestMediaInputNormalization:
         assert source_kind == "inline"
         assert payload == b64
 
+    def test_load_audio_data_uri(self) -> None:
+        embeddings = BedrockEmbeddings(
+            model_id="amazon.nova-2-multimodal-embeddings-v1:0"
+        )
+        audio_bytes = b"ID3" + b"\x00" * 20
+        b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        data_uri = f"data:audio/mp3;base64,{b64}"
+
+        payload, fmt, source_kind = embeddings._load_media(data_uri, "audio")
+
+        assert fmt == "mp3"
+        assert source_kind == "inline"
+        assert payload == b64
+
+    def test_load_data_uri_rejects_media_type_mismatch(self) -> None:
+        embeddings = BedrockEmbeddings(model_id="amazon.titan-embed-image-v1")
+        audio_bytes = b"ID3" + b"\x00" * 20
+        b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        data_uri = f"data:audio/mp3;base64,{b64}"
+
+        with pytest.raises(ValueError, match="does not match requested media type"):
+            embeddings._load_media(data_uri, "image")
+
     def test_load_raw_base64(self) -> None:
         embeddings = BedrockEmbeddings(model_id="amazon.titan-embed-image-v1")
         b64 = base64.b64encode(JPEG_BYTES).decode("utf-8")
@@ -244,6 +267,12 @@ class TestMediaInputNormalization:
 
         with pytest.raises(ValueError, match="Could not interpret input"):
             embeddings._load_media("not-valid-base64-!!!", "image")
+
+    def test_load_plain_string_not_treated_as_base64(self) -> None:
+        embeddings = BedrockEmbeddings(model_id="amazon.titan-embed-image-v1")
+
+        with pytest.raises(ValueError, match="Could not interpret input"):
+            embeddings._load_media("not a path", "image")
 
 
 class TestImageRequestBuilders:
