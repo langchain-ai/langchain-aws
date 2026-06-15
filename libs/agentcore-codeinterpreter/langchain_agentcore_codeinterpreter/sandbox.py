@@ -14,6 +14,9 @@ from deepagents.backends.protocol import (
     ExecuteResponse,
     FileDownloadResponse,
     FileUploadResponse,
+    GlobResult,
+    GrepResult,
+    LsResult,
     ReadResult,
     WriteResult,
 )
@@ -174,7 +177,7 @@ class AgentCoreSandbox(BaseSandbox):
         against the real cwd before shell preflight commands and stripped of
         the cwd prefix before the AgentCore ``writeFiles``/``readFiles`` APIs.
         Pass the known cwd via the ``cwd`` constructor argument, or let the
-        sandbox detect it automatically on the first ``write()`` call.
+        sandbox detect it automatically on the first path operation via ``pwd``.
 
     Example:
         .. code-block:: python
@@ -209,7 +212,7 @@ class AgentCoreSandbox(BaseSandbox):
                 ``write()`` uses it to resolve virtual paths to real absolute
                 paths and to strip the prefix before the AgentCore
                 ``writeFiles`` API. When omitted, the cwd is detected
-                automatically on the first ``write()`` call via ``pwd``.
+                automatically on the first path operation via ``pwd``.
         """
         self._interpreter = interpreter
         self._cwd: str | None = cwd.rstrip("/") if cwd is not None else None
@@ -477,6 +480,68 @@ class AgentCoreSandbox(BaseSandbox):
                 FileUploadResponse(path=path, error="permission_denied")
                 for path, _ in files
             ]
+
+    # ------------------------------------------------------------------
+    # Read-plane overrides — resolve virtual/relative paths against the
+    # sandbox cwd before the inherited ``BaseSandbox`` shell operations,
+    # which would otherwise run against the literal path.
+    #
+    # ``write()`` and ``download_files()`` already resolve paths to the real
+    # cwd, but ``BaseSandbox.ls``/``read``/``grep``/``glob``/``edit`` execute
+    # shell commands against the path verbatim. When the sandbox cwd is not
+    # ``/`` (e.g. ``/opt/amazon/genesis1p-tools/var``), an absolute virtual
+    # path like ``/workspace/file.py`` — which is exactly what the deepagents
+    # filesystem tools produce via ``validate_path`` — does not exist on disk
+    # and these operations fail. Resolving against the cwd here keeps the
+    # read plane symmetric with the write plane.
+    # ------------------------------------------------------------------
+
+    def ls(self, path: str) -> LsResult:
+        """List a directory, resolving ``path`` against the sandbox cwd."""
+        return super().ls(self._to_absolute_path(path))
+
+    def read(
+        self,
+        file_path: str,
+        offset: int = 0,
+        limit: int = 2000,
+    ) -> ReadResult:
+        """Read a file, resolving ``file_path`` against the sandbox cwd."""
+        return super().read(self._to_absolute_path(file_path), offset, limit)
+
+    def grep(
+        self,
+        pattern: str,
+        path: str | None = None,
+        glob: str | None = None,
+    ) -> GrepResult:
+        """Search file contents, resolving ``path`` against the sandbox cwd."""
+        resolved = self._to_absolute_path(path) if path else path
+        return super().grep(pattern, resolved, glob)
+
+    def glob(
+        self,
+        pattern: str,
+        path: str | None = None,
+    ) -> GlobResult:
+        """Match paths by glob, resolving ``path`` against the sandbox cwd."""
+        resolved = self._to_absolute_path(path) if path else path
+        return super().glob(pattern, resolved)
+
+    def edit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,  # noqa: FBT001, FBT002
+    ) -> EditResult:
+        """Edit a file, resolving ``file_path`` against the sandbox cwd."""
+        return super().edit(
+            self._to_absolute_path(file_path),
+            old_string,
+            new_string,
+            replace_all,
+        )
 
     # ------------------------------------------------------------------
     # Async overrides — use a dedicated executor to avoid starving the
