@@ -47,7 +47,7 @@ from langchain_core.messages import (
     merge_message_runs,
 )
 from langchain_core.messages import content as types
-from langchain_core.messages.ai import AIMessageChunk, UsageMetadata
+from langchain_core.messages.ai import AIMessageChunk, InputTokenDetails, UsageMetadata
 from langchain_core.messages.tool import tool_call as create_tool_call
 from langchain_core.messages.tool import tool_call_chunk
 from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
@@ -2194,13 +2194,33 @@ def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
     )
     total_tokens = usage_dict.get("totalTokens", input_tokens + output_tokens)
 
+    input_token_details: dict = {
+        "cache_read": cache_read_input_tokens,
+        "cache_creation": cache_write_input_tokens,
+    }
+
+    # Parse per-TTL cache breakdown from cacheDetails (if present)
+    cache_details = usage_dict.get("cacheDetails", [])
+    if cache_details:
+        cache_5m = sum(
+            d.get("inputTokens", 0) for d in cache_details if d.get("ttl") == "5m"
+        )
+        cache_1h = sum(
+            d.get("inputTokens", 0) for d in cache_details if d.get("ttl") == "1h"
+        )
+        if cache_5m:
+            input_token_details["ephemeral_5m_input_tokens"] = cache_5m
+        if cache_1h:
+            input_token_details["ephemeral_1h_input_tokens"] = cache_1h
+        if cache_5m + cache_1h > 0:
+            input_token_details["cache_creation"] = 0
+
     usage = UsageMetadata(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
-        input_token_details={
-            "cache_read": cache_read_input_tokens,
-            "cache_creation": cache_write_input_tokens,
-        },
+        input_token_details=InputTokenDetails(
+            **{k: v for k, v in input_token_details.items() if v is not None},
+        ),
         total_tokens=total_tokens,
     )
     return usage
