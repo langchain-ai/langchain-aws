@@ -2255,7 +2255,41 @@ def _split_inline_reasoning(
     ``signature``, so ``_lc_content_to_bedrock`` drops it on round-trips); surrounding
     text stays as ``text`` blocks.
     """
-    raise NotImplementedError
+    pattern = re.compile(
+        re.escape(open_tag) + r"(.*?)" + re.escape(close_tag), re.DOTALL
+    )
+
+    blocks: List[Dict[str, Any]] = []
+    last_end = 0
+    found_pair = False
+
+    for match in pattern.finditer(text):
+        found_pair = True
+        # Text preceding this reasoning pair -> text block (drop blank-only segments).
+        leading = text[last_end : match.start()]
+        if leading.strip():
+            blocks.append({"type": "text", "text": leading})
+
+        inner = match.group(1).strip()
+        if inner:
+            blocks.append(
+                {
+                    "type": "reasoning_content",
+                    "reasoning_content": {"text": inner},
+                }
+            )
+        last_end = match.end()
+
+    # No complete pair: return the original text unchanged.
+    if not found_pair:
+        return [{"type": "text", "text": text}]
+
+    # Trailing text after the final reasoning pair (drop blank-only segments).
+    trailing = text[last_end:]
+    if trailing.strip():
+        blocks.append({"type": "text", "text": trailing})
+
+    return blocks
 
 
 def _expand_inline_reasoning(

@@ -53,6 +53,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _set_additional_properties_false,
     _snake_to_camel,
     _snake_to_camel_keys,
+    _split_inline_reasoning,
 )
 from langchain_aws.function_calling import convert_to_anthropic_tool
 
@@ -1139,8 +1140,74 @@ def test__inline_reasoning_tags_for_model() -> None:
     assert titan._inline_reasoning_tags_for_model() is None
 
 
-def test__split_inline_reasoning() -> None:
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        # Reasoning + answer -> [reasoning_content, text]; inner stripped, answer kept.
+        (
+            "<thinking> the query was executed </thinking>\nHere is the answer.",
+            [
+                {
+                    "type": "reasoning_content",
+                    "reasoning_content": {"text": "the query was executed"},
+                },
+                {"type": "text", "text": "\nHere is the answer."},
+            ],
+        ),
+        # No complete pair -> single text block returned unchanged.
+        (
+            "Just a plain answer with no reasoning.",
+            [{"type": "text", "text": "Just a plain answer with no reasoning."}],
+        ),
+        # Multiple pairs -> each extracted in order with interleaved answer text kept.
+        (
+            "<thinking>first thought</thinking>Part one.\n"
+            "<thinking>second thought</thinking>Part two.",
+            [
+                {
+                    "type": "reasoning_content",
+                    "reasoning_content": {"text": "first thought"},
+                },
+                {"type": "text", "text": "Part one.\n"},
+                {
+                    "type": "reasoning_content",
+                    "reasoning_content": {"text": "second thought"},
+                },
+                {"type": "text", "text": "Part two."},
+            ],
+        ),
+        # Unterminated open tag -> preserved verbatim (no pair, no data loss).
+        (
+            "<thinking>this reasoning never closes and bleeds into the answer",
+            [
+                {
+                    "type": "text",
+                    "text": "<thinking>this reasoning never closes and "
+                    "bleeds into the answer",
+                }
+            ],
+        ),
+        # Incidental `<` and a near-miss tag -> preserved verbatim, nothing extracted.
+        (
+            "Compare a < b and check <thinkingish> markup in the output.",
+            [
+                {
+                    "type": "text",
+                    "text": "Compare a < b and check <thinkingish> markup "
+                    "in the output.",
+                }
+            ],
+        ),
+        # Empty pair -> reasoning block dropped, blank-only leftover dropped.
+        ("<thinking></thinking>", []),
+    ],
+)
+def test__split_inline_reasoning(
+    text: str,
+    expected: List[Dict[str, Any]],
+) -> None:
     """Complete `<thinking>` pairs become `reasoning_content`; other text kept."""
+    assert _split_inline_reasoning(text, "<thinking>", "</thinking>") == expected
 
 
 def test__expand_inline_reasoning_preserves_tool_use_and_order() -> None:
