@@ -2300,7 +2300,13 @@ def _expand_inline_reasoning(
     Replaces each ``text`` block with the output of :func:`_split_inline_reasoning`;
     all other blocks pass through unchanged and with their original order.
     """
-    raise NotImplementedError
+    expanded: List[Dict[str, Any]] = []
+    for block in lc_content:
+        if block.get("type") == "text":
+            expanded.extend(_split_inline_reasoning(block["text"], open_tag, close_tag))
+        else:
+            expanded.append(block)
+    return expanded
 
 
 def _parse_response(response: Dict[str, Any]) -> AIMessage:

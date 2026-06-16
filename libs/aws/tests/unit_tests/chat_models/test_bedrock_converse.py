@@ -40,6 +40,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _camel_to_snake,
     _camel_to_snake_keys,
     _convert_tool_blocks_to_text,
+    _expand_inline_reasoning,
     _extract_response_metadata,
     _extract_usage_metadata,
     _format_data_content_block,
@@ -1212,14 +1213,60 @@ def test__split_inline_reasoning(
 
 def test__expand_inline_reasoning_preserves_tool_use_and_order() -> None:
     """Inline reasoning in a text block expands in place; tool_use is left untouched."""
+    lc_content: List[Dict[str, Any]] = [
+        {
+            "type": "text",
+            "text": "<thinking> picking a tool </thinking>\nHere is the answer.",
+        },
+        {
+            "type": "tool_use",
+            "name": "get_weather",
+            "input": {"city": "Seattle"},
+            "id": "tool_123",
+        },
+    ]
+
+    expanded = _expand_inline_reasoning(lc_content, "<thinking>", "</thinking>")
+
+    assert expanded == [
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {"text": "picking a tool"},
+        },
+        {"type": "text", "text": "\nHere is the answer."},
+        {
+            "type": "tool_use",
+            "name": "get_weather",
+            "input": {"city": "Seattle"},
+            "id": "tool_123",
+        },
+    ]
 
 
 def test__expand_inline_reasoning_passes_structured_reasoning_untouched() -> None:
     """A structured `reasoning_content` block passes through unchanged."""
+    lc_content: List[Dict[str, Any]] = [
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {"text": "structured", "signature": "sig"},
+        },
+        {"type": "text", "text": "Final answer."},
+    ]
+
+    expanded = _expand_inline_reasoning(lc_content, "<thinking>", "</thinking>")
+
+    assert expanded == lc_content
 
 
 def test__expand_inline_reasoning_plain_text_block_preserved() -> None:
     """A text block with no tags is preserved as a single text block."""
+    lc_content: List[Dict[str, Any]] = [
+        {"type": "text", "text": "Just a plain answer."},
+    ]
+
+    expanded = _expand_inline_reasoning(lc_content, "<thinking>", "</thinking>")
+
+    assert expanded == [{"type": "text", "text": "Just a plain answer."}]
 
 
 def test__bedrock_to_lc_nova_code_interpreter() -> None:
