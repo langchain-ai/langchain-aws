@@ -527,6 +527,17 @@ def test_cache_control_nova_multi_turn_with_tools() -> None:
     assert r2.content
 
 
+def test_nova_tool_call_no_inline_thinking_leak() -> None:
+    """Nova inline ``<thinking>`` reasoning must not leak into user-facing content.
+
+    Regression test for https://github.com/langchain-ai/langchain-aws/issues/783.
+    Nova narrates its reasoning as inline ``<thinking>...</thinking>`` text (rather
+    than a structured ``reasoningContent`` block) when tools are bound. Drive a tool
+    call, return a tool result, then assert the follow-up response's final ``.content``
+    contains no ``<thinking>`` substring and that the answer text is intact.
+    """
+
+
 @pytest.mark.skip(reason="Needs guardrails setup to run.")
 def test_guardrails() -> None:
     params = {

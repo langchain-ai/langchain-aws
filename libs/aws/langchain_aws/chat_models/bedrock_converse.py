@@ -1072,6 +1072,10 @@ class ChatBedrockConverse(BaseChatModel):
 
         return self.model_id
 
+    def _inline_reasoning_tags_for_model(self) -> Optional[Tuple[str, str]]:
+        """Inline-reasoning ``(open_tag, close_tag)`` for this model, or ``None``."""
+        raise NotImplementedError
+
     def _configure_streaming_for_resolved_model(self) -> None:
         """Configure streaming support after resolving the base model for application inference profiles."""  # noqa: E501
         base_model = self._get_base_model()
@@ -2224,6 +2228,40 @@ def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
         total_tokens=total_tokens,
     )
     return usage
+
+
+def _inline_reasoning_tags(
+    provider: str, model_id_lower: str
+) -> Optional[Tuple[str, str]]:
+    """Return ``(open_tag, close_tag)`` for models that emit inline reasoning as text.
+
+    Each branch encodes observed, undocumented behavior, not an API contract; back new
+    branches with a reproduction.
+    """
+    raise NotImplementedError
+
+
+def _split_inline_reasoning(
+    text: str, open_tag: str, close_tag: str
+) -> List[Dict[str, Any]]:
+    """Split text into ordered text / reasoning_content blocks on complete tag pairs.
+
+    Each ``open_tag ... close_tag`` pair becomes a ``reasoning_content`` block (no
+    ``signature``, so ``_lc_content_to_bedrock`` drops it on round-trips); surrounding
+    text stays as ``text`` blocks.
+    """
+    raise NotImplementedError
+
+
+def _expand_inline_reasoning(
+    lc_content: List[Dict[str, Any]], open_tag: str, close_tag: str
+) -> List[Dict[str, Any]]:
+    """Re-classify inline reasoning markers in the parsed content list.
+
+    Replaces each ``text`` block with the output of :func:`_split_inline_reasoning`;
+    all other blocks pass through unchanged and with their original order.
+    """
+    raise NotImplementedError
 
 
 def _parse_response(response: Dict[str, Any]) -> AIMessage:

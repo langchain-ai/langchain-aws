@@ -1090,6 +1090,42 @@ def test__bedrock_to_lc_nova_reasoning_content() -> None:
     assert expected_lc == actual
 
 
+def test_nova_inline_thinking_excluded_from_text_content() -> None:
+    """Nova inline `<thinking>` is reclassified, not surfaced as text (issue #783)."""
+
+
+def test_claude_style_response_unchanged_through_parse_path() -> None:
+    """A Claude model (no matching inline rule) parses byte-for-byte unchanged.
+
+    Claude resolves to `None`, so the transform is gated off and structured
+    `reasoningContent` is parsed and literal `<thinking>` text is preserved.
+    """
+
+
+def test__inline_reasoning_tags() -> None:
+    """Only Nova models map to inline `<thinking>` tags; everything else -> None."""
+
+
+def test__inline_reasoning_tags_for_model() -> None:
+    """The instance helper resolves tags from this model's provider and base model."""
+
+
+def test__split_inline_reasoning() -> None:
+    """Complete `<thinking>` pairs become `reasoning_content`; other text kept."""
+
+
+def test__expand_inline_reasoning_preserves_tool_use_and_order() -> None:
+    """Inline reasoning in a text block expands in place; tool_use is left untouched."""
+
+
+def test__expand_inline_reasoning_passes_structured_reasoning_untouched() -> None:
+    """A structured `reasoning_content` block passes through unchanged."""
+
+
+def test__expand_inline_reasoning_plain_text_block_preserved() -> None:
+    """A text block with no tags is preserved as a single text block."""
+
+
 def test__bedrock_to_lc_nova_code_interpreter() -> None:
     """Test parsing Nova code interpreter tool blocks."""
     bedrock_content: List[Dict[str, Any]] = [
