@@ -2238,7 +2238,12 @@ def _inline_reasoning_tags(
     Each branch encodes observed, undocumented behavior, not an API contract; back new
     branches with a reproduction.
     """
-    raise NotImplementedError
+    if provider == "amazon" and "nova" in model_id_lower:
+        return ("<thinking>", "</thinking>")
+    # Future, additive only, e.g.:
+    # elif provider == "deepseek" and "r1" in model_id_lower:
+    #     return ("<think>", "</think>")
+    return None
 
 
 def _split_inline_reasoning(

@@ -45,6 +45,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _format_data_content_block,
     _format_tools,
     _has_tool_use_or_result_blocks,
+    _inline_reasoning_tags,
     _lc_content_to_bedrock,
     _messages_to_bedrock,
     _parse_stream_event,
@@ -1102,8 +1103,23 @@ def test_claude_style_response_unchanged_through_parse_path() -> None:
     """
 
 
-def test__inline_reasoning_tags() -> None:
+@pytest.mark.parametrize(
+    "provider, model_id_lower, expected",
+    [
+        # Nova emits inline reasoning -> thinking tags (with/without amazon. prefix).
+        ("amazon", "nova-pro-v1:0", ("<thinking>", "</thinking>")),
+        ("amazon", "amazon.nova-lite-v1:0", ("<thinking>", "</thinking>")),
+        # Non-Nova Amazon models (e.g. Titan) use structured reasoning -> None.
+        ("amazon", "titan-text-express-v1", None),
+        # Other providers (e.g. Anthropic Claude) use structured reasoning -> None.
+        ("anthropic", "claude-3-5-sonnet-20240620-v1:0", None),
+    ],
+)
+def test__inline_reasoning_tags(
+    provider: str, model_id_lower: str, expected: Optional[Tuple[str, str]]
+) -> None:
     """Only Nova models map to inline `<thinking>` tags; everything else -> None."""
+    assert _inline_reasoning_tags(provider, model_id_lower) == expected
 
 
 def test__inline_reasoning_tags_for_model() -> None:
