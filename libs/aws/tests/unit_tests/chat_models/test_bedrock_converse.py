@@ -49,6 +49,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _inline_reasoning_tags,
     _lc_content_to_bedrock,
     _messages_to_bedrock,
+    _parse_response,
     _parse_stream_event,
     _response_format_to_output_config,
     _set_additional_properties_false,
@@ -1095,6 +1096,54 @@ def test__bedrock_to_lc_nova_reasoning_content() -> None:
 
 def test_nova_inline_thinking_excluded_from_text_content() -> None:
     """Nova inline `<thinking>` is reclassified, not surfaced as text (issue #783)."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "ResponseMetadata": {"RequestId": "test-request-id"},
+        "output": {
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "text": (
+                            "<thinking> The query has been executed and the result "
+                            "is that Asia has the highest total population with "
+                            "3705.03 million. </thinking>\n"
+                            "Here is the data in CSV format:\n"
+                            "Continent,Population (M)\nAsia,3705.03"
+                        )
+                    }
+                ],
+            }
+        },
+        "stopReason": "end_turn",
+        "usage": {"inputTokens": 10, "outputTokens": 20, "totalTokens": 30},
+    }
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="us.amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )
+
+    response = llm.invoke([HumanMessage(content="population of Asia as CSV")])
+
+    # User-facing text excludes the reasoning markers and inner reasoning ...
+    text = response.text
+    assert not any(tag in text for tag in ("<thinking>", "</thinking>"))
+    assert "highest total population" not in text
+    # ... while the actual answer is preserved.
+    assert "Here is the data in CSV format:" in text
+    assert "Asia,3705.03" in text
+
+    # The reasoning is relocated into a reasoning_content block (preserved for
+    # audit/governance), not discarded. Confirm the reasoning text itself is there.
+    assert isinstance(response.content, list)
+    reasoning_text = " ".join(
+        block["reasoning_content"].get("text", "")
+        for block in response.content
+        if isinstance(block, dict) and block.get("type") == "reasoning_content"
+    )
+    assert "highest total population" in reasoning_text
+    assert "3705.03 million" in reasoning_text
 
 
 def test_claude_style_response_unchanged_through_parse_path() -> None:
@@ -1103,6 +1152,86 @@ def test_claude_style_response_unchanged_through_parse_path() -> None:
     Claude resolves to `None`, so the transform is gated off and structured
     `reasoningContent` is parsed and literal `<thinking>` text is preserved.
     """
+    # A Claude-style response: a structured reasoning block, a tool_use block, and an
+    # answer whose text happens to contain a literal `<thinking>` substring.
+    claude_content: List[Dict[str, Any]] = [
+        {
+            "reasoningContent": {
+                "reasoningText": {
+                    "text": "Let me reason about this carefully.",
+                    "signature": "sig-abc",
+                }
+            }
+        },
+        {
+            "toolUse": {
+                "toolUseId": "tool_42",
+                "name": "get_weather",
+                "input": {"city": "Seattle"},
+            }
+        },
+        {
+            "text": (
+                "Here is the answer. Note: the literal markup <thinking>kept as "
+                "text</thinking> should stay verbatim for Claude."
+            )
+        },
+    ]
+
+    def _response() -> Dict[str, Any]:
+        return {
+            "ResponseMetadata": {"RequestId": "test-request-id"},
+            "output": {
+                "message": {
+                    "role": "assistant",
+                    "content": [dict(block) for block in claude_content],
+                }
+            },
+            "stopReason": "tool_use",
+            "usage": {"inputTokens": 10, "outputTokens": 20, "totalTokens": 30},
+        }
+
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = _response()
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-5-sonnet-20240620-v1:0",
+        region_name="us-west-2",
+    )
+
+    # Claude has no inline-reasoning rule, so the model gates the transform off ...
+    assert llm._inline_reasoning_tags_for_model() is None
+
+    response = llm.invoke([HumanMessage(content="weather in Seattle")])
+
+    # ... and the parsed content matches the path with the transform explicitly disabled
+    # (byte-for-byte identical to current behavior).
+    baseline = _parse_response(_response(), inline_reasoning_tags=None)
+    assert response.content == baseline.content
+
+    # The structured reasoning block is preserved (not duplicated or altered) and the
+    # literal `<thinking>` markup survives verbatim in the answer text.
+    assert isinstance(response.content, list)
+    reasoning_blocks = [
+        block
+        for block in response.content
+        if isinstance(block, dict) and block.get("type") == "reasoning_content"
+    ]
+    assert reasoning_blocks == [
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {
+                "text": "Let me reason about this carefully.",
+                "signature": "sig-abc",
+            },
+        }
+    ]
+    answer_text = "".join(
+        block["text"]
+        for block in response.content
+        if isinstance(block, dict) and block.get("type") == "text"
+    )
+    assert "<thinking>kept as text</thinking>" in answer_text
 
 
 @pytest.mark.parametrize(

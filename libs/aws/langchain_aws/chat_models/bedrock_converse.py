@@ -1223,7 +1223,10 @@ class ChatBedrockConverse(BaseChatModel):
         except ClientError as e:
             _handle_bedrock_error(e)
         logger.debug(f"Response from Bedrock: {response}")
-        response_message = _parse_response(response)
+        response_message = _parse_response(
+            response,
+            inline_reasoning_tags=self._inline_reasoning_tags_for_model(),
+        )
         response_message.response_metadata["model_provider"] = "bedrock_converse"
         response_message.response_metadata["model_name"] = (
             self.base_model_id or self.model_id
@@ -2309,7 +2312,11 @@ def _expand_inline_reasoning(
     return expanded
 
 
-def _parse_response(response: Dict[str, Any]) -> AIMessage:
+def _parse_response(
+    response: Dict[str, Any],
+    *,
+    inline_reasoning_tags: Optional[Tuple[str, str]] = None,
+) -> AIMessage:
     if "output" not in response:
         raise ValueError(
             "No 'output' key found in the response from the Bedrock Converse API. "
@@ -2319,6 +2326,9 @@ def _parse_response(response: Dict[str, Any]) -> AIMessage:
             "https://docs.aws.amazon.com/general/latest/gr/bedrock.html"
         )
     lc_content = _bedrock_to_lc(response.pop("output")["message"]["content"])
+    if inline_reasoning_tags is not None:
+        open_tag, close_tag = inline_reasoning_tags
+        lc_content = _expand_inline_reasoning(lc_content, open_tag, close_tag)
     tool_calls = _extract_tool_calls(lc_content)
     usage = _extract_usage_metadata(response)
     return AIMessage(
