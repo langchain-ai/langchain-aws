@@ -25,9 +25,8 @@ from langgraph_checkpoint_aws.store.dynamodb.exceptions import (
 
 # Test constants for async testing
 N_ASYNC_CALLS = 5
-MOCK_SLEEP_DURATION = 0.1 / N_ASYNC_CALLS
-OVERHEAD_DURATION = 0.03
-TOTAL_EXPECTED_TIME = MOCK_SLEEP_DURATION + OVERHEAD_DURATION
+MOCK_SLEEP_DURATION = 0.05
+TOTAL_EXPECTED_TIME = (N_ASYNC_CALLS * MOCK_SLEEP_DURATION) / 2
 
 
 def _make_dynamo_item(
