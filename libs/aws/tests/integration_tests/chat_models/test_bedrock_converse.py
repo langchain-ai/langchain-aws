@@ -410,7 +410,10 @@ def test_tool_use_with_cache_point() -> None:
     assert response.usage_metadata is not None
     input_token_details = response.usage_metadata.get("input_token_details")
     if input_token_details:
-        cache_write_input_tokens = input_token_details.get("cache_creation", 0)
+        cache_write_input_tokens = input_token_details.get("cache_creation", 0) or (
+            input_token_details.get("ephemeral_5m_input_tokens", 0)
+            + input_token_details.get("ephemeral_1h_input_tokens", 0)  # type: ignore[operator]
+        )
         assert cache_write_input_tokens > 0, (
             f"Expected cache write on first call, got {cache_write_input_tokens}"
         )
@@ -444,7 +447,10 @@ def test_cache_control_anthropic() -> None:
     assert isinstance(r1, AIMessage)
     assert r1.usage_metadata is not None
     details = r1.usage_metadata.get("input_token_details", {})
-    cache_write = details.get("cache_creation", 0) or 0
+    cache_write = details.get("cache_creation", 0) or (
+        details.get("ephemeral_5m_input_tokens", 0)
+        + details.get("ephemeral_1h_input_tokens", 0)  # type: ignore[operator]
+    )
     assert cache_write > 0, f"Expected cache write on first call, got {cache_write}"
 
 
@@ -490,7 +496,10 @@ def test_cache_control_nova() -> None:
     assert isinstance(r1, AIMessage)
     assert r1.usage_metadata is not None
     details = r1.usage_metadata.get("input_token_details", {})
-    cache_write = details.get("cache_creation", 0) or 0
+    cache_write = details.get("cache_creation", 0) or (
+        details.get("ephemeral_5m_input_tokens", 0)
+        + details.get("ephemeral_1h_input_tokens", 0)  # type: ignore[operator]
+    )
     assert cache_write > 0, f"Expected cache write on first call, got {cache_write}"
 
 
