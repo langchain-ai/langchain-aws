@@ -1124,6 +1124,19 @@ def test__inline_reasoning_tags(
 
 def test__inline_reasoning_tags_for_model() -> None:
     """The instance helper resolves tags from this model's provider and base model."""
+    nova = ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )
+    assert nova._inline_reasoning_tags_for_model() == ("<thinking>", "</thinking>")
+
+    titan = ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="amazon.titan-text-express-v1",
+        region_name="us-west-2",
+    )
+    assert titan._inline_reasoning_tags_for_model() is None
 
 
 def test__split_inline_reasoning() -> None:

@@ -1074,7 +1074,7 @@ class ChatBedrockConverse(BaseChatModel):
 
     def _inline_reasoning_tags_for_model(self) -> Optional[Tuple[str, str]]:
         """Inline-reasoning ``(open_tag, close_tag)`` for this model, or ``None``."""
-        raise NotImplementedError
+        return _inline_reasoning_tags(self.provider, self._get_base_model().lower())
 
     def _configure_streaming_for_resolved_model(self) -> None:
         """Configure streaming support after resolving the base model for application inference profiles."""  # noqa: E501
