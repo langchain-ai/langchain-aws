@@ -19,6 +19,7 @@ from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
+from langchain_aws._version import _add_langchain_aws_version
 from langchain_aws.utils import ContentHandlerBase, create_aws_client
 
 logger = logging.getLogger(__name__)
@@ -303,6 +304,7 @@ class SagemakerEndpoint(LLM):
                 service_name="sagemaker-runtime",
             )
 
+        _add_langchain_aws_version(self)
         return self
 
     @property

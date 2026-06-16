@@ -439,7 +439,7 @@ class AgentCoreSandbox(BaseSandbox):
     def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
         """Upload files to the AgentCore sandbox.
 
-        Text files are sent directly; binary files are base64-encoded.
+        Text files are sent directly; binary files are sent as raw blobs.
 
         Args:
             files: List of ``(path, content)`` tuples to upload.
@@ -448,7 +448,7 @@ class AgentCoreSandbox(BaseSandbox):
             List of :class:`FileUploadResponse` objects in the same order
             as the input files.
         """
-        file_list: list[dict[str, str]] = []
+        file_list: list[dict[str, str | bytes]] = []
 
         for path, content in files:
             rel_path = self._to_relative_path(path)
@@ -456,8 +456,7 @@ class AgentCoreSandbox(BaseSandbox):
                 text_content = content.decode("utf-8")
                 file_list.append({"path": rel_path, "text": text_content})
             except UnicodeDecodeError:
-                encoded = base64.b64encode(content).decode("ascii")
-                file_list.append({"path": rel_path, "blob": encoded})
+                file_list.append({"path": rel_path, "blob": content})
 
         try:
             if file_list:
