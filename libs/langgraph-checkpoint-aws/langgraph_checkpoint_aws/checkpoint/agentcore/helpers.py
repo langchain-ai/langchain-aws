@@ -47,6 +47,11 @@ DEFAULT_MAX_RETRIES = 3
 DEFAULT_INITIAL_BACKOFF = 0.1  # 100ms
 DEFAULT_MAX_BACKOFF = 2.0  # 2 seconds
 
+# AgentCore CreateEvent API limits
+# https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_CreateEvent.html
+MAX_PAYLOAD_ITEMS_PER_EVENT = 100  # max items in payload array
+MAX_PAYLOAD_BYTES_PER_EVENT = 10_000_000  # 10 MB max event size
+
 
 class BedrockAgentCoreClientWithRetry:
     """Wrapper around bedrock-agentcore client with retry logic.
@@ -273,25 +278,82 @@ class AgentCoreEventClient:
         )
 
     def store_blob_events_batch(
-        self, events: list[EventType], session_id: str, actor_id: str
+        self,
+        events: list[EventType],
+        session_id: str,
+        actor_id: str,
+        *,
+        max_payload_items: int = MAX_PAYLOAD_ITEMS_PER_EVENT,
+        max_payload_bytes: int = MAX_PAYLOAD_BYTES_PER_EVENT,
     ) -> None:
-        """Store multiple events in a single API call to AgentCore Memory."""
-        # Serialize all events into payload blobs
-        payload = []
+        """Store multiple events, chunking into multiple API calls if needed.
+
+        AgentCore's ``create_event`` API enforces limits on the payload
+        array (max 100 items) and overall request size (~10 MB).  When the
+        batch exceeds either limit, it is split into the fewest possible
+        chunks that each stay within bounds.
+
+        Args:
+            events: The events to store.
+            session_id: The session ID to store events under.
+            actor_id: The actor ID to store events under.
+            max_payload_items: Maximum number of payload blobs per API call.
+            max_payload_bytes: Maximum total serialized bytes per API call.
+        """
+        blobs = [self.serializer.serialize_event(event) for event in events]
+        chunks = self._chunk_payload(blobs, max_payload_items, max_payload_bytes)
         timestamp = datetime.datetime.now(datetime.timezone.utc)
 
-        for event in events:
-            serialized = self.serializer.serialize_event(event)
-            payload.append({"blob": serialized})
+        for chunk in chunks:
+            payload = [{"blob": b} for b in chunk]
+            self.client.create_event(
+                memoryId=self.memory_id,
+                actorId=actor_id,
+                sessionId=session_id,
+                eventTimestamp=timestamp,
+                payload=payload,
+            )
 
-        # Store all events in a single create_event call
-        self.client.create_event(
-            memoryId=self.memory_id,
-            actorId=actor_id,
-            sessionId=session_id,
-            eventTimestamp=timestamp,
-            payload=payload,
-        )
+    @staticmethod
+    def _chunk_payload(
+        blobs: list[str],
+        max_items: int,
+        max_bytes: int,
+    ) -> list[list[str]]:
+        """Split serialized blobs into chunks respecting item count and byte size.
+
+        Args:
+            blobs: Serialized event strings.
+            max_items: Maximum number of blobs per chunk.
+            max_bytes: Maximum total byte size per chunk.
+
+        Returns:
+            List of chunks, each chunk is a list of blob strings.
+        """
+        if not blobs:
+            return []
+
+        chunks: list[list[str]] = []
+        current_chunk: list[str] = []
+        current_bytes = 0
+
+        for blob in blobs:
+            blob_size = len(blob.encode("utf-8"))
+
+            if current_chunk and (
+                len(current_chunk) >= max_items or current_bytes + blob_size > max_bytes
+            ):
+                chunks.append(current_chunk)
+                current_chunk = []
+                current_bytes = 0
+
+            current_chunk.append(blob)
+            current_bytes += blob_size
+
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        return chunks
 
     def get_events(
         self,
