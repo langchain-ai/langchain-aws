@@ -537,6 +537,35 @@ def test_nova_tool_call_no_inline_thinking_leak() -> None:
     contains no ``<thinking>`` substring and that the answer text is intact.
     """
 
+    @tool
+    def get_population(continent: str) -> str:
+        """Get the population of a continent in millions."""
+        return "3705.03"
+
+    llm = ChatBedrockConverse(model="us.amazon.nova-pro-v1:0", temperature=0)
+    llm_with_tools = llm.bind_tools([get_population], tool_choice="any")
+
+    messages: list = [
+        HumanMessage(content="What is the population of Asia? Use the tool.")
+    ]
+    tool_call_message = llm_with_tools.invoke(messages)
+    assert isinstance(tool_call_message, AIMessage)
+    assert len(tool_call_message.tool_calls) >= 1
+
+    messages.append(tool_call_message)
+    for tc in tool_call_message.tool_calls:
+        messages.append(get_population.invoke(tc))
+
+    response = llm.bind_tools([get_population]).invoke(messages)
+    assert isinstance(response, AIMessage)
+
+    text = response.text
+    # Leaked reasoning markers must never appear in user-facing text, and the answer
+    # itself must survive the reclassification.
+    assert not any(tag in text for tag in ("<thinking>", "</thinking>"))
+    assert text.strip()
+    assert any(value in text for value in ("3705", "3,705"))
+
 
 @pytest.mark.skip(reason="Needs guardrails setup to run.")
 def test_guardrails() -> None:
