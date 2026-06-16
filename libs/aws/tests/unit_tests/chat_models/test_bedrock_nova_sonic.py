@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from langchain_aws._version import __version__
+
 # Mock the aws_sdk_bedrock_runtime before importing the module under test
 mock_sdk_module = MagicMock()
 mock_sdk_models = MagicMock()
@@ -93,6 +95,15 @@ class TestChatBedrockNovaSonicInit:
         mod = _import_module()
         model = mod.ChatBedrockNovaSonic()
         assert model._llm_type == "amazon_bedrock_nova_sonic"
+
+    def test_adds_langchain_aws_version_metadata(self) -> None:
+        mod = _import_module()
+        model = mod.ChatBedrockNovaSonic(
+            metadata={"lc_versions": {"user-package": "1.2.3"}}
+        )
+        assert model.metadata is not None
+        assert model.metadata["lc_versions"]["langchain-aws"] == __version__
+        assert model.metadata["lc_versions"]["user-package"] == "1.2.3"
 
 
 # ---------------------------------------------------------------------------

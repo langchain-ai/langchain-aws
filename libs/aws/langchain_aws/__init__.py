@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, Any
 
+from langchain_aws._version import __version__
 from langchain_aws.chat_models import ChatBedrock, ChatBedrockConverse
 from langchain_aws.llms import BedrockLLM, SagemakerEndpoint
 from langchain_aws.retrievers import (
@@ -79,6 +80,7 @@ except Exception:
 
 
 __all__ = [
+    "__version__",
     "BedrockEmbeddings",
     "BedrockLLM",
     "ChatAnthropicBedrock",
