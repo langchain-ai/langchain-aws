@@ -1,0 +1,21 @@
+libs/aws/langchain_aws/chat_models/bedrock.py
+  s_a58a6f90e62880::t_73b0332eadb462 840-841
+libs/aws/langchain_aws/middleware/prompt_caching.py
+  s_a58a6f90e62880::t_3f199212080d1e 41-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "a625bacd5b5f2bfce50dcc864a53d63a718fa0ef",
+  "prompts": {},
+  "sessions": {
+    "s_a58a6f90e62880": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "83605b4c-7358-4650-a1dd-ecb8459b5c61",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Mason Daugherty <github@mdrxy.com>"
+    }
+  }
+}
