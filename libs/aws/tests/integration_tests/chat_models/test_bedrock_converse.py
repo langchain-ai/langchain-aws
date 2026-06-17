@@ -560,11 +560,14 @@ def test_nova_tool_call_no_inline_thinking_leak() -> None:
     assert isinstance(response, AIMessage)
 
     text = response.text
-    # Leaked reasoning markers must never appear in user-facing text, and the answer
-    # itself must survive the reclassification.
+    # The post-fix invariant: leaked reasoning markers must never appear in
+    # user-facing text, whether or not the model leaked on this run.
     assert not any(tag in text for tag in ("<thinking>", "</thinking>"))
+    # And the answer itself must survive the reclassification (non-empty text).
+    # We intentionally don't assert on the specific population value, since the
+    # model's phrasing (e.g. "3.7 billion") is non-deterministic and isn't what
+    # this test verifies.
     assert text.strip()
-    assert any(value in text for value in ("3705", "3,705"))
 
 
 @pytest.mark.skip(reason="Needs guardrails setup to run.")
