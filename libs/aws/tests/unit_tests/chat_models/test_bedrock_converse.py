@@ -1134,8 +1134,8 @@ def test_nova_inline_thinking_excluded_from_text_content() -> None:
     assert "Here is the data in CSV format:" in text
     assert "Asia,3705.03" in text
 
-    # The reasoning is relocated into a reasoning_content block (preserved for
-    # audit/governance), not discarded. Confirm the reasoning text itself is there.
+    # The reasoning is relocated into a reasoning_content block. Confirm the
+    # reasoning text itself is there.
     assert isinstance(response.content, list)
     reasoning_text = " ".join(
         block["reasoning_content"].get("text", "")
