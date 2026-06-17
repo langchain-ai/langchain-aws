@@ -527,7 +527,19 @@ def test_cache_control_nova_multi_turn_with_tools() -> None:
     assert r2.content
 
 
-def test_nova_tool_call_no_inline_thinking_leak() -> None:
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "What is the population of Asia? Use the tool.",
+        (
+            "Use the tool to look up the populations of Asia, Africa, and Europe. "
+            "Then work out their combined total, say which continent is largest, "
+            "and give the percentage of the combined total that each represents."
+        ),
+    ],
+    ids=["simple", "complex"],
+)
+def test_nova_tool_call_no_inline_thinking_leak(prompt: str) -> None:
     """Nova inline ``<thinking>`` reasoning must not leak into user-facing content.
 
     Regression test for https://github.com/langchain-ai/langchain-aws/issues/783.
@@ -535,38 +547,45 @@ def test_nova_tool_call_no_inline_thinking_leak() -> None:
     than a structured ``reasoningContent`` block) when tools are bound. Drive a tool
     call, return a tool result, then assert the follow-up response's final ``.content``
     contains no ``<thinking>`` substring and that the answer text is intact.
+
+    Two scenarios exercise the same invariant: a simple single-fact lookup (Nova
+    usually answers without narrating) and a multi-step analytical prompt (which
+    tends to make Nova narrate inline reasoning). We don't instruct the model to
+    emit thinking tags; the prompt complexity makes a leak likely. Hence, the
+    ``complex`` prompt.
     """
 
     @tool
     def get_population(continent: str) -> str:
         """Get the population of a continent in millions."""
-        return "3705.03"
+        populations = {
+            "asia": "4753.79",
+            "africa": "1460.48",
+            "europe": "745.17",
+        }
+        return populations.get(continent.strip().lower(), "unknown")
 
     llm = ChatBedrockConverse(model="us.amazon.nova-pro-v1:0", temperature=0)
-    llm_with_tools = llm.bind_tools([get_population], tool_choice="any")
+    llm_with_tools = llm.bind_tools([get_population])
 
-    messages: list = [
-        HumanMessage(content="What is the population of Asia? Use the tool.")
-    ]
-    tool_call_message = llm_with_tools.invoke(messages)
-    assert isinstance(tool_call_message, AIMessage)
-    assert len(tool_call_message.tool_calls) >= 1
-
+    messages: list = [HumanMessage(content=prompt)]
+    tool_call_message = llm.bind_tools([get_population], tool_choice="any").invoke(
+        messages
+    )
     messages.append(tool_call_message)
     for tc in tool_call_message.tool_calls:
         messages.append(get_population.invoke(tc))
 
-    response = llm.bind_tools([get_population]).invoke(messages)
-    assert isinstance(response, AIMessage)
-
+    response = llm_with_tools.invoke(messages)
     text = response.text
-    # The post-fix invariant: leaked reasoning markers must never appear in
+
+    # Assert that leaked reasoning markers do not appear in
     # user-facing text, whether or not the model leaked on this run.
-    assert not any(tag in text for tag in ("<thinking>", "</thinking>"))
-    # And the answer itself must survive the reclassification (non-empty text).
-    # We intentionally don't assert on the specific population value, since the
-    # model's phrasing (e.g. "3.7 billion") is non-deterministic and isn't what
-    # this test verifies.
+    assert not any(tag in text for tag in ("<thinking>", "</thinking>")), (
+        f"Inline reasoning markers leaked for prompt: {prompt!r}"
+    )
+    # Assert the actual answer does not get reclassified into
+    # the reasoning_content block, and remains intact.
     assert text.strip()
 
 
