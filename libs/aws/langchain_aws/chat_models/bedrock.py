@@ -837,7 +837,8 @@ def _apply_cache_control_to_messages(
     cache_control: Optional[Dict[str, Any]],
     formatted_messages: Optional[List[Dict[str, Any]]],
 ) -> None:
-    """Apply cache_control to the last content block of the last message."""
+    """Apply cache_control to the last content block of the latest message with
+    cacheable content."""
     if not cache_control or not formatted_messages:
         return
     for fmt_msg in reversed(formatted_messages):
