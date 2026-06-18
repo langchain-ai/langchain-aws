@@ -2241,7 +2241,8 @@ def _inline_reasoning_tags(
     Each branch encodes observed, undocumented behavior, not an API contract; back new
     branches with a reproduction.
     """
-    if provider == "amazon" and "nova" in model_id_lower:
+    is_nova_v1 = "nova" in model_id_lower and "nova-2" not in model_id_lower
+    if provider == "amazon" and is_nova_v1:
         return ("<thinking>", "</thinking>")
     # Future, additive only, e.g.:
     # elif provider == "deepseek" and "r1" in model_id_lower:
