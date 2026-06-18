@@ -2259,6 +2259,8 @@ def _split_inline_reasoning(
     ``signature``, so ``_lc_content_to_bedrock`` drops it on round-trips); surrounding
     text stays as ``text`` blocks.
     """
+    if open_tag not in text:
+        return [{"type": "text", "text": text}]
     pattern = re.compile(
         re.escape(open_tag) + r"(.*?)" + re.escape(close_tag), re.DOTALL
     )
