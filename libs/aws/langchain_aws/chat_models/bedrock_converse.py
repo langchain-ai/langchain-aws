@@ -1072,6 +1072,10 @@ class ChatBedrockConverse(BaseChatModel):
 
         return self.model_id
 
+    def _inline_reasoning_tags_for_model(self) -> Optional[Tuple[str, str]]:
+        """Inline-reasoning ``(open_tag, close_tag)`` for this model, or ``None``."""
+        return _inline_reasoning_tags(self.provider, self._get_base_model().lower())
+
     def _configure_streaming_for_resolved_model(self) -> None:
         """Configure streaming support after resolving the base model for application inference profiles."""  # noqa: E501
         base_model = self._get_base_model()
@@ -1219,7 +1223,10 @@ class ChatBedrockConverse(BaseChatModel):
         except ClientError as e:
             _handle_bedrock_error(e)
         logger.debug(f"Response from Bedrock: {response}")
-        response_message = _parse_response(response)
+        response_message = _parse_response(
+            response,
+            inline_reasoning_tags=self._inline_reasoning_tags_for_model(),
+        )
         response_message.response_metadata["model_provider"] = "bedrock_converse"
         response_message.response_metadata["model_name"] = (
             self.base_model_id or self.model_id
@@ -2226,7 +2233,93 @@ def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
     return usage
 
 
-def _parse_response(response: Dict[str, Any]) -> AIMessage:
+def _inline_reasoning_tags(
+    provider: str, model_id_lower: str
+) -> Optional[Tuple[str, str]]:
+    """Return ``(open_tag, close_tag)`` for models that emit inline reasoning as text.
+
+    Each branch encodes observed, undocumented behavior, not an API contract; back new
+    branches with a reproduction.
+    """
+    is_nova_v1 = "nova" in model_id_lower and "nova-2" not in model_id_lower
+    if provider == "amazon" and is_nova_v1:
+        return ("<thinking>", "</thinking>")
+    # Future, additive only, e.g.:
+    # elif provider == "deepseek" and "r1" in model_id_lower:
+    #     return ("<think>", "</think>")
+    return None
+
+
+def _split_inline_reasoning(
+    text: str, open_tag: str, close_tag: str
+) -> List[Dict[str, Any]]:
+    """Split text into ordered text / reasoning_content blocks on complete tag pairs.
+
+    Each ``open_tag ... close_tag`` pair becomes a ``reasoning_content`` block (no
+    ``signature``, so ``_lc_content_to_bedrock`` drops it on round-trips); surrounding
+    text stays as ``text`` blocks.
+    """
+    if open_tag not in text:
+        return [{"type": "text", "text": text}]
+    pattern = re.compile(
+        re.escape(open_tag) + r"(.*?)" + re.escape(close_tag), re.DOTALL
+    )
+
+    blocks: List[Dict[str, Any]] = []
+    last_end = 0
+    found_pair = False
+
+    for match in pattern.finditer(text):
+        found_pair = True
+        # Text preceding this reasoning pair -> text block (drop blank-only segments).
+        leading = text[last_end : match.start()]
+        if leading.strip():
+            blocks.append({"type": "text", "text": leading})
+
+        inner = match.group(1).strip()
+        if inner:
+            blocks.append(
+                {
+                    "type": "reasoning_content",
+                    "reasoning_content": {"text": inner},
+                }
+            )
+        last_end = match.end()
+
+    # No complete pair: return the original text unchanged.
+    if not found_pair:
+        return [{"type": "text", "text": text}]
+
+    # Trailing text after the final reasoning pair (drop blank-only segments).
+    trailing = text[last_end:]
+    if trailing.strip():
+        blocks.append({"type": "text", "text": trailing})
+
+    return blocks
+
+
+def _expand_inline_reasoning(
+    lc_content: List[Dict[str, Any]], open_tag: str, close_tag: str
+) -> List[Dict[str, Any]]:
+    """Re-classify inline reasoning markers in the parsed content list.
+
+    Replaces each ``text`` block with the output of :func:`_split_inline_reasoning`;
+    all other blocks pass through unchanged and with their original order.
+    """
+    expanded: List[Dict[str, Any]] = []
+    for block in lc_content:
+        if block.get("type") == "text":
+            expanded.extend(_split_inline_reasoning(block["text"], open_tag, close_tag))
+        else:
+            expanded.append(block)
+    return expanded
+
+
+def _parse_response(
+    response: Dict[str, Any],
+    *,
+    inline_reasoning_tags: Optional[Tuple[str, str]] = None,
+) -> AIMessage:
     if "output" not in response:
         raise ValueError(
             "No 'output' key found in the response from the Bedrock Converse API. "
@@ -2236,6 +2329,9 @@ def _parse_response(response: Dict[str, Any]) -> AIMessage:
             "https://docs.aws.amazon.com/general/latest/gr/bedrock.html"
         )
     lc_content = _bedrock_to_lc(response.pop("output")["message"]["content"])
+    if inline_reasoning_tags is not None:
+        open_tag, close_tag = inline_reasoning_tags
+        lc_content = _expand_inline_reasoning(lc_content, open_tag, close_tag)
     tool_calls = _extract_tool_calls(lc_content)
     usage = _extract_usage_metadata(response)
     return AIMessage(
