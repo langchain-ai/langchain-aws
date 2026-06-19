@@ -102,10 +102,6 @@ class TestBedrockStandard(ChatModelUnitTests):
             },
         )
 
-    @pytest.mark.xfail(reason="Doesn't support streaming init param.")
-    def test_init_streaming(self) -> None:
-        super().test_init_streaming()
-
     @pytest.mark.xfail(reason="Pending mapping + init validator in core")
     def test_serdes(self, model: BaseChatModel, snapshot: SnapshotAssertion) -> None:
         super().test_serdes(model, snapshot)
@@ -787,6 +783,31 @@ def test_set_disable_streaming(
 ) -> None:
     llm = ChatBedrockConverse(model=model_id, region_name="us-west-2")
     assert llm.disable_streaming == disable_streaming
+
+
+def test_streaming_init_param() -> None:
+    """``streaming=True`` is accepted as a backward-compatible init param.
+
+    It must be captured as a first-class field that LangChain Core honors (i.e.
+    present in ``model_fields_set``), not silently routed into
+    ``additional_model_request_fields`` as an unknown model parameter.
+    """
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        streaming=True,
+    )
+    assert llm.streaming is True
+    assert "streaming" in llm.model_fields_set
+    assert "streaming" not in (llm.additional_model_request_fields or {})
+
+    # Defaults to False and leaves disable_streaming auto-config intact.
+    default = ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+    assert default.streaming is False
+    assert default.disable_streaming is False
 
 
 def test__extract_response_metadata() -> None:
