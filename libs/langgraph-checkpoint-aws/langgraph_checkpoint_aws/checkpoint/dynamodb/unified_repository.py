@@ -641,8 +641,11 @@ class UnifiedRepository:
 
         # Each write targets an independent item, so the per-item conditional
         # put (`attribute_not_exists`) semantics are unaffected by ordering.
-        # Concurrency is capped at boto3's default connection-pool size to
-        # avoid exhausting the shared client's urllib3 pool.
+        # Concurrency is capped at boto3's *default* connection-pool size
+        # (`max_pool_connections=10`) to avoid exhausting the shared client's
+        # urllib3 pool. This is intentionally the default rather than the
+        # client's configured value, since the configured pool size isn't
+        # introspectable from the client here; 10 is a safe conservative cap.
         max_workers = min(len(write_items), 10)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
