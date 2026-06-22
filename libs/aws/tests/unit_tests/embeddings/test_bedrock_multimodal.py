@@ -274,6 +274,14 @@ class TestMediaInputNormalization:
         with pytest.raises(ValueError, match="Could not interpret input"):
             embeddings._load_media("not a path", "image")
 
+    def test_load_wrapped_base64_rejected(self) -> None:
+        embeddings = BedrockEmbeddings(model_id="amazon.titan-embed-image-v1")
+        wrapped = base64.encodebytes(JPEG_BYTES * 2).decode("utf-8")
+        assert "\n" in wrapped.strip()
+
+        with pytest.raises(ValueError, match="Could not interpret input"):
+            embeddings._load_media(wrapped, "image")
+
 
 class TestImageRequestBuilders:
     """Test _build_image_request for each provider."""
