@@ -1,0 +1,26 @@
+libs/aws/tests/integration_tests/chat_models/test_bedrock_converse.py
+  h_9f69767fa5fabf 74,76-78,210
+  s_aa09299dfa98a4::t_bb09e4a56d174d 73,75,79-85
+  s_aa09299dfa98a4::t_647c648e2d0cf2 211-213,215-219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.9",
+  "base_commit_sha": "19b90fad388f562be682efbad968013eb0836baa",
+  "prompts": {},
+  "humans": {
+    "h_9f69767fa5fabf": {
+      "author": "Mason Daugherty <github@mdrxy.com>"
+    }
+  },
+  "sessions": {
+    "s_aa09299dfa98a4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4f2ff7f8-4793-4f0b-8d29-38dfd8712c37",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Mason Daugherty <github@mdrxy.com>"
+    }
+  }
+}
