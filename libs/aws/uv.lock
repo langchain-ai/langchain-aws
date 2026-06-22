@@ -1072,6 +1072,9 @@ anthropic = [
     { name = "anthropic", extra = ["bedrock"] },
     { name = "langchain-anthropic" },
 ]
+batch = [
+    { name = "langgraph" },
+]
 nova-sonic = [
     { name = "aws-sdk-bedrock-runtime", marker = "python_full_version >= '3.12'" },
 ]
@@ -1129,12 +1132,13 @@ requires-dist = [
     { name = "boto3", specifier = ">=1.42.42" },
     { name = "langchain-anthropic", marker = "extra == 'anthropic'" },
     { name = "langchain-core", specifier = ">=1.4.7" },
+    { name = "langgraph", marker = "extra == 'batch'", specifier = ">=1.0.0" },
     { name = "numpy", specifier = ">=1.0.0,<3" },
     { name = "playwright", marker = "extra == 'tools'", specifier = ">=1.53.0" },
     { name = "pydantic", specifier = ">=2.10.6,<3" },
     { name = "valkey-glide-sync", marker = "extra == 'valkey'", specifier = ">=2.0.0" },
 ]
-provides-extras = ["tools", "anthropic", "valkey", "nova-sonic"]
+provides-extras = ["tools", "anthropic", "valkey", "nova-sonic", "batch"]
 
 [package.metadata.requires-dev]
 dev = [
