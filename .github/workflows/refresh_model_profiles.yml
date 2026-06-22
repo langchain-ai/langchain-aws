@@ -24,5 +24,5 @@ jobs:
           {"provider":"amazon-bedrock", "data_dir":"libs/aws/langchain_aws/data"}
         ]
     secrets:
-      MODEL_PROFILE_BOT_APP_ID: ${{ secrets.MODEL_PROFILE_BOT_APP_ID }}
+      MODEL_PROFILE_BOT_CLIENT_ID: ${{ secrets.MODEL_PROFILE_BOT_CLIENT_ID }}
       MODEL_PROFILE_BOT_PRIVATE_KEY: ${{ secrets.MODEL_PROFILE_BOT_PRIVATE_KEY }}
