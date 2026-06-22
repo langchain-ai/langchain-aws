@@ -70,7 +70,19 @@ class TestBedrockMistralStandard(ChatModelIntegrationTests):
     def has_tool_choice(self) -> bool:
         return False
 
-    @pytest.mark.xfail(reason="Human messages following AI messages not supported.")
+    # This standard test feeds back an AIMessage whose content mixes a text
+    # block and a `tool_use` block in a single assistant turn. Mistral models on
+    # Bedrock reject that turn shape with
+    # `ValidationException: messages.1.content: Conversation blocks and tool use
+    # blocks cannot be provided in the same turn` (Anthropic models accept it, so
+    # the conversion in `_messages_to_bedrock` is correct and must not change).
+    @pytest.mark.xfail(
+        reason=(
+            "Mistral on Bedrock rejects an assistant turn that mixes text and "
+            "tool_use blocks: 'Conversation blocks and tool use blocks cannot be "
+            "provided in the same turn'."
+        )
+    )
     def test_tool_message_histories_list_content(
         self, model: BaseChatModel, my_adder_tool: BaseTool
     ) -> None:
@@ -195,8 +207,16 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
     def test_tool_calling_with_no_arguments(self, model: BaseChatModel) -> None:
         pass
 
+    # See `TestBedrockMistralStandard` above: the synthetic history mixes a text
+    # block and a tool_use block in one assistant turn, which Meta models on Bedrock
+    # reject with 'Conversation blocks and tool use blocks cannot be provided in the
+    # same turn' (Anthropic models accept it).
     @pytest.mark.xfail(
-        reason="Human messages following AI messages not supported by Bedrock."
+        reason=(
+            "Meta on Bedrock rejects an assistant turn that mixes text and "
+            "tool_use blocks: 'Conversation blocks and tool use blocks cannot be "
+            "provided in the same turn'."
+        )
     )
     def test_tool_message_histories_list_content(
         self, model: BaseChatModel, my_adder_tool: BaseTool
