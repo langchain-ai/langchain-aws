@@ -558,12 +558,7 @@ class ChatBedrockConverse(BaseChatModel):
     """
 
     streaming: bool = False
-    """Whether to stream the results or not.
-
-    Kept for backward compatibility with ``ChatBedrock``. When ``True``, LangChain
-    Core will use the streaming path for ``invoke``/``ainvoke`` (subject to
-    :attr:`disable_streaming`, which still governs per-model capability).
-    """
+    """Whether to stream the results or not."""
 
     endpoint_url: Optional[str] = Field(default=None, alias="base_url")
     """Needed if you don't want to default to us-east-1 endpoint"""
