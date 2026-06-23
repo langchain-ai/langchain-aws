@@ -786,12 +786,6 @@ def test_set_disable_streaming(
 
 
 def test_streaming_init_param() -> None:
-    """``streaming=True`` is accepted as a backward-compatible init param.
-
-    It must be captured as a first-class field that LangChain Core honors (i.e.
-    present in ``model_fields_set``), not silently routed into
-    ``additional_model_request_fields`` as an unknown model parameter.
-    """
     llm = ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0",
         region_name="us-west-2",
