@@ -557,6 +557,9 @@ class ChatBedrockConverse(BaseChatModel):
 
     """
 
+    streaming: bool = False
+    """Whether to stream the results or not."""
+
     endpoint_url: Optional[str] = Field(default=None, alias="base_url")
     """Needed if you don't want to default to us-east-1 endpoint"""
 

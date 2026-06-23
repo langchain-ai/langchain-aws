@@ -102,10 +102,6 @@ class TestBedrockStandard(ChatModelUnitTests):
             },
         )
 
-    @pytest.mark.xfail(reason="Doesn't support streaming init param.")
-    def test_init_streaming(self) -> None:
-        super().test_init_streaming()
-
     @pytest.mark.xfail(reason="Pending mapping + init validator in core")
     def test_serdes(self, model: BaseChatModel, snapshot: SnapshotAssertion) -> None:
         super().test_serdes(model, snapshot)
@@ -787,6 +783,25 @@ def test_set_disable_streaming(
 ) -> None:
     llm = ChatBedrockConverse(model=model_id, region_name="us-west-2")
     assert llm.disable_streaming == disable_streaming
+
+
+def test_streaming_init_param() -> None:
+    model_id = "anthropic.claude-sonnet-4-6"
+
+    llm = ChatBedrockConverse(
+        model=model_id,
+        region_name="us-west-2",
+        streaming=True,
+    )
+    assert llm.streaming is True
+    assert "streaming" not in (llm.additional_model_request_fields or {})
+
+    # Unset -> defaults to False (Core then falls back to its default behavior).
+    default = ChatBedrockConverse(
+        model=model_id,
+        region_name="us-west-2",
+    )
+    assert default.streaming is False
 
 
 def test__extract_response_metadata() -> None:
