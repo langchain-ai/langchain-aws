@@ -786,22 +786,23 @@ def test_set_disable_streaming(
 
 
 def test_streaming_init_param() -> None:
-    llm = ChatBedrockConverse(
-        model="anthropic.claude-3-sonnet-20240229-v1:0",
+    model_id = "anthropic.claude-fable-5"
+
+    streaming = ChatBedrockConverse(
+        model=model_id, region_name="us-west-2", streaming=True
+    )
+    assert streaming._should_stream(async_api=False) is True
+
+    default = ChatBedrockConverse(model=model_id, region_name="us-west-2")
+    assert default._should_stream(async_api=False) is False
+
+    disabled = ChatBedrockConverse(
+        model=model_id,
         region_name="us-west-2",
         streaming=True,
+        disable_streaming=True,
     )
-    assert llm.streaming is True
-    assert "streaming" in llm.model_fields_set
-    assert "streaming" not in (llm.additional_model_request_fields or {})
-
-    # Defaults to False and leaves disable_streaming auto-config intact.
-    default = ChatBedrockConverse(
-        model="anthropic.claude-3-sonnet-20240229-v1:0",
-        region_name="us-west-2",
-    )
-    assert default.streaming is False
-    assert default.disable_streaming is False
+    assert disabled._should_stream(async_api=False) is False
 
 
 def test__extract_response_metadata() -> None:
