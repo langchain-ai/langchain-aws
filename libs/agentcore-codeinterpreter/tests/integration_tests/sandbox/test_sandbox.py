@@ -37,10 +37,10 @@ def sandbox() -> Iterator[AgentCoreSandbox]:
         interpreter.stop()
 
 
-#@pytest.mark.skipif(
-#    not os.environ.get("AWS_DEFAULT_REGION") and not os.environ.get("AWS_REGION"),
-#    reason=_SKIP_REASON,
-#)
+@pytest.mark.skipif(
+    not os.environ.get("AWS_DEFAULT_REGION") and not os.environ.get("AWS_REGION"),
+    reason=_SKIP_REASON,
+)
 class TestAgentCoreSandboxIntegration:
     """Live integration tests against the AgentCore Code Interpreter API."""
 
