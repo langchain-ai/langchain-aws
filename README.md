@@ -71,6 +71,32 @@ response = model.invoke("Hello! How are you today?")
 print(response)
 ```
 
+You can configure Bedrock request timeouts and retries for longer-running calls.
+
+```python
+from botocore.config import Config
+from langchain_aws import ChatBedrockConverse
+
+model = ChatBedrockConverse(
+    model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    timeout=120,
+    max_retries=3,
+)
+
+# For more control, pass a botocore Config.
+model_with_config = ChatBedrockConverse(
+    model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    config=Config(
+        connect_timeout=10,
+        read_timeout=120,
+        retries={"max_attempts": 3},
+    ),
+)
+```
+
+These options only apply to the model instance you configure; they do not change
+the default timeout or retry settings.
+
 ### AgentCore Tools
 
 ```python
