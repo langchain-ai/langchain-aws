@@ -37,10 +37,10 @@ def sandbox() -> Iterator[AgentCoreSandbox]:
         interpreter.stop()
 
 
-@pytest.mark.skipif(
-    not os.environ.get("AWS_DEFAULT_REGION") and not os.environ.get("AWS_REGION"),
-    reason=_SKIP_REASON,
-)
+#@pytest.mark.skipif(
+#    not os.environ.get("AWS_DEFAULT_REGION") and not os.environ.get("AWS_REGION"),
+#    reason=_SKIP_REASON,
+#)
 class TestAgentCoreSandboxIntegration:
     """Live integration tests against the AgentCore Code Interpreter API."""
 
@@ -93,6 +93,41 @@ class TestAgentCoreSandboxIntegration:
         """The sandbox should have a non-empty session ID."""
         assert sandbox.id != ""
 
+    def test_read_plane_roundtrip_virtual_path(
+        self, sandbox: AgentCoreSandbox
+    ) -> None:
+        """Read plane round-trips a virtual path against a non-root cwd."""
+        vpath = "/workspace/readplane_roundtrip.txt"
+        vdir = "/workspace"
+        content = "needle in haystack\nsecond line\n"
+
+        write_result = sandbox.write(vpath, content)
+        assert write_result.error is None, write_result.error
+
+        read_result = sandbox.read(vpath)
+        assert read_result.error is None, read_result.error
+        assert read_result.file_data is not None
+        assert read_result.file_data["content"].strip() == content.strip()
+
+        ls_result = sandbox.ls(vdir)
+        assert ls_result.error is None, ls_result.error
+        assert ls_result.entries is not None
+        assert any("readplane_roundtrip.txt" in e["path"] for e in ls_result.entries)
+
+        grep_result = sandbox.grep("needle", vdir)
+        assert grep_result.error is None, grep_result.error
+        assert grep_result.matches
+
+        glob_result = sandbox.glob("*.txt", vdir)
+        assert glob_result.error is None, glob_result.error
+        assert glob_result.matches
+
+        edit_result = sandbox.edit(vpath, "needle", "pin")
+        assert edit_result.error is None, edit_result.error
+        after = sandbox.read(vpath)
+        assert after.file_data is not None
+        assert "pin in haystack" in after.file_data["content"]
+
     # ------------------------------------------------------------------
     # Async integration tests
     # ------------------------------------------------------------------
@@ -132,3 +167,28 @@ class TestAgentCoreSandboxIntegration:
         for i, result in enumerate(results):
             assert result.exit_code == 0
             assert f"concurrent-{i}" in result.output
+
+    def test_aread_plane_roundtrip_virtual_path(
+        self, sandbox: AgentCoreSandbox
+    ) -> None:
+        """Async read plane round-trips a virtual path against a non-root cwd."""
+        vpath = "/workspace/areadplane_roundtrip.txt"
+        vdir = "/workspace"
+
+        async def run() -> None:
+            write_result = await sandbox.awrite(vpath, "async needle\n")
+            assert write_result.error is None, write_result.error
+
+            read_result = await sandbox.aread(vpath)
+            assert read_result.error is None, read_result.error
+
+            ls_result = await sandbox.als(vdir)
+            assert ls_result.error is None, ls_result.error
+
+            grep_result = await sandbox.agrep("needle", vdir)
+            assert grep_result.error is None, grep_result.error
+
+            glob_result = await sandbox.aglob("*.txt", vdir)
+            assert glob_result.error is None, glob_result.error
+
+        asyncio.run(run())
