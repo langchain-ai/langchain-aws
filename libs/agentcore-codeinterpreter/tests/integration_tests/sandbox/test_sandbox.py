@@ -93,9 +93,7 @@ class TestAgentCoreSandboxIntegration:
         """The sandbox should have a non-empty session ID."""
         assert sandbox.id != ""
 
-    def test_read_plane_roundtrip_virtual_path(
-        self, sandbox: AgentCoreSandbox
-    ) -> None:
+    def test_read_plane_roundtrip_virtual_path(self, sandbox: AgentCoreSandbox) -> None:
         """Read plane round-trips a virtual path against a non-root cwd."""
         vpath = "/workspace/readplane_roundtrip.txt"
         vdir = "/workspace"
