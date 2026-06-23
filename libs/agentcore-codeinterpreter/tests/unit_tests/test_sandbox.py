@@ -9,10 +9,19 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterator
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from botocore.exceptions import ClientError
+from deepagents.backends.protocol import (
+    EditResult,
+    FileData,
+    GlobResult,
+    GrepResult,
+    LsResult,
+    ReadResult,
+)
+from deepagents.backends.sandbox import BaseSandbox
 
 from langchain_agentcore_codeinterpreter import AgentCoreSandbox
 from langchain_agentcore_codeinterpreter.sandbox import (
@@ -593,6 +602,119 @@ def test_write_root_cwd_preserves_existing_behavior() -> None:
     ]
     uploaded_path = write_files_calls[0].kwargs["params"]["content"][0]["path"]
     assert uploaded_path == "hello.py"
+
+
+# ------------------------------------------------------------------
+# Read-plane path normalization (ls/read/grep/glob/edit)
+# ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("method_name", "virtual_path", "expected_path", "extra_args", "return_value"),
+    [
+        (
+            "ls",
+            "/workspace",
+            "/opt/sandbox/workspace",
+            (),
+            LsResult(entries=[]),
+        ),
+        (
+            "read",
+            "/workspace/hello.py",
+            "/opt/sandbox/workspace/hello.py",
+            (0, 2000),
+            ReadResult(file_data=FileData(content="hello", encoding="utf-8")),
+        ),
+        (
+            "grep",
+            "/workspace",
+            "/opt/sandbox/workspace",
+            ("needle", None),
+            GrepResult(matches=[]),
+        ),
+        (
+            "glob",
+            "/workspace",
+            "/opt/sandbox/workspace",
+            ("*.py",),
+            GlobResult(matches=[]),
+        ),
+        (
+            "edit",
+            "/workspace/hello.py",
+            "/opt/sandbox/workspace/hello.py",
+            ("old", "new", False),
+            EditResult(path="/opt/sandbox/workspace/hello.py", occurrences=1),
+        ),
+    ],
+)
+def test_read_plane_resolves_virtual_paths(
+    method_name: str,
+    virtual_path: str,
+    expected_path: str,
+    extra_args: tuple[Any, ...],
+    return_value: Any,
+) -> None:
+    """Read-plane methods should resolve virtual paths against the sandbox cwd."""
+    sandbox, _ = _make_sandbox(cwd="/opt/sandbox")
+    result: Any
+
+    with patch.object(
+        BaseSandbox, method_name, return_value=return_value
+    ) as mock_method:
+        if method_name == "grep":
+            result = sandbox.grep(extra_args[0], virtual_path)
+            mock_method.assert_called_once_with(extra_args[0], expected_path, None)
+        elif method_name == "glob":
+            result = sandbox.glob(extra_args[0], virtual_path)
+            mock_method.assert_called_once_with(extra_args[0], expected_path)
+        elif method_name == "read":
+            result = sandbox.read(virtual_path, *extra_args)
+            mock_method.assert_called_once_with(expected_path, *extra_args)
+        elif method_name == "edit":
+            result = sandbox.edit(virtual_path, *extra_args)
+            mock_method.assert_called_once_with(expected_path, *extra_args)
+        else:
+            result = sandbox.ls(virtual_path)
+            mock_method.assert_called_once_with(expected_path)
+
+    assert result == return_value
+
+
+def test_grep_with_none_path_passes_through() -> None:
+    """grep() should not resolve when path is None (BaseSandbox defaults to '.')."""
+    sandbox, _ = _make_sandbox(cwd="/opt/sandbox")
+
+    with patch.object(
+        BaseSandbox, "grep", return_value=GrepResult(matches=[])
+    ) as mock_grep:
+        sandbox.grep("needle")
+        mock_grep.assert_called_once_with("needle", None, None)
+
+
+def test_glob_with_none_path_passes_through() -> None:
+    """glob() should not resolve when path is None (BaseSandbox defaults to '/')."""
+    sandbox, _ = _make_sandbox(cwd="/opt/sandbox")
+
+    with patch.object(
+        BaseSandbox, "glob", return_value=GlobResult(matches=[])
+    ) as mock_glob:
+        sandbox.glob("*.py")
+        mock_glob.assert_called_once_with("*.py", None)
+
+
+def test_read_root_cwd_preserves_virtual_path() -> None:
+    """When cwd is /, read() should pass virtual paths through unchanged."""
+    sandbox, _ = _make_sandbox(cwd="/")
+
+    with patch.object(
+        BaseSandbox,
+        "read",
+        return_value=ReadResult(file_data=FileData(content="ok", encoding="utf-8")),
+    ) as mock_read:
+        sandbox.read("/workspace/hello.py")
+        mock_read.assert_called_once_with("/workspace/hello.py", 0, 2000)
 
 
 # ------------------------------------------------------------------
