@@ -667,3 +667,63 @@ class AgentCoreSandbox(BaseSandbox):
             _AGENTCORE_EXECUTOR,
             lambda: self.download_files(paths),
         )
+
+    async def als(self, path: str) -> LsResult:
+        """Async version of :meth:`ls`.
+
+        Args:
+            path: Directory path to list, resolved against the sandbox cwd.
+
+        Returns:
+            ``LsResult`` with directory entries on success or ``error`` on
+            failure.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _AGENTCORE_EXECUTOR,
+            lambda: self.ls(path),
+        )
+
+    async def agrep(
+        self,
+        pattern: str,
+        path: str | None = None,
+        glob: str | None = None,
+    ) -> GrepResult:
+        """Async version of :meth:`grep`.
+
+        Args:
+            pattern: Literal string to search for.
+            path: Directory or file to search in, resolved against the sandbox
+                cwd. When ``None``, the ``BaseSandbox`` default is used.
+            glob: Optional file-name glob to restrict the search.
+
+        Returns:
+            ``GrepResult`` with a list of matches or ``error`` on failure.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _AGENTCORE_EXECUTOR,
+            lambda: self.grep(pattern, path, glob),
+        )
+
+    async def aglob(
+        self,
+        pattern: str,
+        path: str | None = None,
+    ) -> GlobResult:
+        """Async version of :meth:`glob`.
+
+        Args:
+            pattern: Glob pattern to match.
+            path: Directory to search in, resolved against the sandbox cwd.
+                When ``None``, the ``BaseSandbox`` default is used.
+
+        Returns:
+            ``GlobResult`` with a list of matches or ``error`` on failure.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _AGENTCORE_EXECUTOR,
+            lambda: self.glob(pattern, path),
+        )

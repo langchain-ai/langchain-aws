@@ -925,6 +925,37 @@ def test_aexecute_handles_session_expiry() -> None:
     assert "expired" in result.output.lower()
 
 
+def test_als_routes_through_cwd_aware_sync_ls() -> None:
+    """als() must resolve the virtual path against the cwd."""
+    sandbox, _ = _make_sandbox(cwd="/opt/sandbox")
+
+    with patch.object(BaseSandbox, "ls", return_value=LsResult(entries=[])) as mock_ls:
+        asyncio.run(sandbox.als("/workspace"))
+        mock_ls.assert_called_once_with("/opt/sandbox/workspace")
+
+
+def test_agrep_routes_through_cwd_aware_sync_grep() -> None:
+    """agrep() must resolve the virtual path against the cwd (not literal)."""
+    sandbox, _ = _make_sandbox(cwd="/opt/sandbox")
+
+    with patch.object(
+        BaseSandbox, "grep", return_value=GrepResult(matches=[])
+    ) as mock_grep:
+        asyncio.run(sandbox.agrep("needle", "/workspace"))
+        mock_grep.assert_called_once_with("needle", "/opt/sandbox/workspace", None)
+
+
+def test_aglob_routes_through_cwd_aware_sync_glob() -> None:
+    """aglob() must resolve the virtual path against the cwd (not literal)."""
+    sandbox, _ = _make_sandbox(cwd="/opt/sandbox")
+
+    with patch.object(
+        BaseSandbox, "glob", return_value=GlobResult(matches=[])
+    ) as mock_glob:
+        asyncio.run(sandbox.aglob("*.py", "/workspace"))
+        mock_glob.assert_called_once_with("*.py", "/opt/sandbox/workspace")
+
+
 # ------------------------------------------------------------------
 # Executor configuration
 # ------------------------------------------------------------------
