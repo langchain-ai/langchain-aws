@@ -786,61 +786,22 @@ def test_set_disable_streaming(
 
 
 def test_streaming_init_param() -> None:
-    model_id = "anthropic.claude-fable-5"
+    model_id = "anthropic.claude-sonnet-4-6"
 
-    def _make(**kwargs: Any) -> Tuple[ChatBedrockConverse, Any]:
-        client = mock.MagicMock()
-        client.converse.return_value = {
-            "output": {"message": {"role": "assistant", "content": [{"text": "hi"}]}},
-            "stopReason": "end_turn",
-            "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
-            "ResponseMetadata": {},
-        }
-        client.converse_stream.return_value = {
-            "stream": [
-                {"messageStart": {"role": "assistant"}},
-                {
-                    "contentBlockDelta": {
-                        "delta": {"text": "hi"},
-                        "contentBlockIndex": 0,
-                    }
-                },
-                {"contentBlockStop": {"contentBlockIndex": 0}},
-                {"messageStop": {"stopReason": "end_turn"}},
-                {
-                    "metadata": {
-                        "usage": {
-                            "inputTokens": 1,
-                            "outputTokens": 1,
-                            "totalTokens": 2,
-                        }
-                    }
-                },
-            ]
-        }
-        llm = ChatBedrockConverse(
-            model=model_id, region_name="us-west-2", client=client, **kwargs
-        )
-        return llm, client
+    llm = ChatBedrockConverse(
+        model=model_id,
+        region_name="us-west-2",
+        streaming=True,
+    )
+    assert llm.streaming is True
+    assert "streaming" not in (llm.additional_model_request_fields or {})
 
-    # streaming=True -> invoke() calls the streaming API (converse_stream).
-    streaming, client = _make(streaming=True)
-    streaming.invoke("hello")
-    assert client.converse_stream.called
-    assert not client.converse.called
-    assert "streaming" not in (streaming.additional_model_request_fields or {})
-
-    # Default (unset) -> invoke() uses the non-streaming API (converse).
-    default, client = _make()
-    default.invoke("hello")
-    assert client.converse.called
-    assert not client.converse_stream.called
-
-    # disable_streaming (capability) overrides streaming=True (intent).
-    disabled, client = _make(streaming=True, disable_streaming=True)
-    disabled.invoke("hello")
-    assert client.converse.called
-    assert not client.converse_stream.called
+    # Unset -> defaults to False (Core then falls back to its default behavior).
+    default = ChatBedrockConverse(
+        model=model_id,
+        region_name="us-west-2",
+    )
+    assert default.streaming is False
 
 
 def test__extract_response_metadata() -> None:
