@@ -658,7 +658,6 @@ def test_read_plane_resolves_virtual_paths(
 ) -> None:
     """Read-plane methods should resolve virtual paths against the sandbox cwd."""
     sandbox, _ = _make_sandbox(cwd="/opt/sandbox")
-    base_method = getattr(BaseSandbox, method_name)
     result: Any
 
     with patch.object(
@@ -681,7 +680,6 @@ def test_read_plane_resolves_virtual_paths(
             mock_method.assert_called_once_with(expected_path)
 
     assert result == return_value
-    assert base_method is not None
 
 
 def test_grep_with_none_path_passes_through() -> None:
