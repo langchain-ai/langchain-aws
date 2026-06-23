@@ -589,14 +589,19 @@ def test_nova_tool_call_no_inline_thinking_leak(prompt: str) -> None:
     llm_with_tools = llm.bind_tools([get_population])
 
     messages: list = [HumanMessage(content=prompt)]
-    tool_call_message = llm.bind_tools([get_population], tool_choice="any").invoke(
-        messages
-    )
-    messages.append(tool_call_message)
-    for tc in tool_call_message.tool_calls:
-        messages.append(get_population.invoke(tc))
+    response = llm.bind_tools([get_population], tool_choice="any").invoke(messages)
 
-    response = llm_with_tools.invoke(messages)
+    for _ in range(5):
+        messages.append(response)
+        if not response.tool_calls:
+            break
+        for tc in response.tool_calls:
+            messages.append(get_population.invoke(tc))
+        response = llm_with_tools.invoke(messages)
+    else:
+        msg = "Nova did not produce a final response after tool calls."
+        raise AssertionError(msg)
+
     text = response.text
 
     # Assert that leaked reasoning markers do not appear in
