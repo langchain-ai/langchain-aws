@@ -56,6 +56,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _snake_to_camel,
     _snake_to_camel_keys,
     _split_inline_reasoning,
+    _strip_null_anyof,
 )
 from langchain_aws.function_calling import convert_to_anthropic_tool
 
@@ -6170,3 +6171,96 @@ class TestNonAsciiPreservation:
         schema_str = config["textFormat"]["structure"]["jsonSchema"]["schema"]
         assert self._CJK in schema_str
         assert "\\u" not in schema_str
+
+
+class TestStripNullAnyof:
+    """Tests for _strip_null_anyof."""
+
+    def test_single_non_null_anyof_unwrapped(self) -> None:
+        """anyOf with one non-null branch is unwrapped to the concrete type."""
+        schema = {"anyOf": [{"type": "string"}, {"type": "null"}]}
+        result = _strip_null_anyof(schema)
+        assert result == {"type": "string"}
+
+    def test_multi_type_anyof_preserved(self) -> None:
+        """anyOf with multiple non-null branches is left intact."""
+        schema = {"anyOf": [{"type": "string"}, {"type": "integer"}]}
+        result = _strip_null_anyof(schema)
+        assert result == {"anyOf": [{"type": "string"}, {"type": "integer"}]}
+
+    def test_nested_properties_in_object_schema(self) -> None:
+        """Nullable params inside object properties are unwrapped recursively."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                "count": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+            },
+        }
+        result = _strip_null_anyof(schema)
+        assert result["properties"]["name"] == {"type": "string"}
+        assert result["properties"]["count"] == {"type": "integer"}
+
+    def test_non_dict_passthrough(self) -> None:
+        """Non-dict values are returned unchanged."""
+        assert _strip_null_anyof("hello") == "hello"
+        assert _strip_null_anyof(42) == 42
+        assert _strip_null_anyof(None) is None
+
+    def test_schema_without_anyof_unchanged(self) -> None:
+        """A schema with no anyOf is returned structurally identical."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "x": {"type": "string"},
+                "y": {"type": "integer"},
+            },
+        }
+        result = _strip_null_anyof(schema)
+        assert result["type"] == "object"
+        assert result["properties"]["x"] == {"type": "string"}
+        assert result["properties"]["y"] == {"type": "integer"}
+
+    def test_all_null_anyof_left_unchanged(self) -> None:
+        """anyOf where all branches are null is left as-is (guards against empty)."""
+        schema = {"anyOf": [{"type": "null"}]}
+        result = _strip_null_anyof(schema)
+        assert "anyOf" in result
+
+    def test_type_array_null_collapsed(self) -> None:
+        """{"type": [X, "null"]} collapses to the concrete type."""
+        assert _strip_null_anyof({"type": ["string", "null"]}) == {"type": "string"}
+
+    def test_type_array_multi_non_null_preserved(self) -> None:
+        """Genuine multi-type unions keep their non-null members."""
+        result = _strip_null_anyof({"type": ["string", "integer", "null"]})
+        assert result == {"type": ["string", "integer"]}
+
+
+def test_format_tools_strips_null_anyof() -> None:
+    """_format_tools removes null anyOf branches from tool parameter schemas."""
+    openai_tool = {
+        "type": "function",
+        "function": {
+            "name": "search",
+            "description": "Search for something",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {
+                        "anyOf": [{"type": "integer"}, {"type": "null"}],
+                    },
+                    "offset": {"type": ["integer", "null"]},
+                },
+                "required": ["query"],
+            },
+        },
+    }
+    result = _format_tools([openai_tool])
+    assert len(result) == 1
+    tool_spec = cast(Dict[str, Any], result[0]["toolSpec"])
+    input_schema: Dict[str, Any] = tool_spec["inputSchema"]["json"]
+    assert input_schema["properties"]["limit"] == {"type": "integer"}
+    assert input_schema["properties"]["offset"] == {"type": "integer"}
+    assert input_schema["properties"]["query"] == {"type": "string"}
