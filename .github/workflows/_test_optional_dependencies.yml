@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     name: "run tests without optional deps"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python + uv
         uses: "./.github/actions/uv_setup"
