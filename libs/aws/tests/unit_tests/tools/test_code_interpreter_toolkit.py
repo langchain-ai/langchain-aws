@@ -390,8 +390,8 @@ class TestGetOrCreateInterpreter:
             assert interpreter is mock_interpreter
             assert "default" in toolkit._code_interpreters
 
-    def test_uses_checkpoint_ns_for_session_key(self) -> None:
-        """Test session key includes checkpoint_ns for subagent isolation."""
+    def test_drops_per_tool_checkpoint_ns_for_session_key(self) -> None:
+        """Top-level per-tool checkpoint_ns is dropped so state persists."""
         from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
 
         toolkit = CodeInterpreterToolkit()
@@ -409,13 +409,84 @@ class TestGetOrCreateInterpreter:
                 {
                     "configurable": {
                         "thread_id": "thread-1",
-                        "checkpoint_ns": "research-acme:abc123",
+                        # Per-tool-call namespace LangGraph injects at top level.
+                        "checkpoint_ns": "tools:abc123",
                     }
                 },
             )
             toolkit._get_or_create_interpreter(config)
 
-            assert "thread-1:research-acme:abc123" in toolkit._code_interpreters
+            assert "thread-1" in toolkit._code_interpreters
+            assert "thread-1:tools:abc123" not in toolkit._code_interpreters
+
+    def test_reuses_interpreter_across_per_tool_namespaces(self) -> None:
+        """Sequential tool calls in one thread share one session."""
+        from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
+
+        toolkit = CodeInterpreterToolkit()
+
+        with patch(
+            "langchain_aws.tools.code_interpreter_toolkit.CodeInterpreter"
+        ) as mock_class:
+            mock_class.side_effect = lambda *a, **k: MagicMock(
+                start=MagicMock(), session_id="s"
+            )
+
+            first: RunnableConfig = cast(
+                RunnableConfig,
+                {"configurable": {"thread_id": "thread-1", "checkpoint_ns": "tools:1"}},
+            )
+            second: RunnableConfig = cast(
+                RunnableConfig,
+                {"configurable": {"thread_id": "thread-1", "checkpoint_ns": "tools:2"}},
+            )
+
+            interp_first = toolkit._get_or_create_interpreter(first)
+            interp_second = toolkit._get_or_create_interpreter(second)
+
+            assert interp_first is interp_second
+            assert list(toolkit._code_interpreters) == ["thread-1"]
+
+    def test_isolates_sessions_per_subagent(self) -> None:
+        """Parallel subagents (nested checkpoint_ns) keep isolated sessions."""
+        from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
+
+        toolkit = CodeInterpreterToolkit()
+
+        with patch(
+            "langchain_aws.tools.code_interpreter_toolkit.CodeInterpreter"
+        ) as mock_class:
+            mock_class.side_effect = lambda *a, **k: MagicMock(
+                start=MagicMock(), session_id="s"
+            )
+
+            sub_a: RunnableConfig = cast(
+                RunnableConfig,
+                {
+                    "configurable": {
+                        "thread_id": "thread-1",
+                        "checkpoint_ns": "research-acme:abc|tools:call1",
+                    }
+                },
+            )
+            sub_b: RunnableConfig = cast(
+                RunnableConfig,
+                {
+                    "configurable": {
+                        "thread_id": "thread-1",
+                        "checkpoint_ns": "research-beta:def|tools:call2",
+                    }
+                },
+            )
+
+            interp_a = toolkit._get_or_create_interpreter(sub_a)
+            interp_b = toolkit._get_or_create_interpreter(sub_b)
+
+            assert interp_a is not interp_b
+            assert set(toolkit._code_interpreters) == {
+                "thread-1:research-acme:abc",
+                "thread-1:research-beta:def",
+            }
 
 
 class TestGetThreadId:
@@ -449,8 +520,8 @@ class TestGetThreadId:
 
         assert thread_id == "default"
 
-    def test_includes_checkpoint_ns(self) -> None:
-        """Test includes checkpoint_ns in session key."""
+    def test_drops_per_tool_checkpoint_ns(self) -> None:
+        """Drops the per-tool-call checkpoint_ns segment."""
         from langchain_aws.tools.code_interpreter_toolkit import _get_thread_id
 
         config: RunnableConfig = cast(
@@ -458,13 +529,28 @@ class TestGetThreadId:
             {
                 "configurable": {
                     "thread_id": "thread-1",
-                    "checkpoint_ns": "subagent:xyz",
+                    "checkpoint_ns": "tools:xyz",
                 }
             },
         )
-        thread_id = _get_thread_id(config)
 
-        assert thread_id == "thread-1:subagent:xyz"
+        assert _get_thread_id(config) == "thread-1"
+
+    def test_preserves_subagent_checkpoint_ns(self) -> None:
+        """Keeps the enclosing subagent segment of a nested checkpoint_ns."""
+        from langchain_aws.tools.code_interpreter_toolkit import _get_thread_id
+
+        config: RunnableConfig = cast(
+            RunnableConfig,
+            {
+                "configurable": {
+                    "thread_id": "thread-1",
+                    "checkpoint_ns": "subagent:xyz|tools:call",
+                }
+            },
+        )
+
+        assert _get_thread_id(config) == "thread-1:subagent:xyz"
 
 
 class TestExtractOutputFromStream:

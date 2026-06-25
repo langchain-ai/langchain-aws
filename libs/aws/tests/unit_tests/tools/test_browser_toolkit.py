@@ -825,6 +825,40 @@ class TestGetSessionKey:
         config: RunnableConfig = cast(RunnableConfig, {"configurable": {}})
         assert get_session_key(config) == "default"
 
+    def test_parent_scope_drops_innermost_checkpoint_ns_segment(self) -> None:
+        """``parent`` scope drops the per-call segment, keeps enclosing scope."""
+        from langchain_aws.tools.utils import get_session_key
+
+        top_level: RunnableConfig = cast(
+            RunnableConfig,
+            {"configurable": {"thread_id": "thread-1", "checkpoint_ns": "tools:abc"}},
+        )
+        assert get_session_key(top_level, checkpoint_ns_scope="parent") == "thread-1"
+
+        # Nested ns (tool call inside a subagent) -> keeps the subagent segment.
+        nested: RunnableConfig = cast(
+            RunnableConfig,
+            {
+                "configurable": {
+                    "thread_id": "thread-1",
+                    "checkpoint_ns": "subagent-a:abc123|tools:xyz",
+                }
+            },
+        )
+        assert (
+            get_session_key(nested, checkpoint_ns_scope="parent")
+            == "thread-1:subagent-a:abc123"
+        )
+
+    def test_parent_scope_with_no_checkpoint_ns(self) -> None:
+        """``parent`` scope returns thread_id when there is no checkpoint_ns."""
+        from langchain_aws.tools.utils import get_session_key
+
+        config: RunnableConfig = cast(
+            RunnableConfig, {"configurable": {"thread_id": "thread-1"}}
+        )
+        assert get_session_key(config, checkpoint_ns_scope="parent") == "thread-1"
+
     def test_returns_default_when_no_configurable(self) -> None:
         """Test returns 'default' when config has no configurable key."""
         from langchain_aws.tools.utils import get_session_key
