@@ -183,7 +183,7 @@ class AgentCoreMemoryStore(BaseStore):
 
         response = self.client.retrieve_memory_records(
             memoryId=self.memory_id,
-            namespace=namespace_str,
+            namespacePath=namespace_str,
             searchCriteria=search_criteria,
             maxResults=op.limit,
         )

@@ -263,7 +263,7 @@ class TestAgentCoreMemoryStore:
 
         mock_boto_client.retrieve_memory_records.assert_called_once_with(
             memoryId="test-memory-id",
-            namespace="/test_actor",
+            namespacePath="/test_actor",
             searchCriteria={"searchQuery": "test query", "topK": 5},
             maxResults=5,
         )
@@ -463,7 +463,8 @@ class TestAgentCoreMemoryStore:
         store.batch(ops)
 
         call_args = mock_boto_client.retrieve_memory_records.call_args[1]
-        assert call_args["namespace"] == "/single_actor"
+        assert call_args["namespacePath"] == "/single_actor"
+        assert "namespace" not in call_args
 
     def test_search_with_pagination_parameters(
         self, store, mock_boto_client, sample_memory_record
