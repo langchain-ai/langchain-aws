@@ -2962,6 +2962,48 @@ def _set_additional_properties_false(schema: dict) -> None:
                 _set_additional_properties_false(sub_schema)
 
 
+def _strip_null_anyof(schema: Any) -> Any:
+    """Recursively strip ``{type: null}`` variants from ``anyOf`` and type arrays.
+
+    Bedrock's Converse API enforces a hard limit of 16 union-typed parameters
+    (``anyOf`` or array types) across all tool schemas in a single request.
+    MCP tools commonly encode optional parameters as either
+    ``anyOf: [{type: X}, {type: null}]`` or ``{type: [X, null]}``, both of
+    which count against the budget.  Stripping the null branch collapses each
+    nullable parameter to its concrete type while preserving correct
+    tool-calling behavior — Bedrock callers can still omit optional parameters
+    without the schema needing to declare them as union types.
+    """
+    if not isinstance(schema, dict):
+        return schema
+    result: Dict[str, Any] = {}
+    for key, value in schema.items():
+        if key == "anyOf" and isinstance(value, list):
+            non_null = [
+                _strip_null_anyof(v)
+                for v in value
+                if not (isinstance(v, dict) and v.get("type") == "null")
+            ]
+            if len(non_null) == 1:
+                # Unwrap single remaining type inline rather than keeping anyOf.
+                result.update(non_null[0])
+                continue
+            result[key] = non_null if non_null else value
+        elif key == "type" and isinstance(value, list):
+            # Collapse {"type": [..., "null"]} the same way as anyOf nullables.
+            non_null = [t for t in value if t != "null"]
+            result[key] = non_null[0] if len(non_null) == 1 else (non_null or value)
+        elif isinstance(value, dict):
+            result[key] = _strip_null_anyof(value)
+        elif isinstance(value, list):
+            result[key] = [
+                _strip_null_anyof(v) if isinstance(v, dict) else v for v in value
+            ]
+        else:
+            result[key] = value
+    return result
+
+
 def _format_tools(
     tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool]],
 ) -> List[Dict[Literal["toolSpec"], Dict[str, Union[Dict[str, Any], str]]]]:
@@ -2974,6 +3016,7 @@ def _format_tools(
                 formatted_tools.append(tool)
             else:
                 spec = convert_to_openai_tool(tool)["function"]
+                spec["parameters"] = _strip_null_anyof(spec["parameters"])
                 spec["inputSchema"] = {"json": spec.pop("parameters")}
                 formatted_tools.append({"toolSpec": spec})
 
