@@ -849,6 +849,7 @@ def test_agent_loop_streaming(output_version: Literal["v0", "v1"]) -> None:
     tool_calls = tool_call_message.tool_calls
     assert len(tool_calls) == 1
     tool_call = tool_calls[0]
+    tool_call_message = AIMessage(content="", tool_calls=[tool_call])
     tool_message = get_weather.invoke(tool_call)
     assert isinstance(tool_message, ToolMessage)
     response = llm_with_tools.invoke(
