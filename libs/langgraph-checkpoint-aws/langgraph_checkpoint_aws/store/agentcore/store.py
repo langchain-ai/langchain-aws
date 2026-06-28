@@ -33,6 +33,8 @@ from ...checkpoint.agentcore.helpers import (
 
 logger = logging.getLogger(__name__)
 
+STORE_KEY_METADATA = "langgraph_store_key"
+
 
 class AgentCoreMemoryStore(BaseStore):
     """
@@ -136,6 +138,7 @@ class AgentCoreMemoryStore(BaseStore):
                 {"conversational": {"content": {"text": text}, "role": role}}
             )
 
+        # TODO: attach op.key as event metadata for round-trip retrieval
         self.client.create_event(
             memoryId=self.memory_id,
             actorId=actor_id,
@@ -146,30 +149,16 @@ class AgentCoreMemoryStore(BaseStore):
         logger.debug(f"Created event for message in namespace {op.namespace}")
 
     def _handle_get(self, op: GetOp) -> Result:
-        """Handle GetOp by retrieving a specific memory record from AgentCore Memory."""
-        try:
-            response = self.client.get_memory_record(
-                memoryId=self.memory_id, memoryRecordId=op.key
-            )
+        """Handle GetOp by retrieving a stored event from AgentCore Memory.
 
-            memory_record = response.get("memoryRecord")
-            if not memory_record:
-                return None
-
-            return self._convert_memory_record_to_item(memory_record, op.namespace)
-
-        except ClientError as e:
-            error_code = e.response["Error"]["Code"]
-            if error_code == "ResourceNotFoundException":
-                # Memory record not found
-                return None
-            else:
-                # Re-raise other client errors
-                logger.error(f"Failed to get memory record: {e}")
-                raise
-        except Exception as e:
-            logger.error(f"Failed to get memory record: {e}")
-            raise
+        Uses list_events with an eventMetadata EQUALS_TO filter on the
+        user-provided key (stored via STORE_KEY_METADATA on put).
+        """
+        # TODO: validate namespace via _unpack_namespace
+        # TODO: call list_events with metadata filter on STORE_KEY_METADATA
+        # TODO: select most recent event (last-write-wins) via _parse_timestamp
+        # TODO: convert to Item via _convert_event_to_item
+        raise NotImplementedError
 
     def _handle_search(self, op: SearchOp) -> Result:
         """Handle SearchOp by retrieving memory records from AgentCore Memory."""
@@ -192,6 +181,49 @@ class AgentCoreMemoryStore(BaseStore):
         return self._convert_memory_records_to_search_items(
             memory_records, op.namespace_prefix
         )
+
+    def _unpack_namespace(self, namespace: tuple[str, ...]) -> tuple[str, str]:
+        """Unpack a store namespace into AgentCore actor and session identifiers.
+
+        Args:
+            namespace: The store namespace, expected to be a 2-tuple of
+                ``(actor_id, session_id)``.
+
+        Returns:
+            The ``(actor_id, session_id)`` pair.
+
+        Raises:
+            ValueError: If the namespace is not a 2-tuple.
+        """
+        raise NotImplementedError
+
+    def _parse_timestamp(self, value: Any) -> datetime:
+        """Parse an AgentCore timestamp value into a datetime.
+
+        Args:
+            value: The raw timestamp from an event or memory record.
+
+        Returns:
+            A timezone-aware datetime; the current UTC time if `value` is
+            missing or unparseable.
+        """
+        raise NotImplementedError
+
+    def _convert_event_to_item(
+        self, event: dict, namespace: tuple[str, ...], key: str
+    ) -> Item:
+        """Convert a stored AgentCore event to an Item object.
+
+        Args:
+            event: An event returned by ``list_events`` with payloads included.
+            namespace: The store namespace the event was retrieved under.
+            key: The user-provided key the event was looked up by.
+
+        Returns:
+            The reconstructed Item, keyed by `key`, whose value preserves the
+            stored conversational content.
+        """
+        raise NotImplementedError
 
     def _convert_namespace_to_string(self, namespace_tuple: tuple[str, ...]) -> str:
         """Convert namespace tuple to AgentCore namespace string."""
