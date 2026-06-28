@@ -135,13 +135,13 @@ class AgentCoreMemoryStore(BaseStore):
                 {"conversational": {"content": {"text": text}, "role": role}}
             )
 
-        # TODO: attach op.key as event metadata for round-trip retrieval
         self.client.create_event(
             memoryId=self.memory_id,
             actorId=actor_id,
             sessionId=session_id,
             eventTimestamp=datetime.now(timezone.utc),
             payload=conversational_payloads,
+            metadata={STORE_KEY_METADATA: {"stringValue": op.key}},
         )
         logger.debug(f"Created event for message in namespace {op.namespace}")
 

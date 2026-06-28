@@ -18,7 +18,10 @@ from langgraph.store.base import (
     SearchOp,
 )
 
-from langgraph_checkpoint_aws.store.agentcore.store import AgentCoreMemoryStore
+from langgraph_checkpoint_aws.store.agentcore.store import (
+    STORE_KEY_METADATA,
+    AgentCoreMemoryStore,
+)
 
 
 class TestAgentCoreMemoryStore:
@@ -154,6 +157,11 @@ class TestAgentCoreMemoryStore:
         assert call_args["sessionId"] == "test_session"
         assert len(call_args["payload"]) == 1
         assert call_args["payload"][0]["conversational"]["role"] == "USER"
+
+        # Verify metadata carries the user key
+        assert call_args["metadata"] == {
+            STORE_KEY_METADATA: {"stringValue": "test-key"}
+        }
 
     def test_batch_put_op_delete(self, store, mock_boto_client):
         """Test PutOp with None value (delete operation)."""
