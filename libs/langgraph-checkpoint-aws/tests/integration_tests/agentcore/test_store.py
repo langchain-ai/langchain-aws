@@ -429,3 +429,26 @@ class TestAgentCoreMemoryStoreIntegration:
         assert item is not None, "get() should return a non-None Item after put()"
         assert item.key == key
         assert item.value["content"] == message_text
+
+    def test_put_get_last_write_wins(self, store, actor_id, session_id):
+        """Test that re-putting the same key returns the most recent value."""
+        key = f"lww-{uuid.uuid4().hex[:8]}"
+        msg_a = HumanMessage("First version of the message")
+        msg_b = HumanMessage("Second version of the message")
+
+        store.put(
+            namespace=(actor_id, session_id),
+            key=key,
+            value={"message": msg_a},
+        )
+        store.put(
+            namespace=(actor_id, session_id),
+            key=key,
+            value={"message": msg_b},
+        )
+
+        item = store.get((actor_id, session_id), key)
+
+        assert item is not None, "get() should return a non-None Item"
+        assert item.key == key
+        assert item.value["content"] == "Second version of the message"
