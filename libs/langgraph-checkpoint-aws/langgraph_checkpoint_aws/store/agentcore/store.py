@@ -120,10 +120,7 @@ class AgentCoreMemoryStore(BaseStore):
             )
 
         # Convert namespace tuple to actor_id and session_id
-        if len(op.namespace) != 2:
-            raise ValueError("Namespace must be a tuple of (actor_id, session_id)")
-
-        actor_id, session_id = op.namespace
+        actor_id, session_id = self._unpack_namespace(op.namespace)
         event_messages = convert_langchain_messages_to_event_messages([message])
 
         if not event_messages:
@@ -195,7 +192,10 @@ class AgentCoreMemoryStore(BaseStore):
         Raises:
             ValueError: If the namespace is not a 2-tuple.
         """
-        raise NotImplementedError
+        if len(namespace) != 2:
+            raise ValueError("Namespace must be a tuple of (actor_id, session_id)")
+        actor_id, session_id = namespace
+        return actor_id, session_id
 
     def _parse_timestamp(self, value: Any) -> datetime:
         """Parse an AgentCore timestamp value into a datetime.
