@@ -200,6 +200,12 @@ class AgentCoreMemoryStore(BaseStore):
     def _parse_timestamp(self, value: Any) -> datetime:
         """Parse an AgentCore timestamp value into a datetime.
 
+        AgentCore returns timestamps as datetimes via boto3. As a defensive
+        fallback, a string ISO-8601 value is parsed (normalizing a trailing
+        "Z" to the "+00:00" UTC offset that ``datetime.fromisoformat`` accepts
+        on Python 3.10), and any value that is not a datetime defaults to the
+        current UTC time.
+
         Args:
             value: The raw timestamp from an event or memory record.
 
@@ -207,7 +213,14 @@ class AgentCoreMemoryStore(BaseStore):
             A timezone-aware datetime; the current UTC time if `value` is
             missing or unparseable.
         """
-        raise NotImplementedError
+        if isinstance(value, str):
+            try:
+                value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                value = None
+        if not isinstance(value, datetime):
+            value = datetime.now(timezone.utc)
+        return value
 
     def _convert_event_to_item(
         self, event: dict, namespace: tuple[str, ...], key: str

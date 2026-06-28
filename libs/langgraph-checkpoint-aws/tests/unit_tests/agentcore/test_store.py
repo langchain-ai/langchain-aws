@@ -501,3 +501,23 @@ class TestAgentCoreMemoryStore:
             ValueError, match="Namespace must be a tuple of \\(actor_id, session_id\\)"
         ):
             store.batch(ops)
+
+    def test_parse_timestamp_string_with_z(self, store):
+        """Test _parse_timestamp with ISO string ending in Z."""
+        result = store._parse_timestamp("2024-01-01T12:00:00Z")
+        assert result == datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    def test_parse_timestamp_datetime_passthrough(self, store):
+        """Test _parse_timestamp returns the same datetime object."""
+        dt = datetime(2025, 6, 15, 9, 30, 0, tzinfo=timezone.utc)
+        result = store._parse_timestamp(dt)
+        assert result is dt  # identity check: no copy or reconstruction, same object returned
+
+    def test_parse_invalid_timestamp_returns_now(self, store):
+        """Test _parse_timestamp with invalid inputs returns a UTC datetime."""
+        result_none = store._parse_timestamp(None)
+        result_invalid = store._parse_timestamp("not-a-date")
+        assert isinstance(result_none, datetime)
+        assert result_none.tzinfo == timezone.utc
+        assert isinstance(result_invalid, datetime)
+        assert result_invalid.tzinfo == timezone.utc
