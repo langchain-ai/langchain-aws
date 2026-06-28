@@ -236,7 +236,26 @@ class AgentCoreMemoryStore(BaseStore):
             The reconstructed Item, keyed by `key`, whose value preserves the
             stored conversational content.
         """
-        raise NotImplementedError
+        messages = []
+        for entry in event.get("payload", []):
+            conversational = entry.get("conversational", {})
+            text = conversational.get("content", {}).get("text", "")
+            messages.append({"text": text, "role": conversational.get("role")})
+
+        content = "\n".join(message["text"] for message in messages)
+
+        event_timestamp = self._parse_timestamp(event.get("eventTimestamp"))
+
+        return Item(
+            namespace=namespace,
+            key=key,
+            value={
+                "content": content,
+                "messages": messages,
+            },
+            created_at=event_timestamp,
+            updated_at=event_timestamp,
+        )
 
     def _convert_namespace_to_string(self, namespace_tuple: tuple[str, ...]) -> str:
         """Convert namespace tuple to AgentCore namespace string."""

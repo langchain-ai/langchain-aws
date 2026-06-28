@@ -521,3 +521,67 @@ class TestAgentCoreMemoryStore:
         assert result_none.tzinfo == timezone.utc
         assert isinstance(result_invalid, datetime)
         assert result_invalid.tzinfo == timezone.utc
+
+    def test_convert_event_to_item_single_payload(self, store):
+        """Test _convert_event_to_item with a normal single-entry payload."""
+        event = {
+            "payload": [
+                {
+                    "conversational": {
+                        "content": {"text": "Hello there"},
+                        "role": "USER",
+                    }
+                }
+            ],
+            "eventTimestamp": datetime(2024, 3, 10, 8, 0, 0, tzinfo=timezone.utc),
+        }
+
+        item = store._convert_event_to_item(event, ("actor1", "sess1"), "my-key")
+
+        assert isinstance(item, Item)
+        assert item.key == "my-key"
+        assert item.namespace == ("actor1", "sess1")
+        assert item.value["content"] == "Hello there"
+        assert item.value["messages"] == [{"text": "Hello there", "role": "USER"}]
+        assert item.created_at == datetime(2024, 3, 10, 8, 0, 0, tzinfo=timezone.utc)
+        assert item.updated_at == datetime(2024, 3, 10, 8, 0, 0, tzinfo=timezone.utc)
+
+    def test_convert_event_to_item_multiple_payloads(self, store):
+        """Test _convert_event_to_item joins multiple payload entries."""
+        event = {
+            "payload": [
+                {
+                    "conversational": {
+                        "content": {"text": "First line"},
+                        "role": "USER",
+                    }
+                },
+                {
+                    "conversational": {
+                        "content": {"text": "Second line"},
+                        "role": "ASSISTANT",
+                    }
+                },
+            ],
+            "eventTimestamp": datetime(2024, 5, 1, 12, 0, 0, tzinfo=timezone.utc),
+        }
+
+        item = store._convert_event_to_item(event, ("a", "b"), "k2")
+
+        assert item.value["content"] == "First line\nSecond line"
+        assert item.value["messages"] == [
+            {"text": "First line", "role": "USER"},
+            {"text": "Second line", "role": "ASSISTANT"},
+        ]
+
+    def test_convert_event_to_item_empty_payload(self, store):
+        """Test _convert_event_to_item with an empty payload list."""
+        event = {
+            "payload": [],
+            "eventTimestamp": datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+        }
+
+        item = store._convert_event_to_item(event, ("x", "y"), "k3")
+
+        assert item.value["content"] == ""
+        assert item.value["messages"] == []
