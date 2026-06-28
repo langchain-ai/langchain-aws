@@ -146,16 +146,61 @@ class AgentCoreMemoryStore(BaseStore):
         logger.debug(f"Created event for message in namespace {op.namespace}")
 
     def _handle_get(self, op: GetOp) -> Result:
-        """Handle GetOp by retrieving a stored event from AgentCore Memory.
+        """Handle GetOp by retrieving a stored event from AgentCore Memory."""
+        actor_id, session_id = self._unpack_namespace(op.namespace)
 
-        Uses list_events with an eventMetadata EQUALS_TO filter on the
-        user-provided key (stored via STORE_KEY_METADATA on put).
-        """
-        # TODO: validate namespace via _unpack_namespace
-        # TODO: call list_events with metadata filter on STORE_KEY_METADATA
-        # TODO: select most recent event (last-write-wins) via _parse_timestamp
-        # TODO: convert to Item via _convert_event_to_item
-        raise NotImplementedError
+        try:
+            response = self.client.list_events(
+                memoryId=self.memory_id,
+                actorId=actor_id,
+                sessionId=session_id,
+                includePayloads=True,
+                maxResults=100,
+                filter={
+                    "eventMetadata": [
+                        {
+                            "left": {"metadataKey": STORE_KEY_METADATA},
+                            "operator": "EQUALS_TO",
+                            "right": {"metadataValue": {"stringValue": op.key}},
+                        }
+                    ]
+                },
+            )
+
+            events = response.get("events", [])
+            if not events:
+                return None
+
+            # ListEvents does not guarantee ordering and put is append-only, so a
+            # re-put of the same key yields multiple matching events. Return the most
+            # recent (last-write-wins) by eventTimestamp.
+            latest_event = max(
+                events,
+                key=lambda event: (
+                    event.get("eventTimestamp")
+                    # Fallback for events missing a timestamp: an oldest-possible,
+                    # UTC-aware value so they never win and comparisons stay typed.
+                    or datetime.min.replace(tzinfo=timezone.utc)
+                ),
+            )
+            return self._convert_event_to_item(latest_event, op.namespace, op.key)
+
+        except ClientError as e:
+            error_code = e.response["Error"]["Code"]
+            if error_code == "ResourceNotFoundException":
+                # Memory resource, actor, or session not found — treat as absent key
+                logger.error(
+                    f"Failed to get event: {e} - "
+                    f"memory_id={self.memory_id}, actor_id={actor_id}, session_id={session_id}"
+                )
+                return None
+            else:
+                # Re-raise other client errors
+                logger.error(f"Failed to get event: {e}")
+                raise
+        except Exception as e:
+            logger.error(f"Failed to get event: {e}")
+            raise
 
     def _handle_search(self, op: SearchOp) -> Result:
         """Handle SearchOp by retrieving memory records from AgentCore Memory."""
@@ -265,38 +310,7 @@ class AgentCoreMemoryStore(BaseStore):
             return "/"
         return "/" + "/".join(namespace_tuple)
 
-    def _convert_memory_record_to_item(
-        self, memory_record: dict, namespace: tuple[str, ...]
-    ) -> Item:
-        """Convert a single AgentCore memory record to an Item object."""
-        # Extract content
-        content = memory_record.get("content", {})
-        text = content.get("text", "") if isinstance(content, dict) else str(content)
 
-        # Extract metadata
-        memory_record_id = memory_record.get("memoryRecordId", str(uuid.uuid4()))
-        created_at = memory_record.get("createdAt")
-
-        # Parse timestamp - API only provides createdAt, use it for both created_at and updated_at # noqa: E501
-        if isinstance(created_at, str):
-            try:
-                created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-            except (ValueError, AttributeError):
-                created_at = datetime.now(timezone.utc)
-        elif created_at is None:
-            created_at = datetime.now(timezone.utc)
-
-        return Item(
-            namespace=namespace,
-            key=memory_record_id,
-            value={
-                "content": text,
-                "memory_strategy_id": memory_record.get("memoryStrategyId"),
-                "namespaces": memory_record.get("namespaces", []),
-            },
-            created_at=created_at,
-            updated_at=created_at,  # Memory records are not updated
-        )
 
     def _convert_memory_records_to_search_items(
         self, memory_records: list, namespace: tuple[str, ...]

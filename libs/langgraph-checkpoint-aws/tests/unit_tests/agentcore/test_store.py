@@ -34,6 +34,7 @@ class TestAgentCoreMemoryStore:
         mock_client.create_event = MagicMock()
         mock_client.retrieve_memory_records = MagicMock()
         mock_client.get_memory_record = MagicMock()
+        mock_client.list_events = MagicMock()
         return mock_client
 
     @pytest.fixture
@@ -87,31 +88,60 @@ class TestAgentCoreMemoryStore:
         with pytest.raises(TypeError):
             AgentCoreMemoryStore()
 
-    def test_batch_get_op_success(self, store, mock_boto_client, sample_memory_record):
-        """Test successful GetOp operation."""
-        mock_boto_client.get_memory_record.return_value = {
-            "memoryRecord": sample_memory_record
+    def test_batch_get_op_success(self, store, mock_boto_client):
+        """Test successful GetOp operation via list_events."""
+        event_timestamp = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        mock_boto_client.list_events.return_value = {
+            "events": [
+                {
+                    "payload": [
+                        {
+                            "conversational": {
+                                "content": {"text": "Hello, world!"},
+                                "role": "USER",
+                            }
+                        }
+                    ],
+                    "eventTimestamp": event_timestamp,
+                }
+            ]
         }
 
-        ops = [GetOp(namespace=("test_actor", "test_session"), key="test-key")]
+        op_key = "test-key"
+        ops = [GetOp(namespace=("test_actor", "test_session"), key=op_key)]
         results = store.batch(ops)
 
         assert len(results) == 1
         result = results[0]
         assert isinstance(result, Item)
         assert result.namespace == ("test_actor", "test_session")
-        assert result.key == sample_memory_record["memoryRecordId"]
+        assert result.key == op_key
         assert result.value["content"] == "Hello, world!"
+        assert result.value["messages"] == [{"text": "Hello, world!", "role": "USER"}]
 
-        mock_boto_client.get_memory_record.assert_called_once_with(
-            memoryId="test-memory-id", memoryRecordId="test-key"
+        # Pin the exact API call shape to protect against regressions in _handle_get
+        mock_boto_client.list_events.assert_called_once_with(
+            memoryId="test-memory-id",
+            actorId="test_actor",
+            sessionId="test_session",
+            includePayloads=True,
+            maxResults=100,
+            filter={
+                "eventMetadata": [
+                    {
+                        "left": {"metadataKey": STORE_KEY_METADATA},
+                        "operator": "EQUALS_TO",
+                        "right": {"metadataValue": {"stringValue": op_key}},
+                    }
+                ]
+            },
         )
 
     def test_batch_get_op_not_found(self, store, mock_boto_client):
-        """Test GetOp when record not found."""
-        mock_boto_client.get_memory_record.side_effect = ClientError(
+        """Test GetOp when list_events raises ResourceNotFoundException."""
+        mock_boto_client.list_events.side_effect = ClientError(
             error_response={"Error": {"Code": "ResourceNotFoundException"}},
-            operation_name="GetMemoryRecord",
+            operation_name="ListEvents",
         )
 
         ops = [GetOp(namespace=("test_actor", "test_session"), key="nonexistent")]
@@ -121,10 +151,10 @@ class TestAgentCoreMemoryStore:
         assert results[0] is None
 
     def test_batch_get_op_other_error(self, store, mock_boto_client):
-        """Test GetOp with other boto3 errors."""
-        mock_boto_client.get_memory_record.side_effect = ClientError(
+        """Test GetOp with other boto3 errors on list_events."""
+        mock_boto_client.list_events.side_effect = ClientError(
             error_response={"Error": {"Code": "AccessDeniedException"}},
-            operation_name="GetMemoryRecord",
+            operation_name="ListEvents",
         )
 
         ops = [GetOp(namespace=("test_actor", "test_session"), key="test-key")]
@@ -330,8 +360,21 @@ class TestAgentCoreMemoryStore:
         self, store, mock_boto_client, sample_memory_record, sample_item_data
     ):
         """Test batch with mixed operation types."""
-        mock_boto_client.get_memory_record.return_value = {
-            "memoryRecord": sample_memory_record
+        event_timestamp = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        mock_boto_client.list_events.return_value = {
+            "events": [
+                {
+                    "payload": [
+                        {
+                            "conversational": {
+                                "content": {"text": "Hello, world!"},
+                                "role": "USER",
+                            }
+                        }
+                    ],
+                    "eventTimestamp": event_timestamp,
+                }
+            ]
         }
         mock_boto_client.retrieve_memory_records.return_value = {
             "memoryRecordSummaries": [sample_memory_record]
@@ -379,20 +422,6 @@ class TestAgentCoreMemoryStore:
                 await store.abatch(ops)
 
         asyncio.run(test_async())
-
-    def test_convert_memory_record_to_item(self, store, sample_memory_record):
-        """Test conversion of memory record to Item."""
-        namespace = ("test_actor", "test_session")
-
-        item = store._convert_memory_record_to_item(sample_memory_record, namespace)
-
-        assert isinstance(item, Item)
-        assert item.namespace == namespace
-        assert item.key == sample_memory_record["memoryRecordId"]
-        assert item.value["content"] == "Hello, world!"
-        assert item.value["memory_strategy_id"] == "strategy-123"
-        assert isinstance(item.created_at, datetime)
-        assert isinstance(item.updated_at, datetime)
 
     def test_convert_memory_records_to_search_items(self, store, sample_memory_record):
         """Test conversion of memory records to SearchItem objects."""
@@ -529,6 +558,109 @@ class TestAgentCoreMemoryStore:
         assert result_none.tzinfo == timezone.utc
         assert isinstance(result_invalid, datetime)
         assert result_invalid.tzinfo == timezone.utc
+
+    def test_put_get_roundtrip(self, store, mock_boto_client):
+        """Regression test for #708: put→get round-trip returns stored value."""
+        mock_boto_client.create_event.return_value = {
+            "event": {"eventId": "event-123", "memoryId": "test-memory-id"}
+        }
+
+        put_op = PutOp(
+            namespace=("user1", "session1"),
+            key="k1",
+            value={"message": HumanMessage(content="I love hot chocolate!")},
+        )
+        store.batch([put_op])
+
+        call_args = mock_boto_client.create_event.call_args[1]
+        assert call_args["metadata"] == {STORE_KEY_METADATA: {"stringValue": "k1"}}
+
+        event_timestamp = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        mock_boto_client.list_events.return_value = {
+            "events": [
+                {
+                    "payload": [
+                        {
+                            "conversational": {
+                                "content": {"text": "I love hot chocolate!"},
+                                "role": "USER",
+                            }
+                        }
+                    ],
+                    "eventTimestamp": event_timestamp,
+                }
+            ]
+        }
+
+        get_op = GetOp(namespace=("user1", "session1"), key="k1")
+        results = store.batch([get_op])
+
+        assert len(results) == 1
+        item = results[0]
+        assert isinstance(item, Item)
+        assert item.key == "k1"
+        assert "I love hot chocolate!" in item.value["content"]
+        assert item.namespace == ("user1", "session1")
+
+    def test_batch_get_op_no_events_returns_none(self, store, mock_boto_client):
+        """Test GetOp returns None when list_events returns empty events list."""
+        mock_boto_client.list_events.return_value = {"events": []}
+
+        ops = [GetOp(namespace=("test_actor", "test_session"), key="absent-key")]
+        results = store.batch(ops)
+
+        assert len(results) == 1
+        assert results[0] is None
+
+    def test_batch_get_op_selects_latest_event(self, store, mock_boto_client):
+        """Test GetOp selects the most recent event (last-write-wins)."""
+        older_timestamp = datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+        newer_timestamp = datetime(2024, 1, 2, 15, 0, 0, tzinfo=timezone.utc)
+
+        mock_boto_client.list_events.return_value = {
+            "events": [
+                {
+                    "payload": [
+                        {
+                            "conversational": {
+                                "content": {"text": "old message"},
+                                "role": "USER",
+                            }
+                        }
+                    ],
+                    "eventTimestamp": newer_timestamp,
+                },
+                {
+                    "payload": [
+                        {
+                            "conversational": {
+                                "content": {"text": "even older message"},
+                                "role": "USER",
+                            }
+                        }
+                    ],
+                    "eventTimestamp": older_timestamp,
+                },
+            ]
+        }
+
+        ops = [GetOp(namespace=("test_actor", "test_session"), key="shared-key")]
+        results = store.batch(ops)
+
+        assert len(results) == 1
+        result = results[0]
+        assert isinstance(result, Item)
+        assert result.value["content"] == "old message"
+        assert result.key == "shared-key"
+
+    def test_get_op_invalid_namespace(self, store, mock_boto_client):
+        """Test GetOp with invalid namespace raises ValueError."""
+        ops = [GetOp(namespace=("single_element",), key="test-key")]
+
+        with pytest.raises(
+            ValueError, match="Namespace must be a tuple of \\(actor_id, session_id\\)"
+        ):
+            store.batch(ops)
 
     def test_convert_event_to_item_single_payload(self, store):
         """Test _convert_event_to_item with a normal single-entry payload."""
