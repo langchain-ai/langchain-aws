@@ -452,3 +452,11 @@ class TestAgentCoreMemoryStoreIntegration:
         assert item is not None, "get() should return a non-None Item"
         assert item.key == key
         assert item.value["content"] == "Second version of the message"
+
+    def test_get_absent_key_returns_none(self, store, actor_id, session_id):
+        """Test that get() for a never-stored key returns None."""
+        absent_key = f"never-put-key-{uuid.uuid4().hex[:8]}"
+
+        item = store.get((actor_id, session_id), absent_key)
+
+        assert item is None
