@@ -191,7 +191,8 @@ class AgentCoreMemoryStore(BaseStore):
                 # Memory resource, actor, or session not found — treat as absent key
                 logger.error(
                     f"Failed to get event: {e} - "
-                    f"memory_id={self.memory_id}, actor_id={actor_id}, session_id={session_id}"
+                    f"memory_id={self.memory_id}, "
+                    f"actor_id={actor_id}, session_id={session_id}"
                 )
                 return None
             else:
@@ -309,8 +310,6 @@ class AgentCoreMemoryStore(BaseStore):
         if not namespace_tuple:
             return "/"
         return "/" + "/".join(namespace_tuple)
-
-
 
     def _convert_memory_records_to_search_items(
         self, memory_records: list, namespace: tuple[str, ...]

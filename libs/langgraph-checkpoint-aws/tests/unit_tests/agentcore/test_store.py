@@ -548,7 +548,7 @@ class TestAgentCoreMemoryStore:
         """Test _parse_timestamp returns the same datetime object."""
         dt = datetime(2025, 6, 15, 9, 30, 0, tzinfo=timezone.utc)
         result = store._parse_timestamp(dt)
-        assert result is dt  # identity check: no copy or reconstruction, same object returned
+        assert result is dt  # identity: same object returned, no copy
 
     def test_parse_invalid_timestamp_returns_now(self, store):
         """Test _parse_timestamp with invalid inputs returns a UTC datetime."""
