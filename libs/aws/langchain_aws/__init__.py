@@ -10,6 +10,11 @@ from langchain_aws.retrievers import (
 )
 
 if TYPE_CHECKING:
+    from langchain_aws.batch import (
+        BatchJob,
+        BedrockBatchManager,
+        BedrockBatchNode,
+    )
     from langchain_aws.chains import (
         create_neptune_opencypher_qa_chain,
         create_neptune_sparql_qa_chain,
@@ -81,6 +86,9 @@ except Exception:
 
 __all__ = [
     "__version__",
+    "BatchJob",
+    "BedrockBatchManager",
+    "BedrockBatchNode",
     "BedrockEmbeddings",
     "BedrockLLM",
     "ChatAnthropicBedrock",
@@ -124,11 +132,17 @@ def __getattr__(name: str) -> Any:
             "langchain_aws.chat_models",
             'pip install "langchain-aws[nova-sonic]"',
         ),
+        "BedrockBatchNode": (
+            "langchain_aws.batch",
+            'pip install "langchain-aws[batch]"',
+        ),
     }
 
     # Modules deferred to avoid importing heavyweight transitive deps
     # (e.g. numpy, neptune connector) at package import time
     _deferred_imports: dict[str, str] = {
+        "BatchJob": "langchain_aws.batch",
+        "BedrockBatchManager": "langchain_aws.batch",
         "BedrockEmbeddings": "langchain_aws.embeddings",
         "BedrockRerank": "langchain_aws.document_compressors.rerank",
         "InMemorySemanticCache": "langchain_aws.vectorstores.inmemorydb",
