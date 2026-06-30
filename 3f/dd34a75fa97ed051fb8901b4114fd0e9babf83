@@ -1,0 +1,46 @@
+libs/aws/tests/integration_tests/tools/test_nova.py
+  s_5004484b732a90::t_1a278a1db1f230 667-670
+  s_5004484b732a90::t_e25dfb8c233cb4 412
+  s_5004484b732a90::t_016c62308a7cf1 697-700
+  s_5004484b732a90::t_a8b935d1a968c1 730-733
+  s_5004484b732a90::t_92a9e5c6e3685b 17
+  s_5004484b732a90::t_2e4f91006b1769 10-11
+  s_5004484b732a90::t_5e16eb652c1737 645-648
+  s_5004484b732a90::t_6401db7ed9821a 761-764,800,803
+  s_5004484b732a90::t_e986cda782874b 28,36-68
+  s_5004484b732a90::t_f446d567c586fb 834,859
+  s_8300ede64af67d::t_98c41bbfd92209 74-78,80-102
+  s_8300ede64af67d::t_fb08c3099a655b 15,18,29-32
+  s_5004484b732a90::t_02364f6ab83664 877-878
+  s_5004484b732a90::t_69f0f17cbe5873 254-256
+  s_5004484b732a90::t_01b1f290814b26 860
+  s_5004484b732a90::t_c5ab48e1c256b2 79
+  s_5004484b732a90::t_69ac01f4e0df8e 804,900-901
+  s_5004484b732a90::t_b9b21023553e0f 27
+  s_5004484b732a90::t_c7200ccf8b8738 801-802
+  s_5004484b732a90::t_26f87382f4cf9d 33-35,69-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.4",
+  "base_commit_sha": "3fdd34a75fa97ed051fb8901b4114fd0e9babf83",
+  "prompts": {},
+  "sessions": {
+    "s_5004484b732a90": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bf236296-1f0d-49b1-8a1e-0aa7d12ec77a",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Mason Daugherty <github@mdrxy.com>"
+    },
+    "s_8300ede64af67d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1933-76d2-7dd2-9948-67d2e43ce488",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Mason Daugherty <github@mdrxy.com>"
+    }
+  }
+}
