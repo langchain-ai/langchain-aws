@@ -649,7 +649,7 @@ typing = [
 
 [package.metadata]
 requires-dist = [
-    { name = "boto3", specifier = ">=1.40.19" },
+    { name = "boto3", specifier = ">=1.42.90" },
     { name = "langgraph", specifier = ">=1.0.0" },
     { name = "langgraph-checkpoint", specifier = ">=3.0.0,<5.0.0" },
     { name = "orjson", marker = "extra == 'valkey'", specifier = ">=3.11.3" },
