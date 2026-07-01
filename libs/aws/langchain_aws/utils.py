@@ -1,7 +1,10 @@
 import logging
 import os
 import re
+import threading
+import time
 from abc import abstractmethod
+from datetime import timedelta
 from typing import Any, Dict, Generic, Iterator, List, Literal, Optional, TypeVar, Union
 
 from botocore.exceptions import BotoCoreError, UnknownServiceError
@@ -495,3 +498,109 @@ def trim_message_whitespace(messages: List[Any]) -> List[Any]:
                     last_message.content[j] = block_dict
 
     return messages
+
+
+class _BedrockApiKeyProvider:
+    """Generates and caches short-term Bedrock API keys.
+
+    Uses ``aws-bedrock-token-generator`` to produce short-term API keys from
+    AWS credentials.  Keys are cached and regenerated when near expiry.
+
+    The instance is callable (sync) and also exposes an ``async_call`` method
+    for use with async clients.
+
+    See: https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-generate.html
+    """
+
+    # Bedrock short-term API keys have a 12 h max lifetime as of 2026-04.
+    # If the service changes this, update accordingly or parse the actual
+    # expiry from the token response when available.
+    _TTL_SECONDS = 43200  # 12 h max
+    # Matches botocore's _DEFAULT_ADVISORY_REFRESH_TIMEOUT (900s) and
+    # _DEFAULT_MANDATORY_REFRESH_TIMEOUT (600s) for credential refresh.
+    _ADVISORY_REFRESH_SECONDS = 900  # try to refresh 15 min before expiry
+    _MANDATORY_REFRESH_SECONDS = 600  # must refresh 10 min before expiry
+
+    def __init__(self, region: str) -> None:
+        self._region = region
+        self._token: Optional[str] = None
+        self._expires_at: float = 0.0
+        self._lock = threading.Lock()
+
+    def __call__(self) -> str:
+        """Return a cached API key, refreshing if near expiry.
+
+        Follows botocore's ``RefreshableCredentials._refresh`` pattern:
+        - Outside advisory window: return cached token immediately.
+        - Advisory window (15–10 min before expiry): try non-blocking
+          refresh. If lock is held or refresh fails, return old token.
+        - Mandatory window (<10 min before expiry): block until refresh
+          completes or raise on failure.
+        """
+        if not self._refresh_needed(self._ADVISORY_REFRESH_SECONDS):
+            return self._token  # type: ignore[return-value]
+
+        if self._lock.acquire(blocking=False):
+            try:
+                # Re-check: another thread may have refreshed before we
+                # acquired the lock.
+                if not self._refresh_needed(self._ADVISORY_REFRESH_SECONDS):
+                    return self._token  # type: ignore[return-value]
+                is_mandatory = self._refresh_needed(self._MANDATORY_REFRESH_SECONDS)
+                self._protected_refresh(is_mandatory=is_mandatory)
+                return self._token  # type: ignore[return-value]
+            finally:
+                self._lock.release()
+        elif self._refresh_needed(self._MANDATORY_REFRESH_SECONDS):
+            # Token is close to expiry — must block until refreshed.
+            with self._lock:
+                # Re-check: another thread may have refreshed while we
+                # were waiting for the lock.
+                if not self._refresh_needed(self._MANDATORY_REFRESH_SECONDS):
+                    return self._token  # type: ignore[return-value]
+                self._protected_refresh(is_mandatory=True)
+                return self._token  # type: ignore[return-value]
+
+        # Another thread is refreshing; return current token.
+        # Note: self._token is never None here because when _token is None,
+        # _refresh_needed() returns True for the mandatory threshold, so the
+        # elif branch above always triggers and blocks until a token exists.
+        return self._token  # type: ignore[return-value]
+
+    def _refresh_needed(self, refresh_in: int) -> bool:
+        """Check if a refresh is needed within ``refresh_in`` seconds."""
+        if self._token is None:
+            return True
+        return time.monotonic() >= self._expires_at - refresh_in
+
+    def _protected_refresh(self, *, is_mandatory: bool) -> None:
+        """Attempt to refresh the token. Only raises if mandatory."""
+        try:
+            self._do_refresh()
+        except Exception:
+            if is_mandatory:
+                raise
+            logger.debug(
+                "Advisory refresh failed, using existing token.",
+                exc_info=True,
+            )
+
+    async def async_call(self) -> str:
+        """Async-compatible version that returns a cached API key.
+
+        Offloads to a thread to avoid blocking the event loop if a
+        token refresh (network call) is needed.
+        """
+        import asyncio
+
+        return await asyncio.to_thread(self)
+
+    def _do_refresh(self) -> None:
+        from aws_bedrock_token_generator import provide_token
+
+        token = provide_token(
+            region=self._region,
+            expiry=timedelta(seconds=self._TTL_SECONDS),
+        )
+        self._token = token
+        self._expires_at = time.monotonic() + self._TTL_SECONDS
