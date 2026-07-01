@@ -1,0 +1,138 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "langchain-backend-aws"
+version = "0.0.1"
+description = "Amazon S3 backend for Deep Agents"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11,<4.0"
+authors = []
+keywords = ["aws", "s3", "langchain", "deepagents", "backend"]
+dependencies = [
+    # ``deepagents`` is pinned with an upper bound because
+    # ``langchain_backend_aws.s3._paths`` consumes ``validate_path`` from
+    # ``deepagents.backends.utils`` and depends on its current contract
+    # of performing **at most one** percent-decode pass before handing
+    # the path to our own normalization scan. A future major release
+    # that decoded twice (or changed the Unicode normalization step)
+    # would silently weaken the double-encoded traversal defense
+    # (``%252e%252e``) — re-validate the assumption in
+    # :func:`langchain_backend_aws.s3._paths.path_to_key` before
+    # raising the upper bound.
+    "deepagents>=0.5.0,<0.6",
+    # ``boto3>=1.42.42`` is required for conditional ``PutObject`` with
+    # ``IfNoneMatch="*"`` / ``IfMatch=etag`` (see :meth:`S3Backend.write`
+    # and :meth:`S3Backend.edit`). AWS S3 added the conditional-write
+    # API in late 2024; older boto3 releases silently drop the
+    # precondition headers and the create-if-absent / optimistic
+    # concurrency contracts degrade to "last writer wins".
+    "boto3>=1.42.42",
+    # ``regex`` is used by ``grep`` instead of stdlib ``re`` because it
+    # supports a per-call ``timeout`` argument that bounds catastrophic
+    # backtracking. ``re`` has no interruption mechanism, so a crafted
+    # pattern like ``(a+)+$`` could otherwise pin a worker indefinitely.
+    "regex>=2024.5.10",
+]
+
+[project.urls]
+"Source Code" = "https://github.com/langchain-ai/langchain-aws/tree/main/libs/langchain-backend-aws"
+Repository = "https://github.com/langchain-ai/langchain-aws"
+
+[tool.hatch.build.targets.wheel]
+packages = ["langchain_backend_aws"]
+
+[dependency-groups]
+test = [
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
+    "pytest-asyncio>=0.20,<2",
+    "pytest-socket>=0.7.0",
+    "pytest-xdist>=3.8.0,<4.0.0",
+]
+test_integration = [
+    "langchain-tests>=1.1.3",
+]
+lint = ["ruff>=0.13.0"]
+typing = [
+    "mypy>=1.17.1",
+    "boto3-stubs[essential]>=1.42.5",
+]
+dev = [
+    "boto3-stubs[essential]>=1.42.5",
+    "botocore-stubs>=1.42.5",
+]
+
+[tool.uv]
+prerelease = "allow"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "T201",
+    # Security-sensitive package: opt into the additional rule sets
+    # below so common foot-guns surface as lint errors rather than as
+    # review comments. ``B`` catches likely bugs (mutable defaults,
+    # unused exception bindings); ``S`` flags insecure constructs
+    # (``assert`` in shipped code, ``subprocess`` shell=True, weak
+    # crypto); ``SIM`` simplifies redundant control flow; ``RET``
+    # enforces consistent return statements.
+    "B",
+    "S",
+    "SIM",
+    "RET",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately use ``assert`` (S101), construct boto stubs that
+# look like hardcoded credentials to ``S105``/``S106``, and exercise
+# error paths that ``S110`` (try-except-pass) flags. Suppressing these
+# in tests only — production code keeps the full rule set.
+"tests/**/*.py" = ["S101", "S105", "S106", "S108", "S110", "S311"]
+
+[tool.mypy]
+ignore_missing_imports = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers --strict-config --durations=5"
+markers = [
+    "requires: mark tests as requiring a specific library",
+    "asyncio: mark tests as requiring asyncio",
+    "compile: mark placeholder test used to compile integration tests without running them",
+    "scheduled: mark tests to run in scheduled testing",
+]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["langchain_backend_aws"]
+omit = [
+    "tests/*",
+    "*/tests/*",
+    "test_*",
+    "*_test.py",
+]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+precision = 2
+show_missing = true
+
+[tool.coverage.html]
+directory = "htmlcov"
