@@ -44,6 +44,11 @@ class AgentCoreMemoryStore(BaseStore):
 
     Args:
         memory_id: The AgentCore Memory resource ID
+        hierarchical_search: Perform memory record retrieval using hierarchical
+            search (i.e. sets `namespacePath`), returning the memory records whose
+            namespace falls under the specified path. Defaults to True. If set to
+            False, will instead perform an exact match search (i.e. sets
+            `namespace`) for memory records stored at that precise path.
         **boto3_kwargs: Additional arguments passed to boto3.client()
 
     Example:
@@ -67,8 +72,15 @@ class AgentCoreMemoryStore(BaseStore):
     supports_ttl: bool = False
     ttl_config = None
 
-    def __init__(self, *, memory_id: str, **boto3_kwargs: Any):
+    def __init__(
+        self,
+        *,
+        memory_id: str,
+        hierarchical_search: bool = True,
+        **boto3_kwargs: Any,
+    ):
         self.memory_id = memory_id
+        self.hierarchical_search = hierarchical_search
 
         config = Config(
             user_agent_extra="x-client-framework:langgraph_agentcore_memory_store",
@@ -181,11 +193,16 @@ class AgentCoreMemoryStore(BaseStore):
 
         search_criteria = {"searchQuery": op.query, "topK": op.limit}
 
+        if self.hierarchical_search:
+            namespace_param = {"namespacePath": namespace_str}
+        else:
+            namespace_param = {"namespace": namespace_str}
+
         response = self.client.retrieve_memory_records(
             memoryId=self.memory_id,
-            namespace=namespace_str,
             searchCriteria=search_criteria,
             maxResults=op.limit,
+            **namespace_param,
         )
 
         memory_records = response.get("memoryRecordSummaries", [])

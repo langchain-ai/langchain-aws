@@ -187,6 +187,40 @@ class TestAgentCoreMemoryStoreIntegration:
 
         assert isinstance(found_results, bool)
 
+    def test_hierarchical_vs_exact_match(self, store, memory_id, actor_id):
+        """Test hierarchical search matches a parent prefix but exact match does not."""
+        session = generate_valid_session_id()
+
+        exact_match_store = AgentCoreMemoryStore(
+            memory_id=memory_id, region_name="us-west-2", hierarchical_search=False
+        )
+
+        messages = [
+            HumanMessage("I really love Croatian food, especially cevapi"),
+            AIMessage("Great choice! Cevapi is a classic Balkan grilled dish"),
+            HumanMessage("I also enjoy Croatian wine, particularly Plavac Mali"),
+            AIMessage("Plavac Mali pairs wonderfully with Dalmatian cuisine"),
+        ]
+        for i, msg in enumerate(messages):
+            store.put(
+                namespace=(actor_id, session), key=f"summ_{i}", value={"message": msg}
+            )
+            time.sleep(1)
+
+        # Extra time for extraction since summaries are generated async
+        time.sleep(120)
+
+        parent_prefix = ("summaries", "actors", actor_id)
+        query = "food preferences Croatian cuisine"
+
+        hierarchical_results = store.search(parent_prefix, query=query, limit=5)
+        exact_match_results = exact_match_store.search(
+            parent_prefix, query=query, limit=5
+        )
+
+        assert hierarchical_results, "namespacePath should match the parent prefix"
+        assert not exact_match_results, "namespace should not match a parent prefix"
+
     def test_batch_operations(self, store, actor_id, session_id):
         """Test batch operations with multiple put and search operations."""
         messages = [
