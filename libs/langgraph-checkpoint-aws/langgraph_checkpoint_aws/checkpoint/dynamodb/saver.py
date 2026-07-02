@@ -352,6 +352,11 @@ class DynamoDBSaver(BaseCheckpointSaver):
     ) -> None:
         """Asynchronously store intermediate writes linked to a checkpoint.
 
+        Each write's DynamoDB metadata update and payload storage are issued
+        concurrently via ``asyncio.gather``, reducing total latency from
+        O(N * round-trip) to approximately O(single round-trip) when the
+        underlying boto3 thread pool can absorb the parallel calls.
+
         Args:
             config: Configuration of the related checkpoint
             writes: List of (channel, value) tuples to store
@@ -359,12 +364,23 @@ class DynamoDBSaver(BaseCheckpointSaver):
             task_path: Path of the task creating the writes (for nested task tracking)
 
         Raises:
-            ValueError: If writes contain invalid tuples or required parameters
-                are missing
-            ClientError: If DynamoDB operation fails
+            ValueError: If required parameters are missing from config
+            ClientError: If any DynamoDB or S3 operation fails
         """
-        return await run_in_executor(
-            None, self.put_writes, config, writes, task_id, task_path
+        thread_id = config["configurable"].get("thread_id")
+        checkpoint_id = config["configurable"].get("checkpoint_id")
+        checkpoint_ns = config["configurable"].get("checkpoint_ns", "")
+
+        if thread_id is None or checkpoint_id is None:
+            raise ValueError("Runnable config must contain thread_id and checkpoint_id")
+
+        await self.repo.aput_writes(
+            thread_id=thread_id,
+            checkpoint_ns=checkpoint_ns,
+            checkpoint_id=checkpoint_id,
+            writes=writes,
+            task_id=task_id,
+            task_path=task_path,
         )
 
     def list(

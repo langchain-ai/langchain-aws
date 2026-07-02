@@ -1,5 +1,6 @@
 """Unified repository for checkpoint and writes operations."""
 
+import asyncio
 import logging
 import time
 from collections.abc import Callable, Iterator, Sequence
@@ -628,6 +629,75 @@ class UnifiedRepository:
                 serialized_data=ref_item["value_data"],
                 allow_overwrite=all_special,
             )
+
+    async def aput_writes(
+        self,
+        thread_id: str,
+        checkpoint_ns: str,
+        checkpoint_id: str,
+        writes: Sequence[tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
+    ) -> None:
+        """Store writes concurrently using asyncio.gather.
+
+        Each (DynamoDB metadata write, payload storage) pair runs in the thread
+        pool concurrently rather than sequentially.  Serialization is done
+        synchronously first (no I/O) so that the event loop is not blocked.
+
+        Args:
+            thread_id: Thread identifier
+            checkpoint_ns: Checkpoint namespace
+            checkpoint_id: Checkpoint identifier
+            writes: Sequence of (channel, value) tuples to store
+            task_id: Task identifier creating the writes
+            task_path: Optional task path for nested task tracking
+
+        Raises:
+            ClientError: If any DynamoDB or S3 operation fails
+        """
+        if not writes:
+            return
+
+        all_special = all(w[0] in WRITES_IDX_MAP for w in writes)
+
+        # Materialise write items synchronously (pure serialisation, no I/O).
+        items = list(
+            self._build_write_items(
+                thread_id,
+                checkpoint_ns,
+                checkpoint_id,
+                writes,
+                task_id,
+                task_path,
+                allow_overwrites=all_special,
+            )
+        )
+
+        loop = asyncio.get_event_loop()
+
+        async def _store_one(
+            base_item: dict[str, Any], ref_item: dict[str, Any]
+        ) -> None:
+            await asyncio.gather(
+                loop.run_in_executor(
+                    None,
+                    self.put_single_write_item,
+                    checkpoint_id,
+                    base_item,
+                    all_special,
+                ),
+                loop.run_in_executor(
+                    None,
+                    self.storage.store_data,
+                    ref_item["chunk_key"],
+                    ref_item["s3_key"],
+                    ref_item["value_data"],
+                    all_special,
+                ),
+            )
+
+        await asyncio.gather(*[_store_one(b, r) for b, r in items])
 
     def _build_write_items(
         self,

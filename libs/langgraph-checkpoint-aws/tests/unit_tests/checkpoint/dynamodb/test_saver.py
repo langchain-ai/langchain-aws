@@ -1,6 +1,6 @@
 """Comprehensive unit tests for DynamoDBSaver."""
 
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from botocore.config import Config
@@ -321,9 +321,17 @@ class TestDynamoDBSaverAsyncMethods:
         result = await saver.aput(config, {"id": TEST_CHECKPOINT_ID}, {}, {})
         assert result["configurable"]["checkpoint_id"] == TEST_CHECKPOINT_ID
 
-        # Test aput_writes
+        # Test aput_writes — now calls repo.aput_writes (async, parallel I/O)
+        mock_repo.aput_writes = AsyncMock()
         await saver.aput_writes(config, [(TEST_CHANNEL, {"value": 1})], TEST_TASK_ID)
-        assert mock_repo.put_writes.called
+        mock_repo.aput_writes.assert_awaited_once_with(
+            thread_id=TEST_THREAD_ID,
+            checkpoint_ns=TEST_CHECKPOINT_NS,
+            checkpoint_id=TEST_CHECKPOINT_ID,
+            writes=[(TEST_CHANNEL, {"value": 1})],
+            task_id=TEST_TASK_ID,
+            task_path="",
+        )
 
 
 class TestDynamoDBSaverDeleteThread:

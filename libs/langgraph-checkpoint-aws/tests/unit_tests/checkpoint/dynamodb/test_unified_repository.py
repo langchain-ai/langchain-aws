@@ -1,6 +1,6 @@
 """Comprehensive tests for UnifiedRepository."""
 
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock, call, patch
 
 import pytest
 from botocore.exceptions import ClientError
@@ -1236,3 +1236,78 @@ class TestDetermineStorageLocation:
         put_item_call = repo.dynamodb_client.put_item.call_args
         item = put_item_call[1]["Item"]
         assert item["ref_loc"]["S"] == "DYNAMODB"
+
+
+class TestAPutWrites:
+    """Tests for UnifiedRepository.aput_writes (parallel I/O, issue #766)."""
+
+    @pytest.fixture()
+    def repo(self):
+        mock_client = Mock()
+        mock_serializer = Mock()
+        mock_serializer.serialize.return_value = ("msgpack", b"serialized", None)
+        mock_storage = Mock()
+        mock_storage.should_offload_to_s3.return_value = False
+        return UnifiedRepository(
+            dynamodb_client=mock_client,
+            table_name=TEST_TABLE_NAME,
+            serializer=mock_serializer,
+            storage_strategy=mock_storage,
+        )
+
+    @pytest.mark.asyncio
+    async def test_aput_writes_empty(self, repo):
+        """aput_writes with an empty writes list must return without calling DynamoDB."""
+        await repo.aput_writes(
+            thread_id=TEST_THREAD_ID,
+            checkpoint_ns=TEST_CHECKPOINT_NS,
+            checkpoint_id=TEST_CHECKPOINT_ID,
+            writes=[],
+            task_id=TEST_TASK_ID,
+        )
+        repo.dynamodb_client.put_item.assert_not_called()
+        repo.storage.store_data.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_aput_writes_issues_all_calls(self, repo):
+        """aput_writes must call put_item and store_data once per write entry."""
+        writes = [("channel1", "v1"), ("channel2", "v2"), ("channel3", "v3")]
+        await repo.aput_writes(
+            thread_id=TEST_THREAD_ID,
+            checkpoint_ns=TEST_CHECKPOINT_NS,
+            checkpoint_id=TEST_CHECKPOINT_ID,
+            writes=writes,
+            task_id=TEST_TASK_ID,
+        )
+        assert repo.dynamodb_client.put_item.call_count == 3
+        assert repo.storage.store_data.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_aput_writes_runs_concurrently(self, repo):
+        """Each write's DynamoDB + storage calls must be issued concurrently.
+
+        We verify this by checking that asyncio.gather is called with multiple
+        coroutines (one per write) rather than awaiting them sequentially.
+        """
+        import asyncio
+
+        writes = [("channel1", "v1"), ("channel2", "v2")]
+
+        gather_calls: list[int] = []
+        original_gather = asyncio.gather
+
+        async def spy_gather(*coros, **kw):
+            gather_calls.append(len(coros))
+            return await original_gather(*coros, **kw)
+
+        with patch("asyncio.gather", side_effect=spy_gather):
+            await repo.aput_writes(
+                thread_id=TEST_THREAD_ID,
+                checkpoint_ns=TEST_CHECKPOINT_NS,
+                checkpoint_id=TEST_CHECKPOINT_ID,
+                writes=writes,
+                task_id=TEST_TASK_ID,
+            )
+
+        # The outer gather call should have received 2 coroutines (one per write).
+        assert gather_calls[0] == len(writes)
