@@ -470,6 +470,21 @@ def thinking_in_params(params: dict) -> bool:
     return params.get("thinking", {}).get("type") in ("enabled", "adaptive")
 
 
+def thinking_forced_tool_use_unsupported(model: str) -> bool:
+    """Check if the model rejects forced tool use while thinking is enabled."""
+    if "claude-opus-4-8" in model:
+        return False
+    return any(
+        x in model
+        for x in (
+            "claude-3-7-",
+            "claude-sonnet-4",
+            "claude-opus-4",
+            "claude-haiku-4",
+        )
+    )
+
+
 def trim_message_whitespace(messages: List[Any]) -> List[Any]:
     """Trim trailing whitespace from final AIMessage content."""
     if not messages or not isinstance(messages[-1], AIMessage):
