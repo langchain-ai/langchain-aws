@@ -793,17 +793,17 @@ class ChatBedrockConverse(BaseChatModel):
                 )
             )
             or
-            # Anthropic Claude 3 and newer models
+            # Anthropic Claude 3 and newer models.
+            # All current Claude models support streaming with tools; only the legacy
+            # claude-v2/claude-instant family does not (handled in the "no_tools" branch
+            # below).  Checking for the "claude-" prefix avoids maintaining an explicit
+            # per-generation allowlist that would silently break for new models
+            # (e.g. claude-sonnet-5, claude-haiku-5, ...).
             (
                 provider == "anthropic"
-                and any(
-                    x in model_id_lower
-                    for x in [
-                        "claude-3",
-                        "claude-sonnet-4",
-                        "claude-opus-4",
-                        "claude-haiku-4",
-                    ]
+                and "claude-" in model_id_lower
+                and not any(
+                    x in model_id_lower for x in ["claude-v2", "claude-instant"]
                 )
             )
             or

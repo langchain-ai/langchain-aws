@@ -766,6 +766,13 @@ def test_standard_tracing_params() -> None:
         ("us.anthropic.claude-opus-4-20250514-v1:0", False),
         ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", False),
         ("us.anthropic.claude-3-haiku-20240307-v1:0", False),
+        # Claude 5 family – previously missing from the allowlist (issue #1139)
+        ("us.anthropic.claude-sonnet-5-20250514-v1:0", False),
+        ("us.anthropic.claude-haiku-5-20250514-v1:0", False),
+        ("us.anthropic.claude-opus-5-20250514-v1:0", False),
+        # Legacy Anthropic models must NOT get full streaming
+        ("anthropic.claude-v2:1", "tool_calling"),
+        ("anthropic.claude-instant-v1", "tool_calling"),
         ("cohere.command-r-v1:0", False),
         ("meta.llama3-1-405b-instruct-v1:0", "tool_calling"),
         ("us.meta.llama3-3-70b-instruct-v1:0", "tool_calling"),
@@ -2991,6 +2998,49 @@ def test_configure_streaming_for_resolved_model_no_streaming(
 
     # The streaming should be disabled for models with no streaming support
     assert chat_model.disable_streaming is True
+
+
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_configure_streaming_for_claude5_application_inference_profile(
+    mock_create_client: mock.Mock,
+) -> None:
+    """Regression test for issue #1139.
+
+    An application inference profile backed by Claude Sonnet 5 must resolve to
+    ``disable_streaming=False``.  The previous positive allowlist only enumerated
+    up to ``claude-sonnet-4``/``claude-opus-4``/``claude-haiku-4``, so Claude 5
+    models silently fell through to ``disable_streaming=True``.
+    """
+    mock_bedrock_client = mock.Mock()
+    mock_runtime_client = mock.Mock()
+
+    mock_bedrock_client.get_inference_profile.return_value = {
+        "models": [
+            {
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "anthropic.claude-sonnet-5-20250514-v1:0"
+                )
+            }
+        ]
+    }
+
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        elif service_name == "bedrock-runtime":
+            return mock_runtime_client
+        return mock.Mock()
+
+    mock_create_client.side_effect = side_effect
+
+    chat_model = ChatBedrockConverse(
+        model="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/test-profile",
+        region_name="us-west-2",
+        provider="anthropic",
+    )
+
+    assert chat_model.disable_streaming is False
 
 
 def test_nova_provider_extraction() -> None:
