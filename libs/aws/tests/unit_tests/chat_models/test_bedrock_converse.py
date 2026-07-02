@@ -2332,8 +2332,6 @@ def test__get_base_model() -> None:
             False,
         ),
         (
-            # Application inference profile over Claude Sonnet 5 must keep
-            # streaming enabled (GH#1139)
             "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile",
             "anthropic.claude-sonnet-5",
             "anthropic",
