@@ -759,8 +759,31 @@ def test_standard_tracing_params() -> None:
 
 
 @pytest.mark.parametrize(
+    "model_id",
+    [
+        "global.anthropic.claude-sonnet-5-20260601-v1:0",
+        "global.anthropic.claude-fable-5-20260601-v1:0",
+    ],
+)
+def test_get_streaming_support_anthropic_claude_5_models(model_id: str) -> None:
+    assert ChatBedrockConverse._get_streaming_support("anthropic", model_id) is True
+
+
+def test_get_streaming_support_anthropic_claude_v2_unchanged() -> None:
+    assert (
+        ChatBedrockConverse._get_streaming_support(
+            "anthropic",
+            "anthropic.claude-v2:1",
+        )
+        == "no_tools"
+    )
+
+
+@pytest.mark.parametrize(
     "model_id, disable_streaming",
     [
+        ("global.anthropic.claude-sonnet-5-20260601-v1:0", False),
+        ("global.anthropic.claude-fable-5-20260601-v1:0", False),
         ("us.anthropic.claude-haiku-4-5-20251001-v1:0", False),
         ("us.anthropic.claude-sonnet-4-20250514-v1:0", False),
         ("us.anthropic.claude-opus-4-20250514-v1:0", False),
@@ -2912,6 +2935,81 @@ def test_configure_streaming_for_resolved_model(mock_create_client: mock.Mock) -
 
     # The streaming should be configured based on the resolved model
     assert chat_model.disable_streaming is False
+
+
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_application_inference_profile_claude_sonnet_5_streams(
+    mock_create_client: mock.Mock,
+) -> None:
+    """Test AIP streaming when the resolved model is Claude Sonnet 5."""
+    aip_arn = (
+        "arn:aws:bedrock:us-east-1:123456789012:"
+        "application-inference-profile/test-profile"
+    )
+    mock_bedrock_client = mock.Mock()
+    mock_runtime_client = mock.Mock()
+
+    mock_bedrock_client.get_inference_profile.return_value = {
+        "models": [
+            {
+                "modelArn": (
+                    "arn:aws:bedrock:us-east-1::foundation-model/"
+                    "anthropic.claude-sonnet-5-20260601-v1:0"
+                )
+            }
+        ]
+    }
+    mock_runtime_client.converse_stream.return_value = {
+        "stream": [
+            {"messageStart": {"role": "assistant"}},
+            {
+                "contentBlockDelta": {
+                    "delta": {"text": "Hel"},
+                    "contentBlockIndex": 0,
+                }
+            },
+            {
+                "contentBlockDelta": {
+                    "delta": {"text": "lo"},
+                    "contentBlockIndex": 0,
+                }
+            },
+            {"messageStop": {"stopReason": "end_turn"}},
+            {
+                "metadata": {
+                    "usage": {
+                        "inputTokens": 1,
+                        "outputTokens": 2,
+                        "totalTokens": 3,
+                    }
+                }
+            },
+        ]
+    }
+
+    def side_effect(service_name: str, **kwargs: Any) -> mock.Mock:
+        if service_name == "bedrock":
+            return mock_bedrock_client
+        elif service_name == "bedrock-runtime":
+            return mock_runtime_client
+        return mock.Mock()
+
+    mock_create_client.side_effect = side_effect
+
+    chat_model = ChatBedrockConverse(
+        model=aip_arn,
+        region_name="us-west-2",
+        provider="anthropic",
+        streaming=True,
+    )
+
+    assert chat_model.disable_streaming is False
+
+    chunks = list(chat_model.stream([HumanMessage(content="hello")]))
+
+    assert len(chunks) > 1
+    mock_runtime_client.converse_stream.assert_called_once()
+    mock_runtime_client.converse.assert_not_called()
 
 
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")

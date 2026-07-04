@@ -803,6 +803,8 @@ class ChatBedrockConverse(BaseChatModel):
                         "claude-sonnet-4",
                         "claude-opus-4",
                         "claude-haiku-4",
+                        "claude-sonnet-5",
+                        "claude-fable-5",
                     ]
                 )
             )
