@@ -79,6 +79,7 @@ from langchain_aws.tools.nova_tools import NovaSystemTool
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
+    thinking_forced_tool_use_unsupported,
     thinking_in_params,
     trim_message_whitespace,
 )
@@ -1002,15 +1003,9 @@ class ChatBedrockConverse(BaseChatModel):
             base_model = self._get_base_model()
             if "claude" in base_model:
                 # Tool choice not supported when thinking is enabled
-                thinking_claude_models = (
-                    "claude-3-7-sonnet",
-                    "claude-sonnet-4",
-                    "claude-opus-4",
-                    "claude-haiku-4",
-                )
                 thinking_params = self.additional_model_request_fields or {}
-                if any(
-                    model in base_model for model in thinking_claude_models
+                if thinking_forced_tool_use_unsupported(
+                    base_model
                 ) and thinking_in_params(thinking_params):
                     self.supports_tool_choice_values = ("auto",)
                 else:
@@ -1337,13 +1332,7 @@ class ChatBedrockConverse(BaseChatModel):
             "langchain_core.exceptions.OutputParserException if tool calls are not "
             "generated. Consider adjusting your prompt to ensure the tool is called."
         )
-        thinking_claude_models = (
-            "claude-3-7-sonnet",
-            "claude-sonnet-4",
-            "claude-opus-4",
-            "claude-haiku-4",
-        )
-        if any(model in self._get_base_model() for model in thinking_claude_models):
+        if thinking_forced_tool_use_unsupported(self._get_base_model()):
             additional_context = (
                 "For Claude 3/4 models, you can also support forced tool use "
                 "by disabling `thinking`."
@@ -1560,14 +1549,8 @@ class ChatBedrockConverse(BaseChatModel):
             tool_choice = "any"
         else:
             tool_choice = None
-        thinking_claude_models = (
-            "claude-3-7-sonnet",
-            "claude-sonnet-4",
-            "claude-opus-4",
-            "claude-haiku-4",
-        )
-        if tool_choice is None and any(
-            model in self._get_base_model() for model in thinking_claude_models
+        if tool_choice is None and thinking_forced_tool_use_unsupported(
+            self._get_base_model()
         ):
             # TODO: remove restriction to thinking Claude models. If a model does not
             # support forced tool calling, we we should raise an exception instead of

@@ -632,6 +632,38 @@ def test_claude_thinking_forced_tool_raises(
         chat.bind_tools([GetWeather], tool_choice=tool_choice)
 
 
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "global.anthropic.claude-opus-4-8",
+        "us.anthropic.claude-sonnet-5",
+        "global.anthropic.claude-fable-5",
+    ],
+)
+@pytest.mark.parametrize(
+    "tool_choice",
+    [
+        "any",
+        "GetWeather",
+        {"type": "tool", "name": "GetWeather"},
+    ],
+)
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_claude_5_thinking_forced_tool_allowed(
+    mock_create_aws_client, model_id, tool_choice
+) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    chat = ChatBedrock(
+        model=model_id,
+        region="us-west-2",
+        model_kwargs={
+            "thinking": {"type": "adaptive"},
+        },
+    )
+    chat_with_tools = chat.bind_tools([GetWeather], tool_choice=tool_choice)
+    assert "tool_choice" in cast(RunnableBinding, chat_with_tools).kwargs
+
+
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
 def test_claude_thinking_tool_choice_auto_ok(mock_create_aws_client) -> None:
     mock_create_aws_client.return_value = MagicMock()

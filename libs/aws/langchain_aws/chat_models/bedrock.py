@@ -74,6 +74,7 @@ from langchain_aws.utils import (
     create_aws_client,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
+    thinking_forced_tool_use_unsupported,
     thinking_in_params,
     trim_message_whitespace,
 )
@@ -1354,15 +1355,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
 
             base_model = self._get_base_model()
-            if any(
-                x in base_model
-                for x in (
-                    "claude-3-7-",
-                    "claude-opus-4-",
-                    "claude-sonnet-4-",
-                    "claude-haiku-4-",
-                )
-            ) and thinking_in_params(self.model_kwargs or {}):
+            if thinking_forced_tool_use_unsupported(base_model) and thinking_in_params(
+                self.model_kwargs or {}
+            ):
                 forced = False
                 if isinstance(tool_choice, bool):
                     forced = bool(tool_choice)
@@ -1545,14 +1540,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         tool_name = convert_to_anthropic_tool(schema)["name"]
 
         base_model = self._get_base_model()
-        has_thinking = any(
-            x in base_model
-            for x in (
-                "claude-3-7-",
-                "claude-opus-4-",
-                "claude-sonnet-4-",
-                "claude-haiku-4-",
-            )
+        has_thinking = thinking_forced_tool_use_unsupported(
+            base_model
         ) and thinking_in_params(self.model_kwargs or {})
 
         if has_thinking:
