@@ -448,6 +448,8 @@ def test_trim_message_whitespace_with_empty_messages() -> None:
         ("us.anthropic.claude-sonnet-4-20250514-v1:0", True),
         ("us.anthropic.claude-sonnet-4-20250514-v1:0", True),
         ("us.anthropic.claude-3-5-sonnet-20240620-v1:0", True),
+        ("us.anthropic.claude-fable-5", False),
+        ("us.anthropic.claude-sonnet-5", False),
         ("us.anthropic.claude-3-sonnet-20240229-v1:0", False),
         ("us.meta.llama4-scout-17b-instruct-v1:0", False),
         ("us.amazon.nova-pro-v1:0", False),
