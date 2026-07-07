@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import random
 from collections.abc import AsyncIterator, Iterator, Sequence
+from contextvars import ContextVar
 from typing import Any, TypeAlias, cast
 
 from langchain_core.runnables import RunnableConfig, run_in_executor
@@ -44,6 +45,13 @@ from .models import (
 )
 
 RunnableConfigDict: TypeAlias = dict[str, Any]
+
+# Request-scoped (thread/async-task isolated) capture of the (thread_id, actor_id)
+# seen on a read. Lets nested subgraph reads, whose derived config omits actor_id,
+# inherit the actor from the current request's parent read instead of failing.
+_request_actor: ContextVar[tuple[str, str] | None] = ContextVar(
+    "_agentcore_request_actor", default=None
+)
 
 
 class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
@@ -90,6 +98,22 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         )
         self.processor = EventProcessor()
 
+    def _resolve_actor_id(self, config: RunnableConfig | None) -> str | None:
+        """Resolve the actor id for a read, scoped to the current request.
+
+        Will capture the (thread_id, actor_id) pair when present and let a later
+        derived subgraph read (which omits actor_id) inherit it. Not yet
+        implemented; returns ``None`` so behavior is unchanged for now.
+
+        Args:
+            config: RunnableConfig for the current read.
+
+        Returns:
+            The resolved actor id, or ``None``.
+        """
+        # TODO(#733): capture on read and resolve for subgraph reads.
+        return None
+
     def get_tuple(
         self,
         config: RunnableConfig,
@@ -106,7 +130,8 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         # TODO: There is room for caching here on the client side
 
         checkpoint_config = CheckpointerConfig.from_runnable_config(
-            RunnableConfigDict(config)
+            RunnableConfigDict(config),
+            default_actor_id=self._resolve_actor_id(config),
         )
 
         events = self.checkpoint_event_client.get_events(
@@ -151,7 +176,8 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         # TODO: There is room for caching here on the client side
 
         checkpoint_config = CheckpointerConfig.from_runnable_config(
-            RunnableConfigDict(config) if config else {}
+            RunnableConfigDict(config) if config else {},
+            default_actor_id=self._resolve_actor_id(config),
         )
         config_checkpoint_id = get_checkpoint_id(config) if config else None
 

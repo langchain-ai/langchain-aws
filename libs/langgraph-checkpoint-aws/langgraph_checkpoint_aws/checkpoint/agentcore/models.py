@@ -39,8 +39,23 @@ class CheckpointerConfig(BaseModel):
         return self.thread_id
 
     @classmethod
-    def from_runnable_config(cls, config: dict[str, Any]) -> "CheckpointerConfig":
-        """Create CheckpointerConfig from RunnableConfig."""
+    def from_runnable_config(
+        cls, config: dict[str, Any], *, default_actor_id: str | None = None
+    ) -> "CheckpointerConfig":
+        """Create a CheckpointerConfig from a RunnableConfig.
+
+        Args:
+            config: RunnableConfig whose ``configurable`` dict supplies
+                ``thread_id`` and (normally) ``actor_id``.
+            default_actor_id: Fallback actor id used only when ``config`` omits
+                ``actor_id`` (e.g. a derived subgraph config). Not yet honored.
+
+        Returns:
+            The parsed CheckpointerConfig.
+
+        Raises:
+            InvalidConfigError: If ``thread_id`` or ``actor_id`` is missing.
+        """
         from .constants import InvalidConfigError
 
         configurable = config.get("configurable", {})
@@ -50,6 +65,7 @@ class CheckpointerConfig(BaseModel):
                 "RunnableConfig must contain 'thread_id' for AgentCore Checkpointer"
             )
 
+        # TODO(#733): resolve a missing actor_id from default_actor_id.
         if not configurable.get("actor_id"):
             raise InvalidConfigError(
                 "RunnableConfig must contain 'actor_id' for AgentCore Checkpointer"
