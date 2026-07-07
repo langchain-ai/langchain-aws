@@ -1081,6 +1081,40 @@ class TestCheckpointerConfig:
 
         assert "actor_id" in str(exc_info.value)
 
+    def test_from_runnable_config_resolves_default_actor_id(self):
+        """A config with thread_id but no actor_id resolves the fallback."""
+        config = RunnableConfig(configurable={"thread_id": "test_thread"})
+
+        checkpoint_config = CheckpointerConfig.from_runnable_config(
+            config, default_actor_id="test_actor"
+        )
+
+        assert checkpoint_config.actor_id == "test_actor"
+        assert checkpoint_config.thread_id == "test_thread"
+
+    def test_config_actor_id_takes_precedence_over_default(self):
+        """An explicit config actor_id wins over the fallback."""
+        config = RunnableConfig(
+            configurable={"thread_id": "test_thread", "actor_id": "test_actor"}
+        )
+
+        checkpoint_config = CheckpointerConfig.from_runnable_config(
+            config, default_actor_id="fallback_actor"
+        )
+
+        assert checkpoint_config.actor_id == "test_actor"
+
+    def test_missing_thread_id_checked_before_actor_id(self):
+        """thread_id is validated before actor_id when both are missing."""
+        config = RunnableConfig(configurable={})
+
+        with pytest.raises(InvalidConfigError) as exc_info:
+            CheckpointerConfig.from_runnable_config(config)
+
+        message = str(exc_info.value)
+        assert "thread_id" in message
+        assert "actor_id" not in message
+
 
 class TestEventSerializer:
     """Test suite for EventSerializer."""

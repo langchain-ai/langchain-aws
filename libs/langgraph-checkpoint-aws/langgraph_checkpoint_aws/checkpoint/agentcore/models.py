@@ -48,13 +48,16 @@ class CheckpointerConfig(BaseModel):
             config: RunnableConfig whose ``configurable`` dict supplies
                 ``thread_id`` and (normally) ``actor_id``.
             default_actor_id: Fallback actor id used only when ``config`` omits
-                ``actor_id`` (e.g. a derived subgraph config). Not yet honored.
+                ``actor_id``. Lets a derived subgraph config, which carries
+                ``thread_id`` but not ``actor_id``, inherit the actor from the
+                saver instead of failing.
 
         Returns:
             The parsed CheckpointerConfig.
 
         Raises:
-            InvalidConfigError: If ``thread_id`` or ``actor_id`` is missing.
+            InvalidConfigError: If ``thread_id`` is missing, or if ``actor_id`` is
+                missing and no fallback resolves it.
         """
         from .constants import InvalidConfigError
 
@@ -65,15 +68,15 @@ class CheckpointerConfig(BaseModel):
                 "RunnableConfig must contain 'thread_id' for AgentCore Checkpointer"
             )
 
-        # TODO(#733): resolve a missing actor_id from default_actor_id.
-        if not configurable.get("actor_id"):
+        actor_id = configurable.get("actor_id") or default_actor_id
+        if not actor_id:
             raise InvalidConfigError(
                 "RunnableConfig must contain 'actor_id' for AgentCore Checkpointer"
             )
 
         return cls(
             thread_id=configurable["thread_id"],
-            actor_id=configurable["actor_id"],
+            actor_id=actor_id,
             checkpoint_ns=configurable.get("checkpoint_ns", ""),
             checkpoint_id=configurable.get("checkpoint_id"),
         )
