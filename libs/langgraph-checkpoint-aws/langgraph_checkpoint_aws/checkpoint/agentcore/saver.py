@@ -4,7 +4,6 @@ AgentCore Memory Checkpoint Saver implementation.
 
 from __future__ import annotations
 
-import asyncio
 import random
 from collections.abc import AsyncIterator, Iterator, Sequence
 from contextvars import ContextVar
@@ -60,6 +59,29 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
 
     This saver persists Checkpoints as serialized blob events in AgentCore Memory.
 
+    Every read and write requires an ``actor_id`` in the config's ``configurable``.
+    The one exception is a *subgraph* read: LangGraph's derived subgraph configs
+    (built during ``get_state(subgraphs=True)``) omit ``actor_id`` but carry a
+    non-empty ``checkpoint_ns``. Such a read inherits the ``actor_id`` captured —
+    for the same ``thread_id`` — from the current request's parent read. That
+    capture is request-scoped (a ``ContextVar`` isolated per thread / async task),
+    never stored on the saver, so a single saver instance can safely serve many
+    actors concurrently. Top-level reads (empty ``checkpoint_ns``) never inherit,
+    and writes never inherit; both always require an explicit ``actor_id``.
+
+    !!! warning "Thread-reusing synchronous servers"
+        The request-scoped capture is not reset at the end of a request. Under
+        asyncio each task runs in its own copied context, so requests do not
+        share captures. But a purely synchronous server that reuses an OS thread
+        across sequential requests keeps the last ``(thread_id, actor_id)`` in
+        that thread's context. Inheritance is gated on both a matching
+        ``thread_id`` and a non-empty ``checkpoint_ns``, so a stale capture can
+        only be picked up by a later *subgraph-shaped* read for the same
+        ``thread_id`` that is not first re-primed by its parent read — a very
+        narrow case that also requires reused (non-unique) thread ids across
+        actors. Use globally unique thread ids (or always pass ``actor_id`` on
+        reads) to avoid it.
+
     Args:
         memory_id: the ID of the memory resource created in AgentCore Memory
         serde: serialization protocol to be used. Defaults to JSONPlusSerializer
@@ -101,17 +123,46 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
     def _resolve_actor_id(self, config: RunnableConfig | None) -> str | None:
         """Resolve the actor id for a read, scoped to the current request.
 
-        Will capture the (thread_id, actor_id) pair when present and let a later
-        derived subgraph read (which omits actor_id) inherit it. Not yet
-        implemented; returns ``None`` so behavior is unchanged for now.
+        When ``config`` supplies both ``thread_id`` and ``actor_id``, record the
+        pair for the current request context so a later read of a derived subgraph
+        config (which omits ``actor_id``) can inherit it. When ``config`` omits
+        ``actor_id``, fall back to the recorded actor only if it was captured for
+        the same ``thread_id`` **and** the current read is a derived subgraph read
+        (identified by a non-empty ``checkpoint_ns``); otherwise return ``None`` so
+        the caller fails closed.
+
+        Restricting inheritance to non-empty ``checkpoint_ns`` reads is what makes
+        this safe: LangGraph only omits ``actor_id`` on the per-subgraph configs it
+        derives during ``get_state(subgraphs=True)``, and those always carry a
+        non-empty namespace. A top-level read has an empty ``checkpoint_ns``, so an
+        actor-less top-level read (only possible if a caller omits ``actor_id``)
+        fails closed instead of inheriting a possibly stale actor.
+
+        The capture lives in a request-scoped ``ContextVar`` rather than on the
+        saver instance, so a shared multi-tenant saver never resolves a subgraph
+        read to another request's actor.
 
         Args:
             config: RunnableConfig for the current read.
 
         Returns:
-            The resolved actor id, or ``None``.
+            The resolved actor id, or ``None`` if it cannot be resolved from the
+            config or the current request context.
         """
-        # TODO(#733): capture on read and resolve for subgraph reads.
+        configurable = config.get("configurable", {}) if config else {}
+        thread_id = configurable.get("thread_id")
+        actor_id = configurable.get("actor_id")
+        if actor_id:
+            if thread_id:  # only record when we can key the capture by thread
+                _request_actor.set((thread_id, actor_id))
+            return actor_id
+        # Only derived subgraph reads (non-empty checkpoint_ns) may inherit; a
+        # top-level read (empty checkpoint_ns) must carry its own actor_id.
+        if not configurable.get("checkpoint_ns"):
+            return None
+        recorded = _request_actor.get()
+        if recorded is not None and thread_id is not None and recorded[0] == thread_id:
+            return recorded[1]  # returns actor ID as it is the 2nd element in the tuple
         return None
 
     def get_tuple(
@@ -434,6 +485,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
 
     # ===== Async methods ( Running sync methods inside executor ) =====
     async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
+        # Capture the actor in the async context so a later async subgraph read
+        # inherits it; run_in_executor copies this context into the worker thread.
+        self._resolve_actor_id(config)
         return await run_in_executor(None, self.get_tuple, config)
 
     async def alist(
@@ -444,12 +498,14 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         before: RunnableConfig | None = None,
         limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
-        loop = asyncio.get_running_loop()
+        # Capture the actor in the async context so a later async subgraph read
+        # inherits it; run_in_executor copies this context into the worker thread.
+        self._resolve_actor_id(config)
 
-        def _sync_list():
+        def _sync_list() -> list[CheckpointTuple]:
             return list(self.list(config, filter=filter, before=before, limit=limit))
 
-        items = await loop.run_in_executor(None, _sync_list)
+        items = await run_in_executor(None, _sync_list)
         for item in items:
             yield item
 
