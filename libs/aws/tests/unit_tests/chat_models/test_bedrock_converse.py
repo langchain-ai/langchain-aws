@@ -228,14 +228,14 @@ def test_anthropic_adaptive_thinking_bind_tools_tool_choice(
     assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
         "auto": {}
     }
-    with pytest.raises(ValueError):
-        chat_model.bind_tools([GetWeather], tool_choice="any")
-    with pytest.raises(ValueError):
-        chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
-    with pytest.raises(ValueError):
-        chat_model.bind_tools(
-            [GetWeather], tool_choice={"tool": {"name": "GetWeather"}}
-        )
+    for tool_choice in ("any", "GetWeather", {"tool": {"name": "GetWeather"}}):
+        with pytest.warns(UserWarning, match="Downgrading to tool_choice='auto'"):
+            chat_model_with_tools = chat_model.bind_tools(
+                [GetWeather], tool_choice=tool_choice
+            )
+        assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+            "auto": {}
+        }
 
 
 @pytest.mark.parametrize(
