@@ -205,6 +205,70 @@ def test__format_anthropic_messages_strips_streaming_fields_on_invalid_tool() ->
     }
 
 
+def test__format_anthropic_messages_signature_only_thinking_block() -> None:
+    ai = AIMessage(
+        content=[
+            {
+                "type": "thinking",
+                "signature": "sig-abc",
+                "index": 0,
+            },
+            {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "get_weather",
+                "input": {"location": "SF"},
+                "index": 1,
+            },
+        ],
+        tool_calls=[
+            {"name": "get_weather", "id": "toolu_1", "args": {"location": "SF"}}
+        ],
+    )
+    _, formatted = _format_anthropic_messages([HumanMessage("go"), ai])
+    thinking_block = next(
+        b for b in formatted[1]["content"] if b.get("type") == "thinking"
+    )
+    assert thinking_block == {
+        "type": "thinking",
+        "signature": "sig-abc",
+        "thinking": "",
+    }
+
+    ai_with_text = AIMessage(
+        content=[
+            {
+                "type": "thinking",
+                "thinking": "step by step...",
+                "signature": "sig-def",
+                "index": 0,
+            },
+            {"type": "text", "text": "Answer."},
+        ]
+    )
+    _, formatted = _format_anthropic_messages([HumanMessage("go"), ai_with_text])
+    thinking_block = next(
+        b for b in formatted[1]["content"] if b.get("type") == "thinking"
+    )
+    assert thinking_block == {
+        "type": "thinking",
+        "thinking": "step by step...",
+        "signature": "sig-def",
+    }
+
+    ai_redacted = AIMessage(
+        content=[
+            {"type": "redacted_thinking", "data": "opaque", "index": 0},
+            {"type": "text", "text": "Answer."},
+        ]
+    )
+    _, formatted = _format_anthropic_messages([HumanMessage("go"), ai_redacted])
+    redacted_block = next(
+        b for b in formatted[1]["content"] if b.get("type") == "redacted_thinking"
+    )
+    assert redacted_block == {"type": "redacted_thinking", "data": "opaque"}
+
+
 def test__format_anthropic_messages_with_str_content_and_tool_calls() -> None:
     system = SystemMessage("fuzz")  # type: ignore[misc]
     human = HumanMessage("foo")  # type: ignore[misc]

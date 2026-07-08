@@ -609,6 +609,46 @@ def test_agent_loop_bedrock(output_version: Literal["v0", "v1"]) -> None:
     assert isinstance(response, AIMessage)
 
 
+def test_signature_only_thinking_block_roundtrip() -> None:
+    @tool
+    def get_weather(location: str) -> str:
+        """Get the weather for a location."""
+        return "It's sunny."
+
+    llm = ChatBedrock(
+        model="us.anthropic.claude-sonnet-5",
+        region="us-west-2",
+    )
+    llm_with_tools = llm.bind_tools([get_weather])
+    input_message = HumanMessage("What is the weather in San Francisco, CA?")
+
+    tool_call_message = AIMessage(
+        content=[
+            {"type": "thinking", "signature": "x" * 128, "index": 0},
+            {
+                "type": "tool_use",
+                "id": "toolu_01Aq9w938a90dw8q",
+                "name": "get_weather",
+                "input": {"location": "San Francisco, CA"},
+                "index": 1,
+            },
+        ],
+        tool_calls=[
+            {
+                "name": "get_weather",
+                "id": "toolu_01Aq9w938a90dw8q",
+                "args": {"location": "San Francisco, CA"},
+            }
+        ],
+    )
+    tool_message = get_weather.invoke(tool_call_message.tool_calls[0])
+
+    try:
+        llm_with_tools.invoke([input_message, tool_call_message, tool_message])
+    except Exception as e:
+        assert "Field required" not in str(e), e
+
+
 @pytest.mark.parametrize("output_version", ["v0", "v1"])
 def test_agent_loop_streaming_bedrock(output_version: Literal["v0", "v1"]) -> None:
     @tool

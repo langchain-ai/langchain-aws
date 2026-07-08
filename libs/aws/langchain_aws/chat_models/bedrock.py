@@ -638,9 +638,16 @@ def _format_anthropic_messages(
                             )
                     elif item["type"] in ["thinking", "redacted_thinking"]:
                         # Store thinking blocks separately
-                        thinking_blocks.append(
-                            {k: v for k, v in item.items() if k != "index"}
-                        )
+                        thinking_block = {k: v for k, v in item.items() if k != "index"}
+                        # Adaptive-only thinking models (i.e. Claude 4.7+) stream
+                        # signature-only thinking blocks on "omitted" display mode.
+                        # Need to include thinking field or Invoke API throws an error
+                        if (
+                            thinking_block["type"] == "thinking"
+                            and "thinking" not in thinking_block
+                        ):
+                            thinking_block["thinking"] = ""
+                        thinking_blocks.append(thinking_block)
                     elif item["type"] == "text":
                         text = item.get("text", "")
                         # Only add non-empty strings for now as empty ones are not
