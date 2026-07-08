@@ -1361,13 +1361,6 @@ class ChatBedrockConverse(BaseChatModel):
 
     # TODO: Add async support once there are async bedrock.converse methods.
 
-    def _is_thinking_enabled(self) -> bool:
-        """Check if extended thinking is enabled via additional_model_request_fields."""
-        thinking_params = (self.additional_model_request_fields or {}).get(
-            "thinking", {}
-        )
-        return thinking_params.get("type") == "enabled"
-
     def _resolve_tool_choice(
         self,
         tool_choice: Optional[Union[dict, str]],
@@ -1402,7 +1395,10 @@ class ChatBedrockConverse(BaseChatModel):
             return formatted
 
         # Thinking-enabled models: downgrade to auto instead of failing.
-        if self._is_thinking_enabled() and "auto" in supported:
+        if (
+            thinking_in_params(self.additional_model_request_fields or {})
+            and "auto" in supported
+        ):
             warnings.warn(
                 f"tool_choice={tool_choice!r} is not supported when thinking "
                 f"is enabled. Downgrading to tool_choice='auto'. The model "
