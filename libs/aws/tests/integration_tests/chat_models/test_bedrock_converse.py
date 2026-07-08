@@ -225,9 +225,7 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
 
 
 def test_multiple_system_messages_anthropic() -> None:
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
     system1 = SystemMessage(content="You are a helpful assistant.")
     system2 = SystemMessage(content="Always respond in a concise manner.")
@@ -235,7 +233,7 @@ def test_multiple_system_messages_anthropic() -> None:
     response = model.invoke([system1, system2, human])
 
     assert isinstance(response, AIMessage)
-    assert isinstance(response.content, str)
+    assert response.text
 
 
 class ClassifyQuery(BaseModel):
@@ -247,9 +245,7 @@ class ClassifyQuery(BaseModel):
 
 
 def test_structured_output_snake_case() -> None:
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
     chat = model.with_structured_output(ClassifyQuery)
     for chunk in chat.stream("How big are cats?"):
@@ -257,7 +253,7 @@ def test_structured_output_snake_case() -> None:
 
 
 def test_tool_calling_snake_case() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
     def classify_query(query_type: Literal["cat", "dog"]) -> None:
         pass
@@ -289,7 +285,7 @@ def test_tool_calling_snake_case() -> None:
 
 
 def test_tool_calling_camel_case() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
     def classifyQuery(queryType: Literal["cat", "dog"]) -> None:
         pass
@@ -314,7 +310,7 @@ def test_tool_calling_camel_case() -> None:
 
 
 def test_tool_calling_strict() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-6")
 
     class GetWeather(BaseModel):
         """Get the current weather in a given location."""
@@ -332,9 +328,7 @@ def test_tool_calling_strict() -> None:
 
 
 def test_structured_output_streaming() -> None:
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
     query = (
         "What weighs more, a pound of bricks or a pound of feathers? "
         "Limit your response to 20 words."
@@ -411,9 +405,7 @@ def test_tool_use_with_cache_point() -> None:
         tool_classes.append(tool_class)
 
     # Create the model instance
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
     # Create cache point configuration
     cache_point = ChatBedrockConverse.create_cache_point()
@@ -457,7 +449,7 @@ def _get_weather(city: str) -> str:
 
 def test_cache_control_anthropic() -> None:
     llm = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model="us.anthropic.claude-sonnet-5",
         system=[_LONG_SYSTEM_PROMPT],
     )
     r1 = llm.invoke(
@@ -477,7 +469,7 @@ def test_cache_control_anthropic() -> None:
 @pytest.mark.xfail(reason="TODO: fails sporadically, suspect transient issue.")
 def test_cache_control_anthropic_multi_turn() -> None:
     llm = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model="us.anthropic.claude-sonnet-5",
         system=[_LONG_SYSTEM_PROMPT],
     )
     llm_with_tools = llm.bind_tools([_get_weather], tool_choice="any")
@@ -618,8 +610,7 @@ def test_nova_tool_call_no_inline_thinking_leak(prompt: str) -> None:
 def test_guardrails() -> None:
     params = {
         "region_name": "us-west-2",
-        "model": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-        "temperature": 0,
+        "model": "us.anthropic.claude-sonnet-5",
         "max_tokens": 100,
         "stop": [],
         "guardrail_config": {
@@ -801,7 +792,7 @@ def test_agent_loop(output_version: Literal["v0", "v1"]) -> None:
         return "It's sunny."
 
     llm = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        model="us.anthropic.claude-sonnet-5",
         output_version=output_version,
     )
     llm_with_tools = llm.bind_tools([get_weather])
@@ -833,7 +824,7 @@ def test_agent_loop_streaming(output_version: Literal["v0", "v1"]) -> None:
         return "It's sunny."
 
     llm = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        model="us.anthropic.claude-sonnet-5",
         output_version=output_version,
     )
     llm_with_tools = llm.bind_tools([get_weather])
@@ -879,7 +870,7 @@ def test_streaming_tool_use_round_trip() -> None:
         return "It's sunny and 72F."
 
     llm = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model="us.anthropic.claude-sonnet-5",
     )
     llm_with_tools = llm.bind_tools([get_weather], tool_choice="any")
 
@@ -924,15 +915,22 @@ def test_streaming_tool_use_round_trip() -> None:
 @pytest.mark.parametrize("output_version", ["v0", "v1"])
 def test_thinking(output_version: Literal["v0", "v1"]) -> None:
     llm = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        model="us.anthropic.claude-sonnet-5",
         max_tokens=4096,
         additional_model_request_fields={
-            "thinking": {"type": "enabled", "budget_tokens": 1024},
+            "thinking": {"type": "adaptive", "display": "summarized"},
         },
         output_version=output_version,
     )
 
-    input_message = {"role": "user", "content": "What is 3^3?"}
+    input_message = {
+        "role": "user",
+        "content": (
+            "What is the smallest positive integer n such that n! is divisible "
+            "by 10^6? Reason through this carefully step by step before "
+            "answering."
+        ),
+    }
     full: Optional[BaseMessageChunk] = None
     for chunk in llm.stream([input_message]):
         assert isinstance(chunk, AIMessageChunk)
@@ -959,7 +957,13 @@ def test_thinking(output_version: Literal["v0", "v1"]) -> None:
     assert content_blocks[0].get("reasoning")
     assert "signature" in content_blocks[0]["extras"]
 
-    next_message = {"role": "user", "content": "Thanks!"}
+    next_message = {
+        "role": "user",
+        "content": (
+            "Now find the smallest n such that n! is divisible by 10^9. "
+            "Reason through it step by step as before."
+        ),
+    }
     response = llm.invoke([input_message, full, next_message])
 
     if output_version == "v0":
@@ -1020,7 +1024,7 @@ STANDARD_PDF_DOCUMENT = {
 @pytest.mark.vcr
 @pytest.mark.parametrize("document", [PLAINTEXT_DOCUMENT, BLOCKS_DOCUMENT])
 def test_citations(document: dict[str, Any]) -> None:
-    llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-20250514-v1:0")
+    llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
     input_message = {
         "role": "user",
@@ -1058,7 +1062,7 @@ def test_citations(document: dict[str, Any]) -> None:
 @pytest.mark.parametrize("output_version", ["v0", "v1"])
 def test_citations_v1(output_version: Literal["v0", "v1"]) -> None:
     llm = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        model="us.anthropic.claude-sonnet-5",
         output_version=output_version,
     )
 
@@ -1094,7 +1098,7 @@ def test_citations_v1(output_version: Literal["v0", "v1"]) -> None:
 
 @pytest.mark.vcr
 def test_pdf_citations() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
     message = HumanMessage(
         [
@@ -1107,7 +1111,7 @@ def test_pdf_citations() -> None:
 
 
 def test_bedrock_pdf_inputs() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
     message = HumanMessage(
         [
@@ -1138,7 +1142,7 @@ def test_bedrock_pdf_inputs() -> None:
 
 def test_get_num_tokens_from_messages_integration() -> None:
     chat = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model="us.anthropic.claude-sonnet-4-6",
     )
 
     base_messages = [
@@ -1149,7 +1153,7 @@ def test_get_num_tokens_from_messages_integration() -> None:
     token_count = chat.get_num_tokens_from_messages(base_messages)
 
     assert isinstance(token_count, int)
-    assert token_count == 38
+    assert token_count == 39
 
 
 @pytest.mark.parametrize("streaming", [False, True])
@@ -1205,9 +1209,7 @@ class GetWeather(BaseModel):
 
 def test_structured_output_json_schema_pydantic() -> None:
     """Test method='json_schema' with Pydantic model returns validated instance."""
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-6")
     structured = model.with_structured_output(JokeSchema, method="json_schema")
     result = structured.invoke("Tell me a short joke about programming")
     assert isinstance(result, JokeSchema)
@@ -1217,9 +1219,7 @@ def test_structured_output_json_schema_pydantic() -> None:
 
 def test_structured_output_json_schema_dict() -> None:
     """Test method='json_schema' with dict schema returns matching dict."""
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-6")
     schema = {
         "title": "Joke",
         "description": "A joke with setup and punchline.",
@@ -1242,9 +1242,7 @@ def test_structured_output_json_schema_dict() -> None:
 
 def test_structured_output_json_schema_streaming() -> None:
     """Test that streaming works with method='json_schema'."""
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-6")
     structured = model.with_structured_output(JokeSchema, method="json_schema")
     result = None
     for chunk in structured.stream("Tell me a short joke about programming"):
@@ -1256,9 +1254,7 @@ def test_structured_output_json_schema_streaming() -> None:
 
 def test_structured_output_json_schema_include_raw() -> None:
     """Test include_raw=True returns dict with raw, parsed, parsing_error."""
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-6")
     structured = model.with_structured_output(
         JokeSchema, method="json_schema", include_raw=True
     )
