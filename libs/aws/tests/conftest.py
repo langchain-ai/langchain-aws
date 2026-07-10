@@ -1,9 +1,28 @@
 import io
+import re
 from typing import Any
+from urllib.parse import urlparse
 
 import pytest
 from langchain_tests.conftest import CustomPersister, CustomSerializer, base_vcr_config
 from vcr import VCR  # type: ignore[import-untyped]
+
+_AWS_REGION = re.compile(r"^[a-z]{2,3}-(gov-)?[a-z]+-\d+$")
+
+
+def _uri_without_aws_region(uri: str) -> str:
+    parsed = urlparse(uri)
+    host = ".".join(
+        p for p in (parsed.hostname or "").split(".") if not _AWS_REGION.match(p)
+    )
+    return f"{host}{parsed.path}"
+
+
+def region_agnostic_uri_matcher(r1: Any, r2: Any) -> None:
+    """Match URIs while ignoring the AWS region segment of the endpoint host."""
+    assert _uri_without_aws_region(r1.uri) == _uri_without_aws_region(r2.uri), (
+        f"{r1.uri} != {r2.uri}"
+    )
 
 
 def remove_request_headers(request: Any) -> Any:
@@ -63,6 +82,7 @@ def vcr_config() -> dict:
     config["before_record_response"] = remove_response_headers
     config["serializer"] = "yaml.gz"
     config["path_transformer"] = VCR.ensure_suffix(".yaml.gz")
+    config["match_on"] = ["method", "region_agnostic_uri", "body"]
 
     return config
 
@@ -70,3 +90,4 @@ def vcr_config() -> dict:
 def pytest_recording_configure(config: dict, vcr: VCR) -> None:
     vcr.register_persister(CustomPersister())
     vcr.register_serializer("yaml.gz", CustomSerializer())
+    vcr.register_matcher("region_agnostic_uri", region_agnostic_uri_matcher)
