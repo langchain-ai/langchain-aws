@@ -39,6 +39,7 @@ from langchain_aws.utils import (
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
     thinking_in_params,
+    thinking_on_by_default,
 )
 
 logger = logging.getLogger(__name__)
@@ -1296,6 +1297,8 @@ class BedrockBase(BaseLanguageModel, ABC):
                     temperature=self.temperature,
                 )
             elif thinking_in_params(params):
+                coerce_content_to_string = False
+            elif thinking_on_by_default(self._get_base_model()):
                 coerce_content_to_string = False
             elif messages is not None and _citations_enabled(messages):
                 coerce_content_to_string = False
