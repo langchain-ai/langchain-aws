@@ -888,23 +888,41 @@ class ChatBedrockConverse(BaseChatModel):
             raise ValueError("base_model_id, base_model, or model_id must be specified")
         model_id_lower = base_model_value.lower()
 
-        streaming_support = cls._get_streaming_support(provider, model_id_lower)
+        if "disable_streaming" not in values:
+            values["disable_streaming"] = cls._resolve_disable_streaming(
+                provider,
+                model_id_lower,
+                warn="application-inference-profile" not in model_id,
+            )
 
+        return values
+
+    @classmethod
+    def _resolve_disable_streaming(
+        cls, provider: str, model_id_lower: str, *, warn: bool = True
+    ) -> Union[bool, Literal["tool_calling"]]:
+        streaming_support = cls._get_streaming_support(provider, model_id_lower)
         # Set the disable_streaming flag accordingly:
         # - If streaming is supported (plain streaming),
         #       we want streaming enabled (i.e. disable_streaming == False).
         # - If the model supports streaming only in non-tool mode ("no_tools"),
         #       then we must force disable streaming when tools are used.
         # - Otherwise, if streaming is not supported, we set disable_streaming to True.
-        if "disable_streaming" not in values:
-            if not streaming_support:
-                values["disable_streaming"] = True
-            elif streaming_support == "no_tools":
-                values["disable_streaming"] = "tool_calling"
-            else:
-                values["disable_streaming"] = False
-
-        return values
+        if not streaming_support:
+            if warn:
+                logger.warning(
+                    "Streaming disabled for model '%s': provider '%s' is not "
+                    "verified as streaming-capable with ChatBedrockConverse, "
+                    "so calls will fall back to the non-streaming Converse "
+                    "API. If this model does support streaming, pass "
+                    "disable_streaming=False to override.",
+                    model_id_lower,
+                    provider,
+                )
+            return True
+        if streaming_support == "no_tools":
+            return "tool_calling"
+        return False
 
     def _get_effective_config(self) -> Any:
         """Merge timeout/max_retries into botocore Config if set."""
@@ -1081,15 +1099,9 @@ class ChatBedrockConverse(BaseChatModel):
         base_model = self._get_base_model()
         model_id_lower = base_model.lower()
 
-        streaming_support = self._get_streaming_support(self.provider, model_id_lower)
-
-        # Set the disable_streaming flag accordingly
-        if not streaming_support:
-            self.disable_streaming = True
-        elif streaming_support == "no_tools":
-            self.disable_streaming = "tool_calling"
-        else:
-            self.disable_streaming = False
+        self.disable_streaming = self._resolve_disable_streaming(
+            self.provider, model_id_lower
+        )
 
     def _validate_nova_reasoning_config(self) -> None:
         """Validate reasoning configuration for Nova 2 models.

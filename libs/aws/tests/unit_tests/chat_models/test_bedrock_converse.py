@@ -2,6 +2,7 @@
 
 import base64
 import json
+import logging
 import os
 import warnings
 from typing import (
@@ -817,6 +818,30 @@ def test_set_disable_streaming(
 ) -> None:
     llm = ChatBedrockConverse(model=model_id, region_name="us-west-2")
     assert llm.disable_streaming == disable_streaming
+
+
+@pytest.mark.parametrize(
+    "model_id, model_kwargs, expect_warning",
+    [
+        ("us.amazon.nonstreaming-model-v1:0", {}, True),
+        ("us.anthropic.claude-sonnet-5", {}, False),
+        ("us.amazon.nonstreaming-model-v1:0", {"disable_streaming": False}, False),
+    ],
+)
+def test_set_disable_streaming_warning(
+    model_id: str,
+    model_kwargs: dict,
+    expect_warning: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="langchain_aws"):
+        ChatBedrockConverse(model=model_id, region_name="us-west-2", **model_kwargs)
+    warnings_emitted = [
+        r
+        for r in caplog.records
+        if "Streaming disabled" in r.message and "disable_streaming=False" in r.message
+    ]
+    assert bool(warnings_emitted) == expect_warning
 
 
 def test_streaming_init_param() -> None:
@@ -3002,6 +3027,7 @@ def test_configure_streaming_for_resolved_model_no_tools(
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
 def test_configure_streaming_for_resolved_model_no_streaming(
     mock_create_client: mock.Mock,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test _configure_streaming_for_resolved_model method with no streaming support."""
     mock_bedrock_client = mock.Mock()
@@ -3028,14 +3054,20 @@ def test_configure_streaming_for_resolved_model_no_streaming(
 
     mock_create_client.side_effect = side_effect
 
-    chat_model = ChatBedrockConverse(
-        model="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/test-profile",
-        region_name="us-west-2",
-        provider="stability",
-    )
+    with caplog.at_level(logging.WARNING, logger="langchain_aws"):
+        chat_model = ChatBedrockConverse(
+            model="arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/test-profile",
+            region_name="us-west-2",
+            provider="stability",
+        )
 
     # The streaming should be disabled for models with no streaming support
     assert chat_model.disable_streaming is True
+
+    # Also check that the no-streaming warning uses the base model, not the raw AIP ARN
+    warnings_emitted = [r for r in caplog.records if "Streaming disabled" in r.message]
+    assert len(warnings_emitted) == 1
+    assert "stability.stable-image-core-v1:0" in warnings_emitted[0].message
 
 
 def test_nova_provider_extraction() -> None:
