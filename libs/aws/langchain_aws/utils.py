@@ -36,6 +36,10 @@ OUTPUT_TYPE = TypeVar(
     bound=Union[str, List[List[float]], MESSAGE_FORMAT, List[MESSAGE_FORMAT], Iterator],
 )
 
+MODEL_ID_GEO_PREFIXES = frozenset(
+    {"eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp", "au"}
+)
+
 
 class ContentHandlerBase(Generic[INPUT_TYPE, OUTPUT_TYPE]):
     """A handler class to transform input from LLM and BaseChatModel to a
@@ -463,6 +467,14 @@ def create_aws_bedrock_runtime_client(
         aws_credentials_identity_resolver=credentials_resolver,
     )
     return BedrockRuntimeClient(config=config)
+
+
+def parse_model_provider(model_id: str) -> str:
+    """Extract the provider from a Bedrock model ID."""
+    parts = model_id.split(".", maxsplit=2)
+    if len(parts) > 1 and parts[0].lower() in MODEL_ID_GEO_PREFIXES:
+        return parts[1]
+    return parts[0]
 
 
 def thinking_in_params(params: dict) -> bool:

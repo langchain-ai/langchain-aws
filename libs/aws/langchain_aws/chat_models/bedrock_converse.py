@@ -79,6 +79,7 @@ from langchain_aws.tools.nova_tools import NovaSystemTool
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
+    parse_model_provider,
     thinking_forced_tool_use_unsupported,
     thinking_in_params,
     trim_message_whitespace,
@@ -874,10 +875,7 @@ class ChatBedrockConverse(BaseChatModel):
                     "Model provider should be supplied when passing a model ARN "
                     "as model_id."
                 )
-            model_parts = model_id.split(".")
-            values["provider"] = (
-                model_parts[-2] if len(model_parts) > 1 else model_parts[0]
-            )
+            values["provider"] = parse_model_provider(model_id)
 
         provider = values["provider"]
 
