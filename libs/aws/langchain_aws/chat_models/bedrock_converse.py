@@ -34,6 +34,9 @@ from langchain_core.language_models import (
     ModelProfileRegistry,
 )
 from langchain_core.language_models.base import LangSmithParams
+from langchain_core.language_models.chat_models import (  # type: ignore[attr-defined]
+    _ChatModelBinding,
+)
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -55,6 +58,7 @@ from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import (
     Runnable,
+    RunnableBinding,
     RunnableLambda,
     RunnableMap,
     RunnablePassthrough,
@@ -141,6 +145,37 @@ MIME_TO_FORMAT = {
 }
 
 _DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
+
+
+class _ChatBedrockConverseBinding(_ChatModelBinding):
+    """A ``bind``-produced binding that keeps bound kwargs across ``bind_tools``.
+
+    ``RunnableBinding`` does not define ``bind_tools``, so on a plain binding the
+    call is proxied (via ``__getattr__``) to the *underlying* model's
+    ``bind_tools``. That method builds a fresh binding off the bare model, which
+    silently drops any kwargs the caller had already bound -- most notably
+    ``cache_control``. As a result ``model.bind(cache_control=...).bind_tools(...)``
+    would send no ``cachePoint`` blocks at all.
+
+    This subclass re-merges the current binding's kwargs after delegating to the
+    model's ``bind_tools``, so ``bind`` and ``bind_tools`` compose in any order.
+    Tool-related kwargs (``tools``, ``tool_choice``, ...) take precedence on
+    conflict, matching the behavior of chaining ``bind`` calls.
+    """
+
+    def bind_tools(
+        self,
+        tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool, str]],
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, AIMessage]:
+        """Bind tools while preserving kwargs already bound to this binding."""
+        tool_binding = self.bound.bind_tools(tools, **kwargs)
+        if isinstance(tool_binding, RunnableBinding):
+            # ``self.bind`` merges self.kwargs first, then the tool kwargs, so
+            # newly bound tool settings win on conflict while cache_control and
+            # any other pre-existing kwargs are retained.
+            return self.bind(**tool_binding.kwargs)
+        return tool_binding
 
 
 class ChatBedrockConverse(BaseChatModel):
@@ -558,6 +593,38 @@ class ChatBedrockConverse(BaseChatModel):
 
     """
 
+    cache_strategy: Literal["auto", "single", "multi"] = "auto"
+    """How ``cachePoint`` blocks are placed when ``cache_control`` is set.
+
+    - ``"auto"`` (default): Anthropic Claude models receive a SINGLE cache
+        checkpoint at the end of the stable prefix, which enables Bedrock's
+        [simplified cache management](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html#prompt-caching-simplified).
+        Amazon Nova and other providers keep the legacy multi-checkpoint
+        placement.
+    - ``"single"``: always use single-checkpoint placement.
+    - ``"multi"``: always use the legacy multi-checkpoint placement (a
+        cachePoint on ``system``, on the last message, and on ``tools``).
+
+    !!! note
+        For Claude models, placing multiple cache checkpoints disables Bedrock's
+        simplified cache management, which otherwise scans prior content-block
+        boundaries to reuse the longest matching prefix. A single checkpoint at
+        the end of the static content maximizes cache reuse, especially in
+        multi-turn agentic loops.
+
+        ``"auto"`` anchors that checkpoint at the end of the conversation
+        history (the message before the final, most dynamic one) rather than on
+        the final message. This matters when a fixed instruction always trails a
+        growing history (e.g. an intent classifier whose last turn is always
+        "classify the conversation above"): a checkpoint on the final message
+        would cache a prefix ending in that instruction, so the next turn -- which
+        inserts new history *before* the instruction -- diverges right after the
+        old history and reuses only the system prompt. The legacy ``"multi"``
+        placement is fine when the final message is a fresh user question, but
+        loses history reuse in the fixed-instruction case; end-of-history
+        placement keeps ``system + history`` cache-readable in both.
+    """
+
     streaming: bool = False
     """Whether to stream the results or not."""
 
@@ -678,6 +745,83 @@ class ChatBedrockConverse(BaseChatModel):
         """
         return {"cachePoint": {"type": cache_type}}
 
+    def _apply_single_cache_point(
+        self,
+        cache_block: Dict[str, Any],
+        system: List[Dict[str, Any]],
+        bedrock_messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]],
+    ) -> None:
+        """Insert exactly one cachePoint at the end of the conversation history.
+
+        Places a single ``cachePoint`` block to enable Bedrock's simplified
+        cache management for Anthropic Claude models. Bedrock evaluates the
+        minimum-token threshold cumulatively across ``tools`` -> ``system`` ->
+        ``messages``, so a single checkpoint near the end of the message list
+        caches everything before it (tools, system, and earlier messages). With
+        one checkpoint at the end of the static content, Bedrock automatically
+        scans prior content-block boundaries to reuse the longest matching
+        prefix.
+
+        The checkpoint is placed on the **penultimate** message (the end of the
+        conversation history), i.e. just before the final, most dynamic message.
+        This is deliberate: when the final message is a fixed instruction that
+        sits after a growing history (e.g. an intent classifier whose last turn
+        is always "classify the conversation above"), a checkpoint on the *last*
+        message caches a prefix that ends with that instruction. The next turn
+        appends new history before the instruction, so the cached prefix
+        diverges right after the old history and only the system prompt is
+        reused. Anchoring the checkpoint at the end of the history instead keeps
+        the whole ``system + history`` prefix cache-readable as the conversation
+        grows.
+
+        Placement preference (most coverage first):
+            1. The penultimate message's ``content`` (caches tools + system +
+               all history up to and including that message), when there are at
+               least two messages.
+            2. The ``system`` array, when there are fewer than two messages (no
+               history to anchor before the final message).
+            3. The ``toolConfig.tools`` array, when there is no system or
+               message content.
+
+        If the request already contains any cachePoint (for example, one the
+        caller placed manually or one carried through from a ``ToolMessage``),
+        no additional point is inserted, so simplified cache management is not
+        re-disabled.
+
+        Args:
+            cache_block: The ``{"cachePoint": {...}}`` block to insert.
+            system: The system message list in Converse API format.
+            bedrock_messages: The messages list in Converse API format.
+            tools: The ``toolConfig.tools`` list, or ``None`` if absent.
+        """
+        already_cached = (
+            any(_is_cache_point(b) for b in system)
+            or any(_is_cache_point(t) for t in (tools or []))
+            or any(
+                isinstance(m.get("content"), list)
+                and any(_is_cache_point(b) for b in m["content"])
+                for m in bedrock_messages
+            )
+        )
+        if already_cached:
+            return
+
+        # Anchor the checkpoint at the end of the conversation history: the
+        # penultimate message, just before the final (most dynamic) message.
+        if len(bedrock_messages) >= 2:
+            penultimate_content = bedrock_messages[-2].get("content")
+            if isinstance(penultimate_content, list):
+                penultimate_content.append(cache_block)
+                return
+
+        # No history to anchor before the final message: fall back to caching
+        # the stable system prompt, then the tools.
+        if system:
+            system.append(cache_block)
+        elif tools:
+            tools.append(cache_block)
+
     def _apply_cache_points(
         self,
         cache_control: Optional[Dict[str, Any]],
@@ -685,7 +829,22 @@ class ChatBedrockConverse(BaseChatModel):
         bedrock_messages: List[Dict[str, Any]],
         params: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Apply cachePoint to system, messages, and tools in Converse API format.
+        """Apply cachePoint blocks to system, messages, and tools.
+
+        For Anthropic Claude models (the default ``cache_strategy="auto"``), a
+        SINGLE cachePoint is inserted at the end of the stable prefix to enable
+        Bedrock's simplified cache management, which automatically reuses the
+        longest matching prefix across prior content-block boundaries. Placing
+        multiple checkpoints disables that feature, so only one is used.
+
+        For Amazon Nova and other providers, the legacy multi-checkpoint
+        placement is used: a cachePoint is appended to ``system``, to the last
+        message's ``content``, and to ``toolConfig.tools`` (Nova omits the tool
+        cachePoint and skips the last message when it carries tool blocks).
+
+        The ``cache_strategy`` field overrides provider detection: ``"single"``
+        forces single-checkpoint placement and ``"multi"`` forces the legacy
+        placement regardless of provider.
 
         Args:
             cache_control: Cache control settings dict. Expected keys:
@@ -697,13 +856,15 @@ class ChatBedrockConverse(BaseChatModel):
             system: The system message list in Converse API format.
             bedrock_messages: The messages list in Converse API format.
             params: The constructed API parameters dict. If provided and
-                ``toolConfig.tools`` is present, a cachePoint block is
-                appended to the tools array (unless one already exists).
+                ``toolConfig.tools`` is present, it may receive a cachePoint
+                block (subject to provider and strategy rules).
         """
         if not cache_control:
             return
 
-        is_nova = "amazon.nova" in self._get_base_model().lower()
+        base_model = self._get_base_model().lower()
+        is_nova = "amazon.nova" in base_model
+        is_anthropic = self.provider == "anthropic" or "anthropic" in base_model
 
         cache_point: Dict[str, Any] = {"type": "default"}
         ttl = cache_control.get("ttl")
@@ -711,6 +872,22 @@ class ChatBedrockConverse(BaseChatModel):
             cache_point["ttl"] = ttl
         cache_block = {"cachePoint": cache_point}
 
+        tools = (
+            params.get("toolConfig", {}).get("tools") if params is not None else None
+        )
+
+        if self.cache_strategy == "single":
+            use_single = True
+        elif self.cache_strategy == "multi":
+            use_single = False
+        else:  # "auto"
+            use_single = is_anthropic and not is_nova
+
+        if use_single:
+            self._apply_single_cache_point(cache_block, system, bedrock_messages, tools)
+            return
+
+        # Legacy multi-checkpoint placement (Nova and other providers).
         if system and not any(_is_cache_point(b) for b in system):
             system.append(cache_block)
 
@@ -726,10 +903,8 @@ class ChatBedrockConverse(BaseChatModel):
                 ):
                     last_content.append(cache_block)
 
-        if params and not is_nova:
-            tools = params.get("toolConfig", {}).get("tools")
-            if tools and not any(_is_cache_point(t) for t in tools):
-                tools.append(cache_block)
+        if tools and not is_nova and not any(_is_cache_point(t) for t in tools):
+            tools.append(cache_block)
 
     @model_validator(mode="before")
     @classmethod
@@ -1424,6 +1599,17 @@ class ChatBedrockConverse(BaseChatModel):
             "API_runtime_ToolChoice.html for the latest documentation "
             "on models that support tool choice."
         )
+
+    def bind(self, **kwargs: Any) -> _ChatModelBinding:
+        """Bind kwargs to this chat model, returning a chat-model binding.
+
+        Overrides ``BaseChatModel.bind`` to return a binding whose
+        ``bind_tools`` preserves already-bound kwargs (e.g. ``cache_control``).
+        Without this, ``model.bind(cache_control=...).bind_tools(...)`` would
+        drop ``cache_control`` because ``bind_tools`` is proxied to the
+        underlying model and rebuilds a binding from scratch.
+        """
+        return _ChatBedrockConverseBinding(bound=self, kwargs=kwargs, config={})
 
     def bind_tools(
         self,
