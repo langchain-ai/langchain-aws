@@ -1,8 +1,10 @@
 from botocore.config import Config
+from langchain_core.tools import tool
 
 from langchain_aws.agents.base import BedrockAgentFinish
 from langchain_aws.agents.utils import (
     SDK_USER_AGENT,
+    _tool_to_function,
     get_boto_session,
     parse_agent_response,
 )
@@ -81,3 +83,36 @@ class TestNonAsciiPreservation:
         assert isinstance(result.trace_log, str)
         assert self._CJK in result.trace_log
         assert "\\u" not in result.trace_log
+
+
+def test_tool_to_function_falsy_defaults_are_not_required() -> None:
+    """Args with a falsy-but-present default (0, False, "") must be optional.
+
+    _tool_to_function previously computed "required" via
+    `not bool(arg_details.get("default", None))`, which checks the
+    *truthiness* of the default value rather than its *presence*. An arg
+    whose default is a legitimate falsy value (0, False, "") was
+    indistinguishable from an arg with no default at all, and got
+    incorrectly marked "required": True in the Bedrock action-group
+    function schema.
+    """
+
+    @tool
+    def sample(
+        query: str,
+        limit: int = 0,
+        verbose: bool = False,
+        name: str = "",
+        threshold: float = 1.5,
+    ) -> str:
+        """A sample tool with a mix of required args and falsy defaults."""
+        return query
+
+    function = _tool_to_function(sample)
+    params = function["parameters"]
+
+    assert params["query"]["required"] is True  # no default -> required
+    assert params["limit"]["required"] is False  # default=0
+    assert params["verbose"]["required"] is False  # default=False
+    assert params["name"]["required"] is False  # default=""
+    assert params["threshold"]["required"] is False  # default=1.5

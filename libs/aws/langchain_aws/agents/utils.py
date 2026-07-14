@@ -312,7 +312,7 @@ def _tool_to_function(tool: BaseTool) -> dict:
                 "description", arg_details.get("title", arg_name)
             ),
             "type": arg_details.get("type", "string"),
-            "required": not bool(arg_details.get("default", None)),
+            "required": "default" not in arg_details,
         }
     return {
         "description": tool.description,
