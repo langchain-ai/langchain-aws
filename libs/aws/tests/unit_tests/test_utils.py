@@ -11,6 +11,7 @@ from pydantic import SecretStr
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
+    enforce_stop_tokens,
     thinking_disabled_in_params,
     thinking_forced_tool_use_unsupported,
     thinking_in_params,
@@ -1066,3 +1067,28 @@ def test_bedrock_runtime_session_region_fallback(
 
     call_kwargs = config_cls.call_args[1]
     assert call_kwargs["region"] == "sa-east-1"
+
+
+def test_enforce_stop_tokens_treats_stop_sequence_as_literal_text() -> None:
+    """Stop sequences containing regex metacharacters must not be treated as regex.
+
+    Special tokens like Llama 3's ``<|eot_id|>`` contain a literal ``|``, which is
+    the regex alternation operator. If the stop sequence isn't escaped before being
+    joined into the split pattern, text is truncated wherever any *character* of the
+    stop sequence appears, instead of only where the exact stop sequence occurs.
+    """
+    text = "Here is <content> you asked for, spanning multiple sentences."
+    result = enforce_stop_tokens(text, ["<|eot_id|>"])
+    assert result == text
+
+
+def test_enforce_stop_tokens_does_not_raise_on_regex_metacharacters() -> None:
+    """A stop sequence like ``AI)`` must not be interpreted as unbalanced regex."""
+    result = enforce_stop_tokens("Hello AI) world", ["AI)"])
+    assert result == "Hello "
+
+
+def test_enforce_stop_tokens_still_cuts_on_exact_match() -> None:
+    text = "Hello<|eot_id|>World"
+    result = enforce_stop_tokens(text, ["<|eot_id|>"])
+    assert result == "Hello"

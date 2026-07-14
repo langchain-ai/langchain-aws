@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 def enforce_stop_tokens(text: str, stop: List[str]) -> str:
     """Cut off the text as soon as any stop words occur."""
-    return re.split("|".join(stop), text, maxsplit=1)[0]
+    return re.split("|".join(re.escape(s) for s in stop), text, maxsplit=1)[0]
 
 
 class LineIterator:

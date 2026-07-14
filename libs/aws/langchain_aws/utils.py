@@ -86,7 +86,7 @@ class ContentHandlerBase(Generic[INPUT_TYPE, OUTPUT_TYPE]):
 
 def enforce_stop_tokens(text: str, stop: List[str]) -> str:
     """Cut off the text as soon as any stop words occur."""
-    return re.split("|".join(stop), text, maxsplit=1)[0]
+    return re.split("|".join(re.escape(s) for s in stop), text, maxsplit=1)[0]
 
 
 def anthropic_tokens_supported() -> bool:
