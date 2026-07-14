@@ -38,6 +38,7 @@ from langchain_aws.utils import (
     enforce_stop_tokens,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
+    thinking_disabled_in_params,
     thinking_in_params,
     thinking_on_by_default,
 )
@@ -1298,7 +1299,9 @@ class BedrockBase(BaseLanguageModel, ABC):
                 )
             elif thinking_in_params(params):
                 coerce_content_to_string = False
-            elif thinking_on_by_default(self._get_base_model()):
+            elif thinking_on_by_default(
+                self._get_base_model()
+            ) and not thinking_disabled_in_params(params):
                 coerce_content_to_string = False
             elif messages is not None and _citations_enabled(messages):
                 coerce_content_to_string = False
