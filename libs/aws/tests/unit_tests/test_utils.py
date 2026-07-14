@@ -11,6 +11,7 @@ from pydantic import SecretStr
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
+    parse_model_provider,
     thinking_disabled_in_params,
     thinking_forced_tool_use_unsupported,
     thinking_in_params,
@@ -710,6 +711,20 @@ def test_api_key_takes_precedence_over_creds(
 )
 def test_thinking_in_params(params: dict, expected: bool) -> None:
     assert thinking_in_params(params) == expected
+
+
+@pytest.mark.parametrize(
+    "model_id,expected_provider",
+    [
+        ("anthropic.claude-sonnet-5", "anthropic"),
+        ("global.anthropic.claude-fable-5", "anthropic"),
+        ("us-gov.anthropic.claude-haiku-4-5-20251001-v1:0", "anthropic"),
+        ("minimax.minimax-m2.5", "minimax"),
+        ("us.minimax.minimax-m2.5", "minimax"),
+    ],
+)
+def test_parse_model_provider(model_id: str, expected_provider: str) -> None:
+    assert parse_model_provider(model_id) == expected_provider
 
 
 @pytest.mark.parametrize("api_key", [SecretStr(""), None])

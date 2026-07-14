@@ -2332,6 +2332,16 @@ def test__get_provider() -> None:
     assert llm.provider == "anthropic"
 
     llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5", region_name="us-west-2"
+    )
+
+    assert llm.provider == "anthropic"
+
+    llm = ChatBedrockConverse(model="us.openai.gpt-5.6-sol", region_name="us-west-2")
+
+    assert llm.provider == "openai"
+
+    llm = ChatBedrockConverse(
         model="arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
         provider="anthropic",
         region_name="us-west-2",
