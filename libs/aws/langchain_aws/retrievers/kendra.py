@@ -422,7 +422,9 @@ class AmazonKendraRetriever(BaseRetriever):
     attribute_filter: Optional[Dict] = None
     page_content_formatter: Callable[[ResultItem], str] = combined_text
     user_context: Optional[Dict] = None
-    min_score_confidence: Annotated[Optional[float], Field(ge=0.0, le=1.0)]
+    min_score_confidence: Annotated[
+        Optional[float], Field(ge=0.0, le=1.0, default=None)
+    ]
 
     @field_validator("top_k")
     def validate_top_k(cls, value: int) -> int:
