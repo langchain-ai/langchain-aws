@@ -11,8 +11,10 @@ from pydantic import SecretStr
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
+    thinking_disabled_in_params,
     thinking_forced_tool_use_unsupported,
     thinking_in_params,
+    thinking_on_by_default,
     trim_message_whitespace,
 )
 
@@ -483,6 +485,34 @@ def test_thinking_forced_tool_use_unsupported(
     model_id: str, expected_result: bool
 ) -> None:
     assert thinking_forced_tool_use_unsupported(model_id) == expected_result
+
+
+@pytest.mark.parametrize(
+    "model_id,expected_result",
+    [
+        ("us.anthropic.claude-sonnet-5", True),
+        ("global.anthropic.claude-fable-5", True),
+        ("global.anthropic.claude-opus-4-8", False),
+        ("anthropic.claude-sonnet-4-6", False),
+        ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", False),
+        ("us.anthropic.claude-haiku-4-5-20251001-v1:0", False),
+    ],
+)
+def test_thinking_on_by_default(model_id: str, expected_result: bool) -> None:
+    assert thinking_on_by_default(model_id) == expected_result
+
+
+@pytest.mark.parametrize(
+    "params,expected_result",
+    [
+        ({"thinking": {"type": "disabled"}}, True),
+        ({"thinking": {"type": "enabled", "budget_tokens": 1024}}, False),
+        ({"thinking": {"type": "adaptive"}}, False),
+        ({}, False),
+    ],
+)
+def test_thinking_disabled_in_params(params: dict, expected_result: bool) -> None:
+    assert thinking_disabled_in_params(params) == expected_result
 
 
 def test_api_key_uses_token_provider(

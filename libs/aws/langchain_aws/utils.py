@@ -470,6 +470,16 @@ def thinking_in_params(params: dict) -> bool:
     return params.get("thinking", {}).get("type") in ("enabled", "adaptive")
 
 
+def thinking_disabled_in_params(params: dict) -> bool:
+    """Check if thinking is explicitly disabled in the request."""
+    return params.get("thinking", {}).get("type") == "disabled"
+
+
+def thinking_on_by_default(model: str) -> bool:
+    """Check if the model runs adaptive thinking without a thinking parameter."""
+    return any(x in model for x in ("claude-sonnet-5", "claude-fable-5"))
+
+
 def thinking_forced_tool_use_unsupported(model: str) -> bool:
     """Check if the model rejects forced tool use while thinking is enabled."""
     if "claude-opus-4-8" in model:

@@ -2148,6 +2148,54 @@ def test_system_prompt_string_format() -> None:
     assert isinstance(body["system"], str)
 
 
+def test_stream_thinking_on_by_default_returns_block_content() -> None:
+    """Sonnet/Fable 5 streams should not mix string and block content."""
+    mock_client = MagicMock()
+
+    def stream_gen():
+        events = [
+            {"type": "message_start", "message": {}},
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "thinking", "thinking": "", "signature": ""},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "signature_delta", "signature": "sig-abc"},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 1,
+                "delta": {"type": "text_delta", "text": "Hello!"},
+            },
+            {"type": "message_stop"},
+        ]
+        for e in events:
+            yield {"chunk": {"bytes": json.dumps(e).encode()}}
+
+    mock_response = MagicMock()
+    mock_response.get.return_value = stream_gen()
+    mock_client.invoke_model_with_response_stream.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-5",
+        region="us-west-2",
+    )
+    full = None
+    for chunk in llm.stream([HumanMessage(content="Hello")]):
+        full = chunk if full is None else full + chunk
+
+    assert isinstance(full.content, list)
+    assert not any(isinstance(b, str) for b in full.content), full.content
+    block_types = [b["type"] for b in full.content]
+    assert "text" in block_types
+    text_blocks = [b for b in full.content_blocks if b["type"] == "text"]
+    assert len(text_blocks) == 1
+
+
 def test_stream_system_prompt_cache_control() -> None:
     """Test that cache_control is preserved in streaming."""
     mock_client = MagicMock()
