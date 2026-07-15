@@ -669,9 +669,7 @@ def test_messages_to_bedrock_with_tool_message_search_result() -> None:
                                 "searchResult": {
                                     "source": "web",
                                     "title": "Weather report",
-                                    "content": [
-                                        {"text": "It is sunny in Seattle."}
-                                    ],
+                                    "content": [{"text": "It is sunny in Seattle."}],
                                     "citations": {"enabled": True},
                                 }
                             }
