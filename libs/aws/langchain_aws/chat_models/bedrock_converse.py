@@ -2671,6 +2671,23 @@ def _lc_content_to_bedrock(
                     }
                 }
             )
+        elif block["type"] == "search_result":
+            search_result_content = _lc_content_to_bedrock(block["content"])
+            if not all(
+                set(search_result_content_block) == {"text"}
+                for search_result_content_block in search_result_content
+            ):
+                msg = "search_result content blocks must be text-only"
+                raise ValueError(msg)
+
+            search_result: Dict[str, Any] = {
+                "source": block["source"],
+                "title": block["title"],
+                "content": search_result_content,
+            }
+            if block.get("citations") is not None:
+                search_result["citations"] = block["citations"]
+            bedrock_content.append({"searchResult": search_result})
         # Only needed for tool_result content blocks.
         elif block["type"] == "json":
             bedrock_content.append({"json": block["json"]})

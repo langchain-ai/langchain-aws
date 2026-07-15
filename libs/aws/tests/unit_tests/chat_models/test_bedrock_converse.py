@@ -639,6 +639,53 @@ def test_messages_to_bedrock_with_cache_point() -> None:
     assert [] == actual_system
 
 
+def test_messages_to_bedrock_with_tool_message_search_result() -> None:
+    messages = [
+        ToolMessage(
+            content=[
+                {
+                    "type": "search_result",
+                    "source": "web",
+                    "title": "Weather report",
+                    "content": [{"type": "text", "text": "It is sunny in Seattle."}],
+                    "citations": {"enabled": True},
+                }
+            ],
+            tool_call_id="tool-123",
+            status="success",
+        )
+    ]
+
+    actual_messages, actual_system = _messages_to_bedrock(messages)
+
+    assert actual_messages == [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "toolResult": {
+                        "content": [
+                            {
+                                "searchResult": {
+                                    "source": "web",
+                                    "title": "Weather report",
+                                    "content": [
+                                        {"text": "It is sunny in Seattle."}
+                                    ],
+                                    "citations": {"enabled": True},
+                                }
+                            }
+                        ],
+                        "status": "success",
+                        "toolUseId": "tool-123",
+                    }
+                }
+            ],
+        }
+    ]
+    assert [] == actual_system
+
+
 def test__messages_to_bedrock_empty_list() -> None:
     messages: List[BaseMessage] = []
     actual_messages, actual_system = _messages_to_bedrock(messages)
@@ -2286,6 +2333,54 @@ def test__lc_content_to_bedrock_mixed_types_with_empty_content() -> None:
 
     assert len(bedrock_content) == 3
     assert bedrock_content == expected
+
+
+def test__lc_content_to_bedrock_search_result() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "search_result",
+            "source": "web",
+            "title": "Weather report",
+            "content": [{"type": "text", "text": "It is sunny in Seattle."}],
+            "citations": {"enabled": True},
+        }
+    ]
+
+    bedrock_content = _lc_content_to_bedrock(content)
+
+    assert bedrock_content == [
+        {
+            "searchResult": {
+                "source": "web",
+                "title": "Weather report",
+                "content": [{"text": "It is sunny in Seattle."}],
+                "citations": {"enabled": True},
+            }
+        }
+    ]
+
+
+def test__lc_content_to_bedrock_search_result_rejects_non_text_content() -> None:
+    content: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "search_result",
+            "source": "web",
+            "title": "Weather report",
+            "content": [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": "data",
+                    },
+                }
+            ],
+        }
+    ]
+
+    with pytest.raises(ValueError, match="search_result content blocks"):
+        _lc_content_to_bedrock(content)
 
 
 def test__lc_content_to_bedrock_non_standard_unwrap() -> None:
