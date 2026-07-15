@@ -640,7 +640,7 @@ def test_messages_to_bedrock_with_cache_point() -> None:
 
 
 def test_messages_to_bedrock_with_tool_message_search_result() -> None:
-    messages = [
+    messages: List[BaseMessage] = [
         ToolMessage(
             content=[
                 {
