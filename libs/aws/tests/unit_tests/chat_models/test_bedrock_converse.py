@@ -5330,7 +5330,7 @@ def test_response_format_stream_without_response_format() -> None:
     assert "outputConfig" not in call_kwargs
 
 
-def _count_cache_points(*sections: list) -> int:
+def _count_cache_points(*sections: Iterable[Any]) -> int:
     """Count cachePoint blocks across the provided Converse API sections."""
     return sum(1 for section in sections for block in section if _is_cache_point(block))
 
