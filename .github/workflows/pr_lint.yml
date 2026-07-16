@@ -83,6 +83,7 @@ jobs:
             aws
             langgraph-checkpoint-aws
             agentcore-codeinterpreter
+            langchain-backend-aws
             model-profiles
           requireScope: false
           disallowScopes: |

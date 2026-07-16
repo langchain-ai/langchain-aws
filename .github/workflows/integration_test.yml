@@ -10,6 +10,7 @@ on:
           - libs/aws
           - libs/langgraph-checkpoint-aws
           - libs/agentcore-codeinterpreter
+          - libs/langchain-backend-aws
       fork:
         required: true
         type: string
