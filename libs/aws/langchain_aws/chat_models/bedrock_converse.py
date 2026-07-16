@@ -169,7 +169,8 @@ class _ChatBedrockConverseBinding(_ChatModelBinding):
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, AIMessage]:
         """Bind tools while preserving kwargs already bound to this binding."""
-        tool_binding = self.bound.bind_tools(tools, **kwargs)
+        model = cast("ChatBedrockConverse", self.bound)
+        tool_binding = model.bind_tools(tools, **kwargs)
         if isinstance(tool_binding, RunnableBinding):
             # ``self.bind`` merges self.kwargs first, then the tool kwargs, so
             # newly bound tool settings win on conflict while cache_control and
