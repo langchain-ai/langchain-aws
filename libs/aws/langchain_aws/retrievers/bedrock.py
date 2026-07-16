@@ -329,7 +329,7 @@ def agentic_retrieve(
     is streaming and doesn't fit the synchronous retriever interface. Use this for
     complex queries that benefit from query decomposition and managed reranking.
 
-    Only works with MANAGED knowledge bases. Requires boto3 >= 1.43.0.
+    Only works with MANAGED knowledge bases. Requires boto3 >= 1.43.32.
 
     Args:
         knowledge_base_id: The managed knowledge base ID.

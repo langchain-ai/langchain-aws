@@ -1,13 +1,3 @@
-"""Integration tests for Bedrock KB retriever (managed + agentic).
-
-These tests hit the live Bedrock API and require:
-- AWS credentials configured
-- A managed knowledge base with ID set in KNOWLEDGE_BASE_ID env var
-- boto3 >= 1.43.2
-
-Run with: pytest tests/integration_tests/retrievers/test_managed_kb.py -m "not compile"
-"""
-
 import os
 
 import pytest
