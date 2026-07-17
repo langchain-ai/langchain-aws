@@ -22,6 +22,11 @@ else:
 
 logger = logging.getLogger(__name__)
 
+# DynamoDB ``batch_write_item`` per-request item cap.
+_BATCH_WRITE_MAX_ITEMS = 25
+# Maximum retries for ``UnprocessedItems`` returned by ``batch_write_item``.
+_BATCH_WRITE_MAX_RETRIES = 5
+
 
 # ========== Key Generation Functions ==========
 
@@ -587,7 +592,14 @@ class UnifiedRepository:
         task_id: str,
         task_path: str = "",
     ) -> None:
-        """Store writes with intelligent offloading and parallel execution.
+        """Store writes with intelligent offloading and batched metadata writes.
+
+        Metadata items for all writes are committed in a single
+        ``batch_write_item`` request (chunked at 25 items, the DynamoDB
+        per-request limit). Payloads are then stored via the storage
+        strategy. This preserves the metadata-before-payload invariant
+        while collapsing N sequential ``put_item`` calls into
+        ``ceil(N / 25)`` batch requests.
 
         Args:
             thread_id: Thread identifier
@@ -606,7 +618,10 @@ class UnifiedRepository:
         # Check if all writes are special (can be overwritten)
         all_special = all(w[0] in WRITES_IDX_MAP for w in writes)
 
-        # Build all write items with payload storage
+        # Materialize the (metadata, payload) pairs so metadata can be
+        # batch-written before any payload is stored.
+        base_items: list[dict[str, Any]] = []
+        ref_items: list[dict[str, Any]] = []
         for base_item, ref_item in self._build_write_items(
             thread_id,
             checkpoint_ns,
@@ -616,12 +631,14 @@ class UnifiedRepository:
             task_path,
             allow_overwrites=all_special,
         ):
-            # Store metadata to base table
-            self.put_single_write_item(
-                checkpoint_id, base_item, allow_overwrites=all_special
-            )
+            base_items.append(base_item)
+            ref_items.append(ref_item)
 
-            # Store Chunks for the record
+        # Batch-write metadata to base table.
+        self._batch_put_write_items(checkpoint_id, base_items)
+
+        # Store payloads via the storage strategy (DynamoDB chunk table or S3).
+        for ref_item in ref_items:
             self.storage.store_data(
                 chunk_key=ref_item["chunk_key"],
                 s3_key=ref_item["s3_key"],
@@ -715,6 +732,91 @@ class UnifiedRepository:
                 base_item["ttl"] = {"N": str(int(time.time() + self.ttl_seconds))}
 
             yield base_item, ref_item
+
+    def _batch_put_write_items(
+        self,
+        checkpoint_id: str,
+        items: list[dict[str, Any]],
+    ) -> None:
+        """Batch-write metadata items to the base table via ``batch_write_item``.
+
+        DynamoDB caps each ``batch_write_item`` request at 25 items and may
+        return ``UnprocessedItems`` when a portion of the batch is throttled.
+        Items are chunked accordingly and any unprocessed items are retried
+        with exponential backoff.
+
+        Note:
+            ``batch_write_item`` does not support ``ConditionExpression``,
+            so existing items with the same primary key are overwritten.
+            For LangGraph writes this is safe because the sort key derives
+            from ``(task_id, idx)``, which deterministically maps to a
+            single payload — replays write identical data.
+
+        Args:
+            checkpoint_id: Checkpoint identifier (for log context).
+            items: Items to write to the base table.
+
+        Raises:
+            ClientError: If ``batch_write_item`` fails.
+            RuntimeError: If items remain unprocessed after the retry budget
+                is exhausted.
+        """
+        if not items:
+            return
+
+        for i in range(0, len(items), _BATCH_WRITE_MAX_ITEMS):
+            chunk = items[i : i + _BATCH_WRITE_MAX_ITEMS]
+
+            write_requests: list[WriteRequestTypeDef] = [
+                {"PutRequest": {"Item": item}} for item in chunk
+            ]
+            request_items: dict[str, list[WriteRequestTypeDef]] = {
+                self.table_name: write_requests
+            }
+
+            retries = 0
+            while request_items:
+                try:
+                    response = self.dynamodb_client.batch_write_item(
+                        RequestItems=request_items
+                    )
+                except ClientError as err:
+                    error_code = err.response["Error"]["Code"]
+                    logger.error(
+                        f"Batch write failed: checkpoint_id={checkpoint_id}, "
+                        f"error={error_code}, batch_size={len(chunk)}"
+                    )
+                    raise
+
+                unprocessed = response.get("UnprocessedItems") or {}
+                if not unprocessed:
+                    break
+
+                retries += 1
+                num_unprocessed = len(unprocessed.get(self.table_name, []))
+                if num_unprocessed == 0:
+                    break
+
+                if retries > _BATCH_WRITE_MAX_RETRIES:
+                    raise RuntimeError(
+                        f"batch_write_item failed to process "
+                        f"{num_unprocessed} items after "
+                        f"{_BATCH_WRITE_MAX_RETRIES} retries: "
+                        f"checkpoint_id={checkpoint_id}"
+                    )
+
+                # Exponential backoff capped at 5 seconds.
+                backoff_seconds = min(2 ** (retries - 1) * 0.1, 5.0)
+                logger.warning(
+                    f"Retrying {num_unprocessed} unprocessed write items "
+                    f"(attempt {retries}/{_BATCH_WRITE_MAX_RETRIES}, "
+                    f"backoff={backoff_seconds:.1f}s)"
+                )
+                time.sleep(backoff_seconds)
+                request_items = {
+                    k: cast("list[WriteRequestTypeDef]", list(v))
+                    for k, v in unprocessed.items()
+                }
 
     def put_single_write_item(
         self, checkpoint_id: str, item: dict[str, Any], allow_overwrites: bool = False
