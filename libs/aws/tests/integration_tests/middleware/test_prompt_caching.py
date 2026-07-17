@@ -325,14 +325,14 @@ def _tagged_system(tag: str) -> str:
 
 @pytest.mark.vcr
 @pytest.mark.parametrize("model_id", CLAUDE_MODELS)
-def test_converse_single_cache_point_request_shape(model_id: str) -> None:
-    """Default cache_strategy='auto' anchors ONE cachePoint at end of history.
+def test_converse_auto_cache_point_request_shape(model_id: str) -> None:
+    """Default cache_strategy='auto' places system + end-of-history + last points.
 
-    With a fixed trailing instruction after the conversation history, the single
-    checkpoint must land on the penultimate message (end of history), NOT on the
-    instruction and NOT (duplicated) on the system prompt. Anchoring before the
-    dynamic final message is what keeps the system+history prefix cache-readable
-    as the conversation grows.
+    With a fixed trailing instruction after the conversation history, "auto" adds
+    an end-of-history checkpoint (on the penultimate sent message) on top of the
+    system and last-message points. The end-of-history point is what keeps the
+    system+history prefix cache-readable as the conversation grows, while the
+    last-message point covers the common forward-chat and single-message shapes.
     """
     llm = ChatBedrockConverse(model=model_id, region_name="us-west-2", max_tokens=16)
     assert llm.cache_strategy == "auto"
@@ -359,13 +359,10 @@ def test_converse_single_cache_point_request_shape(model_id: str) -> None:
         return sum(1 for b in blocks if isinstance(b, dict) and "cachePoint" in b)
 
     sent = captured["messages"]
-    system_cps = _count(captured.get("system", []))
-    total_msg_cps = sum(_count(m["content"]) for m in sent)
-    assert system_cps + total_msg_cps == 1, "Expected exactly one cachePoint"
-    assert system_cps == 0
-    # End of history = the penultimate sent message, not the trailing instruction.
-    assert _count(sent[-2]["content"]) == 1
-    assert _count(sent[-1]["content"]) == 0
+    # system (1) + penultimate/end-of-history (1) + last message (1) = 3 points.
+    assert _count(captured.get("system", [])) == 1
+    assert _count(sent[-2]["content"]) == 1  # end of history
+    assert _count(sent[-1]["content"]) == 1  # trailing instruction
 
 
 @pytest.mark.vcr

@@ -597,33 +597,33 @@ class ChatBedrockConverse(BaseChatModel):
     cache_strategy: Literal["auto", "single", "multi"] = "auto"
     """How ``cachePoint`` blocks are placed when ``cache_control`` is set.
 
-    - ``"auto"`` (default): Anthropic Claude models receive a SINGLE cache
-        checkpoint at the end of the stable prefix, which enables Bedrock's
-        [simplified cache management](https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html#prompt-caching-simplified).
-        Amazon Nova and other providers keep the legacy multi-checkpoint
-        placement.
-    - ``"single"``: always use single-checkpoint placement.
-    - ``"multi"``: always use the legacy multi-checkpoint placement (a
-        cachePoint on ``system``, on the last message, and on ``tools``).
+    - ``"auto"`` (default): Anthropic Claude models get cachePoints on
+        ``system``, on the last message, on ``tools``, **and** on the penultimate
+        message (the end of the conversation history). Amazon Nova and other
+        providers keep the legacy placement (``system`` + last message + tools,
+        no end-of-history point).
+    - ``"single"``: a single cachePoint at the end of the conversation history
+        (the penultimate message), falling back to ``system`` then ``tools``.
+    - ``"multi"``: the legacy placement (``system`` + last message + tools) for
+        any provider, without the end-of-history point.
 
     !!! note
-        For Claude models, placing multiple cache checkpoints disables Bedrock's
-        simplified cache management, which otherwise scans prior content-block
-        boundaries to reuse the longest matching prefix. A single checkpoint at
-        the end of the static content maximizes cache reuse, especially in
-        multi-turn agentic loops.
+        The extra end-of-history checkpoint in ``"auto"`` matters when a fixed
+        instruction always trails a growing history (e.g. an intent classifier
+        whose last turn is always "classify the conversation above"). The
+        last-message checkpoint then caches a prefix ending in that instruction,
+        so the next turn -- which inserts new history *before* the instruction --
+        diverges right after the old history and reuses only the system prompt.
+        Anchoring an additional checkpoint at the end of the history keeps the
+        ``system + history`` prefix cache-readable as the conversation grows,
+        while the last-message and system checkpoints still cover the common
+        forward-chat and single-message shapes. Empirically ``"auto"`` matches or
+        beats ``"multi"`` on cache reads across both shapes and every Claude
+        model.
 
-        ``"auto"`` anchors that checkpoint at the end of the conversation
-        history (the message before the final, most dynamic one) rather than on
-        the final message. This matters when a fixed instruction always trails a
-        growing history (e.g. an intent classifier whose last turn is always
-        "classify the conversation above"): a checkpoint on the final message
-        would cache a prefix ending in that instruction, so the next turn -- which
-        inserts new history *before* the instruction -- diverges right after the
-        old history and reuses only the system prompt. The legacy ``"multi"``
-        placement is fine when the final message is a fresh user question, but
-        loses history reuse in the fixed-instruction case; end-of-history
-        placement keeps ``system + history`` cache-readable in both.
+        Prefer ``"single"`` only for pure fixed-instruction workloads, where it
+        avoids writing the (never-reused) instruction-tail cache and so is more
+        write-efficient than ``"auto"``.
     """
 
     streaming: bool = False
@@ -832,20 +832,26 @@ class ChatBedrockConverse(BaseChatModel):
     ) -> None:
         """Apply cachePoint blocks to system, messages, and tools.
 
-        For Anthropic Claude models (the default ``cache_strategy="auto"``), a
-        SINGLE cachePoint is inserted at the end of the stable prefix to enable
-        Bedrock's simplified cache management, which automatically reuses the
-        longest matching prefix across prior content-block boundaries. Placing
-        multiple checkpoints disables that feature, so only one is used.
+        For Anthropic Claude models (the default ``cache_strategy="auto"``),
+        cachePoints are placed on ``system``, on the last message, on
+        ``toolConfig.tools``, **and** on the penultimate message (the end of the
+        conversation history). The first three cover the common shapes -- a
+        forward-growing chat (the last message becomes cacheable prefix next
+        turn), a single-message request, and cached tools/system -- while the
+        end-of-history point keeps the ``system + history`` prefix cache-readable
+        when a fixed instruction trails a growing history (e.g. an intent
+        classifier). This is at most four checkpoints, Claude's maximum.
 
         For Amazon Nova and other providers, the legacy multi-checkpoint
-        placement is used: a cachePoint is appended to ``system``, to the last
-        message's ``content``, and to ``toolConfig.tools`` (Nova omits the tool
-        cachePoint and skips the last message when it carries tool blocks).
+        placement is used: a cachePoint on ``system``, on the last message's
+        ``content``, and on ``toolConfig.tools`` (Nova omits the tool cachePoint
+        and skips the last message when it carries tool blocks), with no
+        end-of-history point.
 
         The ``cache_strategy`` field overrides provider detection: ``"single"``
-        forces single-checkpoint placement and ``"multi"`` forces the legacy
-        placement regardless of provider.
+        forces a single end-of-history checkpoint (most write-efficient for the
+        fixed-instruction shape) and ``"multi"`` forces the legacy placement
+        without the end-of-history point, regardless of provider.
 
         Args:
             cache_control: Cache control settings dict. Expected keys:
@@ -878,19 +884,48 @@ class ChatBedrockConverse(BaseChatModel):
         )
 
         if self.cache_strategy == "single":
-            use_single = True
-        elif self.cache_strategy == "multi":
-            use_single = False
-        else:  # "auto"
-            use_single = is_anthropic and not is_nova
-
-        if use_single:
             self._apply_single_cache_point(cache_block, system, bedrock_messages, tools)
             return
 
-        # Legacy multi-checkpoint placement (Nova and other providers).
+        # "auto" for Anthropic Claude augments the legacy placement with an
+        # end-of-history checkpoint. "multi" (and "auto" for Nova / other
+        # providers) uses the legacy placement unchanged.
+        add_end_of_history = (
+            self.cache_strategy == "auto" and is_anthropic and not is_nova
+        )
+
+        # Only add the extra end-of-history point when the request carries no
+        # pre-existing cachePoints. Claude allows at most 4 checkpoints, and the
+        # legacy placement below can already emit 3 (system + last + tools); a
+        # 4th auto point plus a caller-placed one could exceed that limit. When
+        # manual points are present, fall back to the legacy 3-point layout.
+        if add_end_of_history:
+            already_cached = (
+                any(_is_cache_point(b) for b in system)
+                or any(_is_cache_point(t) for t in (tools or []))
+                or any(
+                    isinstance(m.get("content"), list)
+                    and any(_is_cache_point(b) for b in m["content"])
+                    for m in bedrock_messages
+                )
+            )
+            add_end_of_history = not already_cached
+
+        # Legacy multi-checkpoint placement (system + last message + tools).
         if system and not any(_is_cache_point(b) for b in system):
             system.append(cache_block)
+
+        # End-of-history (penultimate) checkpoint, "auto" + Anthropic only. This
+        # keeps the system+history prefix cache-readable when a fixed
+        # instruction trails a growing history (see _apply_single_cache_point),
+        # while the last-message point below still covers the common forward-chat
+        # and single-message shapes.
+        if add_end_of_history and len(bedrock_messages) >= 2:
+            penultimate_content = bedrock_messages[-2].get("content")
+            if isinstance(penultimate_content, list) and not any(
+                _is_cache_point(b) for b in penultimate_content
+            ):
+                penultimate_content.append(cache_block)
 
         if bedrock_messages:
             last_content = bedrock_messages[-1].get("content")

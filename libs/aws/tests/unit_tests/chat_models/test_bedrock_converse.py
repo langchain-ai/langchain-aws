@@ -5338,8 +5338,8 @@ def _count_cache_points(*sections: Iterable[Any]) -> int:
 
 # Default model id used by the cache-point tests. With the default
 # ``cache_strategy="auto"`` this is an Anthropic Claude model and therefore
-# receives a SINGLE cache checkpoint at the end of the conversation history (the
-# penultimate message), or the system prefix when there is no history yet.
+# receives cachePoints on system, the last message, tools, AND the penultimate
+# message (end of history) -- see ``_apply_cache_points``.
 _CLAUDE_MODEL = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
 
@@ -5355,18 +5355,18 @@ def test_apply_cache_points_system_and_messages() -> None:
         model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
-    # Single checkpoint for Claude at the end of history: the penultimate message.
-    assert _count_cache_points(system) == 0
-    assert _count_cache_points(*(m["content"] for m in messages)) == 1
+    # Claude "auto": system + last message + end-of-history (penultimate).
+    assert _count_cache_points(system) == 1
+    assert system[-1] == {"cachePoint": {"type": "default"}}
     assert messages[-2]["content"][-1] == {"cachePoint": {"type": "default"}}
-    # The final (dynamic) message and earlier turns are left untouched.
-    assert messages[-1]["content"] == [{"text": "How are you?"}]
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+    # The earliest turn is left untouched.
     assert messages[0]["content"] == [{"text": "Hello"}]
 
 
 def test_apply_cache_points_no_system() -> None:
-    # Single message, no system, no tools: nothing stable precedes the dynamic
-    # message, so no checkpoint is inserted.
+    # Single message, no system, no tools: "auto" still caches the last message
+    # so a stateless single-message request is cache-readable.
     system: list = []
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
     ChatBedrockConverse(
@@ -5375,12 +5375,12 @@ def test_apply_cache_points_no_system() -> None:
         region_name="us-west-2",
     )._apply_cache_points({"ttl": "5m"}, system, messages)
     assert len(system) == 0
-    assert _count_cache_points(messages[0]["content"]) == 0
+    assert messages[0]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_apply_cache_points_no_ttl() -> None:
-    # system + single message: no history before the final message, so the
-    # checkpoint falls back to the system prefix.
+    # system + single message: no history before the final message, so "auto"
+    # caches system and the last message (no penultimate point).
     system = [{"text": "System"}]
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
     ChatBedrockConverse(
@@ -5389,7 +5389,7 @@ def test_apply_cache_points_no_ttl() -> None:
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral"}, system, messages)
     assert system[-1] == {"cachePoint": {"type": "default"}}
-    assert _count_cache_points(messages[0]["content"]) == 0
+    assert messages[0]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_apply_cache_points_extended_ttl() -> None:
@@ -5400,9 +5400,11 @@ def test_apply_cache_points_extended_ttl() -> None:
         model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "1h"}, system, messages)
-    # Single message -> the system fallback checkpoint carries the extended TTL.
+    # The extended TTL is carried on every checkpoint.
     assert system[-1] == {"cachePoint": {"type": "default", "ttl": "1h"}}
-    assert _count_cache_points(messages[0]["content"]) == 0
+    assert messages[0]["content"][-1] == {
+        "cachePoint": {"type": "default", "ttl": "1h"}
+    }
 
 
 def test_apply_cache_points_default_ttl_omitted() -> None:
@@ -5444,7 +5446,7 @@ def test_apply_cache_points_empty_messages() -> None:
 
 
 def test_apply_cache_points_with_tools() -> None:
-    """Claude single-point with a lone message falls back to the system prefix."""
+    """Claude "auto" with a lone message caches system, tools, and the message."""
     system = [{"text": "System"}]
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
     params = {
@@ -5466,14 +5468,14 @@ def test_apply_cache_points_with_tools() -> None:
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages, params)
     tools = params["toolConfig"]["tools"]
-    assert len(tools) == 1
-    assert _count_cache_points(tools) == 0
+    # No history -> no penultimate point, but system + last message + tools.
+    assert tools[-1] == {"cachePoint": {"type": "default"}}
     assert system[-1] == {"cachePoint": {"type": "default"}}
-    assert _count_cache_points(*(m["content"] for m in messages)) == 0
+    assert messages[0]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_apply_cache_points_penultimate_with_tools() -> None:
-    """Claude single-point with history: checkpoint at end of history, not tools."""
+    """Claude "auto" with history: system + penultimate + last + tools = 4 points."""
     system = [{"text": "System"}]
     messages = [
         {"role": "user", "content": [{"text": "u1"}]},
@@ -5494,9 +5496,11 @@ def test_apply_cache_points_penultimate_with_tools() -> None:
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages, params)
     tools = params["toolConfig"]["tools"]
     total = _count_cache_points(system, tools, *(m["content"] for m in messages))
-    assert total == 1
+    assert total == 4  # system + penultimate + last message + tools
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert tools[-1] == {"cachePoint": {"type": "default"}}
     assert messages[-2]["content"][-1] == {"cachePoint": {"type": "default"}}
-    assert _count_cache_points(messages[-1]["content"]) == 0
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_apply_cache_points_tools_with_extended_ttl() -> None:
@@ -5529,7 +5533,7 @@ def test_apply_cache_points_no_tools() -> None:
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages, params)
     assert "toolConfig" not in params
     assert system[-1] == {"cachePoint": {"type": "default"}}
-    assert _count_cache_points(messages[0]["content"]) == 0
+    assert messages[0]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_apply_cache_points_no_params() -> None:
@@ -5541,7 +5545,7 @@ def test_apply_cache_points_no_params() -> None:
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
     assert system[-1] == {"cachePoint": {"type": "default"}}
-    assert _count_cache_points(messages[0]["content"]) == 0
+    assert messages[0]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_apply_cache_points_skips_existing_tool_cache_point() -> None:
@@ -5565,8 +5569,9 @@ def test_apply_cache_points_skips_existing_tool_cache_point() -> None:
 
 
 def test_apply_cache_points_skips_existing_system_cache_point() -> None:
-    # A manually placed cachePoint short-circuits single-point insertion so we
-    # never create a second checkpoint (which would disable simplified caching).
+    # A manually placed cachePoint disables the extra end-of-history point (to
+    # stay within Claude's 4-checkpoint limit); "auto" degrades to the legacy
+    # placement and never duplicates the existing point.
     system: list[dict[str, Any]] = [
         {"text": "You are helpful."},
         {"cachePoint": {"type": "default"}},
@@ -5581,8 +5586,11 @@ def test_apply_cache_points_skips_existing_system_cache_point() -> None:
         model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
+    # System keeps its single (manual) point; no penultimate point is added.
     assert _count_cache_points(system) == 1
-    assert _count_cache_points(*(m["content"] for m in messages)) == 0
+    assert _count_cache_points(messages[-2]["content"]) == 0
+    # The last-message point is still placed (legacy layout).
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_apply_cache_points_skips_existing_message_cache_point() -> None:
@@ -5601,13 +5609,14 @@ def test_apply_cache_points_skips_existing_message_cache_point() -> None:
         model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
+    # The existing message point is not duplicated; system still gets one.
     last_content: list[dict[str, Any]] = messages[0]["content"]
     assert _count_cache_points(last_content) == 1
-    assert _count_cache_points(system) == 0
+    assert system[-1] == {"cachePoint": {"type": "default"}}
 
 
-def test_apply_cache_points_anthropic_single_point_full_request() -> None:
-    """system + tools + multiple messages -> one cachePoint at end of history."""
+def test_apply_cache_points_anthropic_full_request() -> None:
+    """system + tools + multiple messages -> 4 points (system, penult, last, tools)."""
     system = [{"text": "System"}]
     messages = [
         {"role": "user", "content": [{"text": "Hello"}]},
@@ -5628,19 +5637,23 @@ def test_apply_cache_points_anthropic_single_point_full_request() -> None:
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages, params)
     tools = params["toolConfig"]["tools"]
     total = _count_cache_points(system, tools, *(m["content"] for m in messages))
-    assert total == 1
-    # End of history = the penultimate message, not the final dynamic one.
+    assert total == 4
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert tools[-1] == {"cachePoint": {"type": "default"}}
+    # Both the end of history (penultimate) and the final message are cached.
     assert messages[-2]["content"][-1] == {"cachePoint": {"type": "default"}}
-    assert _count_cache_points(messages[-1]["content"]) == 0
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_apply_cache_points_anthropic_instruction_last_caches_history() -> None:
     """A fixed trailing instruction must not poison the cache boundary.
 
     When the final message is a fixed instruction sitting after a growing
-    history (e.g. an intent classifier), the checkpoint anchors at the end of
-    the history (the last assistant turn), leaving the instruction uncached so
-    the ``system + history`` prefix stays cache-readable as turns accumulate.
+    history (e.g. an intent classifier), "auto" adds an end-of-history point on
+    the last assistant turn (index -2) in addition to the last-message point.
+    That end-of-history point keeps the ``system + history`` prefix
+    cache-readable as turns accumulate, even though the last-message point sits
+    on the (constant) instruction.
     """
     system = [{"text": "System"}]
     messages = [
@@ -5655,15 +5668,15 @@ def test_apply_cache_points_anthropic_instruction_last_caches_history() -> None:
         model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
-    assert _count_cache_points(system) == 0
-    assert _count_cache_points(*(m["content"] for m in messages)) == 1
-    # Checkpoint on the last assistant turn (index -2), not the instruction.
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    # End-of-history checkpoint on the last assistant turn keeps history cached.
     assert messages[-2]["content"][-1] == {"cachePoint": {"type": "default"}}
-    assert _count_cache_points(messages[-1]["content"]) == 0
+    # The instruction (last message) is also cached (harmless; not reused).
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_apply_cache_points_anthropic_detected_via_provider_arn() -> None:
-    """ARN model with explicit provider='anthropic' uses single-point placement."""
+    """ARN model with explicit provider='anthropic' uses the "auto" placement."""
     system = [{"text": "System"}]
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
     params = {
@@ -5680,14 +5693,14 @@ def test_apply_cache_points_anthropic_detected_via_provider_arn() -> None:
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages, params)
     tools = params["toolConfig"]["tools"]
-    # Single message -> falls back to caching the system prefix (not the message).
-    assert _count_cache_points(tools) == 0
+    # Recognized as Anthropic via provider -> system + last message + tools.
+    assert tools[-1] == {"cachePoint": {"type": "default"}}
     assert system[-1] == {"cachePoint": {"type": "default"}}
-    assert _count_cache_points(messages[0]["content"]) == 0
+    assert messages[0]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
-def test_apply_cache_points_single_is_idempotent() -> None:
-    """Calling twice keeps exactly one cachePoint (no duplicate)."""
+def test_apply_cache_points_auto_is_idempotent() -> None:
+    """Calling twice keeps the same points (no duplicates)."""
     system = [{"text": "System"}]
     messages = [
         {"role": "user", "content": [{"text": "Hello"}]},
@@ -5701,8 +5714,11 @@ def test_apply_cache_points_single_is_idempotent() -> None:
     )
     llm._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
     llm._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
-    assert _count_cache_points(system, *(m["content"] for m in messages)) == 1
+    # system + penultimate + last message, and no duplicates on a second call.
+    assert _count_cache_points(system, *(m["content"] for m in messages)) == 3
+    assert system[-1] == {"cachePoint": {"type": "default"}}
     assert messages[-2]["content"][-1] == {"cachePoint": {"type": "default"}}
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_apply_cache_points_nova_multi_point_preserved() -> None:
@@ -5795,20 +5811,19 @@ def test_apply_cache_points_strategy_multi_forces_legacy_on_claude() -> None:
     assert system[-1] == {"cachePoint": {"type": "default", "ttl": "1h"}}
 
 
-def test_apply_cache_points_legacy_last_message_poisons_fixed_instruction() -> None:
-    """Contrast that motivates end-of-history placement (the ``auto`` default).
+def test_apply_cache_points_auto_adds_end_of_history_vs_legacy() -> None:
+    """Contrast that motivates the extra end-of-history point in ``auto``.
 
-    The legacy ``multi`` placement anchors a checkpoint on the *last* message.
-    That is fine when the last message is a fresh user question (the cached
-    prefix is exactly ``system + full history``, reused verbatim next turn), but
-    it is wrong when a fixed instruction always trails a growing history: the
-    cached prefix then ends *with the instruction*, so the next turn -- which
-    inserts new history *before* that instruction -- diverges right after the
-    old history and only the system prompt stays reusable.
+    The legacy ``multi`` placement anchors its message checkpoint on the *last*
+    message. That is fine when the last message is a fresh user question, but it
+    is wrong when a fixed instruction always trails a growing history: the cached
+    prefix then ends *with the instruction*, so the next turn -- which inserts new
+    history *before* that instruction -- diverges right after the old history and
+    only the system prompt stays reusable (no end-of-history checkpoint).
 
-    ``auto`` (penultimate placement) anchors at the end of the history instead,
-    so the ``system + history`` prefix keeps matching as turns accumulate. This
-    test pins both behaviors on the same fixed-instruction shape.
+    ``auto`` adds an end-of-history (penultimate) checkpoint on top of the legacy
+    points, so the ``system + history`` prefix keeps matching as turns accumulate.
+    This test pins the difference on the same fixed-instruction shape.
     """
 
     def _history() -> list[dict[str, Any]]:
@@ -5820,8 +5835,8 @@ def test_apply_cache_points_legacy_last_message_poisons_fixed_instruction() -> N
             {"role": "user", "content": [{"text": "Classify the conversation above."}]},
         ]
 
-    # Legacy placement: the checkpoint lands ON the trailing instruction, so the
-    # cached boundary is poisoned for the fixed-instruction shape.
+    # Legacy placement: a point on the trailing instruction, NONE at end of
+    # history -> the history prefix is not cache-readable next turn.
     legacy_messages = _history()
     ChatBedrockConverse(
         client=mock.MagicMock(),
@@ -5834,8 +5849,8 @@ def test_apply_cache_points_legacy_last_message_poisons_fixed_instruction() -> N
     assert _is_cache_point(legacy_messages[-1]["content"][-1])
     assert _count_cache_points(legacy_messages[-2]["content"]) == 0
 
-    # Default ``auto``: the checkpoint anchors at the end of history (the message
-    # before the instruction), keeping the system + history prefix reusable.
+    # Default ``auto``: adds the end-of-history checkpoint (message before the
+    # instruction), keeping the system + history prefix reusable.
     auto_messages = _history()
     ChatBedrockConverse(
         client=mock.MagicMock(),
@@ -5844,18 +5859,19 @@ def test_apply_cache_points_legacy_last_message_poisons_fixed_instruction() -> N
     )._apply_cache_points(
         {"type": "ephemeral", "ttl": "5m"}, [{"text": "System"}], auto_messages
     )
-    assert _count_cache_points(auto_messages[-1]["content"]) == 0
     assert _is_cache_point(auto_messages[-2]["content"][-1])
+    # The last-message point is still present too (harmless for this shape).
+    assert _is_cache_point(auto_messages[-1]["content"][-1])
 
 
 def test_apply_cache_points_standard_new_question_last() -> None:
-    """Standard chat shape: the checkpoint anchors before the new question.
+    """Standard chat shape: the new question is cached (and so is prior history).
 
-    When the final message is a fresh user question (not a fixed instruction),
-    end-of-history placement caches ``system + all prior turns`` and leaves only
-    the new question uncached -- exactly the prefix that repeats next turn. This
-    is the ordinary long-prompt-caching case, and it is unaffected (indeed
-    helped) by the placement change.
+    When the final message is a fresh user question, "auto" caches the system
+    prompt, the end of history, and the new question. Caching the new question is
+    exactly what lets it be reused as prefix on the next turn -- the ordinary
+    long-prompt-caching case, which "auto" preserves (unlike a single
+    end-of-history point).
     """
     system = [{"text": "System"}]
     messages = [
@@ -5868,11 +5884,10 @@ def test_apply_cache_points_standard_new_question_last() -> None:
         model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
-    assert _count_cache_points(system) == 0
-    assert _count_cache_points(*(m["content"] for m in messages)) == 1
-    # The new question stays uncached; the checkpoint sits at the end of history.
-    assert _count_cache_points(messages[-1]["content"]) == 0
-    assert _is_cache_point(messages[-2]["content"][-1])
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    # Both the end of history and the new question are cached.
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+    assert messages[-2]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_apply_cache_points_strategy_single_forces_single_on_other_provider() -> None:
@@ -5995,13 +6010,13 @@ def test_bind_cache_control_then_bind_tools_sends_cache_point() -> None:
     )
     bound.invoke([HumanMessage(content="What's the weather?")])
 
-    # A single message with no history anchors on the system prefix; the point
-    # is emitted at all (before the fix, zero cachePoints reached Converse).
+    # cache_control survived the bind_tools call, so cachePoints are emitted
+    # (before the fix, zero cachePoints reached Converse).
     call_kwargs = mocked_client.converse.call_args[1]
     total = sum(1 for b in call_kwargs["system"] if _is_cache_point(b)) + sum(
         1 for m in call_kwargs["messages"] for b in m["content"] if _is_cache_point(b)
     )
-    assert total == 1
+    assert total > 0
 
 
 def test_generate_with_cache_control() -> None:
@@ -6021,12 +6036,12 @@ def test_generate_with_cache_control() -> None:
     messages = [HumanMessage(content="Hi")]
     llm.invoke(messages, cache_control={"type": "ephemeral", "ttl": "5m"})
 
-    # Claude (auto), single message -> no history to anchor before the final
-    # message, so the checkpoint falls back to the system prefix.
+    # Claude (auto), single message -> system + last message are cached (no
+    # penultimate point, since there is no history).
     call_kwargs = mocked_client.converse.call_args[1]
     assert call_kwargs["system"][-1] == {"cachePoint": {"type": "default"}}
     last_msg_content = call_kwargs["messages"][-1]["content"]
-    assert not any(_is_cache_point(b) for b in last_msg_content)
+    assert last_msg_content[-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_stream_with_cache_control() -> None:
@@ -6058,11 +6073,11 @@ def test_stream_with_cache_control() -> None:
     messages = [HumanMessage(content="Hi")]
     list(llm.stream(messages, cache_control={"type": "ephemeral", "ttl": "5m"}))
 
-    # Claude (auto), single message -> checkpoint falls back to the system prefix.
+    # Claude (auto), single message -> system + last message are cached.
     call_kwargs = mocked_client.converse_stream.call_args[1]
     assert call_kwargs["system"][-1] == {"cachePoint": {"type": "default"}}
     last_msg_content = call_kwargs["messages"][-1]["content"]
-    assert not any(_is_cache_point(b) for b in last_msg_content)
+    assert last_msg_content[-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_generate_with_cache_control_extended_ttl() -> None:
@@ -6082,12 +6097,12 @@ def test_generate_with_cache_control_extended_ttl() -> None:
     messages = [HumanMessage(content="Hi")]
     llm.invoke(messages, cache_control={"type": "ephemeral", "ttl": "1h"})
 
-    # Claude (auto), single message -> the system-fallback checkpoint carries TTL.
+    # Claude (auto), single message -> system + last message cached, both with TTL.
     expected_cp = {"cachePoint": {"type": "default", "ttl": "1h"}}
     call_kwargs = mocked_client.converse.call_args[1]
     assert call_kwargs["system"][-1] == expected_cp
     last_msg_content = call_kwargs["messages"][-1]["content"]
-    assert not any(_is_cache_point(b) for b in last_msg_content)
+    assert last_msg_content[-1] == expected_cp
 
 
 def test_generate_with_cache_control_and_tools() -> None:
@@ -6118,15 +6133,14 @@ def test_generate_with_cache_control_and_tools() -> None:
     messages = [HumanMessage(content="What's the weather?")]
     llm_with_tools.invoke(messages, cache_control={"type": "ephemeral", "ttl": "5m"})
 
-    # Claude (auto), single message -> the checkpoint falls back to the system
-    # prefix; the cumulative tools->system->messages ordering means this also
-    # caches the tools. No point lands on the message or the tools array.
+    # Claude (auto), single message -> system + last message + tools are cached
+    # (no penultimate point, since there is no history).
     call_kwargs = mocked_client.converse.call_args[1]
     assert call_kwargs["system"][-1] == {"cachePoint": {"type": "default"}}
     last_msg_content = call_kwargs["messages"][-1]["content"]
-    assert not any(_is_cache_point(b) for b in last_msg_content)
+    assert last_msg_content[-1] == {"cachePoint": {"type": "default"}}
     tools = call_kwargs["toolConfig"]["tools"]
-    assert not any(_is_cache_point(t) for t in tools)
+    assert tools[-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_generate_with_cache_control_nova_skips_tools() -> None:
