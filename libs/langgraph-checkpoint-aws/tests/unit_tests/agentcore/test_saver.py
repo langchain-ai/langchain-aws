@@ -5,8 +5,10 @@ Unit tests for AgentCore Memory Checkpoint Saver.
 import asyncio
 import hashlib
 import json
+import threading
 import time
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import ANY, MagicMock, Mock, call, patch
 
 import pytest
@@ -131,6 +133,16 @@ class TestAgentCoreMemorySaver:
         with patch("boto3.client") as mock_boto3_client:
             mock_boto3_client.return_value = mock_boto_client
             yield AgentCoreMemorySaver(memory_id=memory_id)
+
+    @pytest.fixture(autouse=True)
+    def _reset_request_actor(self):
+        from langgraph_checkpoint_aws.checkpoint.agentcore.saver import _request_actor
+
+        token = _request_actor.set(None)  # Clean slate + remember prior value
+        try:
+            yield  # Unit tests execute here
+        finally:
+            _request_actor.reset(token)
 
     @pytest.fixture
     def runnable_config(self):
@@ -367,6 +379,353 @@ class TestAgentCoreMemorySaver:
         result = saver.get_tuple(runnable_config)
 
         assert result is None
+
+    def test_get_tuple_resolves_fallback_actor_id(
+        self,
+        saver,
+        mock_boto_client,
+        sample_checkpoint_event,
+    ):
+        """A subgraph read inherits the actor_id captured by the parent read."""
+        mock_boto_client.list_events.return_value = {
+            "events": [
+                {
+                    "eventId": "event_1",
+                    "payload": [
+                        {
+                            "blob": saver.serializer.serialize_event(
+                                sample_checkpoint_event
+                            )
+                        }
+                    ],
+                }
+            ]
+        }
+
+        # Parent read primes the request context with (thread_id, actor_id).
+        saver.get_tuple(
+            RunnableConfig(
+                configurable={
+                    "thread_id": "test_thread_id",
+                    "actor_id": "test_actor_id",
+                }
+            )
+        )
+        # Derived subgraph read carries a namespace but omits actor_id, and
+        # inherits the actor from the request.
+        subgraph_config = RunnableConfig(
+            configurable={"thread_id": "test_thread_id", "checkpoint_ns": "sub"}
+        )
+        result = saver.get_tuple(subgraph_config)
+
+        assert isinstance(result, CheckpointTuple)
+        # "test_actor_id" is not stored on the saver; it is the actor captured
+        # for the current request by the parent read above (request-scoped
+        # ContextVar), which the subgraph read inherits because the thread_id
+        # matches.
+        assert result.config["configurable"]["actor_id"] == "test_actor_id"
+        mock_boto_client.list_events.assert_called()
+        assert (
+            mock_boto_client.list_events.call_args.kwargs["actorId"] == "test_actor_id"
+        )
+
+    def test_get_tuple_resolves_fallback_for_deeply_nested_subgraphs(
+        self,
+        saver,
+        mock_boto_client,
+        sample_checkpoint_event,
+    ):
+        """Each of three nested subgraph reads inherits the captured actor_id."""
+        mock_boto_client.list_events.return_value = {
+            "events": [
+                {
+                    "eventId": "event_1",
+                    "payload": [
+                        {
+                            "blob": saver.serializer.serialize_event(
+                                sample_checkpoint_event
+                            )
+                        }
+                    ],
+                }
+            ]
+        }
+
+        # Parent read primes the request context once.
+        saver.get_tuple(
+            RunnableConfig(
+                configurable={
+                    "thread_id": "test_thread_id",
+                    "actor_id": "test_actor_id",
+                }
+            )
+        )
+
+        nested_configs = [
+            RunnableConfig(
+                configurable={"thread_id": "test_thread_id", "checkpoint_ns": "lvl1"}
+            ),
+            RunnableConfig(
+                configurable={"thread_id": "test_thread_id", "checkpoint_ns": "sub"}
+            ),
+            RunnableConfig(
+                configurable={
+                    "thread_id": "test_thread_id",
+                    "checkpoint_ns": "sub:subsub",
+                }
+            ),
+        ]
+
+        for config in nested_configs:
+            result = saver.get_tuple(config)
+            assert isinstance(result, CheckpointTuple)
+            assert result.config["configurable"]["actor_id"] == "test_actor_id"
+
+    def test_get_tuple_session_mismatch_does_not_leak(
+        self,
+        saver,
+        mock_boto_client,
+        sample_checkpoint_event,
+    ):
+        """A read for a different thread_id never inherits another thread's actor."""
+        mock_boto_client.list_events.return_value = {
+            "events": [
+                {
+                    "eventId": "event_1",
+                    "payload": [
+                        {
+                            "blob": saver.serializer.serialize_event(
+                                sample_checkpoint_event
+                            )
+                        }
+                    ],
+                }
+            ]
+        }
+
+        # Prime: a normal read carrying an actor_id makes the saver remember the
+        # pair ("test_thread_id", "test_actor_id") for the current request.
+        saver.get_tuple(
+            RunnableConfig(
+                configurable={
+                    "thread_id": "test_thread_id",
+                    "actor_id": "test_actor_id",
+                }
+            )
+        )
+
+        # Now a read for a DIFFERENT conversation ("other_thread_id") that omits
+        # actor_id. It must NOT borrow the remembered "test_actor_id" — that
+        # would be a cross-tenant leak. Inheritance is keyed by thread_id, and
+        # the thread_ids differ, so the saver fails closed.
+        #
+        # checkpoint_ns="sub" is deliberate: it marks this as a subgraph-shaped
+        # read so it clears the empty-ns guard (which would otherwise reject it
+        # on its own). That forces the test to pass/fail purely on the
+        # thread_id-mismatch check — the actual security mechanism under test.
+        with pytest.raises(InvalidConfigError) as exc_info:
+            saver.get_tuple(
+                RunnableConfig(
+                    configurable={
+                        "thread_id": "other_thread_id",
+                        "checkpoint_ns": "sub",
+                    }
+                )
+            )
+
+        assert "actor_id" in str(exc_info.value)
+
+    async def test_aget_tuple_resolves_fallback_actor_id(
+        self,
+        saver,
+        mock_boto_client,
+        sample_checkpoint_event,
+    ):
+        """aget_tuple captures the actor so a later async subgraph read inherits it."""
+        mock_boto_client.list_events.return_value = {
+            "events": [
+                {
+                    "eventId": "event_1",
+                    "payload": [
+                        {
+                            "blob": saver.serializer.serialize_event(
+                                sample_checkpoint_event
+                            )
+                        }
+                    ],
+                }
+            ]
+        }
+
+        # Async parent read primes the request context.
+        await saver.aget_tuple(
+            RunnableConfig(
+                configurable={
+                    "thread_id": "test_thread_id",
+                    "actor_id": "test_actor_id",
+                }
+            )
+        )
+        # Async subgraph read carries a namespace, omits actor_id, and inherits it.
+        result = await saver.aget_tuple(
+            RunnableConfig(
+                configurable={"thread_id": "test_thread_id", "checkpoint_ns": "sub"}
+            )
+        )
+
+        assert isinstance(result, CheckpointTuple)
+        assert result.config["configurable"]["actor_id"] == "test_actor_id"
+        assert (
+            mock_boto_client.list_events.call_args.kwargs["actorId"] == "test_actor_id"
+        )
+
+    def test_request_actor_isolated_across_threads(
+        self,
+        saver,
+        mock_boto_client,
+        sample_checkpoint_event,
+    ):
+        """Concurrent requests on the same thread_id do not share captured actors."""
+        mock_boto_client.list_events.return_value = {
+            "events": [
+                {
+                    "eventId": "event_1",
+                    "payload": [
+                        {
+                            "blob": saver.serializer.serialize_event(
+                                sample_checkpoint_event
+                            )
+                        }
+                    ],
+                }
+            ]
+        }
+
+        barrier = threading.Barrier(2)
+
+        def worker(actor_id: str) -> str:
+            # Prime this thread's request context with its own actor.
+            saver.get_tuple(
+                RunnableConfig(
+                    configurable={
+                        "thread_id": "shared_thread_id",
+                        "actor_id": actor_id,
+                    }
+                )
+            )
+            # Wait until both threads have primed, maximizing leakage detection.
+            barrier.wait()
+            # Subgraph-style read (namespace set) lacks actor_id; must resolve
+            # THIS thread's actor.
+            result = saver.get_tuple(
+                RunnableConfig(
+                    configurable={
+                        "thread_id": "shared_thread_id",
+                        "checkpoint_ns": "sub",
+                    }
+                )
+            )
+            assert isinstance(result, CheckpointTuple)
+            return result.config["configurable"]["actor_id"]
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_a = executor.submit(worker, "actor_a")
+            future_b = executor.submit(worker, "actor_b")
+            resolved_a = future_a.result(timeout=5)
+            resolved_b = future_b.result(timeout=5)
+
+        assert resolved_a == "actor_a"
+        assert resolved_b == "actor_b"
+
+    def test_get_tuple_top_level_read_does_not_inherit_actor_id(
+        self,
+        saver,
+        mock_boto_client,
+        sample_checkpoint_event,
+    ):
+        """A top-level read (empty checkpoint_ns) never inherits a captured actor."""
+        mock_boto_client.list_events.return_value = {
+            "events": [
+                {
+                    "eventId": "event_1",
+                    "payload": [
+                        {
+                            "blob": saver.serializer.serialize_event(
+                                sample_checkpoint_event
+                            )
+                        }
+                    ],
+                }
+            ]
+        }
+
+        # Prime the request context for this thread with actor "test_actor_id".
+        saver.get_tuple(
+            RunnableConfig(
+                configurable={
+                    "thread_id": "test_thread_id",
+                    "actor_id": "test_actor_id",
+                }
+            )
+        )
+
+        # A top-level read (no checkpoint_ns) must not borrow the captured actor.
+        top_level_config = RunnableConfig(configurable={"thread_id": "test_thread_id"})
+        with pytest.raises(InvalidConfigError) as exc_info:
+            saver.get_tuple(top_level_config)
+
+        assert "actor_id" in str(exc_info.value)
+
+    def test_get_tuple_without_actor_id_raises(self, saver):
+        """get_tuple with no actor_id and nothing captured fails closed."""
+        config = RunnableConfig(configurable={"thread_id": "test_thread_id"})
+
+        with pytest.raises(InvalidConfigError) as exc_info:
+            saver.get_tuple(config)
+
+        assert "actor_id" in str(exc_info.value)
+
+    def test_list_without_actor_id_raises(self, saver):
+        """list with no actor_id and nothing captured fails closed."""
+        config = RunnableConfig(configurable={"thread_id": "test_thread_id"})
+
+        with pytest.raises(InvalidConfigError) as exc_info:
+            list(saver.list(config))
+
+        assert "actor_id" in str(exc_info.value)
+
+    def test_put_without_actor_id_raises(
+        self, saver, sample_checkpoint, sample_checkpoint_metadata
+    ):
+        """put with no actor_id fails closed (writes never inherit)."""
+        config = RunnableConfig(configurable={"thread_id": "test_thread_id"})
+
+        with pytest.raises(InvalidConfigError) as exc_info:
+            saver.put(config, sample_checkpoint, sample_checkpoint_metadata, {})
+
+        assert "actor_id" in str(exc_info.value)
+
+    def test_put_writes_without_actor_id_raises(self, saver):
+        """put_writes with no actor_id fails closed (writes never inherit)."""
+        config = RunnableConfig(configurable={"thread_id": "test_thread_id"})
+
+        with pytest.raises(InvalidConfigError) as exc_info:
+            saver.put_writes(config, [("channel", "value")], "task_id")
+
+        assert "actor_id" in str(exc_info.value)
+
+    def test_put_with_writes_without_actor_id_raises(
+        self, saver, sample_checkpoint, sample_checkpoint_metadata
+    ):
+        """put_with_writes with no actor_id fails closed (writes never inherit)."""
+        config = RunnableConfig(configurable={"thread_id": "test_thread_id"})
+
+        with pytest.raises(InvalidConfigError) as exc_info:
+            saver.put_with_writes(
+                config, sample_checkpoint, sample_checkpoint_metadata, {}, []
+            )
+
+        assert "actor_id" in str(exc_info.value)
 
     def test_list_success(
         self,
@@ -1080,6 +1439,40 @@ class TestCheckpointerConfig:
             CheckpointerConfig.from_runnable_config(config)
 
         assert "actor_id" in str(exc_info.value)
+
+    def test_from_runnable_config_resolves_default_actor_id(self):
+        """A config with thread_id but no actor_id resolves the fallback."""
+        config = RunnableConfig(configurable={"thread_id": "test_thread"})
+
+        checkpoint_config = CheckpointerConfig.from_runnable_config(
+            config, default_actor_id="test_actor"
+        )
+
+        assert checkpoint_config.actor_id == "test_actor"
+        assert checkpoint_config.thread_id == "test_thread"
+
+    def test_config_actor_id_takes_precedence_over_default(self):
+        """An explicit config actor_id wins over the fallback."""
+        config = RunnableConfig(
+            configurable={"thread_id": "test_thread", "actor_id": "test_actor"}
+        )
+
+        checkpoint_config = CheckpointerConfig.from_runnable_config(
+            config, default_actor_id="fallback_actor"
+        )
+
+        assert checkpoint_config.actor_id == "test_actor"
+
+    def test_missing_thread_id_checked_before_actor_id(self):
+        """thread_id is validated before actor_id when both are missing."""
+        config = RunnableConfig(configurable={})
+
+        with pytest.raises(InvalidConfigError) as exc_info:
+            CheckpointerConfig.from_runnable_config(config)
+
+        message = str(exc_info.value)
+        assert "thread_id" in message
+        assert "actor_id" not in message
 
 
 class TestEventSerializer:
