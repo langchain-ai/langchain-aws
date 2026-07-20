@@ -160,7 +160,7 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
 
     @property
     def chat_model_params(self) -> dict:
-        return {"model": "us.meta.llama3-2-90b-instruct-v1:0"}
+        return {"model": "us.meta.llama3-3-70b-instruct-v1:0"}
 
     @property
     def standard_chat_model_params(self) -> dict:
