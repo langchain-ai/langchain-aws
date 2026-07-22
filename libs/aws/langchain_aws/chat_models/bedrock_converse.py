@@ -2518,6 +2518,32 @@ def _format_data_content_block(block: dict) -> dict:
     return formatted_block
 
 
+def _format_search_result_block(block: dict) -> dict:
+    """Format a search_result block into a Bedrock SearchResultBlock."""
+    items = block.get("content") or []
+    for item in items:
+        if not (
+            isinstance(item, dict)
+            and item.get("type", "text") == "text"
+            and "text" in item
+        ):
+            error_message = (
+                "search_result 'content' items must be text blocks "
+                f'({{"type": "text", "text": ...}}); got: {item}'
+            )
+            raise ValueError(error_message)
+
+    search_result: Dict[str, Any] = {
+        "source": block["source"],
+        "title": block["title"],
+        "content": [{"text": item["text"]} for item in items],
+    }
+    citations_config = block.get("citations")
+    if isinstance(citations_config, dict) and "enabled" in citations_config:
+        search_result["citations"] = {"enabled": citations_config["enabled"]}
+    return {"searchResult": search_result}
+
+
 def _lc_content_to_bedrock(
     content: Union[str, List[Union[str, Dict[str, Any]]]],
 ) -> List[Dict[str, Any]]:
@@ -2547,12 +2573,34 @@ def _lc_content_to_bedrock(
                 bedrock_content.append({"text": EMPTY_CONTENT})
             else:
                 text_block = {"text": block["text"]}
+                citations = block.get("citations")
                 if (
-                    (citations := block.get("citations"))
+                    citations
                     and isinstance(citations, list)
                     and len(citations) > 0
                     and isinstance(citations[0], dict)
                     and "sourceContent" in citations[0]  # validate format
+                ):
+                    # We can't round-trip searchResultLocation citations, as Bedrock
+                    # internally omits the required "type": "search_result_location"
+                    # when translating back to Claude search result citations format.
+                    # Note that document citations specifically are NOT affected
+                    # TODO: restore search result citations once fixed on Bedrock side
+                    kept_citations = [
+                        c
+                        for c in citations
+                        if "searchResultLocation" not in c.get("location", {})
+                    ]
+                    if len(kept_citations) < len(citations):
+                        logger.debug(
+                            "Omitting %d search-result citation(s) from an "
+                            "outbound message: Bedrock cannot round-trip "
+                            "searchResultLocation citations for Anthropic models.",
+                            len(citations) - len(kept_citations),
+                        )
+                    citations = kept_citations
+                if citations and all(
+                    isinstance(c, dict) and "sourceContent" in c for c in citations
                 ):
                     bedrock_content.append(
                         {
@@ -2623,6 +2671,8 @@ def _lc_content_to_bedrock(
         elif block["type"] == "document":
             # Assume block in bedrock document format
             bedrock_content.append({"document": block["document"]})
+        elif block["type"] == "search_result":
+            bedrock_content.append(_format_search_result_block(block))
         elif block["type"] == "tool_use":
             tool_input = block["input"]
             if isinstance(tool_input, str):

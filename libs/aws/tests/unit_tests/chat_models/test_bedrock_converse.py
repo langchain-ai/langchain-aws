@@ -2037,6 +2037,88 @@ def test__lc_content_to_bedrock_reasoning_content_signature() -> None:
     assert expected_system == actual_system
 
 
+def test__lc_content_to_bedrock_search_result() -> None:
+    content: list[str | dict[str, Any]] = [
+        {
+            "type": "search_result",
+            "source": "https://wiki.example.com/policy",
+            "title": "Vacation Policy",
+            "content": [
+                {"type": "text", "text": "Annual leave is 15 days."},
+                {"type": "text", "text": "Carryover is capped at 5 days."},
+            ],
+            "citations": {"enabled": True},
+        }
+    ]
+
+    bedrock_content = _lc_content_to_bedrock(content)
+
+    assert bedrock_content == [
+        {
+            "searchResult": {
+                "source": "https://wiki.example.com/policy",
+                "title": "Vacation Policy",
+                "content": [
+                    {"text": "Annual leave is 15 days."},
+                    {"text": "Carryover is capped at 5 days."},
+                ],
+                "citations": {"enabled": True},
+            }
+        }
+    ]
+
+
+def test__messages_to_bedrock_search_result_in_tool_message() -> None:
+    messages = [
+        HumanMessage("What is the vacation policy?"),
+        AIMessage("", tool_calls=[{"name": "retrieval", "args": {}, "id": "c1"}]),
+        ToolMessage(
+            content=[
+                {
+                    "type": "search_result",
+                    "source": "https://wiki.example.com/policy",
+                    "title": "Vacation Policy",
+                    "content": [{"type": "text", "text": "Annual leave is 15 days."}],
+                    "citations": {"enabled": True},
+                }
+            ],
+            tool_call_id="c1",
+        ),
+    ]
+
+    bedrock_messages, _ = _messages_to_bedrock(messages)
+
+    tool_result = bedrock_messages[-1]["content"][0]["toolResult"]
+    assert tool_result["toolUseId"] == "c1"
+    assert tool_result["content"] == [
+        {
+            "searchResult": {
+                "source": "https://wiki.example.com/policy",
+                "title": "Vacation Policy",
+                "content": [{"text": "Annual leave is 15 days."}],
+                "citations": {"enabled": True},
+            }
+        }
+    ]
+
+
+def test__lc_content_to_bedrock_search_result_rejects_non_text() -> None:
+    content: list[str | dict[str, Any]] = [
+        {
+            "type": "search_result",
+            "source": "kb://doc-1",
+            "title": "Doc",
+            "content": [
+                {"type": "text", "text": "ok"},
+                {"type": "image", "source": {"mediaType": "image/png", "data": ""}},
+            ],
+        }
+    ]
+
+    with pytest.raises(ValueError, match="must be text blocks"):
+        _lc_content_to_bedrock(content)
+
+
 def test__lc_content_to_bedrock_reasoning_content_snake_case() -> None:
     """Test that reasoning_content blocks with snake case are
     handled correctly.
