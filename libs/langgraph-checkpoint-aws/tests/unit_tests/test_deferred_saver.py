@@ -74,6 +74,18 @@ class TestInit:
         assert not buffered.has_buffered_checkpoint
         assert not buffered.has_buffered_writes
 
+    def test_flush_writes_defaults_to_true(self, memory_saver: MemorySaver) -> None:
+        buffered = DeferredCheckpointSaver(memory_saver)
+        config = _make_config(thread_id="t1")
+        buffered.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), {})
+        write_config = _make_config(thread_id="t1", checkpoint_id="ckpt-1")
+        buffered.put_writes(write_config, [("ch1", "v1")], "task-1")
+
+        with patch.object(memory_saver, "put_writes") as mock_put_writes:
+            buffered.flush()
+
+        mock_put_writes.assert_called_once()
+
 
 class TestBuffering:
     """put() and put_writes() buffer correctly."""
@@ -258,6 +270,24 @@ class TestFlush:
         assert buffered.is_empty
         assert not buffered.has_buffered_writes
 
+    def test_flush_writes_false_skips_and_clears_writes(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        buffered = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        config = _make_config(thread_id="t1")
+        buffered.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), {})
+        write_config = _make_config(thread_id="t1", checkpoint_id="ckpt-1")
+        buffered.put_writes(write_config, [("ch1", "v1")], "task-1")
+        buffered.put_writes(write_config, [("ch2", "v2")], "task-2")
+
+        with patch.object(memory_saver, "put_writes") as mock_put_writes:
+            result = buffered.flush()
+
+        assert result is not None
+        assert result["configurable"]["checkpoint_id"] == "ckpt-1"
+        assert buffered.is_empty
+        mock_put_writes.assert_not_called()
+
     def test_flush_returns_none_when_empty(self, memory_saver: MemorySaver) -> None:
         buffered = DeferredCheckpointSaver(memory_saver)
         result = buffered.flush()
@@ -278,6 +308,24 @@ class TestFlush:
                 buffered.flush()
 
         assert buffered.has_buffered_checkpoint
+
+    def test_flush_writes_false_checkpoint_failure_keeps_writes(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        buffered = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        config = _make_config(thread_id="t1")
+        buffered.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), {})
+        write_config = _make_config(thread_id="t1", checkpoint_id="ckpt-1")
+        buffered.put_writes(write_config, [("ch1", "v1")], "task-1")
+
+        with patch.object(
+            memory_saver, "put", side_effect=RuntimeError("network error")
+        ):
+            with pytest.raises(RuntimeError, match="network error"):
+                buffered.flush()
+
+        assert buffered.has_buffered_checkpoint
+        assert buffered.has_buffered_writes
 
     def test_flush_failure_does_not_clobber_new_checkpoint(
         self, memory_saver: MemorySaver
@@ -342,6 +390,20 @@ class TestFlush:
         result = buffered.flush()
         assert result is None
         assert buffered.is_empty
+
+    def test_flush_writes_false_only_writes_clears_without_persisting(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        buffered = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        write_config = _make_config(thread_id="t1", checkpoint_id="ckpt-1")
+        buffered.put_writes(write_config, [("ch1", "v1")], "task-1")
+
+        with patch.object(memory_saver, "put_writes") as mock_put_writes:
+            result = buffered.flush()
+
+        assert result is None
+        assert buffered.is_empty
+        mock_put_writes.assert_not_called()
 
 
 class TestContextManagers:
@@ -1040,6 +1102,28 @@ class TestConcurrentFlush:
 
 class TestAsyncFlushWriteFailure:
     """aflush() partial write failure must keep remaining writes in buffer."""
+
+    @pytest.mark.asyncio
+    async def test_aflush_writes_false_skips_and_clears_writes(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        buffered = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        config = _make_config(thread_id="t1")
+        buffered.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), {})
+        write_config = _make_config(thread_id="t1", checkpoint_id="ckpt-1")
+        buffered.put_writes(write_config, [("ch1", "v1")], "task-1")
+
+        with patch.object(
+            memory_saver,
+            "aput_writes",
+            new_callable=AsyncMock,
+        ) as mock_aput_writes:
+            result = await buffered.aflush()
+
+        assert result is not None
+        assert result["configurable"]["checkpoint_id"] == "ckpt-1"
+        assert buffered.is_empty
+        mock_aput_writes.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_aflush_write_failure_keeps_remaining(
