@@ -8,6 +8,7 @@ import warnings
 from typing import (
     Any,
     Dict,
+    Iterable,
     Iterator,
     List,
     Literal,
@@ -48,6 +49,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _format_tools,
     _has_tool_use_or_result_blocks,
     _inline_reasoning_tags,
+    _is_cache_point,
     _lc_content_to_bedrock,
     _messages_to_bedrock,
     _parse_response,
@@ -5453,6 +5455,18 @@ def test_response_format_stream_without_response_format() -> None:
     assert "outputConfig" not in call_kwargs
 
 
+def _count_cache_points(*sections: Iterable[Any]) -> int:
+    """Count cachePoint blocks across the provided Converse API sections."""
+    return sum(1 for section in sections for block in section if _is_cache_point(block))
+
+
+# Default model id used by the cache-point tests. With the default
+# ``cache_strategy="auto"`` this is an Anthropic Claude model and therefore
+# receives cachePoints on system, the last message, tools, AND the penultimate
+# message (end of history) -- see ``_apply_cache_points``.
+_CLAUDE_MODEL = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+
+
 def test_apply_cache_points_system_and_messages() -> None:
     system = [{"text": "You are helpful."}]
     messages = [
@@ -5462,21 +5476,26 @@ def test_apply_cache_points_system_and_messages() -> None:
     ]
     ChatBedrockConverse(
         client=mock.MagicMock(),
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
+    # Claude "auto": system + last message + end-of-history (penultimate).
+    assert _count_cache_points(system) == 1
     assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert messages[-2]["content"][-1] == {"cachePoint": {"type": "default"}}
     assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+    # The earliest turn is left untouched.
     assert messages[0]["content"] == [{"text": "Hello"}]
-    assert messages[1]["content"] == [{"text": "Hi"}]
 
 
 def test_apply_cache_points_no_system() -> None:
+    # Single message, no system, no tools: "auto" still caches the last message
+    # so a stateless single-message request is cache-readable.
     system: list = []
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
     ChatBedrockConverse(
         client=mock.MagicMock(),
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"ttl": "5m"}, system, messages)
     assert len(system) == 0
@@ -5484,11 +5503,13 @@ def test_apply_cache_points_no_system() -> None:
 
 
 def test_apply_cache_points_no_ttl() -> None:
+    # system + single message: no history before the final message, so "auto"
+    # caches system and the last message (no penultimate point).
     system = [{"text": "System"}]
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
     ChatBedrockConverse(
         client=mock.MagicMock(),
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral"}, system, messages)
     assert system[-1] == {"cachePoint": {"type": "default"}}
@@ -5500,9 +5521,10 @@ def test_apply_cache_points_extended_ttl() -> None:
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
     ChatBedrockConverse(
         client=mock.MagicMock(),
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "1h"}, system, messages)
+    # The extended TTL is carried on every checkpoint.
     assert system[-1] == {"cachePoint": {"type": "default", "ttl": "1h"}}
     assert messages[0]["content"][-1] == {
         "cachePoint": {"type": "default", "ttl": "1h"}
@@ -5514,11 +5536,12 @@ def test_apply_cache_points_default_ttl_omitted() -> None:
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
     ChatBedrockConverse(
         client=mock.MagicMock(),
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
-    assert system[-1] == {"cachePoint": {"type": "default"}}
-    assert "ttl" not in system[-1]["cachePoint"]
+    cache_point = system[-1]
+    assert cache_point == {"cachePoint": {"type": "default"}}
+    assert "ttl" not in cache_point["cachePoint"]
 
 
 def test_apply_cache_points_none_cache_control() -> None:
@@ -5526,7 +5549,7 @@ def test_apply_cache_points_none_cache_control() -> None:
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
     ChatBedrockConverse(
         client=mock.MagicMock(),
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points(None, system, messages)
     assert len(system) == 1
@@ -5538,14 +5561,16 @@ def test_apply_cache_points_empty_messages() -> None:
     messages: list = []
     ChatBedrockConverse(
         client=mock.MagicMock(),
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"ttl": "5m"}, system, messages)
+    # No messages -> the single checkpoint falls back to the system array.
     assert system[-1] == {"cachePoint": {"type": "default"}}
     assert len(messages) == 0
 
 
 def test_apply_cache_points_with_tools() -> None:
+    """Claude "auto" with a lone message caches system, tools, and the message."""
     system = [{"text": "System"}]
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
     params = {
@@ -5563,13 +5588,42 @@ def test_apply_cache_points_with_tools() -> None:
     }
     ChatBedrockConverse(
         client=mock.MagicMock(),
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages, params)
     tools = params["toolConfig"]["tools"]
-    assert len(tools) == 2
+    # No history -> no penultimate point, but system + last message + tools.
     assert tools[-1] == {"cachePoint": {"type": "default"}}
     assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert messages[0]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_penultimate_with_tools() -> None:
+    """Claude "auto" with history: system + penultimate + last + tools = 4 points."""
+    system = [{"text": "System"}]
+    messages = [
+        {"role": "user", "content": [{"text": "u1"}]},
+        {"role": "assistant", "content": [{"text": "a1"}]},
+        {"role": "user", "content": [{"text": "u2"}]},
+    ]
+    params = {
+        "toolConfig": {
+            "tools": [
+                {"toolSpec": {"name": "t", "description": "d", "inputSchema": {}}}
+            ]
+        }
+    }
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model=_CLAUDE_MODEL,
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages, params)
+    tools = params["toolConfig"]["tools"]
+    total = _count_cache_points(system, tools, *(m["content"] for m in messages))
+    assert total == 4  # system + penultimate + last message + tools
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert tools[-1] == {"cachePoint": {"type": "default"}}
+    assert messages[-2]["content"][-1] == {"cachePoint": {"type": "default"}}
     assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
@@ -5583,9 +5637,10 @@ def test_apply_cache_points_tools_with_extended_ttl() -> None:
     }
     ChatBedrockConverse(
         client=mock.MagicMock(),
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "1h"}, [], [], params)
+    # No messages or system -> the single checkpoint falls back to tools.
     assert params["toolConfig"]["tools"][-1] == {
         "cachePoint": {"type": "default", "ttl": "1h"}
     }
@@ -5597,11 +5652,12 @@ def test_apply_cache_points_no_tools() -> None:
     params: dict = {}
     ChatBedrockConverse(
         client=mock.MagicMock(),
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages, params)
     assert "toolConfig" not in params
     assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert messages[0]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_apply_cache_points_no_params() -> None:
@@ -5609,11 +5665,11 @@ def test_apply_cache_points_no_params() -> None:
     messages = [{"role": "user", "content": [{"text": "Hello"}]}]
     ChatBedrockConverse(
         client=mock.MagicMock(),
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
     assert system[-1] == {"cachePoint": {"type": "default"}}
-    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+    assert messages[0]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_apply_cache_points_skips_existing_tool_cache_point() -> None:
@@ -5627,7 +5683,7 @@ def test_apply_cache_points_skips_existing_tool_cache_point() -> None:
     }
     ChatBedrockConverse(
         client=mock.MagicMock(),
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, [], [], params)
     tool_config = cast(dict[str, Any], params["toolConfig"])
@@ -5637,23 +5693,28 @@ def test_apply_cache_points_skips_existing_tool_cache_point() -> None:
 
 
 def test_apply_cache_points_skips_existing_system_cache_point() -> None:
+    # A manually placed cachePoint disables the extra end-of-history point (to
+    # stay within Claude's 4-checkpoint limit); "auto" degrades to the legacy
+    # placement and never duplicates the existing point.
     system: list[dict[str, Any]] = [
         {"text": "You are helpful."},
         {"cachePoint": {"type": "default"}},
     ]
-    messages: list[dict[str, Any]] = [{"role": "user", "content": [{"text": "Hi"}]}]
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": [{"text": "u1"}]},
+        {"role": "assistant", "content": [{"text": "a1"}]},
+        {"role": "user", "content": [{"text": "u2"}]},
+    ]
     ChatBedrockConverse(
         client=mock.MagicMock(),
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
-    system_cps = [b for b in system if "cachePoint" in b]
-    assert len(system_cps) == 1, (
-        f"Expected 1 cachePoint in system, got {len(system_cps)}"
-    )
-    last_content: list[dict[str, Any]] = messages[0]["content"]
-    msg_cps = [b for b in last_content if "cachePoint" in b]
-    assert len(msg_cps) == 1
+    # System keeps its single (manual) point; no penultimate point is added.
+    assert _count_cache_points(system) == 1
+    assert _count_cache_points(messages[-2]["content"]) == 0
+    # The last-message point is still placed (legacy layout).
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
 
 
 def test_apply_cache_points_skips_existing_message_cache_point() -> None:
@@ -5669,14 +5730,417 @@ def test_apply_cache_points_skips_existing_message_cache_point() -> None:
     ]
     ChatBedrockConverse(
         client=mock.MagicMock(),
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model=_CLAUDE_MODEL,
         region_name="us-west-2",
     )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
+    # The existing message point is not duplicated; system still gets one.
     last_content: list[dict[str, Any]] = messages[0]["content"]
-    msg_cps = [b for b in last_content if "cachePoint" in b]
-    assert len(msg_cps) == 1, f"Expected 1 cachePoint in message, got {len(msg_cps)}"
-    system_cps = [b for b in system if "cachePoint" in b]
-    assert len(system_cps) == 1
+    assert _count_cache_points(last_content) == 1
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_anthropic_full_request() -> None:
+    """system + tools + multiple messages -> 4 points (system, penult, last, tools)."""
+    system = [{"text": "System"}]
+    messages = [
+        {"role": "user", "content": [{"text": "Hello"}]},
+        {"role": "assistant", "content": [{"text": "Hi"}]},
+        {"role": "user", "content": [{"text": "Tell me more"}]},
+    ]
+    params = {
+        "toolConfig": {
+            "tools": [
+                {"toolSpec": {"name": "t", "description": "d", "inputSchema": {}}}
+            ]
+        }
+    }
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model=_CLAUDE_MODEL,
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages, params)
+    tools = params["toolConfig"]["tools"]
+    total = _count_cache_points(system, tools, *(m["content"] for m in messages))
+    assert total == 4
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert tools[-1] == {"cachePoint": {"type": "default"}}
+    # Both the end of history (penultimate) and the final message are cached.
+    assert messages[-2]["content"][-1] == {"cachePoint": {"type": "default"}}
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_anthropic_instruction_last_caches_history() -> None:
+    """A fixed trailing instruction must not poison the cache boundary.
+
+    When the final message is a fixed instruction sitting after a growing
+    history (e.g. an intent classifier), "auto" adds an end-of-history point on
+    the last assistant turn (index -2) in addition to the last-message point.
+    That end-of-history point keeps the ``system + history`` prefix
+    cache-readable as turns accumulate, even though the last-message point sits
+    on the (constant) instruction.
+    """
+    system = [{"text": "System"}]
+    messages = [
+        {"role": "user", "content": [{"text": "u1"}]},
+        {"role": "assistant", "content": [{"text": "a1"}]},
+        {"role": "user", "content": [{"text": "u2"}]},
+        {"role": "assistant", "content": [{"text": "a2"}]},
+        {"role": "user", "content": [{"text": "Classify the conversation above."}]},
+    ]
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model=_CLAUDE_MODEL,
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    # End-of-history checkpoint on the last assistant turn keeps history cached.
+    assert messages[-2]["content"][-1] == {"cachePoint": {"type": "default"}}
+    # The instruction (last message) is also cached (harmless; not reused).
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_anthropic_detected_via_provider_arn() -> None:
+    """ARN model with explicit provider='anthropic' uses the "auto" placement."""
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    params = {
+        "toolConfig": {
+            "tools": [
+                {"toolSpec": {"name": "t", "description": "d", "inputSchema": {}}}
+            ]
+        }
+    }
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="arn:aws:bedrock:us-west-2:123456789012:provisioned-model/abc123",
+        provider="anthropic",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages, params)
+    tools = params["toolConfig"]["tools"]
+    # Recognized as Anthropic via provider -> system + last message + tools.
+    assert tools[-1] == {"cachePoint": {"type": "default"}}
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert messages[0]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_auto_is_idempotent() -> None:
+    """Calling twice keeps the same points (no duplicates)."""
+    system = [{"text": "System"}]
+    messages = [
+        {"role": "user", "content": [{"text": "Hello"}]},
+        {"role": "assistant", "content": [{"text": "Hi"}]},
+        {"role": "user", "content": [{"text": "More"}]},
+    ]
+    llm = ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model=_CLAUDE_MODEL,
+        region_name="us-west-2",
+    )
+    llm._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
+    llm._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
+    # system + penultimate + last message, and no duplicates on a second call.
+    assert _count_cache_points(system, *(m["content"] for m in messages)) == 3
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert messages[-2]["content"][-1] == {"cachePoint": {"type": "default"}}
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_nova_multi_point_preserved() -> None:
+    """Nova keeps system + last-message points, no tool point, TTL stripped."""
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    params = {
+        "toolConfig": {
+            "tools": [
+                {"toolSpec": {"name": "t", "description": "d", "inputSchema": {}}}
+            ]
+        }
+    }
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "1h"}, system, messages, params)
+    tools = params["toolConfig"]["tools"]
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+    assert _count_cache_points(tools) == 0  # Nova: no tool cachePoint
+    # Nova never gets a TTL, even when an extended TTL is requested.
+    assert "ttl" not in system[-1]["cachePoint"]
+    assert "ttl" not in messages[-1]["content"][-1]["cachePoint"]
+
+
+def test_apply_cache_points_nova_skips_tool_block_message() -> None:
+    """Nova does not add a cachePoint to a message carrying tool blocks."""
+    system = [{"text": "System"}]
+    messages = [
+        {
+            "role": "user",
+            "content": [{"toolResult": {"toolUseId": "x", "content": []}}],
+        }
+    ]
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert _count_cache_points(messages[0]["content"]) == 0
+
+
+def test_apply_cache_points_other_provider_multi_point() -> None:
+    """Non-Anthropic, non-Nova providers keep the legacy multi-point placement."""
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    params = {
+        "toolConfig": {
+            "tools": [
+                {"toolSpec": {"name": "t", "description": "d", "inputSchema": {}}}
+            ]
+        }
+    }
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="meta.llama3-70b-instruct-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "1h"}, system, messages, params)
+    tools = params["toolConfig"]["tools"]
+    assert system[-1] == {"cachePoint": {"type": "default", "ttl": "1h"}}
+    assert messages[-1]["content"][-1] == {
+        "cachePoint": {"type": "default", "ttl": "1h"}
+    }
+    assert tools[-1] == {"cachePoint": {"type": "default", "ttl": "1h"}}
+
+
+def test_apply_cache_points_strategy_multi_forces_legacy_on_claude() -> None:
+    """cache_strategy='multi' restores 3-point placement for Claude."""
+    system = [{"text": "System"}]
+    messages = [{"role": "user", "content": [{"text": "Hello"}]}]
+    params = {
+        "toolConfig": {
+            "tools": [
+                {"toolSpec": {"name": "t", "description": "d", "inputSchema": {}}}
+            ]
+        }
+    }
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model=_CLAUDE_MODEL,
+        region_name="us-west-2",
+        cache_strategy="multi",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "1h"}, system, messages, params)
+    tools = params["toolConfig"]["tools"]
+    total = _count_cache_points(system, tools, *(m["content"] for m in messages))
+    assert total == 3
+    assert system[-1] == {"cachePoint": {"type": "default", "ttl": "1h"}}
+
+
+def test_apply_cache_points_auto_adds_end_of_history_vs_legacy() -> None:
+    """Contrast that motivates the extra end-of-history point in ``auto``.
+
+    The legacy ``multi`` placement anchors its message checkpoint on the *last*
+    message. That is fine when the last message is a fresh user question, but it
+    is wrong when a fixed instruction always trails a growing history: the cached
+    prefix then ends *with the instruction*, so the next turn -- which inserts new
+    history *before* that instruction -- diverges right after the old history and
+    only the system prompt stays reusable (no end-of-history checkpoint).
+
+    ``auto`` adds an end-of-history (penultimate) checkpoint on top of the legacy
+    points, so the ``system + history`` prefix keeps matching as turns accumulate.
+    This test pins the difference on the same fixed-instruction shape.
+    """
+
+    def _history() -> list[dict[str, Any]]:
+        # Build fresh dicts/lists each call so the two runs below never share
+        # mutable content lists (the checkpoint is appended in place).
+        return [
+            {"role": "user", "content": [{"text": "u1"}]},
+            {"role": "assistant", "content": [{"text": "a1"}]},
+            {"role": "user", "content": [{"text": "Classify the conversation above."}]},
+        ]
+
+    # Legacy placement: a point on the trailing instruction, NONE at end of
+    # history -> the history prefix is not cache-readable next turn.
+    legacy_messages = _history()
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model=_CLAUDE_MODEL,
+        region_name="us-west-2",
+        cache_strategy="multi",
+    )._apply_cache_points(
+        {"type": "ephemeral", "ttl": "5m"}, [{"text": "System"}], legacy_messages
+    )
+    assert _is_cache_point(legacy_messages[-1]["content"][-1])
+    assert _count_cache_points(legacy_messages[-2]["content"]) == 0
+
+    # Default ``auto``: adds the end-of-history checkpoint (message before the
+    # instruction), keeping the system + history prefix reusable.
+    auto_messages = _history()
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model=_CLAUDE_MODEL,
+        region_name="us-west-2",
+    )._apply_cache_points(
+        {"type": "ephemeral", "ttl": "5m"}, [{"text": "System"}], auto_messages
+    )
+    assert _is_cache_point(auto_messages[-2]["content"][-1])
+    # The last-message point is still present too (harmless for this shape).
+    assert _is_cache_point(auto_messages[-1]["content"][-1])
+
+
+def test_apply_cache_points_standard_new_question_last() -> None:
+    """Standard chat shape: the new question is cached (and so is prior history).
+
+    When the final message is a fresh user question, "auto" caches the system
+    prompt, the end of history, and the new question. Caching the new question is
+    exactly what lets it be reused as prefix on the next turn -- the ordinary
+    long-prompt-caching case, which "auto" preserves (unlike a single
+    end-of-history point).
+    """
+    system = [{"text": "System"}]
+    messages = [
+        {"role": "user", "content": [{"text": "What is the capital of France?"}]},
+        {"role": "assistant", "content": [{"text": "Paris."}]},
+        {"role": "user", "content": [{"text": "And its population?"}]},
+    ]
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model=_CLAUDE_MODEL,
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages)
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    # Both the end of history and the new question are cached.
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+    assert messages[-2]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_strategy_single_forces_single_on_other_provider() -> None:
+    """cache_strategy='single' forces single-point for non-Claude providers."""
+    system = [{"text": "System"}]
+    messages = [
+        {"role": "user", "content": [{"text": "u1"}]},
+        {"role": "assistant", "content": [{"text": "a1"}]},
+        {"role": "user", "content": [{"text": "u2"}]},
+    ]
+    params = {
+        "toolConfig": {
+            "tools": [
+                {"toolSpec": {"name": "t", "description": "d", "inputSchema": {}}}
+            ]
+        }
+    }
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="meta.llama3-70b-instruct-v1:0",
+        region_name="us-west-2",
+        cache_strategy="single",
+    )._apply_cache_points({"type": "ephemeral", "ttl": "5m"}, system, messages, params)
+    tools = params["toolConfig"]["tools"]
+    total = _count_cache_points(system, tools, *(m["content"] for m in messages))
+    assert total == 1
+    assert messages[-2]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_default_strategy_is_auto() -> None:
+    llm = ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model=_CLAUDE_MODEL,
+        region_name="us-west-2",
+    )
+    assert llm.cache_strategy == "auto"
+
+
+def test_bind_then_bind_tools_preserves_cache_control() -> None:
+    """``bind(cache_control=...).bind_tools(...)`` must keep ``cache_control``.
+
+    ``bind_tools`` on a plain ``RunnableBinding`` is proxied to the underlying
+    model and rebuilds a binding from scratch, which used to drop kwargs already
+    bound (e.g. ``cache_control``). The overridden ``bind`` returns a binding
+    whose ``bind_tools`` re-merges those kwargs so the two compose in any order.
+    """
+    llm = ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model=_CLAUDE_MODEL,
+        region_name="us-west-2",
+    )
+    cache_control = {"type": "ephemeral", "ttl": "5m"}
+
+    bound = llm.bind(cache_control=cache_control).bind_tools([GetWeather])
+    kwargs = cast(RunnableBinding, bound).kwargs
+    assert kwargs["cache_control"] == cache_control
+    assert "tools" in kwargs
+    # The binding still wraps the original model, not a nested binding.
+    assert cast(RunnableBinding, bound).bound is llm
+
+
+def test_bind_tools_then_bind_preserves_cache_control() -> None:
+    """The reverse order also keeps both ``tools`` and ``cache_control``."""
+    llm = ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model=_CLAUDE_MODEL,
+        region_name="us-west-2",
+    )
+    cache_control = {"type": "ephemeral", "ttl": "5m"}
+
+    bound = llm.bind_tools([GetWeather]).bind(cache_control=cache_control)
+    kwargs = cast(RunnableBinding, bound).kwargs
+    assert kwargs["cache_control"] == cache_control
+    assert "tools" in kwargs
+
+
+def test_bind_tools_after_bind_lets_new_tool_kwargs_win() -> None:
+    """On conflict, kwargs passed to ``bind_tools`` override earlier bound ones."""
+    llm = ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model=_CLAUDE_MODEL,
+        region_name="us-west-2",
+    )
+
+    bound = llm.bind(
+        tool_choice={"auto": {}}, cache_control={"type": "ephemeral", "ttl": "5m"}
+    ).bind_tools([GetWeather], tool_choice="GetWeather")
+    kwargs = cast(RunnableBinding, bound).kwargs
+    # The tool_choice from bind_tools wins over the one bound earlier.
+    assert kwargs["tool_choice"] == {"tool": {"name": "GetWeather"}}
+    # ...while the unrelated cache_control kwarg is retained.
+    assert kwargs["cache_control"] == {"type": "ephemeral", "ttl": "5m"}
+
+
+def test_bind_cache_control_then_bind_tools_sends_cache_point() -> None:
+    """End-to-end: the composed binding actually emits a cachePoint to Converse."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hi!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+    tool_def = {
+        "name": "get_weather",
+        "description": "Get weather for a city",
+        "input_schema": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+    }
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model=_CLAUDE_MODEL,
+        region_name="us-west-2",
+        system=["You are helpful."],
+    )
+
+    bound = llm.bind(cache_control={"type": "ephemeral", "ttl": "5m"}).bind_tools(
+        [tool_def]
+    )
+    bound.invoke([HumanMessage(content="What's the weather?")])
+
+    # cache_control survived the bind_tools call, so cachePoints are emitted
+    # (before the fix, zero cachePoints reached Converse).
+    call_kwargs = mocked_client.converse.call_args[1]
+    total = sum(1 for b in call_kwargs["system"] if _is_cache_point(b)) + sum(
+        1 for m in call_kwargs["messages"] for b in m["content"] if _is_cache_point(b)
+    )
+    assert total > 0
 
 
 def test_generate_with_cache_control() -> None:
@@ -5696,6 +6160,8 @@ def test_generate_with_cache_control() -> None:
     messages = [HumanMessage(content="Hi")]
     llm.invoke(messages, cache_control={"type": "ephemeral", "ttl": "5m"})
 
+    # Claude (auto), single message -> system + last message are cached (no
+    # penultimate point, since there is no history).
     call_kwargs = mocked_client.converse.call_args[1]
     assert call_kwargs["system"][-1] == {"cachePoint": {"type": "default"}}
     last_msg_content = call_kwargs["messages"][-1]["content"]
@@ -5731,6 +6197,7 @@ def test_stream_with_cache_control() -> None:
     messages = [HumanMessage(content="Hi")]
     list(llm.stream(messages, cache_control={"type": "ephemeral", "ttl": "5m"}))
 
+    # Claude (auto), single message -> system + last message are cached.
     call_kwargs = mocked_client.converse_stream.call_args[1]
     assert call_kwargs["system"][-1] == {"cachePoint": {"type": "default"}}
     last_msg_content = call_kwargs["messages"][-1]["content"]
@@ -5754,6 +6221,7 @@ def test_generate_with_cache_control_extended_ttl() -> None:
     messages = [HumanMessage(content="Hi")]
     llm.invoke(messages, cache_control={"type": "ephemeral", "ttl": "1h"})
 
+    # Claude (auto), single message -> system + last message cached, both with TTL.
     expected_cp = {"cachePoint": {"type": "default", "ttl": "1h"}}
     call_kwargs = mocked_client.converse.call_args[1]
     assert call_kwargs["system"][-1] == expected_cp
@@ -5789,6 +6257,8 @@ def test_generate_with_cache_control_and_tools() -> None:
     messages = [HumanMessage(content="What's the weather?")]
     llm_with_tools.invoke(messages, cache_control={"type": "ephemeral", "ttl": "5m"})
 
+    # Claude (auto), single message -> system + last message + tools are cached
+    # (no penultimate point, since there is no history).
     call_kwargs = mocked_client.converse.call_args[1]
     assert call_kwargs["system"][-1] == {"cachePoint": {"type": "default"}}
     last_msg_content = call_kwargs["messages"][-1]["content"]
