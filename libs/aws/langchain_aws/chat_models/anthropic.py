@@ -110,6 +110,19 @@ class ChatAnthropicBedrock(ChatAnthropic):
     If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
     """
 
+    guardrail_config: dict[str, Any] | None = Field(default=None, alias="guardrails")
+    """Configuration for an Amazon Bedrock Guardrail applied to every request.
+
+    Same shape as `ChatBedrockConverse`, e.g.
+    `{"guardrailIdentifier": "gr-abc123", "guardrailVersion": "1", "trace": "enabled"}`.
+
+    The native Bedrock `InvokeModel` APIs used by the Anthropic SDK attach
+    guardrails as HTTP request headers rather than a request body field, so this
+    config is translated into the `X-Amzn-Bedrock-GuardrailIdentifier`,
+    `X-Amzn-Bedrock-GuardrailVersion` and `X-Amzn-Bedrock-Trace` headers and
+    merged over `default_headers` (guardrail values win on key conflicts).
+    """
+
     @property
     def _llm_type(self) -> str:
         """Return type of chat model."""
@@ -135,6 +148,40 @@ class ChatAnthropicBedrock(ChatAnthropic):
         """
         return ["langchain", "chat_models", "anthropic_bedrock"]
 
+    def _guardrail_headers(self) -> dict[str, str]:
+        """Translate `guardrail_config` into Bedrock guardrail request headers.
+
+        The native `InvokeModel` / `InvokeModelWithResponseStream` APIs attach
+        guardrails via HTTP headers instead of a request body field, so the
+        Converse-style config is mapped onto those headers here.
+
+        Returns:
+            Header dict to merge into the client's default headers; empty when
+            no guardrail is configured.
+
+        Raises:
+            ValueError: If `guardrail_config` is missing `guardrailIdentifier`
+                or `guardrailVersion` — failing loudly instead of silently
+                sending unguarded requests.
+        """
+        if not self.guardrail_config:
+            return {}
+        identifier = self.guardrail_config.get("guardrailIdentifier")
+        version = self.guardrail_config.get("guardrailVersion")
+        if not identifier or not version:
+            msg = (
+                "guardrail_config requires both 'guardrailIdentifier' and "
+                "'guardrailVersion'."
+            )
+            raise ValueError(msg)
+        headers = {
+            "X-Amzn-Bedrock-GuardrailIdentifier": str(identifier),
+            "X-Amzn-Bedrock-GuardrailVersion": str(version),
+        }
+        if trace := self.guardrail_config.get("trace"):
+            headers["X-Amzn-Bedrock-Trace"] = str(trace).upper()
+        return headers
+
     @cached_property
     def _client_params(self) -> dict[str, Any]:
         """Get client parameters for AnthropicBedrock."""
@@ -144,13 +191,16 @@ class ChatAnthropicBedrock(ChatAnthropic):
             or os.getenv("AWS_DEFAULT_REGION")
             or None  # let boto3 resolve
         )
+        default_headers = self.default_headers
+        if guardrail_headers := self._guardrail_headers():
+            default_headers = {**(self.default_headers or {}), **guardrail_headers}
         return _create_bedrock_client_params(
             region_name=region_name,
             aws_access_key_id=self.aws_access_key_id,
             aws_secret_access_key=self.aws_secret_access_key,
             aws_session_token=self.aws_session_token,
             max_retries=self.max_retries,
-            default_headers=self.default_headers,
+            default_headers=default_headers,
             timeout=self.default_request_timeout,
         )
 
