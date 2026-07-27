@@ -797,6 +797,7 @@ def test_standard_tracing_params() -> None:
         ("us.anthropic.claude-sonnet-4-20250514-v1:0", False),
         ("us.anthropic.claude-opus-4-20250514-v1:0", False),
         ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", False),
+        ("global.anthropic.claude-opus-5", False),
         ("us.anthropic.claude-sonnet-5", False),
         ("us.anthropic.claude-fable-5", False),
         ("us.anthropic.claude-3-haiku-20240307-v1:0", False),
@@ -2476,6 +2477,12 @@ def test__get_base_model() -> None:
         (
             "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
             "anthropic.claude-3-sonnet-20240229-v1:0",
+            "anthropic",
+            False,
+        ),
+        (
+            "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile",
+            "anthropic.claude-opus-5",
             "anthropic",
             False,
         ),
