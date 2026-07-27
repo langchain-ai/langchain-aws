@@ -294,19 +294,18 @@ def test_model_profile(model_name: str) -> None:
 
 
 def test_chat_anthropic_bedrock_guardrail_config_sets_headers() -> None:
-    """Test guardrail_config is translated into Bedrock guardrail headers."""
+    """Test guardrail_config is translated into extra_headers in the payload."""
     model = ChatAnthropicBedrock(  # type: ignore[call-arg]
         model=BEDROCK_MODEL_NAME,
         region_name="us-east-1",
-        aws_access_key_id=SecretStr("test-key"),
-        aws_secret_access_key=SecretStr("test-secret"),
         guardrail_config={
             "guardrailIdentifier": "gr-abc123",
             "guardrailVersion": "1",
             "trace": "enabled",
         },
     )
-    headers = model._client_params["default_headers"]
+    payload = model._get_request_payload([HumanMessage(content="hello")], stop=None)
+    headers = payload["extra_headers"]
     assert headers["X-Amzn-Bedrock-GuardrailIdentifier"] == "gr-abc123"
     assert headers["X-Amzn-Bedrock-GuardrailVersion"] == "1"
     assert headers["X-Amzn-Bedrock-Trace"] == "ENABLED"
@@ -322,51 +321,51 @@ def test_chat_anthropic_bedrock_guardrail_config_without_trace() -> None:
             "guardrailVersion": "2",
         },
     )
-    headers = model._client_params["default_headers"]
+    payload = model._get_request_payload([HumanMessage(content="hello")], stop=None)
+    headers = payload["extra_headers"]
     assert headers["X-Amzn-Bedrock-GuardrailVersion"] == "2"
     assert "X-Amzn-Bedrock-Trace" not in headers
 
 
 def test_chat_anthropic_bedrock_no_guardrail_config_no_headers() -> None:
-    """Test that without guardrail_config no guardrail headers are added."""
+    """Test that without guardrail_config no extra_headers are added."""
     model = ChatAnthropicBedrock(  # type: ignore[call-arg]
         model=BEDROCK_MODEL_NAME,
         region_name="us-east-1",
     )
-    headers = model._client_params["default_headers"] or {}
-    assert "X-Amzn-Bedrock-GuardrailIdentifier" not in headers
-    assert "X-Amzn-Bedrock-GuardrailVersion" not in headers
+    payload = model._get_request_payload([HumanMessage(content="hello")], stop=None)
+    assert "extra_headers" not in payload
 
 
 def test_chat_anthropic_bedrock_guardrail_config_merges_default_headers() -> None:
-    """Test guardrail headers merge over user default_headers, keeping the rest."""
+    """Test guardrail headers merge with existing extra_headers."""
     model = ChatAnthropicBedrock(  # type: ignore[call-arg]
         model=BEDROCK_MODEL_NAME,
         region_name="us-east-1",
-        default_headers={
-            "X-Custom": "keep-me",
-            "X-Amzn-Bedrock-GuardrailVersion": "stale",
-        },
         guardrail_config={
             "guardrailIdentifier": "gr-abc123",
             "guardrailVersion": "3",
         },
     )
-    headers = model._client_params["default_headers"]
+    payload = model._get_request_payload(
+        [HumanMessage(content="hello")],
+        stop=None,
+        extra_headers={"X-Custom": "keep-me"},
+    )
+    headers = payload["extra_headers"]
     assert headers["X-Custom"] == "keep-me"
     assert headers["X-Amzn-Bedrock-GuardrailIdentifier"] == "gr-abc123"
     assert headers["X-Amzn-Bedrock-GuardrailVersion"] == "3"
 
 
 def test_chat_anthropic_bedrock_guardrail_config_requires_both_keys() -> None:
-    """Test incomplete guardrail_config fails instead of silently not guarding."""
-    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
-        model=BEDROCK_MODEL_NAME,
-        region_name="us-east-1",
-        guardrail_config={"guardrailIdentifier": "gr-abc123"},
-    )
+    """Test incomplete guardrail_config fails eagerly at construction."""
     with pytest.raises(ValueError, match="guardrailVersion"):
-        _ = model._client_params
+        ChatAnthropicBedrock(  # type: ignore[call-arg]
+            model=BEDROCK_MODEL_NAME,
+            region_name="us-east-1",
+            guardrail_config={"guardrailIdentifier": "gr-abc123"},
+        )
 
 
 def test_chat_anthropic_bedrock_guardrails_alias() -> None:
@@ -380,5 +379,63 @@ def test_chat_anthropic_bedrock_guardrails_alias() -> None:
         },
     )
     assert model.guardrail_config is not None
-    headers = model._client_params["default_headers"]
-    assert headers["X-Amzn-Bedrock-GuardrailIdentifier"] == "gr-abc123"
+    payload = model._get_request_payload([HumanMessage(content="hello")], stop=None)
+    assert payload["extra_headers"]["X-Amzn-Bedrock-GuardrailIdentifier"] == "gr-abc123"
+
+
+def test_chat_anthropic_bedrock_per_request_guardrail_override() -> None:
+    """Test invoke-level guardrail_config overrides the instance default."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        guardrail_config={
+            "guardrailIdentifier": "gr-default",
+            "guardrailVersion": "1",
+        },
+    )
+    payload = model._get_request_payload(
+        [HumanMessage(content="hello")],
+        stop=None,
+        guardrail_config={
+            "guardrailIdentifier": "gr-override",
+            "guardrailVersion": "5",
+            "trace": "disabled",
+        },
+    )
+    headers = payload["extra_headers"]
+    assert headers["X-Amzn-Bedrock-GuardrailIdentifier"] == "gr-override"
+    assert headers["X-Amzn-Bedrock-GuardrailVersion"] == "5"
+    assert headers["X-Amzn-Bedrock-Trace"] == "DISABLED"
+
+
+def test_chat_anthropic_bedrock_per_request_guardrail_no_default() -> None:
+    """Test per-request guardrail works without an instance-level default."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+    )
+    payload = model._get_request_payload(
+        [HumanMessage(content="hello")],
+        stop=None,
+        guardrail_config={
+            "guardrailIdentifier": "gr-adhoc",
+            "guardrailVersion": "3",
+        },
+    )
+    headers = payload["extra_headers"]
+    assert headers["X-Amzn-Bedrock-GuardrailIdentifier"] == "gr-adhoc"
+    assert headers["X-Amzn-Bedrock-GuardrailVersion"] == "3"
+
+
+def test_chat_anthropic_bedrock_per_request_guardrail_validates() -> None:
+    """Test incomplete per-request guardrail_config raises ValueError."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+    )
+    with pytest.raises(ValueError, match="guardrailVersion"):
+        model._get_request_payload(
+            [HumanMessage(content="hello")],
+            stop=None,
+            guardrail_config={"guardrailIdentifier": "gr-abc123"},
+        )
