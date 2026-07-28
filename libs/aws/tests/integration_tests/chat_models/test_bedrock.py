@@ -242,6 +242,7 @@ def test_chat_bedrock_streaming_generation_info() -> None:
     "model,model_kwargs",
     [
         ("us.anthropic.claude-sonnet-5", {"thinking": {"type": "disabled"}}),
+        ("us.anthropic.claude-opus-5", {"thinking": {"type": "disabled"}}),
         ("mistral.mistral-7b-instruct-v0:2", {}),
     ],
 )
@@ -267,6 +268,7 @@ def test_bedrock_streaming(model: str, model_kwargs: dict) -> None:
     "model,model_kwargs",
     [
         ("us.anthropic.claude-sonnet-5", {"thinking": {"type": "disabled"}}),
+        ("us.anthropic.claude-opus-5", {"thinking": {"type": "disabled"}}),
         ("mistral.mistral-7b-instruct-v0:2", {}),
     ],
 )

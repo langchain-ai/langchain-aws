@@ -2148,8 +2148,16 @@ def test_system_prompt_string_format() -> None:
     assert isinstance(body["system"], str)
 
 
-def test_stream_thinking_on_by_default_returns_block_content() -> None:
-    """Sonnet/Fable 5 streams should not mix string and block content."""
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "us.anthropic.claude-sonnet-5",
+        "global.anthropic.claude-opus-5",
+        "global.anthropic.claude-fable-5",
+    ],
+)
+def test_stream_thinking_on_by_default_returns_block_content(model_id: str) -> None:
+    """Default-thinking Claude streams must not mix string and block content."""
     mock_client = MagicMock()
 
     def stream_gen():
@@ -2181,7 +2189,7 @@ def test_stream_thinking_on_by_default_returns_block_content() -> None:
 
     llm = ChatBedrock(
         client=mock_client,
-        model="us.anthropic.claude-sonnet-5",
+        model=model_id,
         region="us-west-2",
     )
     full = None

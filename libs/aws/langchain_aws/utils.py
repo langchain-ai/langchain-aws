@@ -489,7 +489,9 @@ def thinking_disabled_in_params(params: dict) -> bool:
 
 def thinking_on_by_default(model: str) -> bool:
     """Check if the model runs adaptive thinking without a thinking parameter."""
-    return any(x in model for x in ("claude-sonnet-5", "claude-fable-5"))
+    return any(
+        x in model for x in ("claude-sonnet-5", "claude-opus-5", "claude-fable-5")
+    )
 
 
 def thinking_forced_tool_use_unsupported(model: str) -> bool:

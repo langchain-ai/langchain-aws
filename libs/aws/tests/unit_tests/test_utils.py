@@ -453,6 +453,7 @@ def test_trim_message_whitespace_with_empty_messages() -> None:
         ("us.anthropic.claude-3-5-sonnet-20240620-v1:0", True),
         ("us.anthropic.claude-fable-5", False),
         ("us.anthropic.claude-sonnet-5", False),
+        ("global.anthropic.claude-opus-5", False),
         ("us.anthropic.claude-3-sonnet-20240229-v1:0", False),
         ("us.meta.llama4-scout-17b-instruct-v1:0", False),
         ("us.amazon.nova-pro-v1:0", False),
@@ -479,6 +480,7 @@ def test_count_tokens_api_supported_for_model(
         ("us.anthropic.claude-haiku-4-5-20251001-v1:0", True),
         ("global.anthropic.claude-opus-4-8", False),
         ("us.anthropic.claude-sonnet-5", False),
+        ("global.anthropic.claude-opus-5", False),
         ("global.anthropic.claude-fable-5", False),
     ],
 )
@@ -492,6 +494,7 @@ def test_thinking_forced_tool_use_unsupported(
     "model_id,expected_result",
     [
         ("us.anthropic.claude-sonnet-5", True),
+        ("global.anthropic.claude-opus-5", True),
         ("global.anthropic.claude-fable-5", True),
         ("global.anthropic.claude-opus-4-8", False),
         ("anthropic.claude-sonnet-4-6", False),
