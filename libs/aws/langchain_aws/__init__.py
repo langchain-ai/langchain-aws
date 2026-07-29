@@ -14,7 +14,11 @@ if TYPE_CHECKING:
         create_neptune_opencypher_qa_chain,
         create_neptune_sparql_qa_chain,
     )
-    from langchain_aws.chat_models import ChatAnthropicBedrock, ChatBedrockNovaSonic
+    from langchain_aws.chat_models import (
+        ChatAnthropicBedrock,
+        ChatBedrockNovaSonic,
+        ChatOpenAIMantle,
+    )
     from langchain_aws.document_compressors.rerank import BedrockRerank
     from langchain_aws.embeddings import BedrockEmbeddings
     from langchain_aws.graphs import NeptuneAnalyticsGraph, NeptuneGraph
@@ -87,6 +91,7 @@ __all__ = [
     "ChatBedrock",
     "ChatBedrockConverse",
     "ChatBedrockNovaSonic",
+    "ChatOpenAIMantle",
     "SagemakerEndpoint",
     "AmazonKendraRetriever",
     "AmazonKnowledgeBasesRetriever",
@@ -123,6 +128,10 @@ def __getattr__(name: str) -> Any:
         "ChatBedrockNovaSonic": (
             "langchain_aws.chat_models",
             'pip install "langchain-aws[nova-sonic]"',
+        ),
+        "ChatOpenAIMantle": (
+            "langchain_aws.chat_models",
+            'pip install "langchain-aws[openai]"',
         ),
     }
 
