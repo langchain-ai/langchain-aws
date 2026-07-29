@@ -80,6 +80,7 @@ from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
     parse_model_provider,
+    reasoning_effort_additional_fields,
     thinking_forced_tool_use_unsupported,
     thinking_in_params,
     trim_message_whitespace,
@@ -312,7 +313,25 @@ class ChatBedrockConverse(BaseChatModel):
         feature that outputs the step-by-step reasoning process that led to an
         answer.
 
-        To use it, specify the `thinking` parameter when initializing
+        For models that support configurable reasoning effort (Claude Opus 5/Sonnet 5,
+        Amazon Nova 2, gpt-oss), `reasoning_effort` is the recommended shorthand. It
+        translates to the appropriate provider-specific request format:
+
+        ```python
+        from langchain_aws import ChatBedrockConverse
+
+        model = ChatBedrockConverse(
+            model="us.anthropic.claude-sonnet-5",
+            region_name="us-west-2",
+            reasoning_effort="high",
+        )
+
+        response = model.invoke("What is the cube root of 50.653?")
+        ```
+
+        For finer-grained control (e.g. a fixed thinking token budget on older
+        Claude models), specify the `thinking` parameter directly via
+        `additional_model_request_fields` when initializing
         `ChatBedrockConverse` as shown below.
 
         You will need to specify a token budget to use this feature. See usage example:
@@ -593,6 +612,18 @@ class ChatBedrockConverse(BaseChatModel):
     not inference_config). Refer to the model's AWS documentation for
     supported parameters.
 
+    """
+
+    reasoning_effort: Optional[Literal["low", "medium", "high", "xhigh", "max"]] = None
+    """Reasoning effort level for models that support configurable reasoning.
+
+    Translated into the appropriate provider-specific request format based on the
+    model family. Only applied to models whose profile declares supported
+    ``reasoning_effort_levels``; unsupported values raise ``ValueError``.
+
+    Explicit values already present in ``additional_model_request_fields`` take
+    precedence. If the model has no known reasoning-effort translation, a warning
+    is emitted and the value is ignored.
     """
 
     additional_model_response_field_paths: Optional[List[str]] = None
@@ -1015,6 +1046,19 @@ class ChatBedrockConverse(BaseChatModel):
         if "application-inference-profile" in self.model_id:
             self._configure_streaming_for_resolved_model()
 
+        if not self.profile:
+            self.profile = self._resolve_model_profile()
+
+        if self.reasoning_effort is not None:
+            effort_fields = self._reasoning_effort_fields(self.reasoning_effort)
+            if effort_fields:
+                # Explicit additional_model_request_fields keys win over the
+                # reasoning_effort-derived defaults (e.g. an explicit `thinking`).
+                self.additional_model_request_fields = {
+                    **effort_fields,
+                    **(self.additional_model_request_fields or {}),
+                }
+
         # As of 12/03/24:
         # only claude-3/4, mistral-large, and nova models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
@@ -1063,9 +1107,6 @@ class ChatBedrockConverse(BaseChatModel):
         # Validate reasoning configuration for Nova 2 models
         self._validate_nova_reasoning_config()
 
-        if not self.profile:
-            self.profile = self._resolve_model_profile()
-
         _add_langchain_aws_version(self)
         return self
 
@@ -1073,6 +1114,38 @@ class ChatBedrockConverse(BaseChatModel):
         """Return the default model profile for this model."""
         model_id = self._get_base_model()
         return _get_default_model_profile(model_id)
+
+    def _reasoning_effort_fields(self, effort: str) -> Dict[str, Any]:
+        """Validate `effort` against the model profile and translate to request
+        fields.
+
+        Translation is only attempted for models whose profile explicitly
+        declares `reasoning_effort_levels` -- this is the single source of
+        truth for "does this specific model support configurable reasoning
+        effort," rather than a broad model-family substring match (e.g. not
+        every Claude model that matches `"claude" in base_model` supports
+        `output_config.effort`).
+        """
+        base_model = self._get_base_model()
+        levels = (self.profile or {}).get("reasoning_effort_levels") or ()
+        if not levels:
+            warnings.warn(
+                f"reasoning_effort is not supported for model {base_model}; ignoring.",
+                stacklevel=2,
+            )
+            return {}
+        if effort not in levels:
+            raise ValueError(
+                f"reasoning_effort={effort!r} is not supported for model "
+                f"{base_model}. Valid values: {list(levels)}"
+            )
+        fields = reasoning_effort_additional_fields(base_model, effort)
+        if not fields:
+            warnings.warn(
+                f"reasoning_effort is not supported for model {base_model}; ignoring.",
+                stacklevel=2,
+            )
+        return fields
 
     def _get_base_model(self) -> str:
         """Return base model id, stripping any regional prefix."""
@@ -1197,6 +1270,11 @@ class ChatBedrockConverse(BaseChatModel):
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
         additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
+        reasoning_effort = filtered_kwargs.pop("reasoning_effort", None)
+        if reasoning_effort is not None:
+            effort_fields = self._reasoning_effort_fields(reasoning_effort)
+            if effort_fields:
+                additional_fields = {**effort_fields, **(additional_fields or {})}
         _apply_response_format(filtered_kwargs)
         cache_control = filtered_kwargs.pop("cache_control", None)
         params = self._converse_params(
@@ -1266,6 +1344,11 @@ class ChatBedrockConverse(BaseChatModel):
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
         additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
+        reasoning_effort = filtered_kwargs.pop("reasoning_effort", None)
+        if reasoning_effort is not None:
+            effort_fields = self._reasoning_effort_fields(reasoning_effort)
+            if effort_fields:
+                additional_fields = {**effort_fields, **(additional_fields or {})}
         _apply_response_format(filtered_kwargs)
         cache_control = filtered_kwargs.pop("cache_control", None)
         params = self._converse_params(

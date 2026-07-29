@@ -509,6 +509,24 @@ def thinking_forced_tool_use_unsupported(model: str) -> bool:
     )
 
 
+def reasoning_effort_additional_fields(base_model: str, effort: str) -> Dict[str, Any]:
+    """Translate a `reasoning_effort` value into provider-specific request fields.
+
+    Returns an empty dict if the model family has no known translation; callers
+    are responsible for warning the user in that case.
+    """
+    model = base_model.lower()
+    if model.startswith("amazon.nova-2"):
+        return {"reasoningConfig": {"type": "enabled", "maxReasoningEffort": effort}}
+    if "claude" in model:
+        return {"thinking": {"type": "adaptive"}, "output_config": {"effort": effort}}
+    if model.startswith("openai."):
+        return {"reasoning_effort": effort}
+    if model.startswith(("moonshot.", "moonshotai.")):
+        return {"reasoning_effort": effort}
+    return {}
+
+
 def trim_message_whitespace(messages: List[Any]) -> List[Any]:
     """Trim trailing whitespace from final AIMessage content."""
     if not messages or not isinstance(messages[-1], AIMessage):

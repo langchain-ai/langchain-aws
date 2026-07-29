@@ -39,6 +39,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "pdf_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high"],
     },
     "amazon.nova-lite-v1:0": {
         "name": "Nova Lite",
@@ -307,6 +308,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high", "xhigh", "max"],
     },
     "anthropic.claude-sonnet-4-5-20250929-v1:0": {
         "name": "Claude Sonnet 4.5",
@@ -382,6 +384,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high", "xhigh", "max"],
     },
     "au.anthropic.claude-haiku-4-5-20251001-v1:0": {
         "name": "Claude Haiku 4.5 (AU)",
@@ -480,6 +483,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high", "xhigh", "max"],
     },
     "au.anthropic.claude-sonnet-4-5-20250929-v1:0": {
         "name": "Claude Sonnet 4.5 (AU)",
@@ -555,6 +559,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high", "xhigh", "max"],
     },
     "deepseek.r1-v1:0": {
         "name": "DeepSeek-R1",
@@ -800,6 +805,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high", "xhigh", "max"],
     },
     "eu.anthropic.claude-sonnet-4-5-20250929-v1:0": {
         "name": "Claude Sonnet 4.5 (EU)",
@@ -875,6 +881,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high", "xhigh", "max"],
     },
     "global.anthropic.claude-fable-5": {
         "name": "Claude Fable 5 (Global)",
@@ -1046,6 +1053,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high", "xhigh", "max"],
     },
     "global.anthropic.claude-sonnet-4-5-20250929-v1:0": {
         "name": "Claude Sonnet 4.5 (Global)",
@@ -1121,6 +1129,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high", "xhigh", "max"],
     },
     "google.gemma-3-12b-it": {
         "name": "Google Gemma 3 12B",
@@ -1292,6 +1301,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high", "xhigh", "max"],
     },
     "jp.anthropic.claude-sonnet-4-5-20250929-v1:0": {
         "name": "Claude Sonnet 4.5 (JP)",
@@ -1367,6 +1377,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high", "xhigh", "max"],
     },
     "meta.llama3-1-70b-instruct-v1:0": {
         "name": "Llama 3.1 70B Instruct",
@@ -1811,6 +1822,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "pdf_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "high", "max"],
     },
     "moonshotai.kimi-k2.5": {
         "name": "Kimi K2.5",
@@ -1836,6 +1848,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "pdf_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "high", "max"],
     },
     "nvidia.nemotron-nano-12b-v2": {
         "name": "NVIDIA Nemotron Nano 12B v2 VL BF16",
@@ -1961,6 +1974,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high"],
     },
     "openai.gpt-5.5": {
         "name": "GPT-5.5",
@@ -1986,6 +2000,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high"],
     },
     "openai.gpt-5.6-luna": {
         "name": "GPT-5.6 Luna",
@@ -2011,6 +2026,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high"],
     },
     "openai.gpt-5.6-sol": {
         "name": "GPT-5.6 Sol",
@@ -2036,6 +2052,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high"],
     },
     "openai.gpt-5.6-terra": {
         "name": "GPT-5.6 Terra",
@@ -2061,6 +2078,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high"],
     },
     "openai.gpt-oss-120b": {
         "name": "gpt-oss-120b",
@@ -2086,6 +2104,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "pdf_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high"],
     },
     "openai.gpt-oss-120b-1:0": {
         "name": "gpt-oss-120b",
@@ -2111,6 +2130,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "pdf_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high"],
     },
     "openai.gpt-oss-20b": {
         "name": "gpt-oss-20b",
@@ -2136,6 +2156,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "pdf_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high"],
     },
     "openai.gpt-oss-20b-1:0": {
         "name": "gpt-oss-20b",
@@ -2161,6 +2182,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "pdf_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high"],
     },
     "openai.gpt-oss-safeguard-120b": {
         "name": "GPT OSS Safeguard 120B",
@@ -2582,6 +2604,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high", "xhigh", "max"],
     },
     "us.anthropic.claude-sonnet-4-5-20250929-v1:0": {
         "name": "Claude Sonnet 4.5 (US)",
@@ -2657,6 +2680,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": ["low", "medium", "high", "xhigh", "max"],
     },
     "us.deepseek.r1-v1:0": {
         "name": "DeepSeek-R1 (US)",

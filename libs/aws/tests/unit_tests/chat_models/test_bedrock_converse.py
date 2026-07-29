@@ -3959,6 +3959,169 @@ def test_reasoning_config_validation_rejects_invalid_type() -> None:
         )  # type: ignore[call-arg]
 
 
+def test_reasoning_effort_claude_translates_to_thinking_and_output_config() -> None:
+    """Test reasoning_effort maps to thinking(adaptive) + output_config.effort."""
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5",
+        region_name="us-east-1",
+        reasoning_effort="high",
+    )  # type: ignore[call-arg]
+    assert llm.additional_model_request_fields == {
+        "thinking": {"type": "adaptive"},
+        "output_config": {"effort": "high"},
+    }
+
+
+def test_reasoning_effort_explicit_thinking_wins() -> None:
+    """Test explicit additional_model_request_fields keys beat reasoning_effort."""
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5",
+        region_name="us-east-1",
+        reasoning_effort="high",
+        additional_model_request_fields={
+            "thinking": {"type": "enabled", "budget_tokens": 2000}
+        },
+    )  # type: ignore[call-arg]
+    assert llm.additional_model_request_fields == {
+        "thinking": {"type": "enabled", "budget_tokens": 2000},
+        "output_config": {"effort": "high"},
+    }
+
+
+def test_reasoning_effort_call_time_overrides_constructor() -> None:
+    """Test call-time reasoning_effort overrides the constructor value."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="us.anthropic.claude-sonnet-5",
+        region_name="us-east-1",
+        reasoning_effort="low",
+    )  # type: ignore[call-arg]
+
+    llm.invoke([HumanMessage(content="Hi")], reasoning_effort="high")
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    additional_fields = call_kwargs["additionalModelRequestFields"]
+    assert additional_fields == {
+        "thinking": {"type": "adaptive"},
+        "output_config": {"effort": "high"},
+    }
+
+
+def test_reasoning_effort_nova2_translates_to_reasoning_config() -> None:
+    """Test reasoning_effort maps to Nova 2's reasoningConfig and unsets maxTokens."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="amazon.nova-2-lite-v1:0",
+        region_name="us-east-1",
+        reasoning_effort="high",
+    )  # type: ignore[call-arg]
+    assert llm.additional_model_request_fields == {
+        "reasoningConfig": {"type": "enabled", "maxReasoningEffort": "high"}
+    }
+
+    llm.invoke([HumanMessage(content="Hi")])
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert "maxTokens" not in call_kwargs["inferenceConfig"]
+
+
+def test_reasoning_effort_nova2_invalid_level_raises() -> None:
+    """Test an effort level unsupported by the model's profile raises ValueError."""
+    with pytest.raises(ValueError, match="reasoning_effort='xhigh' is not supported"):
+        ChatBedrockConverse(
+            model="amazon.nova-2-lite-v1:0",
+            region_name="us-east-1",
+            reasoning_effort="xhigh",
+        )  # type: ignore[call-arg]
+
+
+def test_reasoning_effort_gpt_oss_flat() -> None:
+    """Test reasoning_effort maps to a flat key for gpt-oss models."""
+    llm = ChatBedrockConverse(
+        model="openai.gpt-oss-120b-1:0",
+        region_name="us-east-1",
+        reasoning_effort="medium",
+    )  # type: ignore[call-arg]
+    assert llm.additional_model_request_fields == {"reasoning_effort": "medium"}
+
+
+def test_reasoning_effort_gpt_oss_invalid_level_raises() -> None:
+    """Test a level unsupported by gpt-oss's profile raises ValueError."""
+    with pytest.raises(ValueError, match="reasoning_effort='xhigh' is not supported"):
+        ChatBedrockConverse(
+            model="openai.gpt-oss-120b-1:0",
+            region_name="us-east-1",
+            reasoning_effort="xhigh",
+        )  # type: ignore[call-arg]
+
+
+def test_reasoning_effort_unsupported_model_warns() -> None:
+    """Test reasoning_effort on a model with no known translation warns and no-ops."""
+    with pytest.warns(UserWarning, match="reasoning_effort is not supported"):
+        llm = ChatBedrockConverse(
+            model="meta.llama3-1-70b-instruct-v1:0",
+            region_name="us-east-1",
+            reasoning_effort="high",
+        )  # type: ignore[call-arg]
+    assert not llm.additional_model_request_fields
+
+
+def test_reasoning_effort_older_claude_model_warns_not_translates() -> None:
+    """Test reasoning_effort on a Claude model without declared levels warns.
+
+    Regression test: reasoning_effort must only translate for Claude models
+    whose profile explicitly declares reasoning_effort_levels (opus-5/
+    sonnet-5), not for every model matching "claude" in the id.
+    """
+    with pytest.warns(UserWarning, match="reasoning_effort is not supported"):
+        llm = ChatBedrockConverse(
+            model="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            region_name="us-east-1",
+            reasoning_effort="high",
+        )  # type: ignore[call-arg]
+    assert not llm.additional_model_request_fields
+
+
+def test_reasoning_effort_native_openai_flat() -> None:
+    """Test reasoning_effort maps to a flat key for native openai.gpt-5.x models."""
+    llm = ChatBedrockConverse(
+        model="openai.gpt-5.5",
+        region_name="us-east-1",
+        reasoning_effort="medium",
+    )  # type: ignore[call-arg]
+    assert llm.additional_model_request_fields == {"reasoning_effort": "medium"}
+
+
+def test_reasoning_effort_moonshot_flat() -> None:
+    """Test reasoning_effort maps to a flat key for Moonshot Kimi K2 models."""
+    llm = ChatBedrockConverse(
+        model="moonshot.kimi-k2-thinking",
+        region_name="us-east-1",
+        reasoning_effort="max",
+    )  # type: ignore[call-arg]
+    assert llm.additional_model_request_fields == {"reasoning_effort": "max"}
+
+
+def test_reasoning_effort_moonshot_invalid_level_raises() -> None:
+    """Test a level unsupported by Moonshot's profile (no "medium") raises."""
+    with pytest.raises(ValueError, match="reasoning_effort='medium' is not supported"):
+        ChatBedrockConverse(
+            model="moonshot.kimi-k2-thinking",
+            region_name="us-east-1",
+            reasoning_effort="medium",
+        )  # type: ignore[call-arg]
+
+
 def test_iam_permission_error_detection() -> None:
     """Test that IAM permission errors for InvokeTool are detected and enhanced."""
     from botocore.exceptions import ClientError
