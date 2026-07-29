@@ -33,6 +33,8 @@ from ...checkpoint.agentcore.helpers import (
 
 logger = logging.getLogger(__name__)
 
+STORE_KEY_METADATA = "langgraph_store_key"
+
 
 class AgentCoreMemoryStore(BaseStore):
     """
@@ -130,10 +132,7 @@ class AgentCoreMemoryStore(BaseStore):
             )
 
         # Convert namespace tuple to actor_id and session_id
-        if len(op.namespace) != 2:
-            raise ValueError("Namespace must be a tuple of (actor_id, session_id)")
-
-        actor_id, session_id = op.namespace
+        actor_id, session_id = self._unpack_namespace(op.namespace)
         event_messages = convert_langchain_messages_to_event_messages([message])
 
         if not event_messages:
@@ -154,33 +153,66 @@ class AgentCoreMemoryStore(BaseStore):
             sessionId=session_id,
             eventTimestamp=datetime.now(timezone.utc),
             payload=conversational_payloads,
+            metadata={STORE_KEY_METADATA: {"stringValue": op.key}},
         )
         logger.debug(f"Created event for message in namespace {op.namespace}")
 
     def _handle_get(self, op: GetOp) -> Result:
-        """Handle GetOp by retrieving a specific memory record from AgentCore Memory."""
+        """Handle GetOp by retrieving a stored event from AgentCore Memory."""
+        actor_id, session_id = self._unpack_namespace(op.namespace)
+
         try:
-            response = self.client.get_memory_record(
-                memoryId=self.memory_id, memoryRecordId=op.key
+            response = self.client.list_events(
+                memoryId=self.memory_id,
+                actorId=actor_id,
+                sessionId=session_id,
+                includePayloads=True,
+                maxResults=100,
+                filter={
+                    "eventMetadata": [
+                        {
+                            "left": {"metadataKey": STORE_KEY_METADATA},
+                            "operator": "EQUALS_TO",
+                            "right": {"metadataValue": {"stringValue": op.key}},
+                        }
+                    ]
+                },
             )
 
-            memory_record = response.get("memoryRecord")
-            if not memory_record:
+            events = response.get("events", [])
+            if not events:
                 return None
 
-            return self._convert_memory_record_to_item(memory_record, op.namespace)
+            # ListEvents does not guarantee ordering and put is append-only, so a
+            # re-put of the same key yields multiple matching events. Return the most
+            # recent (last-write-wins) by eventTimestamp.
+            latest_event = max(
+                events,
+                key=lambda event: (
+                    event.get("eventTimestamp")
+                    # Fallback for events missing a timestamp: an oldest-possible,
+                    # UTC-aware value so they never win and comparisons stay typed.
+                    or datetime.min.replace(tzinfo=timezone.utc)
+                ),
+            )
+            return self._convert_event_to_item(latest_event, op.namespace, op.key)
 
         except ClientError as e:
             error_code = e.response["Error"]["Code"]
             if error_code == "ResourceNotFoundException":
-                # Memory record not found
+                # Memory resource, actor, or session not found — treat as absent key
+                logger.error(
+                    f"Failed to get event: {e} - "
+                    f"memory_id={self.memory_id}, "
+                    f"actor_id={actor_id}, session_id={session_id}"
+                )
                 return None
             else:
                 # Re-raise other client errors
-                logger.error(f"Failed to get memory record: {e}")
+                logger.error(f"Failed to get event: {e}")
                 raise
         except Exception as e:
-            logger.error(f"Failed to get memory record: {e}")
+            logger.error(f"Failed to get event: {e}")
             raise
 
     def _handle_search(self, op: SearchOp) -> Result:
@@ -210,6 +242,84 @@ class AgentCoreMemoryStore(BaseStore):
             memory_records, op.namespace_prefix
         )
 
+    def _unpack_namespace(self, namespace: tuple[str, ...]) -> tuple[str, str]:
+        """Unpack a store namespace into AgentCore actor and session identifiers.
+
+        Args:
+            namespace: The store namespace, expected to be a 2-tuple of
+                ``(actor_id, session_id)``.
+
+        Returns:
+            The ``(actor_id, session_id)`` pair.
+
+        Raises:
+            ValueError: If the namespace is not a 2-tuple.
+        """
+        if len(namespace) != 2:
+            raise ValueError("Namespace must be a tuple of (actor_id, session_id)")
+        actor_id, session_id = namespace
+        return actor_id, session_id
+
+    def _parse_timestamp(self, value: Any) -> datetime:
+        """Parse an AgentCore timestamp value into a datetime.
+
+        AgentCore returns timestamps as datetimes via boto3. As a defensive
+        fallback, a string ISO-8601 value is parsed (normalizing a trailing
+        "Z" to the "+00:00" UTC offset that ``datetime.fromisoformat`` accepts
+        on Python 3.10), and any value that is not a datetime defaults to the
+        current UTC time.
+
+        Args:
+            value: The raw timestamp from an event or memory record.
+
+        Returns:
+            A timezone-aware datetime; the current UTC time if `value` is
+            missing or unparseable.
+        """
+        if isinstance(value, str):
+            try:
+                value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                value = None
+        if not isinstance(value, datetime):
+            value = datetime.now(timezone.utc)
+        return value
+
+    def _convert_event_to_item(
+        self, event: dict, namespace: tuple[str, ...], key: str
+    ) -> Item:
+        """Convert a stored AgentCore event to an Item object.
+
+        Args:
+            event: An event returned by ``list_events`` with payloads included.
+            namespace: The store namespace the event was retrieved under.
+            key: The user-provided key the event was looked up by.
+
+        Returns:
+            The reconstructed Item, keyed by `key`, whose value preserves the
+            stored conversational content.
+        """
+        messages = []
+        for entry in event.get("payload", []):
+            conversational = entry.get("conversational", {})
+            text = conversational.get("content", {}).get("text", "")
+            messages.append({"text": text, "role": conversational.get("role")})
+
+        content = "\n".join(message["text"] for message in messages)
+
+        event_timestamp = self._parse_timestamp(event.get("eventTimestamp"))
+
+        return Item(
+            namespace=namespace,
+            key=key,
+            value={
+                "content": content,
+                "messages": messages,
+            },
+            created_at=event_timestamp,
+            updated_at=event_timestamp,
+        )
+
     def _convert_namespace_to_string(self, namespace_tuple: tuple[str, ...]) -> str:
         """Convert namespace tuple to AgentCore namespace string."""
         if not isinstance(namespace_tuple, tuple):
@@ -217,39 +327,6 @@ class AgentCoreMemoryStore(BaseStore):
         if not namespace_tuple:
             return "/"
         return "/" + "/".join(namespace_tuple)
-
-    def _convert_memory_record_to_item(
-        self, memory_record: dict, namespace: tuple[str, ...]
-    ) -> Item:
-        """Convert a single AgentCore memory record to an Item object."""
-        # Extract content
-        content = memory_record.get("content", {})
-        text = content.get("text", "") if isinstance(content, dict) else str(content)
-
-        # Extract metadata
-        memory_record_id = memory_record.get("memoryRecordId", str(uuid.uuid4()))
-        created_at = memory_record.get("createdAt")
-
-        # Parse timestamp - API only provides createdAt, use it for both created_at and updated_at # noqa: E501
-        if isinstance(created_at, str):
-            try:
-                created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-            except (ValueError, AttributeError):
-                created_at = datetime.now(timezone.utc)
-        elif created_at is None:
-            created_at = datetime.now(timezone.utc)
-
-        return Item(
-            namespace=namespace,
-            key=memory_record_id,
-            value={
-                "content": text,
-                "memory_strategy_id": memory_record.get("memoryStrategyId"),
-                "namespaces": memory_record.get("namespaces", []),
-            },
-            created_at=created_at,
-            updated_at=created_at,  # Memory records are not updated
-        )
 
     def _convert_memory_records_to_search_items(
         self, memory_records: list, namespace: tuple[str, ...]

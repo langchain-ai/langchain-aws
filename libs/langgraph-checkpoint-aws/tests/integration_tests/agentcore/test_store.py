@@ -412,63 +412,85 @@ class TestAgentCoreMemoryStoreIntegration:
 
     def test_batch_operations_with_get(self, store, actor_id, session_id):
         """Test batch operations including GetOp operations."""
-        # First, search for existing memory records to get valid IDs for GetOp
-        search_results = store.search(("facts", actor_id), query="preferences", limit=2)
+        # Put a message with a known key so we can retrieve it via GetOp
+        hiking_key = f"hiking-{uuid.uuid4().hex[:8]}"
+        store.put(
+            namespace=(actor_id, session_id),
+            key=hiking_key,
+            value={"message": HumanMessage("Trail running is also fun")},
+        )
 
         # Create batch operations including GetOp
-        batch_ops = []
-
-        # Add some PutOp operations
-        messages = [
-            HumanMessage("I enjoy hiking in the mountains"),
-            AIMessage(
-                "Mountain hiking is a great way to stay active and enjoy nature!"
+        batch_ops = [
+            PutOp(
+                namespace=(actor_id, session_id),
+                key=f"hiking_extra_{uuid.uuid4().hex[:8]}",
+                value={"message": HumanMessage("I also enjoy rock climbing")},
             ),
-        ]
-
-        for i, message in enumerate(messages):
-            batch_ops.append(
-                PutOp(
-                    namespace=(actor_id, session_id),
-                    key=f"hiking_msg_{i}",
-                    value={"message": message},
-                )
-            )
-
-        # Add SearchOp
-        batch_ops.append(
             SearchOp(
                 namespace_prefix=("facts", actor_id),
                 query="outdoor activities",
                 limit=3,
-            )
-        )
-
-        if search_results:
-            for result in search_results[:2]:  # Test up to 2 GetOps
-                batch_ops.append(GetOp(namespace=result.namespace, key=result.key))
-        else:
-            batch_ops.append(
-                GetOp(
-                    namespace=("facts", actor_id),
-                    key=f"mem-nonexistent-{uuid.uuid4().hex}",
-                )
-            )
+            ),
+            GetOp(namespace=(actor_id, session_id), key=hiking_key),
+        ]
 
         results = store.batch(batch_ops)
 
-        assert len(results) == len(batch_ops)
+        assert len(results) == 3
+        assert results[0] is None  # PutOp
+        assert isinstance(results[1], list)  # SearchOp
+        # GetOp should return the item we put earlier
+        get_result = results[2]
+        assert get_result is not None
+        assert get_result.key == hiking_key
+        assert get_result.value["content"] == "Trail running is also fun"
 
-        # PutOp results should be None
-        assert results[0] is None  # First PutOp
-        assert results[1] is None  # Second PutOp
+    def test_put_get_roundtrip_by_key(self, store, actor_id, session_id):
+        """Test that put→get round-trips correctly by user-supplied key (#708)."""
+        key = f"roundtrip-{uuid.uuid4().hex[:8]}"
+        message_text = "I enjoy reading science fiction novels"
+        message = HumanMessage(message_text)
 
-        # SearchOp result should be a list
-        assert isinstance(results[2], list)
+        store.put(
+            namespace=(actor_id, session_id),
+            key=key,
+            value={"message": message},
+        )
 
-        # GetOp results should be Item objects or None
-        for i in range(3, len(results)):
-            result = results[i]
-            assert result is None or hasattr(result, "key"), (
-                f"GetOp result should be Item or None, got {type(result)}"
-            )
+        item = store.get((actor_id, session_id), key)
+
+        assert item is not None, "get() should return a non-None Item after put()"
+        assert item.key == key
+        assert item.value["content"] == message_text
+
+    def test_put_get_last_write_wins(self, store, actor_id, session_id):
+        """Test that re-putting the same key returns the most recent value."""
+        key = f"lww-{uuid.uuid4().hex[:8]}"
+        msg_a = HumanMessage("First version of the message")
+        msg_b = HumanMessage("Second version of the message")
+
+        store.put(
+            namespace=(actor_id, session_id),
+            key=key,
+            value={"message": msg_a},
+        )
+        store.put(
+            namespace=(actor_id, session_id),
+            key=key,
+            value={"message": msg_b},
+        )
+
+        item = store.get((actor_id, session_id), key)
+
+        assert item is not None, "get() should return a non-None Item"
+        assert item.key == key
+        assert item.value["content"] == "Second version of the message"
+
+    def test_get_absent_key_returns_none(self, store, actor_id, session_id):
+        """Test that get() for a never-stored key returns None."""
+        absent_key = f"never-put-key-{uuid.uuid4().hex[:8]}"
+
+        item = store.get((actor_id, session_id), absent_key)
+
+        assert item is None
