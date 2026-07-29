@@ -1120,7 +1120,7 @@ class ChatBedrockConverse(BaseChatModel):
         fields.
 
         Translation is only attempted for models whose profile explicitly
-        declares `reasoning_effort_levels` -- this is the single source of
+        declares `reasoning_effort_levels`. This is the single source of
         truth for "does this specific model support configurable reasoning
         effort," rather than a broad model-family substring match (e.g. not
         every Claude model that matches `"claude" in base_model` supports
