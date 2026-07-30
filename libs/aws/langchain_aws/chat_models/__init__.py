@@ -6,12 +6,14 @@ from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
 if TYPE_CHECKING:
     from langchain_aws.chat_models.anthropic import ChatAnthropicBedrock
     from langchain_aws.chat_models.bedrock_nova_sonic import ChatBedrockNovaSonic
+    from langchain_aws.chat_models.openai import ChatOpenAIMantle
 
 __all__ = [
     "ChatAnthropicBedrock",
     "ChatBedrock",
     "ChatBedrockConverse",
     "ChatBedrockNovaSonic",
+    "ChatOpenAIMantle",
 ]
 
 # Mapping of class name to (module path, install hint) for chat models that
@@ -25,6 +27,10 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "ChatBedrockNovaSonic": (
         "langchain_aws.chat_models.bedrock_nova_sonic",
         'pip install "langchain-aws[nova-sonic]"',
+    ),
+    "ChatOpenAIMantle": (
+        "langchain_aws.chat_models.openai",
+        'pip install "langchain-aws[openai]"',
     ),
 }
 
