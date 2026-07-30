@@ -113,8 +113,23 @@ class ChatOpenAIMantle(BaseChatOpenAI):
         )
 
         # Default the base URL to the region's Mantle endpoint unless the caller
-        # supplied one explicitly (either alias form).
-        if not values.get("base_url") and not values.get("openai_api_base") and region:
+        # supplied one explicitly (either alias form). If no base URL is given and
+        # no region can be resolved, fail here rather than let ``BaseChatOpenAI``
+        # fall back to the default OpenAI host — otherwise the Bedrock bearer token
+        # copied into ``api_key`` below would be sent to ``api.openai.com``.
+        has_explicit_base_url = bool(
+            values.get("base_url") or values.get("openai_api_base")
+        )
+        if not has_explicit_base_url:
+            if not region:
+                msg = (
+                    "ChatOpenAIMantle could not resolve an AWS region for the "
+                    "Bedrock Mantle endpoint. Set `region_name`, the `AWS_REGION` "
+                    "or `AWS_DEFAULT_REGION` environment variable, or pass an "
+                    "explicit `base_url`. Refusing to default to the OpenAI host "
+                    "so the Bedrock API key is never sent to api.openai.com."
+                )
+                raise ValueError(msg)
             values["base_url"] = _MANTLE_BASE_URL_TEMPLATE.format(region=region)
 
         # Route the Bedrock API key into the OpenAI ``api_key`` slot unless the

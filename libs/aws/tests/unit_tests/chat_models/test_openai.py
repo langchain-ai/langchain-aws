@@ -3,6 +3,7 @@
 from typing import Tuple, Type, cast
 from unittest.mock import patch
 
+import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from langchain_openai.chat_models.base import BaseChatOpenAI
@@ -72,6 +73,29 @@ def test_explicit_base_url_is_respected() -> None:
         base_url=custom,
         bedrock_api_key=SecretStr("test-key"),
     )
+    assert model.openai_api_base == custom
+
+
+def test_missing_region_and_base_url_raises() -> None:
+    """Fail locally instead of routing the Bedrock key to the default OpenAI host."""
+    with MonkeyPatch().context() as m:
+        m.delenv("AWS_REGION", raising=False)
+        m.delenv("AWS_DEFAULT_REGION", raising=False)
+        with pytest.raises(ValueError, match="region"):
+            ChatOpenAIMantle(model=MODEL_NAME, bedrock_api_key=SecretStr("test-key"))
+
+
+def test_explicit_base_url_without_region_ok() -> None:
+    """An explicit base_url bypasses the region requirement."""
+    custom = "https://bedrock-mantle.us-east-1.api.aws/v1"
+    with MonkeyPatch().context() as m:
+        m.delenv("AWS_REGION", raising=False)
+        m.delenv("AWS_DEFAULT_REGION", raising=False)
+        model = ChatOpenAIMantle(
+            model=MODEL_NAME,
+            base_url=custom,
+            bedrock_api_key=SecretStr("test-key"),
+        )
     assert model.openai_api_base == custom
 
 
