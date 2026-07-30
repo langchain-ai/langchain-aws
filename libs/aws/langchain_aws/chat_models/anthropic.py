@@ -341,3 +341,158 @@ class ChatAnthropicBedrock(ChatAnthropic):
             )
 
         return msg, block_start_event
+
+
+_MANTLE_BASE_URL_TEMPLATE = "https://bedrock-mantle.{region}.api.aws/anthropic"
+
+
+class ChatAnthropicMantle(ChatAnthropic):
+    """Anthropic Claude via the Amazon Bedrock Mantle endpoint.
+
+    Amazon Bedrock exposes the native Anthropic Messages API on the
+    ``bedrock-mantle`` endpoint (``bedrock-mantle.{region}.api.aws/anthropic``).
+    Because the wire format is the standard Anthropic Messages API, this
+    integration is a thin subclass of
+    [`ChatAnthropic`](https://docs.langchain.com/oss/python/integrations/chat/anthropic)
+    (mirroring the ``AzureChatOpenAI`` pattern) that only resolves the Bedrock
+    Mantle base URL and authentication; all chat behaviour (tool calling,
+    structured output, streaming, tracing, thinking, multimodal) is inherited
+    from ``ChatAnthropic`` and stays in sync with ``langchain-anthropic``.
+
+    Authentication uses an Amazon Bedrock API key sent as the standard Anthropic
+    ``x-api-key`` header, rather than AWS SigV4. This differs from
+    ``ChatAnthropicBedrock``, which talks to ``bedrock-runtime`` via the
+    ``AnthropicBedrock`` SigV4 client.
+
+    See the [Claude Platform docs](https://platform.claude.com/docs/en/about-claude/models/overview)
+    for the latest models, their capabilities, and pricing.
+
+    Example:
+        ```python
+        # pip install "langchain-aws[anthropic]"
+        # export AWS_BEARER_TOKEN_BEDROCK="your-bedrock-api-key"
+        # export AWS_REGION="us-east-1"
+
+        from langchain_aws import ChatAnthropicMantle
+
+        model = ChatAnthropicMantle(
+            model="anthropic.claude-sonnet-5",
+            region_name="us-east-1",
+        )
+        model.invoke("What is 2 + 2?")
+        ```
+
+    Note:
+        This targets the ``bedrock-mantle`` endpoint. For Claude via
+        ``bedrock-runtime`` with AWS SigV4 credentials and invocation logging,
+        use ``ChatAnthropicBedrock`` instead.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    region_name: str | None = None
+    """AWS region for the Bedrock Mantle endpoint, e.g. ``us-east-1``.
+
+    Falls back to the ``AWS_REGION`` or ``AWS_DEFAULT_REGION`` environment
+    variable when not provided. Used to build the default ``base_url``.
+    """
+
+    bedrock_api_key: SecretStr | None = Field(
+        default_factory=secret_from_env("AWS_BEARER_TOKEN_BEDROCK", default=None)
+    )
+    """Amazon Bedrock API key used to authenticate to Mantle.
+
+    If not provided, read from the ``AWS_BEARER_TOKEN_BEDROCK`` environment
+    variable. Sent as the Anthropic ``x-api-key`` header.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _set_mantle_defaults(cls, values: Any) -> Any:
+        """Resolve the Mantle base URL and bearer key before the client is built.
+
+        Runs before ``ChatAnthropic``'s gateway/base-URL resolution so the
+        Anthropic client is created pointing at the Bedrock Mantle endpoint with
+        the Bedrock API key routed into the ``x-api-key`` slot.
+        """
+        if not isinstance(values, dict):
+            return values
+
+        region = (
+            values.get("region_name")
+            or os.getenv("AWS_REGION")
+            or os.getenv("AWS_DEFAULT_REGION")
+        )
+
+        # Default the base URL to the region's Mantle endpoint unless the caller
+        # supplied one explicitly (either alias form).
+        if (
+            not values.get("base_url")
+            and not values.get("anthropic_api_url")
+            and region
+        ):
+            values["base_url"] = _MANTLE_BASE_URL_TEMPLATE.format(region=region)
+
+        # Route the Bedrock API key into the Anthropic ``api_key`` slot unless the
+        # caller already set one explicitly (either alias form).
+        if not values.get("api_key") and not values.get("anthropic_api_key"):
+            key = values.get("bedrock_api_key") or os.getenv("AWS_BEARER_TOKEN_BEDROCK")
+            if key:
+                values["api_key"] = key
+
+        return values
+
+    @model_validator(mode="after")
+    def _stamp_version(self) -> Self:
+        """Record the langchain-aws version in tracing metadata."""
+        _add_langchain_aws_version(self)
+        return self
+
+    @property
+    def _llm_type(self) -> str:
+        """Return type of chat model."""
+        return "anthropic-mantle-chat"
+
+    @property
+    def lc_secrets(self) -> dict[str, str]:
+        """Return a mapping of secret field names to environment variables."""
+        return {"bedrock_api_key": "AWS_BEARER_TOKEN_BEDROCK"}
+
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        """Return whether this class is LangChain-serializable.
+
+        ``False`` because this partner class is not registered in
+        ``langchain-core``'s deserialization allowlist, so a dumped instance
+        cannot be round-tripped via ``langchain_core.load.load``. The
+        ``ChatAnthropic`` base returns ``True``, so this override is required.
+        """
+        return False
+
+    @classmethod
+    def get_lc_namespace(cls) -> list[str]:
+        """Get the namespace of the LangChain object.
+
+        Returns:
+            `["langchain", "chat_models", "anthropic_mantle"]`
+        """
+        return ["langchain", "chat_models", "anthropic_mantle"]
+
+    def _get_ls_params(
+        self,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> LangSmithParams:
+        """Get standard params for tracing."""
+        params = self._get_invocation_params(stop=stop, **kwargs)
+        ls_params = LangSmithParams(
+            ls_provider="anthropic-mantle",
+            ls_model_name=params.get("model", self.model),
+            ls_model_type="chat",
+            ls_temperature=params.get("temperature", self.temperature),
+        )
+        if ls_max_tokens := params.get("max_tokens", self.max_tokens):
+            ls_params["ls_max_tokens"] = ls_max_tokens
+        if ls_stop := stop or params.get("stop", None):
+            ls_params["ls_stop"] = ls_stop
+        return ls_params

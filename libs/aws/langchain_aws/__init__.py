@@ -14,7 +14,11 @@ if TYPE_CHECKING:
         create_neptune_opencypher_qa_chain,
         create_neptune_sparql_qa_chain,
     )
-    from langchain_aws.chat_models import ChatAnthropicBedrock, ChatBedrockNovaSonic
+    from langchain_aws.chat_models import (
+        ChatAnthropicBedrock,
+        ChatAnthropicMantle,
+        ChatBedrockNovaSonic,
+    )
     from langchain_aws.document_compressors.rerank import BedrockRerank
     from langchain_aws.embeddings import BedrockEmbeddings
     from langchain_aws.graphs import NeptuneAnalyticsGraph, NeptuneGraph
@@ -84,6 +88,7 @@ __all__ = [
     "BedrockEmbeddings",
     "BedrockLLM",
     "ChatAnthropicBedrock",
+    "ChatAnthropicMantle",
     "ChatBedrock",
     "ChatBedrockConverse",
     "ChatBedrockNovaSonic",
@@ -117,6 +122,10 @@ def __getattr__(name: str) -> Any:
     # Modules that require extra pip installs
     _optional_imports: dict[str, tuple[str, str]] = {
         "ChatAnthropicBedrock": (
+            "langchain_aws.chat_models",
+            "pip install langchain-aws[anthropic]",
+        ),
+        "ChatAnthropicMantle": (
             "langchain_aws.chat_models",
             "pip install langchain-aws[anthropic]",
         ),
