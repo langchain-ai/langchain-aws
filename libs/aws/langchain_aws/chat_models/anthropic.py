@@ -5,7 +5,12 @@ from functools import cached_property
 from typing import Any, cast
 
 import anthropic
-from anthropic import AnthropicBedrock, AsyncAnthropicBedrock
+from anthropic import (
+    AnthropicBedrock,
+    AnthropicBedrockMantle,
+    AsyncAnthropicBedrock,
+    AsyncAnthropicBedrockMantle,
+)
 from langchain_anthropic.chat_models import ChatAnthropic
 from langchain_core.language_models import ModelProfile, ModelProfileRegistry
 from langchain_core.language_models.chat_models import LangSmithParams
@@ -363,10 +368,14 @@ class ChatAnthropicMantle(ChatAnthropic):
     structured output, streaming, tracing, thinking, multimodal) is inherited
     from ``ChatAnthropic`` and stays in sync with ``langchain-anthropic``.
 
-    Authentication uses an Amazon Bedrock API key sent as the standard Anthropic
-    ``x-api-key`` header, rather than AWS SigV4. This differs from
-    ``ChatAnthropicBedrock``, which talks to ``bedrock-runtime`` via the
-    ``AnthropicBedrock`` SigV4 client.
+    Uses the ``AnthropicBedrockMantle`` clients in the ``anthropic`` SDK, which
+    support both authentication modes Mantle accepts:
+
+    - **Amazon Bedrock API key** (bearer token), from ``bedrock_api_key`` or the
+      ``AWS_BEARER_TOKEN_BEDROCK`` environment variable.
+    - **AWS SigV4** with standard AWS credentials — explicit keys, a named
+      profile, or the default credential chain (environment, instance profile,
+      SSO, etc.). Used automatically whenever no API key is provided.
 
     See the [Claude Platform docs](https://platform.claude.com/docs/en/about-claude/models/overview)
     for the latest models, their capabilities, and pricing.
@@ -407,44 +416,105 @@ class ChatAnthropicMantle(ChatAnthropic):
     """Amazon Bedrock API key used to authenticate to Mantle.
 
     If not provided, read from the ``AWS_BEARER_TOKEN_BEDROCK`` environment
-    variable. Sent as the Anthropic ``x-api-key`` header.
+    variable. When neither is set, the client falls back to AWS SigV4 using
+    the credentials below (or the default AWS credential chain).
     """
+
+    aws_access_key_id: SecretStr | None = Field(
+        default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
+    )
+    """AWS access key id.
+
+    If provided, aws_secret_access_key must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+
+    """
+
+    aws_secret_access_key: SecretStr | None = Field(
+        default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
+    )
+    """AWS secret_access_key.
+
+    If provided, aws_access_key_id must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+    """
+
+    aws_session_token: SecretStr | None = Field(
+        default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
+    )
+    """AWS session token.
+
+    If provided, aws_access_key_id and aws_secret_access_key must
+    also be provided. Not required unless using temporary credentials.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
+    """
+
+    credentials_profile_name: str | None = None
+    """AWS profile name from ``~/.aws/credentials`` for SigV4 authentication."""
 
     @model_validator(mode="before")
     @classmethod
-    def _set_mantle_defaults(cls, values: Any) -> Any:
-        """Resolve the Mantle base URL and bearer key before the client is built.
+    def _set_anthropic_api_key(cls, values: Any) -> Any:
+        if isinstance(values, dict) and not values.get("anthropic_api_key"):
+            values["anthropic_api_key"] = ""
+        return values
 
-        Runs before ``ChatAnthropic``'s gateway/base-URL resolution so the
-        Anthropic client is created pointing at the Bedrock Mantle endpoint with
-        the Bedrock API key routed into the ``x-api-key`` slot.
-        """
-        if not isinstance(values, dict):
-            return values
-
-        region = (
-            values.get("region_name")
+    @property
+    def _client_params(self) -> dict[str, Any]:
+        """Get client parameters for AnthropicBedrockMantle."""
+        region_name = (
+            self.region_name
             or os.getenv("AWS_REGION")
             or os.getenv("AWS_DEFAULT_REGION")
+            or None  # SDK will resolve
         )
-
-        # Default the base URL to the region's Mantle endpoint unless the caller
-        # supplied one explicitly (either alias form).
+        client_params: dict[str, Any] = {
+            "aws_region": region_name,
+            "max_retries": self.max_retries,
+            "default_headers": (self.default_headers or None),
+        }
+        if self.anthropic_api_url and "api.anthropic.com" not in self.anthropic_api_url:
+            client_params["base_url"] = self.anthropic_api_url
+        if self.bedrock_api_key:
+            client_params["api_key"] = self.bedrock_api_key.get_secret_value()
+        if self.aws_access_key_id:
+            client_params["aws_access_key"] = self.aws_access_key_id.get_secret_value()
+        if self.aws_secret_access_key:
+            client_params["aws_secret_key"] = (
+                self.aws_secret_access_key.get_secret_value()
+            )
+        if self.aws_session_token:
+            client_params["aws_session_token"] = (
+                self.aws_session_token.get_secret_value()
+            )
+        if self.credentials_profile_name:
+            client_params["aws_profile"] = self.credentials_profile_name
         if (
-            not values.get("base_url")
-            and not values.get("anthropic_api_url")
-            and region
+            self.default_request_timeout is not None
+            and self.default_request_timeout > 0
         ):
-            values["base_url"] = _MANTLE_BASE_URL_TEMPLATE.format(region=region)
+            client_params["timeout"] = self.default_request_timeout
+        return client_params
 
-        # Route the Bedrock API key into the Anthropic ``api_key`` slot unless the
-        # caller already set one explicitly (either alias form).
-        if not values.get("api_key") and not values.get("anthropic_api_key"):
-            key = values.get("bedrock_api_key") or os.getenv("AWS_BEARER_TOKEN_BEDROCK")
-            if key:
-                values["api_key"] = key
+    @cached_property
+    def _client(self) -> Any:  # type: ignore[type-arg]
+        """Get synchronous AnthropicBedrockMantle client."""
+        return AnthropicBedrockMantle(**self._client_params)
 
-        return values
+    @cached_property
+    def _async_client(self) -> Any:  # type: ignore[type-arg]
+        """Get asynchronous AnthropicBedrockMantle client."""
+        return AsyncAnthropicBedrockMantle(**self._client_params)
 
     @model_validator(mode="after")
     def _set_model_profile(self) -> Self:
@@ -462,7 +532,12 @@ class ChatAnthropicMantle(ChatAnthropic):
     @property
     def lc_secrets(self) -> dict[str, str]:
         """Return a mapping of secret field names to environment variables."""
-        return {"bedrock_api_key": "AWS_BEARER_TOKEN_BEDROCK"}
+        return {
+            "bedrock_api_key": "AWS_BEARER_TOKEN_BEDROCK",
+            "aws_access_key_id": "AWS_ACCESS_KEY_ID",
+            "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
+            "aws_session_token": "AWS_SESSION_TOKEN",
+        }
 
     @classmethod
     def is_lc_serializable(cls) -> bool:
