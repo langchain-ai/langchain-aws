@@ -1,13 +1,12 @@
 """Standard LangChain integration tests for ChatAnthropicMantle.
 
-These hit the live Amazon Bedrock Mantle Anthropic Messages endpoint, so they
-are skipped unless a Bedrock API key is available via
-``AWS_BEARER_TOKEN_BEDROCK``. Unskip in CI once the test account has
-``bedrock-mantle`` API permissions.
+These hit the live Amazon Bedrock Mantle Anthropic Messages endpoint.
+Authentication uses the ambient AWS credentials (SigV4), or a Bedrock API
+key if one is set via ``AWS_BEARER_TOKEN_BEDROCK``.
 
 Run locally with::
 
-    AWS_REGION=us-east-1 AWS_BEARER_TOKEN_BEDROCK=... \\
+    AWS_REGION=us-east-1 \\
         uv run --group test --group test_integration \\
         pytest tests/integration_tests/chat_models/test_anthropic_mantle.py -v
 
@@ -16,7 +15,7 @@ Override the model with ``ANTHROPIC_MANTLE_MODEL`` if needed, e.g.::
     ANTHROPIC_MANTLE_MODEL=anthropic.claude-opus-5 ...
 
 To discover the exact model ids your account/region can call on Mantle, list
-the catalog with your Bedrock API key::
+the catalog::
 
     curl -s https://bedrock-mantle.$AWS_REGION.api.aws/anthropic/v1/models \\
         -H "x-api-key: $AWS_BEARER_TOKEN_BEDROCK" \\
@@ -32,21 +31,15 @@ from langchain_tests.integration_tests import ChatModelIntegrationTests
 
 from langchain_aws import ChatAnthropicMantle
 
-# Skip the whole module until a Bedrock Mantle API key (and, in CI, the
-# corresponding account permissions) is available.
-pytestmark = pytest.mark.skipif(
-    not os.getenv("AWS_BEARER_TOKEN_BEDROCK"),
-    reason=(
-        "Requires a Bedrock Mantle API key in AWS_BEARER_TOKEN_BEDROCK. "
-        "Unskip in CI once the test account has bedrock-mantle API permissions."
-    ),
-)
-
 # Claude model served on the Mantle Anthropic Messages API. Mantle catalog ids
 # use the ``anthropic.`` prefix (no ``us.`` cross-region prefix — Mantle handles
 # routing). Override with ANTHROPIC_MANTLE_MODEL, and use the catalog-listing
 # curl in the module docstring to confirm what your account/region can call.
 MODEL_NAME = os.getenv("ANTHROPIC_MANTLE_MODEL", "anthropic.claude-sonnet-5")
+
+# Sonnet 5 has always-on adaptive thinking and may emit a signature-only thinking
+# block on any request, which stochastically fails the streaming tests.
+STREAM_MODEL_NAME = "anthropic.claude-haiku-4-5"
 
 
 class TestAnthropicMantleIntegration(ChatModelIntegrationTests):
@@ -77,3 +70,15 @@ class TestAnthropicMantleIntegration(ChatModelIntegrationTests):
     @property
     def supports_anthropic_inputs(self) -> bool:
         return True
+
+    @pytest.fixture
+    def model(self, request: pytest.FixtureRequest) -> BaseChatModel:
+        extra_init_params = getattr(request, "param", None) or {}
+        params = {
+            **self.standard_chat_model_params,
+            **self.chat_model_params,
+            **extra_init_params,
+        }
+        if request.node.originalname in ("test_stream", "test_astream"):
+            params["model"] = STREAM_MODEL_NAME
+        return self.chat_model_class(**params)
