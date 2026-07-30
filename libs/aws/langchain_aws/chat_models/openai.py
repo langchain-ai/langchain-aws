@@ -67,13 +67,6 @@ class ChatOpenAIMantle(BaseChatOpenAI):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    use_responses_api: bool | None = True
-    """Whether to use the Responses API instead of the Chat Completions API.
-
-    Defaults to ``True`` for Bedrock Mantle. Set to ``False`` to use the Chat
-    Completions API, or ``None`` to infer from the invocation params.
-    """
-
     region_name: str | None = None
     """AWS region for the Bedrock Mantle endpoint, e.g. ``us-east-1``.
 
