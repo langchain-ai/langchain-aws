@@ -34,7 +34,7 @@ class TestAnthropicMantleStandard(ChatModelUnitTests):
                 "AWS_BEARER_TOKEN_BEDROCK": "env-bedrock-key",
                 "AWS_REGION": "us-west-2",
             },
-            {"model": },
+            {"model": MODEL_NAME},
             {"bedrock_api_key": "env-bedrock-key"},
         )
 
