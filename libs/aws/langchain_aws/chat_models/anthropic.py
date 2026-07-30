@@ -443,8 +443,11 @@ class ChatAnthropicMantle(ChatAnthropic):
         return values
 
     @model_validator(mode="after")
-    def _stamp_version(self) -> Self:
-        """Record the langchain-aws version in tracing metadata."""
+    def _set_model_profile(self) -> Self:
+        """Resolve the model profile and record the langchain-aws version."""
+        if self.profile is None:
+            model = re.sub(r"^[A-Za-z]{2}\.", "", self.model)
+            self.profile = _get_default_model_profile(model)
         _add_langchain_aws_version(self)
         return self
 

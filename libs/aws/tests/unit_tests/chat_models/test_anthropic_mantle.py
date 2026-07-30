@@ -2,7 +2,8 @@
 
 from typing import Tuple, Type, cast
 
-from langchain_core.language_models import BaseChatModel
+import pytest
+from langchain_core.language_models import BaseChatModel, ModelProfile
 from langchain_tests.unit_tests import ChatModelUnitTests
 from pydantic import SecretStr
 from pytest import MonkeyPatch
@@ -137,6 +138,37 @@ def test_get_lc_namespace() -> None:
         "chat_models",
         "anthropic_mantle",
     ]
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "anthropic.claude-sonnet-5",
+        "us.anthropic.claude-sonnet-5",
+        "global.anthropic.claude-sonnet-5",
+    ],
+)
+def test_model_profile(model_name: str) -> None:
+    """Model profile is resolved from the model name across id formats."""
+    model = ChatAnthropicMantle(  # type: ignore[call-arg]
+        model=model_name,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+    )
+    assert model.profile
+    assert "max_input_tokens" in model.profile
+
+
+def test_explicit_profile_is_respected() -> None:
+    """An explicitly supplied profile is not overwritten."""
+    profile = ModelProfile(max_input_tokens=123)
+    model = ChatAnthropicMantle(  # type: ignore[call-arg]
+        model=MODEL_NAME,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+        profile=profile,
+    )
+    assert model.profile == profile
 
 
 def test_inherits_anthropic_features() -> None:
