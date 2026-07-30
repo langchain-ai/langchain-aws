@@ -12,6 +12,7 @@ from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
     parse_model_provider,
+    reasoning_effort_additional_fields,
     thinking_disabled_in_params,
     thinking_forced_tool_use_unsupported,
     thinking_in_params,
@@ -517,6 +518,51 @@ def test_thinking_on_by_default(model_id: str, expected_result: bool) -> None:
 )
 def test_thinking_disabled_in_params(params: dict, expected_result: bool) -> None:
     assert thinking_disabled_in_params(params) == expected_result
+
+
+@pytest.mark.parametrize(
+    "base_model,effort,expected_fields",
+    [
+        (
+            "us.anthropic.claude-sonnet-5",
+            "high",
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+        ),
+        (
+            "anthropic.claude-opus-5",
+            "xhigh",
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "xhigh"}},
+        ),
+        (
+            "amazon.nova-2-lite-v1:0",
+            "medium",
+            {"reasoningConfig": {"type": "enabled", "maxReasoningEffort": "medium"}},
+        ),
+        (
+            "openai.gpt-oss-120b-1:0",
+            "low",
+            {"reasoning_effort": "low"},
+        ),
+        (
+            "moonshot.kimi-k2-thinking",
+            "max",
+            {"reasoning_effort": "max"},
+        ),
+        (
+            "moonshotai.kimi-k2.5",
+            "low",
+            {"reasoning_effort": "low"},
+        ),
+        ("amazon.titan-text-express-v1", "high", {}),
+        ("meta.llama3-1-70b-instruct-v1:0", "high", {}),
+        # Native GPT-5.x models are bedrock-mantle-only
+        ("openai.gpt-5.5", "medium", {}),
+    ],
+)
+def test_reasoning_effort_additional_fields(
+    base_model: str, effort: str, expected_fields: dict
+) -> None:
+    assert reasoning_effort_additional_fields(base_model, effort) == expected_fields
 
 
 def test_api_key_uses_token_provider(
