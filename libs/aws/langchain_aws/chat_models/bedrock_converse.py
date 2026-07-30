@@ -614,18 +614,12 @@ class ChatBedrockConverse(BaseChatModel):
 
     """
 
-    reasoning_effort: Optional[
-        Literal["none", "low", "medium", "high", "xhigh", "max"]
-    ] = None
+    reasoning_effort: Optional[Literal["low", "medium", "high", "xhigh", "max"]] = None
     """Reasoning effort level for models that support configurable reasoning.
 
     Translated into the appropriate provider-specific request format based on the
     model family. Only applied to models whose profile declares supported
     ``reasoning_effort_levels``; unsupported values raise ``ValueError``.
-
-    ``"none"`` disables reasoning outright for native GPT-5.x models, it is
-    not equivalent to omitting the argument, since these models otherwise
-    default to ``"medium"``.
 
     Explicit values already present in ``additional_model_request_fields`` take
     precedence. If the model has no known reasoning-effort translation, a warning

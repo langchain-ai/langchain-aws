@@ -520,7 +520,7 @@ def reasoning_effort_additional_fields(base_model: str, effort: str) -> Dict[str
         return {"reasoningConfig": {"type": "enabled", "maxReasoningEffort": effort}}
     if "claude" in model:
         return {"thinking": {"type": "adaptive"}, "output_config": {"effort": effort}}
-    if model.startswith("openai."):
+    if model.startswith("openai.gpt-oss"):
         return {"reasoning_effort": effort}
     if model.startswith(("moonshot.", "moonshotai.")):
         return {"reasoning_effort": effort}

@@ -3959,12 +3959,17 @@ def test_reasoning_config_validation_rejects_invalid_type() -> None:
         )  # type: ignore[call-arg]
 
 
+# These tests inject `profile=` directly at construction rather than relying on
+# `_profiles.py` containing real data for the model id used.
+
+
 def test_reasoning_effort_claude_translates_to_thinking_and_output_config() -> None:
     """Test reasoning_effort maps to thinking(adaptive) + output_config.effort."""
     llm = ChatBedrockConverse(
         model="us.anthropic.claude-sonnet-5",
         region_name="us-east-1",
         reasoning_effort="high",
+        profile={"reasoning_effort_levels": ["low", "medium", "high", "xhigh", "max"]},
     )  # type: ignore[call-arg]
     assert llm.additional_model_request_fields == {
         "thinking": {"type": "adaptive"},
@@ -3981,6 +3986,7 @@ def test_reasoning_effort_explicit_thinking_wins() -> None:
         additional_model_request_fields={
             "thinking": {"type": "enabled", "budget_tokens": 2000}
         },
+        profile={"reasoning_effort_levels": ["low", "medium", "high", "xhigh", "max"]},
     )  # type: ignore[call-arg]
     assert llm.additional_model_request_fields == {
         "thinking": {"type": "enabled", "budget_tokens": 2000},
@@ -4000,6 +4006,7 @@ def test_reasoning_effort_call_time_overrides_constructor() -> None:
         model="us.anthropic.claude-sonnet-5",
         region_name="us-east-1",
         reasoning_effort="low",
+        profile={"reasoning_effort_levels": ["low", "medium", "high", "xhigh", "max"]},
     )  # type: ignore[call-arg]
 
     llm.invoke([HumanMessage(content="Hi")], reasoning_effort="high")
@@ -4024,6 +4031,7 @@ def test_reasoning_effort_nova2_translates_to_reasoning_config() -> None:
         model="amazon.nova-2-lite-v1:0",
         region_name="us-east-1",
         reasoning_effort="high",
+        profile={"reasoning_effort_levels": ["low", "medium", "high"]},
     )  # type: ignore[call-arg]
     assert llm.additional_model_request_fields == {
         "reasoningConfig": {"type": "enabled", "maxReasoningEffort": "high"}
@@ -4042,6 +4050,7 @@ def test_reasoning_effort_nova2_invalid_level_raises() -> None:
             model="amazon.nova-2-lite-v1:0",
             region_name="us-east-1",
             reasoning_effort="xhigh",
+            profile={"reasoning_effort_levels": ["low", "medium", "high"]},
         )  # type: ignore[call-arg]
 
 
@@ -4051,6 +4060,7 @@ def test_reasoning_effort_gpt_oss_flat() -> None:
         model="openai.gpt-oss-120b-1:0",
         region_name="us-east-1",
         reasoning_effort="medium",
+        profile={"reasoning_effort_levels": ["low", "medium", "high"]},
     )  # type: ignore[call-arg]
     assert llm.additional_model_request_fields == {"reasoning_effort": "medium"}
 
@@ -4062,6 +4072,7 @@ def test_reasoning_effort_gpt_oss_invalid_level_raises() -> None:
             model="openai.gpt-oss-120b-1:0",
             region_name="us-east-1",
             reasoning_effort="xhigh",
+            profile={"reasoning_effort_levels": ["low", "medium", "high"]},
         )  # type: ignore[call-arg]
 
 
@@ -4092,22 +4103,13 @@ def test_reasoning_effort_older_claude_model_warns_not_translates() -> None:
     assert not llm.additional_model_request_fields
 
 
-def test_reasoning_effort_native_openai_flat() -> None:
-    """Test reasoning_effort maps to a flat key for native openai.gpt-5.x models."""
-    llm = ChatBedrockConverse(
-        model="openai.gpt-5.5",
-        region_name="us-east-1",
-        reasoning_effort="medium",
-    )  # type: ignore[call-arg]
-    assert llm.additional_model_request_fields == {"reasoning_effort": "medium"}
-
-
 def test_reasoning_effort_moonshot_flat() -> None:
     """Test reasoning_effort maps to a flat key for Moonshot Kimi K2 models."""
     llm = ChatBedrockConverse(
         model="moonshot.kimi-k2-thinking",
         region_name="us-east-1",
         reasoning_effort="max",
+        profile={"reasoning_effort_levels": ["low", "high", "max"]},
     )  # type: ignore[call-arg]
     assert llm.additional_model_request_fields == {"reasoning_effort": "max"}
 
@@ -4119,6 +4121,7 @@ def test_reasoning_effort_moonshot_invalid_level_raises() -> None:
             model="moonshot.kimi-k2-thinking",
             region_name="us-east-1",
             reasoning_effort="medium",
+            profile={"reasoning_effort_levels": ["low", "high", "max"]},
         )  # type: ignore[call-arg]
 
 

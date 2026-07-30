@@ -544,11 +544,6 @@ def test_thinking_disabled_in_params(params: dict, expected_result: bool) -> Non
             {"reasoning_effort": "low"},
         ),
         (
-            "openai.gpt-5.5",
-            "medium",
-            {"reasoning_effort": "medium"},
-        ),
-        (
             "moonshot.kimi-k2-thinking",
             "max",
             {"reasoning_effort": "max"},
@@ -560,6 +555,8 @@ def test_thinking_disabled_in_params(params: dict, expected_result: bool) -> Non
         ),
         ("amazon.titan-text-express-v1", "high", {}),
         ("meta.llama3-1-70b-instruct-v1:0", "high", {}),
+        # Native GPT-5.x models are bedrock-mantle-only
+        ("openai.gpt-5.5", "medium", {}),
     ],
 )
 def test_reasoning_effort_additional_fields(
