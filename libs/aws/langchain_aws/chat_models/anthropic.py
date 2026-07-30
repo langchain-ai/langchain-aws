@@ -1,7 +1,6 @@
 """Anthropic Bedrock chat models."""
 
 import os
-import re
 from functools import cached_property
 from typing import Any, cast
 
@@ -19,13 +18,19 @@ from typing_extensions import Self
 from langchain_aws._version import _add_langchain_aws_version
 from langchain_aws.chat_models._anthropic_utils import _create_bedrock_client_params
 from langchain_aws.data._profiles import _PROFILES
+from langchain_aws.utils import MODEL_ID_GEO_PREFIXES
 
 _MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
 
 
 def _get_default_model_profile(model_name: str) -> ModelProfile:
-    default = _MODEL_PROFILES.get(model_name) or {}
-    return default.copy()
+    """Look up the default profile for a model ID."""
+    default = _MODEL_PROFILES.get(model_name)
+    if default is None:
+        prefix, _, rest = model_name.partition(".")
+        if rest and prefix.lower() in MODEL_ID_GEO_PREFIXES:
+            default = _MODEL_PROFILES.get(rest)
+    return (default or {}).copy()
 
 
 def _guardrail_config_to_headers(
@@ -276,8 +281,7 @@ class ChatAnthropicBedrock(ChatAnthropic):
     def _set_model_profile(self) -> Self:
         """Set model profile if not overridden."""
         if self.profile is None:
-            model = re.sub(r"^[A-Za-z]{2}\.", "", self.model)
-            self.profile = _get_default_model_profile(model)
+            self.profile = _get_default_model_profile(self.model)
         if self.guardrail_config:
             _guardrail_config_to_headers(self.guardrail_config)
         _add_langchain_aws_version(self)
@@ -446,8 +450,7 @@ class ChatAnthropicMantle(ChatAnthropic):
     def _set_model_profile(self) -> Self:
         """Resolve the model profile and record the langchain-aws version."""
         if self.profile is None:
-            model = re.sub(r"^[A-Za-z]{2}\.", "", self.model)
-            self.profile = _get_default_model_profile(model)
+            self.profile = _get_default_model_profile(self.model)
         _add_langchain_aws_version(self)
         return self
 
