@@ -115,6 +115,39 @@ def test_lc_secrets() -> None:
     assert model.lc_secrets["bedrock_api_key"] == "AWS_BEARER_TOKEN_BEDROCK"
 
 
+def test_profile_resolved_from_model_name() -> None:
+    """The model profile is populated from static profile data by default."""
+    model = ChatOpenAIMantle(
+        model=MODEL_NAME,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+    )
+    assert model.profile is not None
+    assert model.profile.get("tool_calling") is True
+
+
+def test_explicit_profile_is_respected() -> None:
+    """A caller-supplied profile is not overwritten by the default lookup."""
+    custom = {"tool_calling": False}
+    model = ChatOpenAIMantle(
+        model=MODEL_NAME,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+        profile=custom,  # type: ignore[arg-type]
+    )
+    assert model.profile == custom
+
+
+def test_profile_empty_for_unknown_model() -> None:
+    """An unknown model resolves to an empty profile rather than raising."""
+    model = ChatOpenAIMantle(
+        model="openai.does-not-exist",
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+    )
+    assert model.profile == {}
+
+
 def test_inherits_openai_features() -> None:
     """Key BaseChatOpenAI methods are inherited unchanged."""
     model = ChatOpenAIMantle(

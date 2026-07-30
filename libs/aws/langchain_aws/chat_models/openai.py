@@ -9,8 +9,9 @@ structured output, streaming, tracing, multimodal) is inherited unchanged.
 """
 
 import os
-from typing import Any
+from typing import Any, cast
 
+from langchain_core.language_models import ModelProfile, ModelProfileRegistry
 from langchain_core.language_models.chat_models import LangSmithParams
 from langchain_core.utils import secret_from_env
 from langchain_openai.chat_models.base import BaseChatOpenAI
@@ -18,8 +19,17 @@ from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws._version import _add_langchain_aws_version
+from langchain_aws.data._profiles import _PROFILES
 
 _MANTLE_BASE_URL_TEMPLATE = "https://bedrock-mantle.{region}.api.aws/v1"
+
+_MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
+
+
+def _get_default_model_profile(model_name: str) -> ModelProfile:
+    """Return the static capability profile for a Mantle model, or an empty one."""
+    default = _MODEL_PROFILES.get(model_name) or {}
+    return default.copy()
 
 
 class ChatOpenAIMantle(BaseChatOpenAI):
@@ -109,6 +119,13 @@ class ChatOpenAIMantle(BaseChatOpenAI):
     def _stamp_version(self) -> Self:
         """Record the langchain-aws version in tracing metadata."""
         _add_langchain_aws_version(self)
+        return self
+
+    @model_validator(mode="after")
+    def _resolve_profile(self) -> Self:
+        """Populate the model profile from static data unless one was supplied."""
+        if not self.profile:
+            self.profile = _get_default_model_profile(self.model_name)
         return self
 
     @property
