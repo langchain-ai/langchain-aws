@@ -1,10 +1,13 @@
 """ChatOpenAIMantle unit tests."""
 
 from typing import Tuple, Type, cast
+from unittest.mock import patch
 
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage
+from langchain_openai.chat_models.base import BaseChatOpenAI
 from langchain_tests.unit_tests import ChatModelUnitTests
-from pydantic import SecretStr
+from pydantic import BaseModel, SecretStr
 from pytest import MonkeyPatch
 
 from langchain_aws import ChatOpenAIMantle
@@ -146,6 +149,60 @@ def test_profile_empty_for_unknown_model() -> None:
         bedrock_api_key=SecretStr("test-key"),
     )
     assert model.profile == {}
+
+
+def test_stream_routes_to_responses_api() -> None:
+    """_stream delegates to the Responses API path when it is active."""
+    model = ChatOpenAIMantle(
+        model=MODEL_NAME,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+        use_responses_api=True,
+    )
+    with (
+        patch.object(
+            BaseChatOpenAI, "_stream_responses", return_value=iter([])
+        ) as responses,
+        patch.object(BaseChatOpenAI, "_stream", return_value=iter([])) as completions,
+    ):
+        list(model._stream([HumanMessage("hi")]))
+    responses.assert_called_once()
+    completions.assert_not_called()
+
+
+def test_stream_routes_to_chat_completions_when_disabled() -> None:
+    """_stream falls back to Chat Completions when the Responses API is off."""
+    model = ChatOpenAIMantle(
+        model=MODEL_NAME,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+        use_responses_api=False,
+    )
+    with (
+        patch.object(
+            BaseChatOpenAI, "_stream_responses", return_value=iter([])
+        ) as responses,
+        patch.object(BaseChatOpenAI, "_stream", return_value=iter([])) as completions,
+    ):
+        list(model._stream([HumanMessage("hi")]))
+    completions.assert_called_once()
+    responses.assert_not_called()
+
+
+def test_with_structured_output_defaults_to_json_schema() -> None:
+    """with_structured_output defaults method to json_schema."""
+
+    class Schema(BaseModel):
+        answer: str
+
+    model = ChatOpenAIMantle(
+        model=MODEL_NAME,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+    )
+    with patch.object(BaseChatOpenAI, "with_structured_output") as parent:
+        model.with_structured_output(Schema)
+    assert parent.call_args.kwargs["method"] == "json_schema"
 
 
 def test_inherits_openai_features() -> None:

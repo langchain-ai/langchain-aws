@@ -9,12 +9,23 @@ structured output, streaming, tracing, multimodal) is inherited unchanged.
 """
 
 import os
-from typing import Any, cast
+from collections.abc import AsyncIterator, Iterator
+from typing import Any, Literal, cast
 
-from langchain_core.language_models import ModelProfile, ModelProfileRegistry
+from langchain_core.language_models import (
+    LanguageModelInput,
+    ModelProfile,
+    ModelProfileRegistry,
+)
 from langchain_core.language_models.chat_models import LangSmithParams
+from langchain_core.outputs import ChatGenerationChunk
+from langchain_core.runnables import Runnable
 from langchain_core.utils import secret_from_env
-from langchain_openai.chat_models.base import BaseChatOpenAI
+from langchain_openai.chat_models.base import (
+    BaseChatOpenAI,
+    _DictOrPydantic,
+    _DictOrPydanticClass,
+)
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
@@ -150,3 +161,44 @@ class ChatOpenAIMantle(BaseChatOpenAI):
         params = super()._get_ls_params(stop=stop, **kwargs)
         params["ls_provider"] = "openai-mantle"
         return params
+
+    def _stream(self, *args: Any, **kwargs: Any) -> Iterator[ChatGenerationChunk]:
+        """Route to the Chat Completions or Responses API."""
+        if self._use_responses_api({**kwargs, **self.model_kwargs}):
+            return super()._stream_responses(*args, **kwargs)
+        return super()._stream(*args, **kwargs)
+
+    async def _astream(
+        self, *args: Any, **kwargs: Any
+    ) -> AsyncIterator[ChatGenerationChunk]:
+        """Route to the Chat Completions or Responses API."""
+        if self._use_responses_api({**kwargs, **self.model_kwargs}):
+            async for chunk in super()._astream_responses(*args, **kwargs):
+                yield chunk
+        else:
+            async for chunk in super()._astream(*args, **kwargs):
+                yield chunk
+
+    def with_structured_output(
+        self,
+        schema: _DictOrPydanticClass | None = None,
+        *,
+        method: Literal["function_calling", "json_mode", "json_schema"] = "json_schema",
+        include_raw: bool = False,
+        strict: bool | None = None,
+        tools: list | None = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, _DictOrPydantic]:
+        """Model wrapper that returns outputs formatted to match the given schema.
+
+        Identical to ``BaseChatOpenAI.with_structured_output`` except that
+        ``method`` defaults to ``'json_schema'`` (matching ``ChatOpenAI``).
+        """
+        return super().with_structured_output(
+            schema,
+            method=method,
+            include_raw=include_raw,
+            strict=strict,
+            tools=tools,
+            **kwargs,
+        )
