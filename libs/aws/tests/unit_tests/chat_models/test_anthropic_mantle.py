@@ -34,7 +34,7 @@ class TestAnthropicMantleStandard(ChatModelUnitTests):
                 "AWS_BEARER_TOKEN_BEDROCK": "env-bedrock-key",
                 "AWS_REGION": "us-west-2",
             },
-            {"model": MODEL_NAME},
+            {"model": },
             {"bedrock_api_key": "env-bedrock-key"},
         )
 
@@ -146,6 +146,8 @@ def test_get_lc_namespace() -> None:
         "anthropic.claude-sonnet-5",
         "us.anthropic.claude-sonnet-5",
         "global.anthropic.claude-sonnet-5",
+        "us-gov.anthropic.claude-sonnet-5",
+        "apac.anthropic.claude-sonnet-5",
     ],
 )
 def test_model_profile(model_name: str) -> None:
