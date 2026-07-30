@@ -52,14 +52,15 @@ def test_initialization() -> None:
 
 
 def test_default_base_url_from_region() -> None:
-    """base_url defaults to the region's Bedrock Mantle Anthropic endpoint."""
+    """The client resolves the region's Bedrock Mantle Anthropic endpoint."""
     model = ChatAnthropicMantle(  # type: ignore[call-arg]
         model=MODEL_NAME,
         region_name="us-east-1",
         bedrock_api_key=SecretStr("test-key"),
     )
-    assert (
-        model.anthropic_api_url == "https://bedrock-mantle.us-east-1.api.aws/anthropic"
+    assert model._client_params["aws_region"] == "us-east-1"
+    assert str(model._client.base_url).rstrip("/") == (
+        "https://bedrock-mantle.us-east-1.api.aws/anthropic"
     )
 
 
@@ -82,21 +83,49 @@ def test_region_and_key_from_env() -> None:
         m.setenv("AWS_REGION", "eu-west-1")
         m.setenv("AWS_BEARER_TOKEN_BEDROCK", "env-key")
         model = ChatAnthropicMantle(model=MODEL_NAME)  # type: ignore[call-arg]
-        assert (
-            model.anthropic_api_url
-            == "https://bedrock-mantle.eu-west-1.api.aws/anthropic"
+        assert model._client_params["aws_region"] == "eu-west-1"
+        assert str(model._client.base_url).rstrip("/") == (
+            "https://bedrock-mantle.eu-west-1.api.aws/anthropic"
         )
         assert cast("SecretStr", model.bedrock_api_key).get_secret_value() == "env-key"
 
 
-def test_bedrock_api_key_routed_to_anthropic_key() -> None:
-    """The Bedrock API key is used as the Anthropic client api_key (x-api-key)."""
+def test_bedrock_api_key_routed_to_client() -> None:
+    """The Bedrock API key is passed to the Mantle client (bearer auth mode)."""
     model = ChatAnthropicMantle(  # type: ignore[call-arg]
         model=MODEL_NAME,
         region_name="us-east-1",
         bedrock_api_key=SecretStr("bearer-abc"),
     )
-    assert model.anthropic_api_key.get_secret_value() == "bearer-abc"
+    assert model._client_params["api_key"] == "bearer-abc"
+
+
+def test_sigv4_credentials_routed_to_client() -> None:
+    """Without a Bedrock API key, AWS credentials flow to the client (SigV4)."""
+    model = ChatAnthropicMantle(  # type: ignore[call-arg]
+        model=MODEL_NAME,
+        region_name="us-east-1",
+        bedrock_api_key=None,
+        aws_access_key_id=SecretStr("AKIA-test"),
+        aws_secret_access_key=SecretStr("secret-test"),
+        aws_session_token=SecretStr("token-test"),
+    )
+    params = model._client_params
+    assert "api_key" not in params
+    assert params["aws_access_key"] == "AKIA-test"
+    assert params["aws_secret_key"] == "secret-test"
+    assert params["aws_session_token"] == "token-test"
+
+
+def test_credentials_profile_routed_to_client() -> None:
+    """A named AWS profile flows to the client for SigV4 auth."""
+    model = ChatAnthropicMantle(  # type: ignore[call-arg]
+        model=MODEL_NAME,
+        region_name="us-east-1",
+        bedrock_api_key=None,
+        credentials_profile_name="my-profile",
+    )
+    assert model._client_params["aws_profile"] == "my-profile"
 
 
 def test_ls_params_provider() -> None:
