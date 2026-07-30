@@ -148,6 +148,24 @@ def test_profile_empty_for_unknown_model() -> None:
     assert model.profile == {}
 
 
+def test_use_responses_api_defaults_true() -> None:
+    """The Responses API is used by default, and remains caller-overridable."""
+    model = ChatOpenAIMantle(
+        model=MODEL_NAME,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+    )
+    assert model.use_responses_api is True
+
+    override = ChatOpenAIMantle(
+        model=MODEL_NAME,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+        use_responses_api=False,
+    )
+    assert override.use_responses_api is False
+
+
 def test_inherits_openai_features() -> None:
     """Key BaseChatOpenAI methods are inherited unchanged."""
     model = ChatOpenAIMantle(
