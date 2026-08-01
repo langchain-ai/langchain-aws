@@ -791,6 +791,34 @@ def test_standard_tracing_params() -> None:
     }
 
 
+def test_invocation_params_includes_model() -> None:
+    """invocation_params must carry a "model" key so that tracing tools which
+    key off it directly (e.g. cost calculators keyed by model name) work,
+    consistent with ChatOpenAI/ChatAnthropic."""
+    llm = ChatBedrockConverse(
+        model="anthropic.claude-3-5-sonnet-20241022-v2:0", region_name="us-west-2"
+    )
+    assert (
+        llm._get_invocation_params()["model"]
+        == "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    )
+
+
+def test_invocation_params_model_prefers_base_model_id() -> None:
+    """When base_model_id is set (e.g. resolved from an inference profile),
+    it identifies the actual served model and should be preferred over the
+    profile/model_id."""
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        base_model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",  # type: ignore[call-arg]
+        region_name="us-west-2",
+    )
+    assert (
+        llm._get_invocation_params()["model"]
+        == "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    )
+
+
 @pytest.mark.parametrize(
     "model_id, disable_streaming",
     [

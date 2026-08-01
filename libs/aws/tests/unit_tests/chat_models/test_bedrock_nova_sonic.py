@@ -238,6 +238,7 @@ class TestBaseChatModelInterface:
             endpointing_sensitivity="HIGH",
         )
         params = model._identifying_params
+        assert params["model"] == "amazon.nova-2-sonic-v1:0"
         assert params["model_id"] == "amazon.nova-2-sonic-v1:0"
         assert params["voice_id"] == "tiffany"
         assert params["max_tokens"] == 1024

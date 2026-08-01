@@ -975,6 +975,15 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         populate_by_name=True,
     )
 
+    def _get_invocation_params(
+        self, stop: Optional[List[str]] = None, **kwargs: Any
+    ) -> Dict[str, Any]:
+        """Get the parameters used to invoke the model, for tracing purposes."""
+        return {
+            "model": self.model_id,
+            **super()._get_invocation_params(stop=stop, **kwargs),
+        }
+
     def _get_ls_params(
         self, stop: Optional[List[str]] = None, **kwargs: Any
     ) -> LangSmithParams:
