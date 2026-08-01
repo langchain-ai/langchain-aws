@@ -88,7 +88,7 @@ from langchain_aws.utils import (
 
 logger = logging.getLogger(__name__)
 
-
+_MAX_CACHE_POINTS = 4
 _MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
 
 
@@ -717,7 +717,7 @@ class ChatBedrockConverse(BaseChatModel):
         bedrock_messages: List[Dict[str, Any]],
         params: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Apply cachePoint to system, messages, and tools in Converse API format.
+        """Apply cachePoints to system, messages, and tools in Converse API format.
 
         Args:
             cache_control: Cache control settings dict. Expected keys:
@@ -735,7 +735,9 @@ class ChatBedrockConverse(BaseChatModel):
         if not cache_control:
             return
 
-        is_nova = "amazon.nova" in self._get_base_model().lower()
+        base_model = self._get_base_model().lower()
+        is_nova = "amazon.nova" in base_model
+        is_anthropic = self.provider == "anthropic" or "anthropic" in base_model
 
         cache_point: Dict[str, Any] = {"type": "default"}
         ttl = cache_control.get("ttl")
@@ -743,10 +745,27 @@ class ChatBedrockConverse(BaseChatModel):
             cache_point["ttl"] = ttl
         cache_block = {"cachePoint": cache_point}
 
-        if system and not any(_is_cache_point(b) for b in system):
-            system.append(cache_block)
+        tools = (
+            params.get("toolConfig", {}).get("tools") if params is not None else None
+        )
 
-        if bedrock_messages:
+        manual_count = _count_cache_points(system, bedrock_messages, tools)
+        budget = _MAX_CACHE_POINTS - manual_count
+        if budget <= 0:
+            logger.debug(
+                "Request already contains %d cachePoint blocks (Bedrock maximum "
+                "is %d); skipping automatic cachePoint insertion for cache_control.",
+                manual_count,
+                _MAX_CACHE_POINTS,
+            )
+            return
+
+        # Highest-value points first; the rest take any remaining budget.
+        if budget and system and not any(_is_cache_point(b) for b in system):
+            system.append(cache_block)
+            budget -= 1
+
+        if budget and bedrock_messages:
             last_content = bedrock_messages[-1].get("content")
             if isinstance(last_content, list):
                 has_tool_block = is_nova and any(
@@ -757,11 +776,31 @@ class ChatBedrockConverse(BaseChatModel):
                     _is_cache_point(b) for b in last_content
                 ):
                     last_content.append(cache_block)
+                    budget -= 1
 
-        if params and not is_nova:
-            tools = params.get("toolConfig", {}).get("tools")
-            if tools and not any(_is_cache_point(t) for t in tools):
-                tools.append(cache_block)
+        if (
+            budget
+            and tools
+            and not is_nova
+            and not any(_is_cache_point(t) for t in tools)
+        ):
+            tools.append(cache_block)
+            budget -= 1
+
+        # End-of-history checkpoint for Claude's simplified cache management:
+        # https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html#prompt-caching-simplified
+        if (
+            budget
+            and is_anthropic
+            and not is_nova
+            and manual_count == 0
+            and len(bedrock_messages) >= 2
+        ):
+            penultimate_content = bedrock_messages[-2].get("content")
+            if isinstance(penultimate_content, list) and not any(
+                _is_cache_point(b) for b in penultimate_content
+            ):
+                penultimate_content.append(cache_block)
 
     @model_validator(mode="before")
     @classmethod
@@ -3325,6 +3364,21 @@ def _is_cache_point(cache_point: Any) -> bool:
     if cache_point_data is None:
         return False
     return cache_point_data.get("type") is not None
+
+
+def _count_cache_points(
+    system: List[Dict[str, Any]],
+    bedrock_messages: List[Dict[str, Any]],
+    tools: Optional[List[Dict[str, Any]]] = None,
+) -> int:
+    """Count cachePoint blocks across system, messages, and tools."""
+    count = sum(map(_is_cache_point, system))
+    count += sum(map(_is_cache_point, tools or []))
+    for message in bedrock_messages:
+        content = message.get("content")
+        if isinstance(content, list):
+            count += sum(map(_is_cache_point, content))
+    return count
 
 
 def _has_tool_use_or_result_blocks(messages: List[Dict[str, Any]]) -> bool:

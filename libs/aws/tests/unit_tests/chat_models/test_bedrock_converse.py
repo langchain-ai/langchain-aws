@@ -41,6 +41,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _camel_to_snake,
     _camel_to_snake_keys,
     _convert_tool_blocks_to_text,
+    _count_cache_points,
     _expand_inline_reasoning,
     _extract_response_metadata,
     _extract_usage_metadata,
@@ -5641,7 +5642,11 @@ def test_apply_cache_points_system_and_messages() -> None:
     assert system[-1] == {"cachePoint": {"type": "default"}}
     assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
     assert messages[0]["content"] == [{"text": "Hello"}]
-    assert messages[1]["content"] == [{"text": "Hi"}]
+    # Anthropic also gets an end-of-history checkpoint on the penultimate message
+    assert messages[1]["content"] == [
+        {"text": "Hi"},
+        {"cachePoint": {"type": "default"}},
+    ]
 
 
 def test_apply_cache_points_no_system() -> None:
@@ -5850,6 +5855,75 @@ def test_apply_cache_points_skips_existing_message_cache_point() -> None:
     assert len(msg_cps) == 1, f"Expected 1 cachePoint in message, got {len(msg_cps)}"
     system_cps = [b for b in system if "cachePoint" in b]
     assert len(system_cps) == 1
+
+
+def test_apply_cache_points_anthropic_end_of_history() -> None:
+    system: list[dict[str, Any]] = [{"text": "You are helpful."}]
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": [{"text": "Hello"}]},
+        {"role": "assistant", "content": [{"text": "Hi"}]},
+        {"role": "user", "content": [{"text": "Classify the conversation above."}]},
+    ]
+    params: dict[str, Any] = {
+        "toolConfig": {
+            "tools": [
+                {"toolSpec": {"name": "t", "description": "d", "inputSchema": {}}}
+            ]
+        }
+    }
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-5",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral"}, system, messages, params)
+    tools = params["toolConfig"]["tools"]
+    assert messages[-2]["content"][-1] == {"cachePoint": {"type": "default"}}
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert _count_cache_points(system, messages, tools) == 4
+
+
+def test_apply_cache_points_non_anthropic_no_end_of_history() -> None:
+    system: list[dict[str, Any]] = [{"text": "System"}]
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": [{"text": "Hello"}]},
+        {"role": "assistant", "content": [{"text": "Hi"}]},
+        {"role": "user", "content": [{"text": "Question"}]},
+    ]
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.amazon.nova-pro-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral"}, system, messages)
+    assert not any("cachePoint" in b for b in messages[-2]["content"])
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+
+
+def test_apply_cache_points_manual_points_capped_at_four() -> None:
+    cp = {"cachePoint": {"type": "default"}}
+    system: list[dict[str, Any]] = [{"text": "System"}]
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": [{"text": "a"}, dict(cp)]},
+        {"role": "assistant", "content": [{"text": "b"}, dict(cp)]},
+        {"role": "user", "content": [{"text": "c"}, dict(cp)]},
+        {"role": "assistant", "content": [{"text": "d"}]},
+        {"role": "user", "content": [{"text": "e"}]},
+    ]
+    params: dict[str, Any] = {
+        "toolConfig": {
+            "tools": [
+                {"toolSpec": {"name": "t", "description": "d", "inputSchema": {}}}
+            ]
+        }
+    }
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral"}, system, messages, params)
+    tools = params["toolConfig"]["tools"]
+    assert _count_cache_points(system, messages, tools) == 4
+    assert not any("cachePoint" in b for b in messages[-2]["content"])
 
 
 def test_generate_with_cache_control() -> None:

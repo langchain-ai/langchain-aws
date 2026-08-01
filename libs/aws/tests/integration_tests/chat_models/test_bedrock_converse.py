@@ -475,6 +475,27 @@ def test_cache_control_anthropic_multi_turn() -> None:
     assert cache_read > 0, f"Expected cache read on turn 2, got {cache_read}"
 
 
+def test_cache_control_anthropic_with_manual_cache_points() -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5",
+        system=[_LONG_SYSTEM_PROMPT],
+    )
+    llm_with_tools = llm.bind_tools([_get_weather])
+    cache_point = ChatBedrockConverse.create_cache_point()
+    messages = [
+        HumanMessage(content=[{"type": "text", "text": "A" * 400}, cache_point]),
+        AIMessage(content=[{"type": "text", "text": "Noted."}, cache_point]),
+        HumanMessage(content=[{"type": "text", "text": "B" * 400}, cache_point]),
+        AIMessage(content="Also noted."),
+        HumanMessage(content="Reply with exactly: OK"),
+    ]
+    r = llm_with_tools.invoke(
+        messages, cache_control={"type": "ephemeral", "ttl": "5m"}
+    )
+    assert isinstance(r, AIMessage)
+    assert r.content
+
+
 def test_cache_control_nova() -> None:
     llm = ChatBedrockConverse(
         model="us.amazon.nova-2-lite-v1:0",
