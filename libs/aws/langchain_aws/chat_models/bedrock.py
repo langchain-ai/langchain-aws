@@ -980,7 +980,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     ) -> Dict[str, Any]:
         """Get the parameters used to invoke the model, for tracing purposes."""
         return {
-            "model": self.model_id,
+            "model": self.base_model_id or self.model_id,
             **super()._get_invocation_params(stop=stop, **kwargs),
         }
 
