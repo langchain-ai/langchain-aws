@@ -883,16 +883,20 @@ def test_standard_tracing_params() -> None:
 
 
 def test_invocation_params_includes_model() -> None:
-    """invocation_params must carry a "model" key so that tracing tools which
-    key off it directly (e.g. cost calculators keyed by model name) work,
-    consistent with ChatOpenAI/ChatAnthropic."""
+    llm = ChatBedrock(model="us.anthropic.claude-sonnet-5", region="us-west-2")
+    assert llm._get_invocation_params()["model"] == "us.anthropic.claude-sonnet-5"
+
+
+def test_invocation_params_model_prefers_base_model_id() -> None:
     llm = ChatBedrock(
-        model_id="anthropic.claude-3-5-sonnet-20241022-v2:0", region_name="us-west-2"
-    )  # type: ignore[call-arg]
-    assert (
-        llm._get_invocation_params()["model"]
-        == "anthropic.claude-3-5-sonnet-20241022-v2:0"
+        model=(
+            "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/abc"
+        ),
+        base_model="us.anthropic.claude-sonnet-5",
+        provider="anthropic",
+        region="us-west-2",
     )
+    assert llm._get_invocation_params()["model"] == "anthropic.claude-sonnet-5"
 
 
 def test_beta_use_converse_api() -> None:
