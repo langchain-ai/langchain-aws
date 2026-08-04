@@ -896,7 +896,7 @@ def test_invocation_params_model_prefers_base_model_id() -> None:
         provider="anthropic",
         region="us-west-2",
     )
-    assert llm._get_invocation_params()["model"] == "anthropic.claude-sonnet-5"
+    assert llm._get_invocation_params()["model"] == "us.anthropic.claude-sonnet-5"
 
 
 def test_beta_use_converse_api() -> None:
