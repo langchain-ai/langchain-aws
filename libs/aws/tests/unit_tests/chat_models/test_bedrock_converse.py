@@ -791,6 +791,22 @@ def test_standard_tracing_params() -> None:
     }
 
 
+def test_invocation_params_includes_model() -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5", region_name="us-west-2"
+    )
+    assert llm._get_invocation_params()["model"] == "us.anthropic.claude-sonnet-5"
+
+
+def test_invocation_params_model_prefers_base_model_id() -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5",
+        base_model_id="anthropic.claude-sonnet-5",  # type: ignore[call-arg]
+        region_name="us-west-2",
+    )
+    assert llm._get_invocation_params()["model"] == "anthropic.claude-sonnet-5"
+
+
 @pytest.mark.parametrize(
     "model_id, disable_streaming",
     [
