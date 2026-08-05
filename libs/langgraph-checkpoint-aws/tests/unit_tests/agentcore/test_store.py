@@ -84,6 +84,21 @@ class TestAgentCoreMemoryStore:
         with pytest.raises(TypeError):
             AgentCoreMemoryStore()
 
+    def test_init_with_caller_config(self, memory_id):
+        """Test successful merge of user Config into final boto client config"""
+        from botocore.config import Config
+
+        with patch("boto3.client") as mock_boto3_client:
+            AgentCoreMemoryStore(
+                memory_id=memory_id,
+                region_name="us-west-2",
+                config=Config(read_timeout=10),
+            )
+        merged = mock_boto3_client.call_args[1]["config"]
+        assert merged.read_timeout == 10
+        assert merged.retries["mode"] == "adaptive"
+        assert "langgraph_agentcore_memory_store" in merged.user_agent_extra
+
     def test_batch_get_op_success(self, store, mock_boto_client, sample_memory_record):
         """Test successful GetOp operation."""
         mock_boto_client.get_memory_record.return_value = {
