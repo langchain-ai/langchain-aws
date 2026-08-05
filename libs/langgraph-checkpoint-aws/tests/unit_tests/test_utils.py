@@ -146,3 +146,15 @@ def test_process_aws_client_args_user_agent(mock_make_request, mock_client):
     assert hasattr(config_obj, "user_agent_extra")
     assert "existing_agent" in config_obj.user_agent_extra
     assert SDK_USER_AGENT in config_obj.user_agent_extra
+
+
+def test_process_aws_client_args_preserves_caller_config_values():
+    _, client_kwargs = process_aws_client_args(
+        region_name="us-west-2",
+        config=Config(connect_timeout=5, read_timeout=10, max_pool_connections=25),
+    )
+    config_obj = client_kwargs["config"]
+    assert config_obj.connect_timeout == 5
+    assert config_obj.read_timeout == 10
+    assert config_obj.max_pool_connections == 25
+    assert SDK_USER_AGENT in config_obj.user_agent_extra
