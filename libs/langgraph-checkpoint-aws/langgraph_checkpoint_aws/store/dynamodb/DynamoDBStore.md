@@ -83,6 +83,42 @@ store.delete(("documents", "user123"), "report_1")
 
 ## Advanced Features
 
+### Semantic Search (Vector Index)
+
+Configure an `index` to enable semantic search backed by a DynamoDB vector
+index. Embeddings are computed on `put()` and the `query` string is embedded
+and ranked by approximate nearest neighbor search, all served from the same
+table with no separate vector database.
+
+```python
+from langgraph_checkpoint_aws import DynamoDBStore
+from langchain_aws import BedrockEmbeddings
+
+store = DynamoDBStore(
+    table_name="agent-ltm",
+    index={
+        "embed": BedrockEmbeddings(model_id="amazon.titan-embed-text-v2:0"),
+        "dims": 256,  # must match the embedding model's output
+        "fields": ["text"],  # which value fields to embed (default: entire value)
+        # "distance_function": "COSINE",  # default; EUCLIDEAN / DOT_PRODUCT also supported
+    },
+)
+store.setup()  # creates the table and vector index if absent
+
+# Embedding computed automatically on put
+store.put(("user", "alice"), "mem1", {"text": "Alice prefers dark mode"})
+
+# Semantic search: results ranked by relevance (higher score == more relevant)
+results = store.search(("user", "alice"), query="UI preferences")
+for item in results:
+    print(item.score, item.value)
+```
+
+The vector index is eventually consistent (like a global secondary index):
+a search issued immediately after a write may not include the just-written
+item. Without an `index` configured, `search()` behaves exactly as before
+(namespace listing with optional filters).
+
 ### Time-To-Live (TTL)
 
 Configure automatic item expiration:
@@ -336,24 +372,25 @@ Required IAM permissions:
 
 | Feature       | DynamoDB Store                    | Valkey Store                          |
 | ------------- | --------------------------------- | ------------------------------------- |
-| Vector Search | No                                | Yes                                   |
+| Vector Search | Yes (DynamoDB vector index)       | Yes                                   |
 | Performance   | Good                              | Excellent                             |
 | Async Support | Yes (thread pool)                 | Yes                                   |
 | Best For      | Cost-effective persistent storage | Vector search, ultra-high performance |
 
 Use **DynamoDB Store** when:
 
-- You don't require vector search capabilities
 - You want cost-effective, fully managed storage
+- You want key-value memory and semantic search served from one table,
+  with no separate vector database to operate
 
 Use **Valkey Store** when:
 
-- You need vector search capabilities
 - You require ultra-low latency
 
 ## Limitations
 
-- **No Vector Search**: This store does not support semantic/vector search
+- **Vector Search Consistency**: The vector index is eventually consistent (like a global secondary index); a search issued immediately after a write may not include the just-written item
+- **Vector Search Depth**: SearchVectors returns at most the top 100 matches; requests with limit+offset beyond 100 are rejected
 - **Scan Cost**: Listing namespaces uses DynamoDB Scan which can be expensive for large tables
 - **Filter Limitations**: Client-side filtering only (equality checks on value fields)
 - **No Transactions**: Operations are not transactional across multiple items

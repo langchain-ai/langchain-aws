@@ -12,8 +12,9 @@ This package provides multiple persistence solutions for LangGraph agents:
 
 ### DynamoDB Storage
 1. **Checkpoint storage** with DynamoDB and automatic S3 offloading
-2. Unified table design with TTL support
-3. Intelligent compression for optimal storage
+2. **Document storage** with semantic vector search via Amazon DynamoDB vector indexes
+3. Unified table design with TTL support
+4. Intelligent compression for optimal storage
 
 ### Valkey Storage Solutions
 1. **Checkpoint storage** with Valkey (Redis-compatible)
@@ -40,10 +41,11 @@ This package provides following main components:
 1. **AgentCoreMemorySaver** - AWS Bedrock-based checkpoint storage
 2. **AgentCoreValkeySaver** - AgentCore-compatible Valkey checkpoint storage
 3. **DynamoDBSaver** - DynamoDB-based checkpoint storage with S3 offloading
-4. **ValkeySaver** - Valkey checkpoint storage
-5. **AgentCoreMemoryStore** - AWS Bedrock-based document store
-6. **ValkeyStore** - Valkey document store
-7. **ValkeyCache** - Valkey LLM response cache
+4. **DynamoDBStore** - DynamoDB document store with optional semantic vector search
+5. **ValkeySaver** - Valkey checkpoint storage
+6. **AgentCoreMemoryStore** - AWS Bedrock-based document store
+7. **ValkeyStore** - Valkey document store
+8. **ValkeyCache** - Valkey LLM response cache
 
 ## Usage
 
