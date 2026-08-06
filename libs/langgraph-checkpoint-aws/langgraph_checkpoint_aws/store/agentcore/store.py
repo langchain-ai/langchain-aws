@@ -29,6 +29,7 @@ from langgraph.store.base import (
 
 from ...checkpoint.agentcore.helpers import (
     convert_langchain_messages_to_event_messages,
+    merge_client_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,9 +83,14 @@ class AgentCoreMemoryStore(BaseStore):
         self.memory_id = memory_id
         self.hierarchical_search = hierarchical_search
 
-        config = Config(
-            user_agent_extra="x-client-framework:langgraph_agentcore_memory_store",
-            retries={"max_attempts": 4, "mode": "adaptive"},
+        config = merge_client_config(
+            Config(
+                user_agent_extra=(
+                    "x-client-framework:langgraph_agentcore_memory_store"
+                ),
+                retries={"max_attempts": 4, "mode": "adaptive"},
+            ),
+            boto3_kwargs,
         )
         self.client = boto3.client("bedrock-agentcore", config=config, **boto3_kwargs)
 
