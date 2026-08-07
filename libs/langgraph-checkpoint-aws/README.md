@@ -72,21 +72,21 @@ model = init_chat_model(MODEL_ID, model_provider="bedrock_converse", region_name
 graph = create_react_agent(
     model=model,
     tools=tools,
-    checkpointer=checkpointer, # AgentCoreMemorySaver we created above
+    checkpointer=checkpointer,  # AgentCoreMemorySaver we created above
 )
 
 # Specify config at runtime for ACTOR and SESSION
 config = {
     "configurable": {
-        "thread_id": "session-1", # REQUIRED: This maps to Bedrock AgentCore session_id under the hood
-        "actor_id": "react-agent-1", # REQUIRED: This maps to Bedrock AgentCore actor_id under the hood
+        "thread_id": "session-1",  # REQUIRED: This maps to Bedrock AgentCore session_id under the hood
+        "actor_id": "react-agent-1",  # REQUIRED: This maps to Bedrock AgentCore actor_id under the hood
     }
 }
 
 # Invoke the agent
 response = graph.invoke(
     {"messages": [("human", "I like sushi with tuna. In general seafood is great.")]},
-    config=config
+    config=config,
 )
 ```
 
@@ -97,9 +97,7 @@ response = graph.invoke(
 from langchain.chat_models import init_chat_model
 from langgraph.prebuilt import create_react_agent
 
-from langgraph_checkpoint_aws import (
-    AgentCoreMemoryStore
-)
+from langgraph_checkpoint_aws import AgentCoreMemoryStore
 
 REGION = "us-west-2"
 MEMORY_ID = "YOUR_MEMORY_ID"
@@ -109,29 +107,31 @@ MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
 # such as preferences and facts across sessions
 store = AgentCoreMemoryStore(MEMORY_ID, region_name=REGION)
 
+
 # Pre-model hook runs and saves messages of your choosing to AgentCore Memory
 # for async processing and extraction
 def pre_model_hook(state, config: RunnableConfig, *, store: BaseStore):
     """Hook that runs pre-model invocation to save the latest human message"""
     actor_id = config["configurable"]["actor_id"]
     thread_id = config["configurable"]["thread_id"]
-    
+
     # Saving the message to the actor and session combination that we get at runtime
     namespace = (actor_id, thread_id)
-    
+
     messages = state.get("messages", [])
     # Save the last human message we see before model invocation
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
             store.put(namespace, str(uuid.uuid4()), {"message": msg})
             break
-            
+
     # OPTIONAL: Retrieve user preferences based on the last message and append to state
     # user_preferences_namespace = ("preferences", actor_id)
     # preferences = store.search(user_preferences_namespace, query=msg.content, limit=5)
     # # Add to input messages as needed
-    
+
     return {"model_input_messages": messages}
+
 
 # Initialize chat model
 model = init_chat_model(MODEL_ID, model_provider="bedrock_converse", region_name=REGION)
@@ -146,15 +146,15 @@ graph = create_react_agent(
 # Specify config at runtime for ACTOR and SESSION
 config = {
     "configurable": {
-        "thread_id": "session-1", # REQUIRED: This maps to Bedrock AgentCore session_id under the hood
-        "actor_id": "react-agent-1", # REQUIRED: This maps to Bedrock AgentCore actor_id under the hood
+        "thread_id": "session-1",  # REQUIRED: This maps to Bedrock AgentCore session_id under the hood
+        "actor_id": "react-agent-1",  # REQUIRED: This maps to Bedrock AgentCore actor_id under the hood
     }
 }
 
 # Invoke the agent
 response = graph.invoke(
     {"messages": [("human", "I like sushi with tuna. In general seafood is great.")]},
-    config=config
+    config=config,
 )
 ```
 ### 3. Valkey Cache - LLM Response caching
@@ -168,18 +168,15 @@ from langchain_aws import ChatBedrockConverse
 with ValkeyCache.from_conn_string(
     "valkey://localhost:6379",
     ttl_seconds=3600,  # 1 hour TTL
-    pool_size=10
+    pool_size=10,
 ) as cache:
-    
     # Use cache with your LLM calls
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-    )   
-    
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+
     # Cache expensive prompts/computations
     cache_key = "expensive_computation_key"
     result = cache.get([cache_key])
-    
+
     if not result:
         # Compute and cache result
         prompt: str = "Your expensive prompt"
@@ -193,16 +190,13 @@ from langgraph.graph import StateGraph
 from langgraph_checkpoint_aws import DynamoDBSaver
 
 # Basic usage with DynamoDB only
-checkpointer = DynamoDBSaver(
-    table_name="my-checkpoints",
-    region_name="us-west-2"
-)
+checkpointer = DynamoDBSaver(table_name="my-checkpoints", region_name="us-west-2")
 
 # With S3 offloading for large checkpoints (>350KB)
 checkpointer = DynamoDBSaver(
     table_name="my-checkpoints",
     region_name="us-west-2",
-    s3_offload_config={"bucket_name": "my-checkpoint-bucket"}
+    s3_offload_config={"bucket_name": "my-checkpoint-bucket"},
 )
 
 # Production configuration with TTL and compression
@@ -211,7 +205,7 @@ checkpointer = DynamoDBSaver(
     region_name="us-west-2",
     ttl_seconds=86400 * 7,  # 7 days
     enable_checkpoint_compression=True,
-    s3_offload_config={"bucket_name": "my-checkpoint-bucket"}
+    s3_offload_config={"bucket_name": "my-checkpoint-bucket"},
 )
 
 # Create your graph
@@ -235,14 +229,14 @@ from langgraph_checkpoint_aws import ValkeySaver
 with ValkeySaver.from_conn_string(
     "valkey://localhost:6379",
     ttl_seconds=3600,  # 1 hour TTL
-    pool_size=10
+    pool_size=10,
 ) as checkpointer:
     # Create your graph
     builder = StateGraph(int)
     builder.add_node("add_one", lambda x: x + 1)
     builder.set_entry_point("add_one")
     builder.set_finish_point("add_one")
-    
+
     graph = builder.compile(checkpointer=checkpointer)
     config = {"configurable": {"thread_id": "session-1"}}
     result = graph.invoke(1, config)
@@ -260,21 +254,17 @@ from langgraph_checkpoint_aws import AgentCoreValkeySaver
 with AgentCoreValkeySaver.from_conn_string(
     "valkey://localhost:6379",
     ttl_seconds=3600,  # 1 hour TTL
-    pool_size=10
+    pool_size=10,
 ) as checkpointer:
     # Create your agent
-    graph = create_react_agent(
-        model=model,
-        tools=tools,
-        checkpointer=checkpointer
-    )
+    graph = create_react_agent(model=model, tools=tools, checkpointer=checkpointer)
 
     # AgentCore-style configuration (requires actor_id)
     config = {
         "configurable": {
             "thread_id": "session-123",
             "actor_id": "agent-456",  # Required for AgentCore compatibility
-            "checkpoint_ns": "production"
+            "checkpoint_ns": "production",
         }
     }
 
@@ -295,10 +285,10 @@ Document storage with vector search capabilities using ValkeyIndexConfig:
 ```python
 from langchain_aws import BedrockEmbeddings
 from langgraph_checkpoint_aws import ValkeyStore
+
 # Initialize Bedrock embeddings
 embeddings = BedrockEmbeddings(
-    model_id="amazon.titan-embed-text-v1",
-    region_name=AWS_REGION
+    model_id="amazon.titan-embed-text-v1", region_name=AWS_REGION
 )
 # Basic usage with ValkeyIndexConfig
 with ValkeyStore.from_conn_string(
@@ -309,14 +299,13 @@ with ValkeyStore.from_conn_string(
         "embed": embeddings,
         "fields": ["text", "author"],
         "timezone": "UTC",
-        "index_type": "hnsw"
+        "index_type": "hnsw",
     },
-    ttl={"default_ttl": 60.0}  # 1 hour TTL
+    ttl={"default_ttl": 60.0},  # 1 hour TTL
 ) as store:
-    
     # Setup vector search index
     store.setup()
-    
+
     # Store documents
     store.put(
         ("documents", "user123"),
@@ -324,16 +313,16 @@ with ValkeyStore.from_conn_string(
         {
             "text": "Machine learning report on customer behavior analysis...",
             "tags": ["ml", "analytics", "report"],
-            "author": "data_scientist"
-        }
+            "author": "data_scientist",
+        },
     )
-    
+
     # Search documents
     results = store.search(
         ("documents",),
         query="machine learning customer analysis",
         filter={"author": "data_scientist"},
-        limit=10
+        limit=10,
     )
 
 # Advanced HNSW configuration for performance tuning
@@ -349,7 +338,7 @@ with ValkeyStore.from_conn_string(
         "hnsw_m": 32,  # More connections for better recall
         "hnsw_ef_construction": 400,  # Higher construction quality
         "hnsw_ef_runtime": 20,  # Better search accuracy
-    }
+    },
 ) as store:
     # Optimized for high-accuracy vector search
     pass
@@ -362,8 +351,8 @@ with ValkeyStore.from_conn_string(
         "dims": 384,
         "embed": embeddings,
         "fields": ["text"],
-        "index_type": "flat"  # Exact search, no approximation
-    }
+        "index_type": "flat",  # Exact search, no approximation
+    },
 ) as store:
     # Exact vector search for smaller datasets
     pass
@@ -398,7 +387,7 @@ async with AsyncValkeyStore.from_conn_string("valkey://localhost:6379") as store
     data = {
         "message": "Sample message",
         "timestamp": datetime.now().isoformat(),
-        "status": "success"
+        "status": "success",
     }
     await store.setup()
     await store.aput(namespace, key, data)
@@ -452,7 +441,7 @@ DynamoDBSaver(
 ```python
 s3_offload_config = {
     "bucket_name": "my-checkpoint-bucket",  # Required
-    "endpoint_url": "http://localhost:4566"  # Optional: Custom s3 endpoint url
+    "endpoint_url": "http://localhost:4566",  # Optional: Custom s3 endpoint url
 }
 ```
 
@@ -569,7 +558,7 @@ speed_config = {
 
 # High-accuracy configuration (prioritize recall)
 accuracy_config = {
-    "collection_name": "precise_search", 
+    "collection_name": "precise_search",
     "index_type": "hnsw",
     "hnsw_m": 32,  # More connections
     "hnsw_ef_construction": 400,  # Better construction
@@ -579,7 +568,7 @@ accuracy_config = {
 # Balanced configuration (good speed/accuracy trade-off)
 balanced_config = {
     "collection_name": "balanced_search",
-    "index_type": "hnsw", 
+    "index_type": "hnsw",
     "hnsw_m": 16,  # Default connections
     "hnsw_ef_construction": 200,  # Default construction
     "hnsw_ef_runtime": 20,  # Moderate search width
@@ -879,8 +868,7 @@ def __init__(
 from langgraph_checkpoint_aws.checkpoint.valkey import ValkeySaver
 
 with ValkeySaver.from_conn_string(
-    "valkeys://your-elasticache-cluster.amazonaws.com:6379",
-    pool_size=20
+    "valkeys://your-elasticache-cluster.amazonaws.com:6379", pool_size=20
 ) as checkpointer:
     pass
 ```
@@ -908,9 +896,7 @@ docker run --name valkey-custom \
 from valkey.connection import ConnectionPool
 
 pool = ConnectionPool.from_url(
-    "valkey://localhost:6379",
-    max_connections=20,
-    retry_on_timeout=True
+    "valkey://localhost:6379", max_connections=20, retry_on_timeout=True
 )
 
 with ValkeySaver.from_pool(pool) as checkpointer:
@@ -923,18 +909,14 @@ with ValkeySaver.from_pool(pool) as checkpointer:
 # Configure appropriate TTL values
 with ValkeySaver.from_conn_string(
     "valkey://localhost:6379",
-    ttl_seconds=3600  # 1 hour for active sessions
+    ttl_seconds=3600,  # 1 hour for active sessions
 ) as checkpointer:
     pass
 ```
 #### Batch Operations
 ```python
 # Use batch operations for better throughput
-cache.set({
-    "key1": (value1, 3600),
-    "key2": (value2, 1800),
-    "key3": (value3, 7200)
-})
+cache.set({"key1": (value1, 3600), "key2": (value2, 1800), "key3": (value3, 7200)})
 
 results = cache.get(["key1", "key2", "key3"])
 ```
