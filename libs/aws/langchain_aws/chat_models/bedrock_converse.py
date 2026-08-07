@@ -893,6 +893,9 @@ class ChatBedrockConverse(BaseChatModel):
             or
             # Qwen3 models
             (provider == "qwen" and "qwen3" in model_id_lower)
+            or
+            # Kimi models
+            (provider in ("moonshot", "moonshotai") and "kimi" in model_id_lower)
         ):
             return True
         elif (

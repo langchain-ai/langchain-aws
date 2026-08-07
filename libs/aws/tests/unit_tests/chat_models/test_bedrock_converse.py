@@ -829,6 +829,8 @@ def test_invocation_params_model_prefers_base_model_id() -> None:
         ("openai.gpt-oss-120b-1:0", False),
         ("openai.gpt-oss-20b-1:0", False),
         ("qwen.qwen3-32b-v1:0", False),
+        ("moonshotai.kimi-k2.5", False),
+        ("moonshot.kimi-k2-thinking", False),
     ],
 )
 def test_set_disable_streaming(
