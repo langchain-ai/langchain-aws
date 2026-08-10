@@ -770,6 +770,8 @@ def test_thinking_in_params(params: dict, expected: bool) -> None:
         ("us-gov.anthropic.claude-haiku-4-5-20251001-v1:0", "anthropic"),
         ("minimax.minimax-m2.5", "minimax"),
         ("us.minimax.minimax-m2.5", "minimax"),
+        ("moonshotai.kimi-k2.5", "moonshotai"),
+        ("moonshot.kimi-k2-thinking", "moonshot"),
     ],
 )
 def test_parse_model_provider(model_id: str, expected_provider: str) -> None:

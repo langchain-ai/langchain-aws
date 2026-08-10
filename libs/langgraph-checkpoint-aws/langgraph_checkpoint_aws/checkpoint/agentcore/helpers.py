@@ -53,6 +53,17 @@ MAX_PAYLOAD_ITEMS_PER_EVENT = 100  # max items in payload array
 MAX_PAYLOAD_BYTES_PER_EVENT = 10_000_000  # 10 MB max event size
 
 
+def merge_client_config(base_config: Config, boto3_kwargs: dict[str, Any]) -> Config:
+    """Handle merging caller-supplied Config into the final boto config."""
+    caller_config: Config | None = boto3_kwargs.pop("config", None)
+    if not isinstance(caller_config, Config):
+        return base_config
+    base_ua = getattr(base_config, "user_agent_extra", "") or ""
+    caller_ua = getattr(caller_config, "user_agent_extra", "") or ""
+    merged = base_config.merge(caller_config)
+    return merged.merge(Config(user_agent_extra=f"{caller_ua} {base_ua}".strip()))
+
+
 class BedrockAgentCoreClientWithRetry:
     """Wrapper around bedrock-agentcore client with retry logic.
 
@@ -252,8 +263,9 @@ class AgentCoreEventClient:
         else:
             self.serializer = serializer
 
-        config = Config(
-            user_agent_extra="x-client-framework:langgraph_agentcore_memory"
+        config = merge_client_config(
+            Config(user_agent_extra="x-client-framework:langgraph_agentcore_memory"),
+            boto3_kwargs,
         )
         raw_client = boto3.client("bedrock-agentcore", config=config, **boto3_kwargs)
         self.client = BedrockAgentCoreClientWithRetry(

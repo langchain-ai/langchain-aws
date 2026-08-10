@@ -57,29 +57,19 @@ def create_client_config(config: Config | None = None) -> Config:
     Returns:
         Config: New config object with combined user agent and retry configuration
     """
-    config_kwargs = {}
-    existing_user_agent = getattr(config, "user_agent_extra", "") if config else ""
+    framework_ua = (
+        f"x-client-framework:langgraph-dynamodb md/sdk_user_agent/{SDK_USER_AGENT}"
+    )
+    base_config = Config(
+        user_agent_extra=framework_ua,
+        retries={"mode": "adaptive", "max_attempts": 5},
+    )
+    if config is None:
+        return base_config
 
-    # Add our user agent to existing one
-    new_user_agent = (
-        f"{existing_user_agent} x-client-framework:langgraph-dynamodb "
-        f"md/sdk_user_agent/{SDK_USER_AGENT}"
-    ).strip()
-
-    # Preserve retries configuration
-    if config is None or not hasattr(config, "retries"):
-        config_kwargs["retries"] = {
-            "mode": "adaptive",
-            "max_attempts": 5,
-        }
-    elif config:
-        config_kwargs["retries"] = config.retries  # type: ignore[attr-defined]
-
-    # Preserve max_pool_connections if provided
-    if config and hasattr(config, "max_pool_connections"):
-        config_kwargs["max_pool_connections"] = config.max_pool_connections
-
-    return Config(user_agent_extra=new_user_agent, **config_kwargs)  # type: ignore[arg-type]
+    existing_user_agent = getattr(config, "user_agent_extra", "") or ""
+    new_user_agent = f"{existing_user_agent} {framework_ua}".strip()
+    return base_config.merge(config).merge(Config(user_agent_extra=new_user_agent))
 
 
 def create_dynamodb_client(

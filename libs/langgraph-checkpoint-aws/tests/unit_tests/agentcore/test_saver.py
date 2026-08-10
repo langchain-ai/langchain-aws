@@ -1173,6 +1173,29 @@ class TestAgentCoreEventClient:
             mock_boto3_client.return_value = mock_boto_client
             yield AgentCoreEventClient("test-memory-id", serializer)
 
+    def test_caller_config_merged_into_client(self, serializer):
+        from botocore.config import Config
+
+        with patch("boto3.client") as mock_boto3_client:
+            AgentCoreEventClient(
+                "test-memory-id",
+                serializer,
+                region_name="us-west-2",
+                config=Config(connect_timeout=5, read_timeout=10),
+            )
+        call_kwargs = mock_boto3_client.call_args[1]
+        merged = call_kwargs["config"]
+        assert call_kwargs["region_name"] == "us-west-2"
+        assert merged.connect_timeout == 5
+        assert merged.read_timeout == 10
+        assert "langgraph_agentcore_memory" in merged.user_agent_extra
+
+    def test_no_caller_config_keeps_default(self, serializer):
+        with patch("boto3.client") as mock_boto3_client:
+            AgentCoreEventClient("test-memory-id", serializer)
+        merged = mock_boto3_client.call_args[1]["config"]
+        assert "langgraph_agentcore_memory" in merged.user_agent_extra
+
     def test_store_blob_event(self, client, mock_boto_client, sample_checkpoint_event):
         client.store_blob_event(sample_checkpoint_event, "session_id", "actor_id")
 

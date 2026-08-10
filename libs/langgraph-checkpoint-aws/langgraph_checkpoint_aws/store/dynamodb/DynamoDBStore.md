@@ -47,8 +47,8 @@ store.put(
     {
         "text": "Machine learning report on customer behavior analysis...",
         "tags": ["ml", "analytics", "report"],
-        "author": "data_scientist"
-    }
+        "author": "data_scientist",
+    },
 )
 ```
 
@@ -69,10 +69,7 @@ print(f"Updated: {item.updated_at}")
 results = store.search(("documents", "user123"))
 
 # Search with filter (equality match on value fields)
-results = store.search(
-    ("documents", "user123"),
-    filter={"author": "data_scientist"}
-)
+results = store.search(("documents", "user123"), filter={"author": "data_scientist"})
 ```
 
 ### Deleting Items
@@ -130,7 +127,7 @@ store = DynamoDBStore(
     ttl={
         "default_ttl": 60,  # 60 minutes default TTL
         "refresh_on_read": True,  # Refresh TTL on reads
-    }
+    },
 )
 store.setup()
 
@@ -138,12 +135,7 @@ store.setup()
 store.put(("temp", "session_123"), "data", {"value": "temporary data"})
 
 # Custom TTL for specific item (30 minutes)
-store.put(
-    ("temp", "session_123"),
-    "short_lived",
-    {"value": "expires soon"},
-    ttl=30
-)
+store.put(("temp", "session_123"), "short_lived", {"value": "expires soon"}, ttl=30)
 ```
 
 ### Async Operations
@@ -152,6 +144,7 @@ All operations have async counterparts with full sync/async parity:
 
 ```python
 import asyncio
+
 
 async def main():
     store = DynamoDBStore(table_name="my-store-table", region_name="us-east-1")
@@ -166,6 +159,7 @@ async def main():
 
     # Async list namespaces
     namespaces = await store.alist_namespaces(prefix=("users",))
+
 
 asyncio.run(main())
 ```
@@ -228,6 +222,7 @@ store.setup()
 
 # Option 2: Using boto3 session with explicit region
 import boto3
+
 session = boto3.Session(region_name="us-west-2")
 store = DynamoDBStore(table_name="my-store", boto3_session=session)
 store.setup()

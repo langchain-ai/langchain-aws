@@ -52,21 +52,21 @@ model = init_chat_model(MODEL_ID, model_provider="bedrock_converse", region_name
 graph = create_react_agent(
     model=model,
     tools=tools,
-    checkpointer=checkpointer, # AgentCoreMemorySaver we created above
+    checkpointer=checkpointer,  # AgentCoreMemorySaver we created above
 )
 
 # Specify config at runtime for ACTOR and SESSION
 config = {
     "configurable": {
-        "thread_id": "session-1", # REQUIRED: This maps to Bedrock AgentCore session_id under the hood
-        "actor_id": "react-agent-1", # REQUIRED: This maps to Bedrock AgentCore actor_id under the hood
+        "thread_id": "session-1",  # REQUIRED: This maps to Bedrock AgentCore session_id under the hood
+        "actor_id": "react-agent-1",  # REQUIRED: This maps to Bedrock AgentCore actor_id under the hood
     }
 }
 
 # Invoke the agent
 response = graph.invoke(
     {"messages": [("human", "I like sushi with tuna. In general seafood is great.")]},
-    config=config
+    config=config,
 )
 ```
 
@@ -77,9 +77,7 @@ response = graph.invoke(
 from langchain.chat_models import init_chat_model
 from langgraph.prebuilt import create_react_agent
 
-from langgraph_checkpoint_aws import (
-    AgentCoreMemoryStore
-)
+from langgraph_checkpoint_aws import AgentCoreMemoryStore
 
 REGION = "us-west-2"
 MEMORY_ID = "YOUR_MEMORY_ID"
@@ -89,29 +87,31 @@ MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
 # such as preferences and facts across sessions
 store = AgentCoreMemoryStore(MEMORY_ID, region_name=REGION)
 
+
 # Pre-model hook runs and saves messages of your choosing to AgentCore Memory
 # for async processing and extraction
 def pre_model_hook(state, config: RunnableConfig, *, store: BaseStore):
     """Hook that runs pre-model invocation to save the latest human message"""
     actor_id = config["configurable"]["actor_id"]
     thread_id = config["configurable"]["thread_id"]
-    
+
     # Saving the message to the actor and session combination that we get at runtime
     namespace = (actor_id, thread_id)
-    
+
     messages = state.get("messages", [])
     # Save the last human message we see before model invocation
     for msg in reversed(messages):
         if isinstance(msg, HumanMessage):
             store.put(namespace, str(uuid.uuid4()), {"message": msg})
             break
-            
+
     # OPTIONAL: Retrieve user preferences based on the last message and append to state
     # user_preferences_namespace = ("preferences", actor_id)
     # preferences = store.search(user_preferences_namespace, query=msg.content, limit=5)
     # # Add to input messages as needed
-    
+
     return {"model_input_messages": messages}
+
 
 # Initialize chat model
 model = init_chat_model(MODEL_ID, model_provider="bedrock_converse", region_name=REGION)
@@ -126,15 +126,15 @@ graph = create_react_agent(
 # Specify config at runtime for ACTOR and SESSION
 config = {
     "configurable": {
-        "thread_id": "session-1", # REQUIRED: This maps to Bedrock AgentCore session_id under the hood
-        "actor_id": "react-agent-1", # REQUIRED: This maps to Bedrock AgentCore actor_id under the hood
+        "thread_id": "session-1",  # REQUIRED: This maps to Bedrock AgentCore session_id under the hood
+        "actor_id": "react-agent-1",  # REQUIRED: This maps to Bedrock AgentCore actor_id under the hood
     }
 }
 
 # Invoke the agent
 response = graph.invoke(
     {"messages": [("human", "I like sushi with tuna. In general seafood is great.")]},
-    config=config
+    config=config,
 )
 ```
 
