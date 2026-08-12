@@ -283,6 +283,61 @@ def _active(name=_VECTOR_INDEX_NAME, status="ACTIVE"):
     return {"Table": {"VectorIndexes": [{"IndexName": name, "IndexStatus": status}]}}
 
 
+class TestExistingIndexValidation:
+    """setup() previously matched on IndexName alone, so a store pointed at an
+    index with different geometry was accepted. Dimensions and DistanceFunction
+    are immutable after creation, and a distance mismatch never fails: the
+    service scores by the index metric while _distance_to_score converts for
+    the store's setting, silently returning wrongly-scaled scores."""
+
+    def _describe(self, **index_fields):
+        idx = {"IndexName": _VECTOR_INDEX_NAME, "IndexStatus": "ACTIVE"}
+        idx.update(index_fields)
+        return {"Table": {"VectorIndexes": [idx]}}
+
+    def test_dims_mismatch_raises(self, mock_client):
+        store = _store_with_index(mock_client, dim=4)
+        mock_client.describe_table.return_value = self._describe(
+            Dimensions=1024, DistanceFunction="COSINE"
+        )
+        with pytest.raises(ValidationError, match="Dimensions"):
+            store.setup()
+
+    def test_distance_function_mismatch_raises(self, mock_client):
+        store = _store_with_index(mock_client, dim=4, distance="EUCLIDEAN")
+        mock_client.describe_table.return_value = self._describe(
+            Dimensions=4, DistanceFunction="COSINE"
+        )
+        with pytest.raises(ValidationError, match="DistanceFunction"):
+            store.setup()
+
+    def test_matching_index_is_accepted(self, mock_client):
+        """Negative control: a matching index must not raise or recreate."""
+        store = _store_with_index(mock_client, dim=4, distance="EUCLIDEAN")
+        mock_client.describe_table.return_value = self._describe(
+            Dimensions=4, DistanceFunction="EUCLIDEAN"
+        )
+        store.setup()
+        mock_client.update_table.assert_not_called()
+
+    def test_index_without_geometry_fields_is_accepted(self, mock_client):
+        """DescribeTable omitting the fields must not fail the store."""
+        store = _store_with_index(mock_client, dim=4)
+        mock_client.describe_table.return_value = _active()
+        store.setup()
+        mock_client.update_table.assert_not_called()
+
+    def test_absent_index_is_still_created(self, mock_client):
+        """The create path must survive the refactor from name matching."""
+        store = _store_with_index(mock_client, dim=4)
+        mock_client.describe_table.side_effect = [
+            {"Table": {"VectorIndexes": [{"IndexName": "other-index"}]}},
+            _active(),
+        ]
+        store.setup()
+        assert mock_client.update_table.called
+
+
 class TestCreateVectorIndex:
     """_create_vector_index mutates infrastructure; pin its request shape
     and failure modes."""
