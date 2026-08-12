@@ -443,3 +443,159 @@ class TestReviewRegressions:
             [Document(page_content="hello", id="doc-1", metadata={"a": 1})]
         )
         assert ids == ["doc-1"]
+
+
+class TestPartitionScoping:
+    """A SearchSchema HASH element scopes each search to one partition value.
+
+    It is immutable after index creation, and once present the service requires
+    SearchConditionExpression on every SearchVectors call.
+    """
+
+    def _describe(self, hash_attr: str | None = None) -> dict:
+        idx: dict = {
+            "IndexName": "documents-vector-index",
+            "IndexStatus": "ACTIVE",
+            "Dimensions": 4,
+            "DistanceFunction": "COSINE",
+        }
+        if hash_attr is not None:
+            idx["SearchSchema"] = [
+                {"AttributeName": hash_attr, "SearchSchemaElementType": "HASH"}
+            ]
+        return {"Table": {"VectorIndexes": [idx]}}
+
+    def test_index_spec_omits_search_schema_by_default(self, mock_client: Mock) -> None:
+        store = _make_store(mock_client)
+        assert "SearchSchema" not in store._vector_index_spec(4)
+
+    def test_index_spec_declares_hash_element(self, mock_client: Mock) -> None:
+        store = _make_store(mock_client, partition_attribute="category")
+        spec = store._vector_index_spec(4)
+        assert spec["SearchSchema"] == [
+            {"AttributeName": "category", "SearchSchemaElementType": "HASH"}
+        ]
+
+    def test_partition_attribute_is_promoted_to_top_level(
+        self, mock_client: Mock
+    ) -> None:
+        """A SearchSchema element must name a top-level attribute."""
+        mock_client.describe_table.return_value = self._describe("category")
+        store = _make_store(mock_client, partition_attribute="category")
+        store.add_texts(["hello"], metadatas=[{"category": "shoes"}])
+        item = mock_client.batch_write_item.call_args.kwargs["RequestItems"]["docs"][0][
+            "PutRequest"
+        ]["Item"]
+        assert item["category"] == {"S": "shoes"}
+        # still present in metadata so Documents round-trip unchanged
+        assert item["metadata"]["M"]["category"] == {"S": "shoes"}
+
+    def test_write_without_partition_value_raises(self, mock_client: Mock) -> None:
+        """An item missing the partition key is unreachable by any search."""
+        mock_client.describe_table.return_value = self._describe("category")
+        store = _make_store(mock_client, partition_attribute="category")
+        with pytest.raises(ValueError, match="missing 'category'"):
+            store.add_texts(["hello"], metadatas=[{"other": "x"}])
+
+    def test_write_falls_back_to_default_partition_value(
+        self, mock_client: Mock
+    ) -> None:
+        mock_client.describe_table.return_value = self._describe("category")
+        store = _make_store(
+            mock_client,
+            partition_attribute="category",
+            default_partition_value="general",
+        )
+        store.add_texts(["hello"])
+        item = mock_client.batch_write_item.call_args.kwargs["RequestItems"]["docs"][0][
+            "PutRequest"
+        ]["Item"]
+        assert item["category"] == {"S": "general"}
+
+    def test_search_sends_condition_expression(self, mock_client: Mock) -> None:
+        mock_client.describe_table.return_value = self._describe("category")
+        mock_client.search_vectors.return_value = {"SearchResults": []}
+        store = _make_store(mock_client, partition_attribute="category")
+        store.similarity_search("q", k=3, filter={"category": "shoes"})
+        kwargs = mock_client.search_vectors.call_args.kwargs
+        assert kwargs["SearchConditionExpression"] == "#pk = :pk"
+        assert kwargs["ExpressionAttributeNames"] == {"#pk": "category"}
+        assert kwargs["ExpressionAttributeValues"] == {":pk": {"S": "shoes"}}
+
+    def test_search_without_partition_value_raises(self, mock_client: Mock) -> None:
+        """The service requires the condition once a HASH element exists."""
+        store = _make_store(mock_client, partition_attribute="category")
+        with pytest.raises(ValueError, match="every search must supply"):
+            store.similarity_search("q")
+
+    def test_search_uses_default_partition_value(self, mock_client: Mock) -> None:
+        mock_client.search_vectors.return_value = {"SearchResults": []}
+        store = _make_store(
+            mock_client,
+            partition_attribute="category",
+            default_partition_value="general",
+        )
+        store.similarity_search("q")
+        kwargs = mock_client.search_vectors.call_args.kwargs
+        assert kwargs["ExpressionAttributeValues"] == {":pk": {"S": "general"}}
+
+    def test_unsupported_filter_key_raises(self, mock_client: Mock) -> None:
+        """Inline filters are not implemented; do not silently drop keys."""
+        store = _make_store(mock_client, partition_attribute="category")
+        with pytest.raises(ValueError, match="Unsupported filter keys"):
+            store.similarity_search("q", filter={"category": "shoes", "lang": "en"})
+
+    def test_unpartitioned_store_still_sends_no_condition(
+        self, mock_client: Mock
+    ) -> None:
+        """Negative control: the global-search path is unchanged."""
+        mock_client.search_vectors.return_value = {"SearchResults": []}
+        store = _make_store(mock_client)
+        store.similarity_search("q")
+        assert "SearchConditionExpression" not in (
+            mock_client.search_vectors.call_args.kwargs
+        )
+
+    def test_filter_still_rejected_without_partition_attribute(
+        self, mock_client: Mock
+    ) -> None:
+        store = _make_store(mock_client)
+        with pytest.raises(ValueError, match="does not support metadata filtering"):
+            store.similarity_search("q", filter={"category": "shoes"})
+
+    def test_default_without_attribute_raises(self, mock_client: Mock) -> None:
+        with pytest.raises(ValueError, match="requires partition_attribute"):
+            _make_store(mock_client, default_partition_value="general")
+
+    def test_reserved_partition_attribute_raises(self, mock_client: Mock) -> None:
+        with pytest.raises(ValueError, match="collides"):
+            _make_store(mock_client, partition_attribute="page_content")
+
+    def test_schema_mismatch_configured_but_index_has_none(
+        self, mock_client: Mock
+    ) -> None:
+        mock_client.describe_table.return_value = self._describe(None)
+        store = _make_store(mock_client, partition_attribute="category")
+        with pytest.raises(ValueError, match="without a SearchSchema partition key"):
+            store.add_texts(["hello"], metadatas=[{"category": "shoes"}])
+
+    def test_schema_mismatch_index_has_one_but_store_does_not(
+        self, mock_client: Mock
+    ) -> None:
+        mock_client.describe_table.return_value = self._describe("category")
+        store = _make_store(mock_client)
+        with pytest.raises(ValueError, match="has a SearchSchema partition key"):
+            store.add_texts(["hello"])
+
+    def test_schema_mismatch_different_attribute(self, mock_client: Mock) -> None:
+        mock_client.describe_table.return_value = self._describe("country")
+        store = _make_store(mock_client, partition_attribute="category")
+        with pytest.raises(ValueError, match="partition key on 'country'"):
+            store.add_texts(["hello"], metadatas=[{"category": "shoes"}])
+
+    def test_matching_schema_is_accepted(self, mock_client: Mock) -> None:
+        """Negative control: a matching schema neither raises nor recreates."""
+        mock_client.describe_table.return_value = self._describe("category")
+        store = _make_store(mock_client, partition_attribute="category")
+        store.add_texts(["hello"], metadatas=[{"category": "shoes"}])
+        mock_client.update_table.assert_not_called()

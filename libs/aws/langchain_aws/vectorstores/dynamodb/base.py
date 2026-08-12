@@ -36,6 +36,9 @@ _VECTOR_ATTR = "embedding"
 _CONTENT_ATTR = "page_content"
 _METADATA_ATTR = "metadata"
 
+# Attribute names this store owns; a partition attribute must not collide.
+_RESERVED_ATTRS = frozenset({_PK_ATTR, _VECTOR_ATTR, _CONTENT_ATTR, _METADATA_ATTR})
+
 
 def _to_dynamodb_compatible(value: Any) -> Any:
     """Recursively convert floats to Decimal for DynamoDB serialization.
@@ -86,10 +89,20 @@ class DynamoDBVectorStore(VectorStore):
     To use, provide a table name and an embedding function. The table and
     vector index are created on first write if they don't exist.
 
-    Limitations: metadata filtering is not supported (a ``filter`` argument
-    is rejected rather than silently ignored), and maximal marginal
-    relevance (MMR) search is not implemented. SearchVectors returns at
-    most the top 100 matches per query.
+    Pass ``partition_attribute`` to scope searches. The index is then created
+    with a ``SearchSchema`` partition key on that document metadata field, and
+    each search examines only one value of it rather than the whole corpus,
+    which is how the index scales search throughput. The partition value is
+    supplied per search via ``filter={partition_attribute: value}``, or once
+    via ``default_partition_value``.
+
+    Limitations: inline filter attributes are not yet supported, so ``filter``
+    accepts only the partition key (any other key is rejected rather than
+    silently ignored), and maximal marginal relevance (MMR) search is not
+    implemented. SearchVectors returns at most the top 100 matches per query.
+    ``Dimensions``, ``DistanceFunction``, ``SearchSchema`` and the projection
+    are all fixed when the index is created; this store validates the first
+    three against an existing index rather than proceeding with a mismatch.
 
     Example:
         ```python
@@ -112,6 +125,8 @@ class DynamoDBVectorStore(VectorStore):
         embedding: Embeddings,
         index_name: str = "documents-vector-index",
         distance_function: Literal["COSINE", "EUCLIDEAN", "DOT_PRODUCT"] = "COSINE",
+        partition_attribute: Optional[str] = None,
+        default_partition_value: Optional[str] = None,
         create_table_if_not_exist: bool = True,
         relevance_score_fn: Optional[Callable[[float], float]] = None,
         region_name: Optional[str] = None,
@@ -129,6 +144,21 @@ class DynamoDBVectorStore(VectorStore):
             index_name: Name of the vector index on the table.
             distance_function: Distance function for the vector index.
                 One of "COSINE" (default), "EUCLIDEAN", "DOT_PRODUCT".
+            partition_attribute: Name of a document metadata field to use as
+                the vector index partition key. When set, the index is created
+                with a ``SearchSchema`` HASH element on this attribute and each
+                search is scoped to a single value of it, which lets the index
+                scale search throughput horizontally instead of examining the
+                whole corpus. Prefer low-to-medium cardinality values such as
+                a collection, category or tenant. This is part of the index
+                schema and cannot be changed after the index is created.
+                Every search must then supply the value, via
+                ``filter={partition_attribute: value}`` or
+                ``default_partition_value``.
+            default_partition_value: Value to use for ``partition_attribute``
+                when a document's metadata omits it and when a search supplies
+                no ``filter``. Only valid together with
+                ``partition_attribute``.
             create_table_if_not_exist: Create the table and vector index on
                 first use if they don't exist. Default is True.
             relevance_score_fn: Override for the relevance score conversion
@@ -143,6 +173,20 @@ class DynamoDBVectorStore(VectorStore):
         self.table_name = table_name
         self.index_name = index_name
         self.distance_function = distance_function
+        self.partition_attribute = partition_attribute
+        self.default_partition_value = default_partition_value
+        if default_partition_value is not None and partition_attribute is None:
+            raise ValueError(
+                "default_partition_value requires partition_attribute: without "
+                "a SearchSchema partition key there is nothing to scope "
+                "searches by."
+            )
+        if partition_attribute is not None and partition_attribute in _RESERVED_ATTRS:
+            raise ValueError(
+                f"partition_attribute '{partition_attribute}' collides with an "
+                f"attribute this store manages ({', '.join(sorted(_RESERVED_ATTRS))})"
+                ". Choose a different metadata field name."
+            )
         self.create_table_if_not_exist = create_table_if_not_exist
         self.relevance_score_fn = relevance_score_fn
         self._embedding = embedding
@@ -192,6 +236,104 @@ class DynamoDBVectorStore(VectorStore):
         waiter.wait(TableName=self.table_name)
         self._wait_for_vector_index()
 
+    def _validate_existing_search_schema(self, index: dict) -> None:
+        """Check the existing index's partition key matches configuration.
+
+        SearchSchema is immutable after index creation, so a mismatch cannot be
+        reconciled at runtime. Both directions are silent failures if allowed
+        through: an index with a HASH element rejects searches that omit
+        SearchConditionExpression, and an index without one has no partition to
+        scope by, so a configured store would send a condition the index cannot
+        satisfy.
+        """
+        existing_hash = next(
+            (
+                el.get("AttributeName")
+                for el in index.get("SearchSchema") or []
+                if el.get("SearchSchemaElementType") == "HASH"
+            ),
+            None,
+        )
+        if existing_hash == self.partition_attribute:
+            return
+        if existing_hash is None:
+            raise ValueError(
+                f"Vector index '{self.index_name}' was created without a "
+                "SearchSchema partition key but this store is configured with "
+                f"partition_attribute='{self.partition_attribute}'. The search "
+                "schema cannot be changed after creation. Drop "
+                "partition_attribute, or create a separate index (a table "
+                "supports multiple vector indexes) with the partition key."
+            )
+        if self.partition_attribute is None:
+            raise ValueError(
+                f"Vector index '{self.index_name}' has a SearchSchema "
+                f"partition key on '{existing_hash}', so every search must "
+                "supply its value, but this store is configured without a "
+                f"partition_attribute. Construct the store with "
+                f"partition_attribute='{existing_hash}'."
+            )
+        raise ValueError(
+            f"Vector index '{self.index_name}' has a SearchSchema partition "
+            f"key on '{existing_hash}' but this store is configured for "
+            f"'{self.partition_attribute}'. The search schema cannot be "
+            f"changed after creation. Use "
+            f"partition_attribute='{existing_hash}' or a different index."
+        )
+
+    def _partition_value_for_write(self, metadata: dict) -> Optional[str]:
+        """Resolve the partition value for a document being written."""
+        if self.partition_attribute is None:
+            return None
+        value = metadata.get(self.partition_attribute, self.default_partition_value)
+        if value is None:
+            raise ValueError(
+                f"Document metadata is missing '{self.partition_attribute}', "
+                "which is the vector index partition key. An item written "
+                "without it cannot be reached by any search. Supply it in the "
+                "document metadata or set default_partition_value."
+            )
+        return str(value)
+
+    def _partition_condition(self, filter: Optional[dict]) -> dict:
+        """Build the SearchConditionExpression kwargs for a search."""
+        if self.partition_attribute is None:
+            if filter is not None:
+                raise ValueError(
+                    "DynamoDBVectorStore does not support metadata filtering "
+                    "unless the index declares a SearchSchema. Construct the "
+                    "store with partition_attribute=<field> to scope searches, "
+                    "or remove the 'filter' argument (silently ignoring it "
+                    "would return unfiltered results)."
+                )
+            return {}
+
+        if filter is None:
+            value = self.default_partition_value
+        else:
+            unknown = set(filter) - {self.partition_attribute}
+            if unknown:
+                raise ValueError(
+                    f"Unsupported filter keys {sorted(unknown)}: only "
+                    f"'{self.partition_attribute}' (the vector index partition "
+                    "key) can be filtered on. Inline filter attributes are not "
+                    "yet supported by this store."
+                )
+            value = filter.get(self.partition_attribute, self.default_partition_value)
+
+        if value is None:
+            raise ValueError(
+                f"This index is partitioned on '{self.partition_attribute}', so "
+                "every search must supply its value. Pass "
+                f"filter={{'{self.partition_attribute}': <value>}} or set "
+                "default_partition_value on the store."
+            )
+        return {
+            "SearchConditionExpression": "#pk = :pk",
+            "ExpressionAttributeNames": {"#pk": self.partition_attribute},
+            "ExpressionAttributeValues": {":pk": {"S": str(value)}},
+        }
+
     def _create_vector_index(self, *, dimensions: int) -> None:
         """Retrofit the vector index onto an existing table."""
         self.client.update_table(
@@ -201,15 +343,25 @@ class DynamoDBVectorStore(VectorStore):
         self._wait_for_vector_index()
 
     def _vector_index_spec(self, dimensions: int) -> dict:
-        # No SearchSchema: the index spans the whole table so searches are
-        # global over the corpus (unlike a partition-scoped memory store).
-        return {
+        # Without a SearchSchema HASH element the index spans the whole table,
+        # so every search examines the entire corpus and cannot scale
+        # horizontally. With one, each search is scoped to a single partition
+        # value and SearchConditionExpression becomes mandatory.
+        spec: dict = {
             "IndexName": self.index_name,
             "VectorAttribute": {"AttributeName": _VECTOR_ATTR},
             "Projection": {"ProjectionType": "ALL"},
             "Dimensions": dimensions,
             "DistanceFunction": self.distance_function,
         }
+        if self.partition_attribute is not None:
+            spec["SearchSchema"] = [
+                {
+                    "AttributeName": self.partition_attribute,
+                    "SearchSchemaElementType": "HASH",
+                }
+            ]
+        return spec
 
     def _wait_for_vector_index(self, timeout: int = 600) -> None:
         """Poll describe_table until the vector index reports ACTIVE."""
@@ -269,6 +421,7 @@ class DynamoDBVectorStore(VectorStore):
                         f"distance_function='{existing_fn}' or use a different "
                         "index."
                     )
+                self._validate_existing_search_schema(idx)
                 return
         if not self.create_table_if_not_exist:
             raise ValueError(
@@ -347,6 +500,13 @@ class DynamoDBVectorStore(VectorStore):
                 ),
                 _VECTOR_ATTR: {"L": [{"N": str(v)} for v in vec]},
             }
+            # A SearchSchema element must name a top-level attribute, so the
+            # partition field is promoted out of the metadata map. It stays in
+            # metadata too, so Documents round-trip unchanged.
+            partition_value = self._partition_value_for_write(metadata or {})
+            if partition_value is not None:
+                assert self.partition_attribute is not None
+                item[self.partition_attribute] = {"S": partition_value}
             requests.append({"PutRequest": {"Item": item}})
 
         for i in range(0, len(requests), batch_size):
@@ -503,12 +663,13 @@ class DynamoDBVectorStore(VectorStore):
 
         See ``similarity_search_with_score`` for the score semantics.
         """
-        if kwargs.get("filter") is not None:
+        if kwargs.get("filter") is not None and self.partition_attribute is None:
             raise ValueError(
                 "DynamoDBVectorStore does not support metadata filtering: the "
                 "vector index is created without a filterable SearchSchema. "
-                "Remove the 'filter' argument (silently ignoring it would "
-                "return unfiltered results)."
+                "Construct the store with partition_attribute=<field> to scope "
+                "searches by a partition key, or remove the 'filter' argument "
+                "(silently ignoring it would return unfiltered results)."
             )
         if k < 1 or k > _MAX_TOP_K:
             raise ValueError(
@@ -519,6 +680,7 @@ class DynamoDBVectorStore(VectorStore):
             IndexName=self.index_name,
             SearchVector=[{"N": str(v)} for v in embedding],
             TopK=k,
+            **self._partition_condition(kwargs.get("filter")),
         )
         results = []
         for r in resp.get("SearchResults", []):
