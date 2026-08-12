@@ -295,8 +295,27 @@ class DynamoDBVectorStore(VectorStore):
             )
         return str(value)
 
-    def _partition_condition(self, filter: Optional[dict]) -> dict:
-        """Build the SearchConditionExpression kwargs for a search."""
+    def _search_kwargs(self, filter: Optional[dict]) -> dict:
+        """Build the per-request kwargs for a SearchVectors call.
+
+        Two things ride here. The projection expression bounds what comes back
+        to exactly the attributes ``_item_to_document`` reads, which matters
+        because SearchVectors responses are capped at 16 MB with no pagination,
+        so a high TopK over large items can approach that limit. Unlike the
+        index projection, which is immutable, this is a per-request choice.
+
+        The partition condition is required whenever the index declares a
+        SearchSchema HASH element.
+        """
+        kwargs: dict = {
+            "ProjectionExpression": "#id, #c, #m",
+            "ExpressionAttributeNames": {
+                "#id": _PK_ATTR,
+                "#c": _CONTENT_ATTR,
+                "#m": _METADATA_ATTR,
+            },
+        }
+
         if self.partition_attribute is None:
             if filter is not None:
                 raise ValueError(
@@ -306,7 +325,7 @@ class DynamoDBVectorStore(VectorStore):
                     "or remove the 'filter' argument (silently ignoring it "
                     "would return unfiltered results)."
                 )
-            return {}
+            return kwargs
 
         if filter is None:
             value = self.default_partition_value
@@ -328,11 +347,10 @@ class DynamoDBVectorStore(VectorStore):
                 f"filter={{'{self.partition_attribute}': <value>}} or set "
                 "default_partition_value on the store."
             )
-        return {
-            "SearchConditionExpression": "#pk = :pk",
-            "ExpressionAttributeNames": {"#pk": self.partition_attribute},
-            "ExpressionAttributeValues": {":pk": {"S": str(value)}},
-        }
+        kwargs["SearchConditionExpression"] = "#pk = :pk"
+        kwargs["ExpressionAttributeNames"]["#pk"] = self.partition_attribute
+        kwargs["ExpressionAttributeValues"] = {":pk": {"S": str(value)}}
+        return kwargs
 
     def _create_vector_index(self, *, dimensions: int) -> None:
         """Retrofit the vector index onto an existing table."""
@@ -680,7 +698,7 @@ class DynamoDBVectorStore(VectorStore):
             IndexName=self.index_name,
             SearchVector=[{"N": str(v)} for v in embedding],
             TopK=k,
-            **self._partition_condition(kwargs.get("filter")),
+            **self._search_kwargs(kwargs.get("filter")),
         )
         results = []
         for r in resp.get("SearchResults", []):

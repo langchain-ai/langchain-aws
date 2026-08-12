@@ -519,7 +519,7 @@ class TestPartitionScoping:
         store.similarity_search("q", k=3, filter={"category": "shoes"})
         kwargs = mock_client.search_vectors.call_args.kwargs
         assert kwargs["SearchConditionExpression"] == "#pk = :pk"
-        assert kwargs["ExpressionAttributeNames"] == {"#pk": "category"}
+        assert kwargs["ExpressionAttributeNames"]["#pk"] == "category"
         assert kwargs["ExpressionAttributeValues"] == {":pk": {"S": "shoes"}}
 
     def test_search_without_partition_value_raises(self, mock_client: Mock) -> None:
@@ -599,3 +599,65 @@ class TestPartitionScoping:
         store = _make_store(mock_client, partition_attribute="category")
         store.add_texts(["hello"], metadatas=[{"category": "shoes"}])
         mock_client.update_table.assert_not_called()
+
+
+class TestProjectionExpression:
+    """SearchVectors responses are capped at 16 MB with no pagination, so bound
+    what comes back to the attributes a Document actually needs. Unlike the
+    index projection this is a per-request choice, so it costs no immutability.
+    """
+
+    def test_search_bounds_returned_attributes(self, mock_client: Mock) -> None:
+        mock_client.search_vectors.return_value = {"SearchResults": []}
+        store = _make_store(mock_client)
+        store.similarity_search("q")
+        kwargs = mock_client.search_vectors.call_args.kwargs
+        assert kwargs["ProjectionExpression"] == "#id, #c, #m"
+        assert kwargs["ExpressionAttributeNames"] == {
+            "#id": "id",
+            "#c": "page_content",
+            "#m": "metadata",
+        }
+
+    def test_projection_covers_everything_a_document_needs(
+        self, mock_client: Mock
+    ) -> None:
+        """A projected item must still round-trip into a full Document."""
+        mock_client.search_vectors.return_value = {
+            "SearchResults": [
+                {
+                    "Item": {
+                        "id": {"S": "d1"},
+                        "page_content": {"S": "hello"},
+                        "metadata": {"M": {"lang": {"S": "en"}}},
+                    },
+                    "Score": 0.1,
+                }
+            ]
+        }
+        store = _make_store(mock_client)
+        docs = store.similarity_search("q")
+        assert docs[0].id == "d1"
+        assert docs[0].page_content == "hello"
+        assert docs[0].metadata == {"lang": "en"}
+
+    def test_partition_names_merge_with_projection_names(
+        self, mock_client: Mock
+    ) -> None:
+        """Both riders share one ExpressionAttributeNames map; neither wins."""
+        mock_client.search_vectors.return_value = {"SearchResults": []}
+        store = _make_store(
+            mock_client,
+            partition_attribute="category",
+            default_partition_value="general",
+        )
+        store.similarity_search("q")
+        kwargs = mock_client.search_vectors.call_args.kwargs
+        assert kwargs["ExpressionAttributeNames"] == {
+            "#id": "id",
+            "#c": "page_content",
+            "#m": "metadata",
+            "#pk": "category",
+        }
+        assert kwargs["SearchConditionExpression"] == "#pk = :pk"
+        assert kwargs["ProjectionExpression"] == "#id, #c, #m"
