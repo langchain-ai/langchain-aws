@@ -373,6 +373,49 @@ class TestReviewRegressions:
         with pytest.raises(ValueError, match="Dimensions"):
             store.add_texts(["hello"])
 
+    def test_distance_function_mismatch_against_existing_index_raises(
+        self, mock_client: Mock
+    ) -> None:
+        """A store pointed at an index with a different metric must fail loudly.
+
+        The service scores using the index's DistanceFunction, but relevance
+        conversion keys off the store's own setting, so a mismatch would
+        otherwise return wrongly-scaled scores with no error.
+        """
+        mock_client.describe_table.return_value = {
+            "Table": {
+                "VectorIndexes": [
+                    {
+                        "IndexName": "documents-vector-index",
+                        "IndexStatus": "ACTIVE",
+                        "Dimensions": 4,
+                        "DistanceFunction": "COSINE",
+                    }
+                ]
+            }
+        }
+        store = _make_store(mock_client, distance_function="EUCLIDEAN")
+        with pytest.raises(ValueError, match="DistanceFunction"):
+            store.add_texts(["hello"])
+
+    def test_matching_distance_function_is_accepted(self, mock_client: Mock) -> None:
+        """Negative control: the same metric must not raise."""
+        mock_client.describe_table.return_value = {
+            "Table": {
+                "VectorIndexes": [
+                    {
+                        "IndexName": "documents-vector-index",
+                        "IndexStatus": "ACTIVE",
+                        "Dimensions": 4,
+                        "DistanceFunction": "EUCLIDEAN",
+                    }
+                ]
+            }
+        }
+        store = _make_store(mock_client, distance_function="EUCLIDEAN")
+        store.add_texts(["hello"])
+        assert mock_client.batch_write_item.called
+
     def test_by_vector_direct(self, mock_client: Mock) -> None:
         mock_client.search_vectors.return_value = {
             "SearchResults": [

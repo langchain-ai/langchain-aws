@@ -253,6 +253,22 @@ class DynamoDBVectorStore(VectorStore):
                         f"{dimensions}-dimensional vectors. Use a matching "
                         "embedding model or a different index."
                     )
+                # The service scores using the index's DistanceFunction, which
+                # is immutable after creation. Relevance conversion keys off
+                # self.distance_function, so a mismatch silently returns
+                # wrongly-scaled scores rather than failing.
+                existing_fn = idx.get("DistanceFunction")
+                if existing_fn is not None and existing_fn != self.distance_function:
+                    raise ValueError(
+                        f"Vector index '{self.index_name}' has DistanceFunction="
+                        f"{existing_fn} but this store is configured for "
+                        f"{self.distance_function}. The index metric cannot be "
+                        "changed after creation, and searches would be scored "
+                        f"by {existing_fn} while relevance scores were computed "
+                        f"for {self.distance_function}. Construct the store with "
+                        f"distance_function='{existing_fn}' or use a different "
+                        "index."
+                    )
                 return
         if not self.create_table_if_not_exist:
             raise ValueError(
