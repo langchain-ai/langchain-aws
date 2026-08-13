@@ -223,12 +223,15 @@ class DynamoDBVectorStore(VectorStore):
 
     def _create_table(self, *, dimensions: int) -> None:
         """Create the table with the vector index and wait until ACTIVE."""
-        self.client.create_table(
+        attribute_definitions = [{"AttributeName": _PK_ATTR, "AttributeType": "S"}]
+        if self.partition_attribute is not None:
+            attribute_definitions.append(
+                {"AttributeName": self.partition_attribute, "AttributeType": "S"}
+            )
+        self.table = self.client.create_table(
             TableName=self.table_name,
             BillingMode="PAY_PER_REQUEST",
-            AttributeDefinitions=[
-                {"AttributeName": _PK_ATTR, "AttributeType": "S"},
-            ],
+            AttributeDefinitions=attribute_definitions,
             KeySchema=[{"AttributeName": _PK_ATTR, "KeyType": "HASH"}],
             VectorIndexes=[self._vector_index_spec(dimensions)],
         )
@@ -354,10 +357,15 @@ class DynamoDBVectorStore(VectorStore):
 
     def _create_vector_index(self, *, dimensions: int) -> None:
         """Retrofit the vector index onto an existing table."""
-        self.client.update_table(
-            TableName=self.table_name,
-            VectorIndexUpdates=[{"Create": self._vector_index_spec(dimensions)}],
-        )
+        update_params: dict = {
+            "TableName": self.table_name,
+            "VectorIndexUpdates": [{"Create": self._vector_index_spec(dimensions)}],
+        }
+        if self.partition_attribute is not None:
+            update_params["AttributeDefinitions"] = [
+                {"AttributeName": self.partition_attribute, "AttributeType": "S"}
+            ]
+        self.client.update_table(**update_params)
         self._wait_for_vector_index()
 
     def _vector_index_spec(self, dimensions: int) -> dict:
