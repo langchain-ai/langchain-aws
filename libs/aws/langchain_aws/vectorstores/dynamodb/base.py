@@ -228,7 +228,7 @@ class DynamoDBVectorStore(VectorStore):
             attribute_definitions.append(
                 {"AttributeName": self.partition_attribute, "AttributeType": "S"}
             )
-        self.table = self.client.create_table(
+        self.client.create_table(
             TableName=self.table_name,
             BillingMode="PAY_PER_REQUEST",
             AttributeDefinitions=attribute_definitions,

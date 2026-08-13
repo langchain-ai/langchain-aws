@@ -661,3 +661,104 @@ class TestProjectionExpression:
         }
         assert kwargs["SearchConditionExpression"] == "#pk = :pk"
         assert kwargs["ProjectionExpression"] == "#id, #c, #m"
+
+
+class TestPartitionAttributeDefinitions:
+    """A SearchSchema element must be declared in AttributeDefinitions.
+
+    Omitting it makes both CreateTable and UpdateTable fail with "One element in
+    SearchSchema is not defined in attribute definitions". This differs from the
+    key-only rule for base tables, where non-key attributes must NOT be
+    declared, so it is easy to get wrong in either direction.
+    """
+
+    def test_create_table_declares_partition_attribute(self, mock_client: Mock) -> None:
+        from botocore.exceptions import ClientError
+
+        mock_client.describe_table.side_effect = [
+            ClientError(
+                {"Error": {"Code": "ResourceNotFoundException", "Message": "x"}},
+                "DescribeTable",
+            ),
+            {
+                "Table": {
+                    "VectorIndexes": [
+                        {
+                            "IndexName": "documents-vector-index",
+                            "IndexStatus": "ACTIVE",
+                        }
+                    ]
+                }
+            },
+        ]
+        store = _make_store(mock_client, partition_attribute="category")
+        store.add_texts(["hello"], metadatas=[{"category": "shoes"}])
+        defs = mock_client.create_table.call_args.kwargs["AttributeDefinitions"]
+        assert {"AttributeName": "category", "AttributeType": "S"} in defs
+        assert {"AttributeName": "id", "AttributeType": "S"} in defs
+
+    def test_create_table_omits_it_when_unpartitioned(self, mock_client: Mock) -> None:
+        """Negative control: a non-key attribute must not be declared."""
+        from botocore.exceptions import ClientError
+
+        mock_client.describe_table.side_effect = [
+            ClientError(
+                {"Error": {"Code": "ResourceNotFoundException", "Message": "x"}},
+                "DescribeTable",
+            ),
+            {
+                "Table": {
+                    "VectorIndexes": [
+                        {
+                            "IndexName": "documents-vector-index",
+                            "IndexStatus": "ACTIVE",
+                        }
+                    ]
+                }
+            },
+        ]
+        store = _make_store(mock_client)
+        store.add_texts(["hello"])
+        defs = mock_client.create_table.call_args.kwargs["AttributeDefinitions"]
+        assert defs == [{"AttributeName": "id", "AttributeType": "S"}]
+
+    def test_retrofit_declares_partition_attribute(self, mock_client: Mock) -> None:
+        """UpdateTable needs the declaration too, not just CreateTable."""
+        mock_client.describe_table.side_effect = [
+            {"Table": {"VectorIndexes": [{"IndexName": "other-index"}]}},
+            {
+                "Table": {
+                    "VectorIndexes": [
+                        {
+                            "IndexName": "documents-vector-index",
+                            "IndexStatus": "ACTIVE",
+                        }
+                    ]
+                }
+            },
+        ]
+        store = _make_store(mock_client, partition_attribute="category")
+        store.add_texts(["hello"], metadatas=[{"category": "shoes"}])
+        kwargs = mock_client.update_table.call_args.kwargs
+        assert kwargs["AttributeDefinitions"] == [
+            {"AttributeName": "category", "AttributeType": "S"}
+        ]
+
+    def test_retrofit_omits_it_when_unpartitioned(self, mock_client: Mock) -> None:
+        """Negative control: no declaration to make without a partition key."""
+        mock_client.describe_table.side_effect = [
+            {"Table": {"VectorIndexes": [{"IndexName": "other-index"}]}},
+            {
+                "Table": {
+                    "VectorIndexes": [
+                        {
+                            "IndexName": "documents-vector-index",
+                            "IndexStatus": "ACTIVE",
+                        }
+                    ]
+                }
+            },
+        ]
+        store = _make_store(mock_client)
+        store.add_texts(["hello"])
+        assert "AttributeDefinitions" not in mock_client.update_table.call_args.kwargs
