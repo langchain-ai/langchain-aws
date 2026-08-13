@@ -99,3 +99,37 @@ class TestPatchOrphanToolCalls:
         assert result[1].status == "error"
         assert result[2].tool_call_id == "orphan_2"
         assert result[2].status == "error"
+
+    def test_orphan_placeholder_carries_provenance_flag(self):
+        messages = [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {"id": "orphan_123", "name": "get_weather", "args": {}},
+                ],
+            ),
+        ]
+
+        result = patch_orphan_tool_calls(messages)
+
+        assert len(result) == 2
+        assert result[1].additional_kwargs["orphan_tool_call_placeholder"] is True
+
+    def test_real_tool_message_not_flagged(self):
+        messages = [
+            AIMessage(
+                content="",
+                tool_calls=[{"id": "tool_123", "name": "get_weather", "args": {}}],
+            ),
+            ToolMessage(
+                content="Sunny, 75F",
+                tool_call_id="tool_123",
+                additional_kwargs={"some_provider_key": "value"},
+            ),
+        ]
+
+        result = patch_orphan_tool_calls(messages)
+
+        assert len(result) == 2
+        assert isinstance(result[1], ToolMessage)
+        assert "orphan_tool_call_placeholder" not in result[1].additional_kwargs
