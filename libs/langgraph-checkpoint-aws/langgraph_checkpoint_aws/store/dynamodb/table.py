@@ -14,7 +14,7 @@ from typing import Any, cast
 
 from botocore.exceptions import ClientError
 
-from .exceptions import TableCreationError
+from .exceptions import TableCreationError, ValidationError
 from .vector import _VECTOR_ATTR, _VECTOR_INDEX_NAME
 
 logger = logging.getLogger(__name__)
@@ -61,9 +61,18 @@ class DynamoDBTableSetupMixin:
                     "list[dict[str, Any]]",
                     resp["Table"].get("VectorIndexes", []),
                 )
-                index_names = [i["IndexName"] for i in existing_indexes]
-                if _VECTOR_INDEX_NAME not in index_names:
+                existing = next(
+                    (
+                        i
+                        for i in existing_indexes
+                        if i.get("IndexName") == _VECTOR_INDEX_NAME
+                    ),
+                    None,
+                )
+                if existing is None:
                     self._create_vector_index()
+                else:
+                    self._validate_existing_vector_index(existing)
 
         except ClientError as e:
             if e.response["Error"]["Code"] == "ResourceNotFoundException":
@@ -138,6 +147,45 @@ class DynamoDBTableSetupMixin:
             raise TableCreationError(
                 f"Failed to create table '{self.table_name}': {e}"
             ) from e
+
+    def _validate_existing_vector_index(self, index: dict[str, Any]) -> None:
+        """Check an existing vector index matches this store's configuration.
+
+        ``Dimensions`` and ``DistanceFunction`` are immutable after index
+        creation, so a store configured differently from the index it points at
+        cannot be reconciled at runtime. Both mismatches are silent by default:
+        a wrong dimension count fails later at write time with a service-level
+        error that doesn't name the index, and a wrong distance function never
+        fails at all. The service scores using the index's metric while
+        ``_distance_to_score`` converts using this store's setting, so
+        ``search()`` returns wrongly-scaled scores in the right order.
+
+        Raises:
+            ValidationError: If dimensions or distance function disagree.
+        """
+        existing_dims = index.get("Dimensions")
+        if existing_dims is not None and existing_dims != self._dims:
+            raise ValidationError(
+                f"Vector index '{_VECTOR_INDEX_NAME}' on table "
+                f"'{self.table_name}' has Dimensions={existing_dims} but this "
+                f"store is configured for {self._dims}. Index dimensions "
+                "cannot be changed after creation. Set index 'dims' to "
+                f"{existing_dims}, use an embedding model with that output "
+                "size, or point the store at a different table."
+            )
+
+        existing_fn = index.get("DistanceFunction")
+        if existing_fn is not None and existing_fn != self._distance_function:
+            raise ValidationError(
+                f"Vector index '{_VECTOR_INDEX_NAME}' on table "
+                f"'{self.table_name}' has DistanceFunction={existing_fn} but "
+                f"this store is configured for {self._distance_function}. The "
+                "index metric cannot be changed after creation, and searches "
+                f"would be scored by {existing_fn} while scores were converted "
+                f"for {self._distance_function}. Set index "
+                f"'distance_function' to '{existing_fn}' or point the store at "
+                "a different table."
+            )
 
     def _create_vector_index(self) -> None:
         """Add a vector index to an existing table via UpdateTable."""
