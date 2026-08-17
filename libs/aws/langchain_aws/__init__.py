@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from langchain_aws.document_compressors.rerank import BedrockRerank
     from langchain_aws.embeddings import BedrockEmbeddings
     from langchain_aws.graphs import NeptuneAnalyticsGraph, NeptuneGraph
+    from langchain_aws.vectorstores.dynamodb import DynamoDBVectorStore
     from langchain_aws.vectorstores.inmemorydb import (
         InMemorySemanticCache,
         InMemoryVectorStore,
@@ -105,6 +106,7 @@ __all__ = [
     "InMemoryVectorStore",
     "InMemorySemanticCache",
     "AmazonS3Vectors",
+    "DynamoDBVectorStore",
     "BedrockRerank",
     "ValkeyVectorStore",
 ]
@@ -149,6 +151,7 @@ def __getattr__(name: str) -> Any:
         "InMemorySemanticCache": "langchain_aws.vectorstores.inmemorydb",
         "InMemoryVectorStore": "langchain_aws.vectorstores.inmemorydb",
         "AmazonS3Vectors": "langchain_aws.vectorstores.s3_vectors",
+        "DynamoDBVectorStore": "langchain_aws.vectorstores.dynamodb",
         "ValkeyVectorStore": "langchain_aws.vectorstores.valkey",
         "NeptuneAnalyticsGraph": "langchain_aws.graphs",
         "NeptuneGraph": "langchain_aws.graphs",

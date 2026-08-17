@@ -882,6 +882,23 @@ def test_standard_tracing_params() -> None:
     }
 
 
+def test_invocation_params_includes_model() -> None:
+    llm = ChatBedrock(model="us.anthropic.claude-sonnet-5", region="us-west-2")
+    assert llm._get_invocation_params()["model"] == "us.anthropic.claude-sonnet-5"
+
+
+def test_invocation_params_model_prefers_base_model_id() -> None:
+    llm = ChatBedrock(
+        model=(
+            "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/abc"
+        ),
+        base_model="us.anthropic.claude-sonnet-5",
+        provider="anthropic",
+        region="us-west-2",
+    )
+    assert llm._get_invocation_params()["model"] == "us.anthropic.claude-sonnet-5"
+
+
 def test_beta_use_converse_api() -> None:
     llm = ChatBedrock(model_id="amazon.nova.foo", region_name="us-west-2")  # type: ignore[call-arg]
     assert llm.beta_use_converse_api

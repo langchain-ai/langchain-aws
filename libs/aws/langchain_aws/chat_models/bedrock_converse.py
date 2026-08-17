@@ -80,6 +80,7 @@ from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
     parse_model_provider,
+    reasoning_effort_additional_fields,
     thinking_forced_tool_use_unsupported,
     thinking_in_params,
     trim_message_whitespace,
@@ -87,7 +88,7 @@ from langchain_aws.utils import (
 
 logger = logging.getLogger(__name__)
 
-
+_MAX_CACHE_POINTS = 4
 _MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
 
 
@@ -312,7 +313,25 @@ class ChatBedrockConverse(BaseChatModel):
         feature that outputs the step-by-step reasoning process that led to an
         answer.
 
-        To use it, specify the `thinking` parameter when initializing
+        For models that support configurable reasoning effort (Claude Opus 5/Sonnet 5,
+        Amazon Nova 2, gpt-oss), `reasoning_effort` is the recommended shorthand. It
+        translates to the appropriate provider-specific request format:
+
+        ```python
+        from langchain_aws import ChatBedrockConverse
+
+        model = ChatBedrockConverse(
+            model="us.anthropic.claude-sonnet-5",
+            region_name="us-west-2",
+            reasoning_effort="high",
+        )
+
+        response = model.invoke("What is the cube root of 50.653?")
+        ```
+
+        For finer-grained control (e.g. a fixed thinking token budget on older
+        Claude models), specify the `thinking` parameter directly via
+        `additional_model_request_fields` when initializing
         `ChatBedrockConverse` as shown below.
 
         You will need to specify a token budget to use this feature. See usage example:
@@ -595,6 +614,18 @@ class ChatBedrockConverse(BaseChatModel):
 
     """
 
+    reasoning_effort: Optional[Literal["low", "medium", "high", "xhigh", "max"]] = None
+    """Reasoning effort level for models that support configurable reasoning.
+
+    Translated into the appropriate provider-specific request format based on the
+    model family. Only applied to models whose profile declares supported
+    ``reasoning_effort_levels``; unsupported values raise ``ValueError``.
+
+    Explicit values already present in ``additional_model_request_fields`` take
+    precedence. If the model has no known reasoning-effort translation, a warning
+    is emitted and the value is ignored.
+    """
+
     additional_model_response_field_paths: Optional[List[str]] = None
     """Additional model parameters field paths to return in the response.
 
@@ -686,7 +717,7 @@ class ChatBedrockConverse(BaseChatModel):
         bedrock_messages: List[Dict[str, Any]],
         params: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Apply cachePoint to system, messages, and tools in Converse API format.
+        """Apply cachePoints to system, messages, and tools in Converse API format.
 
         Args:
             cache_control: Cache control settings dict. Expected keys:
@@ -704,7 +735,9 @@ class ChatBedrockConverse(BaseChatModel):
         if not cache_control:
             return
 
-        is_nova = "amazon.nova" in self._get_base_model().lower()
+        base_model = self._get_base_model().lower()
+        is_nova = "amazon.nova" in base_model
+        is_anthropic = self.provider == "anthropic" or "anthropic" in base_model
 
         cache_point: Dict[str, Any] = {"type": "default"}
         ttl = cache_control.get("ttl")
@@ -712,10 +745,27 @@ class ChatBedrockConverse(BaseChatModel):
             cache_point["ttl"] = ttl
         cache_block = {"cachePoint": cache_point}
 
-        if system and not any(_is_cache_point(b) for b in system):
-            system.append(cache_block)
+        tools = (
+            params.get("toolConfig", {}).get("tools") if params is not None else None
+        )
 
-        if bedrock_messages:
+        manual_count = _count_cache_points(system, bedrock_messages, tools)
+        budget = _MAX_CACHE_POINTS - manual_count
+        if budget <= 0:
+            logger.debug(
+                "Request already contains %d cachePoint blocks (Bedrock maximum "
+                "is %d); skipping automatic cachePoint insertion for cache_control.",
+                manual_count,
+                _MAX_CACHE_POINTS,
+            )
+            return
+
+        # Highest-value points first; the rest take any remaining budget.
+        if budget and system and not any(_is_cache_point(b) for b in system):
+            system.append(cache_block)
+            budget -= 1
+
+        if budget and bedrock_messages:
             last_content = bedrock_messages[-1].get("content")
             if isinstance(last_content, list):
                 has_tool_block = is_nova and any(
@@ -726,11 +776,31 @@ class ChatBedrockConverse(BaseChatModel):
                     _is_cache_point(b) for b in last_content
                 ):
                     last_content.append(cache_block)
+                    budget -= 1
 
-        if params and not is_nova:
-            tools = params.get("toolConfig", {}).get("tools")
-            if tools and not any(_is_cache_point(t) for t in tools):
-                tools.append(cache_block)
+        if (
+            budget
+            and tools
+            and not is_nova
+            and not any(_is_cache_point(t) for t in tools)
+        ):
+            tools.append(cache_block)
+            budget -= 1
+
+        # End-of-history checkpoint for Claude's simplified cache management:
+        # https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html#prompt-caching-simplified
+        if (
+            budget
+            and is_anthropic
+            and not is_nova
+            and manual_count == 0
+            and len(bedrock_messages) >= 2
+        ):
+            penultimate_content = bedrock_messages[-2].get("content")
+            if isinstance(penultimate_content, list) and not any(
+                _is_cache_point(b) for b in penultimate_content
+            ):
+                penultimate_content.append(cache_block)
 
     @model_validator(mode="before")
     @classmethod
@@ -823,6 +893,9 @@ class ChatBedrockConverse(BaseChatModel):
             or
             # Qwen3 models
             (provider == "qwen" and "qwen3" in model_id_lower)
+            or
+            # Kimi models
+            (provider in ("moonshot", "moonshotai") and "kimi" in model_id_lower)
         ):
             return True
         elif (
@@ -1015,6 +1088,19 @@ class ChatBedrockConverse(BaseChatModel):
         if "application-inference-profile" in self.model_id:
             self._configure_streaming_for_resolved_model()
 
+        if not self.profile:
+            self.profile = self._resolve_model_profile()
+
+        if self.reasoning_effort is not None:
+            effort_fields = self._reasoning_effort_fields(self.reasoning_effort)
+            if effort_fields:
+                # Explicit additional_model_request_fields keys win over the
+                # reasoning_effort-derived defaults (e.g. an explicit `thinking`).
+                self.additional_model_request_fields = {
+                    **effort_fields,
+                    **(self.additional_model_request_fields or {}),
+                }
+
         # As of 12/03/24:
         # only claude-3/4, mistral-large, and nova models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
@@ -1063,9 +1149,6 @@ class ChatBedrockConverse(BaseChatModel):
         # Validate reasoning configuration for Nova 2 models
         self._validate_nova_reasoning_config()
 
-        if not self.profile:
-            self.profile = self._resolve_model_profile()
-
         _add_langchain_aws_version(self)
         return self
 
@@ -1073,6 +1156,38 @@ class ChatBedrockConverse(BaseChatModel):
         """Return the default model profile for this model."""
         model_id = self._get_base_model()
         return _get_default_model_profile(model_id)
+
+    def _reasoning_effort_fields(self, effort: str) -> Dict[str, Any]:
+        """Validate `effort` against the model profile and translate to request
+        fields.
+
+        Translation is only attempted for models whose profile explicitly
+        declares `reasoning_effort_levels`. This is the single source of
+        truth for "does this specific model support configurable reasoning
+        effort," rather than a broad model-family substring match (e.g. not
+        every Claude model that matches `"claude" in base_model` supports
+        `output_config.effort`).
+        """
+        base_model = self._get_base_model()
+        levels = (self.profile or {}).get("reasoning_effort_levels") or ()
+        if not levels:
+            warnings.warn(
+                f"reasoning_effort is not supported for model {base_model}; ignoring.",
+                stacklevel=2,
+            )
+            return {}
+        if effort not in levels:
+            raise ValueError(
+                f"reasoning_effort={effort!r} is not supported for model "
+                f"{base_model}. Valid values: {list(levels)}"
+            )
+        fields = reasoning_effort_additional_fields(base_model, effort)
+        if not fields:
+            warnings.warn(
+                f"reasoning_effort is not supported for model {base_model}; ignoring.",
+                stacklevel=2,
+            )
+        return fields
 
     def _get_base_model(self) -> str:
         """Return base model id, stripping any regional prefix."""
@@ -1197,6 +1312,11 @@ class ChatBedrockConverse(BaseChatModel):
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
         additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
+        reasoning_effort = filtered_kwargs.pop("reasoning_effort", None)
+        if reasoning_effort is not None:
+            effort_fields = self._reasoning_effort_fields(reasoning_effort)
+            if effort_fields:
+                additional_fields = {**effort_fields, **(additional_fields or {})}
         _apply_response_format(filtered_kwargs)
         cache_control = filtered_kwargs.pop("cache_control", None)
         params = self._converse_params(
@@ -1266,6 +1386,11 @@ class ChatBedrockConverse(BaseChatModel):
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
         additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
+        reasoning_effort = filtered_kwargs.pop("reasoning_effort", None)
+        if reasoning_effort is not None:
+            effort_fields = self._reasoning_effort_fields(reasoning_effort)
+            if effort_fields:
+                additional_fields = {**effort_fields, **(additional_fields or {})}
         _apply_response_format(filtered_kwargs)
         cache_control = filtered_kwargs.pop("cache_control", None)
         params = self._converse_params(
@@ -1870,6 +1995,15 @@ class ChatBedrockConverse(BaseChatModel):
                 "outputConfig": outputConfig or self.output_config,
             }
         )
+
+    def _get_invocation_params(
+        self, stop: Optional[List[str]] = None, **kwargs: Any
+    ) -> Dict[str, Any]:
+        """Get the parameters used to invoke the model, for tracing purposes."""
+        return {
+            "model": self.base_model_id or self.model_id,
+            **super()._get_invocation_params(stop=stop, **kwargs),
+        }
 
     def _get_ls_params(
         self, stop: Optional[List[str]] = None, **kwargs: Any
@@ -3242,6 +3376,21 @@ def _is_cache_point(cache_point: Any) -> bool:
     if cache_point_data is None:
         return False
     return cache_point_data.get("type") is not None
+
+
+def _count_cache_points(
+    system: List[Dict[str, Any]],
+    bedrock_messages: List[Dict[str, Any]],
+    tools: Optional[List[Dict[str, Any]]] = None,
+) -> int:
+    """Count cachePoint blocks across system, messages, and tools."""
+    count = sum(map(_is_cache_point, system))
+    count += sum(map(_is_cache_point, tools or []))
+    for message in bedrock_messages:
+        content = message.get("content")
+        if isinstance(content, list):
+            count += sum(map(_is_cache_point, content))
+    return count
 
 
 def _has_tool_use_or_result_blocks(messages: List[Dict[str, Any]]) -> bool:

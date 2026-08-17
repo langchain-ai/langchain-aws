@@ -845,6 +845,7 @@ class ChatBedrockNovaSonic(BaseChatModel):
     def _identifying_params(self) -> Dict[str, Any]:
         """Return identifying parameters for tracing."""
         return {
+            "model": self.model_id,
             "model_id": self.model_id,
             "voice_id": self.voice_id,
             "max_tokens": self.max_tokens,

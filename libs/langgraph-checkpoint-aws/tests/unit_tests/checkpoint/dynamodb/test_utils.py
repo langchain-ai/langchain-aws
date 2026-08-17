@@ -54,6 +54,20 @@ class TestCreateClientConfig:
         assert "my-app/1.0" in config.user_agent_extra
         assert "langgraph-dynamodb" in config.user_agent_extra
 
+    def test_caller_config_values_preserved(self):
+        """Caller-set values like timeouts survive the merge."""
+        caller = Config(connect_timeout=5, read_timeout=10, max_pool_connections=25)
+        config = create_client_config(caller)
+        assert config.connect_timeout == 5
+        assert config.read_timeout == 10
+        assert config.max_pool_connections == 25
+        # adaptive retry default applies when the caller did not set retries
+        assert config.retries == {"mode": "adaptive", "max_attempts": 5}
+
+    def test_caller_retries_win_over_default(self):
+        config = create_client_config(Config(retries={"max_attempts": 1}))
+        assert config.retries == {"max_attempts": 1}
+
 
 class TestCreateDynamoDBClient:
     """Test create_dynamodb_client function."""

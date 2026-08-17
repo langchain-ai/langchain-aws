@@ -89,22 +89,17 @@ from langgraph.prebuilt import create_react_agent
 with AgentCoreValkeySaver.from_conn_string(
     "valkey://localhost:6379",
     ttl_seconds=3600,  # 1 hour TTL
-    pool_size=10
+    pool_size=10,
 ) as checkpointer:
-
     # Create LangGraph agent
-    graph = create_react_agent(
-        model=llm,
-        tools=tools,
-        checkpointer=checkpointer
-    )
+    graph = create_react_agent(model=llm, tools=tools, checkpointer=checkpointer)
 
     # AgentCore-style configuration
     config = {
         "configurable": {
-            "thread_id": "user-session-123",     # Session ID
-            "actor_id": "assistant-agent",       # Agent/Actor ID (REQUIRED)
-            "checkpoint_ns": "production",       # Namespace
+            "thread_id": "user-session-123",  # Session ID
+            "actor_id": "assistant-agent",  # Agent/Actor ID (REQUIRED)
+            "checkpoint_ns": "production",  # Namespace
         }
     }
 
@@ -120,9 +115,7 @@ from langgraph_checkpoint_aws import AgentCoreValkeySaver
 
 # Create optimized connection pool
 pool = ConnectionPool.from_url(
-    "valkey://localhost:6379",
-    max_connections=20,
-    retry_on_timeout=True
+    "valkey://localhost:6379", max_connections=20, retry_on_timeout=True
 )
 
 with AgentCoreValkeySaver.from_pool(pool, ttl_seconds=1800) as checkpointer:
@@ -259,8 +252,8 @@ Built-in retry logic handles transient failures:
 # Automatic retries with exponential backoff
 checkpointer = AgentCoreValkeySaver(
     client,
-    max_retries=5,        # Retry up to 5 times
-    retry_delay=0.2,      # Base delay: 200ms
+    max_retries=5,  # Retry up to 5 times
+    retry_delay=0.2,  # Base delay: 200ms
 )
 
 # Retry delays: 200ms, 400ms, 800ms, 1600ms, 3200ms
@@ -271,10 +264,9 @@ checkpointer = AgentCoreValkeySaver(
 
 ```python
 # Filter checkpoints by metadata
-checkpoints = list(checkpointer.list(
-    config,
-    filter={"user_id": "12345", "environment": "production"}
-))
+checkpoints = list(
+    checkpointer.list(config, filter={"user_id": "12345", "environment": "production"})
+)
 ```
 
 ### TTL Management
@@ -292,17 +284,19 @@ ttl = client.ttl("agentcore:checkpoint:session:actor:ns:cp_id")
 ```python
 import threading
 
+
 def create_checkpoint(session_id, actor_id):
     config = {
         "configurable": {
             "thread_id": session_id,
             "actor_id": actor_id,
-            "checkpoint_ns": "concurrent"
+            "checkpoint_ns": "concurrent",
         }
     }
 
     # Thread-safe operations
     checkpointer.put(config, checkpoint, metadata, versions)
+
 
 # Multiple threads can safely operate concurrently
 threads = [
@@ -323,7 +317,7 @@ for t in threads:
 writes = [
     ("messages", {"role": "assistant", "content": "Response 1"}),
     ("context", {"updated_at": time.time()}),
-    ("state", {"step": 5})
+    ("state", {"step": 5}),
 ]
 
 checkpointer.put_writes(config, writes, "batch_task_1")
@@ -344,7 +338,7 @@ pool = ConnectionPool.from_url(
     max_connections=min(cpu_count() * 2, 20),
     retry_on_timeout=True,
     socket_keepalive=True,
-    socket_keepalive_options={}
+    socket_keepalive_options={},
 )
 ```
 
@@ -372,14 +366,14 @@ pipe.execute()
 checkpointer = AgentCoreValkeySaver(
     client,
     ttl=3600,
-    max_retries=5,         # More retries for critical systems
-    retry_delay=0.1,       # Aggressive initial delay
+    max_retries=5,  # More retries for critical systems
+    retry_delay=0.1,  # Aggressive initial delay
 )
 
 # Development/testing configuration
 checkpointer = AgentCoreValkeySaver(
     client,
-    max_retries=1,         # Fast failure for debugging
+    max_retries=1,  # Fast failure for debugging
     retry_delay=0.05,
 )
 ```
@@ -406,7 +400,7 @@ pytest tests/integration_tests/agentcore/valkey/ -v
 # Use separate database for testing
 test_checkpointer = AgentCoreValkeySaver.from_conn_string(
     "valkey://localhost:6379/1",  # Database 1 for tests
-    ttl_seconds=60  # Short TTL for tests
+    ttl_seconds=60,  # Short TTL for tests
 )
 ```
 
@@ -427,7 +421,7 @@ except ConnectionError as e:
 
 ```python
 # Monitor memory usage
-info = client.info('memory')
+info = client.info("memory")
 print(f"Used memory: {info['used_memory_human']}")
 print(f"Max memory: {info['maxmemory_human']}")
 ```
@@ -476,7 +470,9 @@ from langgraph_checkpoint_aws import AgentCoreValkeySaver
 from langgraph_checkpoint_aws.checkpoint.agentcore.valkey import AgentCoreValkeySaver
 
 # ❌ ERROR: This is the WRONG saver
-from langgraph_checkpoint_aws.checkpoint.valkey import ValkeySaver  # Not AgentCore compatible!
+from langgraph_checkpoint_aws.checkpoint.valkey import (
+    ValkeySaver,
+)  # Not AgentCore compatible!
 
 # ❌ ERROR: This is also the WRONG saver
 from langgraph_checkpoint_aws import ValkeySaver  # Not AgentCore compatible!
@@ -535,12 +531,7 @@ from langgraph_checkpoint_aws.checkpoint.agentcore.valkey import AgentCoreValkey
 checkpointer = AgentCoreValkeySaver.from_conn_string("valkey://localhost:6379")
 
 # Config remains EXACTLY the same! ✓
-config = {
-    "configurable": {
-        "thread_id": "session-123",
-        "actor_id": "agent-456"
-    }
-}
+config = {"configurable": {"thread_id": "session-123", "actor_id": "agent-456"}}
 ```
 
 **Benefits of switching:**
@@ -568,7 +559,7 @@ checkpointer = ValkeySaver.from_conn_string("valkey://localhost:6379")
 config = {
     "configurable": {
         "thread_id": "session-123",
-        "checkpoint_ns": ""
+        "checkpoint_ns": "",
         # No actor_id
     }
 }
@@ -580,9 +571,9 @@ checkpointer = AgentCoreValkeySaver.from_conn_string("valkey://localhost:6379")
 
 config = {
     "configurable": {
-        "thread_id": "session-123",      # Maps to session_id
-        "actor_id": "agent-456",         # NEW: Required for AgentCore!
-        "checkpoint_ns": "namespace"
+        "thread_id": "session-123",  # Maps to session_id
+        "actor_id": "agent-456",  # NEW: Required for AgentCore!
+        "checkpoint_ns": "namespace",
     }
 }
 ```
@@ -663,7 +654,7 @@ config = {
     "configurable": {
         "thread_id": "user-session-123",
         "actor_id": "customer-support-agent",  # Clear actor identification
-        "checkpoint_ns": "production"
+        "checkpoint_ns": "production",
     }
 }
 
@@ -680,11 +671,7 @@ config = {
 
 ```python
 # ✅ GOOD: Descriptive actor IDs
-actor_ids = [
-    "customer-support-agent",
-    "sales-assistant",
-    "technical-advisor"
-]
+actor_ids = ["customer-support-agent", "sales-assistant", "technical-advisor"]
 
 # ❌ BAD: Generic IDs
 actor_ids = ["agent1", "agent2", "agent3"]
@@ -729,6 +716,7 @@ def monitor_keys():
 def cleanup_old_sessions(checkpointer, cutoff_days=30):
     """Remove sessions older than cutoff_days."""
     import time
+
     cutoff_timestamp = time.time() - (cutoff_days * 86400)
 
     # This would require custom logic to iterate through sessions
