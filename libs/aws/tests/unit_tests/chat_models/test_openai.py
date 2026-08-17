@@ -12,6 +12,7 @@ from pydantic import BaseModel, SecretStr
 from pytest import MonkeyPatch
 
 from langchain_aws import ChatOpenAIMantle
+from langchain_aws.utils import _BedrockApiKeyProvider
 
 MODEL_NAME = "openai.gpt-oss-120b"
 
@@ -245,3 +246,87 @@ def test_inherits_openai_features() -> None:
         "_agenerate",
     ):
         assert hasattr(model, attr)
+
+
+# ---------------------------------------------------------------------------
+# Credential-derived (short-term key) authentication path
+# ---------------------------------------------------------------------------
+
+
+def test_provider_installed_when_no_static_key() -> None:
+    """With no static bearer key, a _BedrockApiKeyProvider is used as api_key."""
+    with MonkeyPatch().context() as m:
+        m.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+        m.setenv("AWS_REGION", "us-east-1")
+        model = ChatOpenAIMantle(
+            model=MODEL_NAME,
+            aws_access_key_id=SecretStr("AKIA_TEST"),
+            aws_secret_access_key=SecretStr("SECRET_TEST"),
+            aws_session_token=SecretStr("TOKEN_TEST"),
+        )
+
+    provider = model.openai_api_key
+    assert isinstance(provider, _BedrockApiKeyProvider)
+    assert model.openai_api_base == "https://bedrock-mantle.us-east-1.api.aws/v1"
+    # Explicitly-passed creds are forwarded to the provider.
+    assert provider._region == "us-east-1"
+    assert provider._aws_access_key_id == "AKIA_TEST"
+    assert provider._aws_secret_access_key == "SECRET_TEST"
+    assert provider._aws_session_token == "TOKEN_TEST"
+
+
+def test_static_key_takes_precedence_over_creds() -> None:
+    """A static bedrock_api_key wins over AWS credentials."""
+    with MonkeyPatch().context() as m:
+        m.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+        m.setenv("AWS_REGION", "us-east-1")
+        model = ChatOpenAIMantle(
+            model=MODEL_NAME,
+            bedrock_api_key=SecretStr("bearer-abc"),
+            aws_access_key_id=SecretStr("AKIA_TEST"),
+            aws_secret_access_key=SecretStr("SECRET_TEST"),
+        )
+    assert cast("SecretStr", model.openai_api_key).get_secret_value() == "bearer-abc"
+
+
+def test_explicit_api_key_not_overridden_by_provider() -> None:
+    """An explicit api_key is left untouched (no provider installed)."""
+    with MonkeyPatch().context() as m:
+        m.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+        m.setenv("AWS_REGION", "us-east-1")
+        model = ChatOpenAIMantle(model=MODEL_NAME, api_key=SecretStr("explicit"))
+    assert cast("SecretStr", model.openai_api_key).get_secret_value() == "explicit"
+
+
+def test_provider_forwards_profile_and_ttl() -> None:
+    """Profile name and requested TTL are forwarded; default chain otherwise."""
+    with MonkeyPatch().context() as m:
+        m.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+        m.delenv("AWS_ACCESS_KEY_ID", raising=False)
+        m.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
+        m.setenv("AWS_REGION", "us-east-1")
+        model = ChatOpenAIMantle(
+            model=MODEL_NAME,
+            credentials_profile_name="my-profile",
+            api_key_ttl_seconds=1800,
+        )
+    provider = model.openai_api_key
+    assert isinstance(provider, _BedrockApiKeyProvider)
+    assert provider._credentials_profile_name == "my-profile"
+    assert provider._ttl_seconds == 1800
+    assert provider._aws_access_key_id is None
+
+
+def test_installed_provider_mints_token_when_called() -> None:
+    """The installed provider returns a minted short-term key when invoked."""
+    with MonkeyPatch().context() as m:
+        m.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+        m.setenv("AWS_REGION", "us-east-1")
+        model = ChatOpenAIMantle(
+            model=MODEL_NAME,
+            aws_access_key_id=SecretStr("AKIA_TEST"),
+            aws_secret_access_key=SecretStr("SECRET_TEST"),
+        )
+    provider = cast("_BedrockApiKeyProvider", model.openai_api_key)
+    with patch("aws_bedrock_token_generator.provide_token", return_value="tok-xyz"):
+        assert provider() == "tok-xyz"

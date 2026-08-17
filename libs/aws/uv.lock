@@ -143,13 +143,25 @@ wheels = [
 ]
 
 [[package]]
+name = "aws-bedrock-token-generator"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "botocore" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fb/39/cf1c2e12bc5a84af0f96a546481213f81fa6e7927d2bbabd81758c6558ca/aws_bedrock_token_generator-1.1.0.tar.gz", hash = "sha256:95ccb07f63a91ac486561f6df05cc4e04784c8ff5086dc687ed9c5fd3ab1b5ba", size = 19123, upload-time = "2025-07-29T19:53:19.511Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f9/fd/745ece98870c3824d294bcdce5dc5e15381188a41bc80832c246b205e40e/aws_bedrock_token_generator-1.1.0-py3-none-any.whl", hash = "sha256:bd12854f7c7e52dde5d980d369379f12d0cc5f0855099d87f38688b0f9de5cd4", size = 10291, upload-time = "2025-07-29T19:53:18.704Z" },
+]
+
+[[package]]
 name = "aws-sdk-bedrock-runtime"
 version = "0.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "smithy-aws-core", extra = ["eventstream", "json"], marker = "python_full_version >= '3.12'" },
-    { name = "smithy-core", marker = "python_full_version >= '3.12'" },
-    { name = "smithy-http", extra = ["awscrt"], marker = "python_full_version >= '3.12'" },
+    { name = "smithy-aws-core", extra = ["eventstream", "json"] },
+    { name = "smithy-core" },
+    { name = "smithy-http", extra = ["awscrt"] },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/80/64/58cd2235176b8f42d18eec285004424409ca30f550f06900f8a9a28d02eb/aws_sdk_bedrock_runtime-0.9.0.tar.gz", hash = "sha256:909aa3060d1327be1093abf18e896d0b0ab88ea3c3e34be00668c80605fa4b8a", size = 172016, upload-time = "2026-08-13T18:01:10.065Z" }
 wheels = [
@@ -768,7 +780,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.12'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -1222,12 +1234,14 @@ dependencies = [
 [package.optional-dependencies]
 anthropic = [
     { name = "anthropic", extra = ["bedrock"] },
+    { name = "aws-bedrock-token-generator" },
     { name = "langchain-anthropic" },
 ]
 nova-sonic = [
     { name = "aws-sdk-bedrock-runtime", marker = "python_full_version >= '3.12'" },
 ]
 openai = [
+    { name = "aws-bedrock-token-generator" },
     { name = "langchain-openai" },
     { name = "openai" },
 ]
@@ -1250,6 +1264,7 @@ lint = [
 ]
 test = [
     { name = "anthropic", extra = ["bedrock"] },
+    { name = "aws-bedrock-token-generator" },
     { name = "beautifulsoup4" },
     { name = "bedrock-agentcore" },
     { name = "langchain" },
@@ -1281,6 +1296,8 @@ typing = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", extras = ["bedrock"], marker = "extra == 'anthropic'" },
+    { name = "aws-bedrock-token-generator", marker = "extra == 'anthropic'", specifier = ">=1.1.0" },
+    { name = "aws-bedrock-token-generator", marker = "extra == 'openai'", specifier = ">=1.1.0" },
     { name = "aws-sdk-bedrock-runtime", marker = "python_full_version >= '3.12' and extra == 'nova-sonic'" },
     { name = "beautifulsoup4", marker = "extra == 'tools'", specifier = ">=4.13.4" },
     { name = "bedrock-agentcore", marker = "python_full_version >= '3.10' and extra == 'tools'", specifier = ">=1.4.0" },
@@ -1304,6 +1321,7 @@ dev = [
 lint = [{ name = "ruff", specifier = ">=0.13.0" }]
 test = [
     { name = "anthropic", extras = ["bedrock"] },
+    { name = "aws-bedrock-token-generator", specifier = ">=1.1.0" },
     { name = "beautifulsoup4", specifier = ">=4.13.4" },
     { name = "bedrock-agentcore", specifier = ">=1.4.0" },
     { name = "langchain", specifier = ">=1.0.0" },
@@ -2798,9 +2816,9 @@ name = "smithy-aws-core"
 version = "0.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "aws-sdk-signers", marker = "python_full_version >= '3.12'" },
-    { name = "smithy-core", marker = "python_full_version >= '3.12'" },
-    { name = "smithy-http", marker = "python_full_version >= '3.12'" },
+    { name = "aws-sdk-signers" },
+    { name = "smithy-core" },
+    { name = "smithy-http" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/3f/5a/f9615142beaa69343194de51f583a90da5d1674d5e8383359df328372cf3/smithy_aws_core-0.9.0.tar.gz", hash = "sha256:69daddc739ea461a4118eac1e708873de36d1218fe7ab58533c25a16b15cbb48", size = 33803, upload-time = "2026-08-13T18:00:41.357Z" }
 wheels = [
@@ -2809,10 +2827,10 @@ wheels = [
 
 [package.optional-dependencies]
 eventstream = [
-    { name = "smithy-aws-event-stream", marker = "python_full_version >= '3.12'" },
+    { name = "smithy-aws-event-stream" },
 ]
 json = [
-    { name = "smithy-json", marker = "python_full_version >= '3.12'" },
+    { name = "smithy-json" },
 ]
 
 [[package]]
@@ -2820,7 +2838,7 @@ name = "smithy-aws-event-stream"
 version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "smithy-core", marker = "python_full_version >= '3.12'" },
+    { name = "smithy-core" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/38/0e/6efb3a4ed92c0f1ada6de060ac92e7115a1e34d0ab1fb99a6056734a88ea/smithy_aws_event_stream-0.3.0.tar.gz", hash = "sha256:a0e227367a973144e205a075d0a424f95c92f26656a1018d08900da2ae547c49", size = 12818, upload-time = "2026-05-05T18:04:14.317Z" }
 wheels = [
@@ -2841,7 +2859,7 @@ name = "smithy-http"
 version = "0.4.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "smithy-core", marker = "python_full_version >= '3.12'" },
+    { name = "smithy-core" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e4/cb/53bfa13998fd568fafd5e306485e2fb934e3be5626b114c59a48462f5390/smithy_http-0.4.4.tar.gz", hash = "sha256:b347abbf1133f88c292dab78210644a4152e8b98d75d986131705e6dc0eb8840", size = 30602, upload-time = "2026-08-13T18:00:39.595Z" }
 wheels = [
@@ -2850,7 +2868,7 @@ wheels = [
 
 [package.optional-dependencies]
 awscrt = [
-    { name = "awscrt", marker = "python_full_version >= '3.12'" },
+    { name = "awscrt" },
 ]
 
 [[package]]
@@ -2858,8 +2876,8 @@ name = "smithy-json"
 version = "0.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ijson", marker = "python_full_version >= '3.12'" },
-    { name = "smithy-core", marker = "python_full_version >= '3.12'" },
+    { name = "ijson" },
+    { name = "smithy-core" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b9/6c/418b5687d8933b7a135d5e1a98c61fe814b98f72517dbae0e666860cb876/smithy_json-0.2.3.tar.gz", hash = "sha256:686e9b55a36dacb08e472732b358573ef78009055e05e9fce2e806d61490b2b3", size = 7805, upload-time = "2026-06-23T04:04:47.71Z" }
 wheels = [
