@@ -948,8 +948,9 @@ def test__extract_usage_metadata_with_per_ttl_cache_details() -> None:
     assert usage_metadata["output_tokens"] == 50
     assert usage_metadata["total_tokens"] == 850
     assert usage_metadata["input_token_details"]["cache_read"] == 200
-    # cache_creation zeroed when per-TTL breakdown present (avoids double-counting)
-    assert usage_metadata["input_token_details"]["cache_creation"] == 0
+    # cacheDetails is the per-TTL breakdown of the same write; cache_creation
+    # must still report the total tokens written to cache
+    assert usage_metadata["input_token_details"]["cache_creation"] == 500
     assert usage_metadata["input_token_details"]["ephemeral_5m_input_tokens"] == 300  # type: ignore[typeddict-item]
     assert usage_metadata["input_token_details"]["ephemeral_1h_input_tokens"] == 200  # type: ignore[typeddict-item]
 
@@ -1000,12 +1001,40 @@ def test__extract_usage_metadata_with_single_ttl_cache_details() -> None:
     assert usage_metadata["input_tokens"] == 450  # 100 + 50 + 300
     assert usage_metadata["output_tokens"] == 50
     assert usage_metadata["input_token_details"]["cache_read"] == 50
-    # cache_creation is zeroed when per-TTL breakdown is present
-    assert usage_metadata["input_token_details"]["cache_creation"] == 0
+    # cache_creation preserved alongside the per-TTL breakdown
+    assert usage_metadata["input_token_details"]["cache_creation"] == 300
     # Only 5m key should be present (non-zero)
     assert usage_metadata["input_token_details"]["ephemeral_5m_input_tokens"] == 300  # type: ignore[typeddict-item]
     # 1h key should NOT be present (zero value)
     assert "ephemeral_1h_input_tokens" not in usage_metadata["input_token_details"]
+
+
+def test__extract_usage_metadata_cache_write_with_matching_cache_details() -> None:
+    """Test the real Converse API cold-call shape: cacheDetails mirrors the write.
+
+    Bedrock only includes ``cacheDetails`` on calls that write to the cache, and
+    its entries break down the same tokens counted in ``cacheWriteInputTokens``.
+    ``cache_creation`` must report the write, not be zeroed.
+    """
+    response = {
+        "usage": {
+            "inputTokens": 25,
+            "outputTokens": 40,
+            "totalTokens": 10418,
+            "cacheReadInputTokens": 0,
+            "cacheWriteInputTokens": 10353,
+            "cacheDetails": [
+                {"inputTokens": 10353, "ttl": "5m"},
+            ],
+        }
+    }
+
+    usage_metadata = _extract_usage_metadata(response)
+
+    assert usage_metadata["input_tokens"] == 10378  # 25 + 0 + 10353
+    assert usage_metadata["input_token_details"]["cache_read"] == 0
+    assert usage_metadata["input_token_details"]["cache_creation"] == 10353
+    assert usage_metadata["input_token_details"]["ephemeral_5m_input_tokens"] == 10353  # type: ignore[typeddict-item]
 
 
 def test__extract_usage_metadata_with_malformed_cache_details() -> None:
@@ -1030,8 +1059,9 @@ def test__extract_usage_metadata_with_malformed_cache_details() -> None:
     assert usage_metadata["input_tokens"] == 600  # 100 + 200 + 300
     assert usage_metadata["output_tokens"] == 50
     assert usage_metadata["input_token_details"]["cache_read"] == 200
-    # cache_creation zeroed when per-TTL breakdown present (avoids double-counting)
-    assert usage_metadata["input_token_details"]["cache_creation"] == 0
+    # cacheWriteInputTokens (300) exceeds the partial TTL sum (150); the larger
+    # value wins so malformed entries can't under-report the write
+    assert usage_metadata["input_token_details"]["cache_creation"] == 300
     # 100 from first entry, 0 from second entry (missing inputTokens)
     assert usage_metadata["input_token_details"]["ephemeral_5m_input_tokens"] == 100  # type: ignore[typeddict-item]
     assert usage_metadata["input_token_details"]["ephemeral_1h_input_tokens"] == 50  # type: ignore[typeddict-item]

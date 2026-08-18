@@ -2335,7 +2335,11 @@ def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
         "cache_creation": cache_write_input_tokens,
     }
 
-    # Parse per-TTL cache breakdown from cacheDetails (if present)
+    # Parse per-TTL cache breakdown from cacheDetails (if present). Bedrock only
+    # includes cacheDetails on calls that write to the cache, and its entries
+    # break down the same tokens counted in cacheWriteInputTokens — so
+    # cache_creation keeps reporting the write. max() guards against a partial
+    # cacheDetails under-reporting it.
     cache_details = usage_dict.get("cacheDetails", [])
     if cache_details:
         cache_5m = sum(
@@ -2348,8 +2352,9 @@ def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
             input_token_details["ephemeral_5m_input_tokens"] = cache_5m
         if cache_1h:
             input_token_details["ephemeral_1h_input_tokens"] = cache_1h
-        if cache_5m + cache_1h > 0:
-            input_token_details["cache_creation"] = 0
+        input_token_details["cache_creation"] = max(
+            cache_write_input_tokens, cache_5m + cache_1h
+        )
 
     usage = UsageMetadata(
         input_tokens=input_tokens,
