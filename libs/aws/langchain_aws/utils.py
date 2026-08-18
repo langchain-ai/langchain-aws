@@ -557,6 +557,23 @@ def trim_message_whitespace(messages: List[Any]) -> List[Any]:
     return messages
 
 
+_MANTLE_GUARDRAILS_ERR_MSG = (
+    "Amazon Bedrock Guardrails are not supported on the bedrock-mantle "
+    "endpoint. Please use ``ChatAnthropicBedrock`` or ``ChatBedrockConverse`` "
+    "instead, which support guardrails via the bedrock-runtime endpoint."
+)
+
+
+def _check_no_mantle_guardrail_headers(headers: Optional[Dict[str, Any]]) -> None:
+    """Reject Bedrock guardrail headers, which Mantle silently ignores."""
+    # TODO: remove after Mantle adds guardrails support
+    if not headers:
+        return
+    for key in headers:
+        if key.lower().startswith("x-amzn-bedrock-guardrail"):
+            raise ValueError(_MANTLE_GUARDRAILS_ERR_MSG)
+
+
 class _StaticCredentialProvider:
     """Wraps resolved botocore credentials in the shape ``provide_token`` expects.
 
