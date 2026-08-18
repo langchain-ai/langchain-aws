@@ -113,7 +113,7 @@ def ensure_agentcore_memory(
     Returns:
         A valid, reachable memory ID.
     """
-    from langgraph_checkpoint_aws.agentcore.saver import (
+    from langgraph_checkpoint_aws.checkpoint.agentcore.saver import (
         AgentCoreMemorySaver,
     )
 
@@ -225,7 +225,7 @@ def create_bedrock_session(
         A tuple of ``(saver, session_id, cleanup_fn)`` where
         *cleanup_fn* accepts no arguments and tears down the session.
     """
-    from langgraph_checkpoint_aws.saver import BedrockSessionSaver
+    from langgraph_checkpoint_aws import BedrockSessionSaver
 
     saver = BedrockSessionSaver(region_name=region_name)
     client = saver.session_client.client

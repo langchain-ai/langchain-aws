@@ -8,10 +8,10 @@ from botocore.exceptions import ClientError
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import CheckpointTuple
 
-from langgraph_checkpoint_aws.async_saver import (
+from langgraph_checkpoint_aws.checkpoint.bedrock_sessions.async_saver import (
     AsyncBedrockSessionSaver,
 )
-from langgraph_checkpoint_aws.models import (
+from langgraph_checkpoint_aws.checkpoint.bedrock_sessions.models import (
     GetInvocationStepResponse,
     InvocationStep,
     ListInvocationStepsResponse,
@@ -508,7 +508,9 @@ class TestAsyncBedrockSessionSaver:
         )
 
     @pytest.mark.asyncio
-    @patch("langgraph_checkpoint_aws.async_saver.construct_checkpoint_tuple")
+    @patch(
+        "langgraph_checkpoint_aws.checkpoint.bedrock_sessions.async_saver.construct_checkpoint_tuple"
+    )
     async def test_aget_tuple_success(
         self,
         mock_construct_checkpoint,
@@ -738,7 +740,9 @@ class TestAsyncBedrockSessionSaver:
         )
 
     @pytest.mark.asyncio
-    @patch("langgraph_checkpoint_aws.async_saver.construct_checkpoint_tuple")
+    @patch(
+        "langgraph_checkpoint_aws.checkpoint.bedrock_sessions.async_saver.construct_checkpoint_tuple"
+    )
     async def test_alist_success(
         self,
         mock_construct_checkpoint,
@@ -817,7 +821,9 @@ class TestAsyncBedrockSessionSaver:
         assert len(list(result)) == 0
 
     @pytest.mark.asyncio
-    @patch("langgraph_checkpoint_aws.async_saver.construct_checkpoint_tuple")
+    @patch(
+        "langgraph_checkpoint_aws.checkpoint.bedrock_sessions.async_saver.construct_checkpoint_tuple"
+    )
     async def test_alist_with_limit(
         self,
         mock_construct_checkpoint,

@@ -393,3 +393,46 @@ class TestDynamoDBSaverAsyncList:
 
         assert len(result) == 1
         assert result[0].checkpoint["id"] == "cp1"
+
+    @pytest.mark.asyncio
+    async def test_alist_runs_blocking_work_off_event_loop(
+        self, mock_saver_dependencies
+    ):
+        """`alist` must not run blocking boto3 calls on the event loop thread."""
+        import threading
+
+        loop_thread_id = threading.get_ident()
+        observed_thread_ids = []
+
+        def list_checkpoints(*args, **kwargs):
+            # Record the thread each item is produced on. With a blocking
+            # implementation this would run on the event loop thread.
+            for checkpoint_id in ("cp1", "cp2"):
+                observed_thread_ids.append(threading.get_ident())
+                yield {
+                    "thread_id": TEST_THREAD_ID,
+                    "checkpoint_id": checkpoint_id,
+                    "checkpoint_ns": TEST_CHECKPOINT_NS,
+                    "checkpoint": {"id": checkpoint_id},
+                    "metadata": {},
+                    "parent_checkpoint_id": None,
+                }
+
+        mock_repo = Mock()
+        mock_saver_dependencies["repo"].return_value = mock_repo
+        mock_repo.list_checkpoints.side_effect = list_checkpoints
+        mock_repo.get_pending_writes.return_value = []
+
+        saver = DynamoDBSaver(table_name=TEST_TABLE_NAME)
+        config = {
+            "configurable": {
+                "thread_id": TEST_THREAD_ID,
+                "checkpoint_ns": TEST_CHECKPOINT_NS,
+            }
+        }
+
+        result = [item async for item in saver.alist(config)]
+
+        assert [item.checkpoint["id"] for item in result] == ["cp1", "cp2"]
+        assert observed_thread_ids, "list_checkpoints was never driven"
+        assert all(tid != loop_thread_id for tid in observed_thread_ids)

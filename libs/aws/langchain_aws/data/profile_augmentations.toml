@@ -5,3 +5,60 @@ image_url_inputs = true
 pdf_inputs = true
 pdf_tool_message = true
 image_tool_message = true
+
+[overrides."anthropic.claude-opus-5"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
+[overrides."au.anthropic.claude-opus-5"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
+[overrides."eu.anthropic.claude-opus-5"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
+[overrides."global.anthropic.claude-opus-5"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
+[overrides."jp.anthropic.claude-opus-5"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
+[overrides."us.anthropic.claude-opus-5"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
+[overrides."anthropic.claude-sonnet-5"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
+[overrides."au.anthropic.claude-sonnet-5"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
+[overrides."eu.anthropic.claude-sonnet-5"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
+[overrides."global.anthropic.claude-sonnet-5"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
+[overrides."jp.anthropic.claude-sonnet-5"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
+[overrides."us.anthropic.claude-sonnet-5"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
+[overrides."amazon.nova-2-lite-v1:0"]
+reasoning_effort_levels = ["low", "medium", "high"]
+
+[overrides."openai.gpt-oss-120b"]
+reasoning_effort_levels = ["low", "medium", "high"]
+
+[overrides."openai.gpt-oss-120b-1:0"]
+reasoning_effort_levels = ["low", "medium", "high"]
+
+[overrides."openai.gpt-oss-20b"]
+reasoning_effort_levels = ["low", "medium", "high"]
+
+[overrides."openai.gpt-oss-20b-1:0"]
+reasoning_effort_levels = ["low", "medium", "high"]
+
+[overrides."moonshot.kimi-k2-thinking"]
+reasoning_effort_levels = ["low", "high", "max"]
+
+[overrides."moonshotai.kimi-k2.5"]
+reasoning_effort_levels = ["low", "high", "max"]

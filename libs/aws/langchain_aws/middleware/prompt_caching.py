@@ -38,9 +38,12 @@ class BedrockPromptCachingMiddleware(AgentMiddleware):
     Optimizes API usage by caching conversation prefixes for supported models
     on AWS Bedrock. Supports Anthropic Claude and Amazon Nova models.
 
-    For ChatBedrock (InvokeModel API), adds ``cache_control`` to the last
-    message's content block. For ChatBedrockConverse (Converse API), appends
-    ``cachePoint`` blocks to the system prompt and last message.
+    The middleware passes cache settings through ``model_settings`` rather than
+    modifying messages directly. ``ChatBedrock`` and ``ChatBedrockConverse``
+    apply the provider-specific cache markers at request time: ``ChatBedrock``
+    (InvokeModel API) adds ``cache_control`` to message content, while
+    ``ChatBedrockConverse`` (Converse API) inserts ``cachePoint`` blocks. Cache
+    placement varies by API and model family.
 
     Requires both 'langchain' and 'langchain-aws' packages to be installed.
 

@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, Any
 
+from langchain_aws._version import __version__
 from langchain_aws.chat_models import ChatBedrock, ChatBedrockConverse
 from langchain_aws.llms import BedrockLLM, SagemakerEndpoint
 from langchain_aws.retrievers import (
@@ -13,10 +14,16 @@ if TYPE_CHECKING:
         create_neptune_opencypher_qa_chain,
         create_neptune_sparql_qa_chain,
     )
-    from langchain_aws.chat_models import ChatAnthropicBedrock, ChatBedrockNovaSonic
+    from langchain_aws.chat_models import (
+        ChatAnthropicBedrock,
+        ChatAnthropicMantle,
+        ChatBedrockNovaSonic,
+        ChatOpenAIMantle,
+    )
     from langchain_aws.document_compressors.rerank import BedrockRerank
     from langchain_aws.embeddings import BedrockEmbeddings
     from langchain_aws.graphs import NeptuneAnalyticsGraph, NeptuneGraph
+    from langchain_aws.vectorstores.dynamodb import DynamoDBVectorStore
     from langchain_aws.vectorstores.inmemorydb import (
         InMemorySemanticCache,
         InMemoryVectorStore,
@@ -79,12 +86,15 @@ except Exception:
 
 
 __all__ = [
+    "__version__",
     "BedrockEmbeddings",
     "BedrockLLM",
     "ChatAnthropicBedrock",
+    "ChatAnthropicMantle",
     "ChatBedrock",
     "ChatBedrockConverse",
     "ChatBedrockNovaSonic",
+    "ChatOpenAIMantle",
     "SagemakerEndpoint",
     "AmazonKendraRetriever",
     "AmazonKnowledgeBasesRetriever",
@@ -96,6 +106,7 @@ __all__ = [
     "InMemoryVectorStore",
     "InMemorySemanticCache",
     "AmazonS3Vectors",
+    "DynamoDBVectorStore",
     "BedrockRerank",
     "ValkeyVectorStore",
 ]
@@ -118,9 +129,17 @@ def __getattr__(name: str) -> Any:
             "langchain_aws.chat_models",
             "pip install langchain-aws[anthropic]",
         ),
+        "ChatAnthropicMantle": (
+            "langchain_aws.chat_models",
+            "pip install langchain-aws[anthropic]",
+        ),
         "ChatBedrockNovaSonic": (
             "langchain_aws.chat_models",
             'pip install "langchain-aws[nova-sonic]"',
+        ),
+        "ChatOpenAIMantle": (
+            "langchain_aws.chat_models",
+            'pip install "langchain-aws[openai]"',
         ),
     }
 
@@ -132,6 +151,7 @@ def __getattr__(name: str) -> Any:
         "InMemorySemanticCache": "langchain_aws.vectorstores.inmemorydb",
         "InMemoryVectorStore": "langchain_aws.vectorstores.inmemorydb",
         "AmazonS3Vectors": "langchain_aws.vectorstores.s3_vectors",
+        "DynamoDBVectorStore": "langchain_aws.vectorstores.dynamodb",
         "ValkeyVectorStore": "langchain_aws.vectorstores.valkey",
         "NeptuneAnalyticsGraph": "langchain_aws.graphs",
         "NeptuneGraph": "langchain_aws.graphs",

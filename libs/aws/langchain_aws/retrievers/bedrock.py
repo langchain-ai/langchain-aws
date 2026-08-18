@@ -39,17 +39,36 @@ class SearchFilter(BaseModel):
 
 
 class VectorSearchConfig(BaseModel, extra="allow"):  # type: ignore[call-arg]
-    """Configuration for vector search."""
+    """Configuration for vector search (legacy VECTOR-type knowledge bases)."""
 
     numberOfResults: int = 4
     filter: Optional[SearchFilter] = None
     overrideSearchType: Optional[Literal["HYBRID", "SEMANTIC"]] = None
 
 
-class RetrievalConfig(BaseModel, extra="allow"):  # type: ignore[call-arg]
-    """Configuration for retrieval."""
+class ManagedSearchConfig(BaseModel, extra="allow"):  # type: ignore[call-arg]
+    """Configuration for managed search (MANAGED-type knowledge bases).
 
-    vectorSearchConfiguration: VectorSearchConfig
+    Managed knowledge bases handle embedding and vector storage automatically.
+    Use this configuration when querying a knowledge base created with
+    type=MANAGED.
+    """
+
+    numberOfResults: int = 4
+    filter: Optional[SearchFilter] = None
+    rerankingModelType: Optional[Literal["CUSTOM", "MANAGED", "NONE"]] = None
+    rerankingConfiguration: Optional[Dict[str, Any]] = None
+
+
+class RetrievalConfig(BaseModel, extra="allow"):  # type: ignore[call-arg]
+    """Configuration for retrieval.
+
+    Provide either managedSearchConfiguration (for MANAGED-type KBs) or
+    vectorSearchConfiguration (for VECTOR-type KBs), but not both.
+    """
+
+    vectorSearchConfiguration: Optional[VectorSearchConfig] = None
+    managedSearchConfiguration: Optional[ManagedSearchConfig] = None
     nextToken: Optional[str] = None
 
 
@@ -97,18 +116,29 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
             (0.0 to 1.0).
 
     Example:
-        ```python
-        from langchain_community.retrievers import AmazonKnowledgeBasesRetriever
+        .. code-block:: python
 
-        retriever = AmazonKnowledgeBasesRetriever(
-            knowledge_base_id="<knowledge-base-id>",
-            retrieval_config={
-                "vectorSearchConfiguration": {
-                    "numberOfResults": 4
-                }
-            },
-        )
-        ```
+            from langchain_aws.retrievers import AmazonKnowledgeBasesRetriever
+
+            # For managed knowledge bases (recommended for new KBs):
+            retriever = AmazonKnowledgeBasesRetriever(
+                knowledge_base_id="<knowledge-base-id>",
+                retrieval_config={
+                    "managedSearchConfiguration": {
+                        "numberOfResults": 4
+                    }
+                },
+            )
+
+            # For legacy vector-type knowledge bases:
+            retriever = AmazonKnowledgeBasesRetriever(
+                knowledge_base_id="<knowledge-base-id>",
+                retrieval_config={
+                    "vectorSearchConfiguration": {
+                        "numberOfResults": 4
+                    }
+                },
+            )
 
     """
 
@@ -282,3 +312,95 @@ class AmazonKnowledgeBasesRetriever(BaseRetriever):
             # future proofing this class to prevent code breaks if new types
             # are introduced
             return None
+
+
+def agentic_retrieve(
+    knowledge_base_id: str,
+    query: str,
+    *,
+    generate_response: bool = False,
+    number_of_results: int = 4,
+    region_name: Optional[str] = None,
+    credentials_profile_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Execute AgenticRetrieveStream for intelligent multi-step retrieval.
+
+    This is a standalone helper (not a LangChain retriever) because the agentic API
+    is streaming and doesn't fit the synchronous retriever interface. Use this for
+    complex queries that benefit from query decomposition and managed reranking.
+
+    Only works with MANAGED knowledge bases. Requires boto3 >= 1.43.32.
+
+    Args:
+        knowledge_base_id: The managed knowledge base ID.
+        query: The user query.
+        generate_response: Whether to generate a cited answer (default False).
+        number_of_results: Max results per retrieval iteration.
+        region_name: AWS region.
+        credentials_profile_name: AWS credentials profile.
+
+    Returns:
+        Dict with 'results' (list of retrieval results) and optionally
+        'generatedResponse' with 'answer' and 'citations'.
+
+    Example:
+        .. code-block:: python
+
+            from langchain_aws.retrievers.bedrock import agentic_retrieve
+
+            result = agentic_retrieve(
+                knowledge_base_id="ABCDEFGHIJ",
+                query="Compare pricing models across AWS compute services",
+                generate_response=True,
+            )
+            print(result["generatedResponse"]["answer"])
+    """
+    client = create_aws_client(
+        service_name="bedrock-agent-runtime",
+        region_name=region_name,
+        credentials_profile_name=credentials_profile_name,
+    )
+
+    request = {
+        "messages": [{"content": {"text": query}, "role": "user"}],
+        "retrievers": [
+            {
+                "configuration": {
+                    "knowledgeBase": {
+                        "knowledgeBaseId": knowledge_base_id,
+                        "retrievalOverrides": {"maxNumberOfResults": number_of_results},
+                    }
+                }
+            }
+        ],
+        "agenticRetrieveConfiguration": {
+            "foundationModelType": "MANAGED",
+            "rerankingModelType": "MANAGED",
+        },
+        "generateResponse": generate_response,
+    }
+
+    response = client.agentic_retrieve_stream(**request)
+
+    results = []
+    generated_answer = ""
+    citations = []
+
+    for event in response.get("stream", []):
+        if "result" in event:
+            result_event = event["result"]
+            results = result_event.get("results", [])
+            if "generatedResponse" in result_event:
+                gen_resp = result_event["generatedResponse"]
+                generated_answer = gen_resp.get("answer", "")
+                citations = gen_resp.get("citations", [])
+        elif "responseEvent" in event:
+            generated_answer += event["responseEvent"].get("text", "")
+
+    output: Dict[str, Any] = {"results": results}
+    if generate_response and generated_answer:
+        output["generatedResponse"] = {
+            "answer": generated_answer,
+            "citations": citations,
+        }
+    return output

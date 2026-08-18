@@ -754,7 +754,7 @@ async def create_code_interpreter_toolkit(
 
 def _get_thread_id(config: Optional[RunnableConfig] = None) -> str:
     """Extract session key, using checkpoint_ns for subagent isolation."""
-    return get_session_key(config)
+    return get_session_key(config, checkpoint_ns_scope="parent")
 
 
 def _extract_output_from_stream(response: Any) -> str:

@@ -7,6 +7,7 @@ from langchain_core.documents import Document
 
 from langchain_aws.retrievers import AmazonKnowledgeBasesRetriever
 from langchain_aws.retrievers.bedrock import (
+    ManagedSearchConfig,
     RetrievalConfig,
     SearchFilter,
     VectorSearchConfig,
@@ -178,7 +179,8 @@ def test_retriever_no_retrieval_config_invoke(
     )
     validate_query_response_no_cutoff(documents)
     mock_client.retrieve.assert_called_once_with(
-        retrievalQuery={"text": "test query"}, knowledgeBaseId="test_kb_id"
+        retrievalQuery={"text": "test query"},
+        knowledgeBaseId="test_kb_id",
     )
 
 
@@ -651,6 +653,151 @@ def test_guardrail_config_with_retrieval_config(mock_client, mock_retriever_conf
     )
 
 
+@pytest.fixture
+def mock_managed_retriever_config():
+    return RetrievalConfig(
+        managedSearchConfiguration=ManagedSearchConfig(
+            numberOfResults=5,
+            filter=SearchFilter(equals={"key": "category", "value": "finance"}),
+        ),
+    )
+
+
+@pytest.fixture
+def amazon_retriever_managed(mock_client, mock_managed_retriever_config):
+    return AmazonKnowledgeBasesRetriever(
+        knowledge_base_id="test_managed_kb_id",
+        retrieval_config=mock_managed_retriever_config,
+        client=mock_client,
+    )
+
+
+def test_retriever_managed_kb_invoke(amazon_retriever_managed, mock_client):
+    """Test retrieval with managedSearchConfiguration for managed KBs."""
+    query = "test query"
+    mock_client.retrieve.return_value = {
+        "retrievalResults": [
+            {"content": {"text": "managed result1"}, "metadata": {"key": "value1"}},
+            {
+                "content": {"text": "managed result2"},
+                "metadata": {"key": "value2"},
+                "score": 0.95,
+                "location": "s3://bucket/doc.pdf",
+            },
+        ]
+    }
+    documents = amazon_retriever_managed.invoke(query, run_manager=None)
+
+    mock_client.retrieve.assert_called_once_with(
+        retrievalQuery={"text": "test query"},
+        knowledgeBaseId="test_managed_kb_id",
+        retrievalConfiguration={
+            "managedSearchConfiguration": {
+                "numberOfResults": 5,
+                "filter": {"equals": {"key": "category", "value": "finance"}},
+            }
+        },
+    )
+    assert len(documents) == 2
+    assert documents[0].page_content == "managed result1"
+    assert documents[1].page_content == "managed result2"
+    assert documents[1].metadata["score"] == 0.95
+
+
+def test_retriever_managed_kb_dict_config(mock_client):
+    """Test managed KB retrieval using dict-based config."""
+    retriever = AmazonKnowledgeBasesRetriever(
+        knowledge_base_id="test_managed_kb_id",
+        retrieval_config={
+            "managedSearchConfiguration": {
+                "numberOfResults": 10,
+                "rerankingModelType": "MANAGED",
+            }
+        },
+        client=mock_client,
+    )
+
+    mock_client.retrieve.return_value = {
+        "retrievalResults": [
+            {"content": {"text": "result1"}, "score": 0.9},
+        ]
+    }
+
+    retriever.invoke("test query")
+
+    mock_client.retrieve.assert_called_once_with(
+        retrievalQuery={"text": "test query"},
+        knowledgeBaseId="test_managed_kb_id",
+        retrievalConfiguration={
+            "managedSearchConfiguration": {
+                "numberOfResults": 10,
+                "rerankingModelType": "MANAGED",
+            }
+        },
+    )
+
+
+def test_retriever_managed_kb_with_reranking(mock_client):
+    """Test managed KB retrieval with reranking configuration."""
+    retriever = AmazonKnowledgeBasesRetriever(
+        knowledge_base_id="test_managed_kb_id",
+        retrieval_config={
+            "managedSearchConfiguration": {
+                "numberOfResults": 5,
+                "rerankingConfiguration": {
+                    "type": "BEDROCK_RERANKING_MODEL",
+                },
+            }
+        },
+        client=mock_client,
+    )
+
+    mock_client.retrieve.return_value = {
+        "retrievalResults": [
+            {"content": {"text": "reranked result"}, "score": 0.98},
+        ]
+    }
+
+    documents = retriever.invoke("test query")
+
+    mock_client.retrieve.assert_called_once_with(
+        retrievalQuery={"text": "test query"},
+        knowledgeBaseId="test_managed_kb_id",
+        retrievalConfiguration={
+            "managedSearchConfiguration": {
+                "numberOfResults": 5,
+                "rerankingConfiguration": {
+                    "type": "BEDROCK_RERANKING_MODEL",
+                },
+            }
+        },
+    )
+    assert len(documents) == 1
+    assert documents[0].page_content == "reranked result"
+
+
+def test_retriever_managed_kb_with_score_filter(mock_client):
+    """Test managed KB retrieval with min_score_confidence filtering."""
+    retriever = AmazonKnowledgeBasesRetriever(
+        knowledge_base_id="test_managed_kb_id",
+        retrieval_config={"managedSearchConfiguration": {"numberOfResults": 5}},
+        min_score_confidence=0.8,
+        client=mock_client,
+    )
+
+    mock_client.retrieve.return_value = {
+        "retrievalResults": [
+            {"content": {"text": "high score"}, "score": 0.95},
+            {"content": {"text": "low score"}, "score": 0.5},
+        ]
+    }
+
+    documents = retriever.invoke("test query")
+
+    assert len(documents) == 1
+    assert documents[0].page_content == "high score"
+
+
 @patch("langchain_aws.retrievers.bedrock.create_aws_client")
 def test_user_agent_extra_in_config(mock_create_client):
     """Test that user_agent_extra is properly set in the Config when creating client."""
@@ -692,3 +839,32 @@ def test_custom_config_preserves_user_agent_extra(mock_create_client):
 
     # The custom config should be passed through
     assert call_args.kwargs["config"] == custom_config
+
+
+@patch("langchain_aws.retrievers.bedrock.create_aws_client")
+def test_agentic_retrieve_helper(mock_create_client):
+    """Test agentic_retrieve() standalone helper returns results."""
+    from langchain_aws.retrievers.bedrock import agentic_retrieve
+
+    mock_client = MagicMock()
+    mock_create_client.return_value = mock_client
+    mock_client.agentic_retrieve_stream.return_value = {
+        "stream": [
+            {
+                "result": {
+                    "results": [{"content": {"text": "agentic result"}, "score": 0.9}]
+                }
+            }
+        ]
+    }
+
+    result = agentic_retrieve(
+        knowledge_base_id="test-kb",
+        query="test query",
+        region_name="us-west-2",
+    )
+
+    assert "results" in result
+    assert len(result["results"]) == 1
+    assert result["results"][0]["content"]["text"] == "agentic result"
+    mock_client.agentic_retrieve_stream.assert_called_once()

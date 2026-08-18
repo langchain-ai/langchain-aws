@@ -36,6 +36,8 @@ from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
+from langchain_aws._version import _add_langchain_aws_version
+
 logger = logging.getLogger(__name__)
 
 # Default audio configuration constants
@@ -762,6 +764,7 @@ class ChatBedrockNovaSonic(BaseChatModel):
                 endpoint_url=self.endpoint_url,
                 api_key=self.bedrock_api_key,
             )
+        _add_langchain_aws_version(self)
         return self
 
     @asynccontextmanager
@@ -828,7 +831,7 @@ class ChatBedrockNovaSonic(BaseChatModel):
         params = self._get_invocation_params(stop=stop, **kwargs)
         ls_params = LangSmithParams(
             ls_provider="amazon_bedrock",
-            ls_model_name=self.model_id,
+            ls_model_name=params.get("model") or self.model_id,
             ls_model_type="chat",
             ls_temperature=params.get("temperature", self.temperature),
         )
@@ -842,6 +845,7 @@ class ChatBedrockNovaSonic(BaseChatModel):
     def _identifying_params(self) -> Dict[str, Any]:
         """Return identifying parameters for tracing."""
         return {
+            "model": self.model_id,
             "model_id": self.model_id,
             "voice_id": self.voice_id,
             "max_tokens": self.max_tokens,

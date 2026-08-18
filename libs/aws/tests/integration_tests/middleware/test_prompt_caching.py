@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from langchain_aws import ChatBedrock, ChatBedrockConverse
 from langchain_aws.middleware.prompt_caching import BedrockPromptCachingMiddleware
 
-MODEL_ANTHROPIC = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+MODEL_ANTHROPIC = "us.anthropic.claude-sonnet-5"
 MODEL_NOVA = "us.amazon.nova-2-lite-v1:0"
 
 # Just over 1024 tokens to exceed the Claude/Nova min tokens per cache checkpoint
@@ -36,9 +36,12 @@ def _get_cache_stats(response: AIMessage) -> tuple[int, int]:
     details = um.get("input_token_details")
     if not details:
         return 0, 0
-    cache_read = details.get("cache_read", 0)
-    cache_write = details.get("cache_creation", 0)
-    return cache_read or 0, cache_write or 0
+    cache_read = details.get("cache_read", 0) or 0
+    cache_write = details.get("cache_creation", 0) or (
+        details.get("ephemeral_5m_input_tokens", 0)
+        + details.get("ephemeral_1h_input_tokens", 0)  # type: ignore[operator]
+    )
+    return cache_read, cache_write
 
 
 def _make_many_tools() -> list[type[BaseModel]]:

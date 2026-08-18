@@ -1,4 +1,6 @@
 import os
+import time
+from datetime import timedelta
 from typing import Any, Dict, Generator, List, Tuple
 from unittest import mock
 
@@ -9,9 +11,17 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from pydantic import SecretStr
 
 from langchain_aws.utils import (
+    _BEDROCK_API_KEY_MAX_TTL_SECONDS,
+    _BedrockApiKeyProvider,
+    _StaticCredentialProvider,
     count_tokens_api_supported_for_model,
     create_aws_client,
+    parse_model_provider,
+    reasoning_effort_additional_fields,
+    thinking_disabled_in_params,
+    thinking_forced_tool_use_unsupported,
     thinking_in_params,
+    thinking_on_by_default,
     trim_message_whitespace,
 )
 
@@ -447,6 +457,9 @@ def test_trim_message_whitespace_with_empty_messages() -> None:
         ("us.anthropic.claude-sonnet-4-20250514-v1:0", True),
         ("us.anthropic.claude-sonnet-4-20250514-v1:0", True),
         ("us.anthropic.claude-3-5-sonnet-20240620-v1:0", True),
+        ("us.anthropic.claude-fable-5", False),
+        ("us.anthropic.claude-sonnet-5", False),
+        ("global.anthropic.claude-opus-5", False),
         ("us.anthropic.claude-3-sonnet-20240229-v1:0", False),
         ("us.meta.llama4-scout-17b-instruct-v1:0", False),
         ("us.amazon.nova-pro-v1:0", False),
@@ -458,6 +471,103 @@ def test_count_tokens_api_supported_for_model(
     result = count_tokens_api_supported_for_model(model_id)
 
     assert result == expected_result
+
+
+@pytest.mark.parametrize(
+    "model_id,expected_result",
+    [
+        ("anthropic.claude-3-7-sonnet-20250219-v1:0", True),
+        ("us.anthropic.claude-sonnet-4-20250514-v1:0", True),
+        ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", True),
+        ("anthropic.claude-sonnet-4-6", True),
+        ("us.anthropic.claude-opus-4-20250514-v1:0", True),
+        ("anthropic.claude-opus-4-6-v1", True),
+        ("global.anthropic.claude-opus-4-7", True),
+        ("us.anthropic.claude-haiku-4-5-20251001-v1:0", True),
+        ("global.anthropic.claude-opus-4-8", False),
+        ("us.anthropic.claude-sonnet-5", False),
+        ("global.anthropic.claude-opus-5", False),
+        ("global.anthropic.claude-fable-5", False),
+    ],
+)
+def test_thinking_forced_tool_use_unsupported(
+    model_id: str, expected_result: bool
+) -> None:
+    assert thinking_forced_tool_use_unsupported(model_id) == expected_result
+
+
+@pytest.mark.parametrize(
+    "model_id,expected_result",
+    [
+        ("us.anthropic.claude-sonnet-5", True),
+        ("global.anthropic.claude-opus-5", True),
+        ("global.anthropic.claude-fable-5", True),
+        ("global.anthropic.claude-opus-4-8", False),
+        ("anthropic.claude-sonnet-4-6", False),
+        ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", False),
+        ("us.anthropic.claude-haiku-4-5-20251001-v1:0", False),
+    ],
+)
+def test_thinking_on_by_default(model_id: str, expected_result: bool) -> None:
+    assert thinking_on_by_default(model_id) == expected_result
+
+
+@pytest.mark.parametrize(
+    "params,expected_result",
+    [
+        ({"thinking": {"type": "disabled"}}, True),
+        ({"thinking": {"type": "enabled", "budget_tokens": 1024}}, False),
+        ({"thinking": {"type": "adaptive"}}, False),
+        ({}, False),
+    ],
+)
+def test_thinking_disabled_in_params(params: dict, expected_result: bool) -> None:
+    assert thinking_disabled_in_params(params) == expected_result
+
+
+@pytest.mark.parametrize(
+    "base_model,effort,expected_fields",
+    [
+        (
+            "us.anthropic.claude-sonnet-5",
+            "high",
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+        ),
+        (
+            "anthropic.claude-opus-5",
+            "xhigh",
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "xhigh"}},
+        ),
+        (
+            "amazon.nova-2-lite-v1:0",
+            "medium",
+            {"reasoningConfig": {"type": "enabled", "maxReasoningEffort": "medium"}},
+        ),
+        (
+            "openai.gpt-oss-120b-1:0",
+            "low",
+            {"reasoning_effort": "low"},
+        ),
+        (
+            "moonshot.kimi-k2-thinking",
+            "max",
+            {"reasoning_effort": "max"},
+        ),
+        (
+            "moonshotai.kimi-k2.5",
+            "low",
+            {"reasoning_effort": "low"},
+        ),
+        ("amazon.titan-text-express-v1", "high", {}),
+        ("meta.llama3-1-70b-instruct-v1:0", "high", {}),
+        # Native GPT-5.x models are bedrock-mantle-only
+        ("openai.gpt-5.5", "medium", {}),
+    ],
+)
+def test_reasoning_effort_additional_fields(
+    base_model: str, effort: str, expected_fields: dict
+) -> None:
+    assert reasoning_effort_additional_fields(base_model, effort) == expected_fields
 
 
 def test_api_key_uses_token_provider(
@@ -655,6 +765,22 @@ def test_api_key_takes_precedence_over_creds(
 )
 def test_thinking_in_params(params: dict, expected: bool) -> None:
     assert thinking_in_params(params) == expected
+
+
+@pytest.mark.parametrize(
+    "model_id,expected_provider",
+    [
+        ("anthropic.claude-sonnet-5", "anthropic"),
+        ("global.anthropic.claude-fable-5", "anthropic"),
+        ("us-gov.anthropic.claude-haiku-4-5-20251001-v1:0", "anthropic"),
+        ("minimax.minimax-m2.5", "minimax"),
+        ("us.minimax.minimax-m2.5", "minimax"),
+        ("moonshotai.kimi-k2.5", "moonshotai"),
+        ("moonshot.kimi-k2-thinking", "moonshot"),
+    ],
+)
+def test_parse_model_provider(model_id: str, expected_provider: str) -> None:
+    assert parse_model_provider(model_id) == expected_provider
 
 
 @pytest.mark.parametrize("api_key", [SecretStr(""), None])
@@ -1011,3 +1137,153 @@ def test_bedrock_runtime_session_region_fallback(
 
     call_kwargs = config_cls.call_args[1]
     assert call_kwargs["region"] == "sa-east-1"
+
+
+# ---------------------------------------------------------------------------
+# _StaticCredentialProvider / _BedrockApiKeyProvider tests
+# ---------------------------------------------------------------------------
+
+
+def _make_provider(**overrides: Any) -> _BedrockApiKeyProvider:
+    """Build a provider with explicit static creds unless overridden."""
+    params: Dict[str, Any] = {
+        "region": "us-east-1",
+        "aws_access_key_id": "AKIA_TEST",
+        "aws_secret_access_key": "SECRET_TEST",
+    }
+    params.update(overrides)
+    return _BedrockApiKeyProvider(**params)
+
+
+def test_static_credential_provider_load() -> None:
+    creds = object()
+    provider = _StaticCredentialProvider(creds)
+    assert provider.load() is creds
+    assert provider.METHOD == "explicit"
+
+
+def test_bedrock_api_key_provider_generates_and_caches() -> None:
+    with mock.patch(
+        "aws_bedrock_token_generator.provide_token", return_value="tok-1"
+    ) as m_provide:
+        provider = _make_provider(aws_session_token="TOKEN_TEST")
+
+        # First call mints the token.
+        assert provider() == "tok-1"
+        # Second call (well within TTL) returns the cached token, no re-mint.
+        assert provider() == "tok-1"
+        m_provide.assert_called_once()
+
+        kwargs = m_provide.call_args[1]
+        assert kwargs["region"] == "us-east-1"
+        assert kwargs["expiry"] == timedelta(seconds=_BEDROCK_API_KEY_MAX_TTL_SECONDS)
+
+        cred_provider = kwargs["aws_credentials_provider"]
+        assert isinstance(cred_provider, _StaticCredentialProvider)
+        loaded = cred_provider.load()
+        assert loaded.access_key == "AKIA_TEST"
+        assert loaded.secret_key == "SECRET_TEST"
+        assert loaded.token == "TOKEN_TEST"
+
+
+def test_bedrock_api_key_provider_profile_resolution() -> None:
+    fake_creds = object()
+    fake_session = mock.MagicMock()
+    fake_session.get_credentials.return_value = fake_creds
+
+    with (
+        mock.patch(
+            "aws_bedrock_token_generator.provide_token", return_value="tok"
+        ) as m_provide,
+        mock.patch("botocore.session.Session", return_value=fake_session) as m_session,
+    ):
+        provider = _BedrockApiKeyProvider(
+            region="us-west-2", credentials_profile_name="my-profile"
+        )
+        assert provider() == "tok"
+
+    m_session.assert_called_once_with(profile="my-profile")
+    cred_provider = m_provide.call_args[1]["aws_credentials_provider"]
+    assert isinstance(cred_provider, _StaticCredentialProvider)
+    assert cred_provider.load() is fake_creds
+
+
+def test_bedrock_api_key_provider_default_chain_when_unresolvable() -> None:
+    """If botocore can't resolve creds, provider is None (default chain)."""
+    fake_session = mock.MagicMock()
+    fake_session.get_credentials.return_value = None
+
+    with (
+        mock.patch(
+            "aws_bedrock_token_generator.provide_token", return_value="tok"
+        ) as m_provide,
+        mock.patch("botocore.session.Session", return_value=fake_session),
+    ):
+        provider = _BedrockApiKeyProvider(region="us-east-1")
+        assert provider() == "tok"
+
+    assert m_provide.call_args[1]["aws_credentials_provider"] is None
+
+
+def test_bedrock_api_key_provider_refreshes_when_near_expiry() -> None:
+    with mock.patch(
+        "aws_bedrock_token_generator.provide_token",
+        side_effect=["tok-1", "tok-2"],
+    ) as m_provide:
+        provider = _make_provider(ttl_seconds=1000)
+        assert provider() == "tok-1"
+
+        # Force the cached token into the mandatory-refresh window.
+        provider._expires_at = time.monotonic() + 100
+        assert provider() == "tok-2"
+        assert m_provide.call_count == 2
+
+
+def test_bedrock_api_key_provider_caps_ttl_to_cred_lifetime() -> None:
+    with (
+        mock.patch(
+            "aws_bedrock_token_generator.provide_token", return_value="tok"
+        ) as m_provide,
+        mock.patch.object(
+            _BedrockApiKeyProvider,
+            "_credentials_seconds_remaining",
+            return_value=300,
+        ),
+    ):
+        provider = _make_provider(ttl_seconds=10000)
+        provider()
+
+    assert m_provide.call_args[1]["expiry"] == timedelta(seconds=300)
+
+
+def test_bedrock_api_key_provider_advisory_failure_keeps_token() -> None:
+    with mock.patch(
+        "aws_bedrock_token_generator.provide_token",
+        side_effect=["tok-1", RuntimeError("boom")],
+    ):
+        provider = _make_provider(ttl_seconds=1000)
+        assert provider() == "tok-1"
+
+        # Advisory window (needs refresh) but not yet mandatory: 700s remaining.
+        provider._expires_at = time.monotonic() + 700
+        # Refresh fails but is non-mandatory, so the stale token is returned.
+        assert provider() == "tok-1"
+
+
+def test_bedrock_api_key_provider_mandatory_failure_raises() -> None:
+    with mock.patch(
+        "aws_bedrock_token_generator.provide_token",
+        side_effect=["tok-1", RuntimeError("boom")],
+    ):
+        provider = _make_provider(ttl_seconds=1000)
+        assert provider() == "tok-1"
+
+        provider._expires_at = time.monotonic() + 100  # mandatory window
+        with pytest.raises(RuntimeError, match="boom"):
+            provider()
+
+
+async def test_bedrock_api_key_provider_async_call() -> None:
+    with mock.patch("aws_bedrock_token_generator.provide_token", return_value="tok"):
+        provider = _make_provider()
+        assert await provider.async_call() == "tok"

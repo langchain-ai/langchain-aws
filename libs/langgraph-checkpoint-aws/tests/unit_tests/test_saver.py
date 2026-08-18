@@ -9,12 +9,12 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import CheckpointTuple
 from pydantic import SecretStr
 
-from langgraph_checkpoint_aws.models import (
+from langgraph_checkpoint_aws.checkpoint.bedrock_sessions.models import (
     GetInvocationStepResponse,
     InvocationStep,
     ListInvocationStepsResponse,
 )
-from langgraph_checkpoint_aws.saver import (
+from langgraph_checkpoint_aws.checkpoint.bedrock_sessions.saver import (
     BedrockAgentRuntimeSessionClient,
     BedrockSessionSaver,
 )
@@ -532,7 +532,9 @@ class TestBedrockSessionSaver:
         # Assert
         assert result == []
 
-    @patch("langgraph_checkpoint_aws.saver.construct_checkpoint_tuple")
+    @patch(
+        "langgraph_checkpoint_aws.checkpoint.bedrock_sessions.saver.construct_checkpoint_tuple"
+    )
     def test_get_tuple_success(
         self,
         mock_construct_checkpoint,
@@ -742,7 +744,9 @@ class TestBedrockSessionSaver:
             ANY,
         )
 
-    @patch("langgraph_checkpoint_aws.saver.construct_checkpoint_tuple")
+    @patch(
+        "langgraph_checkpoint_aws.checkpoint.bedrock_sessions.saver.construct_checkpoint_tuple"
+    )
     def test_list_success(
         self,
         mock_construct_checkpoint,
@@ -811,7 +815,9 @@ class TestBedrockSessionSaver:
         # Assert
         assert len(list(result)) == 0
 
-    @patch("langgraph_checkpoint_aws.saver.construct_checkpoint_tuple")
+    @patch(
+        "langgraph_checkpoint_aws.checkpoint.bedrock_sessions.saver.construct_checkpoint_tuple"
+    )
     def test_list_with_limit(
         self,
         mock_construct_checkpoint,

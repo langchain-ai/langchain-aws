@@ -74,6 +74,7 @@ from langchain_aws.utils import (
     create_aws_client,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
+    thinking_forced_tool_use_unsupported,
     thinking_in_params,
     trim_message_whitespace,
 )
@@ -628,13 +629,25 @@ def _format_anthropic_messages(
                                 )
                             )
                         else:
-                            item.pop("text", None)
-                            tool_blocks.append(item)
+                            tool_blocks.append(
+                                {
+                                    k: v
+                                    for k, v in item.items()
+                                    if k not in ("text", "index", "partial_json")
+                                }
+                            )
                     elif item["type"] in ["thinking", "redacted_thinking"]:
                         # Store thinking blocks separately
-                        thinking_blocks.append(
-                            {k: v for k, v in item.items() if k != "index"}
-                        )
+                        thinking_block = {k: v for k, v in item.items() if k != "index"}
+                        # Adaptive-only thinking models (i.e. Claude 4.7+) stream
+                        # signature-only thinking blocks on "omitted" display mode.
+                        # Need to include thinking field or Invoke API throws an error
+                        if (
+                            thinking_block["type"] == "thinking"
+                            and "thinking" not in thinking_block
+                        ):
+                            thinking_block["thinking"] = ""
+                        thinking_blocks.append(thinking_block)
                     elif item["type"] == "text":
                         text = item.get("text", "")
                         # Only add non-empty strings for now as empty ones are not
@@ -832,7 +845,8 @@ def _apply_cache_control_to_messages(
     cache_control: Optional[Dict[str, Any]],
     formatted_messages: Optional[List[Dict[str, Any]]],
 ) -> None:
-    """Apply cache_control to the last content block of the last message."""
+    """Apply cache_control to the last content block of the latest message with
+    cacheable content."""
     if not cache_control or not formatted_messages:
         return
     for fmt_msg in reversed(formatted_messages):
@@ -961,6 +975,15 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         populate_by_name=True,
     )
 
+    def _get_invocation_params(
+        self, stop: Optional[List[str]] = None, **kwargs: Any
+    ) -> Dict[str, Any]:
+        """Get the parameters used to invoke the model, for tracing purposes."""
+        return {
+            "model": self.base_model_id or self.model_id,
+            **super()._get_invocation_params(stop=stop, **kwargs),
+        }
+
     def _get_ls_params(
         self, stop: Optional[List[str]] = None, **kwargs: Any
     ) -> LangSmithParams:
@@ -968,7 +991,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         params = self._get_invocation_params(stop=stop, **kwargs)
         ls_params = LangSmithParams(
             ls_provider="amazon_bedrock",
-            ls_model_name=self.model_id,
+            ls_model_name=params.get("model") or self.model_id,
             ls_model_type="chat",
         )
         if ls_temperature := params.get("temperature", self.temperature):
@@ -1046,7 +1069,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         ):
             if isinstance(chunk, AIMessageChunk):
                 chunk.response_metadata["model_provider"] = "bedrock"
-                chunk.response_metadata["ls_provider"] = "amazon_bedrock"
                 generation_chunk = ChatGenerationChunk(message=chunk)
                 if run_manager:
                     run_manager.on_llm_new_token(
@@ -1080,9 +1102,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     else AIMessageChunk(content=delta)
                 )
                 generation_chunk.message.response_metadata["model_provider"] = "bedrock"
-                generation_chunk.message.response_metadata["ls_provider"] = (
-                    "amazon_bedrock"
-                )
                 if run_manager:
                     run_manager.on_llm_new_token(
                         generation_chunk.text, chunk=generation_chunk
@@ -1228,7 +1247,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             usage_metadata=usage_metadata,
             response_metadata={
                 "model_provider": "bedrock",
-                "ls_provider": "amazon_bedrock",
                 "model_name": self.model_id,
             },
         )
@@ -1353,15 +1371,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
 
             base_model = self._get_base_model()
-            if any(
-                x in base_model
-                for x in (
-                    "claude-3-7-",
-                    "claude-opus-4-",
-                    "claude-sonnet-4-",
-                    "claude-haiku-4-",
-                )
-            ) and thinking_in_params(self.model_kwargs or {}):
+            if thinking_forced_tool_use_unsupported(base_model) and thinking_in_params(
+                self.model_kwargs or {}
+            ):
                 forced = False
                 if isinstance(tool_choice, bool):
                     forced = bool(tool_choice)
@@ -1544,14 +1556,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         tool_name = convert_to_anthropic_tool(schema)["name"]
 
         base_model = self._get_base_model()
-        has_thinking = any(
-            x in base_model
-            for x in (
-                "claude-3-7-",
-                "claude-opus-4-",
-                "claude-sonnet-4-",
-                "claude-haiku-4-",
-            )
+        has_thinking = thinking_forced_tool_use_unsupported(
+            base_model
         ) and thinking_in_params(self.model_kwargs or {})
 
         if has_thinking:

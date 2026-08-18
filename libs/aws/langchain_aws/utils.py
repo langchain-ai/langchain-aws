@@ -1,7 +1,10 @@
 import logging
 import os
 import re
+import threading
+import time
 from abc import abstractmethod
+from datetime import timedelta
 from typing import Any, Dict, Generic, Iterator, List, Literal, Optional, TypeVar, Union
 
 from botocore.exceptions import BotoCoreError, UnknownServiceError
@@ -34,6 +37,10 @@ INPUT_TYPE = TypeVar(
 OUTPUT_TYPE = TypeVar(
     "OUTPUT_TYPE",
     bound=Union[str, List[List[float]], MESSAGE_FORMAT, List[MESSAGE_FORMAT], Iterator],
+)
+
+MODEL_ID_GEO_PREFIXES = frozenset(
+    {"eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp", "au"}
 )
 
 
@@ -465,9 +472,62 @@ def create_aws_bedrock_runtime_client(
     return BedrockRuntimeClient(config=config)
 
 
+def parse_model_provider(model_id: str) -> str:
+    """Extract the provider from a Bedrock model ID."""
+    parts = model_id.split(".", maxsplit=2)
+    if len(parts) > 1 and parts[0].lower() in MODEL_ID_GEO_PREFIXES:
+        return parts[1]
+    return parts[0]
+
+
 def thinking_in_params(params: dict) -> bool:
     """Check if the thinking parameter is enabled in the request."""
     return params.get("thinking", {}).get("type") in ("enabled", "adaptive")
+
+
+def thinking_disabled_in_params(params: dict) -> bool:
+    """Check if thinking is explicitly disabled in the request."""
+    return params.get("thinking", {}).get("type") == "disabled"
+
+
+def thinking_on_by_default(model: str) -> bool:
+    """Check if the model runs adaptive thinking without a thinking parameter."""
+    return any(
+        x in model for x in ("claude-sonnet-5", "claude-opus-5", "claude-fable-5")
+    )
+
+
+def thinking_forced_tool_use_unsupported(model: str) -> bool:
+    """Check if the model rejects forced tool use while thinking is enabled."""
+    if "claude-opus-4-8" in model:
+        return False
+    return any(
+        x in model
+        for x in (
+            "claude-3-7-",
+            "claude-sonnet-4",
+            "claude-opus-4",
+            "claude-haiku-4",
+        )
+    )
+
+
+def reasoning_effort_additional_fields(base_model: str, effort: str) -> Dict[str, Any]:
+    """Translate a `reasoning_effort` value into provider-specific request fields.
+
+    Returns an empty dict if the model family has no known translation; callers
+    are responsible for warning the user in that case.
+    """
+    model = base_model.lower()
+    if model.startswith("amazon.nova-2"):
+        return {"reasoningConfig": {"type": "enabled", "maxReasoningEffort": effort}}
+    if "claude" in model:
+        return {"thinking": {"type": "adaptive"}, "output_config": {"effort": effort}}
+    if model.startswith("openai.gpt-oss"):
+        return {"reasoning_effort": effort}
+    if model.startswith(("moonshot.", "moonshotai.")):
+        return {"reasoning_effort": effort}
+    return {}
 
 
 def trim_message_whitespace(messages: List[Any]) -> List[Any]:
@@ -495,3 +555,225 @@ def trim_message_whitespace(messages: List[Any]) -> List[Any]:
                     last_message.content[j] = block_dict
 
     return messages
+
+
+class _StaticCredentialProvider:
+    """Wraps resolved botocore credentials in the shape ``provide_token`` expects.
+
+    ``aws_bedrock_token_generator.provide_token`` accepts an
+    ``aws_credentials_provider`` that must expose a ``.load()`` method
+    returning a ``botocore.credentials.Credentials`` (or subclass). This
+    class adapts a pre-resolved credentials object to that contract.
+    """
+
+    METHOD = "explicit"
+
+    def __init__(self, credentials: Any) -> None:
+        self._credentials = credentials
+
+    def load(self) -> Any:
+        return self._credentials
+
+
+#: Server-side maximum lifetime (in seconds) of a short-term Bedrock API
+#: key issued by ``aws-bedrock-token-generator``. Bedrock rejects longer
+#: expiries at the token-verification layer, so this is both the default
+#: and the upper-bound of the ``ttl_seconds`` knob.
+_BEDROCK_API_KEY_MAX_TTL_SECONDS = 43200  # 12 h
+
+
+class _BedrockApiKeyProvider:
+    """Generates and caches short-term Bedrock API keys.
+
+    Uses ``aws-bedrock-token-generator`` to produce short-term API keys from
+    AWS credentials.  Keys are cached and regenerated when near expiry.
+
+    The instance is callable (sync) and also exposes an ``async_call`` method
+    for use with async clients.
+
+    This is the shared building block behind bearer-token authentication for
+    the Bedrock Mantle chat models (``ChatOpenAIMantle`` /
+    ``ChatAnthropicMantle``): rather than requiring a manually-minted static
+    ``AWS_BEARER_TOKEN_BEDROCK``, it derives short-term keys from ordinary AWS
+    credentials (explicit keys, a named profile, or the default chain) and
+    transparently refreshes them.
+
+    See: https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-generate.html
+    """
+
+    # Matches botocore's _DEFAULT_ADVISORY_REFRESH_TIMEOUT (900s) and
+    # _DEFAULT_MANDATORY_REFRESH_TIMEOUT (600s) for credential refresh.
+    _ADVISORY_REFRESH_SECONDS = 900  # try to refresh 15 min before expiry
+    _MANDATORY_REFRESH_SECONDS = 600  # must refresh 10 min before expiry
+
+    def __init__(
+        self,
+        region: str,
+        *,
+        ttl_seconds: int = _BEDROCK_API_KEY_MAX_TTL_SECONDS,
+        aws_access_key_id: Optional[str] = None,
+        aws_secret_access_key: Optional[str] = None,
+        aws_session_token: Optional[str] = None,
+        credentials_profile_name: Optional[str] = None,
+    ) -> None:
+        self._region = region
+        self._ttl_seconds = ttl_seconds
+        self._aws_access_key_id = aws_access_key_id
+        self._aws_secret_access_key = aws_secret_access_key
+        self._aws_session_token = aws_session_token
+        self._credentials_profile_name = credentials_profile_name
+        self._token: str = ""
+        self._expires_at: float = 0.0
+        self._lock = threading.Lock()
+
+    def __call__(self) -> str:
+        """Return a cached API key, refreshing if near expiry.
+
+        Follows botocore's ``RefreshableCredentials._refresh`` pattern:
+        - Outside advisory window: return cached token immediately.
+        - Advisory window (15-10 min before expiry): try non-blocking
+          refresh. If lock is held or refresh fails, return old token.
+        - Mandatory window (<10 min before expiry): block until refresh
+          completes or raise on failure.
+        """
+        if not self._refresh_needed(self._ADVISORY_REFRESH_SECONDS):
+            return self._token
+
+        if self._lock.acquire(blocking=False):
+            try:
+                # Re-check: another thread may have refreshed before we
+                # acquired the lock.
+                if not self._refresh_needed(self._ADVISORY_REFRESH_SECONDS):
+                    return self._token
+                is_mandatory = self._refresh_needed(self._MANDATORY_REFRESH_SECONDS)
+                self._protected_refresh(is_mandatory=is_mandatory)
+                return self._token
+            finally:
+                self._lock.release()
+        elif self._refresh_needed(self._MANDATORY_REFRESH_SECONDS):
+            # Token is close to expiry - must block until refreshed.
+            with self._lock:
+                # Re-check: another thread may have refreshed while we
+                # were waiting for the lock.
+                if not self._refresh_needed(self._MANDATORY_REFRESH_SECONDS):
+                    return self._token
+                self._protected_refresh(is_mandatory=True)
+                return self._token
+
+        # Another thread is refreshing; return current token. self._token is
+        # never empty here because when it is, _refresh_needed() returns True
+        # for the mandatory threshold, so the elif branch above always
+        # triggers and blocks until a token exists.
+        return self._token
+
+    def _refresh_needed(self, refresh_in: int) -> bool:
+        """Check if a refresh is needed within ``refresh_in`` seconds."""
+        if not self._token:
+            return True
+        return time.monotonic() >= self._expires_at - refresh_in
+
+    def _protected_refresh(self, *, is_mandatory: bool) -> None:
+        """Attempt to refresh the token. Only raises if mandatory."""
+        try:
+            self._do_refresh()
+        except Exception:
+            if is_mandatory:
+                raise
+            logger.debug(
+                "Advisory refresh failed, using existing token.",
+                exc_info=True,
+            )
+
+    async def async_call(self) -> str:
+        """Async-compatible version that returns a cached API key.
+
+        Offloads to a thread to avoid blocking the event loop if a
+        token refresh (network call) is needed.
+        """
+        import asyncio
+
+        return await asyncio.to_thread(self)
+
+    @staticmethod
+    def _credentials_seconds_remaining(credentials: Any) -> Optional[int]:
+        """Return remaining lifetime (s) for ``RefreshableCredentials``.
+
+        Uses botocore's ``_seconds_remaining`` - a private method, but
+        stable across botocore versions and the one botocore's own auth
+        code uses internally. If botocore ever renames or removes it,
+        the resulting ``AttributeError`` is swallowed and the caller
+        degrades to its configured TTL.
+
+        Args:
+            credentials: A boto3 / botocore ``Credentials`` instance
+                (any subclass).
+
+        Returns:
+            Remaining seconds if the credentials are a
+            ``RefreshableCredentials`` and report a positive value;
+            ``None`` for static credentials or on any error.
+        """
+        from botocore.credentials import RefreshableCredentials
+
+        if not isinstance(credentials, RefreshableCredentials):
+            return None
+        try:
+            remaining = credentials._seconds_remaining()  # type: ignore[attr-defined]
+        except Exception:
+            logger.debug(
+                "RefreshableCredentials._seconds_remaining() raised; "
+                "falling back to configured TTL.",
+                exc_info=True,
+            )
+            return None
+        return int(remaining) if remaining > 0 else None
+
+    def _do_refresh(self) -> None:
+        from aws_bedrock_token_generator import provide_token
+        from botocore.credentials import Credentials
+        from botocore.session import Session as BotocoreSession
+
+        # Resolve credentials with precedence:
+        # explicit access_key + secret_key > profile > default chain.
+        credentials: Any = None
+        if self._aws_access_key_id and self._aws_secret_access_key:
+            credentials = Credentials(
+                access_key=self._aws_access_key_id,
+                secret_key=self._aws_secret_access_key,
+                token=self._aws_session_token,
+            )
+        else:
+            try:
+                if self._credentials_profile_name:
+                    session = BotocoreSession(profile=self._credentials_profile_name)
+                else:
+                    session = BotocoreSession()
+                credentials = session.get_credentials()
+            except Exception:
+                logger.debug(
+                    "Could not resolve credentials via botocore session; "
+                    "provide_token will fall back to its own default chain.",
+                    exc_info=True,
+                )
+                credentials = None
+
+        # Cap TTL by underlying credential lifetime for refreshable creds
+        # (AssumeRole, SSO, IRSA, etc.). Static creds have no expiry
+        # metadata so we use the configured TTL directly.
+        effective_ttl = self._ttl_seconds
+        remaining = self._credentials_seconds_remaining(credentials)
+        if remaining is not None:
+            effective_ttl = min(self._ttl_seconds, remaining)
+
+        # Wrap the resolved credentials in a CredentialProvider shape so
+        # provide_token uses them; passing None lets provide_token fall
+        # back to its own default resolution.
+        provider = _StaticCredentialProvider(credentials) if credentials else None
+
+        token = provide_token(
+            region=self._region,
+            expiry=timedelta(seconds=effective_ttl),
+            aws_credentials_provider=provider,
+        )
+        self._token = token
+        self._expires_at = time.monotonic() + effective_ttl

@@ -1,6 +1,11 @@
 from botocore.config import Config
 
-from langchain_aws.agents.utils import SDK_USER_AGENT, get_boto_session
+from langchain_aws.agents.base import BedrockAgentFinish
+from langchain_aws.agents.utils import (
+    SDK_USER_AGENT,
+    get_boto_session,
+    parse_agent_response,
+)
 
 
 def test_get_boto3_session() -> None:
@@ -44,3 +49,35 @@ def test_get_boto_session_with_user_agent() -> None:
     assert config.connect_timeout == fake_config.connect_timeout  # type: ignore[attr-defined]
     assert config.read_timeout == fake_config.read_timeout  # type: ignore[attr-defined]
     assert config.retries["max_attempts"] == fake_config.retries["max_attempts"]  # type: ignore[attr-defined]
+
+
+class TestNonAsciiPreservation:
+    """Regression tests: non-ASCII characters must survive JSON serialization."""
+
+    _CJK = "日本語テスト"
+
+    def test_return_control_event(self) -> None:
+        event_with_cjk = {"returnControl": {"action": self._CJK}}
+        response = {
+            "completion": [event_with_cjk],
+            "sessionId": "test-session",
+        }
+        result = parse_agent_response(response)
+        assert isinstance(result, BedrockAgentFinish)
+        output = result.return_values["output"]
+        assert self._CJK in output
+        assert "\\u" not in output
+
+    def test_trace_log(self) -> None:
+        response = {
+            "completion": [
+                {"trace": {"message": self._CJK}},
+                {"chunk": {"bytes": b"done"}},
+            ],
+            "sessionId": "test-session",
+        }
+        result = parse_agent_response(response)
+        assert isinstance(result, BedrockAgentFinish)
+        assert isinstance(result.trace_log, str)
+        assert self._CJK in result.trace_log
+        assert "\\u" not in result.trace_log

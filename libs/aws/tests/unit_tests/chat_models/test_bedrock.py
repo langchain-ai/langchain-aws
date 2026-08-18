@@ -31,14 +31,7 @@ from langchain_aws.function_calling import convert_to_anthropic_tool
 
 def test_profile() -> None:
     model = ChatBedrock(
-        model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
-        region_name="us-west-2",
-    )
-    assert model.profile
-    assert not model.profile["reasoning_output"]
-
-    model = ChatBedrock(
-        model_id="anthropic.claude-sonnet-4-20250514-v1:0",
+        model_id="anthropic.claude-sonnet-4-6",
         region_name="us-west-2",
     )
     assert model.profile
@@ -172,6 +165,108 @@ def test__format_anthropic_messages_with_tool_calls() -> None:
     )
     actual = _format_anthropic_messages(messages)
     assert expected == actual
+
+
+def test__format_anthropic_messages_strips_streaming_fields_on_invalid_tool() -> None:
+    """Regression for langchain-ai/langchain#31208."""
+    ai = AIMessage(
+        content=[
+            {
+                "type": "tool_use",
+                "id": "toolu_bad",
+                "name": "web_search",
+                "input": {},
+                "index": 2,
+                "partial_json": '{"bad": json}',
+            },
+        ],
+        tool_calls=[],
+        invalid_tool_calls=[
+            {
+                "type": "invalid_tool_call",
+                "id": "toolu_bad",
+                "name": "web_search",
+                "args": '{"bad": json}',
+                "error": "JSONDecodeError",
+            }
+        ],
+    )
+    _, formatted = _format_anthropic_messages([HumanMessage("go"), ai])
+    tool_use_block = next(
+        b for b in formatted[1]["content"] if b.get("type") == "tool_use"
+    )
+    assert "index" not in tool_use_block
+    assert "partial_json" not in tool_use_block
+    assert tool_use_block == {
+        "type": "tool_use",
+        "id": "toolu_bad",
+        "name": "web_search",
+        "input": {},
+    }
+
+
+def test__format_anthropic_messages_signature_only_thinking_block() -> None:
+    ai = AIMessage(
+        content=[
+            {
+                "type": "thinking",
+                "signature": "sig-abc",
+                "index": 0,
+            },
+            {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "get_weather",
+                "input": {"location": "SF"},
+                "index": 1,
+            },
+        ],
+        tool_calls=[
+            {"name": "get_weather", "id": "toolu_1", "args": {"location": "SF"}}
+        ],
+    )
+    _, formatted = _format_anthropic_messages([HumanMessage("go"), ai])
+    thinking_block = next(
+        b for b in formatted[1]["content"] if b.get("type") == "thinking"
+    )
+    assert thinking_block == {
+        "type": "thinking",
+        "signature": "sig-abc",
+        "thinking": "",
+    }
+
+    ai_with_text = AIMessage(
+        content=[
+            {
+                "type": "thinking",
+                "thinking": "step by step...",
+                "signature": "sig-def",
+                "index": 0,
+            },
+            {"type": "text", "text": "Answer."},
+        ]
+    )
+    _, formatted = _format_anthropic_messages([HumanMessage("go"), ai_with_text])
+    thinking_block = next(
+        b for b in formatted[1]["content"] if b.get("type") == "thinking"
+    )
+    assert thinking_block == {
+        "type": "thinking",
+        "thinking": "step by step...",
+        "signature": "sig-def",
+    }
+
+    ai_redacted = AIMessage(
+        content=[
+            {"type": "redacted_thinking", "data": "opaque", "index": 0},
+            {"type": "text", "text": "Answer."},
+        ]
+    )
+    _, formatted = _format_anthropic_messages([HumanMessage("go"), ai_redacted])
+    redacted_block = next(
+        b for b in formatted[1]["content"] if b.get("type") == "redacted_thinking"
+    )
+    assert redacted_block == {"type": "redacted_thinking", "data": "opaque"}
 
 
 def test__format_anthropic_messages_with_str_content_and_tool_calls() -> None:
@@ -601,6 +696,38 @@ def test_claude_thinking_forced_tool_raises(
         chat.bind_tools([GetWeather], tool_choice=tool_choice)
 
 
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "global.anthropic.claude-opus-4-8",
+        "us.anthropic.claude-sonnet-5",
+        "global.anthropic.claude-fable-5",
+    ],
+)
+@pytest.mark.parametrize(
+    "tool_choice",
+    [
+        "any",
+        "GetWeather",
+        {"type": "tool", "name": "GetWeather"},
+    ],
+)
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_claude_5_thinking_forced_tool_allowed(
+    mock_create_aws_client, model_id, tool_choice
+) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    chat = ChatBedrock(
+        model=model_id,
+        region="us-west-2",
+        model_kwargs={
+            "thinking": {"type": "adaptive"},
+        },
+    )
+    chat_with_tools = chat.bind_tools([GetWeather], tool_choice=tool_choice)
+    assert "tool_choice" in cast(RunnableBinding, chat_with_tools).kwargs
+
+
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
 def test_claude_thinking_tool_choice_auto_ok(mock_create_aws_client) -> None:
     mock_create_aws_client.return_value = MagicMock()
@@ -753,6 +880,23 @@ def test_standard_tracing_params() -> None:
         "ls_model_name": "foo",
         "ls_temperature": 0.1,
     }
+
+
+def test_invocation_params_includes_model() -> None:
+    llm = ChatBedrock(model="us.anthropic.claude-sonnet-5", region="us-west-2")
+    assert llm._get_invocation_params()["model"] == "us.anthropic.claude-sonnet-5"
+
+
+def test_invocation_params_model_prefers_base_model_id() -> None:
+    llm = ChatBedrock(
+        model=(
+            "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/abc"
+        ),
+        base_model="us.anthropic.claude-sonnet-5",
+        provider="anthropic",
+        region="us-west-2",
+    )
+    assert llm._get_invocation_params()["model"] == "us.anthropic.claude-sonnet-5"
 
 
 def test_beta_use_converse_api() -> None:
@@ -2019,6 +2163,62 @@ def test_system_prompt_string_format() -> None:
 
     body = json.loads(mock_client.invoke_model.call_args[1]["body"])
     assert isinstance(body["system"], str)
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "us.anthropic.claude-sonnet-5",
+        "global.anthropic.claude-opus-5",
+        "global.anthropic.claude-fable-5",
+    ],
+)
+def test_stream_thinking_on_by_default_returns_block_content(model_id: str) -> None:
+    """Default-thinking Claude streams must not mix string and block content."""
+    mock_client = MagicMock()
+
+    def stream_gen():
+        events = [
+            {"type": "message_start", "message": {}},
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "thinking", "thinking": "", "signature": ""},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "signature_delta", "signature": "sig-abc"},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 1,
+                "delta": {"type": "text_delta", "text": "Hello!"},
+            },
+            {"type": "message_stop"},
+        ]
+        for e in events:
+            yield {"chunk": {"bytes": json.dumps(e).encode()}}
+
+    mock_response = MagicMock()
+    mock_response.get.return_value = stream_gen()
+    mock_client.invoke_model_with_response_stream.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model=model_id,
+        region="us-west-2",
+    )
+    full = None
+    for chunk in llm.stream([HumanMessage(content="Hello")]):
+        full = chunk if full is None else full + chunk
+
+    assert isinstance(full.content, list)
+    assert not any(isinstance(b, str) for b in full.content), full.content
+    block_types = [b["type"] for b in full.content]
+    assert "text" in block_types
+    text_blocks = [b for b in full.content_blocks if b["type"] == "text"]
+    assert len(text_blocks) == 1
 
 
 def test_stream_system_prompt_cache_control() -> None:

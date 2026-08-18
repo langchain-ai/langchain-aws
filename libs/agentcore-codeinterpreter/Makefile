@@ -30,10 +30,10 @@ test:  ## Run individual unit test: make test TEST_FILE=tests/unit_tests/test.py
 	env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN uv run --group test pytest --disable-socket --allow-unix-socket $(TEST_FILE)
 
 integration_tests: ## Run all integration tests
-	uv run --group test --group test_integration pytest -n auto $(TEST_FILE)
+	uv run --group test --group test_integration pytest -n auto --benchmark-disable $(TEST_FILE)
 
 integration_test: ## Run individual integration test: make integration_test TEST_FILE=tests/integration_tests/integ_test.py
-	uv run --group test --group test_integration pytest -n auto $(TEST_FILE)
+	uv run --group test --group test_integration pytest -n auto --benchmark-disable $(TEST_FILE)
 
 coverage_tests: ## Run unit tests with coverage
 	env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN uv run --group test pytest --cov=langchain_agentcore_codeinterpreter --cov-report=html --cov-report=term-missing --cov-branch tests/unit_tests/

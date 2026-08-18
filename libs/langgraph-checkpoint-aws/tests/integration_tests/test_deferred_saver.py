@@ -17,7 +17,7 @@ from langgraph.checkpoint.base import (
     uuid6,
 )
 
-from langgraph_checkpoint_aws.deferred_saver import DeferredCheckpointSaver
+from langgraph_checkpoint_aws.checkpoint.deferred_saver import DeferredCheckpointSaver
 from tests.integration_tests.utils import (
     create_bedrock_session,
     ensure_agentcore_memory,
@@ -90,7 +90,7 @@ def dynamodb_table() -> str:
 
 
 def _make_agentcore(memory_id: str) -> _SaverAndCleanup:
-    from langgraph_checkpoint_aws.agentcore.saver import AgentCoreMemorySaver
+    from langgraph_checkpoint_aws.checkpoint.agentcore.saver import AgentCoreMemorySaver
 
     saver = AgentCoreMemorySaver(memory_id=memory_id, region_name=AWS_REGION)
 

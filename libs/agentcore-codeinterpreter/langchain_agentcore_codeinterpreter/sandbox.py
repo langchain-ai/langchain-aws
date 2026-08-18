@@ -14,6 +14,9 @@ from deepagents.backends.protocol import (
     ExecuteResponse,
     FileDownloadResponse,
     FileUploadResponse,
+    GlobResult,
+    GrepResult,
+    LsResult,
     ReadResult,
     WriteResult,
 )
@@ -30,6 +33,21 @@ logger = logging.getLogger(__name__)
 _AGENTCORE_EXECUTOR = ThreadPoolExecutor(
     max_workers=4, thread_name_prefix="agentcore-sandbox"
 )
+
+
+def _normalize_relative_path(path: str) -> str:
+    """Strip leading slashes and ``./`` prefixes to a canonical relative path.
+
+    Args:
+        path: File path (absolute or relative).
+
+    Returns:
+        Canonical relative path string with no leading ``/`` or ``./``.
+    """
+    path = path.lstrip("/")
+    while path.startswith("./"):
+        path = path[2:]
+    return path
 
 
 class SessionExpiredError(Exception):
@@ -104,8 +122,7 @@ def _extract_files_from_stream(
     """
     path_lookup: dict[str, str] = {}
     for path in requested_paths:
-        stripped = path.lstrip("/")
-        path_lookup[stripped] = path
+        path_lookup[_normalize_relative_path(path)] = path
 
     files: dict[str, bytes] = {}
 
@@ -117,13 +134,16 @@ def _extract_files_from_stream(
                 continue
             resource = item.get("resource", {})
             uri = resource.get("uri", "")
-            file_path = uri.replace("file://", "").lstrip("/")
+            file_path = _normalize_relative_path(uri.replace("file://", ""))
 
             content: bytes | None = None
             if "text" in resource:
                 content = resource["text"].encode("utf-8")
             elif "blob" in resource:
-                content = base64.b64decode(resource["blob"])
+                blob = resource["blob"]
+                # The AgentCore stream may deliver blob as already-decoded bytes.
+                # Only base64-decode when it arrives as encoded text.
+                content = blob if isinstance(blob, bytes) else base64.b64decode(blob)
 
             if content is not None:
                 original_path = path_lookup.get(file_path, file_path)
@@ -150,6 +170,15 @@ class AgentCoreSandbox(BaseSandbox):
     The caller is responsible for managing the interpreter lifecycle
     (``start()`` / ``stop()``).
 
+    !!! note
+
+        When the sandbox working directory is not ``/`` (e.g.
+        ``/opt/amazon/genesis1p-tools/var/``), paths must be resolved
+        against the real cwd before shell preflight commands and stripped of
+        the cwd prefix before the AgentCore ``writeFiles``/``readFiles`` APIs.
+        Pass the known cwd via the ``cwd`` constructor argument, or let the
+        sandbox detect it automatically on the first path operation via ``pwd``.
+
     Example:
         .. code-block:: python
 
@@ -168,25 +197,113 @@ class AgentCoreSandbox(BaseSandbox):
             interpreter.stop()
     """
 
-    def __init__(self, *, interpreter: CodeInterpreter) -> None:
+    def __init__(
+        self,
+        *,
+        interpreter: CodeInterpreter,
+        cwd: str | None = None,
+    ) -> None:
         """Create a backend wrapping an active CodeInterpreter session.
 
         Args:
             interpreter: A started :class:`CodeInterpreter` instance.
+            cwd: The sandbox working directory (e.g.
+                ``"/opt/amazon/genesis1p-tools/var"``). When provided,
+                ``write()`` uses it to resolve virtual paths to real absolute
+                paths and to strip the prefix before the AgentCore
+                ``writeFiles`` API. When omitted, the cwd is detected
+                automatically on the first path operation via ``pwd``.
         """
         self._interpreter = interpreter
+        self._cwd: str | None = cwd.rstrip("/") if cwd is not None else None
 
-    @staticmethod
-    def _to_relative_path(path: str) -> str:
-        """Strip leading slashes so paths are relative for AgentCore APIs.
+    def _get_cwd(self) -> str:
+        """Return the sandbox working directory, detecting it lazily if needed.
+
+        Returns:
+            The working directory with any trailing slash stripped.
+        """
+        if self._cwd is None:
+            result = self.execute("pwd")
+            if result.exit_code != 0 or not result.output.strip():
+                raise RuntimeError(
+                    f"Failed to detect sandbox working directory: "
+                    f"exit_code={result.exit_code}, output={result.output!r}"
+                )
+            self._cwd = result.output.strip().rstrip("/")
+        return self._cwd
+
+    def _to_relative_path(self, path: str) -> str:
+        """Strip the cwd prefix (or leading slashes) for AgentCore file APIs.
+
+        When the sandbox cwd is known and ``path`` starts with it, the cwd
+        prefix is removed so the AgentCore ``writeFiles``/``readFiles`` APIs
+        receive a cwd-relative path. For paths that do not start with the cwd,
+        the standard leading-slash stripping is applied.
 
         Args:
             path: File path (absolute or relative).
 
         Returns:
-            Relative path string.
+            Path relative to the sandbox cwd, with no leading ``/`` or ``./``.
         """
-        return path.lstrip("/")
+        if self._cwd is not None:
+            cwd_prefix = self._cwd + "/"
+            if path.startswith(cwd_prefix):
+                return path[len(cwd_prefix) :]
+        return _normalize_relative_path(path)
+
+    def _to_absolute_path(self, path: str) -> str:
+        """Resolve a path to a real absolute path under the sandbox cwd.
+
+        Paths already under the cwd are returned unchanged. Virtual paths
+        (e.g. ``/workspace/hello.py``) and relative paths are prepended with
+        the cwd so that shell commands (``makedirs``, etc.) operate on the
+        real filesystem location.
+
+        Args:
+            path: File path to resolve.
+
+        Returns:
+            Absolute path under the sandbox cwd.
+        """
+        cwd = self._get_cwd()
+        if not cwd:
+            return path
+        if path.startswith(cwd + "/") or path == cwd:
+            return path
+        return cwd + "/" + path.lstrip("/")
+
+    def write(self, file_path: str, content: str) -> WriteResult:
+        """Create a new file in the sandbox, failing if it already exists.
+
+        Normalizes ``file_path`` to a real absolute path under the sandbox cwd
+        before the preflight shell command (so ``makedirs`` operates on the
+        correct location) and before uploading (so the AgentCore ``writeFiles``
+        API receives a cwd-relative path rather than a doubled absolute path).
+
+        Args:
+            file_path: Destination path for the new file. May be a real
+                absolute path under the sandbox cwd, a virtual absolute path
+                (e.g. ``/workspace/hello.py``), or a relative path.
+            content: UTF-8 text content to write.
+
+        Returns:
+            ``WriteResult`` with ``path`` set to the resolved absolute path on
+            success, or ``error`` on failure.
+        """
+        abs_path = self._to_absolute_path(file_path)
+        preflight_error = self._write_preflight(abs_path)
+        if preflight_error is not None:
+            return preflight_error
+        responses = self.upload_files([(abs_path, content.encode("utf-8"))])
+        assert responses, "upload_files returned no responses"
+        response = responses[0]
+        if response.error:
+            return WriteResult(
+                error=f"Failed to write file '{abs_path}': {response.error}"
+            )
+        return WriteResult(path=abs_path)
 
     def _invoke(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         """Invoke the interpreter and eagerly consume the response stream.
@@ -294,19 +411,20 @@ class AgentCoreSandbox(BaseSandbox):
             as the input paths.
         """
         try:
+            self._get_cwd()
             relative_paths = [self._to_relative_path(p) for p in paths]
             response = self._invoke(
                 method="readFiles", params={"paths": relative_paths}
             )
-            file_contents = _extract_files_from_stream(response, paths)
+            file_contents = _extract_files_from_stream(response, relative_paths)
 
             return [
                 FileDownloadResponse(
-                    path=path,
-                    content=file_contents.get(path),
-                    error=None if path in file_contents else "file_not_found",
+                    path=original,
+                    content=file_contents.get(rel),
+                    error=None if rel in file_contents else "file_not_found",
                 )
-                for path in paths
+                for original, rel in zip(paths, relative_paths)
             ]
         except SessionExpiredError:
             logger.error("AgentCore session expired while downloading files: %s", paths)
@@ -324,7 +442,7 @@ class AgentCoreSandbox(BaseSandbox):
     def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
         """Upload files to the AgentCore sandbox.
 
-        Text files are sent directly; binary files are base64-encoded.
+        Text files are sent directly; binary files are sent as raw blobs.
 
         Args:
             files: List of ``(path, content)`` tuples to upload.
@@ -333,7 +451,7 @@ class AgentCoreSandbox(BaseSandbox):
             List of :class:`FileUploadResponse` objects in the same order
             as the input files.
         """
-        file_list: list[dict[str, str]] = []
+        file_list: list[dict[str, str | bytes]] = []
 
         for path, content in files:
             rel_path = self._to_relative_path(path)
@@ -341,8 +459,7 @@ class AgentCoreSandbox(BaseSandbox):
                 text_content = content.decode("utf-8")
                 file_list.append({"path": rel_path, "text": text_content})
             except UnicodeDecodeError:
-                encoded = base64.b64encode(content).decode("ascii")
-                file_list.append({"path": rel_path, "blob": encoded})
+                file_list.append({"path": rel_path, "blob": content})
 
         try:
             if file_list:
@@ -363,6 +480,53 @@ class AgentCoreSandbox(BaseSandbox):
                 FileUploadResponse(path=path, error="permission_denied")
                 for path, _ in files
             ]
+
+    def ls(self, path: str) -> LsResult:
+        """List a directory, resolving ``path`` against the sandbox cwd."""
+        return super().ls(self._to_absolute_path(path))
+
+    def read(
+        self,
+        file_path: str,
+        offset: int = 0,
+        limit: int = 2000,
+    ) -> ReadResult:
+        """Read a file, resolving ``file_path`` against the sandbox cwd."""
+        return super().read(self._to_absolute_path(file_path), offset, limit)
+
+    def grep(
+        self,
+        pattern: str,
+        path: str | None = None,
+        glob: str | None = None,
+    ) -> GrepResult:
+        """Search file contents, resolving ``path`` against the sandbox cwd."""
+        resolved = self._to_absolute_path(path) if path else path
+        return super().grep(pattern, resolved, glob)
+
+    def glob(
+        self,
+        pattern: str,
+        path: str | None = None,
+    ) -> GlobResult:
+        """Match paths by glob, resolving ``path`` against the sandbox cwd."""
+        resolved = self._to_absolute_path(path) if path else path
+        return super().glob(pattern, resolved)
+
+    def edit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,  # noqa: FBT001, FBT002
+    ) -> EditResult:
+        """Edit a file, resolving ``file_path`` against the sandbox cwd."""
+        return super().edit(
+            self._to_absolute_path(file_path),
+            old_string,
+            new_string,
+            replace_all,
+        )
 
     # ------------------------------------------------------------------
     # Async overrides — use a dedicated executor to avoid starving the
@@ -502,4 +666,64 @@ class AgentCoreSandbox(BaseSandbox):
         return await loop.run_in_executor(
             _AGENTCORE_EXECUTOR,
             lambda: self.download_files(paths),
+        )
+
+    async def als(self, path: str) -> LsResult:
+        """Async version of :meth:`ls`.
+
+        Args:
+            path: Directory path to list, resolved against the sandbox cwd.
+
+        Returns:
+            ``LsResult`` with directory entries on success or ``error`` on
+            failure.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _AGENTCORE_EXECUTOR,
+            lambda: self.ls(path),
+        )
+
+    async def agrep(
+        self,
+        pattern: str,
+        path: str | None = None,
+        glob: str | None = None,
+    ) -> GrepResult:
+        """Async version of :meth:`grep`.
+
+        Args:
+            pattern: Literal string to search for.
+            path: Directory or file to search in, resolved against the sandbox
+                cwd. When ``None``, the ``BaseSandbox`` default is used.
+            glob: Optional file-name glob to restrict the search.
+
+        Returns:
+            ``GrepResult`` with a list of matches or ``error`` on failure.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _AGENTCORE_EXECUTOR,
+            lambda: self.grep(pattern, path, glob),
+        )
+
+    async def aglob(
+        self,
+        pattern: str,
+        path: str | None = None,
+    ) -> GlobResult:
+        """Async version of :meth:`glob`.
+
+        Args:
+            pattern: Glob pattern to match.
+            path: Directory to search in, resolved against the sandbox cwd.
+                When ``None``, the ``BaseSandbox`` default is used.
+
+        Returns:
+            ``GlobResult`` with a list of matches or ``error`` on failure.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _AGENTCORE_EXECUTOR,
+            lambda: self.glob(pattern, path),
         )

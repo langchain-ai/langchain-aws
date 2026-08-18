@@ -13,7 +13,7 @@ from langchain_core.utils import secret_from_env
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
-from langchain_aws.utils import create_aws_client
+from langchain_aws.utils import create_aws_client, parse_model_provider
 
 logger = logging.getLogger(__name__)
 
@@ -153,9 +153,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
         if self.provider:
             return self.provider
 
-        regions = ("eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp", "au")
-        parts = self.model_id.split(".")
-        return parts[1] if parts[0] in regions else parts[0]
+        return parse_model_provider(self.model_id)
 
     @property
     def _is_cohere_v4(self) -> bool:

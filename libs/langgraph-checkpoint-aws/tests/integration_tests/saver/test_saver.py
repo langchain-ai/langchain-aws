@@ -8,7 +8,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.checkpoint.base.id import uuid6
 
-from langgraph_checkpoint_aws.saver import BedrockSessionSaver
+from langgraph_checkpoint_aws import BedrockSessionSaver
 
 
 @tool

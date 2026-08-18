@@ -182,6 +182,54 @@ def test_extract_files_blob_resource() -> None:
     assert files["/data.bin"] == b"binary data"
 
 
+def test_extract_files_blob_already_bytes() -> None:
+    """Blob delivered as raw bytes must not be base64-decoded again."""
+    png_magic = b"\x89PNG\r\n\x1a\n"
+    fake_png = png_magic + b"\x00" * 100
+    response: dict[str, Any] = {
+        "stream": [
+            {
+                "result": {
+                    "content": [
+                        {
+                            "type": "resource",
+                            "resource": {
+                                "uri": "file:///test.png",
+                                "blob": fake_png,
+                            },
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+    files = _extract_files_from_stream(response, ["test.png"])
+    assert files["test.png"] == fake_png
+
+
+def test_extract_files_dot_slash_path() -> None:
+    """./-prefixed requested paths should match URIs without the prefix."""
+    response: dict[str, Any] = {
+        "stream": [
+            {
+                "result": {
+                    "content": [
+                        {
+                            "type": "resource",
+                            "resource": {
+                                "uri": "file:///data/foo.png",
+                                "text": "x",
+                            },
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+    files = _extract_files_from_stream(response, ["./data/foo.png"])
+    assert files["./data/foo.png"] == b"x"
+
+
 def test_extract_files_path_normalization() -> None:
     """Relative requested paths should still match file:/// URIs."""
     response: dict[str, Any] = {

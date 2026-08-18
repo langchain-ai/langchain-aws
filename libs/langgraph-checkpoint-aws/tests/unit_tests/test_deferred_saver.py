@@ -14,7 +14,7 @@ from langgraph.checkpoint.base import (
 )
 from langgraph.checkpoint.memory import MemorySaver
 
-from langgraph_checkpoint_aws.deferred_saver import DeferredCheckpointSaver
+from langgraph_checkpoint_aws.checkpoint.deferred_saver import DeferredCheckpointSaver
 
 
 def _make_config(
@@ -947,7 +947,9 @@ class TestFlushWriteDrainIdentityGuard:
                 new_write_inserted = True
                 # Directly manipulate the buffer to simulate a race where
                 # the entry at index 0 is no longer the one we peeked.
-                from langgraph_checkpoint_aws.deferred_saver import _PendingWrite
+                from langgraph_checkpoint_aws.checkpoint.deferred_saver import (
+                    _PendingWrite,
+                )
 
                 intruder = _PendingWrite(
                     config=write_config,

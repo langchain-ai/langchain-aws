@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from .agentcore import AgentCoreMemoryStore
 from .dynamodb import DynamoDBStore
 
 # Store the import error for later use
@@ -11,7 +12,13 @@ _import_error: ImportError | None = None
 try:
     from .valkey import AsyncValkeyStore, ValkeyIndexConfig, ValkeyStore
 
-    __all__ = ["AsyncValkeyStore", "DynamoDBStore", "ValkeyStore", "ValkeyIndexConfig"]
+    __all__ = [
+        "AgentCoreMemoryStore",
+        "AsyncValkeyStore",
+        "DynamoDBStore",
+        "ValkeyStore",
+        "ValkeyIndexConfig",
+    ]
 except ImportError as e:
     # Store the error for later use
     _import_error = e
@@ -29,4 +36,10 @@ except ImportError as e:
     ValkeyIndexConfig: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
     ValkeyStore: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
 
-    __all__ = ["AsyncValkeyStore", "DynamoDBStore", "ValkeyStore", "ValkeyIndexConfig"]
+    __all__ = [
+        "AgentCoreMemoryStore",
+        "AsyncValkeyStore",
+        "DynamoDBStore",
+        "ValkeyStore",
+        "ValkeyIndexConfig",
+    ]
