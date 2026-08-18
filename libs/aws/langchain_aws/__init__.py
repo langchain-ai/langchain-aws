@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     )
     from langchain_aws.chat_models import (
         ChatAnthropicBedrock,
+        ChatAnthropicMantle,
         ChatBedrockNovaSonic,
         ChatOpenAIMantle,
     )
@@ -89,6 +90,7 @@ __all__ = [
     "BedrockEmbeddings",
     "BedrockLLM",
     "ChatAnthropicBedrock",
+    "ChatAnthropicMantle",
     "ChatBedrock",
     "ChatBedrockConverse",
     "ChatBedrockNovaSonic",
@@ -124,6 +126,10 @@ def __getattr__(name: str) -> Any:
     # Modules that require extra pip installs
     _optional_imports: dict[str, tuple[str, str]] = {
         "ChatAnthropicBedrock": (
+            "langchain_aws.chat_models",
+            "pip install langchain-aws[anthropic]",
+        ),
+        "ChatAnthropicMantle": (
             "langchain_aws.chat_models",
             "pip install langchain-aws[anthropic]",
         ),
