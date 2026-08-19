@@ -893,9 +893,9 @@ def test__messages_to_bedrock_warns_once_per_dropped_block_type(
     warnings_logged = _dropped_block_warnings(caplog)
     assert len(warnings_logged) == 1
     assert "foreign_provider_block" in warnings_logged[0]
-    # The block itself is logged, not just its type, so the loss is diagnosable
-    # from the first occurrence.
-    assert "{'type': 'foreign_provider_block'}" in warnings_logged[0]
+    # Blocks can carry user data, so the warning names the block type only; the
+    # block itself stays at debug level, out of default-level logs.
+    assert "{'type': 'foreign_provider_block'}" not in warnings_logged[0]
 
 
 def test__messages_to_bedrock_warns_per_distinct_non_standard_block(

@@ -2314,9 +2314,13 @@ def _messages_to_bedrock(
                 # sees rather than merely trimming one block from it.
                 logger.warning(
                     "Assistant message at index %d has no content Bedrock can "
-                    "accept; sending %r in its place. Original content: %s",
+                    "accept; sending %r in its place.",
                     msg_idx,
                     EMPTY_CONTENT,
+                )
+                logger.debug(
+                    "Assistant message at index %d held %s",
+                    msg_idx,
                     msg.content,
                 )
                 content = [{"text": EMPTY_CONTENT}]
@@ -3032,20 +3036,21 @@ def _dropped_block_key(block: Dict[str, Any]) -> str:
 def _log_dropped_block(block: Dict[str, Any]) -> None:
     """Report a content block dropped because Bedrock has no equivalent.
 
-    Warns once per distinct kind of block per process, logging the block itself
-    so the loss can be diagnosed; repeats drop to debug level.
+    Warns once per distinct kind of block per process; repeats drop to debug
+    level. Blocks may carry reasoning text, tool payloads, or other user data,
+    so the block itself is logged only at debug level to keep it out of the
+    warning logs a typical production config enables.
     """
     block_key = _dropped_block_key(block)
+    logger.debug("Dropping unsupported content block: %s", block)
     if block_key in _warned_dropped_block_types:
-        logger.debug("Dropping unsupported content block: %s", block)
         return
     _warned_dropped_block_types.add(block_key)
     logger.warning(
         "Dropping unsupported content block of type %r: Bedrock has no "
         "equivalent, so it cannot be sent. Further blocks of this type are "
-        "logged at debug level. Block: %s",
+        "logged at debug level.",
         block_key,
-        block,
     )
 
 
