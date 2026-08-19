@@ -12,7 +12,11 @@ if TYPE_CHECKING:
         WriteRequestTypeDef,
     )
     from mypy_boto3_s3.client import S3Client
-    from mypy_boto3_s3.type_defs import DeleteTypeDef, ObjectIdentifierTypeDef
+    from mypy_boto3_s3.type_defs import (
+        DeleteTypeDef,
+        LifecycleRuleFilterOutputTypeDef,
+        ObjectIdentifierTypeDef,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +38,7 @@ class StorageStrategy:
         table_name: str,
         s3_client: "S3Client | None" = None,
         s3_bucket: str | None = None,
+        s3_key_prefix: str | None = None,
         ttl_seconds: int | None = None,
     ):
         """Initialize storage strategy.
@@ -43,12 +48,15 @@ class StorageStrategy:
             table_name: Name of the DynamoDB for payload storage
             s3_client: Optional S3 client for large data offloading
             s3_bucket: Optional S3 bucket name for offloading
+            s3_key_prefix: Optional prefix prepended to all S3 keys for
+                bucket-level isolation between applications
             ttl_seconds: Optional TTL in seconds for automatic cleanup
         """
         self.dynamodb_client = dynamodb_client
         self.table_name = table_name
         self.s3_client = s3_client
         self.s3_bucket = s3_bucket
+        self.s3_key_prefix = s3_key_prefix.strip("/") if s3_key_prefix else None
         self.ttl_seconds = ttl_seconds
         self.s3_enabled = s3_client is not None and s3_bucket is not None
 
@@ -82,6 +90,20 @@ class StorageStrategy:
             f"{S3_OFFLOAD_THRESHOLD / 1024:.0f}KB - will store in DynamoDB"
         )
         return False
+
+    def _prefixed_s3_key(self, s3_key: str) -> str:
+        """Prepend the configured key prefix to an S3 key.
+
+        Args:
+            s3_key: Original S3 object key.
+
+        Returns:
+            S3 key with prefix prepended, or the original key if no prefix
+            is configured.
+        """
+        if self.s3_key_prefix:
+            return f"{self.s3_key_prefix}/{s3_key}"
+        return s3_key
 
     def store_data(
         self,
@@ -382,7 +404,10 @@ class StorageStrategy:
             # Calculate expiration days (always round up, minimum 1 day)
             # S3 Lifecycle expiration: convert seconds to days (ceil, min 1 day)
             expiration_days = max(1, (self.ttl_seconds + 86399) // 86400)
-            rule_id = f"ttl-expiration-{expiration_days}d"
+            id_prefix = (
+                self.s3_key_prefix.replace("/", "-") if self.s3_key_prefix else "root"
+            )
+            rule_id = f"{id_prefix}-ttl-expiration-{expiration_days}d"
 
             # Get existing rules
             assert self.s3_bucket is not None  # Already checked by s3_enabled
@@ -405,13 +430,29 @@ class StorageStrategy:
                 existing_rules = []
 
             # Add new rule with tag filter for this specific TTL
+            lifecycle_filter: LifecycleRuleFilterOutputTypeDef
+            if self.s3_key_prefix:
+                lifecycle_filter = {
+                    "And": {
+                        "Prefix": self.s3_key_prefix + "/",
+                        "Tags": [
+                            {
+                                "Key": "ttl-days",
+                                "Value": str(expiration_days),
+                            }
+                        ],
+                    }
+                }
+            else:
+                lifecycle_filter = {
+                    "Tag": {"Key": "ttl-days", "Value": str(expiration_days)}
+                }
+
             existing_rules.append(
                 {
                     "ID": rule_id,
                     "Status": "Enabled",
-                    "Filter": {
-                        "Tag": {"Key": "ttl-days", "Value": str(expiration_days)}
-                    },
+                    "Filter": lifecycle_filter,
                     "Expiration": {"Days": expiration_days},
                 }
             )
@@ -447,10 +488,12 @@ class StorageStrategy:
         if not self.s3_enabled:
             raise ValueError("S3 is not configured but offloading was attempted")
 
+        prefixed_key = self._prefixed_s3_key(s3_key)
+
         # Build put parameters
         put_params: dict[str, Any] = {
             "Bucket": self.s3_bucket,
-            "Key": s3_key,
+            "Key": prefixed_key,
             "Body": data,
             "Metadata": {},
         }
@@ -502,8 +545,9 @@ class StorageStrategy:
         if not self.s3_enabled or self.s3_client is None:
             raise ValueError("S3 is not configured but retrieval was attempted")
 
+        prefixed_key = self._prefixed_s3_key(s3_key)
         assert self.s3_bucket is not None  # Already checked by s3_enabled
-        response = self.s3_client.get_object(Bucket=self.s3_bucket, Key=s3_key)
+        response = self.s3_client.get_object(Bucket=self.s3_bucket, Key=prefixed_key)
         data = response["Body"].read()
 
         logger.debug(f"Retrieved {len(data) / 1024:.1f}KB from S3: {s3_key}")
@@ -539,7 +583,7 @@ class StorageStrategy:
 
             # Build delete request with proper types
             objects_to_delete: list[ObjectIdentifierTypeDef] = [
-                {"Key": key} for key in batch
+                {"Key": self._prefixed_s3_key(key)} for key in batch
             ]
             delete_request: DeleteTypeDef = {"Objects": objects_to_delete}
 

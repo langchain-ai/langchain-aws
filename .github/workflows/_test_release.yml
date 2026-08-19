@@ -34,7 +34,7 @@ jobs:
       version: ${{ steps.check-version.outputs.version }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python + uv
         uses: "./.github/actions/uv_setup"
@@ -57,7 +57,7 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
 
       - name: Upload build
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: test-dist
           path: ${{ inputs.working-directory }}/dist/
@@ -85,9 +85,9 @@ jobs:
       actions: read # Needed for actions/download-artifact
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: test-dist
           path: ${{ inputs.working-directory }}/dist/

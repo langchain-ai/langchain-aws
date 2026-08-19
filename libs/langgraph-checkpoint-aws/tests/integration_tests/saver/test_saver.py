@@ -8,7 +8,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.checkpoint.base.id import uuid6
 
-from langgraph_checkpoint_aws.saver import BedrockSessionSaver
+from langgraph_checkpoint_aws import BedrockSessionSaver
 
 
 @tool
@@ -31,9 +31,7 @@ class TestBedrockMemorySaver:
     @pytest.fixture
     def model(self):
         # Setup model
-        return ChatBedrock(
-            model="anthropic.claude-3-sonnet-20240229-v1:0", region="us-west-2"
-        )
+        return ChatBedrock(model="us.anthropic.claude-sonnet-4-6", region="us-west-2")
 
     @pytest.fixture
     def session_saver(self):

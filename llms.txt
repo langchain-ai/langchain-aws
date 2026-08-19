@@ -12,6 +12,7 @@
 - [Amazon Bedrock AgentCore Browser Tool](https://python.langchain.com/docs/integrations/tools/bedrock_agentcore_browser/): Guide for using the AgentCore Browser toolkit for web automation. Covers navigation, content extraction, form filling, and screenshots in managed browser sessions.
 - [Amazon Bedrock AgentCore Code Interpreter](https://python.langchain.com/docs/integrations/tools/bedrock_agentcore_code_interpreter/): Documentation for executing Python, JavaScript, and TypeScript code in secure AgentCore sandbox environments. Covers code execution, file operations, and package installation.
 - [Amazon Bedrock AgentCore Memory](https://python.langchain.com/docs/integrations/memory/bedrock_agentcore/): Guide for using AgentCore Memory as a LangGraph checkpointer for persistent conversation state across sessions.
+- [Amazon Bedrock AgentCore Code Interpreter Sandbox](https://github.com/langchain-ai/langchain-aws/tree/main/libs/agentcore-codeinterpreter): AgentCore Code Interpreter sandbox backend for the Deep Agents SDK, providing secure code execution in isolated MicroVM environments.
 
 # Examples
 
@@ -35,3 +36,4 @@
 - [Amazon Kendra Documentation](https://docs.aws.amazon.com/kendra/): Official documentation for Amazon Kendra enterprise search service. Covers index creation, data source connectors, search configuration, and enterprise search best practices.
 - [Amazon Neptune Documentation](https://docs.aws.amazon.com/neptune/): Documentation for Amazon Neptune graph database service. Includes guides for graph creation, query languages (Gremlin and SPARQL), performance optimization, and graph analytics capabilities.
 - [Amazon Bedrock AgentCore Documentation](https://docs.aws.amazon.com/bedrock-agentcore/): Official AWS documentation for Bedrock AgentCore services including browser, code interpreter, and memory capabilities.
+- [LangChain AgentCore Code Interpreter PyPI Package](https://pypi.org/project/langchain-agentcore-codeinterpreter/): Python package for AgentCore Code Interpreter sandbox integration with Deep Agents.

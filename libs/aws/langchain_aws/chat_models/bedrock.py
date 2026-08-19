@@ -52,7 +52,6 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_core.utils.pydantic import TypeBaseModel, is_basemodel_subclass
 from langchain_core.utils.utils import _build_model_kwargs
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from typing_extensions import Self
 
 from langchain_aws.chat_models._compat import _convert_from_v1_to_anthropic
 from langchain_aws.chat_models.bedrock_converse import ChatBedrockConverse
@@ -75,6 +74,7 @@ from langchain_aws.utils import (
     create_aws_client,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
+    thinking_forced_tool_use_unsupported,
     thinking_in_params,
     trim_message_whitespace,
 )
@@ -296,6 +296,47 @@ def convert_messages_to_prompt_writer(messages: List[BaseMessage]) -> str:
     )
 
 
+def _convert_one_message_to_text_qwen(message: BaseMessage) -> str:
+    """Convert a single message to ChatML format for Qwen models.
+
+    Args:
+        message: The message to convert.
+
+    Returns:
+        The message formatted in ChatML syntax.
+
+    Raises:
+        ValueError: If the message type is not supported.
+    """
+    if isinstance(message, SystemMessage):
+        message_text = f"<|im_start|>system\n{message.content}<|im_end|>"
+    elif isinstance(message, ChatMessage):
+        message_text = f"<|im_start|>{message.role}\n{message.content}<|im_end|>"
+    elif isinstance(message, HumanMessage):
+        message_text = f"<|im_start|>user\n{message.content}<|im_end|>"
+    elif isinstance(message, AIMessage):
+        message_text = f"<|im_start|>assistant\n{message.content}<|im_end|>"
+    else:
+        raise ValueError(f"Got unknown type {message}")
+
+    return message_text
+
+
+def convert_messages_to_prompt_qwen(messages: List[BaseMessage]) -> str:
+    """Convert a list of messages to a ChatML prompt for Qwen models.
+
+    Args:
+        messages: List of messages to convert.
+
+    Returns:
+        The formatted ChatML prompt string.
+    """
+    return "\n".join(
+        [_convert_one_message_to_text_qwen(message) for message in messages]
+        + ["<|im_start|>assistant\n"]
+    )
+
+
 def _convert_one_message_to_text_openai(message: BaseMessage) -> str:
     if isinstance(message, SystemMessage):
         message_text = f"<|start|>system<|message|>{message.content}<|end|>"
@@ -309,13 +350,12 @@ def _convert_one_message_to_text_openai(message: BaseMessage) -> str:
             f"<|start|>assistant<|channel|>final<|message|>{message.content}<|end|>"
         )
     elif isinstance(message, ToolMessage):
-        # TODO: Tool messages in the OpenAI format should use
-        # "<|start|>{toolname} to=assistant<|message|>"
-        # Need to extract the tool name from the ToolMessage content or tool_call_id
-        # For now using generic "to=assistant" format as placeholder until we implement
-        # tool calling
-        # Will be resolved in follow-up PR with full tool support
-        message_text = f"<|start|>to=assistant<|channel|>commentary<|message|>{message.content}<|end|>"  # noqa: E501
+        tool_name = message.name or message.tool_call_id or "tool"
+
+        message_text = (
+            f"<|start|>{tool_name} to=assistant<|channel|>commentary"
+            f"<|message|>{message.content}<|end|>"
+        )
     else:
         raise ValueError(f"Got unknown type {message}")
 
@@ -589,13 +629,25 @@ def _format_anthropic_messages(
                                 )
                             )
                         else:
-                            item.pop("text", None)
-                            tool_blocks.append(item)
+                            tool_blocks.append(
+                                {
+                                    k: v
+                                    for k, v in item.items()
+                                    if k not in ("text", "index", "partial_json")
+                                }
+                            )
                     elif item["type"] in ["thinking", "redacted_thinking"]:
                         # Store thinking blocks separately
-                        thinking_blocks.append(
-                            {k: v for k, v in item.items() if k != "index"}
-                        )
+                        thinking_block = {k: v for k, v in item.items() if k != "index"}
+                        # Adaptive-only thinking models (i.e. Claude 4.7+) stream
+                        # signature-only thinking blocks on "omitted" display mode.
+                        # Need to include thinking field or Invoke API throws an error
+                        if (
+                            thinking_block["type"] == "thinking"
+                            and "thinking" not in thinking_block
+                        ):
+                            thinking_block["thinking"] = ""
+                        thinking_blocks.append(thinking_block)
                     elif item["type"] == "text":
                         text = item.get("text", "")
                         # Only add non-empty strings for now as empty ones are not
@@ -757,6 +809,8 @@ class ChatPromptAdapter:
             prompt = convert_messages_to_prompt_writer(messages=messages)
         elif provider == "openai":
             prompt = convert_messages_to_prompt_openai(messages=messages)
+        elif provider == "qwen":
+            prompt = convert_messages_to_prompt_qwen(messages=messages)
         else:
             raise NotImplementedError(
                 f"Provider {provider} model does not support chat."
@@ -785,6 +839,33 @@ _message_type_lookups = {
     "AIMessageChunk": "assistant",
     "HumanMessageChunk": "user",
 }
+
+
+def _apply_cache_control_to_messages(
+    cache_control: Optional[Dict[str, Any]],
+    formatted_messages: Optional[List[Dict[str, Any]]],
+) -> None:
+    """Apply cache_control to the last content block of the latest message with
+    cacheable content."""
+    if not cache_control or not formatted_messages:
+        return
+    for fmt_msg in reversed(formatted_messages):
+        content = fmt_msg.get("content")
+        if isinstance(content, list) and content:
+            for block in reversed(content):
+                if isinstance(block, dict):
+                    block["cache_control"] = cache_control
+                    break
+            break
+        elif isinstance(content, str):
+            fmt_msg["content"] = [
+                {
+                    "type": "text",
+                    "text": content,
+                    "cache_control": cache_control,
+                }
+            ]
+            break
 
 
 class ChatBedrock(BaseChatModel, BedrockBase):
@@ -875,13 +956,10 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             }
         return values
 
-    @model_validator(mode="after")
-    def _set_model_profile(self) -> Self:
-        """Set model profile if not overridden."""
-        if self.profile is None:
-            model_id = re.sub(r"^[A-Za-z]{2}\.", "", self.model_id)
-            self.profile = _get_default_model_profile(model_id)
-        return self
+    def _resolve_model_profile(self) -> ModelProfile | None:
+        """Return the default model profile for this model."""
+        model_id = self.base_model_id if self.base_model_id else self.model_id
+        return _get_default_model_profile(model_id)
 
     @property
     def lc_attributes(self) -> Dict[str, Any]:
@@ -897,6 +975,15 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         populate_by_name=True,
     )
 
+    def _get_invocation_params(
+        self, stop: Optional[List[str]] = None, **kwargs: Any
+    ) -> Dict[str, Any]:
+        """Get the parameters used to invoke the model, for tracing purposes."""
+        return {
+            "model": self.base_model_id or self.model_id,
+            **super()._get_invocation_params(stop=stop, **kwargs),
+        }
+
     def _get_ls_params(
         self, stop: Optional[List[str]] = None, **kwargs: Any
     ) -> LangSmithParams:
@@ -904,7 +991,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         params = self._get_invocation_params(stop=stop, **kwargs)
         ls_params = LangSmithParams(
             ls_provider="amazon_bedrock",
-            ls_model_name=self.model_id,
+            ls_model_name=params.get("model") or self.model_id,
             ls_model_type="chat",
         )
         if ls_temperature := params.get("temperature", self.temperature):
@@ -929,34 +1016,35 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             return
         provider = self._get_provider()
         prompt: Optional[str] = None
-        system: Optional[str] = None
+        system: Optional[Union[str, List[Dict[str, Any]]]] = None
         formatted_messages: Optional[List[Dict[str, Any]]] = None
 
         if provider == "anthropic":
             result = ChatPromptAdapter.format_messages(provider, messages)
+            assert isinstance(result, tuple)
             system_raw, formatted_messages = (
                 result[0],
                 cast(List[Dict[str, Any]], result[1]),
             )
-            # Convert system to string if it's a list
-            system_str: Optional[str] = None
+            # Preserve system prompt format (str or list) for cache_control support
             if system_raw:
-                if isinstance(system_raw, str):
-                    system_str = system_raw
-                elif isinstance(system_raw, list):
-                    # Convert list of dicts to string representation
-                    system_str = "\n".join(
-                        item.get("text", "") if isinstance(item, dict) else str(item)
-                        for item in system_raw
-                    )
+                system = system_raw
 
             if self.system_prompt_with_tools:
-                if system_str:
-                    system = self.system_prompt_with_tools + f"\n{system_str}"
-                else:
+                if system is None:
                     system = self.system_prompt_with_tools
-            else:
-                system = system_str
+                elif isinstance(system, str):
+                    system = f"{self.system_prompt_with_tools}\n{system}"
+                else:
+                    # Prepend tools as a content block to preserve cache_control
+                    system = [
+                        {"type": "text", "text": self.system_prompt_with_tools}
+                    ] + list(system)
+
+            # Apply cache_control to last message if provided via kwargs
+            _apply_cache_control_to_messages(
+                kwargs.pop("cache_control", None), formatted_messages
+            )
         elif provider in ("openai", "qwen"):
             formatted_messages = cast(
                 List[Dict[str, Any]],
@@ -1071,38 +1159,38 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
         else:
             prompt: Optional[str] = None
-            system: Optional[str] = None
+            system: Optional[Union[str, List[Dict[str, Any]]]] = None
             formatted_messages: Optional[List[Dict[str, Any]]] = None
             params: Dict[str, Any] = {**kwargs}
 
             if provider == "anthropic":
                 result = ChatPromptAdapter.format_messages(provider, messages)
+                assert isinstance(result, tuple)
                 system_raw, formatted_messages = (
                     result[0],
                     cast(List[Dict[str, Any]], result[1]),
                 )
-                # Convert system to string if it's a list
-                system_str: Optional[str] = None
+                # Preserve system prompt format (str or list) for cache_control support
                 if system_raw:
-                    if isinstance(system_raw, str):
-                        system_str = system_raw
-                    elif isinstance(system_raw, list):
-                        # Convert list of dicts to string representation
-                        system_str = "\n".join(
-                            item.get("text", "")
-                            if isinstance(item, dict)
-                            else str(item)
-                            for item in system_raw
-                        )
-                # use tools the new way with claude 3
+                    system = system_raw
+
                 if self.system_prompt_with_tools:
-                    if system_str:
-                        system = self.system_prompt_with_tools + f"\n{system_str}"
-                    else:
+                    if system is None:
                         system = self.system_prompt_with_tools
-                else:
-                    system = system_str
+                    elif isinstance(system, str):
+                        system = f"{self.system_prompt_with_tools}\n{system}"
+                    else:
+                        # Prepend tools as a content block to preserve cache_control
+                        system = [
+                            {"type": "text", "text": self.system_prompt_with_tools}
+                        ] + list(system)
                 citations_enabled = _citations_enabled(formatted_messages)
+
+                # Apply cache_control to last message if provided via kwargs
+                _apply_cache_control_to_messages(
+                    params.pop("cache_control", None), formatted_messages
+                )
+
             elif provider in ("openai", "qwen"):
                 formatted_messages = cast(
                     List[Dict[str, Any]],
@@ -1283,15 +1371,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
 
             base_model = self._get_base_model()
-            if any(
-                x in base_model
-                for x in (
-                    "claude-3-7-",
-                    "claude-opus-4-",
-                    "claude-sonnet-4-",
-                    "claude-haiku-4-",
-                )
-            ) and thinking_in_params(self.model_kwargs or {}):
+            if thinking_forced_tool_use_unsupported(base_model) and thinking_in_params(
+                self.model_kwargs or {}
+            ):
                 forced = False
                 if isinstance(tool_choice, bool):
                     forced = bool(tool_choice)
@@ -1474,14 +1556,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         tool_name = convert_to_anthropic_tool(schema)["name"]
 
         base_model = self._get_base_model()
-        has_thinking = any(
-            x in base_model
-            for x in (
-                "claude-3-7-",
-                "claude-opus-4-",
-                "claude-sonnet-4-",
-                "claude-haiku-4-",
-            )
+        has_thinking = thinking_forced_tool_use_unsupported(
+            base_model
         ) and thinking_in_params(self.model_kwargs or {})
 
         if has_thinking:

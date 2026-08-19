@@ -19,23 +19,19 @@ from pydantic import BaseModel, Field
 from langchain_aws import ChatBedrock
 from langchain_aws.chat_models.bedrock import (
     ChatPromptAdapter,
+    _convert_one_message_to_text_openai,
+    _convert_one_message_to_text_qwen,
     _format_anthropic_messages,
     _merge_messages,
     convert_messages_to_prompt_anthropic,
+    convert_messages_to_prompt_qwen,
 )
 from langchain_aws.function_calling import convert_to_anthropic_tool
 
 
 def test_profile() -> None:
     model = ChatBedrock(
-        model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
-        region_name="us-west-2",
-    )
-    assert model.profile
-    assert not model.profile["reasoning_output"]
-
-    model = ChatBedrock(
-        model_id="anthropic.claude-sonnet-4-20250514-v1:0",
+        model_id="anthropic.claude-sonnet-4-6",
         region_name="us-west-2",
     )
     assert model.profile
@@ -169,6 +165,108 @@ def test__format_anthropic_messages_with_tool_calls() -> None:
     )
     actual = _format_anthropic_messages(messages)
     assert expected == actual
+
+
+def test__format_anthropic_messages_strips_streaming_fields_on_invalid_tool() -> None:
+    """Regression for langchain-ai/langchain#31208."""
+    ai = AIMessage(
+        content=[
+            {
+                "type": "tool_use",
+                "id": "toolu_bad",
+                "name": "web_search",
+                "input": {},
+                "index": 2,
+                "partial_json": '{"bad": json}',
+            },
+        ],
+        tool_calls=[],
+        invalid_tool_calls=[
+            {
+                "type": "invalid_tool_call",
+                "id": "toolu_bad",
+                "name": "web_search",
+                "args": '{"bad": json}',
+                "error": "JSONDecodeError",
+            }
+        ],
+    )
+    _, formatted = _format_anthropic_messages([HumanMessage("go"), ai])
+    tool_use_block = next(
+        b for b in formatted[1]["content"] if b.get("type") == "tool_use"
+    )
+    assert "index" not in tool_use_block
+    assert "partial_json" not in tool_use_block
+    assert tool_use_block == {
+        "type": "tool_use",
+        "id": "toolu_bad",
+        "name": "web_search",
+        "input": {},
+    }
+
+
+def test__format_anthropic_messages_signature_only_thinking_block() -> None:
+    ai = AIMessage(
+        content=[
+            {
+                "type": "thinking",
+                "signature": "sig-abc",
+                "index": 0,
+            },
+            {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "get_weather",
+                "input": {"location": "SF"},
+                "index": 1,
+            },
+        ],
+        tool_calls=[
+            {"name": "get_weather", "id": "toolu_1", "args": {"location": "SF"}}
+        ],
+    )
+    _, formatted = _format_anthropic_messages([HumanMessage("go"), ai])
+    thinking_block = next(
+        b for b in formatted[1]["content"] if b.get("type") == "thinking"
+    )
+    assert thinking_block == {
+        "type": "thinking",
+        "signature": "sig-abc",
+        "thinking": "",
+    }
+
+    ai_with_text = AIMessage(
+        content=[
+            {
+                "type": "thinking",
+                "thinking": "step by step...",
+                "signature": "sig-def",
+                "index": 0,
+            },
+            {"type": "text", "text": "Answer."},
+        ]
+    )
+    _, formatted = _format_anthropic_messages([HumanMessage("go"), ai_with_text])
+    thinking_block = next(
+        b for b in formatted[1]["content"] if b.get("type") == "thinking"
+    )
+    assert thinking_block == {
+        "type": "thinking",
+        "thinking": "step by step...",
+        "signature": "sig-def",
+    }
+
+    ai_redacted = AIMessage(
+        content=[
+            {"type": "redacted_thinking", "data": "opaque", "index": 0},
+            {"type": "text", "text": "Answer."},
+        ]
+    )
+    _, formatted = _format_anthropic_messages([HumanMessage("go"), ai_redacted])
+    redacted_block = next(
+        b for b in formatted[1]["content"] if b.get("type") == "redacted_thinking"
+    )
+    assert redacted_block == {"type": "redacted_thinking", "data": "opaque"}
 
 
 def test__format_anthropic_messages_with_str_content_and_tool_calls() -> None:
@@ -598,6 +696,38 @@ def test_claude_thinking_forced_tool_raises(
         chat.bind_tools([GetWeather], tool_choice=tool_choice)
 
 
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "global.anthropic.claude-opus-4-8",
+        "us.anthropic.claude-sonnet-5",
+        "global.anthropic.claude-fable-5",
+    ],
+)
+@pytest.mark.parametrize(
+    "tool_choice",
+    [
+        "any",
+        "GetWeather",
+        {"type": "tool", "name": "GetWeather"},
+    ],
+)
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_claude_5_thinking_forced_tool_allowed(
+    mock_create_aws_client, model_id, tool_choice
+) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    chat = ChatBedrock(
+        model=model_id,
+        region="us-west-2",
+        model_kwargs={
+            "thinking": {"type": "adaptive"},
+        },
+    )
+    chat_with_tools = chat.bind_tools([GetWeather], tool_choice=tool_choice)
+    assert "tool_choice" in cast(RunnableBinding, chat_with_tools).kwargs
+
+
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
 def test_claude_thinking_tool_choice_auto_ok(mock_create_aws_client) -> None:
     mock_create_aws_client.return_value = MagicMock()
@@ -752,6 +882,23 @@ def test_standard_tracing_params() -> None:
     }
 
 
+def test_invocation_params_includes_model() -> None:
+    llm = ChatBedrock(model="us.anthropic.claude-sonnet-5", region="us-west-2")
+    assert llm._get_invocation_params()["model"] == "us.anthropic.claude-sonnet-5"
+
+
+def test_invocation_params_model_prefers_base_model_id() -> None:
+    llm = ChatBedrock(
+        model=(
+            "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/abc"
+        ),
+        base_model="us.anthropic.claude-sonnet-5",
+        provider="anthropic",
+        region="us-west-2",
+    )
+    assert llm._get_invocation_params()["model"] == "us.anthropic.claude-sonnet-5"
+
+
 def test_beta_use_converse_api() -> None:
     llm = ChatBedrock(model_id="amazon.nova.foo", region_name="us-west-2")  # type: ignore[call-arg]
     assert llm.beta_use_converse_api
@@ -842,6 +989,34 @@ def test_beta_use_converse_api_with_inference_profile_as_nova_model(
     assert chat.beta_use_converse_api is True
 
 
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_profile_with_application_inference_profile(mock_create_aws_client):
+    """Test _set_model_profile resolves profile correctly for AIP ARNs."""
+    mock_bedrock_client = mock.MagicMock()
+    mock_bedrock_client.get_inference_profile.return_value = {
+        "models": [
+            {
+                "modelArn": (
+                    "arn:aws:bedrock:us-west-2::foundation-model/"
+                    "anthropic.claude-sonnet-4-5-20250929-v1:0"
+                )
+            }
+        ]
+    }
+    mock_create_aws_client.return_value = mock_bedrock_client
+
+    aip_model_id = "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile"  # noqa: E501
+    chat = ChatBedrock(
+        model=aip_model_id,
+        region="us-west-2",
+        bedrock_client=mock_bedrock_client,
+    )  # type: ignore[call-arg]
+
+    # Profile should be resolved from the base model, not the ARN
+    assert chat.profile
+    assert chat.profile["reasoning_output"]
+
+
 @pytest.mark.parametrize(
     "model_id, provider, expected_provider, expectation, region_name",
     [
@@ -874,7 +1049,7 @@ def test_beta_use_converse_api_with_inference_profile_as_nova_model(
             "us-west-2",
         ),
         (
-            "eu.anthropic.claude-3-haiku-20240307-v1:0",
+            "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
             None,
             "anthropic",
             nullcontext(),
@@ -1341,6 +1516,12 @@ def test__format_anthropic_messages_preserves_content_order() -> None:
             "deepseek.r1-v1:0",
             "deepseek",
             "<|begin_of_sentence|>",
+        ),
+        (
+            "qwen.qwen3-32b-v1:0",
+            "qwen.qwen3-32b-v1:0",
+            "qwen",
+            "<|im_start|>",
         ),
     ],
 )
@@ -1839,3 +2020,560 @@ def test_service_tier_passed_to_as_converse() -> None:
 
     converse_llm = llm._as_converse
     assert converse_llm.service_tier == "flex"
+
+
+def test_system_prompt_cache_control_preserved() -> None:
+    """Test that system prompt with cache_control is preserved as list."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+    ).encode()
+    mock_response.get.side_effect = lambda key, default=None: {
+        "body": mock_response.get.return_value,
+        "ResponseMetadata": {"HTTPHeaders": {}},
+    }.get(key, default)
+    mock_client.invoke_model.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
+        region_name="us-west-2",
+    )
+    system = SystemMessage(
+        [
+            {
+                "type": "text",
+                "text": "You are helpful.",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+    )
+    llm.invoke([system, HumanMessage(content="Hi")])
+
+    body = json.loads(mock_client.invoke_model.call_args[1]["body"])
+    assert isinstance(body["system"], list)
+    assert body["system"][0].get("cache_control") == {"type": "ephemeral"}
+
+
+def test_system_prompt_list_format() -> None:
+    """Test that list system prompts are passed through without conversion."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+    ).encode()
+    mock_response.get.side_effect = lambda key, default=None: {
+        "body": mock_response.get.return_value,
+        "ResponseMetadata": {"HTTPHeaders": {}},
+    }.get(key, default)
+    mock_client.invoke_model.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
+        region_name="us-west-2",
+    )
+    system = SystemMessage(
+        [
+            {"type": "text", "text": "Block 1."},
+            {"type": "text", "text": "Block 2."},
+        ]
+    )
+    llm.invoke([system, HumanMessage(content="Hi")])
+
+    body = json.loads(mock_client.invoke_model.call_args[1]["body"])
+    assert isinstance(body["system"], list)
+    assert len(body["system"]) == 2
+
+
+def test_system_prompt_with_tools_prepends_block() -> None:
+    """Test that tools are prepended as content block when system is a list."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+    ).encode()
+    mock_response.get.side_effect = lambda key, default=None: {
+        "body": mock_response.get.return_value,
+        "ResponseMetadata": {"HTTPHeaders": {}},
+    }.get(key, default)
+    mock_client.invoke_model.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
+        region_name="us-west-2",
+    )
+    llm.system_prompt_with_tools = "You have tools."
+    system = SystemMessage(
+        [
+            {
+                "type": "text",
+                "text": "Be helpful.",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+    )
+    llm.invoke([system, HumanMessage(content="Hi")])
+
+    body = json.loads(mock_client.invoke_model.call_args[1]["body"])
+    assert isinstance(body["system"], list)
+    assert len(body["system"]) == 2
+    assert body["system"][0]["text"] == "You have tools."
+    assert "cache_control" not in body["system"][0]
+    assert body["system"][1].get("cache_control") == {"type": "ephemeral"}
+
+
+def test_system_prompt_string_format() -> None:
+    """Test that string system prompts still work."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+    ).encode()
+    mock_response.get.side_effect = lambda key, default=None: {
+        "body": mock_response.get.return_value,
+        "ResponseMetadata": {"HTTPHeaders": {}},
+    }.get(key, default)
+    mock_client.invoke_model.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
+        region_name="us-west-2",
+    )
+    llm.invoke([SystemMessage("You are helpful."), HumanMessage(content="Hi")])  # type: ignore[misc]
+
+    body = json.loads(mock_client.invoke_model.call_args[1]["body"])
+    assert isinstance(body["system"], str)
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "us.anthropic.claude-sonnet-5",
+        "global.anthropic.claude-opus-5",
+        "global.anthropic.claude-fable-5",
+    ],
+)
+def test_stream_thinking_on_by_default_returns_block_content(model_id: str) -> None:
+    """Default-thinking Claude streams must not mix string and block content."""
+    mock_client = MagicMock()
+
+    def stream_gen():
+        events = [
+            {"type": "message_start", "message": {}},
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "thinking", "thinking": "", "signature": ""},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "signature_delta", "signature": "sig-abc"},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 1,
+                "delta": {"type": "text_delta", "text": "Hello!"},
+            },
+            {"type": "message_stop"},
+        ]
+        for e in events:
+            yield {"chunk": {"bytes": json.dumps(e).encode()}}
+
+    mock_response = MagicMock()
+    mock_response.get.return_value = stream_gen()
+    mock_client.invoke_model_with_response_stream.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model=model_id,
+        region="us-west-2",
+    )
+    full = None
+    for chunk in llm.stream([HumanMessage(content="Hello")]):
+        full = chunk if full is None else full + chunk
+
+    assert isinstance(full.content, list)
+    assert not any(isinstance(b, str) for b in full.content), full.content
+    block_types = [b["type"] for b in full.content]
+    assert "text" in block_types
+    text_blocks = [b for b in full.content_blocks if b["type"] == "text"]
+    assert len(text_blocks) == 1
+
+
+def test_stream_system_prompt_cache_control() -> None:
+    """Test that cache_control is preserved in streaming."""
+    mock_client = MagicMock()
+
+    def stream_gen():
+        yield {
+            "chunk": {
+                "bytes": json.dumps(
+                    {
+                        "type": "content_block_delta",
+                        "delta": {"type": "text_delta", "text": "Hi"},
+                    }
+                ).encode()
+            }
+        }
+        yield {
+            "chunk": {
+                "bytes": json.dumps(
+                    {
+                        "type": "message_stop",
+                        "amazon-bedrock-invocationMetrics": {
+                            "inputTokenCount": 10,
+                            "outputTokenCount": 5,
+                        },
+                    }
+                ).encode()
+            }
+        }
+
+    mock_response = MagicMock()
+    mock_response.get.return_value = stream_gen()
+    mock_client.invoke_model_with_response_stream.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
+        region_name="us-west-2",
+    )
+    system = SystemMessage(
+        [
+            {
+                "type": "text",
+                "text": "You are helpful.",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+    )
+    list(llm.stream([system, HumanMessage(content="Hi")]))
+
+    body = json.loads(
+        mock_client.invoke_model_with_response_stream.call_args[1]["body"]
+    )
+    assert isinstance(body["system"], list)
+    assert body["system"][0].get("cache_control") == {"type": "ephemeral"}
+
+
+@pytest.mark.asyncio
+async def test_astream_system_prompt_cache_control() -> None:
+    """Test that cache_control is preserved in async streaming."""
+    mock_client = MagicMock()
+
+    def stream_gen():
+        yield {
+            "chunk": {
+                "bytes": json.dumps(
+                    {
+                        "type": "content_block_delta",
+                        "delta": {"type": "text_delta", "text": "Hi"},
+                    }
+                ).encode()
+            }
+        }
+        yield {
+            "chunk": {
+                "bytes": json.dumps(
+                    {
+                        "type": "message_stop",
+                        "amazon-bedrock-invocationMetrics": {
+                            "inputTokenCount": 10,
+                            "outputTokenCount": 5,
+                        },
+                    }
+                ).encode()
+            }
+        }
+
+    mock_response = MagicMock()
+    mock_response.get.return_value = stream_gen()
+    mock_client.invoke_model_with_response_stream.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
+        region_name="us-west-2",
+    )
+    system = SystemMessage(
+        [
+            {
+                "type": "text",
+                "text": "You are helpful.",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+    )
+    async for _ in llm.astream([system, HumanMessage(content="Hi")]):
+        pass
+
+    body = json.loads(
+        mock_client.invoke_model_with_response_stream.call_args[1]["body"]
+    )
+    assert isinstance(body["system"], list)
+    assert body["system"][0].get("cache_control") == {"type": "ephemeral"}
+
+
+def test_cache_control_kwarg_applied_to_string_content() -> None:
+    """Test that cache_control kwarg converts string content to block."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+    ).encode()
+    mock_response.get.side_effect = lambda key, default=None: {
+        "body": mock_response.get.return_value,
+        "ResponseMetadata": {"HTTPHeaders": {}},
+    }.get(key, default)
+    mock_client.invoke_model.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
+        region_name="us-west-2",
+    )
+    llm.invoke(
+        [SystemMessage("You are helpful."), HumanMessage(content="Hi")],
+        cache_control={"type": "ephemeral", "ttl": "5m"},
+    )
+
+    body = json.loads(mock_client.invoke_model.call_args[1]["body"])
+    last_msg = body["messages"][-1]
+    # String content should be converted to list with cache_control
+    assert isinstance(last_msg["content"], list)
+    assert last_msg["content"][0] == {
+        "type": "text",
+        "text": "Hi",
+        "cache_control": {"type": "ephemeral", "ttl": "5m"},
+    }
+
+
+def test_cache_control_kwarg_applied_to_list_content() -> None:
+    """Test that cache_control kwarg is applied to last block."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+    ).encode()
+    mock_response.get.side_effect = lambda key, default=None: {
+        "body": mock_response.get.return_value,
+        "ResponseMetadata": {"HTTPHeaders": {}},
+    }.get(key, default)
+    mock_client.invoke_model.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
+        region_name="us-west-2",
+    )
+    llm.invoke(
+        [
+            SystemMessage("You are helpful."),
+            HumanMessage(content="Hello"),
+            AIMessage(content="Hi there!"),
+            HumanMessage(content="How are you?"),
+        ],
+        cache_control={"type": "ephemeral"},
+    )
+
+    body = json.loads(mock_client.invoke_model.call_args[1]["body"])
+    last_msg = body["messages"][-1]
+    content = last_msg["content"]
+    if isinstance(content, list):
+        last_block = next(b for b in reversed(content) if isinstance(b, dict))
+        assert last_block["cache_control"] == {"type": "ephemeral"}
+    else:
+        pytest.fail("Expected list content after cache_control applied")
+
+
+def test_cache_control_kwarg_not_in_api_body() -> None:
+    """Test that cache_control is popped from params, not sent to API."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+    ).encode()
+    mock_response.get.side_effect = lambda key, default=None: {
+        "body": mock_response.get.return_value,
+        "ResponseMetadata": {"HTTPHeaders": {}},
+    }.get(key, default)
+    mock_client.invoke_model.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
+        region_name="us-west-2",
+    )
+    llm.invoke(
+        [SystemMessage("You are helpful."), HumanMessage(content="Hi")],
+        cache_control={"type": "ephemeral"},
+    )
+
+    body = json.loads(mock_client.invoke_model.call_args[1]["body"])
+    # cache_control should NOT leak as a top-level body parameter
+    assert "cache_control" not in body
+
+
+def test_stream_cache_control_kwarg_applied() -> None:
+    """Test that cache_control kwarg works in streaming mode."""
+    mock_client = MagicMock()
+
+    def stream_gen():
+        yield {
+            "chunk": {
+                "bytes": json.dumps(
+                    {
+                        "type": "content_block_delta",
+                        "delta": {"type": "text_delta", "text": "Hi"},
+                    }
+                ).encode()
+            }
+        }
+        yield {
+            "chunk": {
+                "bytes": json.dumps(
+                    {
+                        "type": "message_stop",
+                        "amazon-bedrock-invocationMetrics": {
+                            "inputTokenCount": 10,
+                            "outputTokenCount": 5,
+                        },
+                    }
+                ).encode()
+            }
+        }
+
+    mock_response = MagicMock()
+    mock_response.get.return_value = stream_gen()
+    mock_client.invoke_model_with_response_stream.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
+        region_name="us-west-2",
+    )
+    list(
+        llm.stream(
+            [SystemMessage("You are helpful."), HumanMessage(content="Hi")],
+            cache_control={"type": "ephemeral", "ttl": "5m"},
+        )
+    )
+
+    body = json.loads(
+        mock_client.invoke_model_with_response_stream.call_args[1]["body"]
+    )
+    last_msg = body["messages"][-1]
+    assert isinstance(last_msg["content"], list)
+    assert last_msg["content"][0]["cache_control"] == {
+        "type": "ephemeral",
+        "ttl": "5m",
+    }
+
+
+def test_convert_one_message_to_text_qwen_system() -> None:
+    """Test that SystemMessage is converted to ChatML system format."""
+    message = SystemMessage(content="You are a helpful assistant")
+    result = _convert_one_message_to_text_qwen(message)
+    assert result == "<|im_start|>system\nYou are a helpful assistant<|im_end|>"
+
+
+def test_convert_one_message_to_text_qwen_human() -> None:
+    """Test that HumanMessage is converted to ChatML user format."""
+    message = HumanMessage(content="Hello")
+    result = _convert_one_message_to_text_qwen(message)
+    assert result == "<|im_start|>user\nHello<|im_end|>"
+
+
+def test_convert_one_message_to_text_qwen_ai() -> None:
+    """Test that AIMessage is converted to ChatML assistant format."""
+    message = AIMessage(content="Hi there")
+    result = _convert_one_message_to_text_qwen(message)
+    assert result == "<|im_start|>assistant\nHi there<|im_end|>"
+
+
+def test_convert_one_message_to_text_qwen_unknown_type() -> None:
+    """Test that unknown message types raise ValueError."""
+    message = ToolMessage(content="result", tool_call_id="123")
+    with pytest.raises(ValueError, match="Got unknown type"):
+        _convert_one_message_to_text_qwen(message)
+
+
+def test_convert_messages_to_prompt_qwen() -> None:
+    """Test multi-turn conversation is formatted in ChatML with suffix."""
+    messages = [
+        SystemMessage(content="You are a helpful assistant"),
+        HumanMessage(content="What is 1+1?"),
+        AIMessage(content="2"),
+        HumanMessage(content="And 2+2?"),
+    ]
+    result = convert_messages_to_prompt_qwen(messages)
+    expected = (
+        "<|im_start|>system\nYou are a helpful assistant<|im_end|>\n"
+        "<|im_start|>user\nWhat is 1+1?<|im_end|>\n"
+        "<|im_start|>assistant\n2<|im_end|>\n"
+        "<|im_start|>user\nAnd 2+2?<|im_end|>\n"
+        "<|im_start|>assistant\n"
+    )
+    assert result == expected
+
+
+def test_convert_messages_to_prompt_qwen_single_message() -> None:
+    """Test single user message produces valid ChatML prompt."""
+    messages = [HumanMessage(content="Hello")]
+    result = convert_messages_to_prompt_qwen(messages)
+    expected = "<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n"
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "name,tool_call_id,expected_prefix",
+    [
+        ("get_weather", "call_123", "get_weather"),
+        (None, "call_123", "call_123"),
+        (None, "", "tool"),
+    ],
+)
+def test_convert_one_message_to_text_openai_tool_message(
+    name, tool_call_id, expected_prefix
+):
+    """Test ToolMessage formats per Harmony spec with fallbacks."""
+    message = ToolMessage(content="result", tool_call_id=tool_call_id, name=name)
+    result = _convert_one_message_to_text_openai(message)
+    assert result == (
+        f"<|start|>{expected_prefix} to=assistant"
+        f"<|channel|>commentary"
+        f"<|message|>result<|end|>"
+    )

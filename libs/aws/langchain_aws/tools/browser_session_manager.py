@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import TYPE_CHECKING, Dict, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Tuple, Union
 
 if TYPE_CHECKING:
     from playwright.async_api import Browser as AsyncBrowser
     from playwright.sync_api import Browser as SyncBrowser
 
 from bedrock_agentcore.tools.browser_client import BrowserClient
+from bedrock_agentcore.tools.config import (
+    BrowserExtension,
+    ProfileConfiguration,
+    ProxyConfiguration,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,16 +34,51 @@ class BrowserSessionManager:
 
     """
 
-    def __init__(self, region: str = "us-west-2"):
+    def __init__(
+        self,
+        region: str = "us-west-2",
+        proxy_configuration: Optional[Union[ProxyConfiguration, Dict[str, Any]]] = None,
+        extensions: Optional[Sequence[Union[BrowserExtension, Dict[str, Any]]]] = None,
+        profile_configuration: Optional[
+            Union[ProfileConfiguration, Dict[str, Any]]
+        ] = None,
+        session_wait_timeout: float = 10.0,
+    ):
         """
         Initialize the browser session manager.
 
         Args:
             region: AWS region for browser client
+            proxy_configuration: Proxy configuration to pass to browser client
+            extensions: Extensions configuration to pass to browser client
+            profile_configuration: Profile configuration to pass to browser client
         """
         self.region = region
+        self.proxy_configuration = proxy_configuration
+        self.extensions = extensions
+        self.profile_configuration = profile_configuration
+        self.session_wait_timeout = session_wait_timeout
         self._async_sessions: Dict[str, Tuple[BrowserClient, AsyncBrowser, bool]] = {}
         self._sync_sessions: Dict[str, Tuple[BrowserClient, SyncBrowser, bool]] = {}
+
+    def _build_start_kwargs(self) -> Dict[str, Any]:
+        """Build keyword arguments for ``BrowserClient.start()``.
+
+        Collects the optional proxy, extensions, and profile configuration
+        into a dict, omitting any that are ``None``.
+
+        Returns:
+            Dict of keyword arguments to unpack into ``start()``.
+
+        """
+        kwargs: Dict[str, Any] = {}
+        if self.proxy_configuration is not None:
+            kwargs["proxy_configuration"] = self.proxy_configuration
+        if self.extensions is not None:
+            kwargs["extensions"] = self.extensions
+        if self.profile_configuration is not None:
+            kwargs["profile_configuration"] = self.profile_configuration
+        return kwargs
 
     async def get_async_browser(self, thread_id: str) -> AsyncBrowser:
         """
@@ -56,10 +97,26 @@ class BrowserSessionManager:
         if thread_id in self._async_sessions:
             client, browser, in_use = self._async_sessions[thread_id]
             if in_use:
-                raise RuntimeError(
-                    f"Browser session for thread {thread_id} is already in use. "
-                    "Use a different thread_id for concurrent operations."
-                )
+                # Wait for the current operation to release the session.
+                # This happens when LangGraph runs multiple browser tool
+                # calls concurrently (e.g., navigate + extract_text in
+                # the same LLM turn via asyncio.gather).
+                max_attempts = int(self.session_wait_timeout / 0.1)
+                for _ in range(max_attempts):  # 10 second timeout
+                    await asyncio.sleep(0.1)
+                    _, _, still_in_use = self._async_sessions.get(
+                        thread_id, (None, None, False)
+                    )
+                    if not still_in_use:
+                        break
+                else:
+                    raise RuntimeError(
+                        f"Browser session for thread {thread_id} timed out "
+                        "waiting for previous operation to complete "
+                        f"({self.session_wait_timeout}s). "
+                        "Use a different thread_id for truly concurrent operations."
+                    )
+                client, browser, _ = self._async_sessions[thread_id]
             self._async_sessions[thread_id] = (client, browser, True)
             return browser
 
@@ -111,8 +168,8 @@ class BrowserSessionManager:
         )
 
         try:
-            # Start browser session
-            browser_client.start()
+            # Start browser session with optional parameters
+            browser_client.start(**self._build_start_kwargs())
 
             # Get WebSocket connection info
             ws_url, headers = browser_client.generate_ws_headers()
@@ -171,8 +228,8 @@ class BrowserSessionManager:
         )
 
         try:
-            # Start browser session
-            browser_client.start()
+            # Start browser session with optional parameters
+            browser_client.start(**self._build_start_kwargs())
 
             # Get WebSocket connection info
             ws_url, headers = browser_client.generate_ws_headers()

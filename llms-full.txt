@@ -91,7 +91,7 @@ claude_35_sonnet = ChatBedrock(
 
 # For faster responses
 claude_haiku = ChatBedrock(
-    model_id="anthropic.claude-3-haiku-20240307-v1:0",
+    model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
     region_name="us-east-1",
     model_kwargs={"max_tokens": 1000, "temperature": 0.1}
 )
@@ -678,7 +678,7 @@ class RobustBedrockClient:
         raise Exception(f"Failed after {self.max_retries} attempts")
 
 # Usage
-robust_client = RobustBedrockClient("anthropic.claude-3-haiku-20240307-v1:0")
+robust_client = RobustBedrockClient("anthropic.claude-haiku-4-5-20251001-v1:0")
 response = robust_client.invoke_with_retry("Explain cloud computing")
 ```
 
@@ -691,7 +691,7 @@ class CostOptimizedLLM:
     def __init__(self):
         # Use faster/cheaper models for simple tasks
         self.fast_model = ChatBedrock(
-            model_id="anthropic.claude-3-haiku-20240307-v1:0",  # Cheapest
+            model_id="anthropic.claude-haiku-4-5-20251001-v1:0",  # Cheapest
             model_kwargs={"max_tokens": 500}
         )
         
@@ -787,7 +787,7 @@ class SecureLLMWrapper:
         return safe_response
 
 # Usage
-secure_llm = SecureLLMWrapper("anthropic.claude-3-haiku-20240307-v1:0")
+secure_llm = SecureLLMWrapper("anthropic.claude-haiku-4-5-20251001-v1:0")
 response = secure_llm.secure_invoke("Tell me about data privacy laws")
 ```
 
@@ -884,7 +884,7 @@ class MonitoredLLM:
         return self.llm.batch(prompts)
 
 # Usage
-monitored_llm = MonitoredLLM("anthropic.claude-3-haiku-20240307-v1:0")
+monitored_llm = MonitoredLLM("anthropic.claude-haiku-4-5-20251001-v1:0")
 response = monitored_llm.invoke("What is AI?")
 ```
 
@@ -933,7 +933,7 @@ load_dotenv()
 
 class Config:
     AWS_REGION = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
-    BEDROCK_MODEL_ID = os.getenv('BEDROCK_MODEL_ID', 'anthropic.claude-3-haiku-20240307-v1:0')
+    BEDROCK_MODEL_ID = os.getenv('BEDROCK_MODEL_ID', 'anthropic.claude-haiku-4-5-20251001-v1:0')
     KENDRA_INDEX_ID = os.getenv('KENDRA_INDEX_ID')
     
     # Model configurations

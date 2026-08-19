@@ -18,7 +18,7 @@ from langgraph.store.base import (
     SearchOp,
 )
 
-from langgraph_checkpoint_aws.agentcore.store import AgentCoreMemoryStore
+from langgraph_checkpoint_aws.store.agentcore.store import AgentCoreMemoryStore
 
 
 class TestAgentCoreMemoryStore:
@@ -83,6 +83,21 @@ class TestAgentCoreMemoryStore:
         """Test initialization requires memory_id."""
         with pytest.raises(TypeError):
             AgentCoreMemoryStore()
+
+    def test_init_with_caller_config(self, memory_id):
+        """Test successful merge of user Config into final boto client config"""
+        from botocore.config import Config
+
+        with patch("boto3.client") as mock_boto3_client:
+            AgentCoreMemoryStore(
+                memory_id=memory_id,
+                region_name="us-west-2",
+                config=Config(read_timeout=10),
+            )
+        merged = mock_boto3_client.call_args[1]["config"]
+        assert merged.read_timeout == 10
+        assert merged.retries["mode"] == "adaptive"
+        assert "langgraph_agentcore_memory_store" in merged.user_agent_extra
 
     def test_batch_get_op_success(self, store, mock_boto_client, sample_memory_record):
         """Test successful GetOp operation."""
@@ -263,10 +278,41 @@ class TestAgentCoreMemoryStore:
 
         mock_boto_client.retrieve_memory_records.assert_called_once_with(
             memoryId="test-memory-id",
+            namespacePath="/test_actor",
+            searchCriteria={"searchQuery": "test query", "topK": 5},
+            maxResults=5,
+        )
+        call_kwargs = mock_boto_client.retrieve_memory_records.call_args.kwargs
+        assert "namespace" not in call_kwargs
+
+    def test_batch_search_op_exact_match(
+        self, mock_boto_client, memory_id, sample_memory_record
+    ):
+        """Test SearchOp uses the exact-match namespace when hierarchical_search
+        is disabled."""
+        with patch("boto3.client") as mock_boto3_client:
+            mock_boto3_client.return_value = mock_boto_client
+            store = AgentCoreMemoryStore(memory_id=memory_id, hierarchical_search=False)
+
+        mock_boto_client.retrieve_memory_records.return_value = {
+            "memoryRecordSummaries": [sample_memory_record]
+        }
+
+        ops = [
+            SearchOp(
+                namespace_prefix=("test_actor",), query="test query", limit=5, offset=0
+            )
+        ]
+        store.batch(ops)
+
+        mock_boto_client.retrieve_memory_records.assert_called_once_with(
+            memoryId="test-memory-id",
             namespace="/test_actor",
             searchCriteria={"searchQuery": "test query", "topK": 5},
             maxResults=5,
         )
+        call_kwargs = mock_boto_client.retrieve_memory_records.call_args.kwargs
+        assert "namespacePath" not in call_kwargs
 
     def test_batch_search_op_no_query(self, store, mock_boto_client):
         """Test SearchOp without query returns empty results."""
@@ -463,7 +509,7 @@ class TestAgentCoreMemoryStore:
         store.batch(ops)
 
         call_args = mock_boto_client.retrieve_memory_records.call_args[1]
-        assert call_args["namespace"] == "/single_actor"
+        assert call_args["namespacePath"] == "/single_actor"
 
     def test_search_with_pagination_parameters(
         self, store, mock_boto_client, sample_memory_record

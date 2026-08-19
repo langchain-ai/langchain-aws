@@ -13,6 +13,7 @@ updates:
     directories:
       - "/libs/aws"
       - "/libs/langgraph-checkpoint-aws"
+      - "/libs/agentcore-codeinterpreter"
     schedule:
       interval: "weekly"
     groups:

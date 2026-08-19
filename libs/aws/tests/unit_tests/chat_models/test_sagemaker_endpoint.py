@@ -2,6 +2,7 @@
 """Test chat model integration."""
 
 import json
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from unittest.mock import Mock
 
@@ -9,6 +10,7 @@ import pytest
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
+    BaseMessage,
     HumanMessage,
     SystemMessage,
     ToolMessage,
@@ -619,6 +621,25 @@ class TestOpenAICompatibleChatModelContentHandler:
         result = handler._parse_openai_style_tool_calls(tool_calls_data)
 
         assert result[0]["args"] == {}
+
+    def test_parse_openai_style_tool_calls_malformed_json_arguments(
+        self, handler: OpenAICompatibleChatModelContentHandler
+    ) -> None:
+        """Verify malformed JSON arguments fail soft instead of raising."""
+        tool_calls_data = [
+            {
+                "id": "call_bad",
+                "type": "function",
+                "function": {"name": "get_weather", "arguments": "{"},
+            }
+        ]
+
+        result = handler._parse_openai_style_tool_calls(tool_calls_data)
+
+        assert len(result) == 1
+        assert result[0]["id"] == "call_bad"
+        assert result[0]["name"] == "get_weather"
+        assert result[0]["args"] == {"__raw_arguments__": "{"}
 
     def test_parse_openai_style_tool_calls_missing_function(
         self, handler: OpenAICompatibleChatModelContentHandler
@@ -1536,9 +1557,30 @@ class TestMessagesToSagemaker:
         result = _messages_to_sagemaker(messages)
 
         assert len(result) == 1
-        assert result[0]["role"] == "tool"
-        assert result[0]["tool_call_id"] == "call_123"
-        assert result[0]["content"] == '{"temp": 72}'
+        assert result[0] == {
+            "role": "tool",
+            "tool_call_id": "call_123",
+            "content": '{"temp": 72}',
+        }
+
+    def test_tool_message_conversion_drops_non_openai_fields(self) -> None:
+        """Verify artifact/status are dropped, even non-JSON-serializable ones."""
+        messages = [
+            ToolMessage(
+                content="ok",
+                tool_call_id="call_456",
+                artifact=datetime(2024, 1, 1),
+                status="error",
+            ),
+        ]
+
+        result = _messages_to_sagemaker(messages)
+
+        assert len(result) == 1
+        assert "artifact" not in result[0]
+        assert "status" not in result[0]
+        # Should not raise despite the non-JSON-serializable artifact.
+        json.dumps(result)
 
     def test_user_message_merging(self) -> None:
         """Verify consecutive same-role messages are merged."""
@@ -1576,3 +1618,210 @@ class TestMessagesToSagemaker:
 
         with pytest.raises(ValueError, match="Unsupported message type"):
             _messages_to_sagemaker(messages)
+
+
+def _make_stream_payload(lines: List[bytes]) -> List[Dict[str, Any]]:
+    return [{"PayloadPart": {"Bytes": line}} for line in lines]
+
+
+class StreamingHandler(ChatModelContentHandler):
+    content_type = "application/json"
+    accepts = "application/json"
+
+    def __init__(self, responses: List[BaseMessage]) -> None:
+        self._responses = iter(responses)
+
+    def transform_input(self, prompt: Any, model_kwargs: Dict) -> bytes:
+        return json.dumps(prompt).encode("utf-8")
+
+    def transform_output(self, output: bytes) -> BaseMessage:
+        return next(self._responses)
+
+
+def _build_streaming_llm(
+    responses: List[BaseMessage],
+) -> ChatSagemakerEndpoint:
+    handler = StreamingHandler(responses)
+    body = _make_stream_payload([b'{"text":"placeholder"}\n' for _ in responses])
+    client = Mock()
+    client.invoke_endpoint_with_response_stream.return_value = {"Body": body}
+
+    return ChatSagemakerEndpoint(
+        endpoint_name="test-endpoint",
+        region_name="us-east-1",
+        content_handler=handler,
+        client=client,
+    )
+
+
+def test_stream_yields_usage_only_chunk_with_metadata() -> None:
+    resp_meta = {"finish_reason": "stop"}
+    msg_id = "cmpl-final"
+    usage = {
+        "input_tokens": 21,
+        "output_tokens": 14,
+        "total_tokens": 35,
+    }
+    responses: List[BaseMessage] = [
+        AIMessage(content="Hello"),
+        AIMessage(
+            content="",
+            response_metadata=resp_meta,
+            id=msg_id,
+            usage_metadata=usage,
+        ),
+    ]
+    llm = _build_streaming_llm(responses)
+
+    run_manager = Mock()
+    chunks = list(llm._stream([HumanMessage(content="hi")], run_manager=run_manager))
+
+    assert len(chunks) == 2
+    assert chunks[0].message.content == "Hello"
+    assert chunks[0].message.usage_metadata is None  # type: ignore[union-attr]
+
+    final = chunks[1].message
+    assert isinstance(final, AIMessageChunk)
+    assert final.content == ""
+    assert final.usage_metadata == usage  # type: ignore[union-attr]
+    assert final.response_metadata == resp_meta
+    assert final.id == msg_id
+
+    assert run_manager.on_llm_new_token.call_count == 2
+    second_call = run_manager.on_llm_new_token.call_args_list[1]
+    assert second_call[0][0] == ""
+    assert second_call[1]["chunk"].message.usage_metadata == usage
+
+
+def test_stream_preserves_metadata_with_content() -> None:
+    resp_meta = {"model": "my-model", "finish_reason": "stop"}
+    msg_id = "cmpl-abc123"
+    usage = {
+        "input_tokens": 10,
+        "output_tokens": 5,
+        "total_tokens": 15,
+    }
+    responses: List[BaseMessage] = [
+        AIMessage(
+            content="world",
+            usage_metadata=usage,
+            response_metadata=resp_meta,
+            id=msg_id,
+        ),
+    ]
+    llm = _build_streaming_llm(responses)
+
+    chunks = list(llm._stream([HumanMessage(content="hi")]))
+
+    assert len(chunks) == 1
+    chunk_msg = chunks[0].message
+    assert chunk_msg.content == "world"
+    assert chunk_msg.usage_metadata == usage  # type: ignore[union-attr]
+    assert chunk_msg.response_metadata == resp_meta
+    assert chunk_msg.id == msg_id
+
+
+def test_stream_drops_empty_chunk_without_usage() -> None:
+    responses: List[BaseMessage] = [
+        AIMessage(content="Hello"),
+        AIMessage(content=""),
+    ]
+    llm = _build_streaming_llm(responses)
+
+    chunks = list(llm._stream([HumanMessage(content="hi")]))
+
+    assert len(chunks) == 1
+    assert chunks[0].message.content == "Hello"
+
+
+def test_stream_preserves_metadata_through_stop_tokens() -> None:
+    resp_meta = {"model": "my-model"}
+    msg_id = "cmpl-xyz"
+    usage = {
+        "input_tokens": 5,
+        "output_tokens": 3,
+        "total_tokens": 8,
+    }
+    responses: List[BaseMessage] = [
+        AIMessage(
+            content="Hello STOP world",
+            response_metadata=resp_meta,
+            id=msg_id,
+            usage_metadata=usage,
+        ),
+    ]
+    llm = _build_streaming_llm(responses)
+
+    chunks = list(llm._stream([HumanMessage(content="hi")], stop=["STOP"]))
+
+    assert len(chunks) == 1
+    chunk_msg = chunks[0].message
+    assert chunk_msg.content == "Hello "
+    assert chunk_msg.usage_metadata == usage  # type: ignore[union-attr]
+    assert chunk_msg.response_metadata == resp_meta
+    assert chunk_msg.id == msg_id
+
+
+def test_stream_preserves_metadata_with_list_content() -> None:
+    resp_meta = {"model": "my-model"}
+    msg_id = "cmpl-list"
+    usage = {
+        "input_tokens": 10,
+        "output_tokens": 5,
+        "total_tokens": 15,
+    }
+    responses: List[BaseMessage] = [
+        AIMessage(
+            content=[{"type": "text", "text": "Hello"}, {"type": "text", "text": "!"}],
+            usage_metadata=usage,
+            response_metadata=resp_meta,
+            id=msg_id,
+        ),
+    ]
+    llm = _build_streaming_llm(responses)
+
+    chunks = list(llm._stream([HumanMessage(content="hi")]))
+
+    assert len(chunks) == 1
+    chunk_msg = chunks[0].message
+    expected_content = [
+        {"type": "text", "text": "Hello"},
+        {"type": "text", "text": "!"},
+    ]
+    assert chunk_msg.content == expected_content
+    assert chunk_msg.usage_metadata == usage  # type: ignore[union-attr]
+    assert chunk_msg.response_metadata == resp_meta
+    assert chunk_msg.id == msg_id
+
+
+def test_stream_passthrough_ai_message_chunk() -> None:
+    usage = {
+        "input_tokens": 10,
+        "output_tokens": 5,
+        "total_tokens": 15,
+    }
+    resp_meta = {"model": "vllm-7b", "finish_reason": "stop"}
+    msg_id = "cmpl-passthrough"
+    responses: List[BaseMessage] = [
+        AIMessageChunk(content="Hello"),
+        AIMessageChunk(
+            content="",
+            usage_metadata=usage,
+            response_metadata=resp_meta,
+            id=msg_id,
+        ),
+    ]
+    llm = _build_streaming_llm(responses)
+
+    chunks = list(llm._stream([HumanMessage(content="hi")]))
+
+    assert len(chunks) == 2
+    assert chunks[0].message.content == "Hello"
+    assert isinstance(chunks[0].message, AIMessageChunk)
+
+    final = chunks[1].message
+    assert isinstance(final, AIMessageChunk)
+    assert final.content == ""
+    assert final.usage_metadata == usage  # type: ignore[union-attr]
+    assert final.response_metadata == resp_meta
+    assert final.id == msg_id

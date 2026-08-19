@@ -14,3 +14,4 @@ runs:
       with:
         version: "0.5.25"
         python-version: ${{ inputs.python-version }}
+        enable-cache: false

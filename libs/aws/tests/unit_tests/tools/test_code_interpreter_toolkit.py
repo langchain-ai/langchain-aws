@@ -5,6 +5,7 @@ import pytest
 # Skip all tests in this module if optional dependencies are not installed
 pytest.importorskip("bedrock_agentcore", reason="Requires langchain-aws[tools]")
 
+import threading
 from typing import cast
 from unittest.mock import MagicMock, patch
 
@@ -29,6 +30,21 @@ class TestCodeInterpreterToolkit:
         assert len(tools) > 0
         assert all(isinstance(tool, BaseTool) for tool in tools)
 
+    @pytest.mark.asyncio
+    async def test_create_code_interpreter_toolkit_with_identifier(self) -> None:
+        """Test create_code_interpreter_toolkit passes code_interpreter_identifier."""
+        from langchain_aws.tools.code_interpreter_toolkit import (
+            create_code_interpreter_toolkit,
+        )
+
+        toolkit, tools = await create_code_interpreter_toolkit(
+            region="us-east-1",
+            code_interpreter_identifier="my-custom-interpreter",
+        )
+
+        assert toolkit._code_interpreter_identifier == "my-custom-interpreter"
+        assert toolkit.region == "us-east-1"
+
     def test_toolkit_initializes_with_region(self) -> None:
         """Test toolkit initializes with specified region."""
         from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
@@ -45,6 +61,18 @@ class TestCodeInterpreterToolkit:
         toolkit = CodeInterpreterToolkit()
 
         assert toolkit.region == "us-west-2"
+
+    def test_toolkit_with_code_interpreter_identifier(self) -> None:
+        """Test toolkit stores optional code_interpreter_identifier."""
+        from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
+
+        toolkit = CodeInterpreterToolkit(
+            region="us-east-1",
+            code_interpreter_identifier="my-interpreter-abc123",
+        )
+
+        assert toolkit.region == "us-east-1"
+        assert toolkit._code_interpreter_identifier == "my-interpreter-abc123"
 
     def test_get_tools_returns_list(self) -> None:
         """Test get_tools returns list of tools."""
@@ -257,8 +285,34 @@ class TestGetOrCreateInterpreter:
             mock_class.assert_called_once_with(
                 region="us-west-2", integration_source="langchain"
             )
-            mock_interpreter.start.assert_called_once()
+            mock_interpreter.start.assert_called_once_with()
             assert "thread-1" in toolkit._code_interpreters
+
+    def test_creates_interpreter_with_custom_identifier(self) -> None:
+        """Test start() called with identifier when code_interpreter_identifier set."""
+        from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
+
+        toolkit = CodeInterpreterToolkit(
+            region="us-west-2",
+            code_interpreter_identifier="custom-interpreter-id",
+        )
+
+        with patch(
+            "langchain_aws.tools.code_interpreter_toolkit.CodeInterpreter"
+        ) as mock_class:
+            mock_interpreter = MagicMock()
+            mock_interpreter.start = MagicMock()
+            mock_interpreter.session_id = "test-session"
+            mock_class.return_value = mock_interpreter
+
+            config: RunnableConfig = cast(
+                RunnableConfig, {"configurable": {"thread_id": "thread-1"}}
+            )
+            toolkit._get_or_create_interpreter(config)
+
+            mock_interpreter.start.assert_called_once_with(
+                identifier="custom-interpreter-id"
+            )
 
     def test_reuses_existing_interpreter(self) -> None:
         """Test reuses existing interpreter for same thread."""
@@ -276,8 +330,48 @@ class TestGetOrCreateInterpreter:
 
         assert interpreter is mock_interpreter
 
+    def test_concurrent_get_or_create_same_thread_returns_single_interpreter(
+        self,
+    ) -> None:
+        """Concurrent calls for same thread_id create one interpreter and share it."""
+        import time
+
+        from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
+
+        results: list = []
+        config: RunnableConfig = cast(
+            RunnableConfig, {"configurable": {"thread_id": "shared-thread"}}
+        )
+
+        def get_interpreter() -> None:
+            interpreter = toolkit._get_or_create_interpreter(config)
+            results.append(interpreter)
+
+        toolkit = CodeInterpreterToolkit()
+        with patch(
+            "langchain_aws.tools.code_interpreter_toolkit.CodeInterpreter"
+        ) as mock_class:
+            mock_interpreter = MagicMock()
+            mock_interpreter.session_id = "test-session"
+
+            def slow_start() -> None:
+                time.sleep(0.05)
+
+            mock_interpreter.start = slow_start
+            mock_class.return_value = mock_interpreter
+
+            threads = [threading.Thread(target=get_interpreter) for _ in range(3)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+        assert mock_class.call_count == 1
+        assert len(results) == 3
+        assert all(r is mock_interpreter for r in results)
+
     def test_uses_default_thread_id(self) -> None:
-        """Test uses 'default' thread_id when not specified."""
+        """Test uses 'default' thread_id when not specified in configurable."""
         from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
 
         toolkit = CodeInterpreterToolkit()
@@ -291,9 +385,108 @@ class TestGetOrCreateInterpreter:
             mock_class.return_value = mock_interpreter
 
             config: RunnableConfig = cast(RunnableConfig, {"configurable": {}})
-            # This should raise KeyError since thread_id is required
-            with pytest.raises(KeyError):
-                toolkit._get_or_create_interpreter(config)
+            interpreter = toolkit._get_or_create_interpreter(config)
+
+            assert interpreter is mock_interpreter
+            assert "default" in toolkit._code_interpreters
+
+    def test_drops_per_tool_checkpoint_ns_for_session_key(self) -> None:
+        """Top-level per-tool checkpoint_ns is dropped so state persists."""
+        from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
+
+        toolkit = CodeInterpreterToolkit()
+
+        with patch(
+            "langchain_aws.tools.code_interpreter_toolkit.CodeInterpreter"
+        ) as mock_class:
+            mock_interpreter = MagicMock()
+            mock_interpreter.start = MagicMock()
+            mock_interpreter.session_id = "test-session"
+            mock_class.return_value = mock_interpreter
+
+            config: RunnableConfig = cast(
+                RunnableConfig,
+                {
+                    "configurable": {
+                        "thread_id": "thread-1",
+                        # Per-tool-call namespace LangGraph injects at top level.
+                        "checkpoint_ns": "tools:abc123",
+                    }
+                },
+            )
+            toolkit._get_or_create_interpreter(config)
+
+            assert "thread-1" in toolkit._code_interpreters
+            assert "thread-1:tools:abc123" not in toolkit._code_interpreters
+
+    def test_reuses_interpreter_across_per_tool_namespaces(self) -> None:
+        """Sequential tool calls in one thread share one session."""
+        from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
+
+        toolkit = CodeInterpreterToolkit()
+
+        with patch(
+            "langchain_aws.tools.code_interpreter_toolkit.CodeInterpreter"
+        ) as mock_class:
+            mock_class.side_effect = lambda *a, **k: MagicMock(
+                start=MagicMock(), session_id="s"
+            )
+
+            first: RunnableConfig = cast(
+                RunnableConfig,
+                {"configurable": {"thread_id": "thread-1", "checkpoint_ns": "tools:1"}},
+            )
+            second: RunnableConfig = cast(
+                RunnableConfig,
+                {"configurable": {"thread_id": "thread-1", "checkpoint_ns": "tools:2"}},
+            )
+
+            interp_first = toolkit._get_or_create_interpreter(first)
+            interp_second = toolkit._get_or_create_interpreter(second)
+
+            assert interp_first is interp_second
+            assert list(toolkit._code_interpreters) == ["thread-1"]
+
+    def test_isolates_sessions_per_subagent(self) -> None:
+        """Parallel subagents (nested checkpoint_ns) keep isolated sessions."""
+        from langchain_aws.tools.code_interpreter_toolkit import CodeInterpreterToolkit
+
+        toolkit = CodeInterpreterToolkit()
+
+        with patch(
+            "langchain_aws.tools.code_interpreter_toolkit.CodeInterpreter"
+        ) as mock_class:
+            mock_class.side_effect = lambda *a, **k: MagicMock(
+                start=MagicMock(), session_id="s"
+            )
+
+            sub_a: RunnableConfig = cast(
+                RunnableConfig,
+                {
+                    "configurable": {
+                        "thread_id": "thread-1",
+                        "checkpoint_ns": "research-acme:abc|tools:call1",
+                    }
+                },
+            )
+            sub_b: RunnableConfig = cast(
+                RunnableConfig,
+                {
+                    "configurable": {
+                        "thread_id": "thread-1",
+                        "checkpoint_ns": "research-beta:def|tools:call2",
+                    }
+                },
+            )
+
+            interp_a = toolkit._get_or_create_interpreter(sub_a)
+            interp_b = toolkit._get_or_create_interpreter(sub_b)
+
+            assert interp_a is not interp_b
+            assert set(toolkit._code_interpreters) == {
+                "thread-1:research-acme:abc",
+                "thread-1:research-beta:def",
+            }
 
 
 class TestGetThreadId:
@@ -317,6 +510,47 @@ class TestGetThreadId:
         thread_id = _get_thread_id(None)
 
         assert thread_id == "default"
+
+    def test_returns_default_when_no_thread_id(self) -> None:
+        """Test returns 'default' when configurable has no thread_id."""
+        from langchain_aws.tools.code_interpreter_toolkit import _get_thread_id
+
+        config: RunnableConfig = cast(RunnableConfig, {"configurable": {}})
+        thread_id = _get_thread_id(config)
+
+        assert thread_id == "default"
+
+    def test_drops_per_tool_checkpoint_ns(self) -> None:
+        """Drops the per-tool-call checkpoint_ns segment."""
+        from langchain_aws.tools.code_interpreter_toolkit import _get_thread_id
+
+        config: RunnableConfig = cast(
+            RunnableConfig,
+            {
+                "configurable": {
+                    "thread_id": "thread-1",
+                    "checkpoint_ns": "tools:xyz",
+                }
+            },
+        )
+
+        assert _get_thread_id(config) == "thread-1"
+
+    def test_preserves_subagent_checkpoint_ns(self) -> None:
+        """Keeps the enclosing subagent segment of a nested checkpoint_ns."""
+        from langchain_aws.tools.code_interpreter_toolkit import _get_thread_id
+
+        config: RunnableConfig = cast(
+            RunnableConfig,
+            {
+                "configurable": {
+                    "thread_id": "thread-1",
+                    "checkpoint_ns": "subagent:xyz|tools:call",
+                }
+            },
+        )
+
+        assert _get_thread_id(config) == "thread-1:subagent:xyz"
 
 
 class TestExtractOutputFromStream:

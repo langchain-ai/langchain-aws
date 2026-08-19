@@ -41,6 +41,7 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
+from langchain_aws._version import _add_langchain_aws_version
 from langchain_aws.function_calling import lc_tool_calls_to_openai_tool_calls
 from langchain_aws.utils import (
     ContentHandlerBase,
@@ -214,7 +215,18 @@ class OpenAICompatibleChatModelContentHandler(ChatModelContentHandler):
             func = tc.get("function") or {}
             args = func.get("arguments", {})
             if isinstance(args, str):
-                args = json.loads(args) if args else {}
+                if args:
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        logger.warning(
+                            "Tool call arguments are not valid JSON; "
+                            "keeping raw string: %s",
+                            args,
+                        )
+                        args = {"__raw_arguments__": args}
+                else:
+                    args = {}
             tool_calls.append(
                 ToolCall(
                     id=tc.get("id", ""),
@@ -474,6 +486,7 @@ class ChatSagemakerEndpoint(BaseChatModel):
                 service_name="sagemaker-runtime",
             )
 
+        _add_langchain_aws_version(self)
         return self
 
     @property
@@ -546,6 +559,9 @@ class ChatSagemakerEndpoint(BaseChatModel):
 
             for line in iterator:
                 message = self.content_handler.transform_output(line)
+                usage_metadata = getattr(message, "usage_metadata", None)
+                response_metadata = message.response_metadata
+                msg_id = message.id
 
                 # Handle AIMessageChunk (streaming) directly
                 if isinstance(message, AIMessageChunk):
@@ -558,10 +574,17 @@ class ChatSagemakerEndpoint(BaseChatModel):
                         message = AIMessageChunk(
                             content=enforce_stop_tokens(message.content, stop),
                             tool_call_chunks=message.tool_call_chunks,
+                            usage_metadata=usage_metadata,
+                            response_metadata=response_metadata,
+                            id=msg_id,
                         )
 
-                    # Yield if there's content OR tool_call_chunks
-                    if message.content or message.tool_call_chunks:
+                    # Yield if there's content, tool_call_chunks, or usage info
+                    if (
+                        message.content
+                        or message.tool_call_chunks
+                        or usage_metadata is not None
+                    ):
                         generation_chunk = ChatGenerationChunk(message=message)
                         if run_manager:
                             run_manager.on_llm_new_token(
@@ -573,9 +596,16 @@ class ChatSagemakerEndpoint(BaseChatModel):
                 elif isinstance(message, AIMessage):
                     if stop is not None and isinstance(message.content, str):
                         text = enforce_stop_tokens(message.content, stop)
-                        message = AIMessage(content=text, tool_calls=message.tool_calls)
+                        message = AIMessage(
+                            content=text,
+                            tool_calls=message.tool_calls,
+                            usage_metadata=usage_metadata,
+                            response_metadata=response_metadata,
+                            id=msg_id,
+                        )
 
-                    if message.content or message.tool_calls:
+                    has_tool_calls = bool(message.tool_calls)
+                    if message.content or has_tool_calls or usage_metadata is not None:
                         chunk = AIMessageChunk(
                             content=message.content,
                             tool_call_chunks=[
@@ -589,6 +619,9 @@ class ChatSagemakerEndpoint(BaseChatModel):
                             ]
                             if message.tool_calls
                             else [],
+                            usage_metadata=usage_metadata,
+                            response_metadata=response_metadata,
+                            id=msg_id,
                         )
                         generation_chunk = ChatGenerationChunk(message=chunk)
                         if run_manager:
@@ -600,7 +633,10 @@ class ChatSagemakerEndpoint(BaseChatModel):
                 # Handle other message types
                 elif message.content:
                     base_chunk = BaseMessageChunk(
-                        content=message.content, type=message.type
+                        content=message.content,
+                        type=message.type,
+                        response_metadata=response_metadata,
+                        id=msg_id,
                     )
                     generation_chunk = ChatGenerationChunk(message=base_chunk)
                     if run_manager:
@@ -691,8 +727,6 @@ def _messages_to_sagemaker(
                     "role": "tool",
                     "tool_call_id": msg.tool_call_id,
                     "content": content,
-                    "artifact": msg.artifact,
-                    "status": msg.status,
                 }
             )
         else:

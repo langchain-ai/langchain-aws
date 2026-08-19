@@ -10,7 +10,7 @@ from langchain_aws import ChatBedrock
 from langchain_core.tools import tool
 from langgraph.checkpoint.base import Checkpoint, uuid6
 
-from langgraph_checkpoint_aws.agentcore.saver import AgentCoreMemorySaver
+from langgraph_checkpoint_aws.checkpoint.agentcore.saver import AgentCoreMemorySaver
 
 
 def generate_valid_session_id():
@@ -57,9 +57,7 @@ class TestAgentCoreMemorySaver:
 
     @pytest.fixture
     def model(self):
-        return ChatBedrock(
-            model="anthropic.claude-3-sonnet-20240229-v1:0", region="us-west-2"
-        )
+        return ChatBedrock(model="us.anthropic.claude-sonnet-4-6", region="us-west-2")
 
     @pytest.fixture
     def memory_id(self):

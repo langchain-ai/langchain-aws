@@ -11,7 +11,7 @@ from langchain_core.tools import BaseTool, ToolException
 from pydantic import BaseModel, Field
 
 from .browser_session_manager import BrowserSessionManager
-from .utils import aget_current_page, get_current_page
+from .utils import aget_current_page, get_current_page, get_session_key
 
 logger = logging.getLogger(__name__)
 
@@ -135,13 +135,13 @@ class ThreadAwareBaseTool(BaseTool):
         self._session_manager = _session_manager
 
     def get_thread_id(self, config: Optional[RunnableConfig] = None) -> str:
-        """Extract thread ID from config."""
-        thread_id = "default"
+        """Extract session key from config.
 
-        if config and isinstance(config, dict):
-            thread_id = config.get("configurable", {})["thread_id"]
-
-        return thread_id
+        Uses checkpoint_ns when present so that parallel subagents
+        (subgraphs) sharing the same thread_id get isolated browser
+        sessions.
+        """
+        return get_session_key(config)
 
     async def get_async_page(self, thread_id: str) -> Any:
         """Get or create a page for the specified thread."""

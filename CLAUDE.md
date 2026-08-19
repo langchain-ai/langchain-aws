@@ -8,6 +8,7 @@ This is a monorepo containing LangChain and LangGraph integrations for AWS servi
 
 - `langchain-aws`: Core LangChain integrations for AWS services (Bedrock, SageMaker, Kendra, etc.)
 - `langgraph-checkpoint-aws`: LangGraph checkpointing solutions using AWS services
+- `langchain-agentcore-codeinterpreter`: AgentCore Code Interpreter sandbox backend for Deep Agents
 
 ### langchain-aws Structure
 
@@ -34,6 +35,13 @@ The package is organized by AWS service integration type:
 - **Core Savers**: Async and sync checkpoint saving implementations
 - **AgentCore Integration**: Memory service integration for LangGraph agents
 - **Session Management**: AWS Bedrock session management integration
+
+### langchain-agentcore-codeinterpreter Structure
+
+Amazon Bedrock AgentCore Code Interpreter sandbox backend for Deep Agents. Lives in `libs/agentcore-codeinterpreter/`.
+
+- **Sandbox**: `sandbox.py` - `AgentCoreSandbox` class implementing `BaseSandbox` protocol (execute, upload/download files)
+- **Stream Parsing**: Internal helpers for extracting text, exit codes, and files from AgentCore response streams
 
 ### Development tools & commands**
 

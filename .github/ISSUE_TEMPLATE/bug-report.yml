@@ -21,6 +21,7 @@ body:
       options:
         - langchain-aws
         - langgraph-checkpoint-aws
+        - langchain-agentcore-codeinterpreter
       default: 0
     validations:
       required: true

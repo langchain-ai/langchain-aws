@@ -262,9 +262,10 @@ class ValkeyStore(BaseValkeyStore):
                 client = Valkey.from_url(conn_string)
 
             # Set client info for library identification
-            from ...checkpoint.valkey.utils import set_client_info
+            from ...checkpoint.valkey.utils import set_client_info, set_client_name
 
             set_client_info(client)
+            set_client_name(client)
 
             store = cls(client, index=index, ttl=ttl)
             yield store
@@ -338,9 +339,10 @@ class ValkeyStore(BaseValkeyStore):
         try:
             client = Valkey.from_pool(connection_pool=pool)
             # Set client info for library identification
-            from ...checkpoint.valkey.utils import set_client_info
+            from ...checkpoint.valkey.utils import set_client_info, set_client_name
 
             set_client_info(client)
+            set_client_name(client)
 
             store = cls(client, index=index, ttl=ttl)
             yield store

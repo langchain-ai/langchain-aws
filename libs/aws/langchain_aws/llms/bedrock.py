@@ -30,6 +30,7 @@ from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
+from langchain_aws._version import _add_langchain_aws_version
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
     anthropic_tokens_supported,
@@ -37,7 +38,10 @@ from langchain_aws.utils import (
     enforce_stop_tokens,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
+    parse_model_provider,
+    thinking_disabled_in_params,
     thinking_in_params,
+    thinking_on_by_default,
 )
 
 logger = logging.getLogger(__name__)
@@ -313,7 +317,7 @@ class LLMInputOutputAdapter:
         provider: str,
         model_kwargs: Dict[str, Any],
         prompt: Optional[str] = None,
-        system: Optional[str] = None,
+        system: Optional[Union[str, List[Dict[str, Any]]]] = None,
         messages: Optional[List[Dict]] = None,
         tools: Optional[List[AnthropicTool]] = None,
         *,
@@ -738,19 +742,36 @@ class BedrockBase(BaseLanguageModel, ABC):
     """Bedrock API key.
 
     Enables authentication using Bedrock API keys instead of standard AWS
-    credentials. When provided, the key is set as the AWS_BEARER_TOKEN_BEDROCK
+    credentials. When provided, the key is set as the ``AWS_BEARER_TOKEN_BEDROCK``
     environment variable.
+
+    .. warning::
+        Because this sets a **process-wide environment variable**, using
+        ``api_key`` is not compatible with multi-tenant deployments where
+        different model instances in the same process need different API keys.
+        Each new client creation overwrites the previous value. Use standard
+        AWS credentials (IAM roles, profiles, etc.) for multi-tenant scenarios.
 
     See: https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-use.html
 
-    If not provided, will be read from `AWS_BEARER_TOKEN_BEDROCK` environment variable.
+    If not provided, will be read from ``AWS_BEARER_TOKEN_BEDROCK`` environment
+    variable (if it exists).
 
     If both an API key and AWS credentials are present, the API key takes precedence.
-
     """
 
     config: Any = None
     """An optional `botocore.config.Config` instance to pass to the client."""
+
+    timeout: Optional[int] = None
+    """Request timeout in seconds. Sets both connect_timeout and read_timeout
+    on the botocore Config. If ``config`` is also provided, these values are
+    merged on top of it."""
+
+    max_retries: Optional[int] = None
+    """Maximum number of retry attempts. Sets retries.max_attempts on the
+    botocore Config. If ``config`` is also provided, these values are merged
+    on top of it."""
 
     provider: Optional[str] = None
     """The model provider, e.g., `'amazon'`, `'cohere'`, `'ai21'`, etc. When not
@@ -855,6 +876,11 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
+    """
+    Maximum number of tokens to generate.
+
+    When using Anthropic models with InvokeModel API, if not set, defaults to 1024.
+    """
 
     service_tier: Optional[Literal["priority", "default", "flex", "reserved"]] = None
     """Service tier for model invocation.
@@ -879,6 +905,27 @@ class BedrockBase(BaseLanguageModel, ABC):
             "bedrock_api_key": "AWS_BEARER_TOKEN_BEDROCK",
         }
 
+    def _get_effective_config(self) -> Any:
+        """Merge timeout/max_retries into botocore Config if set."""
+        if self.timeout is None and self.max_retries is None:
+            return self.config
+
+        from botocore.config import Config
+
+        override = Config(
+            connect_timeout=self.timeout,
+            read_timeout=self.timeout,
+            retries=(
+                {"max_attempts": self.max_retries}
+                if self.max_retries is not None
+                else None
+            ),
+        )
+
+        if self.config is not None:
+            return self.config.merge(override)
+        return override
+
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         """Validate that AWS credentials to and python package exists in environment."""
@@ -894,6 +941,8 @@ class BedrockBase(BaseLanguageModel, ABC):
                     self.max_tokens = self.model_kwargs["max_tokens"]
                 self.model_kwargs.pop("max_tokens")
 
+        effective_config = self._get_effective_config()
+
         # Skip creating new client if passed in constructor
         if self.client is None:
             self.client = create_aws_client(
@@ -903,7 +952,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 aws_secret_access_key=self.aws_secret_access_key,
                 aws_session_token=self.aws_session_token,
                 endpoint_url=self.endpoint_url,
-                config=self.config,
+                config=effective_config,
                 service_name="bedrock-runtime",
                 api_key=self.bedrock_api_key,
             )
@@ -931,7 +980,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 aws_secret_access_key=self.aws_secret_access_key,
                 aws_session_token=self.aws_session_token,
                 endpoint_url=self.endpoint_url,
-                config=self.config or bedrock_client_cfg.get("config"),
+                config=effective_config or bedrock_client_cfg.get("config"),
                 service_name="bedrock",
                 api_key=self.bedrock_api_key,
             )
@@ -948,6 +997,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 # Format: arn:aws:bedrock:region::foundation-model/provider.model-name
                 self.base_model_id = model_arn.split("/")[-1]
 
+        _add_langchain_aws_version(self)
         return self
 
     @property
@@ -979,16 +1029,7 @@ class BedrockBase(BaseLanguageModel, ABC):
         # If model_id has region prefixed to them,
         # for example eu.anthropic.claude-3-haiku-20240307-v1:0,
         # provider is the second part, otherwise, the first part
-        parts = self.model_id.split(".", maxsplit=2)
-        return (
-            parts[1]
-            if (
-                len(parts) > 1
-                and parts[0].lower()
-                in {"eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp", "au"}
-            )
-            else parts[0]
-        )
+        return parse_model_provider(self.model_id)
 
     def _get_base_model(self) -> str:
         return (
@@ -1032,7 +1073,7 @@ class BedrockBase(BaseLanguageModel, ABC):
     def _prepare_input_and_invoke(
         self,
         prompt: Optional[str] = None,
-        system: Optional[str] = None,
+        system: Optional[Union[str, List[Dict[str, Any]]]] = None,
         messages: Optional[List[Dict]] = None,
         stop: Optional[List[str]] = None,
         run_manager: Optional[CallbackManagerForLLMRun] = None,
@@ -1200,7 +1241,7 @@ class BedrockBase(BaseLanguageModel, ABC):
     def _prepare_input_and_invoke_stream(
         self,
         prompt: Optional[str] = None,
-        system: Optional[str] = None,
+        system: Optional[Union[str, List[Dict[str, Any]]]] = None,
         messages: Optional[List[Dict]] = None,
         stop: Optional[List[str]] = None,
         run_manager: Optional[CallbackManagerForLLMRun] = None,
@@ -1249,6 +1290,10 @@ class BedrockBase(BaseLanguageModel, ABC):
                     temperature=self.temperature,
                 )
             elif thinking_in_params(params):
+                coerce_content_to_string = False
+            elif thinking_on_by_default(
+                self._get_base_model()
+            ) and not thinking_disabled_in_params(params):
                 coerce_content_to_string = False
             elif messages is not None and _citations_enabled(messages):
                 coerce_content_to_string = False

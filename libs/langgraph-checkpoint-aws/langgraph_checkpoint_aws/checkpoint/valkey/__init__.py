@@ -7,10 +7,11 @@ _import_error: ImportError | None = None
 
 # Conditional imports for optional dependencies
 try:
+    from .agentcore import AgentCoreValkeySaver
     from .async_saver import AsyncValkeySaver
     from .saver import ValkeySaver
 
-    __all__ = ["ValkeySaver", "AsyncValkeySaver"]
+    __all__ = ["AgentCoreValkeySaver", "AsyncValkeySaver", "ValkeySaver"]
 except ImportError as e:
     # Store the error for later use
     _import_error = e
@@ -24,7 +25,8 @@ except ImportError as e:
 
     # Create placeholder classes that raise helpful errors
     # Use type: ignore to suppress mypy errors for this intentional pattern
+    AgentCoreValkeySaver: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
     ValkeySaver: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
     AsyncValkeySaver: type[Any] = _missing_dependencies_error  # type: ignore[assignment,no-redef]
 
-    __all__ = ["ValkeySaver", "AsyncValkeySaver"]
+    __all__ = ["AgentCoreValkeySaver", "AsyncValkeySaver", "ValkeySaver"]

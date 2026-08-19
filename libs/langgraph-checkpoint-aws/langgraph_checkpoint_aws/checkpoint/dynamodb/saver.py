@@ -32,13 +32,15 @@ logger = logging.getLogger(__name__)
 
 
 class S3OffloadConfigDict(TypedDict, total=False):
-    """Type alias for S3 offload configuration
+    """Type alias for S3 offload configuration.
+
     Required when user needs to configure Saver, to offload large
     Checkpoints above threshold (350KB) to S3.
     """
 
     bucket_name: str
     endpoint_url: str | None
+    key_prefix: str | None
 
 
 class DynamoDBSaver(BaseCheckpointSaver):
@@ -58,10 +60,14 @@ class DynamoDBSaver(BaseCheckpointSaver):
             Required key: "bucket_name" (str), to be used for checkpoint offloading
             Optional keys:
                 "endpoint_url" (str) Custom endpoint URL for the S3 service
+                "key_prefix" (str) Prefix prepended to all S3 keys, allowing
+                    multiple applications to share a single bucket with
+                    prefix-based isolation
             Example:
             {
                 "bucket_name": "my-checkpoint-bucket",
-                "endpoint_url": "http://localhost:4566"
+                "endpoint_url": "http://localhost:4566",
+                "key_prefix": "my-app/langgraph"
             }
     """
 
@@ -89,6 +95,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
         # S3 configuration if provided
         s3_client_instance = None
         s3_bucket_name = None
+        s3_key_prefix = None
 
         if s3_offload_config:
             # Validate required bucket_name
@@ -99,6 +106,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
                 )
 
             s3_bucket_name = s3_offload_config["bucket_name"]
+            s3_key_prefix = s3_offload_config.get("key_prefix")
 
             s3_client_instance = create_s3_client(
                 session=session,
@@ -121,6 +129,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
             table_name=self.table_name,
             s3_client=s3_client_instance,
             s3_bucket=s3_bucket_name,
+            s3_key_prefix=s3_key_prefix,
             ttl_seconds=ttl_seconds,
         )
 
@@ -466,7 +475,15 @@ class DynamoDBSaver(BaseCheckpointSaver):
         Returns:
             AsyncIterator[CheckpointTuple]: An iterator of checkpoint tuples.
         """
-        for item in self.list(config, filter=filter, before=before, limit=limit):
+        # ``list`` is backed by blocking boto3 calls, so it is driven from a
+        # background thread one item at a time to avoid blocking the event loop
+        # while still yielding lazily (no need to materialize all results).
+        iterator = self.list(config, filter=filter, before=before, limit=limit)
+
+        def next_item() -> CheckpointTuple | None:
+            return next(iterator, None)
+
+        while (item := await run_in_executor(None, next_item)) is not None:
             yield item
 
     def delete_thread(self, thread_id: str) -> None:

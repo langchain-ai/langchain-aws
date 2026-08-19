@@ -16,7 +16,7 @@ try:
 except (ImportError, AttributeError):
     pytest.skip("Valkey class not available", allow_module_level=True)
 
-from langgraph_checkpoint_aws.agentcore.valkey import AgentCoreValkeySaver
+from langgraph_checkpoint_aws.checkpoint.valkey import AgentCoreValkeySaver
 
 
 class TestAgentCoreValkeySaverIntegration:
