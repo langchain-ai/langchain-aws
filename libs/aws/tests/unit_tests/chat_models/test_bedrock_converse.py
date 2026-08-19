@@ -59,6 +59,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _snake_to_camel_keys,
     _split_inline_reasoning,
     _strip_null_anyof,
+    _warned_dropped_block_types,
 )
 from langchain_aws.function_calling import convert_to_anthropic_tool
 
@@ -720,6 +721,87 @@ def test__messages_to_bedrock_preserves_ai_cache_point() -> None:
             ],
         },
     ]
+
+
+def test__messages_to_bedrock_preserves_ai_combined_cache_point_block() -> None:
+    """Preserve blocks that pair a payload with a cache point."""
+    messages = [
+        HumanMessage(content="What is 2 + 2?"),
+        AIMessage(
+            content=[
+                {
+                    "type": "non_standard",
+                    "value": {"text": "4", "cachePoint": {"type": "default"}},
+                },
+            ]
+        ),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages == [
+        {"role": "user", "content": [{"text": "What is 2 + 2?"}]},
+        {
+            "role": "assistant",
+            "content": [{"text": "4", "cachePoint": {"type": "default"}}],
+        },
+    ]
+
+
+def test__messages_to_bedrock_drops_foreign_block_nested_in_tool_result() -> None:
+    """Dropping applies inside tool result content, not just at the top level."""
+    messages = [
+        HumanMessage(content="What is the weather in Paris?"),
+        AIMessage(
+            content=[
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "call_abc",
+                    "content": [
+                        {"type": "text", "text": "Sunny"},
+                        {"type": "foreign_provider_block"},
+                    ],
+                }
+            ]
+        ),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages[1] == {
+        "role": "assistant",
+        "content": [
+            {
+                "toolResult": {
+                    "toolUseId": "call_abc",
+                    "content": [{"text": "Sunny"}],
+                    "status": "success",
+                }
+            }
+        ],
+    }
+
+
+def test__messages_to_bedrock_warns_once_per_dropped_block_type(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Silent content loss is surfaced, without warning on every replayed turn."""
+    _warned_dropped_block_types.discard("foreign_provider_block")
+    messages = [
+        HumanMessage(content="Hello"),
+        AIMessage(content=[{"type": "foreign_provider_block"}]),
+        HumanMessage(content="Again"),
+        AIMessage(content=[{"type": "foreign_provider_block"}]),
+    ]
+
+    with caplog.at_level(
+        logging.WARNING, logger="langchain_aws.chat_models.bedrock_converse"
+    ):
+        _messages_to_bedrock(messages)
+
+    warnings_logged = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings_logged) == 1
+    assert "foreign_provider_block" in warnings_logged[0].getMessage()
 
 
 def test__messages_to_bedrock_replaces_dropped_only_content() -> None:
