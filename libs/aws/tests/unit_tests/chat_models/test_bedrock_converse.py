@@ -37,6 +37,8 @@ from syrupy import SnapshotAssertion
 
 from langchain_aws import ChatBedrockConverse
 from langchain_aws.chat_models.bedrock_converse import (
+    _BEDROCK_CONTENT_BLOCK_KEYS,
+    EMPTY_CONTENT,
     _bedrock_to_lc,
     _camel_to_snake,
     _camel_to_snake_keys,
@@ -663,6 +665,14 @@ def test__messages_to_bedrock_ignores_foreign_function_call_block() -> None:
     assert actual_system == []
 
 
+@pytest.fixture(autouse=True)
+def _reset_dropped_block_warnings() -> Iterator[None]:
+    """Isolate the process-wide warn-once state from test ordering."""
+    _warned_dropped_block_types.clear()
+    yield
+    _warned_dropped_block_types.clear()
+
+
 def test__messages_to_bedrock_ignores_foreign_reasoning_block() -> None:
     messages = [
         HumanMessage(content="What is 2 + 2?"),
@@ -842,7 +852,7 @@ def test__messages_to_bedrock_replaces_dropped_nested_tool_result_content() -> N
             {
                 "toolResult": {
                     "toolUseId": "call_abc",
-                    "content": [{"text": "."}],
+                    "content": [{"text": EMPTY_CONTENT}],
                     "status": "success",
                 }
             }
@@ -850,11 +860,24 @@ def test__messages_to_bedrock_replaces_dropped_nested_tool_result_content() -> N
     }
 
 
+def _dropped_block_warnings(caplog: pytest.LogCaptureFixture) -> List[str]:
+    """Return warnings about individual dropped blocks.
+
+    Filters out the separate warning about an assistant turn left with no
+    usable content, which is emitted unconditionally.
+    """
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+        and "Dropping unsupported content block" in record.getMessage()
+    ]
+
+
 def test__messages_to_bedrock_warns_once_per_dropped_block_type(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Silent content loss is surfaced, without warning on every replayed turn."""
-    _warned_dropped_block_types.discard("foreign_provider_block")
     messages = [
         HumanMessage(content="Hello"),
         AIMessage(content=[{"type": "foreign_provider_block"}]),
@@ -867,9 +890,66 @@ def test__messages_to_bedrock_warns_once_per_dropped_block_type(
     ):
         _messages_to_bedrock(messages)
 
-    warnings_logged = [r for r in caplog.records if r.levelno == logging.WARNING]
+    warnings_logged = _dropped_block_warnings(caplog)
     assert len(warnings_logged) == 1
-    assert "foreign_provider_block" in warnings_logged[0].getMessage()
+    assert "foreign_provider_block" in warnings_logged[0]
+    # The block itself is logged, not just its type, so the loss is diagnosable
+    # from the first occurrence.
+    assert "{'type': 'foreign_provider_block'}" in warnings_logged[0]
+
+
+def test__messages_to_bedrock_warns_per_distinct_non_standard_block(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Cross-provider blocks share a type, so dedupe keys off their payload."""
+    messages = [
+        HumanMessage(content="Hello"),
+        AIMessage(
+            content=[
+                {"type": "non_standard", "value": {"type": "openai_annotation"}},
+                {"type": "non_standard", "value": {"type": "google_grounding"}},
+                {"type": "non_standard", "value": {"type": "openai_annotation"}},
+            ]
+        ),
+    ]
+
+    with caplog.at_level(
+        logging.WARNING, logger="langchain_aws.chat_models.bedrock_converse"
+    ):
+        _messages_to_bedrock(messages)
+
+    warnings_logged = _dropped_block_warnings(caplog)
+    assert len(warnings_logged) == 2
+    assert "openai_annotation" in warnings_logged[0]
+    assert "google_grounding" in warnings_logged[1]
+
+
+def test__messages_to_bedrock_warns_when_assistant_turn_is_erased(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Losing a whole turn changes what the model sees, so always report it."""
+    messages = [
+        HumanMessage(content="Hello"),
+        AIMessage(content=[{"type": "foreign_provider_block"}]),
+        HumanMessage(content="Again"),
+        AIMessage(content=[{"type": "foreign_provider_block"}]),
+    ]
+
+    with caplog.at_level(
+        logging.WARNING, logger="langchain_aws.chat_models.bedrock_converse"
+    ):
+        _messages_to_bedrock(messages)
+
+    erased = [
+        record.getMessage()
+        for record in caplog.records
+        if "has no content Bedrock can accept" in record.getMessage()
+    ]
+    # Reported for every erased turn, unlike the deduped per-block warning, and
+    # naming the message so it can be found in a long replayed history.
+    assert len(erased) == 2
+    assert "index 1" in erased[0]
+    assert "index 3" in erased[1]
 
 
 def test__messages_to_bedrock_replaces_dropped_only_content() -> None:
@@ -890,7 +970,7 @@ def test__messages_to_bedrock_replaces_dropped_only_content() -> None:
 
     assert actual_messages == [
         {"role": "user", "content": [{"text": "Search for the weather."}]},
-        {"role": "assistant", "content": [{"text": "."}]},
+        {"role": "assistant", "content": [{"text": EMPTY_CONTENT}]},
     ]
 
 
@@ -910,6 +990,219 @@ def test__messages_to_bedrock_rejects_unsupported_non_ai_content(
 ) -> None:
     with pytest.raises(ValueError, match="Unsupported content block type"):
         _messages_to_bedrock([message])
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        HumanMessage(
+            content=[{"type": "non_standard", "value": {"type": "provider_metadata"}}]
+        ),
+        SystemMessage(
+            content=[{"type": "non_standard", "value": {"type": "provider_metadata"}}]
+        ),
+        ToolMessage(
+            content=[{"type": "non_standard", "value": {"type": "provider_metadata"}}],
+            tool_call_id="call_abc",
+        ),
+    ],
+)
+def test__messages_to_bedrock_passes_through_non_ai_non_standard(
+    message: BaseMessage,
+) -> None:
+    """Only assistant turns are filtered; other roles keep the historic passthrough.
+
+    A ToolMessage nests the block inside its toolResult, so compare on the
+    serialized output rather than the top-level content list.
+    """
+    actual_messages, actual_system = _messages_to_bedrock([message])
+
+    emitted = json.dumps(actual_system or actual_messages, default=str)
+    assert '"type": "provider_metadata"' in emitted
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"text": "4", "openaiAnnotations": [{"kind": "url"}]},
+        {"cachePoint": {"type": "default"}, "geminiThought": "hidden"},
+    ],
+)
+def test__messages_to_bedrock_drops_partially_native_ai_block(
+    value: Dict[str, Any],
+) -> None:
+    """A payload is native only if *every* key is; a stray key taints the block.
+
+    Forwarding one of these would reach Bedrock and fail validation, which is
+    the crash this filtering exists to prevent.
+    """
+    messages = [AIMessage(content=[{"type": "non_standard", "value": value}])]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages == [
+        {"role": "assistant", "content": [{"text": EMPTY_CONTENT}]}
+    ]
+
+
+@pytest.mark.parametrize("value", [{}, "a string", ["a", "list"], None, 7])
+def test__messages_to_bedrock_drops_degenerate_ai_non_standard_value(
+    value: Any,
+) -> None:
+    """Malformed payloads are dropped, not forwarded or raised on."""
+    messages = [AIMessage(content=[{"type": "non_standard", "value": value}])]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages == [
+        {"role": "assistant", "content": [{"text": EMPTY_CONTENT}]}
+    ]
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        # A `non_standard` block must carry its payload; one without `value` is
+        # a bug in whatever built it, not another provider's content.
+        {"type": "non_standard"},
+        {"type": {"not": "a string"}},
+        {"type": ["also", "not", "a", "string"]},
+    ],
+)
+def test__messages_to_bedrock_rejects_malformed_ai_block(block: Dict[str, Any]) -> None:
+    """Structurally broken blocks keep raising, even where dropping applies."""
+    with pytest.raises(ValueError, match="Unsupported content block type"):
+        _messages_to_bedrock([AIMessage(content=[block])])
+
+
+@pytest.mark.parametrize("key", sorted(_BEDROCK_CONTENT_BLOCK_KEYS))
+def test__messages_to_bedrock_preserves_every_native_block_key(key: str) -> None:
+    """Every allowlisted key survives an assistant turn.
+
+    Pins the allowlist against silent shrinkage: dropping a real `ContentBlock`
+    member discards assistant content instead of sending it.
+    """
+    payload = {"marker": key}
+    messages = [AIMessage(content=[{"type": "non_standard", "value": {key: payload}}])]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages == [{"role": "assistant", "content": [{key: payload}]}]
+
+
+@pytest.mark.parametrize("block_type", ["tool_result", "server_tool_result"])
+def test__messages_to_bedrock_drops_foreign_block_in_tool_results(
+    block_type: str,
+) -> None:
+    """Both tool result branches propagate dropping into nested content."""
+    messages = [
+        AIMessage(
+            content=[
+                {
+                    "type": block_type,
+                    "tool_use_id": "call_abc",
+                    "content": [
+                        {"type": "text", "text": "Sunny"},
+                        {"type": "foreign_provider_block"},
+                    ],
+                }
+            ]
+        ),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages[0] == {
+        "role": "assistant",
+        "content": [
+            {
+                "toolResult": {
+                    "toolUseId": "call_abc",
+                    "content": [{"text": "Sunny"}],
+                    "status": "success",
+                }
+            }
+        ],
+    }
+
+
+def test__messages_to_bedrock_keeps_tool_calls_when_content_dropped() -> None:
+    """Tool calls repopulate the turn, so no placeholder is needed."""
+    messages = [
+        AIMessage(
+            content=[{"type": "foreign_provider_block"}],
+            tool_calls=[
+                {
+                    "name": "get_weather",
+                    "args": {"city": "Paris"},
+                    "id": "call_abc",
+                    "type": "tool_call",
+                }
+            ],
+        ),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages == [
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "toolUse": {
+                        "toolUseId": "call_abc",
+                        "input": {"city": "Paris"},
+                        "name": "get_weather",
+                    }
+                }
+            ],
+        }
+    ]
+
+
+def test__messages_to_bedrock_keeps_cache_point_only_tool_result_valid() -> None:
+    """Cache points move outside the toolResult, which must not be left empty."""
+    messages = [
+        ToolMessage(
+            content=[{"cachePoint": {"type": "default"}}],
+            tool_call_id="call_abc",
+            status="success",
+        ),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages == [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "toolResult": {
+                        "content": [{"text": EMPTY_CONTENT}],
+                        "toolUseId": "call_abc",
+                        "status": "success",
+                    }
+                },
+                {"cachePoint": {"type": "default"}},
+            ],
+        }
+    ]
+
+
+def test__messages_to_bedrock_leaves_empty_system_content_empty() -> None:
+    """The tool result placeholder must not leak into the system prompt.
+
+    An unsigned reasoning block contributes nothing; a system message built only
+    from one should stay empty rather than gain a stray `EMPTY_CONTENT` block.
+    """
+    messages = [
+        SystemMessage(content=[{"type": "thinking", "thinking": "unsigned"}]),
+        HumanMessage(content="Hi"),
+    ]
+
+    _, actual_system = _messages_to_bedrock(messages)
+
+    assert actual_system == []
 
 
 def test_messages_to_bedrock_with_cache_point() -> None:

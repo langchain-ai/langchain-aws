@@ -89,9 +89,13 @@ from langchain_aws.utils import (
 
 logger = logging.getLogger(__name__)
 
-# Top-level members of the Converse ContentBlock union. These native Bedrock
-# blocks can be wrapped as `non_standard` when langchain-core has no matching
-# content block type.
+# Members of the Converse `ContentBlock` union, plus `json` from
+# `ToolResultContentBlock` because this module builds tool result content with
+# the same helper. Native Bedrock blocks reach us wrapped as `non_standard`
+# whenever langchain-core has no matching content block type.
+#
+# Keep in sync with the botocore `bedrock-runtime` service model; a member
+# missing here is silently dropped from assistant turns.
 _BEDROCK_CONTENT_BLOCK_KEYS = frozenset(
     {
         "audio",
@@ -102,7 +106,6 @@ _BEDROCK_CONTENT_BLOCK_KEYS = frozenset(
         "image",
         "json",
         "reasoningContent",
-        "redactedContent",
         "searchResult",
         "text",
         "toolAddition",
@@ -113,8 +116,11 @@ _BEDROCK_CONTENT_BLOCK_KEYS = frozenset(
     }
 )
 
-# Block types already reported as dropped, so each distinct type warns once per
-# process instead of on every request that replays the same history.
+# Dropped-block keys already reported, so each distinct kind of block warns once
+# per process instead of on every request that replays the same history. Grows
+# unbounded in principle, but is bounded in practice by the block vocabulary a
+# process actually sees. Mutated without a lock: a lost race costs a duplicate
+# warning, nothing more.
 _warned_dropped_block_types: Set[str] = set()
 
 _MAX_CACHE_POINTS = 4
@@ -2285,7 +2291,7 @@ def _messages_to_bedrock(
                 sys_param_to_bedrock.append(s)
         bedrock_system.extend(sys_param_to_bedrock)
 
-    for msg in messages:
+    for msg_idx, msg in enumerate(messages):
         content = _lc_content_to_bedrock(
             msg.content, drop_unsupported=isinstance(msg, AIMessage)
         )
@@ -2301,8 +2307,18 @@ def _messages_to_bedrock(
         elif isinstance(msg, AIMessage):
             content = _upsert_tool_calls_to_bedrock_content(content, msg.tool_calls)
             if not content:
-                # Every block was dropped as unsupported, and Bedrock rejects an
-                # empty content list.
+                # Nothing survived: blocks may have been dropped as unsupported,
+                # or held only unsigned reasoning or empty text. Bedrock rejects
+                # an empty content list, so stand in a placeholder — and say so
+                # unconditionally, since an erased turn changes what the model
+                # sees rather than merely trimming one block from it.
+                logger.warning(
+                    "Assistant message at index %d has no content Bedrock can "
+                    "accept; sending %r in its place. Original content: %s",
+                    msg_idx,
+                    EMPTY_CONTENT,
+                    msg.content,
+                )
                 content = [{"text": EMPTY_CONTENT}]
             bedrock_messages.append({"role": "assistant", "content": content})
         elif isinstance(msg, SystemMessage):
@@ -2326,7 +2342,9 @@ def _messages_to_bedrock(
                 [
                     {
                         "toolResult": {
-                            "content": tool_result_content,
+                            # Cache points move outside the toolResult, which
+                            # can leave nothing behind for Bedrock to accept.
+                            "content": tool_result_content or [{"text": EMPTY_CONTENT}],
                             "toolUseId": msg.tool_call_id,
                             "status": msg.status,
                         }
@@ -2877,9 +2895,12 @@ def _lc_content_to_bedrock(
                 {
                     "toolResult": {
                         "toolUseId": block["toolUseId"],
+                        # Bedrock requires every toolResult to carry a block,
+                        # and dropping unsupported content can empty it.
                         "content": _lc_content_to_bedrock(
                             block["content"], drop_unsupported=drop_unsupported
-                        ),
+                        )
+                        or [{"text": EMPTY_CONTENT}],
                         "status": "error" if block.get("isError") else "success",
                     }
                 }
@@ -2890,9 +2911,12 @@ def _lc_content_to_bedrock(
                 {
                     "toolResult": {
                         "toolUseId": block["toolUseId"],
+                        # Bedrock requires every toolResult to carry a block,
+                        # and dropping unsupported content can empty it.
                         "content": _lc_content_to_bedrock(
                             block["content"], drop_unsupported=drop_unsupported
-                        ),
+                        )
+                        or [{"text": EMPTY_CONTENT}],
                         "status": "error" if block.get("isError") else "success",
                     }
                 }
@@ -2933,29 +2957,34 @@ def _lc_content_to_bedrock(
             # langchain-core's content_blocks property wraps provider-specific
             # blocks (e.g. cachePoint, guardContent) that lack a recognized
             # "type" key as {"type": "non_standard", "value": <original>}.
-            # Unwrap to restore the original block — it was valid in .content before
-            # content_blocks wrapped it.
-            non_standard_blocks = _bedrock_non_standard_content_blocks(block["value"])
-            if not drop_unsupported or non_standard_blocks is not None:
-                bedrock_content.extend(non_standard_blocks or [block["value"]])
+            # Unwrap to restore the original block — it was valid in .content
+            # before content_blocks wrapped it. On assistant turns the payload
+            # must be Bedrock-native; anything else came from another provider
+            # and is dropped rather than sent on to fail server-side.
+            native_blocks = _bedrock_non_standard_content_blocks(block["value"])
+            if native_blocks is not None:
+                bedrock_content.extend(native_blocks)
+            elif not drop_unsupported:
+                bedrock_content.append(block["value"])
             else:
                 _log_dropped_block(block)
-        elif drop_unsupported:
+        elif drop_unsupported and _is_droppable_block(block):
             _log_dropped_block(block)
         else:
             raise ValueError(f"Unsupported content block type:\n{block}")
-    # Drop empty text blocks. Unsupported nested tool-result content can leave
-    # this list empty; Bedrock requires every toolResult to contain a block.
-    bedrock_content = [block for block in bedrock_content if block.get("text", True)]
-    return bedrock_content or [{"text": EMPTY_CONTENT}]
+    # drop empty text blocks
+    return [block for block in bedrock_content if block.get("text", True)]
 
 
 def _bedrock_non_standard_content_blocks(value: Any) -> Optional[List[Dict[str, Any]]]:
-    """Return valid Converse blocks reconstructed from a normalized value.
+    """Return Converse blocks reconstructed from a normalized non-standard payload.
 
-    Converse `ContentBlock` is a union, so a normalized value with multiple
-    Bedrock members must be expanded into one block per member before sending
-    it to Bedrock.
+    `value` is the payload unwrapped from a `non_standard` block, not the block
+    itself. Converse `ContentBlock` is a union, so a payload carrying several
+    Bedrock members is expanded into one single-member block per key.
+
+    Returns `None` when the payload is not Bedrock-native — a non-dict, an empty
+    dict, or a dict holding any key Converse does not define.
     """
     if not (
         isinstance(value, dict)
@@ -2966,18 +2995,57 @@ def _bedrock_non_standard_content_blocks(value: Any) -> Optional[List[Dict[str, 
     return [{key: item} for key, item in value.items()]
 
 
-def _log_dropped_block(block: Dict[str, Any]) -> None:
-    """Report a content block dropped because Bedrock has no equivalent."""
+def _is_droppable_block(block: Dict[str, Any]) -> bool:
+    """Return whether an unhandled block is safe to drop rather than reject.
+
+    Dropping is for well-formed blocks that simply have no Bedrock equivalent,
+    such as another provider's content replayed into a Bedrock call. A block
+    that is structurally broken — a non-string `type`, or a `non_standard`
+    block with no `value` — signals a bug in whatever built it, so it keeps
+    raising instead of disappearing.
+    """
     block_type = block["type"]
-    if block_type in _warned_dropped_block_types:
+    if not isinstance(block_type, str):
+        return False
+    return block_type != "non_standard"
+
+
+def _dropped_block_key(block: Dict[str, Any]) -> str:
+    """Return the dedupe key identifying a dropped block's kind.
+
+    Cross-provider blocks nearly all arrive typed `non_standard`, so keying on
+    `type` alone would let the first one mute every later provider block. Key
+    those on their payload instead, so each distinct kind is reported once.
+    """
+    block_type = str(block["type"])
+    if block_type != "non_standard":
+        return block_type
+    value = block.get("value")
+    if isinstance(value, dict):
+        inner_type = value.get("type")
+        if isinstance(inner_type, str):
+            return f"non_standard:{inner_type}"
+        return "non_standard:" + ",".join(sorted(str(key) for key in value))
+    return f"non_standard:{type(value).__name__}"
+
+
+def _log_dropped_block(block: Dict[str, Any]) -> None:
+    """Report a content block dropped because Bedrock has no equivalent.
+
+    Warns once per distinct kind of block per process, logging the block itself
+    so the loss can be diagnosed; repeats drop to debug level.
+    """
+    block_key = _dropped_block_key(block)
+    if block_key in _warned_dropped_block_types:
         logger.debug("Dropping unsupported content block: %s", block)
         return
-    _warned_dropped_block_types.add(block_type)
+    _warned_dropped_block_types.add(block_key)
     logger.warning(
         "Dropping unsupported content block of type %r: Bedrock has no "
         "equivalent, so it cannot be sent. Further blocks of this type are "
-        "logged at debug level.",
-        block_type,
+        "logged at debug level. Block: %s",
+        block_key,
+        block,
     )
 
 
