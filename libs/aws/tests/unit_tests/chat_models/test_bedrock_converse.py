@@ -605,6 +605,134 @@ def test__messages_to_bedrock() -> None:
     assert expected_system == actual_system
 
 
+def test__messages_to_bedrock_ignores_foreign_function_call_block() -> None:
+    messages = [
+        HumanMessage(content="What is the weather in Paris?"),
+        AIMessage(
+            content=[
+                {
+                    "type": "function_call",
+                    "id": "fc_1",
+                    "call_id": "call_abc",
+                    "name": "get_weather",
+                    "arguments": '{"city": "Paris"}',
+                }
+            ],
+            tool_calls=[
+                ToolCall(
+                    name="get_weather",
+                    args={"city": "Paris"},
+                    id="call_abc",
+                    type="tool_call",
+                )
+            ],
+        ),
+        ToolMessage(content="Sunny", tool_call_id="call_abc"),
+    ]
+
+    actual_messages, actual_system = _messages_to_bedrock(messages)
+
+    assert actual_messages == [
+        {"role": "user", "content": [{"text": "What is the weather in Paris?"}]},
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "toolUse": {
+                        "toolUseId": "call_abc",
+                        "input": {"city": "Paris"},
+                        "name": "get_weather",
+                    }
+                }
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "toolResult": {
+                        "content": [{"text": "Sunny"}],
+                        "toolUseId": "call_abc",
+                        "status": "success",
+                    }
+                }
+            ],
+        },
+    ]
+    assert actual_system == []
+
+
+def test__messages_to_bedrock_ignores_foreign_reasoning_block() -> None:
+    messages = [
+        HumanMessage(content="What is 2 + 2?"),
+        AIMessage(
+            content=[
+                {
+                    "type": "reasoning",
+                    "reasoning": "Add the numbers.",
+                    "extras": {"signature": "google-signature"},
+                },
+                {
+                    "type": "non_standard",
+                    "value": {"type": "provider_metadata", "data": "foreign"},
+                },
+                {"type": "text", "text": "4"},
+            ],
+            response_metadata={
+                "output_version": "v1",
+                "model_provider": "google_genai",
+            },
+        ),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages == [
+        {"role": "user", "content": [{"text": "What is 2 + 2?"}]},
+        {"role": "assistant", "content": [{"text": "4"}]},
+    ]
+
+
+def test__messages_to_bedrock_replaces_dropped_only_content() -> None:
+    messages = [
+        HumanMessage(content="Search for the weather."),
+        AIMessage(
+            content=[
+                {
+                    "type": "web_search_call",
+                    "id": "search_1",
+                    "status": "completed",
+                }
+            ]
+        ),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages == [
+        {"role": "user", "content": [{"text": "Search for the weather."}]},
+        {"role": "assistant", "content": [{"text": "."}]},
+    ]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        HumanMessage(content=[{"type": "foreign_provider_block"}]),
+        SystemMessage(content=[{"type": "foreign_provider_block"}]),
+        ToolMessage(
+            content=[{"type": "foreign_provider_block"}],
+            tool_call_id="call_abc",
+        ),
+    ],
+)
+def test__messages_to_bedrock_rejects_unsupported_non_ai_content(
+    message: BaseMessage,
+) -> None:
+    with pytest.raises(ValueError, match="Unsupported content block type"):
+        _messages_to_bedrock([message])
+
+
 def test_messages_to_bedrock_with_cache_point() -> None:
     messages = [
         HumanMessage(content=["Hello!", {"cachePoint": {"type": "default"}}]),

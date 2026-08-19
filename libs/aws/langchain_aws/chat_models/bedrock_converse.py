@@ -2257,7 +2257,9 @@ def _messages_to_bedrock(
         bedrock_system.extend(sys_param_to_bedrock)
 
     for msg in messages:
-        content = _lc_content_to_bedrock(msg.content)
+        content = _lc_content_to_bedrock(
+            msg.content, drop_unsupported=isinstance(msg, AIMessage)
+        )
         if isinstance(msg, HumanMessage):
             # If there's a human, tool, human message sequence, the
             # tool message will be merged with the first human message, so the second
@@ -2269,6 +2271,8 @@ def _messages_to_bedrock(
                 bedrock_messages.append({"role": "user", "content": content})
         elif isinstance(msg, AIMessage):
             content = _upsert_tool_calls_to_bedrock_content(content, msg.tool_calls)
+            if not content:
+                content = [{"text": EMPTY_CONTENT}]
             bedrock_messages.append({"role": "assistant", "content": content})
         elif isinstance(msg, SystemMessage):
             bedrock_system.extend(content)
@@ -2681,6 +2685,8 @@ def _format_search_result_block(block: dict) -> dict:
 
 def _lc_content_to_bedrock(
     content: Union[str, List[Union[str, Dict[str, Any]]]],
+    *,
+    drop_unsupported: bool = False,
 ) -> List[Dict[str, Any]]:
     if isinstance(content, str):
         if not content or content.isspace():
@@ -2888,13 +2894,22 @@ def _lc_content_to_bedrock(
                         }
                     }
                 )
-        elif block["type"] == "non_standard" and "value" in block:
+        elif (
+            block["type"] == "non_standard"
+            and "value" in block
+            and not drop_unsupported
+        ):
             # langchain-core's content_blocks property wraps provider-specific
             # blocks (e.g. cachePoint, guardContent) that lack a recognized
             # "type" key as {"type": "non_standard", "value": <original>}.
             # Unwrap to restore the original block — it was valid in .content before
             # content_blocks wrapped it.
             bedrock_content.append(block["value"])
+        elif drop_unsupported:
+            logger.debug(
+                "Dropping unsupported AI message content block type: %s",
+                block["type"],
+            )
         else:
             raise ValueError(f"Unsupported content block type:\n{block}")
     # drop empty text blocks
