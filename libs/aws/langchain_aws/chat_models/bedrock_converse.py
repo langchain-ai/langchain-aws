@@ -90,7 +90,7 @@ from langchain_aws.utils import (
 logger = logging.getLogger(__name__)
 
 # Top-level keys of a Converse ContentBlock. Blocks keyed only by these are
-# native to Bedrock even when langchain-core wraps them as ``non_standard``
+# native to Bedrock even when langchain-core wraps them as `non_standard`
 # for lack of a matching LangChain content block type.
 _BEDROCK_CONTENT_BLOCK_KEYS = frozenset(
     {
@@ -2951,7 +2951,7 @@ def _is_bedrock_non_standard_content_block(value: Any) -> bool:
     """Return whether a normalized non-standard block is native to Bedrock.
 
     A block qualifies when every key is a Converse ContentBlock key, so that
-    combined blocks (e.g. ``{"text": ..., "cachePoint": ...}``) are recognized
+    combined blocks (e.g. `{"text": ..., "cachePoint": ...}`) are recognized
     while foreign provider blocks are not.
     """
     return (
