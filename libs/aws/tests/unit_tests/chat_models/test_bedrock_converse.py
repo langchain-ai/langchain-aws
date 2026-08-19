@@ -782,6 +782,37 @@ def test__messages_to_bedrock_drops_foreign_block_nested_in_tool_result() -> Non
     }
 
 
+def test__messages_to_bedrock_replaces_dropped_nested_tool_result_content() -> None:
+    """Tool results remain valid when all nested content is unsupported."""
+    messages = [
+        HumanMessage(content="What is the weather in Paris?"),
+        AIMessage(
+            content=[
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "call_abc",
+                    "content": [{"type": "foreign_provider_block"}],
+                }
+            ]
+        ),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages[1] == {
+        "role": "assistant",
+        "content": [
+            {
+                "toolResult": {
+                    "toolUseId": "call_abc",
+                    "content": [{"text": "."}],
+                    "status": "success",
+                }
+            }
+        ],
+    }
+
+
 def test__messages_to_bedrock_warns_once_per_dropped_block_type(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

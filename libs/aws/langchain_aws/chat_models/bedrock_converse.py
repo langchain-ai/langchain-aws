@@ -2943,8 +2943,10 @@ def _lc_content_to_bedrock(
             _log_dropped_block(block)
         else:
             raise ValueError(f"Unsupported content block type:\n{block}")
-    # drop empty text blocks
-    return [block for block in bedrock_content if block.get("text", True)]
+    # Drop empty text blocks. Unsupported nested tool-result content can leave
+    # this list empty; Bedrock requires every toolResult to contain a block.
+    bedrock_content = [block for block in bedrock_content if block.get("text", True)]
+    return bedrock_content or [{"text": EMPTY_CONTENT}]
 
 
 def _is_bedrock_non_standard_content_block(value: Any) -> bool:
