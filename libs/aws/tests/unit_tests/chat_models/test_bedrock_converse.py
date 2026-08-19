@@ -1036,7 +1036,9 @@ def test__messages_to_bedrock_drops_partially_native_ai_block(
     Forwarding one of these would reach Bedrock and fail validation, which is
     the crash this filtering exists to prevent.
     """
-    messages = [AIMessage(content=[{"type": "non_standard", "value": value}])]
+    messages: list[BaseMessage] = [
+        AIMessage(content=[{"type": "non_standard", "value": value}])
+    ]
 
     actual_messages, _ = _messages_to_bedrock(messages)
 
@@ -1050,7 +1052,9 @@ def test__messages_to_bedrock_drops_degenerate_ai_non_standard_value(
     value: Any,
 ) -> None:
     """Malformed payloads are dropped, not forwarded or raised on."""
-    messages = [AIMessage(content=[{"type": "non_standard", "value": value}])]
+    messages: list[BaseMessage] = [
+        AIMessage(content=[{"type": "non_standard", "value": value}])
+    ]
 
     actual_messages, _ = _messages_to_bedrock(messages)
 
@@ -1083,7 +1087,9 @@ def test__messages_to_bedrock_preserves_every_native_block_key(key: str) -> None
     member discards assistant content instead of sending it.
     """
     payload = {"marker": key}
-    messages = [AIMessage(content=[{"type": "non_standard", "value": {key: payload}}])]
+    messages: list[BaseMessage] = [
+        AIMessage(content=[{"type": "non_standard", "value": {key: payload}}])
+    ]
 
     actual_messages, _ = _messages_to_bedrock(messages)
 
@@ -1095,7 +1101,7 @@ def test__messages_to_bedrock_drops_foreign_block_in_tool_results(
     block_type: str,
 ) -> None:
     """Both tool result branches propagate dropping into nested content."""
-    messages = [
+    messages: list[BaseMessage] = [
         AIMessage(
             content=[
                 {
@@ -1128,7 +1134,7 @@ def test__messages_to_bedrock_drops_foreign_block_in_tool_results(
 
 def test__messages_to_bedrock_keeps_tool_calls_when_content_dropped() -> None:
     """Tool calls repopulate the turn, so no placeholder is needed."""
-    messages = [
+    messages: list[BaseMessage] = [
         AIMessage(
             content=[{"type": "foreign_provider_block"}],
             tool_calls=[
@@ -1162,7 +1168,7 @@ def test__messages_to_bedrock_keeps_tool_calls_when_content_dropped() -> None:
 
 def test__messages_to_bedrock_keeps_cache_point_only_tool_result_valid() -> None:
     """Cache points move outside the toolResult, which must not be left empty."""
-    messages = [
+    messages: list[BaseMessage] = [
         ToolMessage(
             content=[{"cachePoint": {"type": "default"}}],
             tool_call_id="call_abc",
