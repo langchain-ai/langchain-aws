@@ -693,6 +693,35 @@ def test__messages_to_bedrock_ignores_foreign_reasoning_block() -> None:
     ]
 
 
+def test__messages_to_bedrock_preserves_ai_cache_point() -> None:
+    """Preserve cache points when replaying normalized assistant history."""
+    messages = [
+        HumanMessage(content="What is 2 + 2?"),
+        AIMessage(
+            content=[
+                {"type": "text", "text": "4"},
+                {
+                    "type": "non_standard",
+                    "value": {"cachePoint": {"type": "default"}},
+                },
+            ]
+        ),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages == [
+        {"role": "user", "content": [{"text": "What is 2 + 2?"}]},
+        {
+            "role": "assistant",
+            "content": [
+                {"text": "4"},
+                {"cachePoint": {"type": "default"}},
+            ],
+        },
+    ]
+
+
 def test__messages_to_bedrock_replaces_dropped_only_content() -> None:
     messages = [
         HumanMessage(content="Search for the weather."),

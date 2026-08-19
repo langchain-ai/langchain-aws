@@ -88,6 +88,17 @@ from langchain_aws.utils import (
 
 logger = logging.getLogger(__name__)
 
+# These Converse content blocks are represented as ``non_standard`` by
+# langchain-core because they do not have a LangChain content block type.
+_BEDROCK_NON_STANDARD_CONTENT_BLOCK_KEYS = frozenset(
+    {
+        "cachePoint",
+        "citationsContent",
+        "guardContent",
+        "redactedContent",
+    }
+)
+
 _MAX_CACHE_POINTS = 4
 _MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
 
@@ -2897,7 +2908,10 @@ def _lc_content_to_bedrock(
         elif (
             block["type"] == "non_standard"
             and "value" in block
-            and not drop_unsupported
+            and (
+                not drop_unsupported
+                or _is_bedrock_non_standard_content_block(block["value"])
+            )
         ):
             # langchain-core's content_blocks property wraps provider-specific
             # blocks (e.g. cachePoint, guardContent) that lack a recognized
@@ -2914,6 +2928,15 @@ def _lc_content_to_bedrock(
             raise ValueError(f"Unsupported content block type:\n{block}")
     # drop empty text blocks
     return [block for block in bedrock_content if block.get("text", True)]
+
+
+def _is_bedrock_non_standard_content_block(value: Any) -> bool:
+    """Return whether a normalized non-standard block is native to Bedrock."""
+    return (
+        isinstance(value, dict)
+        and len(value) == 1
+        and next(iter(value)) in _BEDROCK_NON_STANDARD_CONTENT_BLOCK_KEYS
+    )
 
 
 def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
