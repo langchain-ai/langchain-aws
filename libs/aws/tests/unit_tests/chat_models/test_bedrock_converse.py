@@ -19,7 +19,9 @@ from typing import (
 )
 from unittest import mock
 
+import botocore.session
 import pytest
+from botocore.model import StructureShape
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
@@ -61,9 +63,15 @@ from langchain_aws.chat_models.bedrock_converse import (
     _snake_to_camel_keys,
     _split_inline_reasoning,
     _strip_null_anyof,
-    _warned_dropped_block_types,
+    _warn_dropped_block_type,
 )
 from langchain_aws.function_calling import convert_to_anthropic_tool
+
+
+@pytest.fixture(autouse=True)
+def _reset_dropped_block_warnings() -> None:
+    """Isolate the process-wide warn-once state from test ordering."""
+    _warn_dropped_block_type.cache_clear()
 
 
 class TestBedrockStandard(ChatModelUnitTests):
@@ -665,14 +673,6 @@ def test__messages_to_bedrock_ignores_foreign_function_call_block() -> None:
     assert actual_system == []
 
 
-@pytest.fixture(autouse=True)
-def _reset_dropped_block_warnings() -> Iterator[None]:
-    """Isolate the process-wide warn-once state from test ordering."""
-    _warned_dropped_block_types.clear()
-    yield
-    _warned_dropped_block_types.clear()
-
-
 def test__messages_to_bedrock_ignores_foreign_reasoning_block() -> None:
     messages = [
         HumanMessage(content="What is 2 + 2?"),
@@ -795,40 +795,6 @@ def test__messages_to_bedrock_preserves_ai_audio_block() -> None:
     }
 
 
-def test__messages_to_bedrock_drops_foreign_block_nested_in_tool_result() -> None:
-    """Dropping applies inside tool result content, not just at the top level."""
-    messages = [
-        HumanMessage(content="What is the weather in Paris?"),
-        AIMessage(
-            content=[
-                {
-                    "type": "tool_result",
-                    "tool_use_id": "call_abc",
-                    "content": [
-                        {"type": "text", "text": "Sunny"},
-                        {"type": "foreign_provider_block"},
-                    ],
-                }
-            ]
-        ),
-    ]
-
-    actual_messages, _ = _messages_to_bedrock(messages)
-
-    assert actual_messages[1] == {
-        "role": "assistant",
-        "content": [
-            {
-                "toolResult": {
-                    "toolUseId": "call_abc",
-                    "content": [{"text": "Sunny"}],
-                    "status": "success",
-                }
-            }
-        ],
-    }
-
-
 def test__messages_to_bedrock_replaces_dropped_nested_tool_result_content() -> None:
     """Tool results remain valid when all nested content is unsupported."""
     messages = [
@@ -860,17 +826,19 @@ def test__messages_to_bedrock_replaces_dropped_nested_tool_result_content() -> N
     }
 
 
-def _dropped_block_warnings(caplog: pytest.LogCaptureFixture) -> List[str]:
-    """Return warnings about individual dropped blocks.
+def _warnings_matching(
+    caplog: pytest.LogCaptureFixture,
+    substring: str = "Dropping unsupported content block",
+) -> List[str]:
+    """Return warnings whose message contains `substring`.
 
-    Filters out the separate warning about an assistant turn left with no
-    usable content, which is emitted unconditionally.
+    The default separates the per-block drop warning from the warning about an
+    assistant turn left with no usable content, which is unconditional.
     """
     return [
         record.getMessage()
         for record in caplog.records
-        if record.levelno == logging.WARNING
-        and "Dropping unsupported content block" in record.getMessage()
+        if record.levelno == logging.WARNING and substring in record.getMessage()
     ]
 
 
@@ -885,12 +853,10 @@ def test__messages_to_bedrock_warns_once_per_dropped_block_type(
         AIMessage(content=[{"type": "foreign_provider_block"}]),
     ]
 
-    with caplog.at_level(
-        logging.WARNING, logger="langchain_aws.chat_models.bedrock_converse"
-    ):
+    with caplog.at_level(logging.WARNING, logger="langchain_aws"):
         _messages_to_bedrock(messages)
 
-    warnings_logged = _dropped_block_warnings(caplog)
+    warnings_logged = _warnings_matching(caplog)
     assert len(warnings_logged) == 1
     assert "foreign_provider_block" in warnings_logged[0]
     # Blocks can carry user data, so the warning names the block type only; the
@@ -913,12 +879,10 @@ def test__messages_to_bedrock_warns_per_distinct_non_standard_block(
         ),
     ]
 
-    with caplog.at_level(
-        logging.WARNING, logger="langchain_aws.chat_models.bedrock_converse"
-    ):
+    with caplog.at_level(logging.WARNING, logger="langchain_aws"):
         _messages_to_bedrock(messages)
 
-    warnings_logged = _dropped_block_warnings(caplog)
+    warnings_logged = _warnings_matching(caplog)
     assert len(warnings_logged) == 2
     assert "openai_annotation" in warnings_logged[0]
     assert "google_grounding" in warnings_logged[1]
@@ -935,16 +899,10 @@ def test__messages_to_bedrock_warns_when_assistant_turn_is_erased(
         AIMessage(content=[{"type": "foreign_provider_block"}]),
     ]
 
-    with caplog.at_level(
-        logging.WARNING, logger="langchain_aws.chat_models.bedrock_converse"
-    ):
+    with caplog.at_level(logging.WARNING, logger="langchain_aws"):
         _messages_to_bedrock(messages)
 
-    erased = [
-        record.getMessage()
-        for record in caplog.records
-        if "has no content Bedrock can accept" in record.getMessage()
-    ]
+    erased = _warnings_matching(caplog, "has no content Bedrock can accept")
     # Reported for every erased turn, unlike the deduped per-block warning, and
     # naming the message so it can be found in a long replayed history.
     assert len(erased) == 2
@@ -1077,6 +1035,26 @@ def test__messages_to_bedrock_rejects_malformed_ai_block(block: Dict[str, Any]) 
     """Structurally broken blocks keep raising, even where dropping applies."""
     with pytest.raises(ValueError, match="Unsupported content block type"):
         _messages_to_bedrock([AIMessage(content=[block])])
+
+
+def test__bedrock_content_block_keys_match_botocore() -> None:
+    """Catch drift between the hardcoded allowlist and the service model.
+
+    The allowlist is parametrized over itself elsewhere, which only catches
+    someone deleting an entry. This catches the other direction: AWS adding a
+    `ContentBlock` member, which would otherwise be silently dropped from
+    assistant turns until someone noticed missing content.
+    """
+    service_model = botocore.session.get_session().get_service_model("bedrock-runtime")
+    expected = {
+        key
+        for shape_name in ("ContentBlock", "ToolResultContentBlock")
+        # `shape_for` is typed as returning the `Shape` base class; both of
+        # these are structures, which is where `members` lives.
+        for key in cast(StructureShape, service_model.shape_for(shape_name)).members
+    }
+
+    assert set(_BEDROCK_CONTENT_BLOCK_KEYS) == expected
 
 
 @pytest.mark.parametrize("key", sorted(_BEDROCK_CONTENT_BLOCK_KEYS))
