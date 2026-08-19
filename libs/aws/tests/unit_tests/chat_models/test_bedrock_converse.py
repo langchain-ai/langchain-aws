@@ -723,8 +723,8 @@ def test__messages_to_bedrock_preserves_ai_cache_point() -> None:
     ]
 
 
-def test__messages_to_bedrock_preserves_ai_combined_cache_point_block() -> None:
-    """Preserve blocks that pair a payload with a cache point."""
+def test__messages_to_bedrock_splits_ai_combined_cache_point_block() -> None:
+    """Split normalized values into valid single-member Bedrock blocks."""
     messages = [
         HumanMessage(content="What is 2 + 2?"),
         AIMessage(
@@ -743,9 +743,46 @@ def test__messages_to_bedrock_preserves_ai_combined_cache_point_block() -> None:
         {"role": "user", "content": [{"text": "What is 2 + 2?"}]},
         {
             "role": "assistant",
-            "content": [{"text": "4", "cachePoint": {"type": "default"}}],
+            "content": [
+                {"text": "4"},
+                {"cachePoint": {"type": "default"}},
+            ],
         },
     ]
+
+
+def test__messages_to_bedrock_preserves_ai_audio_block() -> None:
+    """Keep Bedrock-native blocks not represented by a core content type."""
+    messages = [
+        HumanMessage(content="Play this audio."),
+        AIMessage(
+            content=[
+                {
+                    "type": "non_standard",
+                    "value": {
+                        "audio": {
+                            "format": "wav",
+                            "source": {"bytes": b"audio"},
+                        }
+                    },
+                }
+            ]
+        ),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages[1] == {
+        "role": "assistant",
+        "content": [
+            {
+                "audio": {
+                    "format": "wav",
+                    "source": {"bytes": b"audio"},
+                }
+            }
+        ],
+    }
 
 
 def test__messages_to_bedrock_drops_foreign_block_nested_in_tool_result() -> None:

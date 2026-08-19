@@ -89,11 +89,12 @@ from langchain_aws.utils import (
 
 logger = logging.getLogger(__name__)
 
-# Top-level keys of a Converse ContentBlock. Blocks keyed only by these are
-# native to Bedrock even when langchain-core wraps them as `non_standard`
-# for lack of a matching LangChain content block type.
+# Top-level members of the Converse ContentBlock union. These native Bedrock
+# blocks can be wrapped as `non_standard` when langchain-core has no matching
+# content block type.
 _BEDROCK_CONTENT_BLOCK_KEYS = frozenset(
     {
+        "audio",
         "cachePoint",
         "citationsContent",
         "document",
@@ -102,7 +103,10 @@ _BEDROCK_CONTENT_BLOCK_KEYS = frozenset(
         "json",
         "reasoningContent",
         "redactedContent",
+        "searchResult",
         "text",
+        "toolAddition",
+        "toolRemoval",
         "toolResult",
         "toolUse",
         "video",
@@ -2925,20 +2929,17 @@ def _lc_content_to_bedrock(
                         }
                     }
                 )
-        elif (
-            block["type"] == "non_standard"
-            and "value" in block
-            and (
-                not drop_unsupported
-                or _is_bedrock_non_standard_content_block(block["value"])
-            )
-        ):
+        elif block["type"] == "non_standard" and "value" in block:
             # langchain-core's content_blocks property wraps provider-specific
             # blocks (e.g. cachePoint, guardContent) that lack a recognized
             # "type" key as {"type": "non_standard", "value": <original>}.
             # Unwrap to restore the original block — it was valid in .content before
             # content_blocks wrapped it.
-            bedrock_content.append(block["value"])
+            non_standard_blocks = _bedrock_non_standard_content_blocks(block["value"])
+            if not drop_unsupported or non_standard_blocks is not None:
+                bedrock_content.extend(non_standard_blocks or [block["value"]])
+            else:
+                _log_dropped_block(block)
         elif drop_unsupported:
             _log_dropped_block(block)
         else:
@@ -2949,18 +2950,20 @@ def _lc_content_to_bedrock(
     return bedrock_content or [{"text": EMPTY_CONTENT}]
 
 
-def _is_bedrock_non_standard_content_block(value: Any) -> bool:
-    """Return whether a normalized non-standard block is native to Bedrock.
+def _bedrock_non_standard_content_blocks(value: Any) -> Optional[List[Dict[str, Any]]]:
+    """Return valid Converse blocks reconstructed from a normalized value.
 
-    A block qualifies when every key is a Converse ContentBlock key, so that
-    combined blocks (e.g. `{"text": ..., "cachePoint": ...}`) are recognized
-    while foreign provider blocks are not.
+    Converse `ContentBlock` is a union, so a normalized value with multiple
+    Bedrock members must be expanded into one block per member before sending
+    it to Bedrock.
     """
-    return (
+    if not (
         isinstance(value, dict)
-        and bool(value)
+        and value
         and value.keys() <= _BEDROCK_CONTENT_BLOCK_KEYS
-    )
+    ):
+        return None
+    return [{key: item} for key, item in value.items()]
 
 
 def _log_dropped_block(block: Dict[str, Any]) -> None:
