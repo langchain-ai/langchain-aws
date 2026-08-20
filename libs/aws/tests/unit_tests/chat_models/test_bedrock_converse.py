@@ -7282,3 +7282,84 @@ def test_format_tools_strips_null_anyof() -> None:
     assert input_schema["properties"]["limit"] == {"type": "integer"}
     assert input_schema["properties"]["offset"] == {"type": "integer"}
     assert input_schema["properties"]["query"] == {"type": "string"}
+
+
+def test__lc_content_to_bedrock_standard_tool_call_block() -> None:
+    content = _lc_content_to_bedrock(
+        [
+            {
+                "type": "tool_call",
+                "name": "get_weather",
+                "args": {"city": "Paris"},
+                "id": "call_1",
+            }
+        ]
+    )
+    assert content == [
+        {
+            "toolUse": {
+                "toolUseId": "call_1",
+                "input": {"city": "Paris"},
+                "name": "get_weather",
+            }
+        }
+    ]
+
+
+def test__messages_to_bedrock_normalizes_foreign_provider_content() -> None:
+    messages = [
+        HumanMessage("hi"),
+        AIMessage(
+            content=[
+                {"type": "thinking", "thinking": "hmm", "signature": "Z29vZ2xl"},
+                {"type": "text", "text": "answer"},
+            ],
+            response_metadata={"model_provider": "google_genai"},
+        ),
+        HumanMessage("go on"),
+    ]
+    bedrock_messages, _ = _messages_to_bedrock(messages)
+    assert bedrock_messages[1]["content"] == [{"text": "answer"}]
+
+
+def test__messages_to_bedrock_native_thinking_not_normalized() -> None:
+    thinking = {"type": "thinking", "thinking": "hmm", "signature": "YW50aA=="}
+    expected = [
+        {
+            "reasoningContent": {
+                "reasoningText": {"text": "hmm", "signature": "YW50aA=="}
+            }
+        },
+        {"text": "answer"},
+    ]
+    for meta in ({"model_provider": "bedrock_converse"}, {}):
+        messages = [
+            HumanMessage("hi"),
+            AIMessage(
+                content=[thinking, {"type": "text", "text": "answer"}],
+                response_metadata=meta,
+            ),
+            HumanMessage("go on"),
+        ]
+        bedrock_messages, _ = _messages_to_bedrock(messages)
+        assert bedrock_messages[1]["content"] == expected, f"meta={meta}"
+
+
+def test__messages_to_bedrock_foreign_tool_call_round_trip() -> None:
+    messages = [
+        HumanMessage("weather?"),
+        AIMessage(
+            content=[
+                {
+                    "type": "tool_call",
+                    "name": "get_weather",
+                    "args": {"city": "Paris"},
+                    "id": "call_1",
+                }
+            ],
+        ),
+        ToolMessage("sunny", tool_call_id="call_1"),
+    ]
+    bedrock_messages, _ = _messages_to_bedrock(messages)
+    assert bedrock_messages[1]["content"][0]["toolUse"]["toolUseId"] == "call_1"
+    assert bedrock_messages[2]["content"][0]["toolResult"]["toolUseId"] == "call_1"
