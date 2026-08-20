@@ -14,7 +14,6 @@ from typing import (
     Sequence,
     Type,
     Union,
-    override,
 )
 
 from langchain_core.callbacks import CallbackManagerForLLMRun
@@ -39,7 +38,7 @@ from langchain_core.tools import BaseTool
 from langchain_core.utils import secret_from_env
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import ConfigDict, Field, SecretStr, model_validator
-from typing_extensions import Self
+from typing_extensions import Self, override
 
 from langchain_aws._version import _add_langchain_aws_version
 from langchain_aws.function_calling import lc_tool_calls_to_openai_tool_calls
