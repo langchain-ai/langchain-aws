@@ -2256,19 +2256,33 @@ def _messages_to_bedrock(
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Handle Bedrock converse and Anthropic style content blocks"""
     for idx, message in enumerate(messages):
+        if not isinstance(message, AIMessage):
+            continue
+        model_provider = message.response_metadata.get("model_provider")
         # Translate v1 content
-        if (
-            isinstance(message, AIMessage)
-            and message.response_metadata.get("output_version") == "v1"
-        ):
+        if message.response_metadata.get("output_version") == "v1":
             messages[idx] = message.model_copy(
                 update={
                     "content": _convert_from_v1_to_converse(
                         cast(list[types.ContentBlock], message.content),
-                        message.response_metadata.get("model_provider"),
+                        model_provider,
                     )
                 }
             )
+        elif model_provider not in (None, "bedrock_converse", "bedrock"):
+            try:
+                normalized = message.content_blocks
+            except Exception:
+                logger.debug(
+                    "content_blocks normalization failed for message %d; "
+                    "serializing raw content.",
+                    idx,
+                    exc_info=True,
+                )
+            else:
+                messages[idx] = message.model_copy(
+                    update={"content": cast(list, normalized)}
+                )
 
     bedrock_messages: List[Dict[str, Any]] = []
     bedrock_system: List[Dict[str, Any]] = []
@@ -2900,6 +2914,16 @@ def _lc_content_to_bedrock(
                         "toolUseId": block["id"],
                         "input": tool_input,
                         "name": block["name"],
+                    }
+                }
+            )
+        elif block["type"] == "tool_call":
+            bedrock_content.append(
+                {
+                    "toolUse": {
+                        "toolUseId": block.get("id") or "",
+                        "input": block.get("args") or {},
+                        "name": block.get("name", ""),
                     }
                 }
             )
