@@ -419,9 +419,9 @@ class ChatAnthropicMantle(ChatAnthropic):
     If not provided, read from the ``AWS_BEARER_TOKEN_BEDROCK`` environment
     variable. An explicitly supplied API key takes precedence over SigV4
     credentials. An environment-sourced API key is ignored when a profile or
-    complete access key pair is explicitly supplied, allowing callers to select
-    SigV4 authentication. Otherwise, the client falls back to the default AWS
-    credential chain when no API key is available.
+    either static credential is explicitly supplied and both resolve to values,
+    allowing callers to select SigV4 authentication. Otherwise, the client falls
+    back to the default AWS credential chain when no API key is available.
     """
 
     aws_access_key_id: SecretStr | None = Field(
@@ -493,7 +493,7 @@ class ChatAnthropicMantle(ChatAnthropic):
             "credentials_profile_name" in self.model_fields_set
             and bool(self.credentials_profile_name)
         ) or (
-            {"aws_access_key_id", "aws_secret_access_key"} <= self.model_fields_set
+            bool({"aws_access_key_id", "aws_secret_access_key"} & self.model_fields_set)
             and self.aws_access_key_id is not None
             and self.aws_secret_access_key is not None
         )
