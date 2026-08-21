@@ -372,7 +372,8 @@ class ChatAnthropicMantle(ChatAnthropic):
     support both authentication modes Mantle accepts:
 
     - **Amazon Bedrock API key** (bearer token), from ``bedrock_api_key`` or the
-      ``AWS_BEARER_TOKEN_BEDROCK`` environment variable.
+      ``AWS_BEARER_TOKEN_BEDROCK`` environment variable. Explicit SigV4
+      credentials take precedence over an environment-sourced API key.
     - **AWS SigV4** with standard AWS credentials — explicit keys, a named
       profile, or the default credential chain (environment, instance profile,
       SSO, etc.). Used automatically whenever no API key is provided.
@@ -416,8 +417,11 @@ class ChatAnthropicMantle(ChatAnthropic):
     """Amazon Bedrock API key used to authenticate to Mantle.
 
     If not provided, read from the ``AWS_BEARER_TOKEN_BEDROCK`` environment
-    variable. When neither is set, the client falls back to AWS SigV4 using
-    the credentials below (or the default AWS credential chain).
+    variable. An explicitly supplied API key takes precedence over SigV4
+    credentials. An environment-sourced API key is ignored when a profile or
+    complete access key pair is explicitly supplied, allowing callers to select
+    SigV4 authentication. Otherwise, the client falls back to the default AWS
+    credential chain when no API key is available.
     """
 
     aws_access_key_id: SecretStr | None = Field(
@@ -485,7 +489,17 @@ class ChatAnthropicMantle(ChatAnthropic):
         }
         if self.anthropic_api_url and "api.anthropic.com" not in self.anthropic_api_url:
             client_params["base_url"] = self.anthropic_api_url
-        if self.bedrock_api_key:
+        explicit_sigv4_credentials = (
+            "credentials_profile_name" in self.model_fields_set
+            and bool(self.credentials_profile_name)
+        ) or (
+            {"aws_access_key_id", "aws_secret_access_key"} <= self.model_fields_set
+            and self.aws_access_key_id is not None
+            and self.aws_secret_access_key is not None
+        )
+        if self.bedrock_api_key and (
+            "bedrock_api_key" in self.model_fields_set or not explicit_sigv4_credentials
+        ):
             client_params["api_key"] = self.bedrock_api_key.get_secret_value()
         if self.aws_access_key_id:
             client_params["aws_access_key"] = self.aws_access_key_id.get_secret_value()
