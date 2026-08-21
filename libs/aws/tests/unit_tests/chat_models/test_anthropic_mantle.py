@@ -148,13 +148,15 @@ def test_credentials_profile_routed_to_client() -> None:
 
 
 @pytest.mark.parametrize(
-    ("sigv4_params", "expected_client_params"),
+    ("credential_environment", "sigv4_params", "expected_client_params"),
     [
         (
+            {},
             {"credentials_profile_name": "my-profile"},
             {"aws_profile": "my-profile"},
         ),
         (
+            {},
             {
                 "aws_access_key_id": SecretStr("AKIA-test"),
                 "aws_secret_access_key": SecretStr("secret-test"),
@@ -166,15 +168,43 @@ def test_credentials_profile_routed_to_client() -> None:
                 "aws_session_token": "token-test",
             },
         ),
+        (
+            {"AWS_SECRET_ACCESS_KEY": "secret-from-env"},
+            {"aws_access_key_id": SecretStr("AKIA-explicit")},
+            {
+                "aws_access_key": "AKIA-explicit",
+                "aws_secret_key": "secret-from-env",
+            },
+        ),
+        (
+            {"AWS_ACCESS_KEY_ID": "AKIA-from-env"},
+            {"aws_secret_access_key": SecretStr("secret-explicit")},
+            {
+                "aws_access_key": "AKIA-from-env",
+                "aws_secret_key": "secret-explicit",
+            },
+        ),
     ],
-    ids=["profile", "explicit-keys"],
+    ids=[
+        "profile",
+        "explicit-keys",
+        "explicit-access-key",
+        "explicit-secret-key",
+    ],
 )
 def test_explicit_sigv4_credentials_outrank_ambient_api_key(
-    sigv4_params: dict[str, Any], expected_client_params: dict[str, str]
+    credential_environment: dict[str, str],
+    sigv4_params: dict[str, Any],
+    expected_client_params: dict[str, str],
 ) -> None:
     """An ambient bearer token does not override explicit SigV4 credentials."""
     with MonkeyPatch().context() as m:
+        m.delenv("AWS_ACCESS_KEY_ID", raising=False)
+        m.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
+        m.delenv("AWS_SESSION_TOKEN", raising=False)
         m.setenv("AWS_BEARER_TOKEN_BEDROCK", "ambient-key")
+        for name, value in credential_environment.items():
+            m.setenv(name, value)
         model = ChatAnthropicMantle(  # type: ignore[call-arg]
             model=MODEL_NAME,
             region_name="us-east-1",
@@ -184,9 +214,9 @@ def test_explicit_sigv4_credentials_outrank_ambient_api_key(
         client_params_by_type = _constructed_client_params(model)
 
     for client_params in client_params_by_type:
-        assert "api_key" not in client_params
         for name, value in expected_client_params.items():
             assert client_params[name] == value
+        assert "api_key" not in client_params
 
 
 def test_explicit_bedrock_api_key_outranks_sigv4_credentials() -> None:
