@@ -11,11 +11,13 @@ pytest.importorskip("valkey")
 pytest.importorskip("orjson")
 pytest.importorskip("fakeredis")
 
+import fakeredis
 import orjson
 from langchain_core.runnables import RunnableConfig
 from valkey.exceptions import ValkeyError
 
 from langgraph_checkpoint_aws import AsyncValkeySaver
+from langgraph_checkpoint_aws.checkpoint.valkey.base import BaseValkeySaver
 
 
 # Create dummy objects for serialization tests
@@ -541,57 +543,71 @@ class TestAsyncValkeySaverPut:
         # Pipeline expire should have been called (via the pipeline mock)
 
 
+@pytest.fixture
+def fake_async_client():
+    """In-memory async Valkey fake that models WATCH/MULTI/EXEC transactions."""
+    return fakeredis.FakeAsyncValkey(decode_responses=False)
+
+
 class TestAsyncValkeySaverPutWrites:
-    """Test aput_writes method."""
+    """Test aput_writes storing, merging, and concurrency behavior."""
 
     @pytest.mark.asyncio
-    async def test_aput_writes_basic(
-        self, mock_valkey_client, mock_serializer, sample_config
-    ):
-        """Test putting writes."""
+    async def test_aput_writes_basic(self, fake_async_client, sample_config):
+        """Writes are stored under the checkpoint's writes key."""
+        saver = AsyncValkeySaver(client=fake_async_client)
         writes = [("channel1", "value1"), ("channel2", "value2")]
-        task_id = "test-task"
 
-        mock_valkey_client.get.return_value = orjson.dumps([])  # existing writes
+        await saver.aput_writes(sample_config, writes, "test-task")
 
-        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
-
-        await saver.aput_writes(sample_config, writes, task_id)
-
-        mock_valkey_client.get.assert_called()
+        writes_key = saver._make_writes_key("test-thread-123", "", "test-checkpoint-id")
+        stored = orjson.loads(await fake_async_client.get(writes_key))
+        assert [w["channel"] for w in stored] == ["channel1", "channel2"]
+        assert {w["task_id"] for w in stored} == {"test-task"}
 
     @pytest.mark.asyncio
-    async def test_aput_writes_with_task_path(
-        self, mock_valkey_client, mock_serializer, sample_config
-    ):
-        """Test putting writes with task path."""
-        writes = [("channel", "value")]
-        task_id = "test-task"
-        task_path = "path/to/task"
+    async def test_aput_writes_empty_writes(self, fake_async_client, sample_config):
+        """Empty writes leave an empty list rather than erroring."""
+        saver = AsyncValkeySaver(client=fake_async_client)
 
-        mock_valkey_client.get.return_value = orjson.dumps([])  # existing writes
+        await saver.aput_writes(sample_config, [], "test-task")
 
-        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
-
-        await saver.aput_writes(sample_config, writes, task_id, task_path)
-
-        mock_valkey_client.get.assert_called()
+        writes_key = saver._make_writes_key("test-thread-123", "", "test-checkpoint-id")
+        assert orjson.loads(await fake_async_client.get(writes_key)) == []
 
     @pytest.mark.asyncio
-    async def test_aput_writes_empty_writes(
-        self, mock_valkey_client, mock_serializer, sample_config
+    async def test_aput_writes_concurrent_tasks_keep_all_writes(
+        self, fake_async_client, sample_config
     ):
-        """Test putting empty writes."""
-        writes = []
-        task_id = "test-task"
+        """Parallel tool calls fan out into separate tasks writing the same
+        checkpoint concurrently; none of their writes may be lost (issue #1174)."""
+        saver = AsyncValkeySaver(client=fake_async_client)
 
-        mock_valkey_client.get.return_value = orjson.dumps([])  # existing writes
+        await asyncio.gather(
+            *(
+                saver.aput_writes(sample_config, [("messages", f"r{i}")], f"task-{i}")
+                for i in range(8)
+            )
+        )
 
-        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
+        writes_key = saver._make_writes_key("test-thread-123", "", "test-checkpoint-id")
+        stored = orjson.loads(await fake_async_client.get(writes_key))
+        assert sorted(w["task_id"] for w in stored) == [f"task-{i}" for i in range(8)]
 
-        await saver.aput_writes(sample_config, writes, task_id)
+    @pytest.mark.asyncio
+    async def test_aput_writes_positional_write_is_idempotent(
+        self, fake_async_client, sample_config
+    ):
+        """Replaying a task's positional write (e.g. around interrupt/resume) must
+        not duplicate it, matching InMemorySaver semantics."""
+        saver = AsyncValkeySaver(client=fake_async_client)
 
-        mock_valkey_client.get.assert_called()
+        await saver.aput_writes(sample_config, [("messages", "v")], "task-a")
+        await saver.aput_writes(sample_config, [("messages", "v")], "task-a")
+
+        writes_key = saver._make_writes_key("test-thread-123", "", "test-checkpoint-id")
+        stored = orjson.loads(await fake_async_client.get(writes_key))
+        assert len(stored) == 1
 
 
 class TestAsyncValkeySaverErrorHandling:
@@ -691,103 +707,74 @@ class TestAsyncValkeySaverKeyGeneration:
 
 
 class TestAsyncValkeySaverAputWritesErrorHandling:
-    """Test aput_writes method error handling."""
+    """Test aput_writes error handling."""
 
     @pytest.mark.asyncio
-    async def test_aput_writes_existing_data_string(
-        self, mock_valkey_client, mock_serializer, sample_config
-    ):
-        """Test aput_writes with existing data as string."""
-        writes = [("channel", "value")]
-        task_id = "test-task"
+    async def test_aput_writes_valkey_error_propagates(self, sample_config):
+        """A client failure inside the transaction is logged and re-raised."""
+        pipe = AsyncMock()
+        pipe.__aenter__.return_value = pipe
+        pipe.watch.side_effect = ValkeyError("Valkey error")
+        client = Mock()
+        client.pipeline = Mock(return_value=pipe)
 
-        # Mock existing writes as string
-        mock_valkey_client.get.return_value = "[]"  # String instead of bytes
-
-        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
-
-        await saver.aput_writes(sample_config, writes, task_id)
-        mock_valkey_client.get.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_aput_writes_existing_data_invalid_type(
-        self, mock_valkey_client, mock_serializer, sample_config
-    ):
-        """Test aput_writes with existing data as invalid type."""
-        writes = [("channel", "value")]
-        task_id = "test-task"
-
-        # Mock existing writes as invalid type (Mock object)
-        mock_data = Mock()
-        mock_valkey_client.get.return_value = mock_data
-
-        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
-
-        await saver.aput_writes(sample_config, writes, task_id)
-        mock_valkey_client.get.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_aput_writes_existing_data_json_decode_error(
-        self, mock_valkey_client, mock_serializer, sample_config
-    ):
-        """Test aput_writes with JSON decode error on existing data."""
-        writes = [("channel", "value")]
-        task_id = "test-task"
-
-        # Mock existing writes as invalid JSON
-        mock_valkey_client.get.return_value = b"invalid json"
-
-        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
-
-        await saver.aput_writes(sample_config, writes, task_id)
-        mock_valkey_client.get.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_aput_writes_existing_data_not_list(
-        self, mock_valkey_client, mock_serializer, sample_config
-    ):
-        """Test aput_writes with existing data that's not a list."""
-        writes = [("channel", "value")]
-        task_id = "test-task"
-
-        # Mock existing writes as dict instead of list
-        mock_valkey_client.get.return_value = orjson.dumps({"not": "a list"})
-
-        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
-
-        await saver.aput_writes(sample_config, writes, task_id)
-        mock_valkey_client.get.assert_called()
-
-    @pytest.mark.asyncio
-    async def test_aput_writes_valkey_error(
-        self, mock_valkey_client, mock_serializer, sample_config
-    ):
-        """Test aput_writes with ValkeyError."""
-        writes = [("channel", "value")]
-        task_id = "test-task"
-
-        mock_valkey_client.get.side_effect = ValkeyError("Valkey error")
-
-        saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
+        saver = AsyncValkeySaver(client=client)
 
         with pytest.raises(ValkeyError):
-            await saver.aput_writes(sample_config, writes, task_id)
+            await saver.aput_writes(sample_config, [("channel", "value")], "test-task")
 
     @pytest.mark.asyncio
     async def test_aput_writes_key_error(self, mock_valkey_client, mock_serializer):
-        """Test aput_writes with KeyError."""
-        writes = [("channel", "value")]
-        task_id = "test-task"
-
-        # Config missing required keys
+        """A config missing required keys raises before any storage call."""
         bad_config = RunnableConfig(configurable={})
-
-        mock_valkey_client.get.return_value = orjson.dumps([])
-
         saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         with pytest.raises(KeyError):
-            await saver.aput_writes(bad_config, writes, task_id)
+            await saver.aput_writes(bad_config, [("channel", "value")], "test-task")
+
+
+class TestParseWritesBlob:
+    """Test the defensive parsing of the stored writes blob."""
+
+    def test_none_returns_empty(self):
+        assert BaseValkeySaver._parse_writes_blob(None) == []
+
+    def test_string_json_is_decoded(self):
+        assert BaseValkeySaver._parse_writes_blob("[]") == []
+
+    def test_bytes_json_list_is_decoded(self):
+        assert BaseValkeySaver._parse_writes_blob(b'[{"task_id": "a"}]') == [
+            {"task_id": "a"}
+        ]
+
+    def test_invalid_json_returns_empty(self):
+        assert BaseValkeySaver._parse_writes_blob(b"invalid json") == []
+
+    def test_non_list_json_returns_empty(self):
+        assert BaseValkeySaver._parse_writes_blob(orjson.dumps({"not": "a list"})) == []
+
+    def test_unserializable_type_returns_empty(self):
+        assert BaseValkeySaver._parse_writes_blob(object()) == []
+
+
+class TestMergeWrites:
+    """Test the dedup-merge that mirrors InMemorySaver semantics."""
+
+    def test_positional_write_kept_once(self):
+        existing = [{"task_id": "a", "idx": 0, "value": "first"}]
+        new = [{"task_id": "a", "idx": 0, "value": "second"}]
+        assert BaseValkeySaver._merge_writes(existing, new) == existing
+
+    def test_distinct_tasks_are_all_kept(self):
+        existing = [{"task_id": "a", "idx": 0}]
+        new = [{"task_id": "b", "idx": 0}]
+        merged = BaseValkeySaver._merge_writes(existing, new)
+        assert [w["task_id"] for w in merged] == ["a", "b"]
+
+    def test_special_channel_overwrites_in_place(self):
+        existing = [{"task_id": "a", "idx": -1, "value": "old"}]
+        new = [{"task_id": "a", "idx": -1, "value": "new"}]
+        assert BaseValkeySaver._merge_writes(existing, new) == new
 
 
 class TestAsyncValkeySaverAdeleteThread:
