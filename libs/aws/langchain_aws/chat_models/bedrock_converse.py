@@ -2963,7 +2963,15 @@ def _lc_content_to_bedrock(
             reasoning_content = block.get("reasoningContent") or block.get(
                 "reasoning_content", {}
             )
-            if reasoning_content.get("signature", ""):
+            if "redactedContent" in reasoning_content:
+                bedrock_content.append(
+                    {
+                        "reasoningContent": {
+                            "redactedContent": reasoning_content["redactedContent"]
+                        }
+                    }
+                )
+            elif reasoning_content.get("signature", ""):
                 bedrock_content.append(
                     {
                         "reasoningContent": {
@@ -3194,6 +3202,15 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 )
             # Streaming block format
             else:
+                if "redacted_content" in reasoning_dict:
+                    lc_content.append(
+                        {
+                            "type": "reasoning_content",
+                            "reasoning_content": {
+                                "redacted_content": reasoning_dict["redacted_content"],
+                            },
+                        }
+                    )
                 if "text" in reasoning_dict:
                     lc_content.append(
                         {
