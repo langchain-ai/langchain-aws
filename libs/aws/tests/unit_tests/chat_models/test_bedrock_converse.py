@@ -1694,6 +1694,25 @@ def test__bedrock_to_lc_anthropic_reasoning() -> None:
     assert expected_lc == actual
 
 
+def test__bedrock_to_lc_redacted_reasoning_round_trip() -> None:
+    redacted_content = b"encrypted-reasoning"
+    expected_lc: List[Union[str, Dict[str, Any]]] = [
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {"redacted_content": redacted_content},
+        }
+    ]
+
+    actual = _bedrock_to_lc(
+        [{"reasoningContent": {"redactedContent": redacted_content}}]
+    )
+
+    assert actual == expected_lc
+    assert _lc_content_to_bedrock(cast(List[Union[str, Dict[str, Any]]], actual)) == [
+        {"reasoningContent": {"redactedContent": redacted_content}}
+    ]
+
+
 def test__bedrock_to_lc_nova_reasoning_content() -> None:
     """Test parsing Nova's reasoningContent format."""
     bedrock_content: List[Dict[str, Any]] = [
@@ -5563,6 +5582,29 @@ def test_content_block_delta_tool_call_chunk_args_type() -> None:
     args = chunk.tool_call_chunks[0]["args"]
     assert isinstance(args, str)
     assert args == '{"city": "Paris"}'
+
+
+def test_content_block_delta_redacted_reasoning() -> None:
+    redacted_content = b"encrypted-reasoning"
+    event = {
+        "contentBlockDelta": {
+            "contentBlockIndex": 2,
+            "delta": {
+                "reasoningContent": {"redactedContent": redacted_content},
+            },
+        }
+    }
+
+    chunk = _parse_stream_event(event)
+
+    assert isinstance(chunk, AIMessageChunk)
+    assert chunk.content == [
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {"redacted_content": redacted_content},
+            "index": 2,
+        }
+    ]
 
 
 def test_streaming_tool_use_round_trip() -> None:
