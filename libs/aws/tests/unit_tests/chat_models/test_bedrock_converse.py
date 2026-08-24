@@ -7363,3 +7363,78 @@ def test__messages_to_bedrock_foreign_tool_call_round_trip() -> None:
     bedrock_messages, _ = _messages_to_bedrock(messages)
     assert bedrock_messages[1]["content"][0]["toolUse"]["toolUseId"] == "call_1"
     assert bedrock_messages[2]["content"][0]["toolResult"]["toolUseId"] == "call_1"
+
+
+_REASONING_BLOCK = {"reasoningContent": {"reasoningText": {"text": "Thinking."}}}
+_SIGNED_REASONING_BLOCK = {
+    "reasoningContent": {"reasoningText": {"text": "Thinking.", "signature": "sig"}}
+}
+_ANSWER_BLOCK = {"text": "Answer."}
+
+
+@pytest.mark.parametrize(
+    ("model_id", "signature", "expected_content"),
+    [
+        # Models that accept unsigned reasoning have it forwarded.
+        ("openai.gpt-oss-120b-1:0", "", [_REASONING_BLOCK, _ANSWER_BLOCK]),
+        ("deepseek.v3.2", "", [_REASONING_BLOCK, _ANSWER_BLOCK]),
+        # DeepSeek R1 rejects reasoning content whether or not it is signed.
+        ("deepseek.r1-v1:0", "", [_ANSWER_BLOCK]),
+        ("deepseek.r1-v1:0", "sig", [_ANSWER_BLOCK]),
+        # Anthropic models require a signature.
+        ("anthropic.claude-sonnet-4-5-20250929-v1:0", "", [_ANSWER_BLOCK]),
+        (
+            "anthropic.claude-sonnet-4-5-20250929-v1:0",
+            "sig",
+            [_SIGNED_REASONING_BLOCK, _ANSWER_BLOCK],
+        ),
+        # Nova v1 emits inline reasoning and rejects it on the way back; Nova 2
+        # uses native reasoning and accepts it.
+        ("amazon.nova-pro-v1:0", "", [_ANSWER_BLOCK]),
+        ("amazon.nova-pro-v1:0", "sig", [_ANSWER_BLOCK]),
+        ("amazon.nova-2-lite-v1:0", "", [_REASONING_BLOCK, _ANSWER_BLOCK]),
+        # An unknown model falls back to requiring a signature.
+        (None, "", [_ANSWER_BLOCK]),
+        (None, "sig", [_SIGNED_REASONING_BLOCK, _ANSWER_BLOCK]),
+    ],
+)
+def test__messages_to_bedrock_reasoning_by_model(
+    model_id: Optional[str], signature: str, expected_content: List[dict]
+) -> None:
+    messages: List[BaseMessage] = [
+        HumanMessage(content="Question?"),
+        AIMessage(
+            content=[
+                {
+                    "type": "reasoning_content",
+                    "reasoning_content": {"text": "Thinking.", "signature": signature},
+                },
+                {"type": "text", "text": "Answer."},
+            ]
+        ),
+        HumanMessage(content="Follow-up?"),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages, model_id=model_id)
+
+    assert actual_messages[1] == {"role": "assistant", "content": expected_content}
+
+
+def test__messages_to_bedrock_reasoning_only_content() -> None:
+    """An unsigned reasoning block should survive as the sole content block."""
+    messages: List[BaseMessage] = [
+        HumanMessage(content="Question?"),
+        AIMessage(
+            content=[
+                {
+                    "type": "reasoning_content",
+                    "reasoning_content": {"text": "Thinking.", "signature": ""},
+                }
+            ]
+        ),
+        HumanMessage(content="Follow-up?"),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages, model_id="deepseek.v3.2")
+
+    assert actual_messages[1] == {"role": "assistant", "content": [_REASONING_BLOCK]}
