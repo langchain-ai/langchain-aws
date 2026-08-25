@@ -1,6 +1,7 @@
 """Standard LangChain interface tests"""
 
 import base64
+import json
 import time
 from typing import Any, Literal, Optional, Type
 from uuid import uuid4
@@ -60,33 +61,141 @@ class TestBedrockMistralStandard(ChatModelIntegrationTests):
 
     @property
     def chat_model_params(self) -> dict:
-        return {"model": "mistral.mistral-large-2402-v1:0"}
+        return {"model": "mistral.mistral-large-3-675b-instruct"}
 
     @property
     def standard_chat_model_params(self) -> dict:
-        return {"temperature": 0, "max_tokens": 100, "stop": []}
+        return {"temperature": 0, "max_tokens": 100}
 
     @property
     def has_tool_choice(self) -> bool:
         return False
 
-    # This standard test feeds back an AIMessage whose content mixes a text
-    # block and a `tool_use` block in a single assistant turn. Mistral models on
-    # Bedrock reject that turn shape with
-    # `ValidationException: messages.1.content: Conversation blocks and tool use
-    # blocks cannot be provided in the same turn` (Anthropic models accept it, so
-    # the conversion in `_messages_to_bedrock` is correct and must not change).
     @pytest.mark.xfail(
-        reason=(
-            "Mistral on Bedrock rejects an assistant turn that mixes text and "
-            "tool_use blocks: 'Conversation blocks and tool use blocks cannot be "
-            "provided in the same turn'."
-        )
+        reason="Mistral Large 3 does not support the stopSequences field."
     )
+    def test_stop_sequence(self, model: BaseChatModel) -> None:
+        super().test_stop_sequence(model)
+
+    TOOL_CALL_ID = "abcd12345"
+    ID_XFAIL_MSG = (
+        "Mistral Large 3 requires 9-char alphanumeric tool call IDs vs the 'abc123' "
+        "hardcoded by the standard tests. Replaced by the *_mistral_id variants below."
+    )
+
+    @pytest.mark.xfail(reason=ID_XFAIL_MSG)
+    def test_tool_message_histories_string_content(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        super().test_tool_message_histories_string_content(model, my_adder_tool)
+
+    @pytest.mark.xfail(reason=ID_XFAIL_MSG)
     def test_tool_message_histories_list_content(
         self, model: BaseChatModel, my_adder_tool: BaseTool
     ) -> None:
         super().test_tool_message_histories_list_content(model, my_adder_tool)
+
+    @pytest.mark.xfail(reason=ID_XFAIL_MSG)
+    def test_tool_message_error_status(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        super().test_tool_message_error_status(model, my_adder_tool)
+
+    def test_tool_message_histories_string_content_mistral_id(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        if not self.has_tool_calling:
+            pytest.skip("Test requires tool calling.")
+
+        model_with_tools = model.bind_tools([my_adder_tool])
+        messages = [
+            HumanMessage("What is 1 + 2"),
+            AIMessage(
+                "",
+                tool_calls=[
+                    {
+                        "name": "my_adder_tool",
+                        "args": {"a": 1, "b": 2},
+                        "id": self.TOOL_CALL_ID,
+                        "type": "tool_call",
+                    },
+                ],
+            ),
+            ToolMessage(
+                json.dumps({"result": 3}),
+                name="my_adder_tool",
+                tool_call_id=self.TOOL_CALL_ID,
+            ),
+        ]
+        result = model_with_tools.invoke(messages)
+        assert isinstance(result, AIMessage)
+
+    def test_tool_message_histories_list_content_mistral_id(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        if not self.has_tool_calling:
+            pytest.skip("Test requires tool calling.")
+
+        model_with_tools = model.bind_tools([my_adder_tool])
+        messages = [
+            HumanMessage("What is 1 + 2"),
+            AIMessage(
+                [
+                    {"type": "text", "text": "some text"},
+                    {
+                        "type": "tool_use",
+                        "id": self.TOOL_CALL_ID,
+                        "name": "my_adder_tool",
+                        "input": {"a": 1, "b": 2},
+                    },
+                ],
+                tool_calls=[
+                    {
+                        "name": "my_adder_tool",
+                        "args": {"a": 1, "b": 2},
+                        "id": self.TOOL_CALL_ID,
+                        "type": "tool_call",
+                    },
+                ],
+            ),
+            ToolMessage(
+                json.dumps({"result": 3}),
+                name="my_adder_tool",
+                tool_call_id=self.TOOL_CALL_ID,
+            ),
+        ]
+        result = model_with_tools.invoke(messages)
+        assert isinstance(result, AIMessage)
+
+    def test_tool_message_error_status_mistral_id(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        if not self.has_tool_calling:
+            pytest.skip("Test requires tool calling.")
+
+        model_with_tools = model.bind_tools([my_adder_tool])
+        messages = [
+            HumanMessage("What is 1 + 2"),
+            AIMessage(
+                "",
+                tool_calls=[
+                    {
+                        "name": "my_adder_tool",
+                        "args": {"a": 1},
+                        "id": self.TOOL_CALL_ID,
+                        "type": "tool_call",
+                    },
+                ],
+            ),
+            ToolMessage(
+                "Error: Missing required argument 'b'.",
+                name="my_adder_tool",
+                tool_call_id=self.TOOL_CALL_ID,
+                status="error",
+            ),
+        ]
+        result = model_with_tools.invoke(messages)
+        assert isinstance(result, AIMessage)
 
 
 class TestBedrockNovaStandard(ChatModelIntegrationTests):
@@ -186,10 +295,12 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
     ) -> None:
         pass
 
-    # See `TestBedrockMistralStandard` above: the synthetic history mixes a text
-    # block and a tool_use block in one assistant turn, which Meta models on Bedrock
-    # reject with 'Conversation blocks and tool use blocks cannot be provided in the
-    # same turn' (Anthropic models accept it).
+    # This standard test feeds back an AIMessage whose content mixes a text
+    # block and a `tool_use` block in a single assistant turn. Meta models on
+    # Bedrock reject that turn shape with `ValidationException: Conversation
+    # blocks and tool use blocks cannot be provided in the same turn`
+    # (Anthropic models accept it, so the conversion in `_messages_to_bedrock`
+    # is correct and must not change).
     @pytest.mark.xfail(
         reason=(
             "Meta on Bedrock rejects an assistant turn that mixes text and "
