@@ -23,7 +23,11 @@ from typing_extensions import Self
 from langchain_aws._version import _add_langchain_aws_version
 from langchain_aws.chat_models._anthropic_utils import _create_bedrock_client_params
 from langchain_aws.data._profiles import _PROFILES
-from langchain_aws.utils import MODEL_ID_GEO_PREFIXES
+from langchain_aws.utils import (
+    _MANTLE_GUARDRAILS_ERR_MSG,
+    MODEL_ID_GEO_PREFIXES,
+    _check_no_mantle_guardrail_headers,
+)
 
 _MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
 
@@ -468,6 +472,32 @@ class ChatAnthropicMantle(ChatAnthropic):
         if isinstance(values, dict) and not values.get("anthropic_api_key"):
             values["anthropic_api_key"] = ""
         return values
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_guardrails(cls, values: Any) -> Any:
+        # TODO: remove after Mantle adds guardrails support
+        if isinstance(values, dict):
+            if any(
+                values.get(key) is not None
+                for key in ("guardrail_config", "guardrails")
+            ):
+                raise ValueError(_MANTLE_GUARDRAILS_ERR_MSG)
+            _check_no_mantle_guardrail_headers(values.get("default_headers"))
+        return values
+
+    def _get_request_payload(
+        self,
+        input_: Any,
+        *,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> dict:
+        # TODO: remove after Mantle adds guardrails support
+        if kwargs.get("guardrail_config") is not None:
+            raise ValueError(_MANTLE_GUARDRAILS_ERR_MSG)
+        _check_no_mantle_guardrail_headers(kwargs.get("extra_headers"))
+        return super()._get_request_payload(input_, stop=stop, **kwargs)
 
     @property
     def _client_params(self) -> dict[str, Any]:
