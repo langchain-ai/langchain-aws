@@ -341,3 +341,39 @@ def test_inherits_anthropic_features() -> None:
         "_agenerate",
     ):
         assert hasattr(model, attr)
+
+
+def _make_model(**kwargs: Any) -> ChatAnthropicMantle:
+    return ChatAnthropicMantle(  # type: ignore[call-arg]
+        model_name=MODEL_NAME,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+        **kwargs,
+    )
+
+
+def test_guardrail_default_headers_rejected_at_construction() -> None:
+    with pytest.raises(ValueError, match="not supported on the bedrock-mantle"):
+        _make_model(
+            default_headers={
+                "X-Amzn-Bedrock-GuardrailIdentifier": "gr-1",
+                "X-Amzn-Bedrock-GuardrailVersion": "1",
+            },
+        )
+
+
+def test_guardrail_extra_headers_rejected_per_request() -> None:
+    model = _make_model()
+    with pytest.raises(ValueError, match="not supported on the bedrock-mantle"):
+        model._get_request_payload(
+            "hello",
+            extra_headers={"X-Amzn-Bedrock-GuardrailIdentifier": "gr-1"},
+        )
+
+
+def test_non_guardrail_headers_still_allowed() -> None:
+    model = _make_model(default_headers={"X-Custom-Header": "ok"})
+    payload = model._get_request_payload(
+        "hello", extra_headers={"X-Another-Header": "ok"}
+    )
+    assert payload["extra_headers"] == {"X-Another-Header": "ok"}
