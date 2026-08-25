@@ -2770,7 +2770,7 @@ def _empty_content_fallback(
 
 
 def _bedrock_reasoning_block(
-    text: str, signature: str, model_id: Optional[str]
+    reasoning: Dict[str, Any], model_id: Optional[str]
 ) -> Optional[Dict[str, Any]]:
     """Build a Converse `reasoningContent` block, or `None` if `model_id` rejects it."""
     # Models that reject reasoning content in prior assistant turns entirely, whether
@@ -2796,6 +2796,12 @@ def _bedrock_reasoning_block(
         logger.debug("Dropping reasoning block; %s rejects reasoning content", model_id)
         return None
 
+    # Encrypted reasoning is opaque, so there is no text or signature to gate on.
+    if redacted := reasoning.get("redactedContent"):
+        return {"reasoningContent": {"redactedContent": redacted}}
+
+    text = reasoning.get("text", "")
+    signature = reasoning.get("signature", "")
     if not signature and (
         not text
         or not any(model in model_id_lower for model in _unsigned_reasoning_models)
@@ -3002,7 +3008,11 @@ def _lc_content_to_bedrock(
             bedrock_content.append({"guardContent": {"text": {"text": block["text"]}}})
         elif block["type"] == "thinking":
             reasoning_block = _bedrock_reasoning_block(
-                block.get("thinking", ""), block.get("signature", ""), model_id
+                {
+                    "text": block.get("thinking", ""),
+                    "signature": block.get("signature", ""),
+                },
+                model_id,
             )
             if reasoning_block:
                 bedrock_content.append(reasoning_block)
@@ -3010,11 +3020,7 @@ def _lc_content_to_bedrock(
             reasoning_content = block.get("reasoningContent") or block.get(
                 "reasoning_content", {}
             )
-            reasoning_block = _bedrock_reasoning_block(
-                reasoning_content.get("text", ""),
-                reasoning_content.get("signature", ""),
-                model_id,
-            )
+            reasoning_block = _bedrock_reasoning_block(reasoning_content, model_id)
             if reasoning_block:
                 bedrock_content.append(reasoning_block)
         elif block["type"] == "non_standard" and "value" in block:
@@ -3237,6 +3243,15 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 )
             # Streaming block format
             else:
+                if "redacted_content" in reasoning_dict:
+                    lc_content.append(
+                        {
+                            "type": "reasoning_content",
+                            "reasoning_content": {
+                                "redacted_content": reasoning_dict["redacted_content"],
+                            },
+                        }
+                    )
                 if "text" in reasoning_dict:
                     lc_content.append(
                         {

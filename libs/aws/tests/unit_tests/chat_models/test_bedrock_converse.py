@@ -7451,3 +7451,61 @@ def test__messages_to_bedrock_reasoning_only_content() -> None:
     actual_messages, _ = _messages_to_bedrock(messages, model_id="deepseek.v3.2")
 
     assert actual_messages[1] == {"role": "assistant", "content": [_REASONING_BLOCK]}
+
+
+def test__bedrock_to_lc_redacted_reasoning_delta() -> None:
+    """A streamed delta carrying only redacted reasoning should not be dropped."""
+    assert _bedrock_to_lc([{"reasoningContent": {"redactedContent": b"abc"}}]) == [
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {"redacted_content": b"abc"},
+        }
+    ]
+
+
+def test__messages_to_bedrock_redacted_reasoning_round_trip() -> None:
+    """Redacted reasoning survives a round trip without a signature."""
+    messages: List[BaseMessage] = [
+        HumanMessage(content="Question?"),
+        AIMessage(
+            content=[
+                {
+                    "type": "reasoning_content",
+                    "reasoning_content": {"redacted_content": b"abc"},
+                },
+                {"type": "text", "text": "Answer."},
+            ]
+        ),
+        HumanMessage(content="Follow-up?"),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages, model_id="xai.grok-4.6")
+
+    assert actual_messages[1] == {
+        "role": "assistant",
+        "content": [
+            {"reasoningContent": {"redactedContent": b"abc"}},
+            _ANSWER_BLOCK,
+        ],
+    }
+
+
+def test__messages_to_bedrock_redacted_reasoning_dropped_when_rejected() -> None:
+    """A model that rejects reasoning outright also rejects the encrypted form."""
+    messages: List[BaseMessage] = [
+        HumanMessage(content="Question?"),
+        AIMessage(
+            content=[
+                {
+                    "type": "reasoning_content",
+                    "reasoning_content": {"redacted_content": b"abc"},
+                },
+                {"type": "text", "text": "Answer."},
+            ]
+        ),
+        HumanMessage(content="Follow-up?"),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages, model_id="deepseek.r1-v1:0")
+
+    assert actual_messages[1] == {"role": "assistant", "content": [_ANSWER_BLOCK]}
