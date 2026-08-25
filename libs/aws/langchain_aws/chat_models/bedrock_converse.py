@@ -2777,6 +2777,15 @@ def _bedrock_reasoning_block(
     # or not it carries a signature. Models that emit inline reasoning (see
     # `_inline_reasoning_tags`) reject it too, and are detected rather than listed.
     _reasoning_unsupported_models = ("deepseek.r1",)
+    # Models verified to accept reasoning content carrying no signature. Anything not
+    # listed keeps its reasoning only when signed.
+    _unsigned_reasoning_models = (
+        "openai.gpt-oss",
+        "amazon.nova-2",
+        "deepseek.v3",
+        "minimax",
+        "kimi",
+    )
 
     model_id_lower = (model_id or "").lower()
     provider = model_id_lower.partition(".")[0]
@@ -2788,7 +2797,8 @@ def _bedrock_reasoning_block(
         return None
 
     if not signature and (
-        not model_id_lower or "anthropic" in model_id_lower or not text
+        not text
+        or not any(model in model_id_lower for model in _unsigned_reasoning_models)
     ):
         logger.debug("Dropping unsigned reasoning block for model %s", model_id)
         return None

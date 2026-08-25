@@ -7378,6 +7378,12 @@ _ANSWER_BLOCK = {"text": "Answer."}
         # Models that accept unsigned reasoning have it forwarded.
         ("openai.gpt-oss-120b-1:0", "", [_REASONING_BLOCK, _ANSWER_BLOCK]),
         ("deepseek.v3.2", "", [_REASONING_BLOCK, _ANSWER_BLOCK]),
+        ("minimax.minimax-m2.5", "", [_REASONING_BLOCK, _ANSWER_BLOCK]),
+        ("moonshotai.kimi-k2.5", "", [_REASONING_BLOCK, _ANSWER_BLOCK]),
+        # Models that emit unsigned reasoning but reject it on the way back are
+        # absent from the allowlist, so their reasoning is still dropped.
+        ("openai.gpt-5.6-luna", "", [_ANSWER_BLOCK]),
+        ("xai.grok-4.6", "", [_ANSWER_BLOCK]),
         # DeepSeek R1 rejects reasoning content whether or not it is signed.
         ("deepseek.r1-v1:0", "", [_ANSWER_BLOCK]),
         ("deepseek.r1-v1:0", "sig", [_ANSWER_BLOCK]),
@@ -7393,7 +7399,14 @@ _ANSWER_BLOCK = {"text": "Answer."}
         ("amazon.nova-pro-v1:0", "", [_ANSWER_BLOCK]),
         ("amazon.nova-pro-v1:0", "sig", [_ANSWER_BLOCK]),
         ("amazon.nova-2-lite-v1:0", "", [_REASONING_BLOCK, _ANSWER_BLOCK]),
-        # An unknown model falls back to requiring a signature.
+        # A model not vetted for unsigned reasoning falls back to requiring a
+        # signature, as does an unknown model.
+        ("cohere.command-r-plus-v1:0", "", [_ANSWER_BLOCK]),
+        (
+            "cohere.command-r-plus-v1:0",
+            "sig",
+            [_SIGNED_REASONING_BLOCK, _ANSWER_BLOCK],
+        ),
         (None, "", [_ANSWER_BLOCK]),
         (None, "sig", [_SIGNED_REASONING_BLOCK, _ANSWER_BLOCK]),
     ],
