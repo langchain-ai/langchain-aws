@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import random
 from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
-from typing import Any, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 from langchain_core.runnables import RunnableConfig, run_in_executor
 from langgraph.checkpoint.base import (
@@ -16,11 +16,22 @@ from langgraph.checkpoint.base import (
     Checkpoint,
     CheckpointMetadata,
     CheckpointTuple,
-    DeltaChannelHistory,
     SerializerProtocol,
     get_checkpoint_id,
     get_checkpoint_metadata,
 )
+
+if TYPE_CHECKING:
+    # `DeltaChannelHistory` was added to `langgraph-checkpoint` alongside
+    # `DeltaChannel`/`get_delta_channel_history` support and does not exist
+    # in `langgraph-checkpoint` 3.0.0, the package's declared floor
+    # (`langgraph-checkpoint>=3.0.0,<5.0.0`). A module-level import would
+    # make importing this whole package fail on 3.0.x. It is only ever used
+    # here as a type annotation, and `from __future__ import annotations`
+    # (above) makes all annotations in this module lazy strings, so a
+    # `TYPE_CHECKING`-only import is sufficient: static type checkers still
+    # resolve it, and nothing evaluates it at runtime.
+    from langgraph.checkpoint.base import DeltaChannelHistory
 
 from langgraph_checkpoint_aws.checkpoint.deferred_saver import PendingWrite
 
