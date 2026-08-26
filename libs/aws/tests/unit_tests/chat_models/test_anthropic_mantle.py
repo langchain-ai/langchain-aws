@@ -406,3 +406,127 @@ def test_env_sigv4_credentials_do_not_outrank_ambient_api_key() -> None:
 
     for client_params in client_params_by_type:
         assert client_params["api_key"] == "api-key"
+
+
+def test_auth_mode_default_is_auto() -> None:
+    model = ChatAnthropicMantle(  # type: ignore[call-arg]
+        model_name=MODEL_NAME,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+    )
+    assert model.auth_mode == "auto"
+
+
+def test_auth_mode_api_key_requires_key() -> None:
+    with MonkeyPatch().context() as m:
+        m.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+        with pytest.raises(ValueError, match="requires a Bedrock API key"):
+            ChatAnthropicMantle(  # type: ignore[call-arg]
+                model_name=MODEL_NAME,
+                region_name="us-east-1",
+                auth_mode="api_key",
+            )
+
+
+def test_auth_mode_api_key_from_env_ok() -> None:
+    with MonkeyPatch().context() as m:
+        m.setenv("AWS_BEARER_TOKEN_BEDROCK", "api-key")
+        model = ChatAnthropicMantle(  # type: ignore[call-arg]
+            model_name=MODEL_NAME,
+            region_name="us-east-1",
+            auth_mode="api_key",
+        )
+        assert model._client_params["api_key"] == "api-key"
+
+
+def test_auth_mode_sigv4_ignores_env_bearer_token() -> None:
+    with MonkeyPatch().context() as m:
+        m.setenv("AWS_BEARER_TOKEN_BEDROCK", "api-key")
+        model = ChatAnthropicMantle(  # type: ignore[call-arg]
+            model_name=MODEL_NAME,
+            region_name="us-east-1",
+            auth_mode="sigv4",
+        )
+        # the env-derived key must not reach the SDK client
+        assert "api_key" not in model._client_params
+        client = model._client
+        assert client._use_sigv4 is True
+        assert client.api_key is None
+
+
+def test_auth_mode_sigv4_async_client_pinned_too() -> None:
+    with MonkeyPatch().context() as m:
+        m.setenv("AWS_BEARER_TOKEN_BEDROCK", "api-key")
+        model = ChatAnthropicMantle(  # type: ignore[call-arg]
+            model_name=MODEL_NAME,
+            region_name="us-east-1",
+            auth_mode="sigv4",
+        )
+        client = model._async_client
+        assert client._use_sigv4 is True
+        assert client.api_key is None
+
+
+def test_auth_mode_sigv4_conflicts_with_explicit_key() -> None:
+    with pytest.raises(ValueError, match="conflicts with an explicitly provided"):
+        ChatAnthropicMantle(  # type: ignore[call-arg]
+            model_name=MODEL_NAME,
+            region_name="us-east-1",
+            auth_mode="sigv4",
+            bedrock_api_key=SecretStr("explicit-key"),
+        )
+
+
+def test_auth_mode_sigv4_with_explicit_credentials() -> None:
+    with MonkeyPatch().context() as m:
+        m.setenv("AWS_BEARER_TOKEN_BEDROCK", "api-key")
+        model = ChatAnthropicMantle(  # type: ignore[call-arg]
+            model_name=MODEL_NAME,
+            region_name="us-east-1",
+            auth_mode="sigv4",
+            aws_access_key_id=SecretStr("key-id"),
+            aws_secret_access_key=SecretStr("sec-key"),
+        )
+        params = model._client_params
+        assert "api_key" not in params
+        assert params["aws_access_key"] == "key-id"
+        assert model._client._use_sigv4 is True
+
+
+def test_auth_mode_auto_env_bearer_wins() -> None:
+    with MonkeyPatch().context() as m:
+        m.setenv("AWS_BEARER_TOKEN_BEDROCK", "api-key")
+        model = ChatAnthropicMantle(  # type: ignore[call-arg]
+            model_name=MODEL_NAME, region_name="us-east-1"
+        )
+        assert model._client._use_sigv4 is False
+        assert model._client.api_key == "api-key"
+
+
+def test_auth_mode_api_key_overrides_explicit_sigv4_precedence() -> None:
+    with MonkeyPatch().context() as m:
+        m.setenv("AWS_BEARER_TOKEN_BEDROCK", "api-key")
+        model = ChatAnthropicMantle(  # type: ignore[call-arg]
+            model_name=MODEL_NAME,
+            region_name="us-east-1",
+            auth_mode="api_key",
+            aws_access_key_id=SecretStr("key-id"),
+            aws_secret_access_key=SecretStr("sec-key"),
+        )
+        client = model._client
+        assert client._use_sigv4 is False
+        assert client.api_key == "api-key"
+
+
+def test_auth_mode_api_key_with_explicit_profile() -> None:
+    with MonkeyPatch().context() as m:
+        m.setenv("AWS_BEARER_TOKEN_BEDROCK", "api-key")
+        model = ChatAnthropicMantle(  # type: ignore[call-arg]
+            model_name=MODEL_NAME,
+            region_name="us-east-1",
+            auth_mode="api_key",
+            credentials_profile_name="my-profile",
+        )
+        client = model._client
+        assert client._use_sigv4 is False
+        assert client.api_key == "api-key"
