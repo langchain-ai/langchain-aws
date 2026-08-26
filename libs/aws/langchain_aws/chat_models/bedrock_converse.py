@@ -1330,7 +1330,9 @@ class ChatBedrockConverse(BaseChatModel):
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
         else:
-            bedrock_messages, system = _messages_to_bedrock(messages, self.system)
+            bedrock_messages, system = _messages_to_bedrock(
+                messages, self.system, model_id=self._get_base_model()
+            )
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
                 self._apply_guard_last_turn_only(bedrock_messages)
@@ -1406,7 +1408,9 @@ class ChatBedrockConverse(BaseChatModel):
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
         else:
-            bedrock_messages, system = _messages_to_bedrock(messages, self.system)
+            bedrock_messages, system = _messages_to_bedrock(
+                messages, self.system, model_id=self._get_base_model()
+            )
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
                 self._apply_guard_last_turn_only(bedrock_messages)
@@ -2116,7 +2120,9 @@ class ChatBedrockConverse(BaseChatModel):
             bedrock_messages, system = (
                 (self.raw_blocks, [])
                 if self.raw_blocks
-                else _messages_to_bedrock(messages, self.system)
+                else _messages_to_bedrock(
+                    messages, self.system, model_id=self._get_base_model()
+                )
             )
 
             input_data = {"converse": {"messages": bedrock_messages}}
@@ -2253,6 +2259,8 @@ def _handle_bedrock_error(error: ClientError) -> None:
 def _messages_to_bedrock(
     messages: List[BaseMessage],
     system: Optional[List[Union[str, Dict[str, Any]]]] = None,
+    *,
+    model_id: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Handle Bedrock converse and Anthropic style content blocks"""
     for idx, message in enumerate(messages):
@@ -2305,7 +2313,9 @@ def _messages_to_bedrock(
         # raising, so a block this module simply does not handle yet stays a
         # loud bug rather than silently vanishing from the prompt.
         content = _lc_content_to_bedrock(
-            msg.content, drop_unsupported=isinstance(msg, AIMessage)
+            msg.content,
+            drop_unsupported=isinstance(msg, AIMessage),
+            model_id=model_id,
         )
         if isinstance(msg, HumanMessage):
             # If there's a human, tool, human message sequence, the
@@ -2451,9 +2461,9 @@ def _split_inline_reasoning(
 ) -> List[Dict[str, Any]]:
     """Split text into ordered text / reasoning_content blocks on complete tag pairs.
 
-    Each ``open_tag ... close_tag`` pair becomes a ``reasoning_content`` block (no
-    ``signature``, so ``_lc_content_to_bedrock`` drops it on round-trips); surrounding
-    text stays as ``text`` blocks.
+    Each ``open_tag ... close_tag`` pair becomes a ``reasoning_content`` block (which
+    ``_bedrock_reasoning_block`` drops on round-trips, since these models reject
+    reasoning content); surrounding text stays as ``text`` blocks.
     """
     if open_tag not in text:
         return [{"type": "text", "text": text}]
@@ -2759,10 +2769,60 @@ def _empty_content_fallback(
     return blocks or [{"text": EMPTY_CONTENT}]
 
 
+def _bedrock_reasoning_block(
+    reasoning: Dict[str, Any], model_id: Optional[str]
+) -> Optional[Dict[str, Any]]:
+    """Build a Converse `reasoningContent` block, or `None` if `model_id` rejects it."""
+    # Models that reject reasoning content in prior assistant turns entirely, whether
+    # or not it carries a signature. Models that emit inline reasoning (see
+    # `_inline_reasoning_tags`) reject it too, and are detected rather than listed.
+    _reasoning_unsupported_models = ("deepseek.r1",)
+    # Models verified to accept reasoning content carrying no signature. Anything not
+    # listed keeps its reasoning only when signed.
+    _unsigned_reasoning_models = (
+        "openai.gpt-oss",
+        "amazon.nova-2",
+        "deepseek.v3",
+        "minimax",
+        "kimi",
+    )
+
+    model_id_lower = (model_id or "").lower()
+    # TODO: `_get_base_model()` returns the raw ARN when `model_id` is an ARN and
+    # `base_model_id` is unset, so this misses Nova v1. Strip the ARN there, then
+    # simplify this to use the resolved provider.
+    provider = model_id_lower.partition(".")[0]
+
+    if any(
+        model in model_id_lower for model in _reasoning_unsupported_models
+    ) or _inline_reasoning_tags(provider, model_id_lower):
+        logger.debug("Dropping reasoning block; %s rejects reasoning content", model_id)
+        return None
+
+    # Encrypted reasoning is opaque, so there is no text or signature to gate on.
+    if redacted := reasoning.get("redactedContent"):
+        return {"reasoningContent": {"redactedContent": redacted}}
+
+    text = reasoning.get("text", "")
+    signature = reasoning.get("signature", "")
+    if not signature and (
+        not text
+        or not any(model in model_id_lower for model in _unsigned_reasoning_models)
+    ):
+        logger.debug("Dropping unsigned reasoning block for model %s", model_id)
+        return None
+
+    reasoning_text: Dict[str, Any] = {"text": text}
+    if signature:
+        reasoning_text["signature"] = signature
+    return {"reasoningContent": {"reasoningText": reasoning_text}}
+
+
 def _lc_content_to_bedrock(
     content: Union[str, List[Union[str, Dict[str, Any]]]],
     *,
     drop_unsupported: bool = False,
+    model_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     if isinstance(content, str):
         if not content or content.isspace():
@@ -2935,7 +2995,9 @@ def _lc_content_to_bedrock(
                         "toolUseId": block["toolUseId"],
                         "content": _empty_content_fallback(
                             _lc_content_to_bedrock(
-                                block["content"], drop_unsupported=drop_unsupported
+                                block["content"],
+                                drop_unsupported=drop_unsupported,
+                                model_id=model_id,
                             )
                         ),
                         "status": "error" if block.get("isError") else "success",
@@ -2948,32 +3010,22 @@ def _lc_content_to_bedrock(
         elif block["type"] == "guard_content":
             bedrock_content.append({"guardContent": {"text": {"text": block["text"]}}})
         elif block["type"] == "thinking":
-            if block.get("signature", ""):
-                bedrock_content.append(
-                    {
-                        "reasoningContent": {
-                            "reasoningText": {
-                                "text": block.get("thinking", ""),
-                                "signature": block.get("signature", ""),
-                            }
-                        }
-                    }
-                )
+            reasoning_block = _bedrock_reasoning_block(
+                {
+                    "text": block.get("thinking", ""),
+                    "signature": block.get("signature", ""),
+                },
+                model_id,
+            )
+            if reasoning_block:
+                bedrock_content.append(reasoning_block)
         elif block["type"] == "reasoning_content":
             reasoning_content = block.get("reasoningContent") or block.get(
                 "reasoning_content", {}
             )
-            if reasoning_content.get("signature", ""):
-                bedrock_content.append(
-                    {
-                        "reasoningContent": {
-                            "reasoningText": {
-                                "text": reasoning_content.get("text", ""),
-                                "signature": reasoning_content.get("signature", ""),
-                            }
-                        }
-                    }
-                )
+            reasoning_block = _bedrock_reasoning_block(reasoning_content, model_id)
+            if reasoning_block:
+                bedrock_content.append(reasoning_block)
         elif block["type"] == "non_standard" and "value" in block:
             # langchain-core's content_blocks property wraps provider-specific
             # blocks (e.g. cachePoint, guardContent) that lack a recognized
@@ -3194,6 +3246,15 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 )
             # Streaming block format
             else:
+                if "redacted_content" in reasoning_dict:
+                    lc_content.append(
+                        {
+                            "type": "reasoning_content",
+                            "reasoning_content": {
+                                "redacted_content": reasoning_dict["redacted_content"],
+                            },
+                        }
+                    )
                 if "text" in reasoning_dict:
                     lc_content.append(
                         {
