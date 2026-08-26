@@ -2788,6 +2788,9 @@ def _bedrock_reasoning_block(
     )
 
     model_id_lower = (model_id or "").lower()
+    # TODO: `_get_base_model()` returns the raw ARN when `model_id` is an ARN and
+    # `base_model_id` is unset, so this misses Nova v1. Strip the ARN there, then
+    # simplify this to use the resolved provider.
     provider = model_id_lower.partition(".")[0]
 
     if any(
