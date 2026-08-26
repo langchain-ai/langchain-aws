@@ -595,17 +595,19 @@ def patch_orphan_tool_calls(messages: Any) -> Any:
     tool_calls that don't have corresponding ToolMessages. This would cause
     Bedrock to throw a ValidationException. This function patches the state by
     adding placeholder ToolMessages with status="error" for each orphaned tool_call.
+    Delta snapshots are returned unchanged because they are incomplete seeds whose
+    pending writes are replayed later.
 
     Args:
         messages: Messages or delta snapshot from checkpoint channel values.
 
     Returns:
-        The original container type with placeholder `ToolMessage` objects added for
-        orphaned tool calls.
+        The original delta snapshot, or a message list with placeholder `ToolMessage`
+        objects added for orphaned tool calls.
     """
     delta_snapshot_type = getattr(serde_types, "_DeltaSnapshot", None)
     if delta_snapshot_type is not None and isinstance(messages, delta_snapshot_type):
-        return delta_snapshot_type(patch_orphan_tool_calls(messages.value))
+        return messages
 
     if not messages:
         return messages

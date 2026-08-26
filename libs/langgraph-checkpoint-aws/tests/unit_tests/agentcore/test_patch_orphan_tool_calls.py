@@ -19,7 +19,7 @@ class TestPatchOrphanToolCalls:
     def test_none_messages_list(self):
         assert patch_orphan_tool_calls(None) is None
 
-    def test_delta_snapshot_preserves_type_and_patches_inner_messages(self):
+    def test_delta_snapshot_is_not_patched_before_pending_writes_replay(self):
         messages = [
             HumanMessage(content="Hello"),
             AIMessage(
@@ -30,12 +30,11 @@ class TestPatchOrphanToolCalls:
             ),
         ]
 
-        result = patch_orphan_tool_calls(_DeltaSnapshot(messages))
+        snapshot = _DeltaSnapshot(messages)
+        result = patch_orphan_tool_calls(snapshot)
 
-        assert isinstance(result, _DeltaSnapshot)
-        assert result.value[:2] == messages
-        assert isinstance(result.value[2], ToolMessage)
-        assert result.value[2].tool_call_id == "orphan_123"
+        assert result is snapshot
+        assert result.value == messages
 
     def test_messages_without_tool_calls(self):
         messages = [
