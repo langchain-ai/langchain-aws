@@ -376,11 +376,19 @@ class ChatAnthropicMantle(ChatAnthropic):
     support both authentication modes Mantle accepts:
 
     - **Amazon Bedrock API key** (bearer token), from ``bedrock_api_key`` or the
-      ``AWS_BEARER_TOKEN_BEDROCK`` environment variable. Explicit SigV4
-      credentials take precedence over an environment-sourced API key.
+      ``AWS_BEARER_TOKEN_BEDROCK`` environment variable.
     - **AWS SigV4** with standard AWS credentials — explicit keys, a named
       profile, or the default credential chain (environment, instance profile,
-      SSO, etc.). Used automatically whenever no API key is provided.
+      SSO, etc.).
+
+    Note that if multiple credential sources are provided/available, the
+    ``AnthropicBedrockMantle`` client resolves priority as follows:
+
+    1. Explicit ``bedrock_api_key``
+    2. Explicit ``aws_access_key_id``/``aws_secret_access_key``
+    3. Explicit ``credentials_profile_name``
+    4. ``AWS_BEARER_TOKEN_BEDROCK`` env variable
+    5. Default AWS credential chain (SigV4)
 
     See the [Claude Platform docs](https://platform.claude.com/docs/en/about-claude/models/overview)
     for the latest models, their capabilities, and pricing.
@@ -421,11 +429,9 @@ class ChatAnthropicMantle(ChatAnthropic):
     """Amazon Bedrock API key used to authenticate to Mantle.
 
     If not provided, read from the ``AWS_BEARER_TOKEN_BEDROCK`` environment
-    variable. An explicitly supplied API key takes precedence over SigV4
-    credentials. An environment-sourced API key is ignored when a profile or
-    either static credential is explicitly supplied and both resolve to values,
-    allowing callers to select SigV4 authentication. Otherwise, the client falls
-    back to the default AWS credential chain when no API key is available.
+    variable. An explicitly passed key always selects bearer authentication;
+    an environment-sourced key is outranked by explicitly passed SigV4
+    credentials. See the class docstring for the full selection order.
     """
 
     aws_access_key_id: SecretStr | None = Field(

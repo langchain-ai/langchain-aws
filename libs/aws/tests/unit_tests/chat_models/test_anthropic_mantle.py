@@ -377,3 +377,32 @@ def test_non_guardrail_headers_still_allowed() -> None:
         "hello", extra_headers={"X-Another-Header": "ok"}
     )
     assert payload["extra_headers"] == {"X-Another-Header": "ok"}
+
+
+def test_explicit_sigv4_credentials_select_sigv4_at_sdk_level() -> None:
+    with MonkeyPatch().context() as m:
+        m.setenv("AWS_BEARER_TOKEN_BEDROCK", "api-key")
+        model = ChatAnthropicMantle(  # type: ignore[call-arg]
+            model_name=MODEL_NAME,
+            region_name="us-east-1",
+            aws_access_key_id=SecretStr("key-id"),
+            aws_secret_access_key=SecretStr("sec-key"),
+        )
+        client = model._client
+        assert client._use_sigv4 is True
+        assert client.api_key is None
+
+
+def test_env_sigv4_credentials_do_not_outrank_ambient_api_key() -> None:
+    with MonkeyPatch().context() as m:
+        m.setenv("AWS_BEARER_TOKEN_BEDROCK", "api-key")
+        m.setenv("AWS_ACCESS_KEY_ID", "key-id")
+        m.setenv("AWS_SECRET_ACCESS_KEY", "sec-key")
+        model = ChatAnthropicMantle(  # type: ignore[call-arg]
+            model_name=MODEL_NAME, region_name="us-east-1"
+        )
+
+        client_params_by_type = _constructed_client_params(model)
+
+    for client_params in client_params_by_type:
+        assert client_params["api_key"] == "api-key"
