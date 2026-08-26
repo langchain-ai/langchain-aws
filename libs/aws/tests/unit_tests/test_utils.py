@@ -463,6 +463,7 @@ def test_trim_message_whitespace_with_empty_messages() -> None:
         ("us.anthropic.claude-3-sonnet-20240229-v1:0", False),
         ("us.meta.llama4-scout-17b-instruct-v1:0", False),
         ("us.amazon.nova-pro-v1:0", False),
+        ("xai.grok-4.6", False),
     ],
 )
 def test_count_tokens_api_supported_for_model(
