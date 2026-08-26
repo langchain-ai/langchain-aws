@@ -1221,7 +1221,7 @@ wheels = [
 
 [[package]]
 name = "langchain-aws"
-version = "1.7.3"
+version = "1.7.4"
 source = { editable = "." }
 dependencies = [
     { name = "boto3" },
@@ -1303,7 +1303,7 @@ requires-dist = [
     { name = "bedrock-agentcore", marker = "python_full_version >= '3.10' and extra == 'tools'", specifier = ">=1.4.0" },
     { name = "boto3", specifier = ">=1.43.64" },
     { name = "langchain-anthropic", marker = "extra == 'anthropic'" },
-    { name = "langchain-core", specifier = ">=1.4.7" },
+    { name = "langchain-core", specifier = ">=1.6.0" },
     { name = "langchain-openai", marker = "extra == 'openai'", specifier = ">=1.0.0" },
     { name = "numpy", specifier = ">=1.0.0,<3" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.106.0" },
