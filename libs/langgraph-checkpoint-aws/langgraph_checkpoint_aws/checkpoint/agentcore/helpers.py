@@ -11,7 +11,7 @@ import logging
 import time
 import warnings
 from collections import defaultdict
-from typing import Any, cast
+from typing import Any, Protocol, cast, overload
 
 import boto3
 from botocore.config import Config
@@ -24,6 +24,7 @@ from langgraph.checkpoint.base import (
     RunnableConfig,
     SerializerProtocol,
 )
+from langgraph.checkpoint.serde import types as serde_types
 
 from .constants import (
     EMPTY_CHANNEL_VALUE,
@@ -38,6 +39,12 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class _DeltaSnapshotProtocol(Protocol):
+    @property
+    def value(self) -> Any: ...
+
 
 # Union type for all events
 EventType = CheckpointEvent | ChannelDataEvent | WritesEvent
@@ -567,7 +574,21 @@ class EventProcessor:
         )
 
 
-def patch_orphan_tool_calls(messages: list[Any]) -> list[Any]:
+@overload
+def patch_orphan_tool_calls(
+    messages: _DeltaSnapshotProtocol,
+) -> _DeltaSnapshotProtocol: ...
+
+
+@overload
+def patch_orphan_tool_calls(messages: list[Any]) -> list[Any]: ...
+
+
+@overload
+def patch_orphan_tool_calls(messages: None) -> None: ...
+
+
+def patch_orphan_tool_calls(messages: Any) -> Any:
     """Add placeholder ToolMessages for orphaned tool_calls in AIMessages.
 
     When a checkpoint is saved mid-tool-execution, there may be AIMessages with
@@ -576,11 +597,16 @@ def patch_orphan_tool_calls(messages: list[Any]) -> list[Any]:
     adding placeholder ToolMessages with status="error" for each orphaned tool_call.
 
     Args:
-        messages: List of messages from checkpoint channel_values
+        messages: Messages or delta snapshot from checkpoint channel values.
 
     Returns:
-        List of messages with placeholder ToolMessages added for orphaned tool_calls
+        The original container type with placeholder `ToolMessage` objects added for
+        orphaned tool calls.
     """
+    delta_snapshot_type = getattr(serde_types, "_DeltaSnapshot", None)
+    if delta_snapshot_type is not None and isinstance(messages, delta_snapshot_type):
+        return delta_snapshot_type(patch_orphan_tool_calls(messages.value))
+
     if not messages:
         return messages
 
