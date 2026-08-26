@@ -1415,6 +1415,7 @@ def test_invocation_params_model_prefers_base_model_id() -> None:
         ("qwen.qwen3-32b-v1:0", False),
         ("moonshotai.kimi-k2.5", False),
         ("moonshot.kimi-k2-thinking", False),
+        ("xai.grok-4.6", False),
     ],
 )
 def test_set_disable_streaming(
@@ -3099,6 +3100,12 @@ def test__get_base_model() -> None:
             "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile",
             "anthropic.claude-fable-5",
             "anthropic",
+            False,
+        ),
+        (
+            "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile",
+            "xai.grok-4.6",
+            "xai",
             False,
         ),
         (

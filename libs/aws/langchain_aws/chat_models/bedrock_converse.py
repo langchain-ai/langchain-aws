@@ -924,6 +924,9 @@ class ChatBedrockConverse(BaseChatModel):
             or
             # Kimi models
             (provider in ("moonshot", "moonshotai") and "kimi" in model_id_lower)
+            or
+            # xAI Grok models
+            (provider == "xai" and "grok" in model_id_lower)
         ):
             return True
         elif (
