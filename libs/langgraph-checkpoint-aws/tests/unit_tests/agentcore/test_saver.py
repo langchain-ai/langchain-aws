@@ -45,6 +45,34 @@ MOCK_SLEEP_DURATION = 0.05
 TOTAL_EXPECTED_TIME = (N_ASYNC_CALLS * MOCK_SLEEP_DURATION) / 2
 
 
+def _checkpoint_data(checkpoint_id, channel_versions=None):
+    """Minimal `Checkpoint`-shaped dict for building `CheckpointEvent`s."""
+    return {
+        "v": 1,
+        "id": checkpoint_id,
+        "ts": "2024-01-01T00:00:00Z",
+        "channel_versions": channel_versions or {},
+        "versions_seen": {},
+        "pending_sends": [],
+    }
+
+
+def _list_events_page(saver, events, *, next_token=None):
+    """Build a ListEvents-shaped response dict from domain events."""
+    response = {
+        "events": [
+            {
+                "eventId": f"event_{i}",
+                "payload": [{"blob": saver.serializer.serialize_event(event)}],
+            }
+            for i, event in enumerate(events)
+        ]
+    }
+    if next_token:
+        response["nextToken"] = next_token
+    return response
+
+
 @pytest.fixture
 def sample_checkpoint_tuple():
     return CheckpointTuple(
@@ -512,6 +540,296 @@ class TestAgentCoreMemorySaver:
 
         assert len(results) == 0
 
+    def test_get_delta_channel_history_empty_channels(
+        self, saver, mock_boto_client, runnable_config
+    ):
+        result = saver.get_delta_channel_history(config=runnable_config, channels=[])
+
+        assert result == {}
+        mock_boto_client.list_events.assert_not_called()
+
+    def test_get_delta_channel_history_no_ancestors(
+        self, saver, mock_boto_client, runnable_config
+    ):
+        """A checkpoint with no parent yields an unseeded, empty-writes entry."""
+        runnable_config["configurable"]["checkpoint_id"] = "root"
+        root_event = CheckpointEvent(
+            checkpoint_id="root",
+            checkpoint_data=_checkpoint_data("root"),
+            metadata={"step": 0},
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+        mock_boto_client.list_events.return_value = _list_events_page(
+            saver, [root_event]
+        )
+
+        result = saver.get_delta_channel_history(
+            config=runnable_config, channels=["notes"]
+        )
+
+        assert result == {"notes": {"writes": []}}
+
+    def test_get_delta_channel_history_seed_found_at_ancestor(
+        self, saver, mock_boto_client, runnable_config
+    ):
+        runnable_config["configurable"]["checkpoint_id"] = "c2"
+
+        c2_event = CheckpointEvent(
+            checkpoint_id="c2",
+            checkpoint_data=_checkpoint_data("c2"),
+            metadata={"step": 1},
+            parent_checkpoint_id="c1",
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+        c1_event = CheckpointEvent(
+            checkpoint_id="c1",
+            checkpoint_data=_checkpoint_data("c1", {"notes": "v1"}),
+            metadata={"step": 0},
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+        notes_at_c1 = ChannelDataEvent(
+            channel="notes",
+            version="v1",
+            value="seed_value",
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+        mock_boto_client.list_events.return_value = _list_events_page(
+            saver, [c2_event, c1_event, notes_at_c1]
+        )
+
+        result = saver.get_delta_channel_history(
+            config=runnable_config, channels=["notes"]
+        )
+
+        assert result == {"notes": {"writes": [], "seed": "seed_value"}}
+
+    def test_get_delta_channel_history_writes_collected_in_order(
+        self, saver, mock_boto_client, runnable_config
+    ):
+        """Writes accumulate oldest-ancestor-first, and within one ancestor's
+        batch of writes, their original storage order is preserved."""
+        runnable_config["configurable"]["checkpoint_id"] = "c3"
+
+        c3_event = CheckpointEvent(
+            checkpoint_id="c3",
+            checkpoint_data=_checkpoint_data("c3"),
+            metadata={"step": 3},
+            parent_checkpoint_id="c2",
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+        c2_event = CheckpointEvent(
+            checkpoint_id="c2",
+            checkpoint_data=_checkpoint_data("c2"),
+            metadata={"step": 2},
+            parent_checkpoint_id="c1",
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+        c1_event = CheckpointEvent(
+            checkpoint_id="c1",
+            checkpoint_data=_checkpoint_data("c1"),
+            metadata={"step": 1},
+            parent_checkpoint_id="root",
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+        root_event = CheckpointEvent(
+            checkpoint_id="root",
+            checkpoint_data=_checkpoint_data("root", {"notes": "v0"}),
+            metadata={"step": 0},
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+        notes_at_root = ChannelDataEvent(
+            channel="notes",
+            version="v0",
+            value="root_seed",
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+        writes_c2 = WritesEvent(
+            checkpoint_id="c2",
+            writes=[WriteItem(task_id="t_c2", channel="notes", value="w_c2")],
+        )
+        writes_c1 = WritesEvent(
+            checkpoint_id="c1",
+            writes=[
+                WriteItem(task_id="t_c1a", channel="notes", value="w_c1a"),
+                WriteItem(task_id="t_c1b", channel="notes", value="w_c1b"),
+            ],
+        )
+
+        mock_boto_client.list_events.return_value = _list_events_page(
+            saver,
+            [
+                c3_event,
+                c2_event,
+                c1_event,
+                root_event,
+                notes_at_root,
+                writes_c2,
+                writes_c1,
+            ],
+        )
+
+        result = saver.get_delta_channel_history(
+            config=runnable_config, channels=["notes"]
+        )
+
+        assert result == {
+            "notes": {
+                "writes": [
+                    ("t_c1a", "notes", "w_c1a"),
+                    ("t_c1b", "notes", "w_c1b"),
+                    ("t_c2", "notes", "w_c2"),
+                ],
+                "seed": "root_seed",
+            }
+        }
+
+    def test_get_delta_channel_history_stops_paging_once_satisfied(
+        self, saver, mock_boto_client, runnable_config
+    ):
+        """Once every channel is seeded, no further pages should be fetched
+        for the ancestor walk, even if more pages remain available."""
+        runnable_config["configurable"]["checkpoint_id"] = "c2"
+
+        c2_event = CheckpointEvent(
+            checkpoint_id="c2",
+            checkpoint_data=_checkpoint_data("c2"),
+            metadata={"step": 1},
+            parent_checkpoint_id="c1",
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+        c1_event = CheckpointEvent(
+            checkpoint_id="c1",
+            checkpoint_data=_checkpoint_data("c1", {"notes": "v1"}),
+            metadata={"step": 0},
+            parent_checkpoint_id="root",
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+        notes_at_c1 = ChannelDataEvent(
+            channel="notes",
+            version="v1",
+            value="seed_c1",
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+        root_event = CheckpointEvent(
+            checkpoint_id="root",
+            checkpoint_data=_checkpoint_data("root"),
+            metadata={"step": -1},
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+
+        page1 = _list_events_page(
+            saver, [c2_event, c1_event, notes_at_c1], next_token="tok1"
+        )
+        page2 = _list_events_page(saver, [root_event])
+
+        def _side_effect(**kwargs):
+            return page2 if kwargs.get("nextToken") == "tok1" else page1
+
+        mock_boto_client.list_events.side_effect = _side_effect
+
+        result = saver.get_delta_channel_history(
+            config=runnable_config, channels=["notes"]
+        )
+
+        assert result == {"notes": {"writes": [], "seed": "seed_c1"}}
+        # get_tuple's own full scan makes 2 calls (page1, then page2 to
+        # exhaust pagination); the ancestor walk should stop after page1
+        # since "notes" is already seeded there, for 3 calls total.
+        assert mock_boto_client.list_events.call_count == 3
+
+    def test_get_delta_channel_history_chain_spans_multiple_pages(
+        self, saver, mock_boto_client, runnable_config
+    ):
+        """The ancestor walk must not silently truncate when the seed (or
+        writes) only appear on a later page."""
+        runnable_config["configurable"]["checkpoint_id"] = "c3"
+
+        c3_event = CheckpointEvent(
+            checkpoint_id="c3",
+            checkpoint_data=_checkpoint_data("c3"),
+            metadata={"step": 2},
+            parent_checkpoint_id="c2",
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+        c2_event = CheckpointEvent(
+            checkpoint_id="c2",
+            checkpoint_data=_checkpoint_data("c2"),
+            metadata={"step": 1},
+            parent_checkpoint_id="c1",
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+        writes_c2 = WritesEvent(
+            checkpoint_id="c2",
+            writes=[WriteItem(task_id="t_c2", channel="notes", value="w_c2")],
+        )
+        c1_event = CheckpointEvent(
+            checkpoint_id="c1",
+            checkpoint_data=_checkpoint_data("c1"),
+            metadata={"step": 0},
+            parent_checkpoint_id="root",
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+        writes_c1 = WritesEvent(
+            checkpoint_id="c1",
+            writes=[WriteItem(task_id="t_c1", channel="notes", value="w_c1")],
+        )
+        root_event = CheckpointEvent(
+            checkpoint_id="root",
+            checkpoint_data=_checkpoint_data("root", {"notes": "v0"}),
+            metadata={"step": -1},
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+        notes_at_root = ChannelDataEvent(
+            channel="notes",
+            version="v0",
+            value="root_seed",
+            thread_id="test_thread_id",
+            checkpoint_ns="test_namespace",
+        )
+
+        page1 = _list_events_page(
+            saver, [c3_event, c2_event, writes_c2], next_token="tok1"
+        )
+        page2 = _list_events_page(
+            saver, [c1_event, writes_c1, root_event, notes_at_root]
+        )
+
+        def _side_effect(**kwargs):
+            return page2 if kwargs.get("nextToken") == "tok1" else page1
+
+        mock_boto_client.list_events.side_effect = _side_effect
+
+        result = saver.get_delta_channel_history(
+            config=runnable_config, channels=["notes"]
+        )
+
+        assert result == {
+            "notes": {
+                "writes": [
+                    ("t_c1", "notes", "w_c1"),
+                    ("t_c2", "notes", "w_c2"),
+                ],
+                "seed": "root_seed",
+            }
+        }
+
     def test_put_success(
         self,
         saver,
@@ -822,6 +1140,20 @@ class TestAgentCoreMemorySaver:
             mock_get.assert_called_once_with(runnable_config)
 
             assert result is not None
+
+    async def test_aget_delta_channel_history_calls_sync_method_with_correct_args(
+        self, saver, runnable_config
+    ):
+        expected = {"notes": {"writes": []}}
+        with patch.object(
+            saver, "get_delta_channel_history", return_value=expected
+        ) as mock_get:
+            result = await saver.aget_delta_channel_history(
+                config=runnable_config, channels=["notes"]
+            )
+
+            mock_get.assert_called_once_with(config=runnable_config, channels=["notes"])
+            assert result == expected
 
     async def test_alist_calls_sync_method_with_correct_args(
         self, saver, runnable_config, mock_slow_list

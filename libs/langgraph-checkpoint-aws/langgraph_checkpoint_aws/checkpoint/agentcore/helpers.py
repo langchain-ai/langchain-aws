@@ -11,6 +11,7 @@ import logging
 import time
 import warnings
 from collections import defaultdict
+from collections.abc import Iterator
 from typing import Any, cast
 
 import boto3
@@ -440,6 +441,64 @@ class AgentCoreEventClient:
                 break
 
         return all_events
+
+    def iter_event_pages(
+        self,
+        session_id: str,
+        actor_id: str,
+        *,
+        max_results: int | None = 100,
+    ) -> Iterator[list[EventType]]:
+        """Yield parsed events page by page, with no total item cap.
+
+        Unlike `get_events`, this never enforces a global `limit` (and so
+        never emits its "Stopped retrieving events" warning): a caller that
+        only needs a prefix of a thread's history — for example, walking an
+        ancestor chain until every requested channel is seeded — can stop
+        iterating once it has enough, turning what would otherwise be a
+        full-history fetch into a lazily-paged one.
+
+        Args:
+            session_id: The session ID to retrieve events for.
+            actor_id: The actor ID to retrieve events for.
+            max_results: Maximum number of results to retrieve per ListEvents
+                call.
+
+        Yields:
+            The events decoded from each successive page of ListEvents, in
+            the order AgentCore Memory returns them.
+        """
+        next_token: str | None = None
+
+        while True:
+            params: dict[str, Any] = {
+                "memoryId": self.memory_id,
+                "actorId": actor_id,
+                "sessionId": session_id,
+                "maxResults": max_results,
+                "includePayloads": True,
+            }
+            if next_token:
+                params["nextToken"] = next_token
+
+            response = self.client.list_events(**params)
+
+            page_events: list[EventType] = []
+            for event in response.get("events", []):
+                for payload_item in event.get("payload", []):
+                    blob = payload_item.get("blob")
+                    if not blob:
+                        continue
+                    try:
+                        page_events.append(self.serializer.deserialize_event(blob))
+                    except EventDecodingError as e:
+                        logger.warning(f"Failed to decode event: {e}")
+
+            yield page_events
+
+            next_token = response.get("nextToken")
+            if not next_token:
+                break
 
     def delete_events(self, session_id: str, actor_id: str) -> None:
         """Delete all events for a session."""
