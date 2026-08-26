@@ -357,6 +357,13 @@ def test_deepseek_supports_tool_choice_values(
     assert chat_model.supports_tool_choice_values == expected_values
 
 
+def test_xai_supports_tool_choice_values() -> None:
+    chat_model = ChatBedrockConverse(
+        model="global.xai.grok-4.6", region_name="us-east-1"
+    )
+    assert chat_model.supports_tool_choice_values == ("auto", "any", "tool")
+
+
 def test_deepseek_r1_no_tool_choice_support() -> None:
     chat_model = ChatBedrockConverse(model="deepseek.r1-v1:0", region_name="us-east-1")  # type: ignore[call-arg]
 
