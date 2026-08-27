@@ -1,7 +1,7 @@
 """ChatAnthropicMantle unit tests."""
 
 from collections.abc import Mapping
-from typing import Any, Tuple, Type, cast
+from typing import Any, Literal, Tuple, Type, cast
 from unittest.mock import patch
 
 import pytest
@@ -428,15 +428,46 @@ def test_auth_mode_api_key_requires_key() -> None:
             )
 
 
-def test_auth_mode_api_key_from_env_ok() -> None:
+@pytest.mark.parametrize(
+    "env,expected_key",
+    [
+        # standard bearer env var
+        ({"AWS_BEARER_TOKEN_BEDROCK": "api-key"}, "api-key"),
+        # the SDK's alternate key env var, not lifted into bedrock_api_key:
+        # satisfies the mode, and the SDK reads it from the env itself
+        ({"ANTHROPIC_AWS_API_KEY": "anthropic-key"}, "anthropic-key"),
+        # a partial SigV4 env pair must not break a declared bearer mode
+        # (SigV4 kwargs are omitted, avoiding the SDK's incomplete-pair error)
+        (
+            {"AWS_BEARER_TOKEN_BEDROCK": "api-key", "AWS_ACCESS_KEY_ID": "key-id"},
+            "api-key",
+        ),
+        (
+            {"AWS_BEARER_TOKEN_BEDROCK": "api-key", "AWS_SECRET_ACCESS_KEY": "sec-key"},
+            "api-key",
+        ),
+    ],
+    ids=["bearer-env", "anthropic-key-env", "partial-access-key", "partial-secret-key"],
+)
+def test_auth_mode_api_key_from_env_ok(env: dict[str, str], expected_key: str) -> None:
     with MonkeyPatch().context() as m:
-        m.setenv("AWS_BEARER_TOKEN_BEDROCK", "api-key")
+        for var in (
+            "AWS_BEARER_TOKEN_BEDROCK",
+            "ANTHROPIC_AWS_API_KEY",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+        ):
+            m.delenv(var, raising=False)
+        for name, value in env.items():
+            m.setenv(name, value)
         model = ChatAnthropicMantle(  # type: ignore[call-arg]
             model_name=MODEL_NAME,
             region_name="us-east-1",
             auth_mode="api_key",
         )
-        assert model._client_params["api_key"] == "api-key"
+        client = model._client
+        assert client._use_sigv4 is False
+        assert client.api_key == expected_key
 
 
 def test_auth_mode_sigv4_ignores_env_bearer_token() -> None:
@@ -530,3 +561,43 @@ def test_auth_mode_api_key_with_explicit_profile() -> None:
         client = model._client
         assert client._use_sigv4 is False
         assert client.api_key == "api-key"
+
+
+@pytest.mark.parametrize(
+    "auth_mode,expected_scheme",
+    [("sigv4", "AWS4-HMAC-SHA256"), ("api_key", "Bearer")],
+)
+def test_auth_mode_authorization_scheme_on_the_wire(
+    auth_mode: Literal["api_key", "sigv4"], expected_scheme: str
+) -> None:
+    import boto3.session
+    import httpx
+
+    with MonkeyPatch().context() as m:
+        m.setenv("AWS_BEARER_TOKEN_BEDROCK", "api-key")
+        m.setenv("AWS_ACCESS_KEY_ID", "key-id")
+        m.setenv("AWS_SECRET_ACCESS_KEY", "sec-key")
+        m.delenv("AWS_SESSION_TOKEN", raising=False)
+        m.setattr("boto3.Session", boto3.session.Session)
+        model = ChatAnthropicMantle(  # type: ignore[call-arg]
+            model_name=MODEL_NAME,
+            region_name="us-east-1",
+            auth_mode=auth_mode,
+            max_retries=0,
+        )
+        client = model._client
+
+        captured: dict[str, str] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["auth"] = request.headers.get("Authorization", "")
+            return httpx.Response(500, json={"error": "captured"})
+
+        client._client = httpx.Client(transport=httpx.MockTransport(handler))
+        with pytest.raises(Exception):
+            client.messages.create(
+                model=MODEL_NAME,
+                max_tokens=10,
+                messages=[{"role": "user", "content": "hi"}],
+            )
+        assert captured["auth"].startswith(expected_scheme)
