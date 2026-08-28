@@ -262,6 +262,24 @@ class TestBedrockCohereStandard(ChatModelIntegrationTests):
         pass
 
 
+class TestBedrockXaiStandard(ChatModelIntegrationTests):
+    @property
+    def chat_model_class(self) -> Type[BaseChatModel]:
+        return ChatBedrockConverse
+
+    @property
+    def chat_model_params(self) -> dict:
+        return {"model": "global.xai.grok-4.6"}
+
+    @property
+    def standard_chat_model_params(self) -> dict:
+        return {"max_tokens": 1024}
+
+    @pytest.mark.xfail(reason="Grok does not support the stopSequences field.")
+    def test_stop_sequence(self, model: BaseChatModel) -> None:
+        super().test_stop_sequence(model)
+
+
 class TestBedrockMetaStandard(ChatModelIntegrationTests):
     @property
     def chat_model_class(self) -> Type[BaseChatModel]:
