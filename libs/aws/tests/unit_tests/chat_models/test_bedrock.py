@@ -857,6 +857,54 @@ def test_with_structured_output_strict_passed_to_converse_api(
     assert func["strict"] is True
 
 
+def test_with_structured_output_repairs_stringified_list_field() -> None:
+    """A List[Model] field emitted as a JSON string parses successfully (#1221).
+
+    Claude models on Bedrock intermittently re-serialize a declared array
+    field as a JSON string containing the correct value. The structured
+    output chain repairs the encoding before validation.
+    """
+    from typing import List
+    from unittest.mock import patch
+
+    from langchain_core.outputs import ChatGeneration, ChatResult
+
+    class Entry(BaseModel):
+        label: str
+        values: List[int] = Field(default_factory=list)
+
+    class Output(BaseModel):
+        items: List[Entry]
+
+    stringified = '[{"label": "Onboarding", "values": [1001, 1002]}]'
+    message = AIMessage(
+        "",
+        tool_calls=[
+            {
+                "name": "Output",
+                "args": {"items": stringified},
+                "id": "toolu_bdrk_01X",
+                "type": "tool_call",
+            }
+        ],
+    )
+    result = ChatResult(generations=[ChatGeneration(message=message)])
+
+    model = ChatBedrock(
+        model_id="us.anthropic.claude-sonnet-5", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    structured = model.with_structured_output(
+        Output, include_raw=True, tool_choice="any"
+    )
+    with patch.object(ChatBedrock, "_generate", return_value=result):
+        out = cast(dict, structured.invoke("group the items"))
+
+    assert out["parsing_error"] is None
+    assert out["parsed"] == Output(
+        items=[Entry(label="Onboarding", values=[1001, 1002])]
+    )
+
+
 def test_standard_tracing_params() -> None:
     llm = ChatBedrock(model_id="foo", region_name="us-west-2")  # type: ignore[call-arg]
     expected = {

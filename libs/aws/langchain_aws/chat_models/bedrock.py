@@ -3,6 +3,7 @@ import logging
 import re
 import warnings
 from collections import defaultdict
+from functools import partial
 from operator import itemgetter
 from typing import (
     Any,
@@ -45,7 +46,12 @@ from langchain_core.messages.utils import convert_to_openai_messages
 from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
 from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
+from langchain_core.runnables import (
+    Runnable,
+    RunnableLambda,
+    RunnableMap,
+    RunnablePassthrough,
+)
 from langchain_core.tools import BaseTool
 from langchain_core.utils import get_pydantic_field_names
 from langchain_core.utils.function_calling import convert_to_openai_tool
@@ -60,6 +66,7 @@ from langchain_aws.function_calling import (
     AnthropicTool,
     ToolsOutputParser,
     _lc_tool_calls_to_anthropic_tool_use_blocks,
+    _repair_stringified_tool_call_message,
     convert_to_anthropic_tool,
     get_system_message,
 )
@@ -1553,7 +1560,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 f"Structured output is not supported for model {self._get_base_model()}"
             )
 
-        tool_name = convert_to_anthropic_tool(schema)["name"]
+        anthropic_tool = convert_to_anthropic_tool(schema)
+        tool_name = anthropic_tool["name"]
+        schema_properties = (anthropic_tool.get("input_schema") or {}).get(
+            "properties"
+        ) or None
 
         base_model = self._get_base_model()
         has_thinking = thinking_forced_tool_use_unsupported(
@@ -1579,6 +1590,12 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     "schema": convert_to_openai_tool(schema),
                 },
             )
+        if schema_properties:
+            _repair = partial(
+                _repair_stringified_tool_call_message, properties=schema_properties
+            )
+            llm = llm | RunnableLambda(_repair)
+
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             if self.streaming:
                 output_parser: OutputParserLike = PydanticToolsParser(

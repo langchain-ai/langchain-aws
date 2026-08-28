@@ -7139,6 +7139,51 @@ def test_with_structured_output_prompt_prefill_include_raw() -> None:
     assert "parsing_error" in repr(last) or "parsed" in repr(last)
 
 
+def test_with_structured_output_repairs_stringified_list_field() -> None:
+    """A List[Model] field emitted as a JSON string parses successfully (#1221).
+
+    Same repair as ChatBedrock: Claude models intermittently re-serialize a
+    declared array field as a JSON string containing the correct value.
+    """
+    from unittest.mock import patch
+
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from pydantic import Field
+
+    class Entry(BaseModel):
+        label: str
+        values: List[int] = Field(default_factory=list)
+
+    class Output(BaseModel):
+        items: List[Entry]
+
+    stringified = '[{"label": "Onboarding", "values": [1001, 1002]}]'
+    message = AIMessage(
+        "",
+        tool_calls=[
+            {
+                "name": "Output",
+                "args": {"items": stringified},
+                "id": "toolu_bdrk_01X",
+                "type": "tool_call",
+            }
+        ],
+    )
+    result = ChatResult(generations=[ChatGeneration(message=message)])
+
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    structured = model.with_structured_output(Output, include_raw=True)
+    with patch.object(ChatBedrockConverse, "_generate", return_value=result):
+        out = cast(dict, structured.invoke("group the items"))
+
+    assert out["parsing_error"] is None
+    assert out["parsed"] == Output(
+        items=[Entry(label="Onboarding", values=[1001, 1002])]
+    )
+
+
 class TestNonAsciiPreservation:
     """Regression tests: non-ASCII characters must survive JSON serialization."""
 

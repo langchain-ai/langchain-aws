@@ -158,6 +158,50 @@ class ToolDescription(TypedDict):
     function: FunctionDescription
 
 
+def _repair_stringified_json_args(
+    args: Dict[str, Any], properties: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Unwrap tool-call arguments if the model converted them to JSON strings."""
+    repaired: Dict[str, Any] = {}
+    for key, value in args.items():
+        declared = (properties.get(key) or {}).get("type")
+        if not isinstance(value, str) or declared not in ("array", "object"):
+            repaired[key] = value
+            continue
+        try:
+            loaded = json.loads(value)
+        except json.JSONDecodeError:
+            repaired[key] = value
+            continue
+        expected_type: type = list if declared == "array" else dict
+        if isinstance(loaded, expected_type):
+            repaired[key] = loaded
+        elif (
+            isinstance(loaded, dict)
+            and key in loaded
+            and isinstance(loaded[key], expected_type)
+        ):
+            repaired[key] = loaded[key]
+        else:
+            repaired[key] = value
+    return repaired
+
+
+def _repair_stringified_tool_call_message(
+    message: AIMessage, properties: Dict[str, Any]
+) -> AIMessage:
+    """Return ``message`` with str tool-call args repaired."""
+    if not message.tool_calls:
+        return message
+    repaired_calls = [
+        {**tc, "args": _repair_stringified_json_args(tc["args"], properties)}
+        for tc in message.tool_calls
+    ]
+    if repaired_calls == message.tool_calls:
+        return message
+    return message.model_copy(update={"tool_calls": repaired_calls})
+
+
 class ToolsOutputParser(BaseGenerationOutputParser):
     first_tool_only: bool = False
     args_only: bool = False

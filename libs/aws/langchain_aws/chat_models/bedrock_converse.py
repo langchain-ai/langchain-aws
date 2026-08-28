@@ -74,7 +74,10 @@ from typing_extensions import Self
 from langchain_aws._version import _add_langchain_aws_version
 from langchain_aws.chat_models._compat import _convert_from_v1_to_converse
 from langchain_aws.data._profiles import _PROFILES
-from langchain_aws.function_calling import ToolsOutputParser
+from langchain_aws.function_calling import (
+    ToolsOutputParser,
+    _repair_stringified_tool_call_message,
+)
 from langchain_aws.tools.nova_tools import NovaSystemTool
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
@@ -1740,6 +1743,16 @@ class ChatBedrockConverse(BaseChatModel):
                 )
             except Exception:
                 llm = self.bind_tools([schema], tool_choice=tool_choice, strict=strict)
+
+        schema_properties = (
+            convert_to_openai_tool(schema)["function"].get("parameters") or {}
+        ).get("properties") or None
+        if schema_properties:
+            _repair = functools.partial(
+                _repair_stringified_tool_call_message, properties=schema_properties
+            )
+            llm = llm | RunnableLambda(_repair)
+
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             if self.disable_streaming:
                 output_parser: OutputParserLike = ToolsOutputParser(
