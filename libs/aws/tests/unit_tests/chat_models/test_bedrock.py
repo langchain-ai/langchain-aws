@@ -5,7 +5,7 @@
 import json
 import os
 from contextlib import nullcontext
-from typing import Any, Callable, Dict, Literal, Type, cast
+from typing import Any, Callable, Dict, List, Literal, Type, cast
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -855,6 +855,59 @@ def test_with_structured_output_strict_passed_to_converse_api(
     bound_kwargs = cast(RunnableBinding, llm).kwargs
     func = bound_kwargs["tools"][0]["function"]
     assert func["strict"] is True
+
+
+@mock.patch("langchain_aws.llms.bedrock.create_aws_client")
+def test_structured_output_json_schema_via_converse_passthrough(
+    mock_create_aws_client: Any,
+) -> None:
+
+    class Entry(BaseModel):
+        label: str
+
+    class Output(BaseModel):
+        items: List[Entry]
+
+    client = MagicMock()
+    client.converse.return_value = {
+        "output": {
+            "message": {
+                "role": "assistant",
+                "content": [{"text": '{"items": [{"label": "a"}]}'}],
+            }
+        },
+        "stopReason": "end_turn",
+        "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+        "metrics": {"latencyMs": 1},
+        "ResponseMetadata": {"RequestId": "r"},
+    }
+    mock_create_aws_client.return_value = client
+
+    llm = ChatBedrock(
+        model="anthropic.claude-sonnet-5",
+        region="us-west-2",
+        beta_use_converse_api=True,
+    )
+    result = llm.with_structured_output(Output, method="json_schema").invoke("hi")
+
+    assert result == Output(items=[Entry(label="a")])
+    sent = client.converse.call_args.kwargs
+    assert "outputConfig" in sent
+    assert "toolConfig" not in sent
+
+
+@mock.patch("langchain_aws.llms.bedrock.create_aws_client")
+def test_structured_output_json_schema_strict_warns(
+    mock_create_aws_client: Any,
+) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    llm = ChatBedrock(
+        model="anthropic.claude-sonnet-5",
+        region="us-west-2",
+        beta_use_converse_api=True,
+    )
+    with pytest.warns(UserWarning, match="only applies to method='function_calling'"):
+        llm.with_structured_output(GetWeather, method="json_schema", strict=True)
 
 
 def test_standard_tracing_params() -> None:
