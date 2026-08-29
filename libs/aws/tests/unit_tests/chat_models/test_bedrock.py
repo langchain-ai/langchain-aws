@@ -934,6 +934,16 @@ def test_standard_tracing_params() -> None:
         "ls_temperature": 0.1,
     }
 
+    llm = ChatBedrock(model_id="foo", temperature=0, region_name="us-west-2")  # type: ignore[call-arg]
+    assert llm._get_ls_params() == {**expected, "ls_temperature": 0}
+
+    llm = ChatBedrock(model_id="foo", temperature=None, region_name="us-west-2")  # type: ignore[call-arg]
+    assert llm._get_ls_params() == expected
+
+    llm = ChatBedrock(model_id="foo", temperature=0.1, region_name="us-west-2")  # type: ignore[call-arg]
+    assert llm._get_ls_params(temperature=0) == {**expected, "ls_temperature": 0}
+    assert llm._get_ls_params(temperature=None) == expected
+
 
 def test_invocation_params_includes_model() -> None:
     llm = ChatBedrock(model="us.anthropic.claude-sonnet-5", region="us-west-2")
