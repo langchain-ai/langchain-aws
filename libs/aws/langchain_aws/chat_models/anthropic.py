@@ -429,13 +429,16 @@ class ChatAnthropicMantle(ChatAnthropic):
     """
 
     bedrock_api_key: SecretStr | None = Field(
-        default_factory=secret_from_env("AWS_BEARER_TOKEN_BEDROCK", default=None)
+        default_factory=secret_from_env(
+            ("AWS_BEARER_TOKEN_BEDROCK", "ANTHROPIC_AWS_API_KEY"), default=None
+        )
     )
     """Amazon Bedrock API key used to authenticate to Mantle.
 
-    If not provided, read from the ``AWS_BEARER_TOKEN_BEDROCK`` environment
-    variable. An explicitly passed key always selects bearer authentication;
-    an environment-sourced key is outranked by explicitly passed SigV4
+    If not provided, read from the ``AWS_BEARER_TOKEN_BEDROCK`` or
+    ``ANTHROPIC_AWS_API_KEY`` environment variable (in that order). An
+    explicitly passed key always selects bearer authentication; an
+    environment-sourced key is outranked by explicitly passed SigV4
     credentials. See the class docstring for the full selection order.
     """
 
@@ -528,11 +531,7 @@ class ChatAnthropicMantle(ChatAnthropic):
 
     @model_validator(mode="after")
     def _validate_auth_mode(self) -> Self:
-        if (
-            self.auth_mode == "api_key"
-            and not self.bedrock_api_key
-            and not os.getenv("ANTHROPIC_AWS_API_KEY")
-        ):
+        if self.auth_mode == "api_key" and not self.bedrock_api_key:
             msg = (
                 "auth_mode='api_key' requires a Bedrock API key. Set "
                 "`bedrock_api_key`, or the AWS_BEARER_TOKEN_BEDROCK or "

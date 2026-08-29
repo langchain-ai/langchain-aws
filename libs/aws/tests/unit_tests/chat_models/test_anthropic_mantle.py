@@ -1,6 +1,7 @@
 """ChatAnthropicMantle unit tests."""
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Literal, Tuple, Type, cast
 from unittest.mock import patch
 
@@ -13,6 +14,20 @@ from pytest import MonkeyPatch
 from langchain_aws import ChatAnthropicMantle
 
 MODEL_NAME = "anthropic.claude-sonnet-5"
+
+_AMBIENT_AUTH_VARS = (
+    "AWS_BEARER_TOKEN_BEDROCK",
+    "ANTHROPIC_AWS_API_KEY",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_PROFILE",
+)
+
+
+def _scrub_ambient_auth(m: MonkeyPatch) -> None:
+    for var in _AMBIENT_AUTH_VARS:
+        m.delenv(var, raising=False)
 
 
 def _constructed_client_params(
@@ -472,6 +487,7 @@ def test_auth_mode_api_key_from_env_ok(env: dict[str, str], expected_key: str) -
 
 def test_auth_mode_sigv4_ignores_env_bearer_token() -> None:
     with MonkeyPatch().context() as m:
+        _scrub_ambient_auth(m)
         m.setenv("AWS_BEARER_TOKEN_BEDROCK", "api-key")
         model = ChatAnthropicMantle(  # type: ignore[call-arg]
             model_name=MODEL_NAME,
@@ -487,6 +503,7 @@ def test_auth_mode_sigv4_ignores_env_bearer_token() -> None:
 
 def test_auth_mode_sigv4_async_client_pinned_too() -> None:
     with MonkeyPatch().context() as m:
+        _scrub_ambient_auth(m)
         m.setenv("AWS_BEARER_TOKEN_BEDROCK", "api-key")
         model = ChatAnthropicMantle(  # type: ignore[call-arg]
             model_name=MODEL_NAME,
@@ -568,16 +585,25 @@ def test_auth_mode_api_key_with_explicit_profile() -> None:
     [("sigv4", "AWS4-HMAC-SHA256"), ("api_key", "Bearer")],
 )
 def test_auth_mode_authorization_scheme_on_the_wire(
-    auth_mode: Literal["api_key", "sigv4"], expected_scheme: str
+    auth_mode: Literal["api_key", "sigv4"],
+    expected_scheme: str,
+    tmp_path: Path,
 ) -> None:
+    import asyncio
+
     import boto3.session
     import httpx
 
+    creds_file = tmp_path / "credentials"
+    creds_file.write_text(
+        "[default]\n"
+        "aws_access_key_id = chain-key-id\n"
+        "aws_secret_access_key = chain-sec-key\n"
+    )
     with MonkeyPatch().context() as m:
+        _scrub_ambient_auth(m)
+        m.setenv("AWS_SHARED_CREDENTIALS_FILE", str(creds_file))
         m.setenv("AWS_BEARER_TOKEN_BEDROCK", "api-key")
-        m.setenv("AWS_ACCESS_KEY_ID", "key-id")
-        m.setenv("AWS_SECRET_ACCESS_KEY", "sec-key")
-        m.delenv("AWS_SESSION_TOKEN", raising=False)
         m.setattr("boto3.Session", boto3.session.Session)
         model = ChatAnthropicMantle(  # type: ignore[call-arg]
             model_name=MODEL_NAME,
@@ -585,7 +611,13 @@ def test_auth_mode_authorization_scheme_on_the_wire(
             auth_mode=auth_mode,
             max_retries=0,
         )
-        client = model._client
+        params = model._client_params
+        assert "aws_access_key" not in params
+        assert "aws_secret_key" not in params
+        assert "aws_session_token" not in params
+        assert "aws_profile" not in params
+        if auth_mode == "sigv4":
+            assert "api_key" not in params
 
         captured: dict[str, str] = {}
 
@@ -593,6 +625,7 @@ def test_auth_mode_authorization_scheme_on_the_wire(
             captured["auth"] = request.headers.get("Authorization", "")
             return httpx.Response(500, json={"error": "captured"})
 
+        client = model._client
         client._client = httpx.Client(transport=httpx.MockTransport(handler))
         with pytest.raises(Exception):
             client.messages.create(
@@ -601,3 +634,38 @@ def test_auth_mode_authorization_scheme_on_the_wire(
                 messages=[{"role": "user", "content": "hi"}],
             )
         assert captured["auth"].startswith(expected_scheme)
+        if auth_mode == "sigv4":
+            assert "chain-key-id" in captured["auth"]
+
+        captured.clear()
+        async_client = model._async_client
+        async_client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+        async def _call() -> None:
+            await async_client.messages.create(
+                model=MODEL_NAME,
+                max_tokens=10,
+                messages=[{"role": "user", "content": "hi"}],
+            )
+
+        with pytest.raises(Exception):
+            asyncio.run(_call())
+        assert captured["auth"].startswith(expected_scheme)
+        if auth_mode == "sigv4":
+            assert "chain-key-id" in captured["auth"]
+
+
+def test_api_key_snapshot_survives_env_mutation() -> None:
+    with MonkeyPatch().context() as m:
+        _scrub_ambient_auth(m)
+        m.setenv("ANTHROPIC_AWS_API_KEY", "key-A")
+        model = ChatAnthropicMantle(  # type: ignore[call-arg]
+            model_name=MODEL_NAME,
+            region_name="us-east-1",
+            auth_mode="api_key",
+        )
+        m.setenv("ANTHROPIC_AWS_API_KEY", "key-B")
+        m.delenv("ANTHROPIC_AWS_API_KEY")
+        client = model._client
+        assert client._use_sigv4 is False
+        assert client.api_key == "key-A"
