@@ -224,42 +224,22 @@ class TestBedrockNovaStandard(ChatModelIntegrationTests):
         super().test_tool_message_histories_list_content(model, my_adder_tool)
 
 
-class TestBedrockCohereStandard(ChatModelIntegrationTests):
+class TestBedrockXaiStandard(ChatModelIntegrationTests):
     @property
     def chat_model_class(self) -> Type[BaseChatModel]:
         return ChatBedrockConverse
 
     @property
     def chat_model_params(self) -> dict:
-        return {"model": "cohere.command-r-plus-v1:0"}
+        return {"model": "global.xai.grok-4.6"}
 
     @property
     def standard_chat_model_params(self) -> dict:
-        return {"temperature": 0, "max_tokens": 100, "stop": []}
+        return {"max_tokens": 1024}
 
-    @property
-    def has_tool_choice(self) -> bool:
-        return False
-
-    @pytest.mark.xfail(reason="Cohere models don't support tool_choice.")
-    def test_structured_few_shot_examples(
-        self, model: BaseChatModel, my_adder_tool: BaseTool
-    ) -> None:
-        pass
-
-    @pytest.mark.xfail(reason="Cohere models don't support tool_choice.")
-    def test_unicode_tool_call_integration(
-        self,
-        model: BaseChatModel,
-        *,
-        tool_choice: Optional[str] = None,
-        force_tool_call: bool = False,
-    ) -> None:
-        pass
-
-    @pytest.mark.xfail(reason="Generates invalid tool call.")
-    def test_tool_calling_with_no_arguments(self, model: BaseChatModel) -> None:
-        pass
+    @pytest.mark.xfail(reason="Grok does not support the stopSequences field.")
+    def test_stop_sequence(self, model: BaseChatModel) -> None:
+        super().test_stop_sequence(model)
 
 
 class TestBedrockMetaStandard(ChatModelIntegrationTests):
