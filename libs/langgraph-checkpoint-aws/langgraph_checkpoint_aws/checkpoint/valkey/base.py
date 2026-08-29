@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import random
 from collections.abc import Sequence
 from typing import Any, cast
@@ -26,6 +27,8 @@ from .utils import set_client_info, set_client_name
 # before giving up. Contention is bounded by the number of tasks flushing writes
 # for the same checkpoint concurrently, so this is only ever reached pathologically.
 _PUT_WRITES_MAX_ATTEMPTS = 100
+
+logger = logging.getLogger(__name__)
 
 
 class BaseValkeySaver(BaseCheckpointSaver[str]):
@@ -254,8 +257,18 @@ class BaseValkeySaver(BaseCheckpointSaver[str]):
         try:
             parsed = orjson.loads(existing_data)
         except (orjson.JSONDecodeError, TypeError, ValueError):
+            logger.warning(
+                "Discarding un-decodable checkpoint writes blob; existing "
+                "writes for this checkpoint will be replaced."
+            )
             return []
-        return parsed if isinstance(parsed, list) else []
+        if not isinstance(parsed, list):
+            logger.warning(
+                "Checkpoint writes blob was not a JSON list; existing "
+                "writes for this checkpoint will be replaced."
+            )
+            return []
+        return parsed
 
     @staticmethod
     def _merge_writes(
