@@ -13,7 +13,7 @@ from langchain_aws.middleware.prompt_caching import BedrockPromptCachingMiddlewa
 def test_trace_inputs_are_omitted() -> None:
     policy = BedrockPromptCachingMiddleware.trace_policy
     assert policy.process_inputs is not None
-    assert policy.process_inputs({"messages": [HumanMessage("secret")]}) == {}
+    assert policy.process_inputs({"messages": [HumanMessage("foo")]}) == {}
 
 
 def test_trace_policy_unsupported_langchain() -> None:
