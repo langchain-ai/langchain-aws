@@ -8,6 +8,12 @@ from langchain_aws import ChatBedrock, ChatBedrockConverse
 from langchain_aws.middleware.prompt_caching import BedrockPromptCachingMiddleware
 
 
+def test_trace_inputs_are_omitted() -> None:
+    policy = BedrockPromptCachingMiddleware.trace_policy
+    assert policy.process_inputs is not None
+    assert policy.process_inputs({"messages": [HumanMessage("secret")]}) == {}
+
+
 def test_bedrock_skips_non_chatbedrock() -> None:
     middleware = BedrockPromptCachingMiddleware(unsupported_model_behavior="ignore")
 

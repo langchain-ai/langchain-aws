@@ -11,6 +11,8 @@ try:
         ModelCallResult,
         ModelRequest,
         ModelResponse,
+        TracePolicy,
+        omit_payload,
     )
 except ImportError as e:
     msg = (
@@ -51,6 +53,8 @@ class BedrockPromptCachingMiddleware(AgentMiddleware):
     - `Anthropic <https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching>`
     - `AWS Bedrock <https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html>`
     """
+
+    trace_policy = TracePolicy(process_inputs=omit_payload)
 
     def __init__(
         self,
