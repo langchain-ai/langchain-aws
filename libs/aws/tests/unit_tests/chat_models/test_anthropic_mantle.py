@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Literal, Tuple, Type, cast
 from unittest.mock import patch
 
+import anthropic
 import pytest
 from langchain_core.language_models import BaseChatModel, ModelProfile
 from langchain_tests.unit_tests import ChatModelUnitTests
@@ -580,6 +581,10 @@ def test_auth_mode_api_key_with_explicit_profile() -> None:
         assert client.api_key == "api-key"
 
 
+@pytest.mark.skipif(
+    int(anthropic.__version__.partition(".")[0]) < 1,
+    reason="mock transport targets the httpx2 HTTP layer used by anthropic>=1",
+)
 @pytest.mark.parametrize(
     "auth_mode,expected_scheme",
     [("sigv4", "AWS4-HMAC-SHA256"), ("api_key", "Bearer")],
@@ -592,7 +597,7 @@ def test_auth_mode_authorization_scheme_on_the_wire(
     import asyncio
 
     import boto3.session
-    import httpx
+    import httpx2  # anthropic>=1 builds its HTTP layer on httpx2, not httpx
 
     creds_file = tmp_path / "credentials"
     creds_file.write_text(
@@ -621,12 +626,12 @@ def test_auth_mode_authorization_scheme_on_the_wire(
 
         captured: dict[str, str] = {}
 
-        def handler(request: httpx.Request) -> httpx.Response:
+        def handler(request: httpx2.Request) -> httpx2.Response:
             captured["auth"] = request.headers.get("Authorization", "")
-            return httpx.Response(500, json={"error": "captured"})
+            return httpx2.Response(500, json={"error": "captured"})
 
         client = model._client
-        client._client = httpx.Client(transport=httpx.MockTransport(handler))
+        client._client = httpx2.Client(transport=httpx2.MockTransport(handler))
         with pytest.raises(Exception):
             client.messages.create(
                 model=MODEL_NAME,
@@ -639,7 +644,9 @@ def test_auth_mode_authorization_scheme_on_the_wire(
 
         captured.clear()
         async_client = model._async_client
-        async_client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        async_client._client = httpx2.AsyncClient(
+            transport=httpx2.MockTransport(handler)
+        )
 
         async def _call() -> None:
             await async_client.messages.create(
