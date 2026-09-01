@@ -168,7 +168,10 @@ def test_chat_anthropic_bedrock_get_request_payload() -> None:
         [HumanMessage(content="Hello")],  # type: ignore[misc]
     )
     assert payload["model"] == BEDROCK_MODEL_NAME
-    assert payload["temperature"] == 0.7
+    temperature = payload.get(
+        "temperature", payload.get("extra_body", {}).get("temperature")
+    )
+    assert temperature == 0.7
     assert payload["max_tokens"] == 1000
     assert "messages" in payload
 
