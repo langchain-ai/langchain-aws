@@ -1001,7 +1001,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             ls_model_name=params.get("model") or self.model_id,
             ls_model_type="chat",
         )
-        if ls_temperature := params.get("temperature", self.temperature):
+        if (ls_temperature := params.get("temperature", self.temperature)) is not None:
             ls_params["ls_temperature"] = ls_temperature
         if ls_max_tokens := params.get("max_tokens", self.max_tokens):
             ls_params["ls_max_tokens"] = ls_max_tokens
