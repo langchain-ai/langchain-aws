@@ -1,16 +1,25 @@
-"""OpenAI-compatible chat model for the Amazon Bedrock Mantle endpoint.
+"""OpenAI-compatible chat models for Amazon Bedrock endpoints.
 
 Amazon Bedrock exposes OpenAI-compatible Chat Completions and Responses APIs on
-the ``bedrock-mantle`` endpoint (``bedrock-mantle.{region}.api.aws``). Because the
-wire format matches OpenAI, this integration is a thin subclass of
-``BaseChatOpenAI`` (mirroring the ``AzureChatOpenAI`` pattern) that only resolves
-the Bedrock Mantle base URL and authentication; all chat behaviour (tool calling,
-structured output, streaming, tracing, multimodal) is inherited unchanged.
+two endpoints:
+
+* ``bedrock-mantle`` (``bedrock-mantle.{region}.api.aws``) — served by
+  :class:`ChatOpenAIMantle`, which defaults to the ``/v1`` route. Mantle also
+  serves some models under ``/openai/v1``; override ``base_url`` for those.
+* ``bedrock-runtime`` (``bedrock-runtime.{region}.amazonaws.com/openai/v1``) —
+  served by :class:`ChatOpenAIBedrock`.
+
+Because the wire format matches OpenAI, both integrations are thin subclasses of
+``BaseChatOpenAI`` (mirroring the ``AzureChatOpenAI`` pattern) that only resolve
+the endpoint base URL and authentication; all chat behavior (tool calling,
+structured output, streaming, tracing, multimodal) is inherited unchanged. The
+shared logic lives in :class:`_BaseChatBedrockOpenAI`; each public class only
+sets a handful of endpoint-specific class attributes.
 """
 
 import os
 from collections.abc import AsyncIterator, Iterator
-from typing import Any, Literal, cast
+from typing import Any, ClassVar, Literal, cast
 
 from langchain_core.language_models import (
     LanguageModelInput,
@@ -35,18 +44,40 @@ from langchain_aws.utils import (
     _BEDROCK_API_KEY_MAX_TTL_SECONDS,
     _MANTLE_GUARDRAILS_ERR_MSG,
     _BedrockApiKeyProvider,
-    _check_no_mantle_guardrail_headers,
+    _reject_guardrail_config_values,
+    _reject_guardrail_request_kwargs,
+    _strip_cross_region_prefix,
 )
 
 _MANTLE_BASE_URL_TEMPLATE = "https://bedrock-mantle.{region}.api.aws/v1"
+_BEDROCK_RUNTIME_BASE_URL_TEMPLATE = (
+    "https://bedrock-runtime.{region}.amazonaws.com/openai/v1"
+)
+
+# Guardrails are not accepted by the OpenAI models currently served on the
+# bedrock-runtime OpenAI-compatible endpoint; used only by ChatOpenAIBedrock.
+_BEDROCK_RUNTIME_OAI_GUARDRAILS_ERR_MSG = (
+    "Amazon Bedrock Guardrails are not supported by the current OpenAI models "
+    "on the bedrock-runtime OpenAI-compatible endpoint. Please use "
+    "``ChatAnthropicBedrock`` or ``ChatBedrockConverse`` instead, which support "
+    "guardrails via the bedrock-runtime endpoint."
+)
 
 _MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
 
 
 def _get_default_model_profile(model_name: str) -> ModelProfile:
-    """Return the static capability profile for a Mantle model, or an empty one."""
-    default = _MODEL_PROFILES.get(model_name) or {}
-    return default.copy()
+    """Return the static capability profile for a model, or an empty one.
+
+    Tries the exact model id first (so an explicitly-registered profile such as
+    ``global.openai.gpt-5.6-sol`` is used verbatim), then retries with any
+    geographic/global prefix stripped (so ``us.openai.gpt-5.6-sol`` inherits the
+    base ``openai.gpt-5.6-sol`` profile).
+    """
+    default = _MODEL_PROFILES.get(model_name)
+    if default is None:
+        default = _MODEL_PROFILES.get(_strip_cross_region_prefix(model_name))
+    return (default or {}).copy()
 
 
 def _plain_secret(value: Any) -> str | None:
@@ -58,60 +89,41 @@ def _plain_secret(value: Any) -> str | None:
     return str(value)
 
 
-class ChatOpenAIMantle(BaseChatOpenAI):
-    """OpenAI-compatible GPT/open-weight models via the Amazon Bedrock Mantle endpoint.
+class _BaseChatBedrockOpenAI(BaseChatOpenAI):
+    """Shared implementation for Bedrock OpenAI-compatible chat models.
 
-    Talks to the ``bedrock-mantle`` OpenAI-compatible endpoint
-    (``bedrock-mantle.{region}.api.aws``) using the OpenAI Python SDK.
-    Authentication uses an Amazon Bedrock API key (bearer token) rather than
-    AWS SigV4. Provide it directly (``bedrock_api_key`` /
-    ``AWS_BEARER_TOKEN_BEDROCK``), or omit it and let short-term keys be derived
-    from your AWS credentials and refreshed transparently.
-
-    See the [LangChain docs for `ChatOpenAI`](https://docs.langchain.com/oss/python/integrations/chat/openai)
-    for tutorials and feature walkthroughs — the same features apply here.
-
-    Example (static bearer token):
-        ```python
-        # pip install "langchain-aws[openai]"
-        # export AWS_BEARER_TOKEN_BEDROCK="your-bedrock-api-key"
-        # export AWS_REGION="us-east-1"
-
-        from langchain_aws import ChatOpenAIMantle
-
-        model = ChatOpenAIMantle(
-            model="openai.gpt-oss-120b",
-            region_name="us-east-1",
-        )
-        model.invoke("What is 2 + 2?")
-        ```
-
-    Example (derive short-term keys from AWS credentials):
-        ```python
-        # pip install "langchain-aws[openai]"
-        # Uses the standard boto3 credential chain (env, profile, role, IRSA).
-
-        from langchain_aws import ChatOpenAIMantle
-
-        model = ChatOpenAIMantle(
-            model="openai.gpt-oss-120b",
-            region_name="us-east-1",
-            # optionally: credentials_profile_name="my-profile"
-        )
-        model.invoke("What is 2 + 2?")
-        ```
-
-    Note:
-        This targets the ``bedrock-mantle`` endpoint, which serves only the
-        OpenAI-compatible model catalog (a different, non-superset set of models
-        from ``bedrock-runtime``). For Anthropic Claude on Bedrock, use
-        ``ChatAnthropicBedrock``.
+    Not intended for direct use. Concrete subclasses set the endpoint-specific
+    class attributes below (``_base_url_template``, ``_endpoint_label``,
+    ``_ls_provider_name``, ``_lc_namespace``, ``_llm_type_name``,
+    ``_guardrails_err_msg``); everything else — region/base-URL resolution,
+    Bedrock API-key auth (static bearer token or short-term keys derived from
+    AWS credentials), guardrail rejection, profile resolution, tracing, and the
+    Chat Completions/Responses routing — is shared here.
     """
+
+    # --- Endpoint-specific configuration (set by subclasses) ---------------
+    _base_url_template: ClassVar[str]
+    """``str.format(region=...)`` template for the default endpoint base URL."""
+
+    _endpoint_label: ClassVar[str]
+    """Human-readable endpoint name used in error messages."""
+
+    _ls_provider_name: ClassVar[str]
+    """Value reported as ``ls_provider`` in tracing metadata."""
+
+    _lc_namespace: ClassVar[list[str]]
+    """LangChain serialization namespace for this class."""
+
+    _llm_type_name: ClassVar[str]
+    """Value returned by ``_llm_type``."""
+
+    _guardrails_err_msg: ClassVar[str]
+    """Error raised when guardrails are configured on an unsupported endpoint."""
 
     model_config = ConfigDict(populate_by_name=True)
 
     region_name: str | None = None
-    """AWS region for the Bedrock Mantle endpoint, e.g. ``us-east-1``.
+    """AWS region for the Bedrock endpoint, e.g. ``us-east-1``.
 
     Falls back to the ``AWS_REGION`` or ``AWS_DEFAULT_REGION`` environment
     variable when not provided. Used to build the default ``base_url``.
@@ -120,7 +132,7 @@ class ChatOpenAIMantle(BaseChatOpenAI):
     bedrock_api_key: SecretStr | None = Field(
         default_factory=secret_from_env("AWS_BEARER_TOKEN_BEDROCK", default=None)
     )
-    """Amazon Bedrock API key (bearer token) used to authenticate to Mantle.
+    """Amazon Bedrock API key (bearer token) used to authenticate.
 
     If not provided, read from the ``AWS_BEARER_TOKEN_BEDROCK`` environment
     variable. Sent as the OpenAI ``api_key``.
@@ -167,17 +179,27 @@ class ChatOpenAIMantle(BaseChatOpenAI):
     lifetime for refreshable credentials (AssumeRole, SSO, IRSA, ...).
     """
 
+    @classmethod
+    def _ensure_concrete(cls) -> None:
+        """Guard against instantiating the abstract base directly.
+
+        The endpoint-specific ``ClassVar``s are only set on concrete subclasses,
+        so constructing ``_BaseChatBedrockOpenAI`` itself would otherwise fail
+        with an opaque ``AttributeError`` deep inside a validator.
+        """
+        if cls is _BaseChatBedrockOpenAI:
+            msg = (
+                "_BaseChatBedrockOpenAI is an internal base class and cannot be "
+                "instantiated directly. Use ChatOpenAIMantle (bedrock-mantle) or "
+                "ChatOpenAIBedrock (bedrock-runtime)."
+            )
+            raise TypeError(msg)
+
     @model_validator(mode="before")
     @classmethod
     def _reject_guardrails(cls, values: Any) -> Any:
-        # TODO: remove after Mantle adds guardrails support
-        if isinstance(values, dict):
-            if any(
-                values.get(key) is not None
-                for key in ("guardrail_config", "guardrails")
-            ):
-                raise ValueError(_MANTLE_GUARDRAILS_ERR_MSG)
-            _check_no_mantle_guardrail_headers(values.get("default_headers"))
+        cls._ensure_concrete()
+        _reject_guardrail_config_values(values, cls._guardrails_err_msg)
         return values
 
     def _get_request_payload(
@@ -187,21 +209,19 @@ class ChatOpenAIMantle(BaseChatOpenAI):
         stop: list[str] | None = None,
         **kwargs: Any,
     ) -> dict:
-        # TODO: remove after Mantle adds guardrails support
-        if kwargs.get("guardrail_config") is not None:
-            raise ValueError(_MANTLE_GUARDRAILS_ERR_MSG)
-        _check_no_mantle_guardrail_headers(kwargs.get("extra_headers"))
+        _reject_guardrail_request_kwargs(kwargs, self._guardrails_err_msg)
         return super()._get_request_payload(input_, stop=stop, **kwargs)
 
     @model_validator(mode="before")
     @classmethod
-    def _set_mantle_defaults(cls, values: Any) -> Any:
-        """Resolve the Mantle base URL and bearer key before the client is built.
+    def _set_endpoint_defaults(cls, values: Any) -> Any:
+        """Resolve the endpoint base URL and bearer key before the client is built.
 
         Runs before ``BaseChatOpenAI``'s client-construction validator so the
-        OpenAI client is created pointing at the Bedrock Mantle endpoint with the
+        OpenAI client is created pointing at the Bedrock endpoint with the
         Bedrock API key.
         """
+        cls._ensure_concrete()
         if not isinstance(values, dict):
             return values
 
@@ -211,7 +231,7 @@ class ChatOpenAIMantle(BaseChatOpenAI):
             or os.getenv("AWS_DEFAULT_REGION")
         )
 
-        # Default the base URL to the region's Mantle endpoint unless the caller
+        # Default the base URL to the region's endpoint unless the caller
         # supplied one explicitly (either alias form). If no base URL is given and
         # no region can be resolved, fail here rather than let ``BaseChatOpenAI``
         # fall back to the default OpenAI host — otherwise the Bedrock bearer token
@@ -222,14 +242,15 @@ class ChatOpenAIMantle(BaseChatOpenAI):
         if not has_explicit_base_url:
             if not region:
                 msg = (
-                    "ChatOpenAIMantle could not resolve an AWS region for the "
-                    "Bedrock Mantle endpoint. Set `region_name`, the `AWS_REGION` "
-                    "or `AWS_DEFAULT_REGION` environment variable, or pass an "
-                    "explicit `base_url`. Refusing to default to the OpenAI host "
-                    "so the Bedrock API key is never sent to api.openai.com."
+                    f"{cls.__name__} could not resolve an AWS region for the "
+                    f"{cls._endpoint_label} endpoint. Set `region_name`, the "
+                    "`AWS_REGION` or `AWS_DEFAULT_REGION` environment variable, "
+                    "or pass an explicit `base_url`. Refusing to default to the "
+                    "OpenAI host so the Bedrock API key is never sent to "
+                    "api.openai.com."
                 )
                 raise ValueError(msg)
-            values["base_url"] = _MANTLE_BASE_URL_TEMPLATE.format(region=region)
+            values["base_url"] = cls._base_url_template.format(region=region)
 
         # Route the Bedrock API key into the OpenAI ``api_key`` slot unless the
         # caller already set one explicitly. Precedence:
@@ -280,7 +301,7 @@ class ChatOpenAIMantle(BaseChatOpenAI):
     @property
     def _llm_type(self) -> str:
         """Return type of chat model."""
-        return "openai-mantle-chat"
+        return self._llm_type_name
 
     @property
     def lc_secrets(self) -> dict[str, str]:
@@ -290,14 +311,14 @@ class ChatOpenAIMantle(BaseChatOpenAI):
     @classmethod
     def get_lc_namespace(cls) -> list[str]:
         """Get the namespace of the LangChain object."""
-        return ["langchain", "chat_models", "openai_mantle"]
+        return list(cls._lc_namespace)
 
     def _get_ls_params(
         self, stop: list[str] | None = None, **kwargs: Any
     ) -> LangSmithParams:
         """Get standard params for tracing."""
         params = super()._get_ls_params(stop=stop, **kwargs)
-        params["ls_provider"] = "openai-mantle"
+        params["ls_provider"] = self._ls_provider_name
         return params
 
     def _stream(self, *args: Any, **kwargs: Any) -> Iterator[ChatGenerationChunk]:
@@ -340,3 +361,132 @@ class ChatOpenAIMantle(BaseChatOpenAI):
             tools=tools,
             **kwargs,
         )
+
+
+class ChatOpenAIMantle(_BaseChatBedrockOpenAI):
+    """OpenAI-compatible GPT/open-weight models via the Amazon Bedrock Mantle endpoint.
+
+    Talks to the ``bedrock-mantle`` OpenAI-compatible endpoint
+    (``bedrock-mantle.{region}.api.aws``) using the OpenAI Python SDK.
+    Authentication uses an Amazon Bedrock API key (bearer token) rather than
+    AWS SigV4. Provide it directly (``bedrock_api_key`` /
+    ``AWS_BEARER_TOKEN_BEDROCK``), or omit it and let short-term keys be derived
+    from your AWS credentials and refreshed transparently.
+
+    See the [LangChain docs for `ChatOpenAI`](https://docs.langchain.com/oss/python/integrations/chat/openai)
+    for tutorials and feature walkthroughs — the same features apply here.
+
+    Example (static bearer token):
+        ```python
+        # pip install "langchain-aws[openai]"
+        # export AWS_BEARER_TOKEN_BEDROCK="your-bedrock-api-key"
+        # export AWS_REGION="us-east-1"
+
+        from langchain_aws import ChatOpenAIMantle
+
+        model = ChatOpenAIMantle(
+            model="openai.gpt-oss-120b",
+            region_name="us-east-1",
+        )
+        model.invoke("What is 2 + 2?")
+        ```
+
+    Example (derive short-term keys from AWS credentials):
+        ```python
+        # pip install "langchain-aws[openai]"
+        # Uses the standard boto3 credential chain (env, profile, role, IRSA).
+
+        from langchain_aws import ChatOpenAIMantle
+
+        model = ChatOpenAIMantle(
+            model="openai.gpt-oss-120b",
+            region_name="us-east-1",
+            # optionally: credentials_profile_name="my-profile"
+        )
+        model.invoke("What is 2 + 2?")
+        ```
+
+    Note:
+        This targets the ``bedrock-mantle`` endpoint, which serves only the
+        OpenAI-compatible model catalog (a different, non-superset set of models
+        from ``bedrock-runtime``). For the ``bedrock-runtime`` OpenAI-compatible
+        endpoint (e.g. GPT-5.x via cross-Region inference profiles), use
+        ``ChatOpenAIBedrock``. For Anthropic Claude on Bedrock, use
+        ``ChatAnthropicBedrock``.
+
+        The default ``base_url`` uses Mantle's ``/v1`` route (used by
+        open-weight models such as gpt-oss). Some Mantle models are served
+        under ``/openai/v1`` instead; pass an explicit ``base_url`` for those.
+
+        As on ``bedrock-runtime``, tool calling with the GPT-5.x reasoning
+        models is rejected on the Chat Completions path while reasoning is
+        active; use ``use_responses_api=True`` or ``reasoning_effort="none"``
+        to bind tools. Open-weight models such as gpt-oss are unaffected.
+    """
+
+    _base_url_template = _MANTLE_BASE_URL_TEMPLATE
+    _endpoint_label = "Bedrock Mantle"
+    _ls_provider_name = "openai-mantle"
+    _lc_namespace = ["langchain", "chat_models", "openai_mantle"]
+    _llm_type_name = "openai-mantle-chat"
+    _guardrails_err_msg = _MANTLE_GUARDRAILS_ERR_MSG
+
+
+class ChatOpenAIBedrock(_BaseChatBedrockOpenAI):
+    """OpenAI-compatible models via the Amazon Bedrock ``bedrock-runtime`` endpoint.
+
+    Talks to the ``bedrock-runtime`` OpenAI-compatible endpoint
+    (``bedrock-runtime.{region}.amazonaws.com/openai/v1``) using the OpenAI
+    Python SDK. This is the recommended endpoint for OpenAI models (e.g. the
+    GPT-5.x family) on Amazon Bedrock, and it supports both the Chat Completions
+    and Responses APIs plus cross-Region inference.
+
+    Authentication uses an Amazon Bedrock API key (bearer token). Provide it
+    directly (``bedrock_api_key`` / ``AWS_BEARER_TOKEN_BEDROCK``), or omit it and
+    let short-term keys be derived from your AWS credentials and refreshed
+    transparently.
+
+    See the [LangChain docs for `ChatOpenAI`](https://docs.langchain.com/oss/python/integrations/chat/openai)
+    for tutorials and feature walkthroughs — the same features apply here.
+
+    Example:
+        ```python
+        # pip install "langchain-aws[openai]"
+        # export AWS_REGION="us-west-2"
+
+        from langchain_aws import ChatOpenAIBedrock
+
+        # bedrock-runtime requires a cross-Region inference profile id
+        # (e.g. "us." or "global." prefix), not a bare model id.
+        model = ChatOpenAIBedrock(
+            model="us.openai.gpt-5.6-sol",
+            region_name="us-west-2",
+        )
+        model.invoke("What is 2 + 2?")
+        ```
+
+    Note:
+        Cross-Region inference is selected purely via the ``model`` id — use a
+        geographic (``us.``, ``eu.``, ...) or ``global.`` inference-profile id.
+        Bare foundation-model ids are rejected by this endpoint. For the
+        ``bedrock-mantle`` endpoint (open-weight catalog, server-side tools) use
+        ``ChatOpenAIMantle``. For Anthropic Claude on Bedrock, use
+        ``ChatAnthropicBedrock``.
+
+        Amazon Bedrock Guardrails are not currently accepted by the OpenAI models
+        on this endpoint; configuring them raises an error. Use
+        ``ChatAnthropicBedrock`` or ``ChatBedrockConverse`` for guardrails.
+
+        Tool calling with the GPT-5.x reasoning models is rejected on the Chat
+        Completions path when reasoning is active. To bind tools (e.g. in a
+        LangGraph agent), either use the Responses API
+        (``ChatOpenAIBedrock(..., use_responses_api=True)``) or set
+        ``reasoning_effort="none"``.
+    """
+
+    _base_url_template = _BEDROCK_RUNTIME_BASE_URL_TEMPLATE
+    _endpoint_label = "Bedrock Runtime"
+    _ls_provider_name = "openai-bedrock"
+    _lc_namespace = ["langchain", "chat_models", "openai_bedrock"]
+    _llm_type_name = "openai-bedrock-chat"
+    _guardrails_err_msg = _BEDROCK_RUNTIME_OAI_GUARDRAILS_ERR_MSG

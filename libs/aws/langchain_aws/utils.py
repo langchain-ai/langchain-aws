@@ -557,6 +557,21 @@ def trim_message_whitespace(messages: List[Any]) -> List[Any]:
     return messages
 
 
+def _strip_cross_region_prefix(model_id: str) -> str:
+    """Return the base model id with any cross-Region prefix removed.
+
+    Regional/global inference-profile ids (e.g. ``us.anthropic.claude-...`` or
+    ``global.openai.gpt-5.6-sol``) embed the base model id after a
+    geographic/global prefix; ids without a recognized prefix are returned
+    unchanged. Uses the same ``MODEL_ID_GEO_PREFIXES`` set as
+    ``parse_model_provider``.
+    """
+    prefix, _, rest = model_id.partition(".")
+    if rest and prefix.lower() in MODEL_ID_GEO_PREFIXES:
+        return rest
+    return model_id
+
+
 _MANTLE_GUARDRAILS_ERR_MSG = (
     "Amazon Bedrock Guardrails are not supported on the bedrock-mantle "
     "endpoint. Please use ``ChatAnthropicBedrock`` or ``ChatBedrockConverse`` "
@@ -564,14 +579,50 @@ _MANTLE_GUARDRAILS_ERR_MSG = (
 )
 
 
-def _check_no_mantle_guardrail_headers(headers: Optional[Dict[str, Any]]) -> None:
-    """Reject Bedrock guardrail headers, which Mantle silently ignores."""
-    # TODO: remove after Mantle adds guardrails support
+def _check_no_guardrail_headers(
+    headers: Optional[Dict[str, Any]], err_msg: str
+) -> None:
+    """Raise ``err_msg`` if any ``X-Amzn-Bedrock-Guardrail*`` header is present.
+
+    Used by endpoints that silently ignore guardrail headers, so a
+    misconfiguration fails loudly instead of passing content unguarded.
+    """
     if not headers:
         return
     for key in headers:
         if key.lower().startswith("x-amzn-bedrock-guardrail"):
-            raise ValueError(_MANTLE_GUARDRAILS_ERR_MSG)
+            raise ValueError(err_msg)
+
+
+def _reject_guardrail_config_values(values: Any, err_msg: str) -> None:
+    """Raise ``err_msg`` if guardrails are configured at construction time.
+
+    Checks the ``guardrail_config`` / ``guardrails`` fields and any guardrail
+    request headers in ``default_headers``. Shared by the chat models whose
+    endpoint does not honor Bedrock Guardrails on its OpenAI/Anthropic-
+    compatible path (bedrock-mantle, and OpenAI models on bedrock-runtime), so
+    a misconfiguration fails loudly instead of silently passing content
+    unguarded.
+    """
+    # TODO: remove for an endpoint once it supports guardrails on this path.
+    if not isinstance(values, dict):
+        return
+    if any(values.get(key) is not None for key in ("guardrail_config", "guardrails")):
+        raise ValueError(err_msg)
+    _check_no_guardrail_headers(values.get("default_headers"), err_msg)
+
+
+def _reject_guardrail_request_kwargs(kwargs: Dict[str, Any], err_msg: str) -> None:
+    """Raise ``err_msg`` if guardrails are set on a per-request invocation.
+
+    The per-request counterpart to ``_reject_guardrail_config_values``: checks
+    the per-request ``guardrail_config`` kwarg and any guardrail request headers
+    in ``extra_headers``.
+    """
+    # TODO: remove for an endpoint once it supports guardrails on this path.
+    if kwargs.get("guardrail_config") is not None:
+        raise ValueError(err_msg)
+    _check_no_guardrail_headers(kwargs.get("extra_headers"), err_msg)
 
 
 class _StaticCredentialProvider:
@@ -609,8 +660,8 @@ class _BedrockApiKeyProvider:
     for use with async clients.
 
     This is the shared building block behind bearer-token authentication for
-    the Bedrock Mantle chat models (``ChatOpenAIMantle`` /
-    ``ChatAnthropicMantle``): rather than requiring a manually-minted static
+    the Bedrock OpenAI-compatible chat models (``ChatOpenAIMantle`` /
+    ``ChatOpenAIBedrock``): rather than requiring a manually-minted static
     ``AWS_BEARER_TOKEN_BEDROCK``, it derives short-term keys from ordinary AWS
     credentials (explicit keys, a named profile, or the default chain) and
     transparently refreshes them.

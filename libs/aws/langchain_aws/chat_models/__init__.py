@@ -9,7 +9,7 @@ if TYPE_CHECKING:
         ChatAnthropicMantle,
     )
     from langchain_aws.chat_models.bedrock_nova_sonic import ChatBedrockNovaSonic
-    from langchain_aws.chat_models.openai import ChatOpenAIMantle
+    from langchain_aws.chat_models.openai import ChatOpenAIBedrock, ChatOpenAIMantle
 
 __all__ = [
     "ChatAnthropicBedrock",
@@ -17,6 +17,7 @@ __all__ = [
     "ChatBedrock",
     "ChatBedrockConverse",
     "ChatBedrockNovaSonic",
+    "ChatOpenAIBedrock",
     "ChatOpenAIMantle",
 ]
 
@@ -35,6 +36,10 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "ChatBedrockNovaSonic": (
         "langchain_aws.chat_models.bedrock_nova_sonic",
         'pip install "langchain-aws[nova-sonic]"',
+    ),
+    "ChatOpenAIBedrock": (
+        "langchain_aws.chat_models.openai",
+        'pip install "langchain-aws[openai]"',
     ),
     "ChatOpenAIMantle": (
         "langchain_aws.chat_models.openai",

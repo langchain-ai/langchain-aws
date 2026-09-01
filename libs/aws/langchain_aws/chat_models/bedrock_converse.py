@@ -77,6 +77,7 @@ from langchain_aws.data._profiles import _PROFILES
 from langchain_aws.function_calling import ToolsOutputParser
 from langchain_aws.tools.nova_tools import NovaSystemTool
 from langchain_aws.utils import (
+    _strip_cross_region_prefix,
     count_tokens_api_supported_for_model,
     create_aws_client,
     parse_model_provider,
@@ -1229,13 +1230,8 @@ class ChatBedrockConverse(BaseChatModel):
             return self.base_model_id
 
         # For regional model IDs (e.g., us.anthropic.claude-haiku-4-5-20251001-v1:0),
-        # get the base model ID by removing the regional prefix
-        if self.model_id.startswith(
-            ("eu.", "us.", "us-gov.", "apac.", "sa.", "amer.", "global.", "jp.", "au.")
-        ):
-            return self.model_id.partition(".")[2]
-
-        return self.model_id
+        # get the base model ID by removing the cross-Region inference prefix.
+        return _strip_cross_region_prefix(self.model_id)
 
     def _inline_reasoning_tags_for_model(self) -> Optional[Tuple[str, str]]:
         """Inline-reasoning ``(open_tag, close_tag)`` for this model, or ``None``."""

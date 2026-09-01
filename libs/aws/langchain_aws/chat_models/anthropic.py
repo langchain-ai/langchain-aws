@@ -25,8 +25,9 @@ from langchain_aws.chat_models._anthropic_utils import _create_bedrock_client_pa
 from langchain_aws.data._profiles import _PROFILES
 from langchain_aws.utils import (
     _MANTLE_GUARDRAILS_ERR_MSG,
-    MODEL_ID_GEO_PREFIXES,
-    _check_no_mantle_guardrail_headers,
+    _reject_guardrail_config_values,
+    _reject_guardrail_request_kwargs,
+    _strip_cross_region_prefix,
 )
 
 _MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
@@ -36,9 +37,7 @@ def _get_default_model_profile(model_name: str) -> ModelProfile:
     """Look up the default profile for a model ID."""
     default = _MODEL_PROFILES.get(model_name)
     if default is None:
-        prefix, _, rest = model_name.partition(".")
-        if rest and prefix.lower() in MODEL_ID_GEO_PREFIXES:
-            default = _MODEL_PROFILES.get(rest)
+        default = _MODEL_PROFILES.get(_strip_cross_region_prefix(model_name))
     return (default or {}).copy()
 
 
@@ -506,14 +505,7 @@ class ChatAnthropicMantle(ChatAnthropic):
     @model_validator(mode="before")
     @classmethod
     def _reject_guardrails(cls, values: Any) -> Any:
-        # TODO: remove after Mantle adds guardrails support
-        if isinstance(values, dict):
-            if any(
-                values.get(key) is not None
-                for key in ("guardrail_config", "guardrails")
-            ):
-                raise ValueError(_MANTLE_GUARDRAILS_ERR_MSG)
-            _check_no_mantle_guardrail_headers(values.get("default_headers"))
+        _reject_guardrail_config_values(values, _MANTLE_GUARDRAILS_ERR_MSG)
         return values
 
     def _get_request_payload(
@@ -523,10 +515,7 @@ class ChatAnthropicMantle(ChatAnthropic):
         stop: list[str] | None = None,
         **kwargs: Any,
     ) -> dict:
-        # TODO: remove after Mantle adds guardrails support
-        if kwargs.get("guardrail_config") is not None:
-            raise ValueError(_MANTLE_GUARDRAILS_ERR_MSG)
-        _check_no_mantle_guardrail_headers(kwargs.get("extra_headers"))
+        _reject_guardrail_request_kwargs(kwargs, _MANTLE_GUARDRAILS_ERR_MSG)
         return super()._get_request_payload(input_, stop=stop, **kwargs)
 
     @model_validator(mode="after")
