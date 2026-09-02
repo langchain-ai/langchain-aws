@@ -10,6 +10,7 @@ from langchain_aws.retrievers import (
 )
 
 if TYPE_CHECKING:
+    from langchain_aws.async_client import BedrockAsyncClient
     from langchain_aws.chains import (
         create_neptune_opencypher_qa_chain,
         create_neptune_sparql_qa_chain,
@@ -87,6 +88,7 @@ except Exception:
 
 __all__ = [
     "__version__",
+    "BedrockAsyncClient",
     "BedrockEmbeddings",
     "BedrockLLM",
     "ChatAnthropicBedrock",
@@ -146,6 +148,7 @@ def __getattr__(name: str) -> Any:
     # Modules deferred to avoid importing heavyweight transitive deps
     # (e.g. numpy, neptune connector) at package import time
     _deferred_imports: dict[str, str] = {
+        "BedrockAsyncClient": "langchain_aws.async_client",
         "BedrockEmbeddings": "langchain_aws.embeddings",
         "BedrockRerank": "langchain_aws.document_compressors.rerank",
         "InMemorySemanticCache": "langchain_aws.vectorstores.inmemorydb",

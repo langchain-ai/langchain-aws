@@ -188,9 +188,7 @@ def create_aws_client(
         from botocore.config import Config as BotocoreConfig
         from botocore.session import get_session
 
-        region_name = (
-            region_name or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
-        )
+        region_name = _resolve_region_name(region_name)
 
         has_aws_credentials = bool(
             credentials_profile_name
@@ -302,6 +300,151 @@ def create_aws_client(
         ) from e
     except Exception as e:
         raise ValueError(f"Error raised by service:\n\n{e}") from e
+
+
+def _resolve_region_name(region_name: Optional[str]) -> Optional[str]:
+    """Fall back to the standard AWS region environment variables."""
+    return region_name or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
+
+
+def _session_credential_params(
+    credentials_profile_name: Optional[str],
+    aws_access_key_id: Optional[SecretStr],
+    aws_secret_access_key: Optional[SecretStr],
+    aws_session_token: Optional[SecretStr],
+) -> Dict[str, str]:
+    """Build session kwargs for explicitly supplied credentials.
+
+    Returns an empty dict when no credentials were supplied, meaning the caller
+    should rely on the ambient credential chain.
+
+    Raises:
+        ValueError: If only one half of an access key pair was supplied.
+    """
+    if credentials_profile_name:
+        return {"profile_name": credentials_profile_name}
+
+    if not (aws_access_key_id or aws_secret_access_key or aws_session_token):
+        return {}
+
+    if not (aws_access_key_id and aws_secret_access_key):
+        msg = (
+            "If providing credentials, both aws_access_key_id and "
+            "aws_secret_access_key must be specified."
+        )
+        raise ValueError(msg)
+
+    params = {
+        "aws_access_key_id": aws_access_key_id.get_secret_value(),
+        "aws_secret_access_key": aws_secret_access_key.get_secret_value(),
+    }
+    if aws_session_token:
+        params["aws_session_token"] = aws_session_token.get_secret_value()
+    return params
+
+
+def create_bedrock_async_client(
+    region_name: Optional[str] = None,
+    credentials_profile_name: Optional[str] = None,
+    aws_access_key_id: Optional[SecretStr] = None,
+    aws_secret_access_key: Optional[SecretStr] = None,
+    aws_session_token: Optional[SecretStr] = None,
+    endpoint_url: Optional[str] = None,
+    config: Any = None,
+) -> Any:
+    """Create the built-in async Bedrock runtime client.
+
+    Resolves credentials through `boto3` exactly as `create_aws_client` does, then
+    hands them to a client that signs with `botocore` and sends with `httpx`. This
+    needs no `aiobotocore`, so it is unaffected by that package's `botocore`
+    version pin.
+
+    Args:
+        region_name: AWS region name. If not provided, try to get from env variables.
+        credentials_profile_name: The name of the AWS credentials profile to use.
+        aws_access_key_id: AWS access key ID.
+        aws_secret_access_key: AWS secret access key.
+        aws_session_token: AWS session token.
+        endpoint_url: The complete URL to use for the constructed client.
+        config: Advanced client configuration options. `max_pool_connections`,
+            `connect_timeout`, `read_timeout` and `retries["max_attempts"]` are
+            honored; `retries["mode"]` is not.
+
+    Returns:
+        A `BedrockAsyncClient`.
+
+    Raises:
+        ValueError: If credentials are incomplete or cannot be loaded.
+    """
+    import boto3
+
+    from langchain_aws.async_client import BedrockAsyncClient
+
+    try:
+        # _session_credential_params returns valid boto3.Session kwargs but the
+        # type stubs are overly restrictive about **kwargs expansion.
+        session = boto3.Session(
+            **_session_credential_params(  # type: ignore[arg-type]
+                credentials_profile_name,
+                aws_access_key_id,
+                aws_secret_access_key,
+                aws_session_token,
+            )
+        )
+    except BotoCoreError as e:
+        raise ValueError(
+            "Could not load credentials to authenticate with AWS client. "
+            "Please check that the specified profile name and/or its credentials are "
+            f"valid. Service error: {e}"
+        ) from e
+
+    return BedrockAsyncClient(
+        region_name=_resolve_region_name(region_name) or session.region_name,
+        credentials=session.get_credentials(),
+        endpoint_url=endpoint_url,
+        config=config,
+    )
+
+
+def validate_async_client(client: Any, *, required_method: str) -> Any:
+    """Check that an async client was entered before being handed to a model.
+
+    `aioboto3`'s `Session.client()` returns an async context manager, not a
+    client. Passing it straight through fails much later with a confusing
+    ``'coroutine' object has no attribute '...'``, so reject it up front.
+
+    Args:
+        client: The candidate async client.
+        required_method: An operation the client is expected to expose, e.g.
+            `"converse"`.
+
+    Returns:
+        The client, unchanged.
+
+    Raises:
+        ValueError: If `client` is an unentered context manager or otherwise does
+            not expose `required_method`.
+    """
+    if client is None or hasattr(client, required_method):
+        return client
+
+    if hasattr(client, "__aenter__"):
+        msg = (
+            "`async_client` was given an unentered async context manager. "
+            "`aioboto3.Session().client(...)` must be entered before use:\n"
+            "    async with session.client('bedrock-runtime') as async_client:\n"
+            "        ...\n"
+            "Alternatively, enter it yourself with "
+            "`contextlib.AsyncExitStack.enter_async_context`."
+        )
+        raise ValueError(msg)
+
+    msg = (
+        f"`async_client` of type {type(client).__name__} does not provide a "
+        f"`{required_method}` method. Expected an entered `aioboto3`/"
+        f"`aiobotocore` client."
+    )
+    raise ValueError(msg)
 
 
 _pending_transport_closes: "set[Any]" = set()
