@@ -1,6 +1,7 @@
 import base64
 import copy
 import functools
+import inspect
 import json
 import logging
 import re
@@ -9,6 +10,7 @@ import warnings
 from operator import itemgetter
 from typing import (
     Any,
+    AsyncIterator,
     Callable,
     Dict,
     Iterator,
@@ -25,7 +27,10 @@ from typing import (
 )
 
 from botocore.exceptions import ClientError
-from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.callbacks import (
+    AsyncCallbackManagerForLLMRun,
+    CallbackManagerForLLMRun,
+)
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import (
     BaseChatModel,
@@ -71,6 +76,7 @@ from langchain_core.utils.utils import _build_model_kwargs
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
+from langchain_aws._async_transport import AsyncTransportMixin
 from langchain_aws._version import _add_langchain_aws_version
 from langchain_aws.chat_models._compat import _convert_from_v1_to_converse
 from langchain_aws.data._profiles import _PROFILES
@@ -173,7 +179,7 @@ MIME_TO_FORMAT = {
 _DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
 
 
-class ChatBedrockConverse(BaseChatModel):
+class ChatBedrockConverse(AsyncTransportMixin, BaseChatModel):
     """Bedrock chat model integration built on the Bedrock converse API.
 
     This implementation will eventually replace the existing ChatBedrock implementation
@@ -447,6 +453,25 @@ class ChatBedrockConverse(BaseChatModel):
          'metrics': {'latencyMs': 1290}}
         ```
 
+    Native async:
+        `ainvoke` and `astream` run their synchronous counterparts in a thread
+        executor by default, which caps concurrency at the size of that
+        executor. Set `use_async_transport` to issue non-blocking requests
+        instead. The model then owns an HTTP connection pool bound to the event
+        loop that first uses it, so close it when done:
+
+        ```python
+        async with ChatBedrockConverse(
+            model="anthropic.claude-3-5-sonnet-20240620-v1:0",
+            use_async_transport=True,
+        ) as model:
+            await model.ainvoke(messages)
+        ```
+
+        Supply `async_client` instead to reuse a client you already manage, such
+        as an entered `aiobotocore` one. Concurrency is bounded by
+        `max_pool_connections` on `config`, which defaults to 10.
+
     """  # noqa: E501
 
     client: Any = Field(default=None, exclude=True)
@@ -454,6 +479,20 @@ class ChatBedrockConverse(BaseChatModel):
 
     bedrock_client: Any = Field(default=None, exclude=True)
     """The bedrock client for making control plane API calls"""
+
+    use_async_transport: bool = False
+    """Whether `ainvoke`/`astream` should issue native async requests.
+
+    Ignored when `async_client` is supplied. See `Native async` above for the
+    connection lifecycle this implies.
+    """
+
+    async_client: Any = Field(default=None, exclude=True)
+    """An entered async bedrock runtime client for `ainvoke`/`astream`.
+
+    Accepts anything exposing awaitable `converse`/`converse_stream` methods
+    with `boto3` payload shapes. Its lifecycle stays with the caller.
+    """
 
     model_id: str = Field(alias="model")
     """ID of the model to call.
@@ -1054,6 +1093,8 @@ class ChatBedrockConverse(BaseChatModel):
 
         effective_config = self._get_effective_config()
 
+        self._setup_async_client(required_method="converse", config=effective_config)
+
         # Skip creating new client if passed in constructor
         if self.client is None:
             self.client = create_aws_client(
@@ -1321,29 +1362,26 @@ class ChatBedrockConverse(BaseChatModel):
                 msg["content"] = new_content
                 break
 
-    def _generate(
-        self,
-        messages: List[BaseMessage],
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
-        **kwargs: Any,
-    ) -> ChatResult:
-        """Top Level call"""
-
-        system: List[Dict[str, Any]]
+    def _prepare_bedrock_messages(
+        self, messages: List[BaseMessage]
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Convert LangChain messages into Converse `messages` and `system` blocks."""
         if self.raw_blocks is not None:
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
-            bedrock_messages, system = self.raw_blocks, []
-        else:
-            bedrock_messages, system = _messages_to_bedrock(
-                messages, self.system, model_id=self._get_base_model()
-            )
-            if self.guard_last_turn_only:
-                logger.debug("Applying selective guardrail to only the last turn")
-                self._apply_guard_last_turn_only(bedrock_messages)
+            return self.raw_blocks, []
 
-        logger.debug(f"input message to bedrock: {bedrock_messages}")
-        logger.debug(f"System message to bedrock: {system}")
+        bedrock_messages, system = _messages_to_bedrock(
+            messages, self.system, model_id=self._get_base_model()
+        )
+        if self.guard_last_turn_only:
+            logger.debug("Applying selective guardrail to only the last turn")
+            self._apply_guard_last_turn_only(bedrock_messages)
+        return bedrock_messages, system
+
+    def _build_converse_params(
+        self, stop: Optional[List[str]], kwargs: Dict[str, Any]
+    ) -> Tuple[Dict[str, Any], Any]:
+        """Build Converse API params, returning them alongside any cache control."""
         # Remove disable_streaming from kwargs as it's not a valid API parameter
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
         additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
@@ -1361,6 +1399,29 @@ class ChatBedrockConverse(BaseChatModel):
                 filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
             ),
         )
+        return params, cache_control
+
+    def _prepare_converse_request(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]],
+        kwargs: Dict[str, Any],
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
+        """Build the full Converse request shared by the sync and async paths.
+
+        Args:
+            messages: The messages to send to the model.
+            stop: Optional stop sequences.
+            kwargs: Per-call overrides forwarded from the caller.
+
+        Returns:
+            A tuple of Bedrock messages, system blocks, and Converse API params.
+        """
+        bedrock_messages, system = self._prepare_bedrock_messages(messages)
+        logger.debug(f"input message to bedrock: {bedrock_messages}")
+        logger.debug(f"System message to bedrock: {system}")
+
+        params, cache_control = self._build_converse_params(stop, kwargs)
         self._apply_cache_points(cache_control, system, bedrock_messages, params)
 
         # Check for tool blocks without toolConfig and handle conversion
@@ -1381,13 +1442,10 @@ class ChatBedrockConverse(BaseChatModel):
             logger.debug(f"converted input messages: {bedrock_messages}")
 
         logger.debug(f"Input params: {params}")
-        logger.info("Using Bedrock Converse API to generate response")
-        try:
-            response = self.client.converse(
-                messages=bedrock_messages, system=system, **params
-            )
-        except ClientError as e:
-            _handle_bedrock_error(e)
+        return bedrock_messages, system, params
+
+    def _parse_converse_response(self, response: Dict[str, Any]) -> ChatResult:
+        """Turn a raw Converse response into a `ChatResult`."""
         logger.debug(f"Response from Bedrock: {response}")
         response_message = _parse_response(
             response,
@@ -1401,6 +1459,95 @@ class ChatBedrockConverse(BaseChatModel):
             response_message.response_metadata["inference_profile_id"] = self.model_id
         return ChatResult(generations=[ChatGeneration(message=response_message)])
 
+    def _generate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Top Level call"""
+        bedrock_messages, system, params = self._prepare_converse_request(
+            messages, stop, kwargs
+        )
+        logger.info("Using Bedrock Converse API to generate response")
+        try:
+            response = self.client.converse(
+                messages=bedrock_messages, system=system, **params
+            )
+        except ClientError as e:
+            _handle_bedrock_error(e)
+        return self._parse_converse_response(response)
+
+    async def _agenerate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Top level async call.
+
+        Issues a non-blocking Converse request when an `async_client` is
+        configured. Without one, falls back to running `_generate` in a thread
+        executor, which is the historical behavior.
+        """
+        if self.async_client is None:
+            return await super()._agenerate(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            )
+
+        bedrock_messages, system, params = self._prepare_converse_request(
+            messages, stop, kwargs
+        )
+        logger.info("Using Bedrock Converse API to generate response")
+        try:
+            response = await self.async_client.converse(
+                messages=bedrock_messages, system=system, **params
+            )
+        except ClientError as e:
+            _handle_bedrock_error(e)
+        return self._parse_converse_response(response)
+
+    def _build_stream_chunk(
+        self,
+        event: Dict[str, Any],
+        response: Dict[str, Any],
+        added_model_name: bool,
+    ) -> Tuple[Optional[ChatGenerationChunk], bool]:
+        """Convert one Converse stream event into a chunk.
+
+        Args:
+            event: A raw event from the Converse stream.
+            response: The `converse_stream` response, read for `ResponseMetadata`.
+            added_model_name: Whether model name metadata was already attached to
+                an earlier chunk.
+
+        Returns:
+            A tuple of the chunk (`None` for events that carry no content) and
+            the updated `added_model_name` flag.
+        """
+        message_chunk = _parse_stream_event(event)
+        if not message_chunk:
+            return None, added_model_name
+
+        if (
+            hasattr(message_chunk, "usage_metadata")
+            and message_chunk.usage_metadata
+            and not added_model_name
+        ):
+            message_chunk.response_metadata["model_name"] = (
+                self.base_model_id or self.model_id
+            )
+            if "application-inference-profile" in self.model_id:
+                message_chunk.response_metadata["inference_profile_id"] = self.model_id
+            if metadata := response.get("ResponseMetadata"):
+                message_chunk.response_metadata["ResponseMetadata"] = metadata
+            added_model_name = True
+
+        message_chunk.response_metadata["model_provider"] = "bedrock_converse"
+        return ChatGenerationChunk(message=message_chunk), added_model_name
+
     def _stream(
         self,
         messages: List[BaseMessage],
@@ -1408,54 +1555,9 @@ class ChatBedrockConverse(BaseChatModel):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
-        system: List[Dict[str, Any]]
-        if self.raw_blocks is not None:
-            logger.debug(f"Using raw blocks: {self.raw_blocks}")
-            bedrock_messages, system = self.raw_blocks, []
-        else:
-            bedrock_messages, system = _messages_to_bedrock(
-                messages, self.system, model_id=self._get_base_model()
-            )
-            if self.guard_last_turn_only:
-                logger.debug("Applying selective guardrail to only the last turn")
-                self._apply_guard_last_turn_only(bedrock_messages)
-
-        # Remove disable_streaming from kwargs as it's not a valid API parameter
-        filtered_kwargs = {k: v for k, v in kwargs.items() if k != "disable_streaming"}
-        additional_fields = filtered_kwargs.pop("additional_model_request_fields", None)
-        reasoning_effort = filtered_kwargs.pop("reasoning_effort", None)
-        if reasoning_effort is not None:
-            effort_fields = self._reasoning_effort_fields(reasoning_effort)
-            if effort_fields:
-                additional_fields = {**effort_fields, **(additional_fields or {})}
-        _apply_response_format(filtered_kwargs)
-        cache_control = filtered_kwargs.pop("cache_control", None)
-        params = self._converse_params(
-            stop=stop,
-            additionalModelRequestFields=additional_fields,
-            **_snake_to_camel_keys(
-                filtered_kwargs, excluded_keys={"inputSchema", "properties", "thinking"}
-            ),
+        bedrock_messages, system, params = self._prepare_converse_request(
+            messages, stop, kwargs
         )
-        self._apply_cache_points(cache_control, system, bedrock_messages, params)
-
-        # Check for tool blocks without toolConfig and handle conversion
-        if params.get("toolConfig") is None and _has_tool_use_or_result_blocks(
-            bedrock_messages
-        ):
-            logger.warning(
-                "Tool messages (toolUse/toolResult) detected without toolConfig. "
-                "Converting tool blocks to text format to avoid ValidationException."
-            )
-            warnings.warn(
-                "Tool messages were passed without toolConfig, "
-                "converting to text format",
-                RuntimeWarning,
-            )
-
-            bedrock_messages = _convert_tool_blocks_to_text(bedrock_messages)
-            logger.debug(f"converted input messages: {bedrock_messages}")
-
         try:
             response = self.client.converse_stream(
                 messages=bedrock_messages, system=system, **params
@@ -1466,36 +1568,70 @@ class ChatBedrockConverse(BaseChatModel):
         stream = response["stream"]
         try:
             for event in stream:
-                if message_chunk := _parse_stream_event(event):
-                    if (
-                        hasattr(message_chunk, "usage_metadata")
-                        and message_chunk.usage_metadata
-                        and not added_model_name
-                    ):
-                        message_chunk.response_metadata["model_name"] = (
-                            self.base_model_id or self.model_id
-                        )
-                        if "application-inference-profile" in self.model_id:
-                            message_chunk.response_metadata["inference_profile_id"] = (
-                                self.model_id
-                            )
-                        if metadata := response.get("ResponseMetadata"):
-                            message_chunk.response_metadata["ResponseMetadata"] = (
-                                metadata
-                            )
-                        added_model_name = True
-                    message_chunk.response_metadata["model_provider"] = (
-                        "bedrock_converse"
+                generation_chunk, added_model_name = self._build_stream_chunk(
+                    event, response, added_model_name
+                )
+                if generation_chunk is None:
+                    continue
+                if run_manager:
+                    run_manager.on_llm_new_token(
+                        generation_chunk.text, chunk=generation_chunk
                     )
-                    generation_chunk = ChatGenerationChunk(message=message_chunk)
-                    if run_manager:
-                        run_manager.on_llm_new_token(
-                            generation_chunk.text, chunk=generation_chunk
-                        )
-                    yield generation_chunk
+                yield generation_chunk
         finally:
             if hasattr(stream, "close"):
                 stream.close()
+
+    async def _astream(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatGenerationChunk]:
+        """Stream chunks from Bedrock without blocking the event loop.
+
+        Requires an `async_client`. Without one, falls back to iterating
+        `_stream` in a thread executor, which is the historical behavior.
+        """
+        if self.async_client is None:
+            async for generation_chunk in super()._astream(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            ):
+                yield generation_chunk
+            return
+
+        bedrock_messages, system, params = self._prepare_converse_request(
+            messages, stop, kwargs
+        )
+        try:
+            response = await self.async_client.converse_stream(
+                messages=bedrock_messages, system=system, **params
+            )
+        except ClientError as e:
+            _handle_bedrock_error(e)
+        added_model_name = False
+        stream = response["stream"]
+        maybe_chunk: Optional[ChatGenerationChunk]
+        try:
+            async for event in stream:
+                maybe_chunk, added_model_name = self._build_stream_chunk(
+                    event, response, added_model_name
+                )
+                if maybe_chunk is None:
+                    continue
+                generation_chunk = maybe_chunk
+                if run_manager:
+                    await run_manager.on_llm_new_token(
+                        generation_chunk.text, chunk=generation_chunk
+                    )
+                yield generation_chunk
+        finally:
+            close = getattr(stream, "close", None)
+            if close is not None:
+                result = close()
+                if inspect.isawaitable(result):
+                    await result
 
     def _get_llm_for_structured_output_no_tool_choice(
         self,
