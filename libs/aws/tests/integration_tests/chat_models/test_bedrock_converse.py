@@ -231,7 +231,7 @@ class TestBedrockXaiStandard(ChatModelIntegrationTests):
 
     @property
     def chat_model_params(self) -> dict:
-        return {"model": "global.xai.grok-4.6"}
+        return {"model": "global.xai.grok-4.6", "timeout": 300}
 
     @property
     def standard_chat_model_params(self) -> dict:
