@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import logging
 import warnings
@@ -30,6 +31,7 @@ from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
+from langchain_aws._async_transport import AsyncTransportMixin
 from langchain_aws._version import _add_langchain_aws_version
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
@@ -93,6 +95,30 @@ def _human_assistant_format(input_text: str) -> str:
         input_text = input_text + ASSISTANT_PROMPT  # SILENT CORRECTION
 
     return input_text
+
+
+async def _aiter_stream_events(stream: Any) -> AsyncIterator[Any]:
+    """Iterate a Bedrock response stream that may be sync or async.
+
+    The `boto3` client returns a synchronous `EventStream`, while a native async
+    client returns an async iterator. Normalizing here keeps
+    `aprepare_output_stream` agnostic to which client produced the response.
+
+    Args:
+        stream: The `body` member of an invoke-with-response-stream response.
+
+    Yields:
+        Raw stream events.
+    """
+    # Checked in this order because botocore's EventStream is sync-iterable and
+    # must keep taking the sync path; only a native async client's stream is
+    # async-only.
+    if hasattr(stream, "__iter__"):
+        for event in stream:
+            yield event
+    else:
+        async for event in stream:
+            yield event
 
 
 def _stream_response_to_generation_chunk(
@@ -621,7 +647,7 @@ class LLMInputOutputAdapter:
                 f"Unknown streaming response output key for provider: {provider}"
             )
 
-        for event in stream:
+        async for event in _aiter_stream_events(stream):
             chunk = event.get("chunk")
             if not chunk:
                 continue
@@ -660,11 +686,28 @@ class LLMInputOutputAdapter:
                 continue
 
 
-class BedrockBase(BaseLanguageModel, ABC):
+class BedrockBase(AsyncTransportMixin, BaseLanguageModel, ABC):
     """Base class for Bedrock models."""
 
     client: Any = Field(default=None, exclude=True)
     """The bedrock runtime client for making data plane API calls"""
+
+    use_async_transport: bool = False
+    """Whether the async methods should issue native async requests.
+
+    Without this they bridge to the synchronous client through a thread
+    executor, capping concurrency at that executor's size. Ignored when
+    `async_client` is supplied. Builds a client this model owns, so call
+    `aclose()` when done, or use the model as an async context manager.
+    """
+
+    async_client: Any = Field(default=None, exclude=True)
+    """An entered async bedrock runtime client for the async methods.
+
+    Accepts anything exposing awaitable `invoke_model` and
+    `invoke_model_with_response_stream` methods with `boto3` payload shapes.
+    Its lifecycle stays with the caller.
+    """
 
     bedrock_client: Any = Field(default=None, exclude=True)
     """The bedrock client for making control plane API calls"""
@@ -957,6 +1000,10 @@ class BedrockBase(BaseLanguageModel, ABC):
                 api_key=self.bedrock_api_key,
             )
 
+        self._setup_async_client(
+            required_method="invoke_model", config=effective_config
+        )
+
         # Create bedrock client for control plane API call
         if self.bedrock_client is None:
             # If client was provided but bedrock_client wasn't, try to extract config from client  # noqa: E501
@@ -1070,22 +1117,53 @@ class BedrockBase(BaseLanguageModel, ABC):
                 and 'guardrailVersion' keys."
             ) from e
 
-    def _prepare_input_and_invoke(
+    def _reorder_thinking_blocks(self, messages: List[Dict]) -> None:
+        """Move thinking blocks to the front of each assistant message.
+
+        Claude requires thinking blocks to precede other content when thinking is
+        combined with tool use.
+
+        Args:
+            messages: Provider-native messages, modified in place.
+        """
+        for i, message in enumerate(messages):
+            if message.get("role") != "assistant" or i == 0:
+                continue
+            content = message.get("content", [])
+            if not isinstance(content, list) or not content:
+                continue
+            thinking_blocks = [
+                j
+                for j, item in enumerate(content)
+                if isinstance(item, dict)
+                and item.get("type") in ["thinking", "redacted_thinking"]
+            ]
+            if thinking_blocks and thinking_blocks[0] > 0:
+                thinking_content = [content[j] for j in thinking_blocks]
+                other_content = [
+                    item for j, item in enumerate(content) if j not in thinking_blocks
+                ]
+                message["content"] = thinking_content + other_content
+
+    def _build_invoke_request_options(
         self,
         prompt: Optional[str] = None,
         system: Optional[Union[str, List[Dict[str, Any]]]] = None,
         messages: Optional[List[Dict]] = None,
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
-    ) -> Tuple[
-        str,
-        List[ToolCall],
-        Dict[str, Any],
-        Dict[str, Any],
-    ]:
-        _model_kwargs = self.model_kwargs or {}
+    ) -> Tuple[Dict[str, Any], str]:
+        """Build the `invoke_model` request shared by the sync and async paths.
 
+        Args:
+            prompt: The prompt to send, for text-completion style providers.
+            system: The system prompt.
+            messages: Provider-native messages, for chat style providers.
+            **kwargs: Per-call overrides merged over `model_kwargs`.
+
+        Returns:
+            A tuple of the `invoke_model` request options and the provider name.
+        """
+        _model_kwargs = self.model_kwargs or {}
         provider = self._get_provider()
         params = {**_model_kwargs, **kwargs}
 
@@ -1095,63 +1173,27 @@ class BedrockBase(BaseLanguageModel, ABC):
             and "claude-" in self._get_base_model()
             and thinking_in_params(params)
         ):
-            # We need to ensure thinking blocks are first in assistant messages
-            # Process each message in the sequence
-            for i, message in enumerate(messages):
-                if message.get("role") == "assistant" and i > 0:
-                    content = message.get("content", [])
-                    if isinstance(content, list) and content:
-                        # Find any thinking blocks
-                        thinking_blocks = [
-                            j
-                            for j, item in enumerate(content)
-                            if isinstance(item, dict)
-                            and item.get("type") in ["thinking", "redacted_thinking"]
-                        ]
+            self._reorder_thinking_blocks(messages)
 
-                        # If thinking blocks exist but aren't first, reorder
-                        if thinking_blocks and thinking_blocks[0] > 0:
-                            # Extract thinking blocks
-                            thinking_content = [content[j] for j in thinking_blocks]
-                            # Extract non-thinking blocks
-                            other_content = [
-                                item
-                                for j, item in enumerate(content)
-                                if j not in thinking_blocks
-                            ]
-                            # Reorder with thinking first
-                            message["content"] = thinking_content + other_content
-
+        prepare_input_kwargs: Dict[str, Any] = {
+            "provider": provider,
+            "model_kwargs": params,
+            "prompt": prompt,
+            "system": system,
+            "messages": messages,
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
+        }
         if "claude-" in self._get_base_model() and _tools_in_params(params):
-            input_body = LLMInputOutputAdapter.prepare_input(
-                provider=provider,
-                model_kwargs=params,
-                prompt=prompt,
-                system=system,
-                messages=messages,
-                tools=params["tools"],
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-            )
-        else:
-            input_body = LLMInputOutputAdapter.prepare_input(
-                provider=provider,
-                model_kwargs=params,
-                prompt=prompt,
-                system=system,
-                messages=messages,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-            )
-        body = json.dumps(input_body)
-        accept = "application/json"
-        contentType = "application/json"
+            prepare_input_kwargs["tools"] = params["tools"]
+
+        input_body = LLMInputOutputAdapter.prepare_input(**prepare_input_kwargs)
 
         request_options: dict[str, Any] = {
-            "body": body,
+            "body": json.dumps(input_body),
             "modelId": self.model_id,
-            "accept": accept,
-            "contentType": contentType,
+            "accept": "application/json",
+            "contentType": "application/json",
         }
 
         if self.service_tier:
@@ -1167,25 +1209,33 @@ class BedrockBase(BaseLanguageModel, ABC):
             if self.guardrails.get("trace"):  # type: ignore[union-attr]
                 request_options["trace"] = "ENABLED"
 
-        try:
-            logger.debug(f"Request body sent to bedrock: {request_options}")
-            logger.info("Using Bedrock Invoke API to generate response")
-            response = self.client.invoke_model(**request_options)
+        logger.debug(f"Request body sent to bedrock: {request_options}")
+        logger.info("Using Bedrock Invoke API to generate response")
+        return request_options, provider
 
-            (
-                text,
-                thinking,
-                tool_calls,
-                body,
-                usage_info,
-                stop_reason,
-            ) = LLMInputOutputAdapter.prepare_output(provider, response).values()
-            logger.debug(f"Response received from Bedrock: {response}")
-        except Exception as e:
-            logger.exception("Error raised by bedrock service")
-            if run_manager is not None:
-                run_manager.on_llm_error(e)
-            raise e
+    def _parse_invoke_response(
+        self, response: Any, provider: str, stop: Optional[List[str]]
+    ) -> Tuple[str, List[ToolCall], Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+        """Decode an `invoke_model` response.
+
+        Args:
+            response: The raw `invoke_model` response.
+            provider: The provider name.
+            stop: Optional stop sequences to enforce client-side.
+
+        Returns:
+            A tuple of text, tool calls, the LLM output dict, the response body,
+            and the Bedrock services trace.
+        """
+        (
+            text,
+            thinking,
+            tool_calls,
+            body,
+            usage_info,
+            stop_reason,
+        ) = LLMInputOutputAdapter.prepare_output(provider, response).values()
+        logger.debug(f"Response received from Bedrock: {response}")
 
         if stop is not None:
             text = enforce_stop_tokens(text, stop)
@@ -1194,14 +1244,96 @@ class BedrockBase(BaseLanguageModel, ABC):
             "stop_reason": stop_reason,
             "thinking": thinking,
         }
-
         # Verify and raise a callback error if any intervention occurs or a signal is
-        # sent from a Bedrock service,
-        # such as when guardrails are triggered.
+        # sent from a Bedrock service, such as when guardrails are triggered.
         services_trace = self._get_bedrock_services_signal(body)  # type: ignore[arg-type]
+        return text, tool_calls, llm_output, body, services_trace
+
+    def _prepare_input_and_invoke(
+        self,
+        prompt: Optional[str] = None,
+        system: Optional[Union[str, List[Dict[str, Any]]]] = None,
+        messages: Optional[List[Dict]] = None,
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> Tuple[
+        str,
+        List[ToolCall],
+        Dict[str, Any],
+        Dict[str, Any],
+    ]:
+        request_options, provider = self._build_invoke_request_options(
+            prompt=prompt, system=system, messages=messages, **kwargs
+        )
+
+        try:
+            response = self.client.invoke_model(**request_options)
+            text, tool_calls, llm_output, body, services_trace = (
+                self._parse_invoke_response(response, provider, stop)
+            )
+        except Exception as e:
+            logger.exception("Error raised by bedrock service")
+            if run_manager is not None:
+                run_manager.on_llm_error(e)
+            raise e
 
         if run_manager is not None and services_trace.get("signal"):
             run_manager.on_llm_error(
+                Exception(
+                    f"Error raised by bedrock service: {services_trace.get('reason')}"
+                ),
+                **services_trace,
+            )
+
+        return text, tool_calls, llm_output, body
+
+    async def _aprepare_input_and_invoke(
+        self,
+        prompt: Optional[str] = None,
+        system: Optional[Union[str, List[Dict[str, Any]]]] = None,
+        messages: Optional[List[Dict]] = None,
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> Tuple[
+        str,
+        List[ToolCall],
+        Dict[str, Any],
+        Dict[str, Any],
+    ]:
+        """Invoke the model without blocking the event loop.
+
+        Args:
+            prompt: The prompt to send, for text-completion style providers.
+            system: The system prompt.
+            messages: Provider-native messages, for chat style providers.
+            stop: Optional stop sequences to enforce client-side.
+            run_manager: Callback manager for this run.
+            **kwargs: Per-call overrides merged over `model_kwargs`.
+
+        Returns:
+            A tuple of text, tool calls, the LLM output dict, and the response body.
+        """
+        request_options, provider = self._build_invoke_request_options(
+            prompt=prompt, system=system, messages=messages, **kwargs
+        )
+
+        try:
+            response = await self._require_async_client().invoke_model(
+                **request_options
+            )
+            text, tool_calls, llm_output, body, services_trace = (
+                self._parse_invoke_response(response, provider, stop)
+            )
+        except Exception as e:
+            logger.exception("Error raised by bedrock service")
+            if run_manager is not None:
+                await run_manager.on_llm_error(e)
+            raise e
+
+        if run_manager is not None and services_trace.get("signal"):
+            await run_manager.on_llm_error(
                 Exception(
                     f"Error raised by bedrock service: {services_trace.get('reason')}"
                 ),
@@ -1348,8 +1480,8 @@ class BedrockBase(BaseLanguageModel, ABC):
 
     async def _aprepare_input_and_invoke_stream(
         self,
-        prompt: str,
-        system: Optional[str] = None,
+        prompt: Optional[str] = None,
+        system: Optional[Union[str, List[Dict[str, Any]]]] = None,
         messages: Optional[List[Dict]] = None,
         stop: Optional[List[str]] = None,
         run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
@@ -1393,15 +1525,23 @@ class BedrockBase(BaseLanguageModel, ABC):
             )
         body = json.dumps(input_body)
 
-        response = await asyncio.get_running_loop().run_in_executor(
-            None,
-            lambda: self.client.invoke_model_with_response_stream(
+        if self.async_client is not None:
+            response = await self.async_client.invoke_model_with_response_stream(
                 body=body,
                 modelId=self.model_id,
                 accept="application/json",
                 contentType="application/json",
-            ),
-        )
+            )
+        else:
+            response = await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: self.client.invoke_model_with_response_stream(
+                    body=body,
+                    modelId=self.model_id,
+                    accept="application/json",
+                    contentType="application/json",
+                ),
+            )
 
         try:
             async for chunk in LLMInputOutputAdapter.aprepare_output_stream(
@@ -1413,8 +1553,11 @@ class BedrockBase(BaseLanguageModel, ABC):
                 yield chunk
         finally:
             stream = response.get("body")
-            if stream and hasattr(stream, "close"):
-                stream.close()
+            close = getattr(stream, "close", None) if stream else None
+            if close is not None:
+                result = close()
+                if inspect.isawaitable(result):
+                    await result
 
 
 class BedrockLLM(LLM, BedrockBase):

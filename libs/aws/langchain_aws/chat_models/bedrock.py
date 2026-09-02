@@ -6,6 +6,7 @@ from collections import defaultdict
 from operator import itemgetter
 from typing import (
     Any,
+    AsyncIterator,
     Callable,
     Dict,
     Iterator,
@@ -19,7 +20,10 @@ from typing import (
     cast,
 )
 
-from langchain_core.callbacks import CallbackManagerForLLMRun
+from langchain_core.callbacks import (
+    AsyncCallbackManagerForLLMRun,
+    CallbackManagerForLLMRun,
+)
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import (
     BaseChatModel,
@@ -28,7 +32,10 @@ from langchain_core.language_models import (
     ModelProfile,
     ModelProfileRegistry,
 )
-from langchain_core.language_models.chat_models import generate_from_stream
+from langchain_core.language_models.chat_models import (
+    agenerate_from_stream,
+    generate_from_stream,
+)
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -44,7 +51,12 @@ from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.messages.utils import convert_to_openai_messages
 from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
 from langchain_core.output_parsers.base import OutputParserLike
-from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
+from langchain_core.outputs import (
+    ChatGeneration,
+    ChatGenerationChunk,
+    ChatResult,
+    GenerationChunk,
+)
 from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.utils import get_pydantic_field_names
@@ -1002,22 +1014,31 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             ls_params["ls_stop"] = ls_stop
         return ls_params
 
-    def _stream(
+    def _format_provider_messages(
         self,
         messages: List[BaseMessage],
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
-        **kwargs: Any,
-    ) -> Iterator[ChatGenerationChunk]:
-        if self.beta_use_converse_api:
-            yield from self._as_converse._stream(
-                messages, stop=stop, run_manager=run_manager, **kwargs
-            )
-            return
+        params: Dict[str, Any],
+    ) -> Tuple[
+        Optional[str],
+        Optional[Union[str, List[Dict[str, Any]]]],
+        Optional[List[Dict[str, Any]]],
+        Optional[bool],
+    ]:
+        """Format messages into the shape this provider's Invoke API expects.
+
+        Args:
+            messages: The messages to format.
+            params: Per-call parameters; a `cache_control` entry is consumed here.
+
+        Returns:
+            A tuple of prompt, system prompt, provider-native messages, and
+            whether citations are enabled.
+        """
         provider = self._get_provider()
         prompt: Optional[str] = None
         system: Optional[Union[str, List[Dict[str, Any]]]] = None
         formatted_messages: Optional[List[Dict[str, Any]]] = None
+        citations_enabled: Optional[bool] = None
 
         if provider == "anthropic":
             result = ChatPromptAdapter.format_messages(provider, messages)
@@ -1040,10 +1061,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     system = [
                         {"type": "text", "text": self.system_prompt_with_tools}
                     ] + list(system)
+            citations_enabled = _citations_enabled(formatted_messages)
 
             # Apply cache_control to last message if provided via kwargs
             _apply_cache_control_to_messages(
-                kwargs.pop("cache_control", None), formatted_messages
+                params.pop("cache_control", None), formatted_messages
             )
         elif provider in ("openai", "qwen"):
             formatted_messages = cast(
@@ -1054,6 +1076,24 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             prompt = ChatPromptAdapter.convert_messages_to_prompt(
                 provider=provider, messages=messages, model=self._get_base_model()
             )
+
+        return prompt, system, formatted_messages, citations_enabled
+
+    def _stream(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> Iterator[ChatGenerationChunk]:
+        if self.beta_use_converse_api:
+            yield from self._as_converse._stream(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            )
+            return
+        prompt, system, formatted_messages, _ = self._format_provider_messages(
+            messages, kwargs
+        )
 
         added_model_name = False
         # Track guardrails trace information for callback handling
@@ -1067,50 +1107,131 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             run_manager=run_manager,
             **kwargs,
         ):
-            if isinstance(chunk, AIMessageChunk):
-                chunk.response_metadata["model_provider"] = "bedrock"
-                generation_chunk = ChatGenerationChunk(message=chunk)
-                if run_manager:
-                    run_manager.on_llm_new_token(
-                        generation_chunk.text, chunk=generation_chunk
-                    )
-                yield generation_chunk
-            else:
-                delta = chunk.text
-                response_metadata = None
-                if generation_info := chunk.generation_info:
-                    # Check for guardrail intervention in the streaming chunk
-                    services_trace = self._get_bedrock_services_signal(generation_info)
-                    if services_trace.get("signal") and run_manager:
-                        # Store trace info for potential callback
-                        guardrails_trace_info = services_trace
-
-                    usage_metadata = generation_info.pop("usage_metadata", None)
-                    response_metadata = generation_info
-                    if not added_model_name:
-                        response_metadata["model_name"] = self.model_id
-                        added_model_name = True
-                else:
-                    usage_metadata = None
-                generation_chunk = ChatGenerationChunk(
-                    message=AIMessageChunk(
-                        content=delta,
-                        response_metadata=response_metadata,
-                        usage_metadata=usage_metadata,
-                    )
-                    if response_metadata is not None
-                    else AIMessageChunk(content=delta)
+            generation_chunk, added_model_name, services_trace = (
+                self._to_chat_generation_chunk(chunk, added_model_name)
+            )
+            if services_trace and run_manager:
+                guardrails_trace_info = services_trace
+            if run_manager:
+                run_manager.on_llm_new_token(
+                    generation_chunk.text, chunk=generation_chunk
                 )
-                generation_chunk.message.response_metadata["model_provider"] = "bedrock"
-                if run_manager:
-                    run_manager.on_llm_new_token(
-                        generation_chunk.text, chunk=generation_chunk
-                    )
-                yield generation_chunk
+            yield generation_chunk
 
         # If guardrails intervened during streaming, notify the callback handler
         if guardrails_trace_info and run_manager:
             run_manager.on_llm_error(
+                Exception(
+                    f"Error raised by bedrock service: "
+                    f"{guardrails_trace_info.get('reason')}"
+                ),
+                **guardrails_trace_info,
+            )
+
+    def _to_chat_generation_chunk(
+        self,
+        chunk: Union[AIMessageChunk, GenerationChunk],
+        added_model_name: bool,
+    ) -> Tuple[ChatGenerationChunk, bool, Optional[Dict[str, Any]]]:
+        """Convert one Invoke API stream chunk into a chat generation chunk.
+
+        Args:
+            chunk: A chunk from the Invoke response stream.
+            added_model_name: Whether model name metadata was already attached to
+                an earlier chunk.
+
+        Returns:
+            A tuple of the chunk, the updated `added_model_name` flag, and the
+            Bedrock services trace when one signalled an intervention.
+        """
+        if isinstance(chunk, AIMessageChunk):
+            chunk.response_metadata["model_provider"] = "bedrock"
+            return ChatGenerationChunk(message=chunk), added_model_name, None
+
+        services_trace: Optional[Dict[str, Any]] = None
+        delta = chunk.text
+        response_metadata = None
+        if generation_info := chunk.generation_info:
+            # Check for guardrail intervention in the streaming chunk
+            trace = self._get_bedrock_services_signal(generation_info)
+            if trace.get("signal"):
+                services_trace = trace
+
+            usage_metadata = generation_info.pop("usage_metadata", None)
+            response_metadata = generation_info
+            if not added_model_name:
+                response_metadata["model_name"] = self.model_id
+                added_model_name = True
+        else:
+            usage_metadata = None
+
+        generation_chunk = ChatGenerationChunk(
+            message=AIMessageChunk(
+                content=delta,
+                response_metadata=response_metadata,
+                usage_metadata=usage_metadata,
+            )
+            if response_metadata is not None
+            else AIMessageChunk(content=delta)
+        )
+        generation_chunk.message.response_metadata["model_provider"] = "bedrock"
+        return generation_chunk, added_model_name, services_trace
+
+    async def _astream(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatGenerationChunk]:
+        """Stream chunks from Bedrock without blocking the event loop.
+
+        Requires an async client. Without one, falls back to iterating `_stream`
+        in a thread executor, which is the historical behavior.
+        """
+        if self.async_client is None:
+            async for generation_chunk in super()._astream(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            ):
+                yield generation_chunk
+            return
+
+        if self.beta_use_converse_api:
+            async for generation_chunk in self._as_converse._astream(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            ):
+                yield generation_chunk
+            return
+
+        prompt, system, formatted_messages, _ = self._format_provider_messages(
+            messages, kwargs
+        )
+
+        added_model_name = False
+        guardrails_trace_info = None
+
+        async for chunk in self._aprepare_input_and_invoke_stream(
+            prompt=prompt,
+            system=system,
+            messages=formatted_messages,
+            stop=stop,
+            run_manager=run_manager,
+            **kwargs,
+        ):
+            generation_chunk, added_model_name, services_trace = (
+                self._to_chat_generation_chunk(chunk, added_model_name)
+            )
+            if services_trace and run_manager:
+                guardrails_trace_info = services_trace
+            if run_manager:
+                await run_manager.on_llm_new_token(
+                    generation_chunk.text, chunk=generation_chunk
+                )
+            yield generation_chunk
+
+        # If guardrails intervened during streaming, notify the callback handler
+        if guardrails_trace_info and run_manager:
+            await run_manager.on_llm_error(
                 Exception(
                     f"Error raised by bedrock service: "
                     f"{guardrails_trace_info.get('reason')}"
@@ -1158,48 +1279,10 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 response_metadata, provider_stop_reason_code
             )
         else:
-            prompt: Optional[str] = None
-            system: Optional[Union[str, List[Dict[str, Any]]]] = None
-            formatted_messages: Optional[List[Dict[str, Any]]] = None
             params: Dict[str, Any] = {**kwargs}
-
-            if provider == "anthropic":
-                result = ChatPromptAdapter.format_messages(provider, messages)
-                assert isinstance(result, tuple)
-                system_raw, formatted_messages = (
-                    result[0],
-                    cast(List[Dict[str, Any]], result[1]),
-                )
-                # Preserve system prompt format (str or list) for cache_control support
-                if system_raw:
-                    system = system_raw
-
-                if self.system_prompt_with_tools:
-                    if system is None:
-                        system = self.system_prompt_with_tools
-                    elif isinstance(system, str):
-                        system = f"{self.system_prompt_with_tools}\n{system}"
-                    else:
-                        # Prepend tools as a content block to preserve cache_control
-                        system = [
-                            {"type": "text", "text": self.system_prompt_with_tools}
-                        ] + list(system)
-                citations_enabled = _citations_enabled(formatted_messages)
-
-                # Apply cache_control to last message if provided via kwargs
-                _apply_cache_control_to_messages(
-                    params.pop("cache_control", None), formatted_messages
-                )
-
-            elif provider in ("openai", "qwen"):
-                formatted_messages = cast(
-                    List[Dict[str, Any]],
-                    ChatPromptAdapter.format_messages(provider, messages),
-                )
-            else:
-                prompt = ChatPromptAdapter.convert_messages_to_prompt(
-                    provider=provider, messages=messages, model=self._get_base_model()
-                )
+            prompt, system, formatted_messages, citations_enabled = (
+                self._format_provider_messages(messages, params)
+            )
 
             if stop:
                 params["stop_sequences"] = stop
@@ -1212,6 +1295,31 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 messages=formatted_messages,
                 **params,
             )
+        return self._build_chat_result(
+            completion, tool_calls, llm_output, body, citations_enabled
+        )
+
+    def _build_chat_result(
+        self,
+        completion: str,
+        tool_calls: List[ToolCall],
+        llm_output: Dict[str, Any],
+        body: Dict[str, Any],
+        citations_enabled: Optional[bool],
+    ) -> ChatResult:
+        """Assemble a `ChatResult` from a completed Invoke API call.
+
+        Args:
+            completion: The generated text.
+            tool_calls: Tool calls parsed from the response.
+            llm_output: Provider output metadata, mutated to add `model_id`.
+            body: The raw response body.
+            citations_enabled: Whether citations were requested, in which case
+                the raw content array is preserved.
+
+        Returns:
+            The chat result.
+        """
         # usage metadata
         if usage := llm_output.get("usage"):
             input_tokens = usage.get("prompt_tokens", 0)
@@ -1251,12 +1359,61 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             },
         )
         return ChatResult(
-            generations=[
-                ChatGeneration(
-                    message=msg,
-                )
-            ],
+            generations=[ChatGeneration(message=msg)],
             llm_output=llm_output,
+        )
+
+    async def _agenerate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        """Generate a response without blocking the event loop.
+
+        Requires an async client. Without one, falls back to running `_generate`
+        in a thread executor, which is the historical behavior.
+        """
+        if self.async_client is None:
+            return await super()._agenerate(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            )
+
+        if self.beta_use_converse_api and not self.streaming:
+            return await self._as_converse._agenerate(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            )
+
+        if self.beta_use_converse_api or self.streaming:
+            stream_iter = self._astream(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            )
+            return await agenerate_from_stream(stream_iter)
+
+        params: Dict[str, Any] = {**kwargs}
+        prompt, system, formatted_messages, citations_enabled = (
+            self._format_provider_messages(messages, params)
+        )
+
+        if stop:
+            params["stop_sequences"] = stop
+
+        (
+            completion,
+            tool_calls,
+            llm_output,
+            body,
+        ) = await self._aprepare_input_and_invoke(
+            prompt=prompt,
+            stop=stop,
+            run_manager=run_manager,
+            system=system,
+            messages=formatted_messages,
+            **params,
+        )
+        return self._build_chat_result(
+            completion, tool_calls, llm_output, body, citations_enabled
         )
 
     def _combine_llm_outputs(self, llm_outputs: List[Optional[dict]]) -> dict:
@@ -1651,6 +1808,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
 
         return ChatBedrockConverse(
             client=self.client,
+            async_client=self.async_client,
             model=self.model_id,
             region_name=self.region_name,
             credentials_profile_name=self.credentials_profile_name,
