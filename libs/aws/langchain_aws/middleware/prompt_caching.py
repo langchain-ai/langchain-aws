@@ -1,5 +1,5 @@
 from collections.abc import Awaitable, Callable
-from typing import Literal, Union
+from typing import Any, Literal, Union
 from warnings import warn
 
 from langchain_aws.chat_models.bedrock import ChatBedrock
@@ -19,6 +19,18 @@ except ImportError as e:
         "Install it with: pip install langchain"
     )
     raise ImportError(msg) from e
+
+
+def _get_trace_policy() -> Any:
+    """Use tracing optimizations when supported by the installed LangChain."""
+    try:
+        from langchain.agents.middleware.types import TracePolicy, omit_payload
+    except ImportError:
+        return None
+    return TracePolicy(process_inputs=omit_payload)
+
+
+_TRACE_POLICY = _get_trace_policy()
 
 
 def _is_supported_model(model: Union[ChatBedrock, ChatBedrockConverse]) -> bool:
@@ -51,6 +63,8 @@ class BedrockPromptCachingMiddleware(AgentMiddleware):
     - `Anthropic <https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching>`
     - `AWS Bedrock <https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html>`
     """
+
+    trace_policy = _TRACE_POLICY
 
     def __init__(
         self,
