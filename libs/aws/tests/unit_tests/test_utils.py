@@ -847,33 +847,64 @@ def test_api_key_overrides_existing_env_var(
 # ---------------------------------------------------------------------------
 
 # Mock the smithy SDK modules so tests work without installing nova-sonic deps
-_mock_config_instance = mock.MagicMock()
 _mock_client_instance = mock.MagicMock()
+_mock_client_instance._ensure_setup = mock.AsyncMock()
 
 
 @pytest.fixture
 def mock_bedrock_runtime_sdk() -> Generator[
-    Tuple[mock.MagicMock, mock.MagicMock], None, None
+    Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock], None, None
 ]:
-    """Mock aws_sdk_bedrock_runtime so create_aws_bedrock_runtime_client works."""
-    mock_config_cls = mock.MagicMock(return_value=_mock_config_instance)
+    """Mock aws_sdk_bedrock_runtime and the smithy transport/identity modules."""
     mock_client_cls = mock.MagicMock(return_value=_mock_client_instance)
+    mock_transport_cls = mock.MagicMock()
+    mock_identity_cls = mock.MagicMock()
+
+    mock_client_module = mock.MagicMock(spec=["AsyncBedrockRuntimeClient"])
+    mock_client_module.AsyncBedrockRuntimeClient = mock_client_cls
+    mock_crt_module = mock.MagicMock(spec=["AWSCRTHTTPClient"])
+    mock_crt_module.AWSCRTHTTPClient = mock_transport_cls
+    mock_identity_module = mock.MagicMock(spec=["AWSCredentialsIdentity"])
+    mock_identity_module.AWSCredentialsIdentity = mock_identity_cls
 
     with (
         mock.patch.dict(
             "sys.modules",
             {
                 "aws_sdk_bedrock_runtime": mock.MagicMock(),
-                "aws_sdk_bedrock_runtime.client": mock.MagicMock(
-                    BedrockRuntimeClient=mock_client_cls
-                ),
-                "aws_sdk_bedrock_runtime.config": mock.MagicMock(
-                    Config=mock_config_cls
-                ),
+                "aws_sdk_bedrock_runtime.client": mock_client_module,
+                "smithy_http": mock.MagicMock(),
+                "smithy_http.aio": mock.MagicMock(),
+                "smithy_http.aio.crt": mock_crt_module,
+                "smithy_aws_core": mock.MagicMock(),
+                "smithy_aws_core.identity": mock.MagicMock(),
+                "smithy_aws_core.identity.components": mock_identity_module,
             },
         ),
     ):
-        yield mock_config_cls, mock_client_cls
+        yield mock_client_cls, mock_transport_cls, mock_identity_cls
+
+
+def _apply_config_plugin(client_cls: mock.MagicMock) -> mock.MagicMock:
+    """Run the client's config plugin against a bare config and return it."""
+    plugins = client_cls.call_args[1]["plugins"]
+    assert len(plugins) == 1
+    config = mock.MagicMock(
+        spec=[
+            "endpoint_uri",
+            "region",
+            "aws_access_key_id",
+            "aws_secret_access_key",
+            "aws_session_token",
+            "aws_credentials_identity_resolver",
+            "transport",
+        ]
+    )
+    config.aws_access_key_id = None
+    config.aws_secret_access_key = None
+    config.aws_credentials_identity_resolver = None
+    plugins[0](config)
+    return config
 
 
 def _create_client(**kwargs: Any) -> Any:
@@ -883,28 +914,30 @@ def _create_client(**kwargs: Any) -> Any:
 
 
 def test_bedrock_runtime_default_no_creds(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
-    """No credentials provided — keys should be None, endpoint built from region."""
-    config_cls, client_cls = mock_bedrock_runtime_sdk
+    """No credentials provided — endpoint built from region, awscrt transport."""
+    client_cls, transport_cls, _ = mock_bedrock_runtime_sdk
 
     with mock.patch.dict(os.environ, {}, clear=True):
-        _create_client(region_name="us-east-1")
+        client = _create_client(region_name="us-east-1")
 
-    config_cls.assert_called_once()
-    call_kwargs = config_cls.call_args[1]
-    assert (
-        call_kwargs["endpoint_uri"] == "https://bedrock-runtime.us-east-1.amazonaws.com"
-    )
-    assert call_kwargs["region"] == "us-east-1"
     client_cls.assert_called_once()
+    assert client == _mock_client_instance
+    _mock_client_instance._ensure_setup.assert_awaited()
+
+    config = _apply_config_plugin(client_cls)
+    assert config.endpoint_uri == "https://bedrock-runtime.us-east-1.amazonaws.com"
+    assert config.region == "us-east-1"
+    transport_cls.assert_called_once()
+    assert config.transport == transport_cls.return_value
 
 
 def test_bedrock_runtime_explicit_keys(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
-    """Explicit access key + secret key are passed through as plain strings."""
-    config_cls, client_cls = mock_bedrock_runtime_sdk
+    """Explicit keys become a credentials identity resolver."""
+    client_cls, _, identity_cls = mock_bedrock_runtime_sdk
 
     with mock.patch.dict(os.environ, {}, clear=True):
         _create_client(
@@ -913,22 +946,24 @@ def test_bedrock_runtime_explicit_keys(
             aws_secret_access_key=SecretStr("SECRET_TEST"),
         )
 
-    config_cls.assert_called_once()
-    call_kwargs = config_cls.call_args[1]
-    assert (
-        call_kwargs["endpoint_uri"] == "https://bedrock-runtime.us-west-2.amazonaws.com"
+    identity_cls.assert_called_once_with(
+        access_key_id="AKIA_TEST",
+        secret_access_key="SECRET_TEST",
+        session_token=None,
     )
-    assert call_kwargs["region"] == "us-west-2"
-    assert call_kwargs["aws_access_key_id"] == "AKIA_TEST"
-    assert call_kwargs["aws_secret_access_key"] == "SECRET_TEST"
-    assert call_kwargs["aws_session_token"] is None
+    config = _apply_config_plugin(client_cls)
+    assert config.endpoint_uri == "https://bedrock-runtime.us-west-2.amazonaws.com"
+    assert config.region == "us-west-2"
+    assert config.aws_credentials_identity_resolver is not None
+    assert config.aws_access_key_id is None
+    assert config.aws_secret_access_key is None
 
 
 def test_bedrock_runtime_explicit_keys_with_session_token(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
     """Session token is forwarded when provided alongside access keys."""
-    config_cls, _ = mock_bedrock_runtime_sdk
+    _, _, identity_cls = mock_bedrock_runtime_sdk
 
     with mock.patch.dict(os.environ, {}, clear=True):
         _create_client(
@@ -938,22 +973,18 @@ def test_bedrock_runtime_explicit_keys_with_session_token(
             aws_session_token=SecretStr("TOKEN_TEST"),
         )
 
-    config_cls.assert_called_once()
-    call_kwargs = config_cls.call_args[1]
-    assert (
-        call_kwargs["endpoint_uri"] == "https://bedrock-runtime.eu-west-1.amazonaws.com"
+    identity_cls.assert_called_once_with(
+        access_key_id="AKIA_TEST",
+        secret_access_key="SECRET_TEST",
+        session_token="TOKEN_TEST",
     )
-    assert call_kwargs["region"] == "eu-west-1"
-    assert call_kwargs["aws_access_key_id"] == "AKIA_TEST"
-    assert call_kwargs["aws_secret_access_key"] == "SECRET_TEST"
-    assert call_kwargs["aws_session_token"] == "TOKEN_TEST"
 
 
 def test_bedrock_runtime_profile_name(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
     """Profile name resolves credentials via boto3.Session."""
-    config_cls, _ = mock_bedrock_runtime_sdk
+    client_cls, _, identity_cls = mock_bedrock_runtime_sdk
 
     mock_creds = mock.MagicMock()
     mock_creds.access_key = "PROFILE_KEY"
@@ -973,20 +1004,19 @@ def test_bedrock_runtime_profile_name(
         _create_client(credentials_profile_name="my-profile")
 
     session_cls.assert_called_once_with(profile_name="my-profile")
-    config_cls.assert_called_once()
-    call_kwargs = config_cls.call_args[1]
-    assert (
-        call_kwargs["endpoint_uri"]
-        == "https://bedrock-runtime.ap-southeast-1.amazonaws.com"
+    identity_cls.assert_called_once_with(
+        access_key_id="PROFILE_KEY",
+        secret_access_key="PROFILE_SECRET",
+        session_token="PROFILE_TOKEN",
     )
-    assert call_kwargs["region"] == "ap-southeast-1"
-    assert call_kwargs["aws_access_key_id"] == "PROFILE_KEY"
-    assert call_kwargs["aws_secret_access_key"] == "PROFILE_SECRET"
-    assert call_kwargs["aws_session_token"] == "PROFILE_TOKEN"
+    config = _apply_config_plugin(client_cls)
+    assert config.endpoint_uri == "https://bedrock-runtime.ap-southeast-1.amazonaws.com"
+    assert config.region == "ap-southeast-1"
+    assert config.aws_credentials_identity_resolver is not None
 
 
 def test_bedrock_runtime_profile_no_credentials_raises(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
     """Profile that returns no credentials raises ValueError."""
     mock_session = mock.MagicMock()
@@ -1009,7 +1039,7 @@ def test_bedrock_runtime_profile_no_credentials_raises(
     ],
 )
 def test_bedrock_runtime_invalid_creds(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
     creds: Dict[str, SecretStr],
 ) -> None:
     """Partial credentials (missing key or secret) raise ValueError."""
@@ -1024,10 +1054,10 @@ def test_bedrock_runtime_invalid_creds(
 
 
 def test_bedrock_runtime_custom_endpoint_url(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
     """Custom endpoint_url is passed through without modification."""
-    config_cls, _ = mock_bedrock_runtime_sdk
+    client_cls, _, _ = mock_bedrock_runtime_sdk
 
     with mock.patch.dict(os.environ, {}, clear=True):
         _create_client(
@@ -1035,10 +1065,9 @@ def test_bedrock_runtime_custom_endpoint_url(
             endpoint_url="https://custom.endpoint.example.com",
         )
 
-    config_cls.assert_called_once()
-    call_kwargs = config_cls.call_args[1]
-    assert call_kwargs["endpoint_uri"] == "https://custom.endpoint.example.com"
-    assert call_kwargs["region"] == "us-east-1"
+    config = _apply_config_plugin(client_cls)
+    assert config.endpoint_uri == "https://custom.endpoint.example.com"
+    assert config.region == "us-east-1"
 
 
 @pytest.mark.parametrize(
@@ -1049,12 +1078,12 @@ def test_bedrock_runtime_custom_endpoint_url(
     ],
 )
 def test_bedrock_runtime_region_from_env(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
     env_var: str,
     env_value: str,
 ) -> None:
     """Region falls back to AWS_REGION / AWS_DEFAULT_REGION env vars."""
-    config_cls, _ = mock_bedrock_runtime_sdk
+    client_cls, _, _ = mock_bedrock_runtime_sdk
 
     env_patch = {env_var: env_value}
     for var in ["AWS_REGION", "AWS_DEFAULT_REGION"]:
@@ -1064,16 +1093,16 @@ def test_bedrock_runtime_region_from_env(
     with mock.patch.dict(os.environ, env_patch):
         _create_client()
 
-    call_kwargs = config_cls.call_args[1]
-    assert call_kwargs["region"] == env_value
-    assert env_value in call_kwargs["endpoint_uri"]
+    config = _apply_config_plugin(client_cls)
+    assert config.region == env_value
+    assert env_value in config.endpoint_uri
 
 
 def test_bedrock_runtime_api_key_sets_env(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
-    """api_key sets AWS_BEARER_TOKEN_BEDROCK env var."""
-    config_cls, _ = mock_bedrock_runtime_sdk
+    """api_key sets AWS_BEARER_TOKEN_BEDROCK env var and skips AWS creds."""
+    client_cls, _, identity_cls = mock_bedrock_runtime_sdk
 
     with mock.patch.dict(os.environ, {}, clear=True):
         _create_client(
@@ -1082,17 +1111,19 @@ def test_bedrock_runtime_api_key_sets_env(
         )
         assert os.environ.get("AWS_BEARER_TOKEN_BEDROCK") == "my-api-key"
 
-    # When api_key is used, credentials should be None (default chain)
-    call_kwargs = config_cls.call_args[1]
-    assert call_kwargs["aws_access_key_id"] is None
-    assert call_kwargs["aws_secret_access_key"] is None
+    # When api_key is used, no credentials resolver is built
+    identity_cls.assert_not_called()
+    config = _apply_config_plugin(client_cls)
+    assert config.aws_credentials_identity_resolver is None
+    assert config.aws_access_key_id is None
+    assert config.aws_secret_access_key is None
 
 
 def test_bedrock_runtime_api_key_with_creds_warns(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
     """Both api_key and AWS creds logs a warning; api_key wins."""
-    config_cls, _ = mock_bedrock_runtime_sdk
+    client_cls, _, identity_cls = mock_bedrock_runtime_sdk
 
     with (
         mock.patch.dict(os.environ, {}, clear=True),
@@ -1108,16 +1139,17 @@ def test_bedrock_runtime_api_key_with_creds_warns(
     mock_logger.warning.assert_called_once()
     assert "Both api_key and AWS credentials" in mock_logger.warning.call_args[0][0]
 
-    # api_key wins — credentials should be None
-    call_kwargs = config_cls.call_args[1]
-    assert call_kwargs["aws_access_key_id"] is None
+    # api_key wins — no credentials resolver is built
+    identity_cls.assert_not_called()
+    config = _apply_config_plugin(client_cls)
+    assert config.aws_credentials_identity_resolver is None
 
 
 def test_bedrock_runtime_session_region_fallback(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
     """When no region_name and profile provides one, use session region."""
-    config_cls, _ = mock_bedrock_runtime_sdk
+    client_cls, _, _ = mock_bedrock_runtime_sdk
 
     mock_creds = mock.MagicMock()
     mock_creds.access_key = "KEY"
@@ -1136,8 +1168,34 @@ def test_bedrock_runtime_session_region_fallback(
     ):
         _create_client(credentials_profile_name="regional-profile")
 
-    call_kwargs = config_cls.call_args[1]
-    assert call_kwargs["region"] == "sa-east-1"
+    config = _apply_config_plugin(client_cls)
+    assert config.region == "sa-east-1"
+
+
+def test_bedrock_runtime_missing_awscrt_raises() -> None:
+    """Missing awscrt transport raises a helpful error."""
+    mock_client_module = mock.MagicMock(spec=["AsyncBedrockRuntimeClient"])
+    mock_client_module.AsyncBedrockRuntimeClient = mock.MagicMock()
+
+    mock_session = mock.MagicMock()
+    mock_session.get_credentials.return_value = None
+
+    with (
+        mock.patch.dict(
+            "sys.modules",
+            {
+                "aws_sdk_bedrock_runtime": mock.MagicMock(),
+                "aws_sdk_bedrock_runtime.client": mock_client_module,
+                "smithy_http": None,
+                "smithy_http.aio": None,
+                "smithy_http.aio.crt": None,
+            },
+        ),
+        mock.patch("boto3.Session", return_value=mock_session),
+        mock.patch.dict(os.environ, {}, clear=True),
+        pytest.raises(ModuleNotFoundError, match="awscrt"),
+    ):
+        _create_client(region_name="us-east-1")
 
 
 # ---------------------------------------------------------------------------
