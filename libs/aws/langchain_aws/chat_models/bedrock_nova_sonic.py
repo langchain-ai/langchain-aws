@@ -137,7 +137,7 @@ class NovaSonicSession:
         """Initialize a Nova Sonic session.
 
         Args:
-            client: The ``BedrockRuntimeClient`` instance.
+            client: The ``AsyncBedrockRuntimeClient`` instance.
             model_id: The Nova Sonic model identifier.
             system_prompt: Optional system prompt for the conversation.
             voice_id: Voice identifier for audio output.
