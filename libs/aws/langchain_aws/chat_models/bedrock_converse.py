@@ -1691,8 +1691,16 @@ class ChatBedrockConverse(BaseChatModel):
         method: Literal[
             "function_calling", "json_schema", "prompt_prefill"
         ] = "function_calling",
+        strict: Optional[bool] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
+        if method != "function_calling" and strict is not None:
+            warnings.warn(
+                "The 'strict' parameter only applies to "
+                "method='function_calling'; it is ignored for "
+                f"method='{method}'.",
+                stacklevel=2,
+            )
         if method == "json_schema":
             return self._with_structured_output_json_schema(
                 schema, include_raw=include_raw, **kwargs
@@ -1702,7 +1710,7 @@ class ChatBedrockConverse(BaseChatModel):
                 schema, include_raw=include_raw, **kwargs
             )
         return self._with_structured_output_function_calling(
-            schema, include_raw=include_raw, **kwargs
+            schema, include_raw=include_raw, strict=strict, **kwargs
         )
 
     def _with_structured_output_function_calling(
