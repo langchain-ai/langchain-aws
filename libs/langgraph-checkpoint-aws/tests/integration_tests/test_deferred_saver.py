@@ -411,6 +411,52 @@ class TestDeferredCheckpointSaver:
         finally:
             cleanup(thread_id, actor_id)
 
+    def test_flush_writes_disabled_persists_checkpoint_only(
+        self, saver_and_cleanup: _SaverAndCleanup
+    ) -> None:
+        """flush_writes=False persists the checkpoint and drops the writes."""
+        saver, cleanup, thread_id, actor_id = self._unpack(saver_and_cleanup)
+        deferred = DeferredCheckpointSaver(saver, flush_writes=False)
+        checkpoint = _make_checkpoint()
+
+        config: RunnableConfig = {
+            "configurable": {
+                "thread_id": thread_id,
+                "actor_id": actor_id,
+                "checkpoint_ns": "",
+            }
+        }
+        write_config: RunnableConfig = {
+            "configurable": {
+                "thread_id": thread_id,
+                "actor_id": actor_id,
+                "checkpoint_ns": "",
+                "checkpoint_id": checkpoint["id"],
+            }
+        }
+
+        try:
+            deferred.put(
+                config,
+                checkpoint,
+                {"source": "input", "step": 1},
+                {"messages": "v1"},
+            )
+            deferred.put_writes(write_config, [("messages", "hello")], "task-1")
+
+            deferred.flush()
+            assert deferred.is_empty
+
+            # Checkpoint state survived...
+            result = saver.get_tuple(write_config)
+            assert result is not None
+            assert result.checkpoint["id"] == checkpoint["id"]
+            assert result.checkpoint["channel_values"]["messages"] == ["test message"]
+            # ...but no per-task write records were written.
+            assert not result.pending_writes
+        finally:
+            cleanup(thread_id, actor_id)
+
     def test_multi_session_isolation(self, saver_and_cleanup: _SaverAndCleanup) -> None:
         """Two flush_on_exit blocks with different threads stay isolated."""
         saver, cleanup, thread_id_1, actor_id = self._unpack(saver_and_cleanup)
