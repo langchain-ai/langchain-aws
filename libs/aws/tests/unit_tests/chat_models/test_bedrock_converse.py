@@ -7139,6 +7139,152 @@ def test_with_structured_output_prompt_prefill_include_raw() -> None:
     assert "parsing_error" in repr(last) or "parsed" in repr(last)
 
 
+def test_with_structured_output_repairs_stringified_list_field() -> None:
+    """A List[Model] field emitted as a JSON string parses successfully (#1221).
+
+    Same repair as ChatBedrock: Claude models intermittently re-serialize a
+    declared array field as a JSON string containing the correct value.
+    """
+    from unittest.mock import patch
+
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from pydantic import Field
+
+    class Entry(BaseModel):
+        label: str
+        values: List[int] = Field(default_factory=list)
+
+    class Output(BaseModel):
+        items: List[Entry]
+
+    stringified = '[{"label": "Onboarding", "values": [1001, 1002]}]'
+    message = AIMessage(
+        "",
+        tool_calls=[
+            {
+                "name": "Output",
+                "args": {"items": stringified},
+                "id": "toolu_bdrk_01X",
+                "type": "tool_call",
+            }
+        ],
+    )
+    result = ChatResult(generations=[ChatGeneration(message=message)])
+
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    structured = model.with_structured_output(Output, include_raw=True)
+    with patch.object(ChatBedrockConverse, "_generate", return_value=result):
+        out = cast(dict, structured.invoke("group the items"))
+
+    assert out["parsing_error"] is None
+    assert out["parsed"] == Output(
+        items=[Entry(label="Onboarding", values=[1001, 1002])]
+    )
+
+
+def _fake_tool_call_stream(tool_name: str, args_json: str, split_at: str) -> list:
+    """Build a two-chunk fake stream with tool-call args split across chunks."""
+    from langchain_core.messages import AIMessageChunk
+    from langchain_core.outputs import ChatGenerationChunk
+
+    split = args_json.index(split_at)
+    return [
+        ChatGenerationChunk(
+            message=AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {
+                        "name": tool_name,
+                        "args": args_json[:split],
+                        "id": "toolu_bdrk_01X",
+                        "index": 0,
+                        "type": "tool_call_chunk",
+                    }
+                ],
+            )
+        ),
+        ChatGenerationChunk(
+            message=AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {
+                        "name": None,
+                        "args": args_json[split:],
+                        "id": None,
+                        "index": 0,
+                        "type": "tool_call_chunk",
+                    }
+                ],
+            )
+        ),
+    ]
+
+
+def test_with_structured_output_streaming_pydantic_yields_multiple_chunks() -> None:
+    """Structured-output streaming must not collapse to a single chunk."""
+    from unittest.mock import patch
+
+    class Answer(BaseModel):
+        answer: str
+        justification: str
+
+    chunks = _fake_tool_call_stream(
+        "Answer",
+        '{"answer": "Neither", "justification": "Both weigh one pound."}',
+        "one pound",
+    )
+
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    structured = model.with_structured_output(Answer)
+    with patch.object(ChatBedrockConverse, "_stream", return_value=iter(chunks)):
+        results = list(structured.stream("bricks or feathers?"))
+
+    assert len(results) > 1
+    assert results[-1] == Answer(
+        answer="Neither", justification="Both weigh one pound."
+    )
+
+
+def test_with_structured_output_streaming_dict_yields_multiple_chunks() -> None:
+    """Dict-schema structured-output streaming yields incremental chunks."""
+    from unittest.mock import patch
+
+    schema = {
+        "name": "Answer",
+        "description": "An answer with justification.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "answer": {"type": "string"},
+                "justification": {"type": "string"},
+            },
+            "required": ["answer", "justification"],
+        },
+    }
+    chunks = _fake_tool_call_stream(
+        "Answer",
+        '{"answer": "Neither", "justification": "Both weigh one pound."}',
+        "one pound",
+    )
+
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    structured = model.with_structured_output(schema)
+    with patch.object(ChatBedrockConverse, "_stream", return_value=iter(chunks)):
+        results = list(structured.stream("bricks or feathers?"))
+
+    assert len(results) > 1
+    assert results[-1] == {
+        "answer": "Neither",
+        "justification": "Both weigh one pound.",
+    }
+
+
 class TestNonAsciiPreservation:
     """Regression tests: non-ASCII characters must survive JSON serialization."""
 
