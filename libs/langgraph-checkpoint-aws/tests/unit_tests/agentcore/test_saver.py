@@ -11,9 +11,11 @@ from unittest.mock import ANY, MagicMock, Mock, call, patch
 
 import pytest
 from botocore.exceptions import ClientError
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata, CheckpointTuple
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from langgraph.checkpoint.serde.types import _DeltaSnapshot
 from langgraph.constants import TASKS
 
 from langgraph_checkpoint_aws.checkpoint.agentcore.constants import (
@@ -1699,6 +1701,62 @@ class TestEventProcessor:
         assert tuple_result.checkpoint["id"] == "checkpoint_123"
         assert len(tuple_result.pending_writes) == 1
         assert tuple_result.checkpoint["channel_values"]["default"] == "test_value"
+
+    def test_build_checkpoint_tuple_does_not_patch_delta_snapshot_seed(
+        self,
+        processor,
+        sample_checkpoint_event,
+    ):
+        tool_call_id = "tooluse_resolved_by_pending_write"
+        seed = _DeltaSnapshot(
+            [
+                HumanMessage(content="How many libraries?", id="message_1"),
+                AIMessage(
+                    content="",
+                    id="message_2",
+                    tool_calls=[
+                        {"id": tool_call_id, "name": "execute_sql", "args": {}}
+                    ],
+                ),
+            ]
+        )
+        real_tool_result = ToolMessage(
+            content="1234",
+            id="message_3",
+            tool_call_id=tool_call_id,
+        )
+        sample_checkpoint_event.checkpoint_data["channel_versions"]["messages"] = (
+            "messages_v1"
+        )
+        config = CheckpointerConfig(
+            thread_id="test_thread",
+            actor_id="test_actor",
+            checkpoint_ns="test_ns",
+        )
+
+        tuple_result = processor.build_checkpoint_tuple(
+            sample_checkpoint_event,
+            [
+                WriteItem(
+                    task_id="task_1",
+                    channel="messages",
+                    value=real_tool_result,
+                )
+            ],
+            {("messages", "messages_v1"): seed},
+            config,
+        )
+
+        result_seed = tuple_result.checkpoint["channel_values"]["messages"]
+        tool_results = [
+            message for message in result_seed.value if isinstance(message, ToolMessage)
+        ] + [
+            value
+            for _, channel, value in tuple_result.pending_writes
+            if channel == "messages" and isinstance(value, ToolMessage)
+        ]
+        assert result_seed is seed
+        assert [message.tool_call_id for message in tool_results] == [tool_call_id]
 
     def test_build_checkpoint_tuple_with_parent(
         self,
