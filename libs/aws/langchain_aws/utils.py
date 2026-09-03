@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import re
@@ -303,6 +304,27 @@ def create_aws_client(
         raise ValueError(f"Error raised by service:\n\n{e}") from e
 
 
+_pending_transport_closes: "set[Any]" = set()
+
+
+def _close_transport_soon(transport: Any) -> None:
+    """Schedule an async ``close()`` of a discarded HTTP transport.
+
+    Config plugins are synchronous but run inside the client's async setup,
+    so a running event loop is available to schedule the close on.
+    """
+    close = getattr(transport, "close", None)
+    if close is None:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    task = loop.create_task(close())
+    _pending_transport_closes.add(task)
+    task.add_done_callback(_pending_transport_closes.discard)
+
+
 def create_aws_bedrock_runtime_client(
     region_name: Optional[str] = None,
     credentials_profile_name: Optional[str] = None,
@@ -312,7 +334,7 @@ def create_aws_bedrock_runtime_client(
     endpoint_url: Optional[str] = None,
     api_key: Optional[SecretStr] = None,
 ) -> Any:
-    """Create a ``BedrockRuntimeClient`` from ``aws-sdk-bedrock-runtime``.
+    """Create an ``AsyncBedrockRuntimeClient`` from ``aws-sdk-bedrock-runtime``.
 
     This mirrors ``create_aws_client`` but targets the smithy-based
     ``aws-sdk-bedrock-runtime`` package required for bidirectional streaming
@@ -334,19 +356,19 @@ def create_aws_bedrock_runtime_client(
             different API keys, as each call overwrites the previous value.
 
     Returns:
-        A configured ``BedrockRuntimeClient`` instance.
+        A configured ``AsyncBedrockRuntimeClient`` instance.
 
     Raises:
-        ModuleNotFoundError: If ``aws-sdk-bedrock-runtime`` is not installed.
+        ModuleNotFoundError: If ``aws-sdk-bedrock-runtime`` >= 0.10 is not
+            installed.
         ValueError: If credentials are incomplete or invalid.
     """
     try:
-        from aws_sdk_bedrock_runtime.client import BedrockRuntimeClient
-        from aws_sdk_bedrock_runtime.config import Config
+        from aws_sdk_bedrock_runtime.client import AsyncBedrockRuntimeClient
     except ImportError as e:
         raise ModuleNotFoundError(
-            "Could not import aws-sdk-bedrock-runtime. "
-            'Please install it via: pip install "langchain-aws[nova-sonic]"'
+            "Could not import aws-sdk-bedrock-runtime >= 0.10. "
+            'Please install it via: pip install -U "langchain-aws[nova-sonic]"'
         ) from e
 
     region_name = (
@@ -433,43 +455,71 @@ def create_aws_bedrock_runtime_client(
     # fails in a background task and the bidirectional stream hangs.
     credentials_resolver = None
     if access_key and secret_key:
-        try:
-            from smithy_aws_core.identity.components import AWSCredentialsIdentity
-        except ImportError:
-            pass
-        else:
+        from smithy_aws_core.identity.components import AWSCredentialsIdentity
 
-            class _StaticCredentialsResolver:
-                """Minimal resolver that returns pre-resolved credentials."""
+        class _StaticCredentialsResolver:
+            """Minimal resolver that returns pre-resolved credentials."""
 
-                def __init__(self, ak: str, sk: str, token: Optional[str]) -> None:
-                    self._identity = AWSCredentialsIdentity(
-                        access_key_id=ak,
-                        secret_access_key=sk,
-                        session_token=token,
-                    )
+            def __init__(self, ak: str, sk: str, token: Optional[str]) -> None:
+                self._identity = AWSCredentialsIdentity(
+                    access_key_id=ak,
+                    secret_access_key=sk,
+                    session_token=token,
+                )
 
-                async def get_identity(self, **kwargs: Any) -> AWSCredentialsIdentity:
-                    return self._identity
+            async def get_identity(self, **kwargs: Any) -> AWSCredentialsIdentity:
+                return self._identity
 
-            credentials_resolver = _StaticCredentialsResolver(
-                access_key, secret_key, session_token
+        credentials_resolver = _StaticCredentialsResolver(
+            access_key, secret_key, session_token
+        )
+
+    endpoint_uri = endpoint_url or (
+        f"https://bedrock-runtime.{region_name}.amazonaws.com" if region_name else None
+    )
+
+    try:
+        from smithy_http.aio.crt import AWSCRTHTTPClient
+    except ImportError as e:
+        raise ModuleNotFoundError(
+            "The `awscrt` HTTP client is required for bidirectional streaming. "
+            'Please install it via: pip install -U "langchain-aws[nova-sonic]"'
+        ) from e
+
+    def _configure(config: Any) -> None:
+        if endpoint_uri:
+            config.endpoint_uri = endpoint_uri
+        if region_name:
+            config.region = region_name
+        if credentials_resolver is not None:
+            config.aws_credentials_identity_resolver = credentials_resolver
+        old_transport = getattr(config, "transport", None)
+        config.transport = AWSCRTHTTPClient()
+        _close_transport_soon(old_transport)
+
+    client = AsyncBedrockRuntimeClient(plugins=[_configure])
+
+    if hasattr(client, "_ensure_setup"):
+
+        async def _setup() -> None:
+            await client._ensure_setup()
+            await asyncio.gather(
+                *list(_pending_transport_closes), return_exceptions=True
             )
 
-    config = Config(
-        endpoint_uri=endpoint_url
-        or (
-            f"https://bedrock-runtime.{region_name}.amazonaws.com"
-            if region_name
-            else None
-        ),
-        region=region_name,
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
-        aws_session_token=session_token,
-        aws_credentials_identity_resolver=credentials_resolver,
-    )
-    return BedrockRuntimeClient(config=config)
+        def _run_setup() -> None:
+            asyncio.run(_setup())
+
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            _run_setup()
+        else:
+            setup_thread = threading.Thread(target=_run_setup)
+            setup_thread.start()
+            setup_thread.join()
+
+    return client
 
 
 def parse_model_provider(model_id: str) -> str:

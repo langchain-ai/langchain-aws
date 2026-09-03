@@ -9,7 +9,7 @@ license = {text = "MIT"}
 readme = "README.md"
 authors = []
 
-version = "1.7.4"
+version = "1.7.5"
 requires-python = ">=3.10"
 dependencies = [
     "langchain-core>=1.6.0",
@@ -27,7 +27,10 @@ tools = ["bedrock-agentcore>=1.4.0; python_version>='3.10'", "playwright>=1.53.0
 anthropic = ["langchain-anthropic", "anthropic[bedrock]>=0.95.0", "aws-bedrock-token-generator>=1.1.0"]
 openai = ["langchain-openai>=1.0.0", "openai>=1.106.0", "aws-bedrock-token-generator>=1.1.0"]
 valkey = ["valkey-glide-sync>=2.0.0"]
-nova-sonic = ["aws-sdk-bedrock-runtime; python_version>='3.12'"]
+nova-sonic = [
+    "aws-sdk-bedrock-runtime>=0.10; python_version>='3.12'",
+    "smithy-http[awscrt]; python_version>='3.12'",
+]
 
 [dependency-groups]
 test = [
@@ -52,7 +55,8 @@ test = [
 test_integration = [
     "langchain-anthropic",
     "anthropic[bedrock]",
-    "aws-sdk-bedrock-runtime; python_version>='3.12'",
+    "aws-sdk-bedrock-runtime>=0.10; python_version>='3.12'",
+    "smithy-http[awscrt]; python_version>='3.12'",
 ]
 lint = ["ruff>=0.13.0"]
 typing = [
