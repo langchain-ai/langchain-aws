@@ -15,13 +15,17 @@ from typing import (
 )
 
 from langchain_core.messages import ToolCall
-from langchain_core.output_parsers import BaseGenerationOutputParser
+from langchain_core.output_parsers import (
+    BaseGenerationOutputParser,
+    JsonOutputKeyToolsParser,
+    PydanticToolsParser,
+)
 from langchain_core.outputs import ChatGeneration, Generation
 from langchain_core.prompts.chat import AIMessage
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_core.utils.pydantic import PydanticBaseModel, TypeBaseModel
-from pydantic import ConfigDict, SkipValidation
+from pydantic import BaseModel, ConfigDict, SkipValidation
 from typing_extensions import TypedDict
 
 PYTHON_TO_JSON_TYPES = {
@@ -202,10 +206,50 @@ def _repair_stringified_tool_call_message(
     return message.model_copy(update={"tool_calls": repaired_calls})
 
 
+def _repair_generations(
+    result: List[Generation], properties: Optional[Dict[str, Any]]
+) -> List[Generation]:
+    if not properties:
+        return result
+    repaired: List[Generation] = []
+    for gen in result:
+        if (
+            isinstance(gen, ChatGeneration)
+            and isinstance(gen.message, AIMessage)
+            and gen.message.tool_calls
+        ):
+            new_message = _repair_stringified_tool_call_message(gen.message, properties)
+            if new_message is not gen.message:
+                gen = gen.__class__(
+                    message=new_message, generation_info=gen.generation_info
+                )
+        repaired.append(gen)
+    return repaired
+
+
+class _RepairingParserMixin(BaseModel):
+    schema_properties: Optional[Dict[str, Any]] = None
+
+    def parse_result(self, result: List[Generation], *, partial: bool = False) -> Any:
+        result = _repair_generations(result, self.schema_properties)
+        return super().parse_result(result, partial=partial)  # type: ignore[misc]
+
+
+class _RepairingPydanticToolsParser(_RepairingParserMixin, PydanticToolsParser):
+    """``PydanticToolsParser`` that repairs model-stringified tool args."""
+
+
+class _RepairingJsonOutputKeyToolsParser(
+    _RepairingParserMixin, JsonOutputKeyToolsParser
+):
+    """``JsonOutputKeyToolsParser`` that repairs model-stringified tool args."""
+
+
 class ToolsOutputParser(BaseGenerationOutputParser):
     first_tool_only: bool = False
     args_only: bool = False
     pydantic_schemas: Optional[List[Annotated[TypeBaseModel, SkipValidation()]]] = None
+    schema_properties: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(
         extra="forbid",
@@ -222,6 +266,7 @@ class ToolsOutputParser(BaseGenerationOutputParser):
             Structured output.
 
         """
+        result = _repair_generations(result, self.schema_properties)
         if (
             not result
             or not isinstance(result[0], ChatGeneration)

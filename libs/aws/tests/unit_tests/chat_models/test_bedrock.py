@@ -905,6 +905,63 @@ def test_with_structured_output_repairs_stringified_list_field() -> None:
     )
 
 
+def test_with_structured_output_streaming_yields_multiple_chunks() -> None:
+    """Structured-output streaming must not collapse to a single chunk."""
+    from langchain_core.messages import AIMessageChunk
+    from langchain_core.outputs import ChatGenerationChunk
+
+    class Answer(BaseModel):
+        answer: str
+        justification: str
+
+    args_json = '{"answer": "Neither", "justification": "Both weigh one pound."}'
+    split = args_json.index("one pound")
+    chunks = [
+        ChatGenerationChunk(
+            message=AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {
+                        "name": "Answer",
+                        "args": args_json[:split],
+                        "id": "toolu_bdrk_01X",
+                        "index": 0,
+                        "type": "tool_call_chunk",
+                    }
+                ],
+            )
+        ),
+        ChatGenerationChunk(
+            message=AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {
+                        "name": None,
+                        "args": args_json[split:],
+                        "id": None,
+                        "index": 0,
+                        "type": "tool_call_chunk",
+                    }
+                ],
+            )
+        ),
+    ]
+
+    model = ChatBedrock(
+        model_id="us.anthropic.claude-sonnet-5",
+        region_name="us-east-1",
+        streaming=True,
+    )  # type: ignore[call-arg]
+    structured = model.with_structured_output(Answer, tool_choice="any")
+    with patch.object(ChatBedrock, "_stream", return_value=iter(chunks)):
+        results = list(structured.stream("bricks or feathers?"))
+
+    assert len(results) > 1
+    assert results[-1] == Answer(
+        answer="Neither", justification="Both weigh one pound."
+    )
+
+
 def test_standard_tracing_params() -> None:
     llm = ChatBedrock(model_id="foo", region_name="us-west-2")  # type: ignore[call-arg]
     expected = {
