@@ -1165,10 +1165,9 @@ class ChatBedrockConverse(BaseChatModel):
             elif "nova" in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "deepseek" in base_model and "r1-v1" not in base_model:
-                if "v3-v1" in base_model:
-                    self.supports_tool_choice_values = ("any",)
-                else:
-                    self.supports_tool_choice_values = ("any", "tool")
+                # DeepSeek V3 models accept `auto` (Bedrock's default), `any`,
+                # and named `tool` selection on the Converse API.
+                self.supports_tool_choice_values = ("auto", "any", "tool")
             else:
                 self.supports_tool_choice_values = ()
 
@@ -1556,8 +1555,6 @@ class ChatBedrockConverse(BaseChatModel):
                 not enabled (no safe downgrade possible).
         """
         if not tool_choice:
-            if "deepseek.v3" in self._get_base_model():
-                return _format_tool_choice("any")
             return None
 
         formatted = _format_tool_choice(tool_choice)

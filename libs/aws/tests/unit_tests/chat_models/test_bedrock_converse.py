@@ -340,10 +340,12 @@ def test_llama_bind_tools_tool_choice_variants(
     "model,expected_values",
     [
         ("us.deepseek.r1-v1:0", ()),
-        ("deepseek.v3-v1:0", ("any",)),
+        ("deepseek.v3-v1:0", ("auto", "any", "tool")),
+        ("deepseek.v3.2", ("auto", "any", "tool")),
         (
             "deepseek.v3-x:0",
             (
+                "auto",
                 "any",
                 "tool",
             ),
@@ -392,20 +394,30 @@ def test_deepseek_v3_bind_tools_tool_choice_variants() -> None:
         "any": {}
     }
 
-    with pytest.raises(ValueError):
-        chat_model.bind_tools([GetWeather], tool_choice="auto")
+    # `auto` is accepted by Bedrock for DeepSeek V3 and must not be refused
+    # (regression test for issue #1259).
+    chat_model_with_auto = chat_model.bind_tools([GetWeather], tool_choice="auto")
+    assert cast(RunnableBinding, chat_model_with_auto).kwargs["tool_choice"] == {
+        "auto": {}
+    }
 
-    with pytest.raises(ValueError):
-        chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+    chat_model_with_named = chat_model.bind_tools(
+        [GetWeather], tool_choice="GetWeather"
+    )
+    assert cast(RunnableBinding, chat_model_with_named).kwargs["tool_choice"] == {
+        "tool": {"name": "GetWeather"}
+    }
 
 
 def test_deepseek_v3_bind_tools_default_tool_choice() -> None:
     chat_model = ChatBedrockConverse(model="deepseek.v3-v1:0", region_name="us-east-1")  # type: ignore[call-arg]
 
+    # With no explicit tool_choice, the resolved tool_choice must be None so no
+    # toolChoice is sent and Bedrock's default (`auto`) applies, letting the
+    # model answer in text instead of being forced into a tool call
+    # (regression test for issue #1259).
     chat_model_with_tools = chat_model.bind_tools([GetWeather])
-    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
-        "any": {}
-    }
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] is None
 
 
 def test__messages_to_bedrock() -> None:
