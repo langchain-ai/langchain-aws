@@ -548,7 +548,7 @@ def thinking_on_by_default(model: str) -> bool:
 
 
 def thinking_forced_tool_use_unsupported(model: str) -> bool:
-    """Check if the model rejects forced tool use while thinking is enabled."""
+    """Check if the model rejects or ignores forced tool use with thinking enabled."""
     if "claude-opus-4-8" in model:
         return False
     return any(
@@ -558,8 +558,17 @@ def thinking_forced_tool_use_unsupported(model: str) -> bool:
             "claude-sonnet-4",
             "claude-opus-4",
             "claude-haiku-4",
+            "deepseek.v3",
         )
     )
+
+
+def thinking_enabled_in_params(model: str, params: dict) -> bool:
+    """Check if thinking is explicitly enabled in the request."""
+    if "deepseek.v3" in model:
+        effort = params.get("reasoning_effort")
+        return bool(effort) and str(effort).lower() not in ("none", "low", "medium")
+    return thinking_in_params(params)
 
 
 def reasoning_effort_additional_fields(base_model: str, effort: str) -> Dict[str, Any]:
