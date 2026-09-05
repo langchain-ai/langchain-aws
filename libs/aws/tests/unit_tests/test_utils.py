@@ -19,6 +19,7 @@ from langchain_aws.utils import (
     parse_model_provider,
     reasoning_effort_additional_fields,
     thinking_disabled_in_params,
+    thinking_enabled_in_params,
     thinking_forced_tool_use_unsupported,
     thinking_in_params,
     thinking_on_by_default,
@@ -489,12 +490,31 @@ def test_count_tokens_api_supported_for_model(
         ("us.anthropic.claude-sonnet-5", False),
         ("global.anthropic.claude-opus-5", False),
         ("global.anthropic.claude-fable-5", False),
+        ("deepseek.v3-v1:0", True),
+        ("deepseek.v3.2", True),
     ],
 )
 def test_thinking_forced_tool_use_unsupported(
     model_id: str, expected_result: bool
 ) -> None:
     assert thinking_forced_tool_use_unsupported(model_id) == expected_result
+
+
+@pytest.mark.parametrize(
+    "model_id,params,expected_result",
+    [
+        ("anthropic.claude-sonnet-4-6", {"thinking": {"type": "enabled"}}, True),
+        ("anthropic.claude-sonnet-4-6", {"reasoning_effort": "high"}, False),
+        ("deepseek.v3.2", {"reasoning_effort": "high"}, True),
+        ("deepseek.v3.2", {"reasoning_effort": "low"}, False),
+        ("deepseek.v3.2", {"thinking": {"type": "enabled"}}, False),
+        ("deepseek.v3.2", {}, False),
+    ],
+)
+def test_thinking_enabled_in_params(
+    model_id: str, params: Dict[str, Any], expected_result: bool
+) -> None:
+    assert thinking_enabled_in_params(model_id, params) == expected_result
 
 
 @pytest.mark.parametrize(

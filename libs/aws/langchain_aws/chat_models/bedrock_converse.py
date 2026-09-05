@@ -84,6 +84,7 @@ from langchain_aws.utils import (
     create_aws_client,
     parse_model_provider,
     reasoning_effort_additional_fields,
+    thinking_enabled_in_params,
     thinking_forced_tool_use_unsupported,
     thinking_in_params,
     trim_message_whitespace,
@@ -1168,10 +1169,12 @@ class ChatBedrockConverse(BaseChatModel):
             elif "nova" in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "deepseek" in base_model and "r1-v1" not in base_model:
-                if "v3-v1" in base_model:
-                    self.supports_tool_choice_values = ("any",)
+                if thinking_enabled_in_params(
+                    base_model, self.additional_model_request_fields or {}
+                ):
+                    self.supports_tool_choice_values = ("auto",)
                 else:
-                    self.supports_tool_choice_values = ("any", "tool")
+                    self.supports_tool_choice_values = ("auto", "any")
             else:
                 self.supports_tool_choice_values = ()
 
@@ -1510,10 +1513,17 @@ class ChatBedrockConverse(BaseChatModel):
             "langchain_core.exceptions.OutputParserException if tool calls are not "
             "generated. Consider adjusting your prompt to ensure the tool is called."
         )
-        if thinking_forced_tool_use_unsupported(self._get_base_model()):
+        base_model = self._get_base_model()
+        if "claude" in base_model and thinking_forced_tool_use_unsupported(base_model):
             additional_context = (
                 "For Claude 3/4 models, you can also support forced tool use "
                 "by disabling `thinking`."
+            )
+            admonition = f"{admonition} {additional_context}"
+        if "deepseek.v3" in base_model:
+            additional_context = (
+                "For DeepSeek V3 models, forced tool use is not available while "
+                "`reasoning_effort` is set in `additional_model_request_fields`."
             )
             admonition = f"{admonition} {additional_context}"
         warnings.warn(admonition)
@@ -1559,8 +1569,6 @@ class ChatBedrockConverse(BaseChatModel):
                 not enabled (no safe downgrade possible).
         """
         if not tool_choice:
-            if "deepseek.v3" in self._get_base_model():
-                return _format_tool_choice("any")
             return None
 
         formatted = _format_tool_choice(tool_choice)
@@ -1572,7 +1580,9 @@ class ChatBedrockConverse(BaseChatModel):
 
         # Thinking-enabled models: downgrade to auto instead of failing.
         if (
-            thinking_in_params(self.additional_model_request_fields or {})
+            thinking_enabled_in_params(
+                self._get_base_model(), self.additional_model_request_fields or {}
+            )
             and "auto" in supported
         ):
             warnings.warn(
