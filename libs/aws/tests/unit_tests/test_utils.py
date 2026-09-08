@@ -561,8 +561,8 @@ def test_thinking_disabled_in_params(params: dict, expected_result: bool) -> Non
         ),
         ("amazon.titan-text-express-v1", "high", {}),
         ("meta.llama3-1-70b-instruct-v1:0", "high", {}),
-        # Native GPT-5.x models are bedrock-mantle-only
-        ("openai.gpt-5.5", "medium", {}),
+        ("openai.gpt-5.6-terra", "medium", {"reasoning": {"effort": "medium"}}),
+        ("openai.gpt-5.6-sol", "none", {"reasoning": {"effort": "none"}}),
     ],
 )
 def test_reasoning_effort_additional_fields(

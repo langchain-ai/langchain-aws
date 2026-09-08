@@ -645,7 +645,9 @@ class ChatBedrockConverse(BaseChatModel):
 
     """
 
-    reasoning_effort: Optional[Literal["low", "medium", "high", "xhigh", "max"]] = None
+    reasoning_effort: Optional[
+        Literal["none", "low", "medium", "high", "xhigh", "max"]
+    ] = None
     """Reasoning effort level for models that support configurable reasoning.
 
     Translated into the appropriate provider-specific request format based on the

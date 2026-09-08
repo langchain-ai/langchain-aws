@@ -4693,6 +4693,16 @@ def test_reasoning_effort_gpt_oss_invalid_level_raises() -> None:
         )  # type: ignore[call-arg]
 
 
+def test_reasoning_effort_gpt_5() -> None:
+    """Test reasoning effort use with GPT-5.x."""
+    llm = ChatBedrockConverse(
+        model="us.openai.gpt-5.6-terra",
+        region_name="us-east-1",
+        reasoning_effort="none",
+    )  # type: ignore[call-arg]
+    assert llm.additional_model_request_fields == {"reasoning": {"effort": "none"}}
+
+
 def test_reasoning_effort_unsupported_model_warns() -> None:
     """Test reasoning_effort on a model with no known translation warns and no-ops."""
     with pytest.warns(UserWarning, match="reasoning_effort is not supported"):
