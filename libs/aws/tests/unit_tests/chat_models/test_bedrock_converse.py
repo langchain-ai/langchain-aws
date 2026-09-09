@@ -364,6 +364,22 @@ def test_xai_supports_tool_choice_values() -> None:
     assert chat_model.supports_tool_choice_values == ("auto", "any", "tool")
 
 
+@pytest.mark.parametrize(
+    "model, expected_values",
+    [
+        ("us.openai.gpt-6-astra", ("auto", "any", "tool")),
+        ("global.openai.gpt-5.6-terra", ("auto", "any", "tool")),
+        ("openai.gpt-5.6-sol", ("auto", "any", "tool")),
+        ("openai.gpt-oss-120b-1:0", ()),
+    ],
+)
+def test_openai_supports_tool_choice_values(
+    model: str, expected_values: tuple[Literal["auto", "any", "tool"], ...]
+) -> None:
+    chat_model = ChatBedrockConverse(model=model, region_name="us-east-1")
+    assert chat_model.supports_tool_choice_values == expected_values
+
+
 def test_deepseek_r1_no_tool_choice_support() -> None:
     chat_model = ChatBedrockConverse(model="deepseek.r1-v1:0", region_name="us-east-1")  # type: ignore[call-arg]
 
@@ -1419,6 +1435,9 @@ def test_invocation_params_model_prefers_base_model_id() -> None:
         ("deepseek.v3-v1:0", False),
         ("openai.gpt-oss-120b-1:0", False),
         ("openai.gpt-oss-20b-1:0", False),
+        ("us.openai.gpt-5.6-terra", False),
+        ("global.openai.gpt-5.6-sol", False),
+        ("us.openai.gpt-6-astra", False),
         ("qwen.qwen3-32b-v1:0", False),
         ("moonshotai.kimi-k2.5", False),
         ("moonshot.kimi-k2-thinking", False),
