@@ -563,6 +563,7 @@ def test_thinking_disabled_in_params(params: dict, expected_result: bool) -> Non
         ("meta.llama3-1-70b-instruct-v1:0", "high", {}),
         ("openai.gpt-5.6-terra", "medium", {"reasoning": {"effort": "medium"}}),
         ("openai.gpt-5.6-sol", "none", {"reasoning": {"effort": "none"}}),
+        ("openai.gpt-6-astra", "max", {"reasoning": {"effort": "max"}}),
     ],
 )
 def test_reasoning_effort_additional_fields(

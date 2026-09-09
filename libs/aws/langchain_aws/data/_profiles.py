@@ -2373,6 +2373,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "openai.gpt-oss-120b": {
         "name": "gpt-oss-120b",

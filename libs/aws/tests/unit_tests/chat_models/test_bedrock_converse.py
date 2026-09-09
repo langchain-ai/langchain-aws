@@ -4703,6 +4703,26 @@ def test_reasoning_effort_gpt_5() -> None:
     assert llm.additional_model_request_fields == {"reasoning": {"effort": "none"}}
 
 
+def test_reasoning_effort_gpt_6_nested() -> None:
+    """Test reasoning effort use with GPT-6."""
+    llm = ChatBedrockConverse(
+        model="global.openai.gpt-6-astra",
+        region_name="us-east-1",
+        reasoning_effort="max",
+    )  # type: ignore[call-arg]
+    assert llm.additional_model_request_fields == {"reasoning": {"effort": "max"}}
+
+
+def test_reasoning_effort_gpt_6_rejects_none() -> None:
+    """Test `none` is rejected with a helpful error for GPT-6."""
+    with pytest.raises(ValueError, match="reasoning_effort='none' is not supported"):
+        ChatBedrockConverse(
+            model="openai.gpt-6-astra",
+            region_name="us-east-1",
+            reasoning_effort="none",
+        )  # type: ignore[call-arg]
+
+
 def test_reasoning_effort_unsupported_model_warns() -> None:
     """Test reasoning_effort on a model with no known translation warns and no-ops."""
     with pytest.warns(UserWarning, match="reasoning_effort is not supported"):

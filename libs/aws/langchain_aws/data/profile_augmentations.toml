@@ -57,6 +57,9 @@ reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 [overrides."amazon.nova-2-lite-v1:0"]
 reasoning_effort_levels = ["low", "medium", "high"]
 
+[overrides."openai.gpt-6-astra"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
 [overrides."openai.gpt-5.6-terra"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
