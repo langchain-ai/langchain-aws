@@ -282,6 +282,13 @@ def test_claude_5_adaptive_thinking_forced_tool_choice_allowed(
     }
 
 
+def test_claude_fable_5_1_tool_choice_auto_only() -> None:
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-fable-5-1", region_name="us-west-2"
+    )
+    assert chat_model.supports_tool_choice_values == ("auto",)
+
+
 def test_amazon_bind_tools_tool_choice() -> None:
     chat_model = ChatBedrockConverse(
         model="us.amazon.nova-lite-v1:0", region_name="us-east-1"

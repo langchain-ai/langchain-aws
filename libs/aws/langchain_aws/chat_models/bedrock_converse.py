@@ -1145,7 +1145,9 @@ class ChatBedrockConverse(BaseChatModel):
             if "claude" in base_model:
                 # Tool choice not supported when thinking is enabled
                 thinking_params = self.additional_model_request_fields or {}
-                if thinking_forced_tool_use_unsupported(
+                if "claude-fable-5-1" in base_model:
+                    self.supports_tool_choice_values = ("auto",)
+                elif thinking_forced_tool_use_unsupported(
                     base_model
                 ) and thinking_in_params(thinking_params):
                     self.supports_tool_choice_values = ("auto",)
