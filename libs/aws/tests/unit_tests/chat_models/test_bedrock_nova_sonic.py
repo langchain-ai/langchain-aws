@@ -12,7 +12,9 @@ mock_sdk_module = MagicMock()
 mock_sdk_models = MagicMock()
 mock_sdk_config = MagicMock()
 mock_sdk_client = MagicMock()
+mock_sdk_client.AsyncBedrockRuntimeClient.return_value._ensure_setup = AsyncMock()
 mock_smithy = MagicMock()
+mock_smithy_http = MagicMock()
 
 
 @pytest.fixture(autouse=True)
@@ -32,14 +34,17 @@ def _mock_nova_sonic_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setitem(__import__("sys").modules, "smithy_aws_core", mock_smithy)
     monkeypatch.setitem(
-        __import__("sys").modules,
-        "smithy_aws_core.credentials_resolvers",
-        mock_smithy,
+        __import__("sys").modules, "smithy_aws_core.identity", mock_smithy
     )
     monkeypatch.setitem(
         __import__("sys").modules,
-        "smithy_aws_core.credentials_resolvers.environment",
+        "smithy_aws_core.identity.components",
         mock_smithy,
+    )
+    monkeypatch.setitem(__import__("sys").modules, "smithy_http", mock_smithy_http)
+    monkeypatch.setitem(__import__("sys").modules, "smithy_http.aio", mock_smithy_http)
+    monkeypatch.setitem(
+        __import__("sys").modules, "smithy_http.aio.crt", mock_smithy_http
     )
 
 

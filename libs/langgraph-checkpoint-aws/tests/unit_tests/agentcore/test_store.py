@@ -2,6 +2,8 @@
 Unit tests for AgentCore Memory Store.
 """
 
+import asyncio
+import time
 from datetime import datetime, timezone
 from unittest.mock import ANY, MagicMock, Mock, patch
 
@@ -405,18 +407,139 @@ class TestAgentCoreMemoryStore:
         with pytest.raises(ValueError, match="Unknown operation type"):
             store.batch(ops)
 
-    def test_abatch_not_implemented(self, store):
-        """Test that abatch raises NotImplementedError."""
-        ops = [SearchOp(namespace_prefix=("test_actor",), query="test", limit=5)]
+    async def test_abatch_mixed_operations(
+        self, store, mock_boto_client, sample_memory_record, sample_item_data
+    ):
+        """Test abatch delegates to batch and preserves result order."""
+        mock_boto_client.get_memory_record.return_value = {
+            "memoryRecord": sample_memory_record
+        }
+        mock_boto_client.retrieve_memory_records.return_value = {
+            "memoryRecordSummaries": [sample_memory_record]
+        }
+        mock_boto_client.create_event.return_value = {"event": {"eventId": "event-123"}}
 
-        # Use asyncio to test async method
-        import asyncio
+        ops = [
+            GetOp(namespace=("test_actor", "test_session"), key="test-key"),
+            PutOp(
+                namespace=("test_actor", "test_session"),
+                key="new-key",
+                value=sample_item_data,
+            ),
+            SearchOp(namespace_prefix=("test_actor",), query="test query", limit=5),
+            ListNamespacesOp(limit=10),
+        ]
+        results = await store.abatch(ops)
 
-        async def test_async():
-            with pytest.raises(NotImplementedError):
-                await store.abatch(ops)
+        assert len(results) == 4
+        assert isinstance(results[0], Item)  # GetOp
+        assert results[1] is None  # PutOp
+        assert isinstance(results[2], list)  # SearchOp
+        assert results[3] == []  # ListNamespacesOp
+        mock_boto_client.create_event.assert_called_once()
 
-        asyncio.run(test_async())
+    async def test_abatch_consumes_lazy_iterable(self, store, mock_boto_client):
+        """Test abatch materializes generator ops before the executor thread."""
+        mock_boto_client.retrieve_memory_records.return_value = {
+            "memoryRecordSummaries": []
+        }
+
+        ops = (
+            SearchOp(namespace_prefix=("test_actor",), query="test", limit=5)
+            for _ in range(2)
+        )
+        results = await store.abatch(ops)
+
+        assert results == [[], []]
+
+    async def test_async_convenience_methods_route_through_abatch(
+        self, store, mock_boto_client, sample_memory_record, sample_item_data
+    ):
+        """Test BaseStore's aget/aput/asearch work against the sync client."""
+        mock_boto_client.get_memory_record.return_value = {
+            "memoryRecord": sample_memory_record
+        }
+        mock_boto_client.retrieve_memory_records.return_value = {
+            "memoryRecordSummaries": [sample_memory_record]
+        }
+        mock_boto_client.create_event.return_value = {"event": {"eventId": "event-123"}}
+
+        await store.aput(("test_actor", "test_session"), "key1", sample_item_data)
+        mock_boto_client.create_event.assert_called_once()
+
+        item = await store.aget(("test_actor", "test_session"), "test-key")
+        assert isinstance(item, Item)
+
+        found = await store.asearch(("test_actor",), query="test query", limit=5)
+        assert len(found) == 1
+        assert isinstance(found[0], SearchItem)
+
+    async def test_abatch_does_not_block_event_loop(self, store, mock_boto_client):
+        """Test the event loop keeps running while abatch waits on the client."""
+        call_duration = 0.2
+
+        def slow_search(**kwargs):
+            time.sleep(call_duration)
+            return {"memoryRecordSummaries": []}
+
+        mock_boto_client.retrieve_memory_records.side_effect = slow_search
+        heartbeats = 0
+
+        async def heartbeat():
+            nonlocal heartbeats
+            while True:
+                await asyncio.sleep(0.01)
+                heartbeats += 1
+
+        ticker = asyncio.create_task(heartbeat())
+        try:
+            await store.abatch(
+                [SearchOp(namespace_prefix=("test_actor",), query="q", limit=1)]
+            )
+        finally:
+            ticker.cancel()
+
+        assert heartbeats >= 5
+
+    async def test_abatch_runs_ops_concurrently(self, store, mock_boto_client):
+        """Test concurrent abatch calls overlap instead of serializing."""
+        call_duration = 0.2
+        n_calls = 4
+
+        def slow_search(**kwargs):
+            time.sleep(call_duration)
+            return {"memoryRecordSummaries": []}
+
+        mock_boto_client.retrieve_memory_records.side_effect = slow_search
+        op = SearchOp(namespace_prefix=("test_actor",), query="q", limit=1)
+
+        start = time.perf_counter()
+        await asyncio.gather(*(store.abatch([op]) for _ in range(n_calls)))
+        elapsed = time.perf_counter() - start
+
+        assert elapsed < (n_calls * call_duration) * 0.75
+
+    async def test_abatch_propagates_validation_errors(self, store):
+        """Test ValueErrors raised on the executor thread reach the awaiter."""
+        with pytest.raises(ValueError, match="'message' key"):
+            await store.aput(
+                ("test_actor", "test_session"), "k", {"message": "not a message"}
+            )
+
+        with pytest.raises(ValueError, match="tuple of \\(actor_id, session_id\\)"):
+            await store.aput(("only_actor",), "k", {"message": HumanMessage("hi")})
+
+    async def test_abatch_propagates_client_errors(self, store, mock_boto_client):
+        """Test botocore ClientErrors surface unchanged through abatch."""
+        mock_boto_client.get_memory_record.side_effect = ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "denied"}},
+            "GetMemoryRecord",
+        )
+
+        with pytest.raises(ClientError) as exc_info:
+            await store.aget(("test_actor", "test_session"), "mem-" + "0" * 40)
+
+        assert exc_info.value.response["Error"]["Code"] == "AccessDeniedException"
 
     def test_convert_memory_record_to_item(self, store, sample_memory_record):
         """Test conversion of memory record to Item."""

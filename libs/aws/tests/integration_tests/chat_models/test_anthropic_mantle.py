@@ -82,3 +82,57 @@ class TestAnthropicMantleIntegration(ChatModelIntegrationTests):
         if request.node.originalname in ("test_stream", "test_astream"):
             params["model"] = STREAM_MODEL_NAME
         return self.chat_model_class(**params)
+
+
+def _aws_credentials_available() -> bool:
+    try:
+        import boto3
+
+        return boto3.Session().get_credentials() is not None
+    except Exception:
+        return False
+
+
+@pytest.mark.skipif(
+    not _aws_credentials_available(),
+    reason="Requires resolvable AWS credentials to generate Bedrock API key "
+    "and SigV4 sign.",
+)
+def test_auth_mode_sigv4_with_env_bearer_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aws_bedrock_token_generator import provide_token
+
+    region = os.getenv("AWS_REGION", "us-east-1")
+    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", provide_token(region=region))
+    model = ChatAnthropicMantle(  # type: ignore[call-arg]
+        model_name=MODEL_NAME,
+        region_name=region,
+        auth_mode="sigv4",
+        max_tokens=50,
+    )
+    assert model._client._use_sigv4 is True
+    response = model.invoke("Say OK and nothing else.")
+    assert isinstance(response.content, (str, list))
+    assert response.content
+
+
+@pytest.mark.skipif(
+    not _aws_credentials_available(),
+    reason="Requires resolvable AWS credentials to mint a Bedrock API key.",
+)
+def test_auth_mode_api_key_live(monkeypatch: pytest.MonkeyPatch) -> None:
+    from aws_bedrock_token_generator import provide_token
+
+    region = os.getenv("AWS_REGION", "us-east-1")
+    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", provide_token(region=region))
+    model = ChatAnthropicMantle(  # type: ignore[call-arg]
+        model_name=MODEL_NAME,
+        region_name=region,
+        auth_mode="api_key",
+        max_tokens=50,
+    )
+    assert model._client._use_sigv4 is False
+    response = model.invoke("Say OK and nothing else.")
+    assert isinstance(response.content, (str, list))
+    assert response.content

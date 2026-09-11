@@ -2,10 +2,21 @@
 Unit tests for patch_orphan_tool_calls function.
 """
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langgraph.checkpoint.serde import types as _serde_types
 
 from langgraph_checkpoint_aws.checkpoint.agentcore.helpers import (
     patch_orphan_tool_calls,
+)
+
+# `_DeltaSnapshot` only exists on newer langgraph-checkpoint releases, while the
+# package still supports `langgraph-checkpoint>=3.0.0`. Import it defensively so
+# collection does not fail on versions that predate it.
+_DeltaSnapshot = getattr(_serde_types, "_DeltaSnapshot", None)
+requires_delta_snapshot = pytest.mark.skipif(
+    _DeltaSnapshot is None,
+    reason="requires a langgraph-checkpoint version that ships _DeltaSnapshot",
 )
 
 
@@ -17,6 +28,24 @@ class TestPatchOrphanToolCalls:
 
     def test_none_messages_list(self):
         assert patch_orphan_tool_calls(None) is None
+
+    @requires_delta_snapshot
+    def test_delta_snapshot_is_not_patched_before_pending_writes_replay(self):
+        messages = [
+            HumanMessage(content="Hello"),
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {"id": "orphan_123", "name": "get_weather", "args": {}},
+                ],
+            ),
+        ]
+
+        snapshot = _DeltaSnapshot(messages)
+        result = patch_orphan_tool_calls(snapshot)
+
+        assert result is snapshot
+        assert result.value == messages
 
     def test_messages_without_tool_calls(self):
         messages = [

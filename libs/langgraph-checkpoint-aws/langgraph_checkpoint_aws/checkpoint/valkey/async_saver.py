@@ -18,7 +18,7 @@ from langgraph.checkpoint.base import (
 )
 from langgraph.checkpoint.serde.base import SerializerProtocol
 
-from .base import BaseValkeySaver
+from .base import _PUT_WRITES_MAX_ATTEMPTS, BaseValkeySaver
 from .utils import aset_client_info, aset_client_name
 
 # Conditional imports for optional dependencies
@@ -33,7 +33,7 @@ except ImportError as e:
 try:
     from valkey.asyncio import Valkey as AsyncValkey
     from valkey.asyncio.connection import ConnectionPool as AsyncConnectionPool
-    from valkey.exceptions import ValkeyError
+    from valkey.exceptions import ValkeyError, WatchError
 except ImportError as e:
     raise ImportError(
         "The 'valkey' package is required to use AsyncValkeySaver. "
@@ -513,43 +513,33 @@ class AsyncValkeySaver(BaseValkeySaver):
             checkpoint_id = str(configurable["checkpoint_id"])
 
             writes_key = self._make_writes_key(thread_id, checkpoint_ns, checkpoint_id)
-
-            # Get existing writes first
-            existing_data = await self.client.get(writes_key)
-
-            existing_writes = []
-            if existing_data:
-                try:
-                    # Handle string vs bytes for orjson
-                    if isinstance(existing_data, str):
-                        existing_data = existing_data.encode("utf-8")
-                    elif not isinstance(existing_data, (bytes, bytearray, memoryview)):
-                        # Handle other types (like Mock objects) by converting to
-                        # JSON string first
-                        try:
-                            existing_data = orjson.dumps(existing_data)
-                        except (TypeError, ValueError):
-                            existing_data = b"[]"  # Default to empty array
-
-                    parsed_data = orjson.loads(existing_data)
-                    # Ensure we have a list
-                    if isinstance(parsed_data, list):
-                        existing_writes = parsed_data
-                    else:
-                        existing_writes = []
-                except (orjson.JSONDecodeError, TypeError, ValueError):
-                    existing_writes = []
-
-            # Add new writes
             new_writes = self._serialize_writes_data(writes, task_id)
-            existing_writes.extend(new_writes)
 
-            # Store updated writes atomically
-            pipe = self.client.pipeline()
-            pipe.set(writes_key, orjson.dumps(existing_writes))
-            if self.ttl:
-                pipe.expire(writes_key, int(self.ttl))
-            await pipe.execute()
+            # Read-modify-write the shared writes blob inside a WATCH/MULTI/EXEC
+            # transaction so concurrent tasks writing to the same checkpoint cannot
+            # clobber each other's writes (a lost update). WATCH aborts EXEC if the
+            # key changed since it was read, so we retry on the stale snapshot.
+            async with self.client.pipeline() as pipe:
+                for _ in range(_PUT_WRITES_MAX_ATTEMPTS):
+                    try:
+                        await pipe.watch(writes_key)
+                        existing_writes = self._parse_writes_blob(
+                            await pipe.get(writes_key)
+                        )
+                        merged_writes = self._merge_writes(existing_writes, new_writes)
+                        pipe.multi()
+                        pipe.set(writes_key, orjson.dumps(merged_writes))
+                        if self.ttl:
+                            pipe.expire(writes_key, int(self.ttl))
+                        await pipe.execute()
+                        return
+                    except WatchError:
+                        continue
+            msg = (
+                f"aput_writes could not commit after {_PUT_WRITES_MAX_ATTEMPTS} "
+                "attempts due to contention on the checkpoint writes key"
+            )
+            raise ValkeyError(msg)
 
         except (ValkeyError, orjson.JSONEncodeError, KeyError) as e:
             logger.error(f"Error in aput_writes: {e}")

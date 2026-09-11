@@ -2,7 +2,7 @@
 
 import os
 from functools import cached_property
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import anthropic
 from anthropic import (
@@ -379,7 +379,21 @@ class ChatAnthropicMantle(ChatAnthropic):
       ``AWS_BEARER_TOKEN_BEDROCK`` environment variable.
     - **AWS SigV4** with standard AWS credentials — explicit keys, a named
       profile, or the default credential chain (environment, instance profile,
-      SSO, etc.). Used automatically whenever no API key is provided.
+      SSO, etc.).
+
+    Note that if multiple credential sources are provided/available, the
+    ``AnthropicBedrockMantle`` client resolves priority as follows:
+
+    1. Explicit ``bedrock_api_key``
+    2. Explicit ``aws_access_key_id``/``aws_secret_access_key``
+    3. Explicit ``credentials_profile_name``
+    4. ``AWS_BEARER_TOKEN_BEDROCK`` env variable
+    5. Default AWS credential chain (SigV4)
+
+    If you want to explicitly prioritize either API keys or SigV4, use
+    ``auth_mode``. ``auth_mode="api_key"`` generally restores the
+    key-over-credentials precedence used by ``ChatBedrockConverse`` and
+    most of the other boto3-client based integrations.
 
     See the [Claude Platform docs](https://platform.claude.com/docs/en/about-claude/models/overview)
     for the latest models, their capabilities, and pricing.
@@ -415,13 +429,17 @@ class ChatAnthropicMantle(ChatAnthropic):
     """
 
     bedrock_api_key: SecretStr | None = Field(
-        default_factory=secret_from_env("AWS_BEARER_TOKEN_BEDROCK", default=None)
+        default_factory=secret_from_env(
+            ("AWS_BEARER_TOKEN_BEDROCK", "ANTHROPIC_AWS_API_KEY"), default=None
+        )
     )
     """Amazon Bedrock API key used to authenticate to Mantle.
 
-    If not provided, read from the ``AWS_BEARER_TOKEN_BEDROCK`` environment
-    variable. When neither is set, the client falls back to AWS SigV4 using
-    the credentials below (or the default AWS credential chain).
+    If not provided, read from the ``AWS_BEARER_TOKEN_BEDROCK`` or
+    ``ANTHROPIC_AWS_API_KEY`` environment variable (in that order). An
+    explicitly passed key always selects bearer authentication; an
+    environment-sourced key is outranked by explicitly passed SigV4
+    credentials. See the class docstring for the full selection order.
     """
 
     aws_access_key_id: SecretStr | None = Field(
@@ -466,6 +484,18 @@ class ChatAnthropicMantle(ChatAnthropic):
     credentials_profile_name: str | None = None
     """AWS profile name from ``~/.aws/credentials`` for SigV4 authentication."""
 
+    auth_mode: Literal["auto", "api_key", "sigv4"] = "auto"
+    """Which authentication mode to use with the Mantle request.
+
+    - ``"auto"`` (default): Allow `AnthropicBedrockMantle` to decide the 
+      credential source priority (see class docstring for details).
+    - ``"api_key"``: always use bearer authentication. Raises if Bedrock
+      API key is unavailable from either `bedrock_api_key`` or the environment.
+    - ``"sigv4"``: always use AWS SigV4. Use this when the process environment 
+      may carry ``AWS_BEARER_TOKEN_BEDROCK`` (e.g. shared containers) but requests 
+      must be signed with the caller's AWS credentials.
+    """
+
     @model_validator(mode="before")
     @classmethod
     def _set_anthropic_api_key(cls, values: Any) -> Any:
@@ -499,6 +529,29 @@ class ChatAnthropicMantle(ChatAnthropic):
         _check_no_mantle_guardrail_headers(kwargs.get("extra_headers"))
         return super()._get_request_payload(input_, stop=stop, **kwargs)
 
+    @model_validator(mode="after")
+    def _validate_auth_mode(self) -> Self:
+        if self.auth_mode == "api_key" and not self.bedrock_api_key:
+            msg = (
+                "auth_mode='api_key' requires a Bedrock API key. Set "
+                "`bedrock_api_key`, or the AWS_BEARER_TOKEN_BEDROCK or "
+                "ANTHROPIC_AWS_API_KEY environment variable."
+            )
+            raise ValueError(msg)
+        if (
+            self.auth_mode == "sigv4"
+            and "bedrock_api_key" in self.model_fields_set
+            and self.bedrock_api_key
+        ):
+            msg = (
+                "auth_mode='sigv4' conflicts with an explicitly provided "
+                "`bedrock_api_key`. Remove one of the two: a bearer key "
+                "read from the environment is ignored under sigv4, but an "
+                "explicit constructor argument is treated as a mistake."
+            )
+            raise ValueError(msg)
+        return self
+
     @property
     def _client_params(self) -> dict[str, Any]:
         """Get client parameters for AnthropicBedrockMantle."""
@@ -515,20 +568,39 @@ class ChatAnthropicMantle(ChatAnthropic):
         }
         if self.anthropic_api_url and "api.anthropic.com" not in self.anthropic_api_url:
             client_params["base_url"] = self.anthropic_api_url
-        if self.bedrock_api_key:
+        explicit_sigv4_credentials = (
+            "credentials_profile_name" in self.model_fields_set
+            and bool(self.credentials_profile_name)
+        ) or (
+            bool({"aws_access_key_id", "aws_secret_access_key"} & self.model_fields_set)
+            and self.aws_access_key_id is not None
+            and self.aws_secret_access_key is not None
+        )
+        if (
+            self.bedrock_api_key
+            and self.auth_mode != "sigv4"
+            and (
+                self.auth_mode == "api_key"
+                or "bedrock_api_key" in self.model_fields_set
+                or not explicit_sigv4_credentials
+            )
+        ):
             client_params["api_key"] = self.bedrock_api_key.get_secret_value()
-        if self.aws_access_key_id:
-            client_params["aws_access_key"] = self.aws_access_key_id.get_secret_value()
-        if self.aws_secret_access_key:
-            client_params["aws_secret_key"] = (
-                self.aws_secret_access_key.get_secret_value()
-            )
-        if self.aws_session_token:
-            client_params["aws_session_token"] = (
-                self.aws_session_token.get_secret_value()
-            )
-        if self.credentials_profile_name:
-            client_params["aws_profile"] = self.credentials_profile_name
+        if self.auth_mode != "api_key":
+            if self.aws_access_key_id:
+                client_params["aws_access_key"] = (
+                    self.aws_access_key_id.get_secret_value()
+                )
+            if self.aws_secret_access_key:
+                client_params["aws_secret_key"] = (
+                    self.aws_secret_access_key.get_secret_value()
+                )
+            if self.aws_session_token:
+                client_params["aws_session_token"] = (
+                    self.aws_session_token.get_secret_value()
+                )
+            if self.credentials_profile_name:
+                client_params["aws_profile"] = self.credentials_profile_name
         if (
             self.default_request_timeout is not None
             and self.default_request_timeout > 0
@@ -536,15 +608,32 @@ class ChatAnthropicMantle(ChatAnthropic):
             client_params["timeout"] = self.default_request_timeout
         return client_params
 
+    def _pin_client_auth_mode(self, client: Any) -> Any:
+        if self.auth_mode == "sigv4":
+            if not hasattr(client, "_use_sigv4"):
+                msg = (
+                    "Unable to set `_use_sigv4` on the AnthropicBedrockMantle client, "
+                    "which may not longer expose it. Please pin `anthropic` to a "
+                    "compatible version and file a bug report to the langchain-aws "
+                    "repository."
+                )
+                raise RuntimeError(msg)
+            if not client._use_sigv4:
+                client._use_sigv4 = True
+                client.api_key = None
+        return client
+
     @cached_property
     def _client(self) -> Any:  # type: ignore[type-arg]
         """Get synchronous AnthropicBedrockMantle client."""
-        return AnthropicBedrockMantle(**self._client_params)
+        return self._pin_client_auth_mode(AnthropicBedrockMantle(**self._client_params))
 
     @cached_property
     def _async_client(self) -> Any:  # type: ignore[type-arg]
         """Get asynchronous AnthropicBedrockMantle client."""
-        return AsyncAnthropicBedrockMantle(**self._client_params)
+        return self._pin_client_auth_mode(
+            AsyncAnthropicBedrockMantle(**self._client_params)
+        )
 
     @model_validator(mode="after")
     def _set_model_profile(self) -> Self:

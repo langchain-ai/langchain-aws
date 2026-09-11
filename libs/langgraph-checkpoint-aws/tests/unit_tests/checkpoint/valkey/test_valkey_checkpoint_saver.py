@@ -449,6 +449,25 @@ class TestValkeySaverUnit:
         writes = json.loads(writes_data)
         assert len(writes) == 3  # 2 from first batch + 1 from second batch
 
+    def test_put_writes_positional_write_is_idempotent(self, saver, fake_valkey_client):
+        """Replaying a task's positional write must not duplicate it."""
+        config_with_checkpoint = {
+            "configurable": {
+                "thread_id": "test-thread",
+                "checkpoint_ns": "test-ns",
+                "checkpoint_id": "test-checkpoint-id",
+            }
+        }
+
+        saver.put_writes(config_with_checkpoint, [("messages", "v")], "task-a")
+        saver.put_writes(config_with_checkpoint, [("messages", "v")], "task-a")
+
+        writes_key = saver._make_writes_key(
+            "test-thread", "test-ns", "test-checkpoint-id"
+        )
+        stored = json.loads(fake_valkey_client.get(writes_key))
+        assert len(stored) == 1
+
     def test_serialize_checkpoint_data(self, saver, sample_checkpoint, sample_metadata):
         """Test checkpoint data serialization."""
         config = {"configurable": {"thread_id": "test-thread"}}

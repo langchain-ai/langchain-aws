@@ -7,43 +7,67 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-opus-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."au.anthropic.claude-opus-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."eu.anthropic.claude-opus-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."global.anthropic.claude-opus-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."jp.anthropic.claude-opus-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."us.anthropic.claude-opus-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."anthropic.claude-sonnet-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."au.anthropic.claude-sonnet-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."eu.anthropic.claude-sonnet-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."global.anthropic.claude-sonnet-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."jp.anthropic.claude-sonnet-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."us.anthropic.claude-sonnet-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."amazon.nova-2-lite-v1:0"]
 reasoning_effort_levels = ["low", "medium", "high"]
+
+[overrides."openai.gpt-6-astra"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
+[overrides."openai.gpt-5.6-terra"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+
+[overrides."openai.gpt-5.6-luna"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+
+[overrides."openai.gpt-5.6-sol"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."openai.gpt-oss-120b"]
 reasoning_effort_levels = ["low", "medium", "high"]

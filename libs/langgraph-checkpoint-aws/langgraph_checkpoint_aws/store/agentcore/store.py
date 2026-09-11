@@ -15,6 +15,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from langchain_core.messages import BaseMessage
+from langchain_core.runnables import run_in_executor
 from langgraph.store.base import (
     BaseStore,
     GetOp,
@@ -117,10 +118,8 @@ class AgentCoreMemoryStore(BaseStore):
         return results
 
     async def abatch(self, ops: Iterable[Op]) -> list[Result]:
-        """Execute multiple operations asynchronously (not implemented)."""
-        raise NotImplementedError(
-            "AgentCore Memory client does not support async operations yet"
-        )
+        """Execute multiple operations asynchronously."""
+        return await run_in_executor(None, self.batch, list(ops))
 
     def _handle_put(self, op: PutOp) -> None:
         """Handle PutOp by creating conversational events in AgentCore Memory."""

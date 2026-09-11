@@ -282,6 +282,13 @@ def test_claude_5_adaptive_thinking_forced_tool_choice_allowed(
     }
 
 
+def test_claude_fable_5_1_tool_choice_auto_only() -> None:
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-fable-5-1", region_name="us-west-2"
+    )
+    assert chat_model.supports_tool_choice_values == ("auto",)
+
+
 def test_amazon_bind_tools_tool_choice() -> None:
     chat_model = ChatBedrockConverse(
         model="us.amazon.nova-lite-v1:0", region_name="us-east-1"
@@ -340,17 +347,34 @@ def test_llama_bind_tools_tool_choice_variants(
     "model,expected_values",
     [
         ("us.deepseek.r1-v1:0", ()),
-        ("deepseek.v3-v1:0", ("any",)),
-        (
-            "deepseek.v3-x:0",
-            (
-                "any",
-                "tool",
-            ),
-        ),
+        ("deepseek.v3-v1:0", ("auto", "any")),
+        ("deepseek.v3.2", ("auto", "any")),
     ],
 )
 def test_deepseek_supports_tool_choice_values(
+    model: str, expected_values: tuple[Literal["auto", "any", "tool"], ...]
+) -> None:
+    chat_model = ChatBedrockConverse(model=model, region_name="us-east-1")
+    assert chat_model.supports_tool_choice_values == expected_values
+
+
+def test_xai_supports_tool_choice_values() -> None:
+    chat_model = ChatBedrockConverse(
+        model="global.xai.grok-4.6", region_name="us-east-1"
+    )
+    assert chat_model.supports_tool_choice_values == ("auto", "any", "tool")
+
+
+@pytest.mark.parametrize(
+    "model, expected_values",
+    [
+        ("us.openai.gpt-6-astra", ("auto", "any", "tool")),
+        ("global.openai.gpt-5.6-terra", ("auto", "any", "tool")),
+        ("openai.gpt-5.6-sol", ("auto", "any", "tool")),
+        ("openai.gpt-oss-120b-1:0", ()),
+    ],
+)
+def test_openai_supports_tool_choice_values(
     model: str, expected_values: tuple[Literal["auto", "any", "tool"], ...]
 ) -> None:
     chat_model = ChatBedrockConverse(model=model, region_name="us-east-1")
@@ -377,28 +401,61 @@ def test_deepseek_r1_no_tool_choice_support() -> None:
         chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
 
 
-def test_deepseek_v3_bind_tools_tool_choice_variants() -> None:
-    chat_model = ChatBedrockConverse(model="deepseek.v3-v1:0", region_name="us-east-1")  # type: ignore[call-arg]
+@pytest.mark.parametrize("model", ["deepseek.v3-v1:0", "deepseek.v3.2"])
+def test_deepseek_v3_bind_tools_tool_choice_variants(model: str) -> None:
+    chat_model = ChatBedrockConverse(model=model, region_name="us-east-1")  # type: ignore[call-arg]
 
     chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="any")
     assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
         "any": {}
     }
 
-    with pytest.raises(ValueError):
-        chat_model.bind_tools([GetWeather], tool_choice="auto")
+    chat_model_with_tools = chat_model.bind_tools([GetWeather], tool_choice="auto")
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "auto": {}
+    }
 
     with pytest.raises(ValueError):
         chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
 
 
-def test_deepseek_v3_bind_tools_default_tool_choice() -> None:
-    chat_model = ChatBedrockConverse(model="deepseek.v3-v1:0", region_name="us-east-1")  # type: ignore[call-arg]
+@pytest.mark.parametrize("model", ["deepseek.v3-v1:0", "deepseek.v3.2"])
+def test_deepseek_v3_bind_tools_default_tool_choice(model: str) -> None:
+    chat_model = ChatBedrockConverse(model=model, region_name="us-east-1")  # type: ignore[call-arg]
 
     chat_model_with_tools = chat_model.bind_tools([GetWeather])
-    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
-        "any": {}
-    }
+    assert (
+        cast(RunnableBinding, chat_model_with_tools).kwargs.get("tool_choice") is None
+    )
+
+
+_DEEPSEEK_REASONING = {"reasoning_effort": "high"}
+
+
+@pytest.mark.parametrize("model", ["deepseek.v3-v1:0", "deepseek.v3.2"])
+def test_deepseek_v3_reasoning_restricts_tool_choice_to_auto(model: str) -> None:
+    chat_model = ChatBedrockConverse(
+        model=model,
+        region_name="us-east-1",
+        additional_model_request_fields=_DEEPSEEK_REASONING,
+    )  # type: ignore[call-arg]
+    assert chat_model.supports_tool_choice_values == ("auto",)
+
+
+def test_deepseek_v3_reasoning_downgrades_forced_tool_choice_to_auto() -> None:
+    chat_model = ChatBedrockConverse(
+        model="deepseek.v3.2",
+        region_name="us-east-1",
+        additional_model_request_fields=_DEEPSEEK_REASONING,
+    )  # type: ignore[call-arg]
+
+    with pytest.warns(UserWarning, match="Downgrading to tool_choice='auto'"):
+        bound = chat_model.bind_tools([GetWeather], tool_choice="any")
+    assert cast(RunnableBinding, bound).kwargs["tool_choice"] == {"auto": {}}
+
+    with pytest.warns(UserWarning, match="Downgrading to tool_choice='auto'"):
+        bound = chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+    assert cast(RunnableBinding, bound).kwargs["tool_choice"] == {"auto": {}}
 
 
 def test__messages_to_bedrock() -> None:
@@ -1412,9 +1469,13 @@ def test_invocation_params_model_prefers_base_model_id() -> None:
         ("deepseek.v3-v1:0", False),
         ("openai.gpt-oss-120b-1:0", False),
         ("openai.gpt-oss-20b-1:0", False),
+        ("us.openai.gpt-5.6-terra", False),
+        ("global.openai.gpt-5.6-sol", False),
+        ("us.openai.gpt-6-astra", False),
         ("qwen.qwen3-32b-v1:0", False),
         ("moonshotai.kimi-k2.5", False),
         ("moonshot.kimi-k2-thinking", False),
+        ("xai.grok-4.6", False),
     ],
 )
 def test_set_disable_streaming(
@@ -3102,6 +3163,12 @@ def test__get_base_model() -> None:
             False,
         ),
         (
+            "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile",
+            "xai.grok-4.6",
+            "xai",
+            False,
+        ),
+        (
             "arn:aws:bedrock:us-west-2::custom-model/anthropic.claude-v2:1/MyModel",
             "anthropic.claude-v2:1",
             "anthropic",
@@ -4676,6 +4743,36 @@ def test_reasoning_effort_gpt_oss_invalid_level_raises() -> None:
             region_name="us-east-1",
             reasoning_effort="xhigh",
             profile={"reasoning_effort_levels": ["low", "medium", "high"]},
+        )  # type: ignore[call-arg]
+
+
+def test_reasoning_effort_gpt_5() -> None:
+    """Test reasoning effort use with GPT-5.x."""
+    llm = ChatBedrockConverse(
+        model="us.openai.gpt-5.6-terra",
+        region_name="us-east-1",
+        reasoning_effort="none",
+    )  # type: ignore[call-arg]
+    assert llm.additional_model_request_fields == {"reasoning": {"effort": "none"}}
+
+
+def test_reasoning_effort_gpt_6_nested() -> None:
+    """Test reasoning effort use with GPT-6."""
+    llm = ChatBedrockConverse(
+        model="global.openai.gpt-6-astra",
+        region_name="us-east-1",
+        reasoning_effort="max",
+    )  # type: ignore[call-arg]
+    assert llm.additional_model_request_fields == {"reasoning": {"effort": "max"}}
+
+
+def test_reasoning_effort_gpt_6_rejects_none() -> None:
+    """Test `none` is rejected with a helpful error for GPT-6."""
+    with pytest.raises(ValueError, match="reasoning_effort='none' is not supported"):
+        ChatBedrockConverse(
+            model="openai.gpt-6-astra",
+            region_name="us-east-1",
+            reasoning_effort="none",
         )  # type: ignore[call-arg]
 
 
@@ -7125,6 +7222,152 @@ def test_with_structured_output_prompt_prefill_include_raw() -> None:
     assert "parsing_error" in repr(last) or "parsed" in repr(last)
 
 
+def test_with_structured_output_repairs_stringified_list_field() -> None:
+    """A List[Model] field emitted as a JSON string parses successfully (#1221).
+
+    Same repair as ChatBedrock: Claude models intermittently re-serialize a
+    declared array field as a JSON string containing the correct value.
+    """
+    from unittest.mock import patch
+
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from pydantic import Field
+
+    class Entry(BaseModel):
+        label: str
+        values: List[int] = Field(default_factory=list)
+
+    class Output(BaseModel):
+        items: List[Entry]
+
+    stringified = '[{"label": "Onboarding", "values": [1001, 1002]}]'
+    message = AIMessage(
+        "",
+        tool_calls=[
+            {
+                "name": "Output",
+                "args": {"items": stringified},
+                "id": "toolu_bdrk_01X",
+                "type": "tool_call",
+            }
+        ],
+    )
+    result = ChatResult(generations=[ChatGeneration(message=message)])
+
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    structured = model.with_structured_output(Output, include_raw=True)
+    with patch.object(ChatBedrockConverse, "_generate", return_value=result):
+        out = cast(dict, structured.invoke("group the items"))
+
+    assert out["parsing_error"] is None
+    assert out["parsed"] == Output(
+        items=[Entry(label="Onboarding", values=[1001, 1002])]
+    )
+
+
+def _fake_tool_call_stream(tool_name: str, args_json: str, split_at: str) -> list:
+    """Build a two-chunk fake stream with tool-call args split across chunks."""
+    from langchain_core.messages import AIMessageChunk
+    from langchain_core.outputs import ChatGenerationChunk
+
+    split = args_json.index(split_at)
+    return [
+        ChatGenerationChunk(
+            message=AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {
+                        "name": tool_name,
+                        "args": args_json[:split],
+                        "id": "toolu_bdrk_01X",
+                        "index": 0,
+                        "type": "tool_call_chunk",
+                    }
+                ],
+            )
+        ),
+        ChatGenerationChunk(
+            message=AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {
+                        "name": None,
+                        "args": args_json[split:],
+                        "id": None,
+                        "index": 0,
+                        "type": "tool_call_chunk",
+                    }
+                ],
+            )
+        ),
+    ]
+
+
+def test_with_structured_output_streaming_pydantic_yields_multiple_chunks() -> None:
+    """Structured-output streaming must not collapse to a single chunk."""
+    from unittest.mock import patch
+
+    class Answer(BaseModel):
+        answer: str
+        justification: str
+
+    chunks = _fake_tool_call_stream(
+        "Answer",
+        '{"answer": "Neither", "justification": "Both weigh one pound."}',
+        "one pound",
+    )
+
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    structured = model.with_structured_output(Answer)
+    with patch.object(ChatBedrockConverse, "_stream", return_value=iter(chunks)):
+        results = list(structured.stream("bricks or feathers?"))
+
+    assert len(results) > 1
+    assert results[-1] == Answer(
+        answer="Neither", justification="Both weigh one pound."
+    )
+
+
+def test_with_structured_output_streaming_dict_yields_multiple_chunks() -> None:
+    """Dict-schema structured-output streaming yields incremental chunks."""
+    from unittest.mock import patch
+
+    schema = {
+        "name": "Answer",
+        "description": "An answer with justification.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "answer": {"type": "string"},
+                "justification": {"type": "string"},
+            },
+            "required": ["answer", "justification"],
+        },
+    }
+    chunks = _fake_tool_call_stream(
+        "Answer",
+        '{"answer": "Neither", "justification": "Both weigh one pound."}',
+        "one pound",
+    )
+
+    model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    structured = model.with_structured_output(schema)
+    with patch.object(ChatBedrockConverse, "_stream", return_value=iter(chunks)):
+        results = list(structured.stream("bricks or feathers?"))
+
+    assert len(results) > 1
+    assert results[-1] == {
+        "answer": "Neither",
+        "justification": "Both weigh one pound.",
+    }
+
+
 class TestNonAsciiPreservation:
     """Regression tests: non-ASCII characters must survive JSON serialization."""
 
@@ -7363,3 +7606,149 @@ def test__messages_to_bedrock_foreign_tool_call_round_trip() -> None:
     bedrock_messages, _ = _messages_to_bedrock(messages)
     assert bedrock_messages[1]["content"][0]["toolUse"]["toolUseId"] == "call_1"
     assert bedrock_messages[2]["content"][0]["toolResult"]["toolUseId"] == "call_1"
+
+
+_REASONING_BLOCK = {"reasoningContent": {"reasoningText": {"text": "Thinking."}}}
+_SIGNED_REASONING_BLOCK = {
+    "reasoningContent": {"reasoningText": {"text": "Thinking.", "signature": "sig"}}
+}
+_ANSWER_BLOCK = {"text": "Answer."}
+
+
+@pytest.mark.parametrize(
+    ("model_id", "signature", "expected_content"),
+    [
+        # Models that accept unsigned reasoning have it forwarded.
+        ("openai.gpt-oss-120b-1:0", "", [_REASONING_BLOCK, _ANSWER_BLOCK]),
+        ("deepseek.v3.2", "", [_REASONING_BLOCK, _ANSWER_BLOCK]),
+        ("minimax.minimax-m2.5", "", [_REASONING_BLOCK, _ANSWER_BLOCK]),
+        ("moonshotai.kimi-k2.5", "", [_REASONING_BLOCK, _ANSWER_BLOCK]),
+        # Models that emit unsigned reasoning but reject it on the way back are
+        # absent from the allowlist, so their reasoning is still dropped.
+        ("openai.gpt-5.6-luna", "", [_ANSWER_BLOCK]),
+        ("xai.grok-4.6", "", [_ANSWER_BLOCK]),
+        # DeepSeek R1 rejects reasoning content whether or not it is signed.
+        ("deepseek.r1-v1:0", "", [_ANSWER_BLOCK]),
+        ("deepseek.r1-v1:0", "sig", [_ANSWER_BLOCK]),
+        # Anthropic models require a signature.
+        ("anthropic.claude-sonnet-4-5-20250929-v1:0", "", [_ANSWER_BLOCK]),
+        (
+            "anthropic.claude-sonnet-4-5-20250929-v1:0",
+            "sig",
+            [_SIGNED_REASONING_BLOCK, _ANSWER_BLOCK],
+        ),
+        # Nova v1 emits inline reasoning and rejects it on the way back; Nova 2
+        # uses native reasoning and accepts it.
+        ("amazon.nova-pro-v1:0", "", [_ANSWER_BLOCK]),
+        ("amazon.nova-pro-v1:0", "sig", [_ANSWER_BLOCK]),
+        ("amazon.nova-2-lite-v1:0", "", [_REASONING_BLOCK, _ANSWER_BLOCK]),
+        # A model not vetted for unsigned reasoning falls back to requiring a
+        # signature, as does an unknown model.
+        ("cohere.command-r-plus-v1:0", "", [_ANSWER_BLOCK]),
+        (
+            "cohere.command-r-plus-v1:0",
+            "sig",
+            [_SIGNED_REASONING_BLOCK, _ANSWER_BLOCK],
+        ),
+        (None, "", [_ANSWER_BLOCK]),
+        (None, "sig", [_SIGNED_REASONING_BLOCK, _ANSWER_BLOCK]),
+    ],
+)
+def test__messages_to_bedrock_reasoning_by_model(
+    model_id: Optional[str], signature: str, expected_content: List[dict]
+) -> None:
+    messages: List[BaseMessage] = [
+        HumanMessage(content="Question?"),
+        AIMessage(
+            content=[
+                {
+                    "type": "reasoning_content",
+                    "reasoning_content": {"text": "Thinking.", "signature": signature},
+                },
+                {"type": "text", "text": "Answer."},
+            ]
+        ),
+        HumanMessage(content="Follow-up?"),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages, model_id=model_id)
+
+    assert actual_messages[1] == {"role": "assistant", "content": expected_content}
+
+
+def test__messages_to_bedrock_reasoning_only_content() -> None:
+    """An unsigned reasoning block should survive as the sole content block."""
+    messages: List[BaseMessage] = [
+        HumanMessage(content="Question?"),
+        AIMessage(
+            content=[
+                {
+                    "type": "reasoning_content",
+                    "reasoning_content": {"text": "Thinking.", "signature": ""},
+                }
+            ]
+        ),
+        HumanMessage(content="Follow-up?"),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages, model_id="deepseek.v3.2")
+
+    assert actual_messages[1] == {"role": "assistant", "content": [_REASONING_BLOCK]}
+
+
+def test__bedrock_to_lc_redacted_reasoning_delta() -> None:
+    """A streamed delta carrying only redacted reasoning should not be dropped."""
+    assert _bedrock_to_lc([{"reasoningContent": {"redactedContent": b"abc"}}]) == [
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {"redacted_content": b"abc"},
+        }
+    ]
+
+
+def test__messages_to_bedrock_redacted_reasoning_round_trip() -> None:
+    """Redacted reasoning survives a round trip without a signature."""
+    messages: List[BaseMessage] = [
+        HumanMessage(content="Question?"),
+        AIMessage(
+            content=[
+                {
+                    "type": "reasoning_content",
+                    "reasoning_content": {"redacted_content": b"abc"},
+                },
+                {"type": "text", "text": "Answer."},
+            ]
+        ),
+        HumanMessage(content="Follow-up?"),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages, model_id="xai.grok-4.6")
+
+    assert actual_messages[1] == {
+        "role": "assistant",
+        "content": [
+            {"reasoningContent": {"redactedContent": b"abc"}},
+            _ANSWER_BLOCK,
+        ],
+    }
+
+
+def test__messages_to_bedrock_redacted_reasoning_dropped_when_rejected() -> None:
+    """A model that rejects reasoning outright also rejects the encrypted form."""
+    messages: List[BaseMessage] = [
+        HumanMessage(content="Question?"),
+        AIMessage(
+            content=[
+                {
+                    "type": "reasoning_content",
+                    "reasoning_content": {"redacted_content": b"abc"},
+                },
+                {"type": "text", "text": "Answer."},
+            ]
+        ),
+        HumanMessage(content="Follow-up?"),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages, model_id="deepseek.r1-v1:0")
+
+    assert actual_messages[1] == {"role": "assistant", "content": [_ANSWER_BLOCK]}

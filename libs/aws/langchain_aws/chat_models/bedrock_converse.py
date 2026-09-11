@@ -50,7 +50,6 @@ from langchain_core.messages import content as types
 from langchain_core.messages.ai import AIMessageChunk, InputTokenDetails, UsageMetadata
 from langchain_core.messages.tool import tool_call as create_tool_call
 from langchain_core.messages.tool import tool_call_chunk
-from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
 from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import (
@@ -74,13 +73,18 @@ from typing_extensions import Self
 from langchain_aws._version import _add_langchain_aws_version
 from langchain_aws.chat_models._compat import _convert_from_v1_to_converse
 from langchain_aws.data._profiles import _PROFILES
-from langchain_aws.function_calling import ToolsOutputParser
+from langchain_aws.function_calling import (
+    ToolsOutputParser,
+    _RepairingJsonOutputKeyToolsParser,
+    _RepairingPydanticToolsParser,
+)
 from langchain_aws.tools.nova_tools import NovaSystemTool
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
     parse_model_provider,
     reasoning_effort_additional_fields,
+    thinking_enabled_in_params,
     thinking_forced_tool_use_unsupported,
     thinking_in_params,
     trim_message_whitespace,
@@ -642,7 +646,9 @@ class ChatBedrockConverse(BaseChatModel):
 
     """
 
-    reasoning_effort: Optional[Literal["low", "medium", "high", "xhigh", "max"]] = None
+    reasoning_effort: Optional[
+        Literal["none", "low", "medium", "high", "xhigh", "max"]
+    ] = None
     """Reasoning effort level for models that support configurable reasoning.
 
     Translated into the appropriate provider-specific request format based on the
@@ -910,8 +916,8 @@ class ChatBedrockConverse(BaseChatModel):
                 )
             )
             or
-            # OpenAI gpt-oss models
-            (provider == "openai" and "gpt-oss" in model_id_lower)
+            # OpenAI GPT models (gpt-oss and native GPT-5.x/6.x)
+            (provider == "openai" and "gpt-" in model_id_lower)
             or
             # Cohere Command R models
             (provider == "cohere" and "command-r" in model_id_lower)
@@ -924,6 +930,9 @@ class ChatBedrockConverse(BaseChatModel):
             or
             # Kimi models
             (provider in ("moonshot", "moonshotai") and "kimi" in model_id_lower)
+            or
+            # xAI Grok models
+            (provider == "xai" and "grok" in model_id_lower)
         ):
             return True
         elif (
@@ -1137,12 +1146,18 @@ class ChatBedrockConverse(BaseChatModel):
             if "claude" in base_model:
                 # Tool choice not supported when thinking is enabled
                 thinking_params = self.additional_model_request_fields or {}
-                if thinking_forced_tool_use_unsupported(
+                if "claude-fable-5-1" in base_model:
+                    self.supports_tool_choice_values = ("auto",)
+                elif thinking_forced_tool_use_unsupported(
                     base_model
                 ) and thinking_in_params(thinking_params):
                     self.supports_tool_choice_values = ("auto",)
                 else:
                     self.supports_tool_choice_values = ("auto", "any", "tool")
+            elif "grok" in base_model:
+                self.supports_tool_choice_values = ("auto", "any", "tool")
+            elif base_model.startswith("openai.gpt-") and "gpt-oss" not in base_model:
+                self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "llama4" in base_model:
                 self.supports_tool_choice_values = ("auto",)
             elif "llama3" in base_model:
@@ -1160,10 +1175,12 @@ class ChatBedrockConverse(BaseChatModel):
             elif "nova" in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "deepseek" in base_model and "r1-v1" not in base_model:
-                if "v3-v1" in base_model:
-                    self.supports_tool_choice_values = ("any",)
+                if thinking_enabled_in_params(
+                    base_model, self.additional_model_request_fields or {}
+                ):
+                    self.supports_tool_choice_values = ("auto",)
                 else:
-                    self.supports_tool_choice_values = ("any", "tool")
+                    self.supports_tool_choice_values = ("auto", "any")
             else:
                 self.supports_tool_choice_values = ()
 
@@ -1330,7 +1347,9 @@ class ChatBedrockConverse(BaseChatModel):
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
         else:
-            bedrock_messages, system = _messages_to_bedrock(messages, self.system)
+            bedrock_messages, system = _messages_to_bedrock(
+                messages, self.system, model_id=self._get_base_model()
+            )
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
                 self._apply_guard_last_turn_only(bedrock_messages)
@@ -1406,7 +1425,9 @@ class ChatBedrockConverse(BaseChatModel):
             logger.debug(f"Using raw blocks: {self.raw_blocks}")
             bedrock_messages, system = self.raw_blocks, []
         else:
-            bedrock_messages, system = _messages_to_bedrock(messages, self.system)
+            bedrock_messages, system = _messages_to_bedrock(
+                messages, self.system, model_id=self._get_base_model()
+            )
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
                 self._apply_guard_last_turn_only(bedrock_messages)
@@ -1498,10 +1519,17 @@ class ChatBedrockConverse(BaseChatModel):
             "langchain_core.exceptions.OutputParserException if tool calls are not "
             "generated. Consider adjusting your prompt to ensure the tool is called."
         )
-        if thinking_forced_tool_use_unsupported(self._get_base_model()):
+        base_model = self._get_base_model()
+        if "claude" in base_model and thinking_forced_tool_use_unsupported(base_model):
             additional_context = (
                 "For Claude 3/4 models, you can also support forced tool use "
                 "by disabling `thinking`."
+            )
+            admonition = f"{admonition} {additional_context}"
+        if "deepseek.v3" in base_model:
+            additional_context = (
+                "For DeepSeek V3 models, forced tool use is not available while "
+                "`reasoning_effort` is set in `additional_model_request_fields`."
             )
             admonition = f"{admonition} {additional_context}"
         warnings.warn(admonition)
@@ -1547,8 +1575,6 @@ class ChatBedrockConverse(BaseChatModel):
                 not enabled (no safe downgrade possible).
         """
         if not tool_choice:
-            if "deepseek.v3" in self._get_base_model():
-                return _format_tool_choice("any")
             return None
 
         formatted = _format_tool_choice(tool_choice)
@@ -1560,7 +1586,9 @@ class ChatBedrockConverse(BaseChatModel):
 
         # Thinking-enabled models: downgrade to auto instead of failing.
         if (
-            thinking_in_params(self.additional_model_request_fields or {})
+            thinking_enabled_in_params(
+                self._get_base_model(), self.additional_model_request_fields or {}
+            )
             and "auto" in supported
         ):
             warnings.warn(
@@ -1682,8 +1710,16 @@ class ChatBedrockConverse(BaseChatModel):
         method: Literal[
             "function_calling", "json_schema", "prompt_prefill"
         ] = "function_calling",
+        strict: Optional[bool] = None,
         **kwargs: Any,
     ) -> Runnable[LanguageModelInput, Union[Dict, BaseModel]]:
+        if method != "function_calling" and strict is not None:
+            warnings.warn(
+                "The 'strict' parameter only applies to "
+                "method='function_calling'; it is ignored for "
+                f"method='{method}'.",
+                stacklevel=2,
+            )
         if method == "json_schema":
             return self._with_structured_output_json_schema(
                 schema, include_raw=include_raw, **kwargs
@@ -1693,7 +1729,7 @@ class ChatBedrockConverse(BaseChatModel):
                 schema, include_raw=include_raw, **kwargs
             )
         return self._with_structured_output_function_calling(
-            schema, include_raw=include_raw, **kwargs
+            schema, include_raw=include_raw, strict=strict, **kwargs
         )
 
     def _with_structured_output_function_calling(
@@ -1731,23 +1767,37 @@ class ChatBedrockConverse(BaseChatModel):
                 )
             except Exception:
                 llm = self.bind_tools([schema], tool_choice=tool_choice, strict=strict)
+
+        schema_properties = (
+            convert_to_openai_tool(schema)["function"].get("parameters") or {}
+        ).get("properties") or None
+
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             if self.disable_streaming:
                 output_parser: OutputParserLike = ToolsOutputParser(
-                    first_tool_only=True, pydantic_schemas=[schema]
+                    first_tool_only=True,
+                    pydantic_schemas=[schema],
+                    schema_properties=schema_properties,
                 )
             else:
-                output_parser = PydanticToolsParser(
+                output_parser = _RepairingPydanticToolsParser(
                     tools=[schema],
                     first_tool_only=True,
+                    schema_properties=schema_properties,
                 )
         else:
             tool_name = convert_to_openai_tool(schema)["function"]["name"]
             if self.disable_streaming:
-                output_parser = ToolsOutputParser(first_tool_only=True, args_only=True)
+                output_parser = ToolsOutputParser(
+                    first_tool_only=True,
+                    args_only=True,
+                    schema_properties=schema_properties,
+                )
             else:
-                output_parser = JsonOutputKeyToolsParser(
-                    key_name=tool_name, first_tool_only=True
+                output_parser = _RepairingJsonOutputKeyToolsParser(
+                    key_name=tool_name,
+                    first_tool_only=True,
+                    schema_properties=schema_properties,
                 )
 
         if include_raw:
@@ -2116,7 +2166,9 @@ class ChatBedrockConverse(BaseChatModel):
             bedrock_messages, system = (
                 (self.raw_blocks, [])
                 if self.raw_blocks
-                else _messages_to_bedrock(messages, self.system)
+                else _messages_to_bedrock(
+                    messages, self.system, model_id=self._get_base_model()
+                )
             )
 
             input_data = {"converse": {"messages": bedrock_messages}}
@@ -2253,6 +2305,8 @@ def _handle_bedrock_error(error: ClientError) -> None:
 def _messages_to_bedrock(
     messages: List[BaseMessage],
     system: Optional[List[Union[str, Dict[str, Any]]]] = None,
+    *,
+    model_id: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Handle Bedrock converse and Anthropic style content blocks"""
     for idx, message in enumerate(messages):
@@ -2305,7 +2359,9 @@ def _messages_to_bedrock(
         # raising, so a block this module simply does not handle yet stays a
         # loud bug rather than silently vanishing from the prompt.
         content = _lc_content_to_bedrock(
-            msg.content, drop_unsupported=isinstance(msg, AIMessage)
+            msg.content,
+            drop_unsupported=isinstance(msg, AIMessage),
+            model_id=model_id,
         )
         if isinstance(msg, HumanMessage):
             # If there's a human, tool, human message sequence, the
@@ -2451,9 +2507,9 @@ def _split_inline_reasoning(
 ) -> List[Dict[str, Any]]:
     """Split text into ordered text / reasoning_content blocks on complete tag pairs.
 
-    Each ``open_tag ... close_tag`` pair becomes a ``reasoning_content`` block (no
-    ``signature``, so ``_lc_content_to_bedrock`` drops it on round-trips); surrounding
-    text stays as ``text`` blocks.
+    Each ``open_tag ... close_tag`` pair becomes a ``reasoning_content`` block (which
+    ``_bedrock_reasoning_block`` drops on round-trips, since these models reject
+    reasoning content); surrounding text stays as ``text`` blocks.
     """
     if open_tag not in text:
         return [{"type": "text", "text": text}]
@@ -2759,10 +2815,60 @@ def _empty_content_fallback(
     return blocks or [{"text": EMPTY_CONTENT}]
 
 
+def _bedrock_reasoning_block(
+    reasoning: Dict[str, Any], model_id: Optional[str]
+) -> Optional[Dict[str, Any]]:
+    """Build a Converse `reasoningContent` block, or `None` if `model_id` rejects it."""
+    # Models that reject reasoning content in prior assistant turns entirely, whether
+    # or not it carries a signature. Models that emit inline reasoning (see
+    # `_inline_reasoning_tags`) reject it too, and are detected rather than listed.
+    _reasoning_unsupported_models = ("deepseek.r1",)
+    # Models verified to accept reasoning content carrying no signature. Anything not
+    # listed keeps its reasoning only when signed.
+    _unsigned_reasoning_models = (
+        "openai.gpt-oss",
+        "amazon.nova-2",
+        "deepseek.v3",
+        "minimax",
+        "kimi",
+    )
+
+    model_id_lower = (model_id or "").lower()
+    # TODO: `_get_base_model()` returns the raw ARN when `model_id` is an ARN and
+    # `base_model_id` is unset, so this misses Nova v1. Strip the ARN there, then
+    # simplify this to use the resolved provider.
+    provider = model_id_lower.partition(".")[0]
+
+    if any(
+        model in model_id_lower for model in _reasoning_unsupported_models
+    ) or _inline_reasoning_tags(provider, model_id_lower):
+        logger.debug("Dropping reasoning block; %s rejects reasoning content", model_id)
+        return None
+
+    # Encrypted reasoning is opaque, so there is no text or signature to gate on.
+    if redacted := reasoning.get("redactedContent"):
+        return {"reasoningContent": {"redactedContent": redacted}}
+
+    text = reasoning.get("text", "")
+    signature = reasoning.get("signature", "")
+    if not signature and (
+        not text
+        or not any(model in model_id_lower for model in _unsigned_reasoning_models)
+    ):
+        logger.debug("Dropping unsigned reasoning block for model %s", model_id)
+        return None
+
+    reasoning_text: Dict[str, Any] = {"text": text}
+    if signature:
+        reasoning_text["signature"] = signature
+    return {"reasoningContent": {"reasoningText": reasoning_text}}
+
+
 def _lc_content_to_bedrock(
     content: Union[str, List[Union[str, Dict[str, Any]]]],
     *,
     drop_unsupported: bool = False,
+    model_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     if isinstance(content, str):
         if not content or content.isspace():
@@ -2935,7 +3041,9 @@ def _lc_content_to_bedrock(
                         "toolUseId": block["toolUseId"],
                         "content": _empty_content_fallback(
                             _lc_content_to_bedrock(
-                                block["content"], drop_unsupported=drop_unsupported
+                                block["content"],
+                                drop_unsupported=drop_unsupported,
+                                model_id=model_id,
                             )
                         ),
                         "status": "error" if block.get("isError") else "success",
@@ -2948,32 +3056,22 @@ def _lc_content_to_bedrock(
         elif block["type"] == "guard_content":
             bedrock_content.append({"guardContent": {"text": {"text": block["text"]}}})
         elif block["type"] == "thinking":
-            if block.get("signature", ""):
-                bedrock_content.append(
-                    {
-                        "reasoningContent": {
-                            "reasoningText": {
-                                "text": block.get("thinking", ""),
-                                "signature": block.get("signature", ""),
-                            }
-                        }
-                    }
-                )
+            reasoning_block = _bedrock_reasoning_block(
+                {
+                    "text": block.get("thinking", ""),
+                    "signature": block.get("signature", ""),
+                },
+                model_id,
+            )
+            if reasoning_block:
+                bedrock_content.append(reasoning_block)
         elif block["type"] == "reasoning_content":
             reasoning_content = block.get("reasoningContent") or block.get(
                 "reasoning_content", {}
             )
-            if reasoning_content.get("signature", ""):
-                bedrock_content.append(
-                    {
-                        "reasoningContent": {
-                            "reasoningText": {
-                                "text": reasoning_content.get("text", ""),
-                                "signature": reasoning_content.get("signature", ""),
-                            }
-                        }
-                    }
-                )
+            reasoning_block = _bedrock_reasoning_block(reasoning_content, model_id)
+            if reasoning_block:
+                bedrock_content.append(reasoning_block)
         elif block["type"] == "non_standard" and "value" in block:
             # langchain-core's content_blocks property wraps provider-specific
             # blocks (e.g. cachePoint, guardContent) that lack a recognized
@@ -3194,6 +3292,15 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 )
             # Streaming block format
             else:
+                if "redacted_content" in reasoning_dict:
+                    lc_content.append(
+                        {
+                            "type": "reasoning_content",
+                            "reasoning_content": {
+                                "redacted_content": reasoning_dict["redacted_content"],
+                            },
+                        }
+                    )
                 if "text" in reasoning_dict:
                     lc_content.append(
                         {
