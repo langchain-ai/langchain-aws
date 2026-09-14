@@ -8,6 +8,7 @@ import warnings
 from typing import (
     Any,
     Dict,
+    Generator,
     Iterator,
     List,
     Literal,
@@ -3388,9 +3389,7 @@ def test_stream_guard_last_turn_only() -> None:
     """Test that stream() applies guardContent to final user turn."""
     llm, mocked_client = _create_mock_llm_guard_last_turn_only()
 
-    mocked_client.converse_stream.return_value = {
-        "stream": [{"messageStart": {"role": "assistant"}}]
-    }
+    mocked_client.converse_stream.return_value = {"stream": _completion_events()}
 
     messages = [
         HumanMessage(content="Hello"),
@@ -3500,9 +3499,7 @@ def test_stream_guard_last_turn_only_tool_continuation() -> None:
     llm, mocked_client = _create_mock_llm_guard_last_turn_only()
     llm_with_tools = llm.bind_tools([GetWeather])
 
-    mocked_client.converse_stream.return_value = {
-        "stream": [{"messageStart": {"role": "assistant"}}]
-    }
+    mocked_client.converse_stream.return_value = {"stream": _completion_events()}
 
     messages = [
         HumanMessage(content="What is the weather?"),
@@ -5365,20 +5362,7 @@ def test_additional_model_request_fields_keys_passthrough_stream() -> None:
     when streaming."""
     mocked_client = mock.MagicMock()
     mock_stream = mock.MagicMock()
-    mock_stream.__iter__ = mock.Mock(
-        return_value=iter(
-            [
-                {"messageStart": {"role": "assistant"}},
-                {
-                    "contentBlockDelta": {
-                        "delta": {"text": "Hi"},
-                        "contentBlockIndex": 0,
-                    }
-                },
-                {"messageStop": {"stopReason": "end_turn"}},
-            ]
-        )
-    )
+    mock_stream.__iter__ = mock.Mock(return_value=iter(_completion_events()))
     mocked_client.converse_stream.return_value = {"stream": mock_stream}
 
     llm = ChatBedrockConverse(
@@ -5438,20 +5422,7 @@ def test_stream_closes_event_stream() -> None:
     """Test that stream() explicitly closes the EventStream after iteration."""
     mocked_client = mock.MagicMock()
     mock_stream = mock.MagicMock()
-    mock_stream.__iter__ = mock.Mock(
-        return_value=iter(
-            [
-                {"messageStart": {"role": "assistant"}},
-                {
-                    "contentBlockDelta": {
-                        "delta": {"text": "Hi"},
-                        "contentBlockIndex": 0,
-                    }
-                },
-                {"messageStop": {"stopReason": "end_turn"}},
-            ]
-        )
-    )
+    mock_stream.__iter__ = mock.Mock(return_value=iter(_completion_events()))
     mocked_client.converse_stream.return_value = {"stream": mock_stream}
 
     llm = ChatBedrockConverse(
@@ -5619,12 +5590,34 @@ def test_stream_accepts_complete_response(tool: bool) -> None:
 def test_closing_stream_early_does_not_report_incomplete_response() -> None:
     """Caller cancellation closes the transport without validating completion."""
     model, transport = _streaming_model(_completion_events())
-    stream = model.stream("Reply briefly")
+    stream = cast(Generator[AIMessageChunk, None, None], model.stream("Reply briefly"))
 
     next(stream)
     stream.close()
 
     transport.close.assert_called_once()
+
+
+def test_incomplete_stream_reports_error_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An incomplete response reports an error rather than a successful end."""
+    from langchain_core.callbacks import BaseCallbackHandler
+
+    handler = BaseCallbackHandler()
+    on_llm_end = mock.MagicMock()
+    on_llm_error = mock.MagicMock()
+    monkeypatch.setattr(handler, "on_llm_end", on_llm_end)
+    monkeypatch.setattr(handler, "on_llm_error", on_llm_error)
+    model, _ = _streaming_model(
+        _completion_events(include_message_stop=False, include_metadata=False)
+    )
+
+    with pytest.raises(ConnectionError, match="Incomplete Bedrock response stream"):
+        model.invoke("Reply briefly", config={"callbacks": [handler]})
+
+    on_llm_end.assert_not_called()
+    on_llm_error.assert_called_once()
 
 
 def test_guardrail_config_snake_to_camel_conversion() -> None:

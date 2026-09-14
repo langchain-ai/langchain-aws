@@ -1495,9 +1495,13 @@ class ChatBedrockConverse(BaseChatModel):
         except ClientError as e:
             _handle_bedrock_error(e)
         added_model_name = False
+        received_message_stop = False
+        received_metadata = False
         stream = response["stream"]
         try:
             for event in stream:
+                received_message_stop |= "messageStop" in event
+                received_metadata |= "metadata" in event
                 if message_chunk := _parse_stream_event(event):
                     if (
                         hasattr(message_chunk, "usage_metadata")
@@ -1528,6 +1532,18 @@ class ChatBedrockConverse(BaseChatModel):
         finally:
             if hasattr(stream, "close"):
                 stream.close()
+
+        if not received_message_stop or not received_metadata:
+            missing_events = []
+            if not received_message_stop:
+                missing_events.append("messageStop")
+            if not received_metadata:
+                missing_events.append("metadata")
+            msg = (
+                "Incomplete Bedrock response stream: missing "
+                f"{' and '.join(missing_events)} event."
+            )
+            raise ConnectionError(msg)
 
     def _get_llm_for_structured_output_no_tool_choice(
         self,
