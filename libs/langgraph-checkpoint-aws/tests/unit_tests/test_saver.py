@@ -69,7 +69,10 @@ class TestBedrockSessionSaver:
             )
 
             mock_boto3_session.return_value.client.assert_called_with(
-                "bedrock-agent-runtime", endpoint_url=endpoint_url, config=ANY
+                "bedrock-agent-runtime",
+                region_name="us-west-2",
+                endpoint_url=endpoint_url,
+                config=ANY,
             )
 
     def test_init_with_custom_session(self, mock_boto_client):
