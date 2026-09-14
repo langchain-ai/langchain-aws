@@ -34,7 +34,7 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import RunnableBinding
 from langchain_tests.unit_tests import ChatModelUnitTests
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from syrupy import SnapshotAssertion
 
 from langchain_aws import ChatBedrockConverse
@@ -3592,7 +3592,7 @@ def test_explicit_bedrock_config_takes_precedence_over_gateway(
     ChatBedrockConverse(
         model="anthropic.claude-3-sonnet-20240229-v1:0",
         base_url="https://bedrock.example.com",
-        api_key="bedrock-key",
+        api_key=SecretStr("bedrock-key"),
     )
 
     for call in mock_create_client.call_args_list:
