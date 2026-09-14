@@ -34,9 +34,12 @@ def process_aws_client_args(
     session_kwargs = {}
     client_kwargs = {}
 
-    # Session parameters
+    # The region goes to both: the session so a session created here defaults
+    # to it, and the client so it also applies when the caller supplies their
+    # own session (whose default region may differ or be unset).
     if region_name is not None:
         session_kwargs["region_name"] = region_name
+        client_kwargs["region_name"] = region_name
 
     # Client parameters
     if endpoint_url is not None:
@@ -78,20 +81,16 @@ def create_dynamodb_client(
     endpoint_url: str | None = None,
     boto_config: Config | None = None,
 ) -> "DynamoDBClient":
-    """Create or return a DynamoDB client.
+    """Create a DynamoDB client.
 
     Args:
-        client: Pre-configured DynamoDB client instance
         session: Pre-configured boto3 session instance
         region_name: AWS region name
         endpoint_url: Custom endpoint URL
-        config: Boto3 config object
+        boto_config: Boto3 config object
 
     Returns:
         BaseClient: Configured DynamoDB client
-
-    Raises:
-        ValueError: If provided client is not a DynamoDB client
     """
 
     # Process arguments
@@ -115,10 +114,9 @@ def create_s3_client(
     endpoint_url: str | None = None,
     boto_config: Config | None = None,
 ) -> "S3Client":
-    """Create or return an S3 client.
+    """Create an S3 client.
 
     Args:
-        client: Pre-configured S3 client instance
         session: Pre-configured boto3 session instance
         region_name: AWS region name
         endpoint_url: Custom endpoint URL
