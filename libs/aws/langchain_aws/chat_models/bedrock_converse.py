@@ -60,6 +60,7 @@ from langchain_core.runnables import (
 )
 from langchain_core.tools import BaseTool
 from langchain_core.utils import get_pydantic_field_names, secret_from_env
+from langchain_core.utils._gateway import _apply_gateway_config
 from langchain_core.utils.function_calling import (
     convert_to_openai_function,
     convert_to_openai_tool,
@@ -614,7 +615,11 @@ class ChatBedrockConverse(BaseChatModel):
     """Whether to stream the results or not."""
 
     endpoint_url: Optional[str] = Field(default=None, alias="base_url")
-    """Needed if you don't want to default to us-east-1 endpoint"""
+    """Bedrock endpoint URL.
+
+    If `LANGSMITH_GATEWAY` is set, the Bedrock direct gateway endpoint is used as a
+    fallback.
+    """
 
     default_headers: Mapping[str, str] | None = None
     """Headers to pass to the Anthropic clients, will be used for every API call."""
@@ -835,6 +840,21 @@ class ChatBedrockConverse(BaseChatModel):
                 _is_cache_point(b) for b in penultimate_content
             ):
                 penultimate_content.append(cache_block)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _resolve_gateway(cls, values: Any) -> Any:
+        """Apply LangSmith gateway settings to the Bedrock endpoint and API key."""
+        if isinstance(values, dict):
+            _apply_gateway_config(
+                values,
+                cls,
+                base_url_field="endpoint_url",
+                api_key_field="bedrock_api_key",
+                provider_path="bedrock",
+                api_key_env="AWS_BEARER_TOKEN_BEDROCK",
+            )
+        return values
 
     @model_validator(mode="before")
     @classmethod
