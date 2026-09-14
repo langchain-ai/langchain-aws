@@ -5490,6 +5490,143 @@ def test_stream_closes_event_stream_on_exception() -> None:
     mock_stream.close.assert_called_once()
 
 
+def _completion_events(
+    *,
+    include_message_stop: bool = True,
+    include_metadata: bool = True,
+    tool: bool = False,
+) -> List[Dict[str, Any]]:
+    events: List[Dict[str, Any]] = [{"messageStart": {"role": "assistant"}}]
+    if tool:
+        events.extend(
+            [
+                {
+                    "contentBlockStart": {
+                        "contentBlockIndex": 0,
+                        "start": {
+                            "toolUse": {
+                                "toolUseId": "tool-1",
+                                "name": "get_weather",
+                            }
+                        },
+                    }
+                },
+                {
+                    "contentBlockDelta": {
+                        "contentBlockIndex": 0,
+                        "delta": {"toolUse": {"input": '{"city": "Paris"}'}},
+                    }
+                },
+            ]
+        )
+    else:
+        events.append(
+            {
+                "contentBlockDelta": {
+                    "contentBlockIndex": 0,
+                    "delta": {"text": "This answer is cut"},
+                }
+            }
+        )
+    events.append({"contentBlockStop": {"contentBlockIndex": 0}})
+    if include_message_stop:
+        events.append(
+            {"messageStop": {"stopReason": "tool_use" if tool else "end_turn"}}
+        )
+    if include_metadata:
+        events.append(
+            {
+                "metadata": {
+                    "usage": {
+                        "inputTokens": 1,
+                        "outputTokens": 2,
+                        "totalTokens": 3,
+                    },
+                    "metrics": {"latencyMs": 1},
+                }
+            }
+        )
+    return events
+
+
+def _streaming_model(
+    events: List[Dict[str, Any]],
+) -> Tuple[ChatBedrockConverse, mock.MagicMock]:
+    stream = mock.MagicMock()
+    stream.__iter__ = mock.Mock(return_value=iter(events))
+    client = mock.MagicMock()
+    client.converse_stream.return_value = {"stream": stream}
+    model = ChatBedrockConverse(
+        client=client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        streaming=True,
+    )
+    return model, stream
+
+
+@pytest.mark.parametrize(
+    ("include_message_stop", "include_metadata"),
+    [(False, False), (False, True), (True, False)],
+)
+@pytest.mark.parametrize("tool", [False, True])
+def test_stream_rejects_incomplete_response(
+    include_message_stop: bool, include_metadata: bool, tool: bool
+) -> None:
+    """Natural EOF without all terminal events is not a successful response."""
+    model, stream = _streaming_model(
+        _completion_events(
+            include_message_stop=include_message_stop,
+            include_metadata=include_metadata,
+            tool=tool,
+        )
+    )
+
+    with pytest.raises(ConnectionError, match="Incomplete Bedrock response stream"):
+        model.invoke("Reply briefly")
+
+    stream.close.assert_called_once()
+
+
+@pytest.mark.parametrize("tool", [False, True])
+def test_stream_accepts_complete_response(tool: bool) -> None:
+    """Complete text and tool responses preserve stop and usage metadata."""
+    model, stream = _streaming_model(_completion_events(tool=tool))
+
+    response = model.invoke("Reply briefly")
+
+    assert response.response_metadata["stopReason"] == (
+        "tool_use" if tool else "end_turn"
+    )
+    assert response.usage_metadata is not None
+    assert response.usage_metadata["total_tokens"] == 3
+    if tool:
+        assert response.tool_calls == [
+            {
+                "name": "get_weather",
+                "args": {"city": "Paris"},
+                "id": "tool-1",
+                "type": "tool_call",
+            }
+        ]
+    else:
+        assert response.content == [
+            {"type": "text", "text": "This answer is cut", "index": 0}
+        ]
+    stream.close.assert_called_once()
+
+
+def test_closing_stream_early_does_not_report_incomplete_response() -> None:
+    """Caller cancellation closes the transport without validating completion."""
+    model, transport = _streaming_model(_completion_events())
+    stream = model.stream("Reply briefly")
+
+    next(stream)
+    stream.close()
+
+    transport.close.assert_called_once()
+
+
 def test_guardrail_config_snake_to_camel_conversion() -> None:
     """Test that guardrail_config is properly converted
     from snake_case to camelCase."""
