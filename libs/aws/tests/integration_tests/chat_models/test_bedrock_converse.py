@@ -242,6 +242,28 @@ class TestBedrockXaiStandard(ChatModelIntegrationTests):
         super().test_stop_sequence(model)
 
 
+class TestBedrockOpenAIStandard(ChatModelIntegrationTests):
+    @property
+    def chat_model_class(self) -> Type[BaseChatModel]:
+        return ChatBedrockConverse
+
+    @property
+    def chat_model_params(self) -> dict:
+        return {"model": "us.openai.gpt-6-astra", "timeout": 300}
+
+    @property
+    def standard_chat_model_params(self) -> dict:
+        return {"max_tokens": 1024}
+
+    @property
+    def supports_image_inputs(self) -> bool:
+        return True
+
+    @pytest.mark.xfail(reason="GPT-6 Astra does not support the stopSequences field.")
+    def test_stop_sequence(self, model: BaseChatModel) -> None:
+        super().test_stop_sequence(model)
+
+
 class TestBedrockMetaStandard(ChatModelIntegrationTests):
     @property
     def chat_model_class(self) -> Type[BaseChatModel]:
