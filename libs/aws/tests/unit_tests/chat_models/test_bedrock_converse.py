@@ -34,7 +34,7 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import RunnableBinding
 from langchain_tests.unit_tests import ChatModelUnitTests
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from syrupy import SnapshotAssertion
 
 from langchain_aws import ChatBedrockConverse
@@ -3552,6 +3552,52 @@ def test_bedrock_client_creation(mock_create_client: mock.Mock) -> None:
     assert chat_model.bedrock_client == mock_bedrock_client
     assert chat_model.client == mock_runtime_client
     assert mock_create_client.call_count == 2
+
+
+@pytest.mark.parametrize(
+    ("gateway", "expected_endpoint"),
+    [
+        ("true", "https://gateway.smith.langchain.com/bedrock"),
+        (
+            "https://eu.gateway.smith.langchain.com/",
+            "https://eu.gateway.smith.langchain.com/bedrock",
+        ),
+    ],
+)
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_langsmith_gateway_configures_bedrock_clients(
+    mock_create_client: mock.Mock,
+    monkeypatch: pytest.MonkeyPatch,
+    gateway: str,
+    expected_endpoint: str,
+) -> None:
+    monkeypatch.setenv("LANGSMITH_GATEWAY", gateway)
+    monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2_gateway-key")
+
+    ChatBedrockConverse(model="anthropic.claude-3-sonnet-20240229-v1:0")
+
+    assert mock_create_client.call_count == 2
+    for call in mock_create_client.call_args_list:
+        assert call.kwargs["endpoint_url"] == expected_endpoint
+        assert call.kwargs["api_key"].get_secret_value() == "lsv2_gateway-key"
+
+
+@mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
+def test_explicit_bedrock_config_takes_precedence_over_gateway(
+    mock_create_client: mock.Mock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LANGSMITH_GATEWAY", "true")
+    monkeypatch.setenv("LANGSMITH_GATEWAY_API_KEY", "lsv2_gateway-key")
+
+    ChatBedrockConverse(
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        base_url="https://bedrock.example.com",
+        api_key=SecretStr("bedrock-key"),
+    )
+
+    for call in mock_create_client.call_args_list:
+        assert call.kwargs["endpoint_url"] == "https://bedrock.example.com"
+        assert call.kwargs["api_key"].get_secret_value() == "bedrock-key"
 
 
 @mock.patch("langchain_aws.chat_models.bedrock_converse.create_aws_client")
