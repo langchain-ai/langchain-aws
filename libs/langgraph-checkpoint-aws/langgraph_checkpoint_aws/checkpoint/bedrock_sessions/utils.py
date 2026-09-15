@@ -436,9 +436,7 @@ def process_aws_client_args(
     session_kwargs: dict[str, Any] = {}
     client_kwargs: dict[str, Any] = {}
 
-    # The region goes to both: the session so a session created here defaults
-    # to it, and the client so it also applies when the caller supplies their
-    # own session (whose default region may differ or be unset).
+    # Set the default region for new sessions and the explicit region for each client.
     if region_name is not None:
         session_kwargs["region_name"] = region_name
         client_kwargs["region_name"] = region_name
