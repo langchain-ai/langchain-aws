@@ -6628,6 +6628,36 @@ def test_apply_cache_points_anthropic_end_of_history() -> None:
     assert _count_cache_points(system, messages, tools) == 4
 
 
+def test_apply_cache_points_skips_end_of_history_after_reasoning() -> None:
+    system: list[dict[str, Any]] = [{"text": "You are helpful."}]
+    reasoning_block = {
+        "reasoningContent": {
+            "reasoningText": {"text": "Thinking.", "signature": "signature"}
+        }
+    }
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": [{"text": "Hello"}]},
+        {"role": "assistant", "content": [reasoning_block]},
+        {"role": "user", "content": [{"text": "Classify the conversation."}]},
+    ]
+    params: dict[str, Any] = {
+        "toolConfig": {
+            "tools": [
+                {"toolSpec": {"name": "t", "description": "d", "inputSchema": {}}}
+            ]
+        }
+    }
+    ChatBedrockConverse(
+        client=mock.MagicMock(),
+        model="us.anthropic.claude-sonnet-5",
+        region_name="us-west-2",
+    )._apply_cache_points({"type": "ephemeral"}, system, messages, params)
+    assert messages[-2]["content"] == [reasoning_block]
+    assert messages[-1]["content"][-1] == {"cachePoint": {"type": "default"}}
+    assert system[-1] == {"cachePoint": {"type": "default"}}
+    assert params["toolConfig"]["tools"][-1] == {"cachePoint": {"type": "default"}}
+
+
 def test_apply_cache_points_non_anthropic_no_end_of_history() -> None:
     system: list[dict[str, Any]] = [{"text": "System"}]
     messages: list[dict[str, Any]] = [
