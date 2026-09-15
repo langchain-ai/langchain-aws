@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import boto3
+from bedrock_agentcore.runtime import AgentCoreRuntimeClient
 
 __all__ = ["Deployment", "deploy_agent", "delete_deployment"]
 
@@ -123,11 +124,11 @@ def deploy_agent(
     entrypoint_src: str,
     modules: dict[str, str],
     deps: list[str],
+    data_files: dict[str, str] | None = None,
     region: str | None = None,
     env: dict[str, str] | None = None,
     work_dir: str | Path = "agentcore_build",
     python_version: str = "3.13",
-    wait_minutes: float = 15.0,
 ) -> Deployment:
     """Package and deploy an agent, returning a `Deployment`.
 
@@ -135,12 +136,13 @@ def deploy_agent(
         name: Runtime name. Reused on redeploy.
         entrypoint_src: Source for `main.py`, containing the `@app.entrypoint`.
         modules: Extra `{module_name: source}` written beside the entrypoint.
+        data_files: Extra `{filename: text}` written beside the entrypoint, for
+            assets the agent reads at run time rather than imports.
         deps: Requirements installed for arm64.
         region: AWS region. Defaults to `AWS_REGION`.
         env: Environment variables for the runtime.
         work_dir: Local scratch directory for the build.
         python_version: Runtime Python version.
-        wait_minutes: How long to wait for READY.
 
     Returns:
         A `Deployment` describing the live runtime.
@@ -181,6 +183,8 @@ def deploy_agent(
     (pkg / "main.py").write_text(entrypoint_src)
     for mod_name, src in modules.items():
         (pkg / f"{mod_name}.py").write_text(src)
+    for file_name, text in (data_files or {}).items():
+        (pkg / file_name).write_text(text)
 
     # Syntax-check the sources we wrote. Deliberately NOT an import check: the
     # dependencies in this directory are manylinux aarch64 wheels, so importing them
@@ -245,29 +249,23 @@ def deploy_agent(
         "roleArn": role_arn,
         "environmentVariables": env or {"AWS_REGION": region},
     }
+    # The SDK's *_and_wait helpers poll to READY and raise on a failed state, so
+    # there is no wait loop here to get subtly wrong. Their default timeout is used
+    # rather than a custom one, because WaitConfig has no public import path yet.
+    # Note: this client takes `region`, while ConfigBundleClient takes
+    # `region_name`. integration_source shows up in the SDK user agent.
+    rt = AgentCoreRuntimeClient(region=region, integration_source="langchain")
     if existing:
-        ctrl.update_agent_runtime(agentRuntimeId=existing, **common)
+        detail = rt.update_agent_runtime_and_wait(agentRuntimeId=existing, **common)
         runtime_id = existing
         print(f"  runtime   updated {runtime_id}")
     else:
-        runtime_id = ctrl.create_agent_runtime(agentRuntimeName=name, **common)["agentRuntimeId"]
+        detail = rt.create_agent_runtime_and_wait(agentRuntimeName=name, **common)
+        runtime_id = detail["agentRuntimeId"]
         print(f"  runtime   created {runtime_id}")
 
-    deadline = time.time() + wait_minutes * 60
-    runtime_arn = ""
-    while time.time() < deadline:
-        detail = ctrl.get_agent_runtime(agentRuntimeId=runtime_id)
-        status = detail.get("status")
-        if status in ("READY", "ACTIVE"):
-            runtime_arn = detail["agentRuntimeArn"]
-            break
-        if "FAILED" in str(status):
-            raise RuntimeError(f"deploy failed: {detail.get('failureReason')}")
-        time.sleep(10)
-    if not runtime_arn:
-        raise RuntimeError(f"runtime did not become ready in {wait_minutes} minutes")
-
-    print(f"  status    READY")
+    runtime_arn = detail["agentRuntimeArn"]
+    print("  status    READY")
     return Deployment(
         name=name,
         runtime_id=runtime_id,

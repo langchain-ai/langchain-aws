@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import boto3
+from bedrock_agentcore.config_bundle import ConfigBundleClient
 
 __all__ = [
     "INSIGHT_IDS",
@@ -196,7 +197,7 @@ def make_bundle(*, region: str, runtime_arn: str, name: str, prompt: str, note: 
     no-op: both A/B arms would run the baseline prompt and the experiment would
     confidently report no difference.
     """
-    ctrl = boto3.client("bedrock-agentcore-control", region_name=region)
+    ctrl = ConfigBundleClient(region_name=region)
     resp = ctrl.create_configuration_bundle(
         bundleName=name,
         description=note,
@@ -220,7 +221,7 @@ def make_bundle(*, region: str, runtime_arn: str, name: str, prompt: str, note: 
 
 def delete_bundles(*, region: str, bundle_ids: list[str]) -> None:
     """Delete configuration bundles, reporting rather than raising."""
-    ctrl = boto3.client("bedrock-agentcore-control", region_name=region)
+    ctrl = ConfigBundleClient(region_name=region)
     for bid in bundle_ids:
         try:
             ctrl.delete_configuration_bundle(bundleId=bid)

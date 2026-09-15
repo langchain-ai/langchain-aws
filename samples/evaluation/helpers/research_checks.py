@@ -56,12 +56,21 @@ def ranking_line(prefix: str, *labels: str):
     """
     want = [x.lower() for x in labels]
 
+    def clean(part: str) -> str:
+        """Strip markdown and any parenthesised value the model appended.
+
+        Models routinely annotate a ranking line, writing
+        "Datadog (56.9) > Snowflake (53.1)". The order is the claim being graded, so
+        the annotation is removed rather than treated as a mismatch.
+        """
+        return re.sub(r"\(.*?\)", "", part).strip(" `*_\t").strip()
+
     def check(traj, answer):
         for line in answer.splitlines():
             low = line.lower()
             if prefix.lower() not in low:
                 continue
-            got = [p.strip(" `*_") for p in low.split(":", 1)[-1].split(">")]
+            got = [clean(p) for p in low.split(":", 1)[-1].split(">")]
             got = [g for g in got if g]
             if got == want:
                 return True, ""

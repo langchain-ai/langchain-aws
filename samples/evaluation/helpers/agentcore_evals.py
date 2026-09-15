@@ -19,19 +19,20 @@ works for a local run and a deployed one, and for any instrumented framework.
 
 Both produce the same `Trajectory`, so a check written once runs against either.
 
-Why two rather than one: capturing spans in-process would be the tidier answer, and
-it works for a `create_react_agent` graph (verified: tool spans with correct names
-and timings, no AWS). It does NOT work for `create_deep_agent`. In-process,
-`opentelemetry-instrumentation-langchain` emits `execute_task`/`workflow` spans for
-graph nodes but no `execute_tool` spans for the individual tools, whether the
-instrumentor is enabled before or after importing the framework, and whether its
-callback handler is attached explicitly or not. The same agent deployed under
-`opentelemetry-instrument` (ADOT) does emit them. That difference is unexplained.
+Why two rather than one: spans are the framework-agnostic path and the one that
+matches what a deployed agent emits, so they are what the checks are written
+against. The LangChain event adapter exists so notebook 1 can measure a local run
+without deploying anything first, and it is deliberately the only
+framework-specific thing in this module.
 
-So: production trajectory metrics come from spans, which is the path that
-demonstrably works and is framework agnostic. For local iteration the LangChain
-event adapter below fills the gap. It is deliberately the only framework-specific
-thing in this module.
+In-process span capture also works. With `deepagents` 0.7.13 and
+`opentelemetry-instrumentation-langchain` 0.62.3, a subagent's leaf tools do get
+their own `execute_tool` spans and `parentSpanId` gives a correct, stable chain
+(`execute_tool` leaf -> `execute_task tools` -> `execute_task <subagent>` ->
+`execute_tool task` -> ... -> `invoke_agent`), verified over repeated runs with
+three `task()` calls in flight at once. If you already run an OTEL SDK in process,
+`trajectory_from_spans` works on those spans directly and the event adapter is
+optional.
 """
 
 from __future__ import annotations
@@ -85,6 +86,7 @@ class ToolCall:
     t_start: float
     t_end: float
     span_id: str = ""
+    parent_span_id: str = ""
     output: str | None = None
 
     @property
@@ -100,24 +102,57 @@ class Trajectory:
     duration_s: float = 0.0
     model_calls: int = 0
     delegation_tools: frozenset[str] = frozenset({"task"})
-    """Tools that hand work to a subagent. Calls inside their interval are nested."""
+    """Tools that hand work to a subagent. Calls beneath them are nested."""
+
+    _span_parents: dict[str, str] = field(default_factory=dict)
+    """`spanId -> parentSpanId` for EVERY span, not only tool spans, so ancestry can
+    be walked through the graph and middleware spans that sit between two tools."""
+
+    @property
+    def _by_span_id(self) -> dict[str, ToolCall]:
+        return {c.span_id: c for c in self.tool_calls if c.span_id}
 
     def is_nested(self, call: ToolCall) -> bool:
         """Whether `call` ran inside a delegated subagent.
 
-        Determined by containment in a delegation call's interval, not by span
-        parentage. Parent-id depth turned out to be unreliable: it differed between
-        runs for the same parent-child relationship, which silently made every
-        nesting-aware check vacuous.
+        Uses span ancestry when the source provides parent ids: walk up from this
+        call and report whether a delegation call is among its ancestors. Ancestry
+        rather than depth, because the number of intermediate middleware spans
+        between a tool and its parent tool is an implementation detail, while
+        "is there a `task` above me" is the actual question.
+
+        Falls back to interval containment when parent ids are absent, which is the
+        case for `trajectory_from_langchain_events`, since LangChain events carry no
+        span ids. The fallback can misattribute a call that merely overlaps a
+        delegation, so prefer a span source when nesting matters.
         """
         if call.name in self.delegation_tools:
             return False
+        if call.parent_span_id and self._by_span_id:
+            return self._has_delegation_ancestor(call)
         return any(
             t.name in self.delegation_tools
             and t is not call
             and t.t_start <= call.t_start <= t.t_end
             for t in self.tool_calls
         )
+
+    def _has_delegation_ancestor(self, call: ToolCall) -> bool:
+        """Walk the recorded parent chain looking for a delegation call."""
+        seen: set[str] = set()
+        parent = call.parent_span_id
+        while parent and parent not in seen:
+            seen.add(parent)
+            ancestor = self._by_span_id.get(parent)
+            if ancestor is not None:
+                if ancestor.name in self.delegation_tools:
+                    return True
+                parent = ancestor.parent_span_id
+            else:
+                # A non-tool span (a graph node or middleware). Keep climbing using
+                # the raw span parentage recorded alongside the tool calls.
+                parent = self._span_parents.get(parent, "")
+        return False
 
     def calls(self, name: str | None = None, *, nested: bool | None = None) -> list[ToolCall]:
         """Filter calls by name and nesting. `nested=None` means any level."""
@@ -186,6 +221,11 @@ def trajectory_from_spans(spans: list[dict]) -> Trajectory:
         end = int(doc.get("endTimeUnixNano") or 0) or start
         latest = max(latest, end)
 
+        span_id = str(doc.get("spanId") or "")
+        parent_id = str(doc.get("parentSpanId") or doc.get("parentId") or "")
+        if span_id:
+            traj._span_parents[span_id] = parent_id
+
         if attrs.get("gen_ai.operation.name") == "chat":
             traj.model_calls += 1
         if not _is_tool_span(attrs):
@@ -212,7 +252,8 @@ def trajectory_from_spans(spans: list[dict]) -> Trajectory:
                 args=args,
                 t_start=(start - origin) / 1e9,
                 t_end=(end - origin) / 1e9,
-                span_id=str(doc.get("spanId") or ""),
+                span_id=span_id,
+                parent_span_id=parent_id,
                 output=str(result)[:4000] if result is not None else None,
             )
         )

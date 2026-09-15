@@ -17,16 +17,16 @@ context. That reduction is the whole reason to delegate, and it is measurable he
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from dataclasses import fields as fields_of
+from pathlib import Path
 from typing import Any
 
 from botocore.config import Config as BotoConfig
 from deepagents import create_deep_agent
 from langchain_aws import ChatBedrockConverse
-
-from edgar_dataset import DATASET_PATH, load_dataset
 
 __all__ = [
     "Company",
@@ -119,10 +119,18 @@ def _load_companies() -> tuple[Company, ...]:
     than transcribed. A transcription error in an answer key is the worst bug an
     evaluation can have, because every score after it is confidently wrong.
     """
-    records = load_dataset()
-    if not records:
-        msg = (f"{DATASET_PATH.name} not found. Generate it with:\n"
-               f"    python helpers/edgar_dataset.py --tickers SNOW DDOG MDB")
+    here = Path(__file__).resolve().parent
+    # Beside this file, one level up (the notebooks' directory), or the working
+    # directory. The three cover a notebook run, a script run and the flat layout
+    # inside an AgentCore Runtime deployment package.
+    for candidate in (here / "dataset.json", here.parent / "dataset.json",
+                      Path("dataset.json")):
+        if candidate.exists():
+            records = json.loads(candidate.read_text())
+            break
+    else:
+        msg = ("dataset.json not found. Generate it with:\n"
+               "    python helpers/edgar_dataset.py --tickers SNOW DDOG MDB")
         raise FileNotFoundError(msg)
     fields = {f.name for f in fields_of(Company)}
     return tuple(Company(**{k: v for k, v in r.items() if k in fields}) for r in records)
