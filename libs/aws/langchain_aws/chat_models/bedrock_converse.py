@@ -836,8 +836,13 @@ class ChatBedrockConverse(BaseChatModel):
             and len(bedrock_messages) >= 2
         ):
             penultimate_content = bedrock_messages[-2].get("content")
-            if isinstance(penultimate_content, list) and not any(
-                _is_cache_point(b) for b in penultimate_content
+            if (
+                isinstance(penultimate_content, list)
+                and not any(_is_cache_point(b) for b in penultimate_content)
+                and not (
+                    penultimate_content
+                    and "reasoningContent" in penultimate_content[-1]
+                )
             ):
                 penultimate_content.append(cache_block)
 
