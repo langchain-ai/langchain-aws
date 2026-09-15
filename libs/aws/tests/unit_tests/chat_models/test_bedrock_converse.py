@@ -8,6 +8,7 @@ import warnings
 from typing import (
     Any,
     Dict,
+    Generator,
     Iterator,
     List,
     Literal,
@@ -3456,9 +3457,7 @@ def test_stream_guard_last_turn_only() -> None:
     """Test that stream() applies guardContent to final user turn."""
     llm, mocked_client = _create_mock_llm_guard_last_turn_only()
 
-    mocked_client.converse_stream.return_value = {
-        "stream": [{"messageStart": {"role": "assistant"}}]
-    }
+    mocked_client.converse_stream.return_value = {"stream": _completion_events()}
 
     messages = [
         HumanMessage(content="Hello"),
@@ -3568,9 +3567,7 @@ def test_stream_guard_last_turn_only_tool_continuation() -> None:
     llm, mocked_client = _create_mock_llm_guard_last_turn_only()
     llm_with_tools = llm.bind_tools([GetWeather])
 
-    mocked_client.converse_stream.return_value = {
-        "stream": [{"messageStart": {"role": "assistant"}}]
-    }
+    mocked_client.converse_stream.return_value = {"stream": _completion_events()}
 
     messages = [
         HumanMessage(content="What is the weather?"),
@@ -5556,6 +5553,226 @@ def test_stream_closes_event_stream_on_exception() -> None:
         list(llm.stream([HumanMessage(content="Hi")]))
 
     mock_stream.close.assert_called_once()
+
+
+def _completion_events(
+    *,
+    include_message_stop: bool = True,
+    include_metadata: bool = True,
+    text: str = "This answer is cut",
+    tool: bool = False,
+) -> List[Dict[str, Any]]:
+    events: List[Dict[str, Any]] = [{"messageStart": {"role": "assistant"}}]
+    if tool:
+        events.extend(
+            [
+                {
+                    "contentBlockStart": {
+                        "contentBlockIndex": 0,
+                        "start": {
+                            "toolUse": {
+                                "toolUseId": "tool-1",
+                                "name": "get_weather",
+                            }
+                        },
+                    }
+                },
+                {
+                    "contentBlockDelta": {
+                        "contentBlockIndex": 0,
+                        "delta": {"toolUse": {"input": '{"city": "Paris"}'}},
+                    }
+                },
+            ]
+        )
+    else:
+        events.append(
+            {
+                "contentBlockDelta": {
+                    "contentBlockIndex": 0,
+                    "delta": {"text": text},
+                }
+            }
+        )
+    events.append({"contentBlockStop": {"contentBlockIndex": 0}})
+    if include_message_stop:
+        events.append(
+            {"messageStop": {"stopReason": "tool_use" if tool else "end_turn"}}
+        )
+    if include_metadata:
+        events.append(
+            {
+                "metadata": {
+                    "usage": {
+                        "inputTokens": 1,
+                        "outputTokens": 2,
+                        "totalTokens": 3,
+                    },
+                    "metrics": {"latencyMs": 1},
+                }
+            }
+        )
+    return events
+
+
+def _streaming_model(
+    events: List[Dict[str, Any]],
+) -> Tuple[ChatBedrockConverse, mock.MagicMock]:
+    stream = mock.MagicMock()
+    stream.__iter__ = mock.Mock(return_value=iter(events))
+    client = mock.MagicMock()
+    client.converse_stream.return_value = {"stream": stream}
+    model = ChatBedrockConverse(
+        client=client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        streaming=True,
+    )
+    return model, stream
+
+
+@pytest.mark.parametrize("include_metadata", [False, True])
+@pytest.mark.parametrize("tool", [False, True])
+def test_stream_rejects_response_without_message_stop(
+    include_metadata: bool, tool: bool
+) -> None:
+    """Natural EOF without messageStop is not a successful response."""
+    model, stream = _streaming_model(
+        _completion_events(
+            include_message_stop=False,
+            include_metadata=include_metadata,
+            tool=tool,
+        )
+    )
+
+    with pytest.raises(ConnectionError, match="Incomplete Bedrock response stream"):
+        model.invoke("Reply briefly")
+
+    stream.close.assert_called_once()
+
+
+@pytest.mark.parametrize("tool", [False, True])
+def test_stream_accepts_response_without_metadata(tool: bool) -> None:
+    """A stop event is sufficient even when usage metadata is unavailable."""
+    model, stream = _streaming_model(
+        _completion_events(include_metadata=False, tool=tool)
+    )
+
+    response = model.invoke("Reply briefly")
+
+    assert response.response_metadata["stopReason"] == (
+        "tool_use" if tool else "end_turn"
+    )
+    assert response.usage_metadata is None
+    stream.close.assert_called_once()
+
+
+@pytest.mark.parametrize("tool", [False, True])
+def test_stream_accepts_complete_response(tool: bool) -> None:
+    """Complete text and tool responses preserve stop and usage metadata."""
+    model, stream = _streaming_model(_completion_events(tool=tool))
+
+    response = model.invoke("Reply briefly")
+
+    assert response.response_metadata["stopReason"] == (
+        "tool_use" if tool else "end_turn"
+    )
+    assert response.usage_metadata is not None
+    assert response.usage_metadata["total_tokens"] == 3
+    if tool:
+        assert response.tool_calls == [
+            {
+                "name": "get_weather",
+                "args": {"city": "Paris"},
+                "id": "tool-1",
+                "type": "tool_call",
+            }
+        ]
+    else:
+        assert response.content == [
+            {"type": "text", "text": "This answer is cut", "index": 0}
+        ]
+    stream.close.assert_called_once()
+
+
+def test_closing_stream_early_does_not_report_incomplete_response() -> None:
+    """Caller cancellation closes the transport without validating completion."""
+    model, transport = _streaming_model(_completion_events())
+    stream = cast(Generator[AIMessageChunk, None, None], model.stream("Reply briefly"))
+
+    next(stream)
+    stream.close()
+
+    transport.close.assert_called_once()
+
+
+def test_incomplete_stream_reports_error_callback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An incomplete response reports an error rather than a successful end."""
+    from langchain_core.callbacks import BaseCallbackHandler
+
+    handler = BaseCallbackHandler()
+    on_llm_end = mock.MagicMock()
+    on_llm_error = mock.MagicMock()
+    monkeypatch.setattr(handler, "on_llm_end", on_llm_end)
+    monkeypatch.setattr(handler, "on_llm_error", on_llm_error)
+    model, _ = _streaming_model(
+        _completion_events(include_message_stop=False, include_metadata=False)
+    )
+
+    with pytest.raises(ConnectionError, match="Incomplete Bedrock response stream"):
+        model.invoke("Reply briefly", config={"callbacks": [handler]})
+
+    on_llm_end.assert_not_called()
+    on_llm_error.assert_called_once()
+
+
+def test_incomplete_stream_uses_fallback_on_invoke() -> None:
+    """Invocation fallback replaces, rather than returns, a partial response."""
+    from langchain_core.language_models import LanguageModelInput
+    from langchain_core.runnables import RunnableLambda
+
+    model, stream = _streaming_model(
+        _completion_events(include_message_stop=False, text="partial response")
+    )
+    fallback: RunnableLambda[LanguageModelInput, AIMessage] = RunnableLambda(
+        lambda _: AIMessage(content="fallback response")
+    )
+
+    response = model.with_fallbacks([fallback]).invoke("Reply briefly")
+
+    assert response.content == "fallback response"
+    stream.close.assert_called_once()
+
+
+def test_incomplete_stream_retries_on_invoke() -> None:
+    """Invocation retry returns only the subsequent complete response."""
+    model, first_stream = _streaming_model(
+        _completion_events(include_message_stop=False, text="partial response")
+    )
+    second_stream = mock.MagicMock()
+    second_stream.__iter__ = mock.Mock(
+        return_value=iter(_completion_events(text="complete response"))
+    )
+    client = cast(mock.MagicMock, model.client)
+    client.converse_stream.side_effect = [
+        {"stream": first_stream},
+        {"stream": second_stream},
+    ]
+
+    response = model.with_retry(
+        retry_if_exception_type=(ConnectionError,),
+        wait_exponential_jitter=False,
+        stop_after_attempt=2,
+    ).invoke("Reply briefly")
+
+    assert response.content == [
+        {"type": "text", "text": "complete response", "index": 0}
+    ]
+    assert client.converse_stream.call_count == 2
+    first_stream.close.assert_called_once()
+    second_stream.close.assert_called_once()
 
 
 def test_guardrail_config_snake_to_camel_conversion() -> None:
