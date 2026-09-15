@@ -25,6 +25,7 @@ class TestProcessAWSClientArgs:
         )
 
         assert session_kwargs["region_name"] == "us-east-1"
+        assert client_kwargs["region_name"] == "us-east-1"
         assert client_kwargs["endpoint_url"] == "http://localhost:8000"
         assert "config" in client_kwargs
 
@@ -35,6 +36,7 @@ class TestProcessAWSClientArgs:
         assert session_kwargs == {}
         assert "config" in client_kwargs
         assert "endpoint_url" not in client_kwargs
+        assert "region_name" not in client_kwargs
 
 
 class TestCreateClientConfig:
@@ -100,3 +102,26 @@ class TestCreateDynamoDBClient:
         assert client_kwargs["endpoint_url"] == "http://localhost:8000"
         assert "config" in client_kwargs
         assert "langgraph-dynamodb" in client_kwargs["config"].user_agent_extra
+
+    @patch("langgraph_checkpoint_aws.checkpoint.dynamodb.utils.boto3.Session")
+    def test_region_applies_to_caller_provided_session(self, mock_session_class):
+        """region_name must reach the client even when the session is supplied."""
+        session = Mock()
+        session.client.return_value = Mock()
+
+        create_dynamodb_client(session=session, region_name="eu-west-1")
+
+        mock_session_class.assert_not_called()
+        client_kwargs = session.client.call_args[1]
+        assert client_kwargs["region_name"] == "eu-west-1"
+
+    @patch("langgraph_checkpoint_aws.checkpoint.dynamodb.utils.boto3.Session")
+    def test_no_region_leaves_session_default(self, mock_session_class):
+        """Without region_name the caller's session default is left alone."""
+        session = Mock()
+        session.client.return_value = Mock()
+
+        create_dynamodb_client(session=session)
+
+        mock_session_class.assert_not_called()
+        assert "region_name" not in session.client.call_args[1]
