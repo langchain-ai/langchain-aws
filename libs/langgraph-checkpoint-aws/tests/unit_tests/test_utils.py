@@ -148,6 +148,18 @@ def test_process_aws_client_args_user_agent(mock_make_request, mock_client):
     assert SDK_USER_AGENT in config_obj.user_agent_extra
 
 
+def test_process_aws_client_args_region_goes_to_session_and_client():
+    session_kwargs, client_kwargs = process_aws_client_args(region_name="us-west-2")
+    assert session_kwargs["region_name"] == "us-west-2"
+    assert client_kwargs["region_name"] == "us-west-2"
+
+
+def test_process_aws_client_args_no_region_leaves_client_kwargs_alone():
+    session_kwargs, client_kwargs = process_aws_client_args()
+    assert "region_name" not in session_kwargs
+    assert "region_name" not in client_kwargs
+
+
 def test_process_aws_client_args_preserves_caller_config_values():
     _, client_kwargs = process_aws_client_args(
         region_name="us-west-2",

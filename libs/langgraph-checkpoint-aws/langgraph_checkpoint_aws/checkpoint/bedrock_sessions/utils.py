@@ -436,9 +436,10 @@ def process_aws_client_args(
     session_kwargs: dict[str, Any] = {}
     client_kwargs: dict[str, Any] = {}
 
-    # Session parameters
+    # Set the default region for new sessions and the explicit region for each client.
     if region_name is not None:
         session_kwargs["region_name"] = region_name
+        client_kwargs["region_name"] = region_name
     if credentials_profile_name is not None:
         session_kwargs["profile_name"] = credentials_profile_name
     if aws_access_key_id is not None:

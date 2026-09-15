@@ -46,6 +46,22 @@ class TestAsyncBedrockAgentRuntimeSessionClient:
         )
         assert client.client == mock_boto_client
 
+    def test_init_with_custom_session_applies_region(self, mock_boto_client):
+        """region_name must reach the client even when the session is supplied"""
+        # Arrange
+        mock_custom_session = Mock()
+        mock_custom_session.client.return_value = mock_boto_client
+
+        # Act
+        AsyncBedrockAgentRuntimeSessionClient(
+            session=mock_custom_session, region_name="eu-west-1"
+        )
+
+        # Assert
+        mock_custom_session.client.assert_called_once_with(
+            "bedrock-agent-runtime", region_name="eu-west-1", config=ANY
+        )
+
     def test_init_without_session(self, mock_boto_client):
         """Test initialization without custom session (default behavior)"""
         # Arrange & Act
