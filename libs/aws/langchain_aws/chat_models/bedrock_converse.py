@@ -3016,6 +3016,24 @@ def _lc_content_to_bedrock(
             bedrock_content.append({"document": block["document"]})
         elif block["type"] == "search_result":
             bedrock_content.append(_format_search_result_block(block))
+        elif block["type"] == "invalid_tool_call":
+            tool_call_id = block.get("id")
+            tool_name = block.get("name")
+            if (
+                isinstance(tool_call_id, str)
+                and tool_call_id
+                and isinstance(tool_name, str)
+                and tool_name
+            ):
+                bedrock_content.append(
+                    {
+                        "toolUse": {
+                            "toolUseId": tool_call_id,
+                            "input": {},
+                            "name": tool_name,
+                        }
+                    }
+                )
         elif block["type"] == "tool_use":
             tool_input = block["input"]
             if isinstance(tool_input, str):

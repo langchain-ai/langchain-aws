@@ -1201,6 +1201,74 @@ def test__messages_to_bedrock_keeps_tool_calls_when_content_dropped() -> None:
     ]
 
 
+def test__messages_to_bedrock_keeps_invalid_tool_call_for_error_result() -> None:
+    """An error result must retain its Bedrock tool-use block on replay."""
+    tool_call_id = "toolu_invalid"
+    invalid_tool_call = {
+        "type": "invalid_tool_call",
+        "id": tool_call_id,
+        "name": "get_weather",
+        "args": '{"location":',
+        "error": "Failed to parse tool call arguments as JSON",
+    }
+    messages: list[BaseMessage] = [
+        HumanMessage("Check the weather"),
+        AIMessage(
+            content=[invalid_tool_call],
+            invalid_tool_calls=[invalid_tool_call],
+        ),
+        ToolMessage(
+            "Tool call arguments were malformed.",
+            tool_call_id=tool_call_id,
+            status="error",
+        ),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages[1] == {
+        "role": "assistant",
+        "content": [
+            {
+                "toolUse": {
+                    "toolUseId": tool_call_id,
+                    "name": "get_weather",
+                    "input": {},
+                }
+            }
+        ],
+    }
+    assert actual_messages[2]["content"][0]["toolResult"] == {
+        "toolUseId": tool_call_id,
+        "content": [{"text": "Tool call arguments were malformed."}],
+        "status": "error",
+    }
+
+
+def test__messages_to_bedrock_drops_unidentified_invalid_tool_call() -> None:
+    """Incomplete invalid calls must not become malformed Bedrock tool uses."""
+    invalid_tool_call = {
+        "type": "invalid_tool_call",
+        "id": None,
+        "name": "get_weather",
+        "args": '{"location":',
+        "error": "Failed to parse tool call arguments as JSON",
+    }
+
+    actual_messages, _ = _messages_to_bedrock(
+        [
+            AIMessage(
+                content=[invalid_tool_call],
+                invalid_tool_calls=[invalid_tool_call],
+            )
+        ]
+    )
+
+    assert actual_messages == [
+        {"role": "assistant", "content": [{"text": EMPTY_CONTENT}]}
+    ]
+
+
 def test__messages_to_bedrock_keeps_cache_point_only_tool_result_valid() -> None:
     """Cache points move outside the toolResult, which must not be left empty."""
     messages: list[BaseMessage] = [
