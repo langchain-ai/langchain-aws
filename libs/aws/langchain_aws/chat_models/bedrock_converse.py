@@ -738,6 +738,11 @@ class ChatBedrockConverse(BaseChatModel):
         populate_by_name=True,
     )
 
+    @property
+    def model(self) -> str:
+        """Same as model_id."""
+        return self.model_id
+
     @classmethod
     def create_cache_point(cls, cache_type: str = "default") -> Dict[str, Any]:
         """Create a prompt caching configuration for Bedrock.
