@@ -13,7 +13,11 @@ from langchain_core.utils import secret_from_env
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
-from langchain_aws.utils import create_aws_client, parse_model_provider
+from langchain_aws._async_transport import AsyncTransportMixin
+from langchain_aws.utils import (
+    create_aws_client,
+    parse_model_provider,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +25,7 @@ logger = logging.getLogger(__name__)
 MediaInput = Union[str, bytes]
 
 
-class BedrockEmbeddings(BaseModel, Embeddings):
+class BedrockEmbeddings(AsyncTransportMixin, BaseModel, Embeddings):
     """Bedrock embedding models.
 
     To authenticate, the AWS client uses the following methods to
@@ -49,6 +53,21 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
     client: Any = Field(default=None, exclude=True)
     """Bedrock client."""
+
+    use_async_transport: bool = False
+    """Whether the async methods should issue native async requests.
+
+    Without this they run their synchronous counterparts in a thread executor,
+    capping concurrency at that executor's size. Ignored when `async_client` is
+    supplied. Builds a client this object owns, so call `aclose()` when done.
+    """
+
+    async_client: Any = Field(default=None, exclude=True)
+    """An entered async bedrock runtime client for the async methods.
+
+    Accepts anything exposing an awaitable `invoke_model` with `boto3` payload
+    shapes. Its lifecycle stays with the caller.
+    """
 
     region_name: Optional[str] = None
     """The aws region e.g., `us-west-2`.
@@ -227,64 +246,93 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                 service_name="bedrock-runtime",
             )
 
+        self._setup_async_client(required_method="invoke_model", config=self.config)
+
         return self
 
-    def _embedding_func(
+    def _embedding_input_body(
         self, text: str, input_type: str = "search_document"
-    ) -> List[float]:
-        """Call out to Bedrock embedding endpoint with a single text."""
+    ) -> Dict[str, Any]:
+        """Build the provider-native request body for a single text.
+
+        Args:
+            text: The text to embed.
+            input_type: Cohere input type; `"search_document"` when indexing and
+                `"search_query"` when embedding a retrieval query.
+
+        Returns:
+            The request body to send to the model.
+        """
         # replace newlines, which can negatively affect performance.
         text = text.replace(os.linesep, " ")
 
         if self._inferred_provider == "cohere":
-            # Cohere input_type depends on usage
-            # for embedding documents use "search_document"
-            # for embedding queries for retrieval use "search_query"
-            response_body = self._invoke_model(
-                input_body={
-                    "input_type": input_type,
-                    "texts": [text],
-                    **self._get_dimensions_params(),
-                }
-            )
+            return {
+                "input_type": input_type,
+                "texts": [text],
+                **self._get_dimensions_params(),
+            }
+
+        if self._is_nova_embed:
+            single_embedding_params: Dict[str, Any] = {
+                "embeddingPurpose": "GENERIC_INDEX",
+                "text": {"truncationMode": "END", "value": text},
+            }
+            if self.dimensions:
+                single_embedding_params["embeddingDimension"] = self.dimensions
+            return {
+                "taskType": "SINGLE_EMBEDDING",
+                "singleEmbeddingParams": single_embedding_params,
+            }
+
+        # includes common provider == "amazon"
+        return {"inputText": text, **self._get_dimensions_params()}
+
+    def _extract_embedding(self, response_body: Dict[str, Any]) -> List[float]:
+        """Pull the embedding vector out of a provider-native response.
+
+        Args:
+            response_body: The decoded model response.
+
+        Returns:
+            The embedding for the single input text.
+
+        Raises:
+            ValueError: If the response carries no embedding.
+        """
+        if self._inferred_provider == "cohere":
             embeddings = response_body.get("embeddings")
             if embeddings is None:
                 raise ValueError("No embeddings returned from model")
             # Embed v3 and v4 schemas
             if isinstance(embeddings, dict) and "float" in embeddings:
-                processed_embeddings = embeddings["float"]
-            else:
-                processed_embeddings = embeddings
-            return processed_embeddings[0]
-        elif self._is_nova_embed:
-            single_embedding_params: Dict[str, Any] = {
-                "embeddingPurpose": "GENERIC_INDEX",
-                "text": {
-                    "truncationMode": "END",
-                    "value": text,
-                },
-            }
-            if self.dimensions:
-                single_embedding_params["embeddingDimension"] = self.dimensions
-            response_body = self._invoke_model(
-                input_body={
-                    "taskType": "SINGLE_EMBEDDING",
-                    "singleEmbeddingParams": single_embedding_params,
-                }
-            )
+                return embeddings["float"][0]
+            return embeddings[0]
+
+        if self._is_nova_embed:
             embeddings = response_body.get("embeddings")
             if not embeddings or not embeddings[0].get("embedding"):
                 raise ValueError("No embedding returned from model")
             return embeddings[0]["embedding"]
-        else:
-            # includes common provider == "amazon"
-            response_body = self._invoke_model(
-                input_body={"inputText": text, **self._get_dimensions_params()},
-            )
-            embedding = response_body.get("embedding")
-            if embedding is None:
-                raise ValueError("No embedding returned from model")
-            return embedding
+
+        embedding = response_body.get("embedding")
+        if embedding is None:
+            raise ValueError("No embedding returned from model")
+        return embedding
+
+    def _embedding_func(
+        self, text: str, input_type: str = "search_document"
+    ) -> List[float]:
+        """Call out to Bedrock embedding endpoint with a single text."""
+        input_body = self._embedding_input_body(text, input_type)
+        return self._extract_embedding(self._invoke_model(input_body=input_body))
+
+    async def _aembedding_func(
+        self, text: str, input_type: str = "search_document"
+    ) -> List[float]:
+        """Call out to Bedrock embedding endpoint with a single text, async."""
+        input_body = self._embedding_input_body(text, input_type)
+        return self._extract_embedding(await self._ainvoke_model(input_body=input_body))
 
     def _cohere_multi_embedding(self, texts: List[str]) -> List[List[float]]:
         """Call out to Cohere Bedrock embedding endpoint with multiple inputs."""
@@ -303,22 +351,27 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                     **self._get_dimensions_params(),
                 }
             ).get("embeddings")
-            # Embed v3 and v4 schemas
-            if isinstance(batch_embeddings, dict) and "float" in batch_embeddings:
-                processed_embeddings = batch_embeddings["float"]
-            else:
-                processed_embeddings = batch_embeddings
-
-            if processed_embeddings is not None:
-                results += processed_embeddings
+            results += _unwrap_cohere_embeddings(batch_embeddings)
 
         return results
 
-    def _invoke_model(self, input_body: Dict[str, Any] = {}) -> Dict[str, Any]:
+    def _invoke_model_body(self, input_body: Dict[str, Any]) -> str:
+        """Serialize a request body, merging in `model_kwargs`."""
         if self.model_kwargs:
             input_body = {**input_body, **self.model_kwargs}
+        return json.dumps(input_body)
 
-        body = json.dumps(input_body)
+    def _log_invocation(self, response: Dict[str, Any]) -> None:
+        """Log the response metadata of a successful invocation."""
+        response_metadata = response.get("ResponseMetadata", {})
+        if response_metadata:
+            logger.info(
+                f"Successfully invoked model {self.model_id}. "
+                f"ResponseMetadata: {response_metadata}"
+            )
+
+    def _invoke_model(self, input_body: Dict[str, Any] = {}) -> Dict[str, Any]:
+        body = self._invoke_model_body(input_body)
 
         try:
             response = self.client.invoke_model(
@@ -327,16 +380,32 @@ class BedrockEmbeddings(BaseModel, Embeddings):
                 accept="application/json",
                 contentType="application/json",
             )
+            self._log_invocation(response)
+            return json.loads(response.get("body").read())
+        except Exception as e:
+            logger.exception("Error raised by inference endpoint")
+            raise e
 
-            response_metadata = response.get("ResponseMetadata", {})
-            if response_metadata:
-                logger.info(
-                    f"Successfully invoked model {self.model_id}. "
-                    f"ResponseMetadata: {response_metadata}"
-                )
+    async def _ainvoke_model(self, input_body: Dict[str, Any] = {}) -> Dict[str, Any]:
+        """Invoke the model without blocking the event loop.
 
-            response_body = json.loads(response.get("body").read())
-            return response_body
+        Args:
+            input_body: The provider-native request body.
+
+        Returns:
+            The decoded model response.
+        """
+        body = self._invoke_model_body(input_body)
+
+        try:
+            response = await self._require_async_client().invoke_model(
+                body=body,
+                modelId=self.model_id,
+                accept="application/json",
+                contentType="application/json",
+            )
+            self._log_invocation(response)
+            return json.loads(response.get("body").read())
         except Exception as e:
             logger.exception("Error raised by inference endpoint")
             raise e
@@ -619,6 +688,9 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     async def aembed_query(self, text: str) -> List[float]:
         """Asynchronous compute query embeddings using a Bedrock model.
 
+        Issues a non-blocking request when an async client is configured.
+        Without one, falls back to running `embed_query` in a thread executor.
+
         Args:
             text: The text to embed.
 
@@ -626,8 +698,18 @@ class BedrockEmbeddings(BaseModel, Embeddings):
             Embeddings for the text.
 
         """
+        if self.async_client is None:
+            return await run_in_executor(None, self.embed_query, text)
 
-        return await run_in_executor(None, self.embed_query, text)
+        if self._inferred_provider == "cohere":
+            embedding = await self._aembedding_func(text, input_type="search_query")
+        else:
+            embedding = await self._aembedding_func(text)
+
+        if self.normalize:
+            return self._normalize_vector(embedding)
+
+        return embedding
 
     async def aembed_documents(self, texts: List[str]) -> List[List[float]]:
         """Asynchronous compute doc embeddings using a Bedrock model.
@@ -640,11 +722,50 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
         """
         if self._inferred_provider == "cohere":
-            return await run_in_executor(None, self.embed_documents, texts)
+            if self.async_client is None:
+                return await run_in_executor(None, self.embed_documents, texts)
+            return await self._aembed_cohere_documents(texts)
 
         result = await asyncio.gather(*[self.aembed_query(text) for text in texts])
 
         return list(result)
+
+    async def _aembed_cohere_documents(self, texts: List[str]) -> List[List[float]]:
+        """Embed documents with Cohere's multi-input endpoint, async.
+
+        Args:
+            texts: The list of texts to embed.
+
+        Returns:
+            List of embeddings, one for each text.
+        """
+        results = await self._acohere_multi_embedding(texts)
+        if self.normalize:
+            return [self._normalize_vector(e) for e in results]
+        return results
+
+    async def _acohere_multi_embedding(self, texts: List[str]) -> List[List[float]]:
+        """Call the Cohere Bedrock embedding endpoint with multiple inputs, async."""
+        # replace newlines, which can negatively affect performance.
+        texts = [text.replace(os.linesep, " ") for text in texts]
+        batches = list(_batch_cohere_embedding_texts(texts, is_v4=self._is_cohere_v4))
+        responses = await asyncio.gather(
+            *[
+                self._ainvoke_model(
+                    input_body={
+                        "input_type": "search_document",
+                        "texts": text_batch,
+                        **self._get_dimensions_params(),
+                    }
+                )
+                for text_batch in batches
+            ]
+        )
+
+        results: List[List[float]] = []
+        for response in responses:
+            results += _unwrap_cohere_embeddings(response.get("embeddings"))
+        return results
 
     def embed_image(self, image: MediaInput) -> List[float]:
         """Embed a single image.
@@ -758,6 +879,21 @@ class BedrockEmbeddings(BaseModel, Embeddings):
     async def aembed_video(self, video: MediaInput) -> List[float]:
         """Asynchronously embed video content."""
         return await run_in_executor(None, self.embed_video, video)
+
+
+def _unwrap_cohere_embeddings(embeddings: Any) -> List[List[float]]:
+    """Normalize Cohere's Embed v3 and v4 response schemas.
+
+    Args:
+        embeddings: The `embeddings` member of a Cohere response, which is a
+            list in v3 and a dict keyed by output type in v4.
+
+    Returns:
+        The embeddings as a list, empty when none were returned.
+    """
+    if isinstance(embeddings, dict) and "float" in embeddings:
+        return embeddings["float"] or []
+    return embeddings if embeddings is not None else []
 
 
 def _batch_cohere_embedding_texts(
