@@ -8098,6 +8098,25 @@ def test__bedrock_to_lc_redacted_reasoning_delta() -> None:
     ]
 
 
+def test__bedrock_to_lc_redacted_only_reasoning_content() -> None:
+    """A non-streaming redacted block may have a null `reasoningText`."""
+    assert _bedrock_to_lc(
+        [
+            {
+                "reasoningContent": {
+                    "reasoningText": None,
+                    "redactedContent": b"abc",
+                }
+            }
+        ]
+    ) == [
+        {
+            "type": "reasoning_content",
+            "reasoning_content": {"redacted_content": b"abc"},
+        }
+    ]
+
+
 def test__messages_to_bedrock_redacted_reasoning_round_trip() -> None:
     """Redacted reasoning survives a round trip without a signature."""
     messages: List[BaseMessage] = [
