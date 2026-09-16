@@ -1,7 +1,7 @@
 import os
 import time
 from datetime import timedelta
-from typing import Any, Dict, Generator, List, Tuple
+from typing import Any, Dict, Generator, List, Optional, Tuple
 from unittest import mock
 
 import pytest
@@ -16,6 +16,7 @@ from langchain_aws.utils import (
     _StaticCredentialProvider,
     count_tokens_api_supported_for_model,
     create_aws_client,
+    create_bedrock_async_client,
     parse_model_provider,
     reasoning_effort_additional_fields,
     thinking_disabled_in_params,
@@ -1367,3 +1368,67 @@ async def test_bedrock_api_key_provider_async_call() -> None:
     with mock.patch("aws_bedrock_token_generator.provide_token", return_value="tok"):
         provider = _make_provider()
         assert await provider.async_call() == "tok"
+
+
+def _bedrock_async_client(region_name: Optional[str] = None) -> Any:
+    return create_bedrock_async_client(
+        region_name=region_name,
+        aws_access_key_id=SecretStr("key"),
+        aws_secret_access_key=SecretStr("secret"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("region_name", "env", "expected"),
+    [
+        (
+            "us-gov-west-1",
+            {"AWS_USE_FIPS_ENDPOINT": "true"},
+            "https://bedrock-runtime-fips.us-gov-west-1.amazonaws.com",
+        ),
+        (
+            "us-east-1",
+            {"AWS_USE_DUALSTACK_ENDPOINT": "true"},
+            "https://bedrock-runtime.us-east-1.api.aws",
+        ),
+        (
+            "us-east-1",
+            {"AWS_ENDPOINT_URL_BEDROCK_RUNTIME": "https://bedrock.example.internal"},
+            "https://bedrock.example.internal",
+        ),
+        ("cn-north-1", {}, "https://bedrock-runtime.cn-north-1.amazonaws.com.cn"),
+    ],
+)
+def test_async_client_endpoint_matches_botocore_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+    region_name: str,
+    env: Dict[str, str],
+    expected: str,
+) -> None:
+    """FIPS, dual-stack, env overrides and partitions must match the sync client."""
+    import boto3.session
+
+    # The autouse `mock_boto3_client` fixture replaces `boto3.Session` with a
+    # MagicMock. Endpoint resolution is offline, so restore the real class here.
+    monkeypatch.setattr("boto3.Session", boto3.session.Session)
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+
+    client = _bedrock_async_client(region_name)
+
+    assert client._base_url == expected
+
+
+def test_async_client_without_a_region_fails_at_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """boto3 raises NoRegionError up front rather than building a bad host."""
+    import boto3.session
+
+    monkeypatch.setattr("boto3.Session", boto3.session.Session)
+    for key in ("AWS_REGION", "AWS_DEFAULT_REGION"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("AWS_CONFIG_FILE", os.devnull)
+
+    with pytest.raises(ValueError, match="Could not load credentials"):
+        _bedrock_async_client()
