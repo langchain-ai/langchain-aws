@@ -99,10 +99,61 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
             ``SyncBatchFlushable`` or ``AsyncBatchFlushable``, flush uses
             a single ``put_with_writes`` call instead of 1 + N sequential
             calls.  Defaults to ``False`` for backward compatibility.
+            ``AgentCoreMemorySaver`` implements both protocols, so this is
+            the preferred way to reach one API call per flush.
+        flush_writes: When ``False``, flush persists only the checkpoint and
+            discards buffered writes, reducing flush to a single ``put()``
+            call.  Buffered writes are still served to the graph from memory
+            during execution, so a run that reaches the end persists complete
+            state — the final ``put()`` already has every task output applied.
+            See the warning below for what a partially completed run loses.
+            Prefer *batch_writes* when the underlying saver supports it: it
+            reaches the same single call while keeping the write records.
+            Reach for this only with a saver that does not implement the
+            batch protocols.
 
     Raises:
         ValueError: If *saver* is itself a ``DeferredCheckpointSaver``
-            (nesting is not supported).
+            (nesting is not supported), or if *batch_writes* and
+            ``flush_writes=False`` are combined.
+
+    !!! warning "One in-flight run per instance"
+
+        The buffer holds a single checkpoint slot, so a ``put()`` for one
+        ``thread_id`` discards whatever was buffered for another.  Sharing
+        one instance across concurrent runs — a module-level saver serving
+        concurrent requests, for example — silently loses turns.  Create one
+        instance per in-flight run, or per request.
+
+        Sequential reuse is fine: ``flush()`` and ``clear()`` both empty the
+        buffer, so the next run starts clean.  Subgraphs are also fine —
+        they share the parent's ``thread_id`` and only vary
+        ``checkpoint_ns``.
+
+    !!! warning "`flush_writes=False` makes node execution at-least-once"
+
+        LangGraph writes a per-task record when a node finishes.  Those
+        records are not only debug metadata — they are the receipts the
+        runtime uses on resume to tell which tasks in the current superstep
+        already ran.  Dropping them means a resumed superstep re-executes
+        tasks that had already completed.
+
+        This affects any run that does not reach the end: a node raising
+        (``flush_on_exit`` still flushes, from its ``finally`` block), or an
+        ``interrupt()``.  Resuming such a thread succeeds and converges to
+        the same channel values, but every already-completed sibling task in
+        the unfinished superstep runs a second time.  If your nodes have
+        side effects — tool calls, API writes, payments — those side effects
+        repeat.
+
+        Two further consequences: ``state.interrupts`` comes back empty
+        after a flush, so a restarted process can see *that* a thread is
+        paused but not what it asked the human; and time travel plus
+        ``get_state_history()`` inspection of pending tasks no longer work.
+
+        Set this to ``False`` only when nodes are idempotent (or the run is
+        never resumed) and the persisted checkpoint alone is enough to
+        restore your application state.
 
     Example::
 
@@ -111,10 +162,23 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
 
         with deferred.flush_on_exit():
             graph.invoke(input, config)
+
+    Example: one API call per invocation without the batch protocols, for
+    idempotent nodes only::
+
+        deferred = DeferredCheckpointSaver(my_saver, flush_writes=False)
+        graph = workflow.compile(checkpointer=deferred)
+
+        with deferred.flush_on_exit():
+            graph.invoke(input, config)
     """
 
     def __init__(
-        self, saver: BaseCheckpointSaver, *, batch_writes: bool = False
+        self,
+        saver: BaseCheckpointSaver,
+        *,
+        batch_writes: bool = False,
+        flush_writes: bool = True,
     ) -> None:
         if isinstance(saver, DeferredCheckpointSaver):
             msg = (
@@ -122,9 +186,22 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
                 "Pass the underlying saver directly."
             )
             raise ValueError(msg)
+        if batch_writes and not flush_writes:
+            # Anyone setting both wanted fewer API calls and did not realize
+            # batch_writes alone gets there.  Say so rather than silently
+            # picking the option that also drops the write records.
+            msg = (
+                "batch_writes=True and flush_writes=False are contradictory. "
+                "batch_writes=True already reduces flush to a single call and "
+                "keeps the per-task write records that make node execution "
+                "once-per-superstep; flush_writes=False drops them. Remove "
+                "flush_writes=False."
+            )
+            raise ValueError(msg)
         super().__init__()
         self._saver = saver
         self._batch_writes = batch_writes
+        self._flush_writes = flush_writes
         self._lock = threading.Lock()
         self._pending_checkpoint: _PendingCheckpoint | None = None
         self._pending_writes: list[_PendingWrite] = []
@@ -165,6 +242,9 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
         Each call overwrites the previously buffered checkpoint — only the
         latest one is kept.  This is the core optimization: for a 6-node
         workflow LangGraph calls ``put()`` 6 times, but we only persist once.
+
+        Overwriting is only safe within a single run — see the class-level
+        note on one in-flight run per instance.
 
         Args:
             config: The runnable config associated with this checkpoint.
@@ -436,7 +516,9 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
     def flush(self) -> RunnableConfig | None:
         """Persist all buffered data to the underlying saver.
 
-        When ``batch_writes=True`` and the saver implements
+        When ``flush_writes=False``, only the checkpoint is persisted and
+        buffered writes are discarded (single ``put()`` call).  Otherwise,
+        when ``batch_writes=True`` and the saver implements
         ``SyncBatchFlushable``, the checkpoint and all writes are persisted
         in a single ``put_with_writes()`` call (fast path).  Otherwise the
         checkpoint is flushed first, then writes are drained one at a time
@@ -455,12 +537,45 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
             Exception: Any exception raised by the underlying saver during
                 persistence is propagated after restoring unflushed data.
         """
+        # --- Checkpoint-only path: writes are dropped, not persisted ---
+        if not self._flush_writes:
+            return self._flush_checkpoint_only()
+
         # --- Fast path: saver supports sync batching ---
         if self._batch_writes and isinstance(self._saver, SyncBatchFlushable):
             return self._flush_batched()
 
         # --- Fallback path: existing 1 + N behavior ---
         return self._flush_sequential()
+
+    def _flush_checkpoint_only(self) -> RunnableConfig | None:
+        """Persist the checkpoint and discard buffered writes.
+
+        Writes are dropped before the network call: they are never persisted
+        under ``flush_writes=False``, so there is nothing to retry on failure
+        and nothing to restore.  The checkpoint itself is restored on failure
+        unless a newer ``put()`` raced in while we were blocked on I/O.
+        """
+        with self._lock:
+            pending_cp = self._pending_checkpoint
+            self._pending_checkpoint = None
+            self._pending_writes.clear()
+
+        if pending_cp is None:
+            return None
+
+        try:
+            return self._saver.put(
+                pending_cp.config,
+                pending_cp.checkpoint,
+                pending_cp.metadata,
+                pending_cp.new_versions,
+            )
+        except Exception:
+            with self._lock:
+                if self._pending_checkpoint is None:
+                    self._pending_checkpoint = pending_cp
+            raise
 
     def _flush_batched(self) -> RunnableConfig | None:
         """Fast path: persist checkpoint + writes in one call."""
@@ -569,9 +684,11 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
     async def aflush(self) -> RunnableConfig | None:
         """Async version of :meth:`flush`.
 
-        When ``batch_writes=True`` and the saver implements
-        ``AsyncBatchFlushable``, uses ``aput_with_writes()`` (fast path).
-        Otherwise falls back to sequential ``aput()`` + N ``aput_writes()``.
+        When ``flush_writes=False``, persists only the checkpoint with a
+        single ``aput()`` call and discards buffered writes.  Otherwise, when
+        ``batch_writes=True`` and the saver implements ``AsyncBatchFlushable``,
+        uses ``aput_with_writes()`` (fast path).  Otherwise falls back to
+        sequential ``aput()`` + N ``aput_writes()``.
 
         Returns:
             The config returned by the underlying saver, or ``None`` if no
@@ -581,12 +698,39 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
             Exception: Any exception raised by the underlying saver during
                 persistence is propagated after restoring unflushed data.
         """
+        # --- Checkpoint-only path: writes are dropped, not persisted ---
+        if not self._flush_writes:
+            return await self._aflush_checkpoint_only()
+
         # --- Fast path: saver supports async batching ---
         if self._batch_writes and isinstance(self._saver, AsyncBatchFlushable):
             return await self._aflush_batched()
 
         # --- Fallback path: existing 1 + N behavior ---
         return await self._aflush_sequential()
+
+    async def _aflush_checkpoint_only(self) -> RunnableConfig | None:
+        """Async version of :meth:`_flush_checkpoint_only`."""
+        with self._lock:
+            pending_cp = self._pending_checkpoint
+            self._pending_checkpoint = None
+            self._pending_writes.clear()
+
+        if pending_cp is None:
+            return None
+
+        try:
+            return await self._saver.aput(
+                pending_cp.config,
+                pending_cp.checkpoint,
+                pending_cp.metadata,
+                pending_cp.new_versions,
+            )
+        except Exception:
+            with self._lock:
+                if self._pending_checkpoint is None:
+                    self._pending_checkpoint = pending_cp
+            raise
 
     async def _aflush_batched(self) -> RunnableConfig | None:
         """Async fast path: persist checkpoint + writes in one call."""
@@ -685,7 +829,9 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
         """Context manager that flushes buffered data on exit.
 
         Flushes in the ``finally`` block so data is persisted even when the
-        graph raises an exception.
+        graph raises an exception.  Note that under ``flush_writes=False``
+        that exception path is exactly the case where completed tasks lose
+        their receipts and re-run on resume — see the class-level warning.
 
         Yields:
             This ``DeferredCheckpointSaver`` instance.
@@ -703,6 +849,9 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
     @contextlib.asynccontextmanager
     async def aflush_on_exit(self) -> AsyncIterator[DeferredCheckpointSaver]:
         """Async context manager that flushes buffered data on exit.
+
+        Carries the same ``flush_writes=False`` caveat as
+        :meth:`flush_on_exit`.
 
         Yields:
             This ``DeferredCheckpointSaver`` instance.
