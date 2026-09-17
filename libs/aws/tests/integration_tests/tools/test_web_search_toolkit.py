@@ -8,6 +8,7 @@ creating one is a control plane operation with its own IAM requirements. Point
 import os
 
 import pytest
+from langchain_core.tools import ToolException
 
 from langchain_aws.tools.web_search_toolkit import (
     WebSearchToolkit,
@@ -59,12 +60,11 @@ def test_include_domains_restricts_the_sources() -> None:
     assert all("aws.amazon.com" in url for url in urls), urls
 
 
-def test_a_query_over_the_limit_is_reported_not_raised() -> None:
-    """Client-side validation surfaces as tool output the agent can act on."""
+def test_a_query_over_the_limit_raises() -> None:
+    """Client-side validation reaches the caller as a ToolException."""
     with _toolkit() as toolkit:
-        output = toolkit.get_tools()[0].invoke({"query": "x" * 201})
-
-    assert "Web search failed" in output
+        with pytest.raises(ToolException, match="Web search failed"):
+            toolkit.get_tools()[0].invoke({"query": "x" * 201})
 
 
 @pytest.mark.asyncio

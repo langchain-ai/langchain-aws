@@ -17,13 +17,15 @@ from bedrock_agentcore.tools.web_search_client import (
     WebSearchClient,
     WebSearchResponse,
 )
-from langchain_core.tools import BaseTool, StructuredTool
+from langchain_core.tools import BaseTool, StructuredTool, ToolException
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
 #: Web search is offered in a subset of regions, so this default is not the one
-#: the other AgentCore toolkits in this package use.
+#: the other AgentCore toolkits in this package use. It is applied only when no
+#: region and no gateway ARN were given, because the SDK prefers an explicit
+#: region over the one carried in the ARN.
 DEFAULT_REGION = "us-east-1"
 
 _TOOL_NAME = "web_search"
@@ -114,11 +116,17 @@ class WebSearchToolkit:
     `bedrock-agentcore:InvokeGateway` on the gateway, and the gateway's own
     service role needs `bedrock-agentcore:InvokeWebSearch` on the connector.
 
+    A failed search raises `ToolException`, so a retry wrapper sees it as a
+    failure. To let the model read the message and correct its own query instead,
+    set `handle_tool_error` on the tool.
+
     Example:
         ```python
         from langchain.agents import create_agent
         from langchain_aws.tools import create_web_search_toolkit
 
+        # A gateway ARN carries its own region. Pass region= alongside a
+        # gateway_id, or to override the region in an ARN.
         toolkit, tools = create_web_search_toolkit(
             region="us-east-1",
             gateway_id="my-gateway-abc123",
@@ -129,11 +137,18 @@ class WebSearchToolkit:
         finally:
             toolkit.close()
         ```
+
+        To have the model see the failure and retry, rather than the run ending:
+
+        ```python
+        for tool in tools:
+            tool.handle_tool_error = True
+        ```
     """
 
     def __init__(
         self,
-        region: str = DEFAULT_REGION,
+        region: Optional[str] = None,
         *,
         gateway_id: Optional[str] = None,
         gateway_arn: Optional[str] = None,
@@ -149,9 +164,10 @@ class WebSearchToolkit:
         `client` says where the search goes.
 
         Args:
-            region: AWS region to call.
+            region: AWS region to call. Defaults to `DEFAULT_REGION`, except when
+                `gateway_arn` is given, in which case the ARN's region is used.
             gateway_id: ID of a gateway carrying a web search connector target.
-            gateway_arn: ARN of that gateway. The ID is read from it.
+            gateway_arn: ARN of that gateway. The ID and the region are read from it.
             gateway_endpoint: A gateway MCP endpoint URL, if one is already known.
             target_name: Name the connector target was created under. Supplying it
                 avoids a tool discovery round trip on the first search.
@@ -171,6 +187,12 @@ class WebSearchToolkit:
                 "gateway_endpoint, not both."
             )
             raise ValueError(msg)
+
+        # The SDK prefers an explicit region over the one in a gateway ARN, so
+        # filling the default in here would silently override the ARN's region.
+        # Leaving it unset is what lets the ARN decide.
+        if region is None and gateway_arn is None:
+            region = DEFAULT_REGION
 
         self.region = region
         self._gateway_id = gateway_id
@@ -194,11 +216,9 @@ class WebSearchToolkit:
         # Passing `gateway_id=None` explicitly would tie this package to the
         # gateway transport. Forwarding only what was supplied means a future
         # transport needing no gateway argument works through this same path.
-        kwargs: Dict[str, Any] = {
-            "region": self.region,
-            "integration_source": "langchain",
-        }
+        kwargs: Dict[str, Any] = {"integration_source": "langchain"}
         optional = (
+            ("region", self.region),
             ("gateway_id", self._gateway_id),
             ("gateway_arn", self._gateway_arn),
             ("gateway_endpoint", self._gateway_endpoint),
@@ -239,7 +259,11 @@ class WebSearchToolkit:
             published_before: Latest publication date, ISO-8601 UTC.
 
         Returns:
-            The results as text, or a message describing why the call failed.
+            The results as text.
+
+        Raises:
+            RuntimeError: If the toolkit has been closed.
+            ToolException: If the search itself failed.
         """
         if self._closed:
             msg = "This web search toolkit has been closed."
@@ -254,10 +278,13 @@ class WebSearchToolkit:
                 published_before=published_before,
             )
         except Exception as exc:
-            # Returning the failure lets the agent correct a bad query or narrow
-            # filter on its next turn instead of ending the run.
+            # Raised rather than returned as text so that a failure is recorded
+            # as one, which is what `with_retry` and any callback handler need to
+            # see. A caller who would rather the model read the message and fix
+            # its own query sets `handle_tool_error` on the tool.
             logger.warning("Web search failed: %s", exc)
-            return f"Web search failed: {exc}"
+            msg = f"Web search failed: {exc}"
+            raise ToolException(msg) from exc
         return _format_response(response)
 
     async def _asearch(
@@ -283,7 +310,11 @@ class WebSearchToolkit:
             published_before: Latest publication date, ISO-8601 UTC.
 
         Returns:
-            The results as text, or a message describing why the call failed.
+            The results as text.
+
+        Raises:
+            RuntimeError: If the toolkit has been closed.
+            ToolException: If the search itself failed.
         """
         return await asyncio.to_thread(
             self._search,
@@ -333,7 +364,7 @@ class WebSearchToolkit:
 
 
 def create_web_search_toolkit(
-    region: str = DEFAULT_REGION,
+    region: Optional[str] = None,
     *,
     gateway_id: Optional[str] = None,
     gateway_arn: Optional[str] = None,
@@ -350,9 +381,10 @@ def create_web_search_toolkit(
     first.
 
     Args:
-        region: AWS region to call.
+        region: AWS region to call. Defaults to `DEFAULT_REGION`, except when
+            `gateway_arn` is given, in which case the ARN's region is used.
         gateway_id: ID of a gateway carrying a web search connector target.
-        gateway_arn: ARN of that gateway. The ID is read from it.
+        gateway_arn: ARN of that gateway. The ID and the region are read from it.
         gateway_endpoint: A gateway MCP endpoint URL, if one is already known.
         target_name: Name the connector target was created under. Supplying it
             avoids a tool discovery round trip on the first search.

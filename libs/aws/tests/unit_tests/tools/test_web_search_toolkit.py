@@ -16,7 +16,7 @@ from bedrock_agentcore.tools.web_search_client import (  # noqa: E402
     WebSearchResponse,
     WebSearchResult,
 )
-from langchain_core.tools import BaseTool  # noqa: E402
+from langchain_core.tools import BaseTool, ToolException  # noqa: E402
 
 from langchain_aws.tools.web_search_toolkit import (  # noqa: E402
     DEFAULT_REGION,
@@ -35,7 +35,7 @@ def _response(*results: WebSearchResult) -> WebSearchResponse:
 
 def _make_toolkit(
     search_return: Optional[Any] = None,
-    search_side_effect: Optional[BaseException] = None,
+    search_side_effect: Optional[Any] = None,
     **kwargs: Any,
 ) -> tuple[WebSearchToolkit, MagicMock]:
     """Build a toolkit whose SDK client is a mock, and return both."""
@@ -151,6 +151,38 @@ class TestClientConstruction:
         assert "gateway_arn" in kwargs
         assert "gateway_id" not in kwargs
 
+    def test_leaves_region_unset_when_a_gateway_arn_carries_one(self) -> None:
+        """A gateway ARN's region is not overridden by this package's default.
+
+        The SDK prefers an explicit region over the one in the ARN, so passing
+        the default here would send every ARN-addressed gateway to us-east-1.
+        """
+        with patch(
+            "langchain_aws.tools.web_search_toolkit.WebSearchClient"
+        ) as client_cls:
+            toolkit = WebSearchToolkit(
+                gateway_arn=(
+                    "arn:aws:bedrock-agentcore:eu-west-1:123456789012:gateway/gw-1"
+                ),
+            )
+
+        assert toolkit.region is None
+        assert "region" not in client_cls.call_args.kwargs
+
+    def test_an_explicit_region_still_wins_over_a_gateway_arn(self) -> None:
+        """Naming a region overrides the ARN, matching the SDK's own precedence."""
+        with patch(
+            "langchain_aws.tools.web_search_toolkit.WebSearchClient"
+        ) as client_cls:
+            WebSearchToolkit(
+                region="ap-northeast-1",
+                gateway_arn=(
+                    "arn:aws:bedrock-agentcore:eu-west-1:123456789012:gateway/gw-1"
+                ),
+            )
+
+        assert client_cls.call_args.kwargs["region"] == "ap-northeast-1"
+
     def test_uses_a_supplied_client_as_is(self) -> None:
         """A caller-supplied client is used without building another."""
         client = MagicMock()
@@ -234,17 +266,50 @@ class TestSearchTool:
         assert "Published: 2026-08-01" in output
         assert "urllib3 is maintained by the urllib3 team." in output
 
-    def test_returns_the_failure_instead_of_raising(self) -> None:
-        """A failed search leaves the agent able to correct itself next turn."""
+    def test_raises_tool_exception_when_the_search_fails(self) -> None:
+        """A failure is raised, so `with_retry` and callbacks see it as one."""
         toolkit, _ = _make_toolkit(
             search_side_effect=ValueError("query must be 200 characters or fewer")
         )
         tool = toolkit.get_tools()[0]
 
+        with pytest.raises(ToolException, match="200 characters or fewer") as caught:
+            tool.invoke({"query": "x" * 300})
+
+        assert isinstance(caught.value.__cause__, ValueError)
+
+    def test_handle_tool_error_turns_a_failure_back_into_text(self) -> None:
+        """The caller can opt into the agent correcting itself next turn."""
+        toolkit, _ = _make_toolkit(
+            search_side_effect=ValueError("query must be 200 characters or fewer")
+        )
+        tool = toolkit.get_tools()[0]
+        tool.handle_tool_error = True
+
         output = tool.invoke({"query": "x" * 300})
 
         assert "Web search failed" in output
         assert "200 characters or fewer" in output
+
+    def test_a_failed_search_is_retried_by_with_retry(self) -> None:
+        """The point of raising: a transient failure gets a second attempt."""
+        toolkit, _ = _make_toolkit(
+            search_side_effect=[
+                ConnectionError("connection reset"),
+                _response(
+                    WebSearchResult(
+                        title="Second attempt", url="https://example.com", text="body"
+                    )
+                ),
+            ]
+        )
+        tool = toolkit.get_tools()[0].with_retry(
+            retry_if_exception_type=(ToolException,), stop_after_attempt=2
+        )
+
+        output = tool.invoke({"query": "boto3 release"})
+
+        assert "Second attempt" in output
 
     def test_raises_after_the_toolkit_is_closed(self) -> None:
         """Using a closed toolkit is a programming error, not a search failure."""
