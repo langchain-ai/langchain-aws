@@ -145,6 +145,51 @@ class TestBatchFlushFastPath:
         payload = mock_boto_client.create_event.call_args[1]["payload"]
         assert len(payload) == 2
 
+    def test_flush_writes_false_fast_path_skips_writes(
+        self, agentcore_saver, mock_boto_client
+    ) -> None:
+        """Batch flush can persist only the checkpoint and discard pending writes."""
+        deferred = DeferredCheckpointSaver(
+            agentcore_saver, batch_writes=True, flush_writes=False
+        )
+        config = _make_config()
+
+        new_versions: ChannelVersions = {"messages": "v1"}
+        deferred.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), new_versions)
+        write_config = _make_config(checkpoint_id="ckpt-1")
+        deferred.put_writes(write_config, [("ch1", "v1")], "task-1")
+        deferred.put_writes(write_config, [("ch2", "v2")], "task-2")
+
+        result = deferred.flush()
+
+        assert deferred.is_empty
+        assert result is not None
+        mock_boto_client.create_event.assert_called_once()
+        # 1 channel + 1 checkpoint, no writes events
+        payload = mock_boto_client.create_event.call_args[1]["payload"]
+        assert len(payload) == 2
+
+    def test_flush_writes_false_fast_path_failure_restores_writes(
+        self, agentcore_saver, mock_boto_client
+    ) -> None:
+        deferred = DeferredCheckpointSaver(
+            agentcore_saver, batch_writes=True, flush_writes=False
+        )
+        config = _make_config()
+
+        new_versions: ChannelVersions = {"messages": "v1"}
+        deferred.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), new_versions)
+        write_config = _make_config(checkpoint_id="ckpt-1")
+        deferred.put_writes(write_config, [("ch1", "v1")], "task-1")
+
+        mock_boto_client.create_event.side_effect = RuntimeError("network error")
+
+        with pytest.raises(RuntimeError, match="network error"):
+            deferred.flush()
+
+        assert deferred.has_buffered_checkpoint
+        assert deferred.has_buffered_writes
+
     def test_flush_fast_path_multiple_channels_and_writes(
         self, agentcore_saver, mock_boto_client
     ) -> None:
@@ -304,6 +349,28 @@ class TestBatchFlushAsync:
         assert result is not None
         # Single API call for the batch
         mock_boto_client.create_event.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_aflush_writes_false_fast_path_skips_writes(
+        self, agentcore_saver, mock_boto_client
+    ) -> None:
+        deferred = DeferredCheckpointSaver(
+            agentcore_saver, batch_writes=True, flush_writes=False
+        )
+        config = _make_config()
+
+        new_versions: ChannelVersions = {"messages": "v1"}
+        deferred.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), new_versions)
+        write_config = _make_config(checkpoint_id="ckpt-1")
+        deferred.put_writes(write_config, [("ch1", "v1")], "task-1")
+
+        result = await deferred.aflush()
+
+        assert deferred.is_empty
+        assert result is not None
+        mock_boto_client.create_event.assert_called_once()
+        payload = mock_boto_client.create_event.call_args[1]["payload"]
+        assert len(payload) == 2
 
     @pytest.mark.asyncio
     async def test_aflush_fast_path_failure_restores_all(
