@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         ChatAnthropicBedrock,
         ChatAnthropicMantle,
         ChatBedrockNovaSonic,
+        ChatOpenAIBedrock,
         ChatOpenAIMantle,
     )
     from langchain_aws.document_compressors.rerank import BedrockRerank
@@ -94,6 +95,7 @@ __all__ = [
     "ChatBedrock",
     "ChatBedrockConverse",
     "ChatBedrockNovaSonic",
+    "ChatOpenAIBedrock",
     "ChatOpenAIMantle",
     "SagemakerEndpoint",
     "AmazonKendraRetriever",
@@ -136,6 +138,10 @@ def __getattr__(name: str) -> Any:
         "ChatBedrockNovaSonic": (
             "langchain_aws.chat_models",
             'pip install "langchain-aws[nova-sonic]"',
+        ),
+        "ChatOpenAIBedrock": (
+            "langchain_aws.chat_models",
+            'pip install "langchain-aws[openai]"',
         ),
         "ChatOpenAIMantle": (
             "langchain_aws.chat_models",
