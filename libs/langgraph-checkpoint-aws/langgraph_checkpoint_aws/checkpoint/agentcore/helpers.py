@@ -405,9 +405,10 @@ class AgentCoreEventClient:
                 "memoryId": self.memory_id,
                 "actorId": actor_id,
                 "sessionId": session_id,
-                "maxResults": max_results,
                 "includePayloads": True,
             }
+            if max_results is not None:
+                params["maxResults"] = max_results
 
             if next_token:
                 params["nextToken"] = next_token
@@ -543,6 +544,7 @@ class EventProcessor:
         channel_values = {}
 
         for channel, version in checkpoint.get("channel_versions", {}).items():
+            version = str(version)
             if (channel, version) in channel_data:
                 channel_values[channel] = channel_data[(channel, version)]
 
