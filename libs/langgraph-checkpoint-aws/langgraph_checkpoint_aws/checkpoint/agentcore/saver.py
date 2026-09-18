@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 import random
 from collections.abc import AsyncIterator, Iterator, Sequence
-from typing import Any, TypeAlias, cast
+from typing import Any, Literal, TypeAlias
 
 from langchain_core.runnables import RunnableConfig, run_in_executor
 from langgraph.checkpoint.base import (
@@ -42,6 +42,7 @@ from .models import (
     WriteItem,
     WritesEvent,
 )
+from .snapshot import AgentCoreSnapshotClient, writes_session_id
 
 RunnableConfigDict: TypeAlias = dict[str, Any]
 
@@ -50,16 +51,20 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
     """
     AgentCore Memory checkpoint saver.
 
-    This saver persists Checkpoints as serialized blob events in AgentCore Memory.
+    This saver persists checkpoints as blob events in AgentCore Memory.
 
     Args:
         memory_id: the ID of the memory resource created in AgentCore Memory
         serde: serialization protocol to be used. Defaults to JSONPlusSerializer
-        limit: maximum number of events to parse from ListEvents.
-        max_results: maximum number of results to retrieve from AgentCore Memory.
+        limit: Maximum decoded payload blobs for legacy checkpoint reads.
+            Snapshot mode requires None so snapshot data is never truncated.
+        max_results: Maximum number of service events per pagination request.
         max_retries: maximum number of retry attempts for retryable errors.
         initial_backoff: initial backoff time in seconds for exponential backoff.
         max_backoff: maximum backoff time in seconds.
+        checkpoint_format: "legacy" preserves the existing storage format.
+            "snapshot" is experimental and stores complete checkpoints for
+            bounded reads. All workers sharing a snapshot thread must use snapshot mode.
     """
 
     def __init__(
@@ -72,15 +77,35 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         max_retries: int = DEFAULT_MAX_RETRIES,
         initial_backoff: float = DEFAULT_INITIAL_BACKOFF,
         max_backoff: float = DEFAULT_MAX_BACKOFF,
+        checkpoint_format: Literal["legacy", "snapshot"] = "legacy",
         **boto3_kwargs: Any,
     ) -> None:
         super().__init__(serde=serde)
 
         self.memory_id = memory_id
+        if checkpoint_format not in ("legacy", "snapshot"):
+            msg = "checkpoint_format must be 'legacy' or 'snapshot'."
+            raise ValueError(msg)
+        if checkpoint_format == "snapshot":
+            if limit is not None:
+                msg = (
+                    "checkpoint_format='snapshot' requires limit=None. "
+                    "Snapshot reads retrieve the complete snapshot and its writes."
+                )
+                raise ValueError(msg)
+            if max_results is not None and not 1 <= max_results <= 100:
+                msg = "max_results must be between 1 and 100, or None."
+                raise ValueError(msg)
         self.limit = limit
         self.max_results = max_results
+        self.checkpoint_format = checkpoint_format
         self.serializer = EventSerializer(self.serde)
-        self.checkpoint_event_client = AgentCoreEventClient(
+        client_class = (
+            AgentCoreSnapshotClient
+            if checkpoint_format == "snapshot"
+            else AgentCoreEventClient
+        )
+        self.checkpoint_event_client = client_class(
             memory_id,
             self.serializer,
             max_retries=max_retries,
@@ -103,18 +128,25 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             CheckpointTuple if found, None otherwise
         """
 
-        # TODO: There is room for caching here on the client side
-
         checkpoint_config = CheckpointerConfig.from_runnable_config(
             RunnableConfigDict(config)
         )
 
-        events = self.checkpoint_event_client.get_events(
-            checkpoint_config.session_id,
-            checkpoint_config.actor_id,
-            self.limit,
-            self.max_results,
-        )
+        events = None
+        if isinstance(self.checkpoint_event_client, AgentCoreSnapshotClient):
+            events = self.checkpoint_event_client.get_snapshot(
+                checkpoint_config.session_id,
+                checkpoint_config.actor_id,
+                checkpoint_config.checkpoint_id,
+                self.max_results,
+            )
+        if events is None:
+            events = self.checkpoint_event_client.get_events(
+                checkpoint_config.session_id,
+                checkpoint_config.actor_id,
+                self.limit,
+                self.max_results,
+            )
 
         checkpoints, writes_by_checkpoint, channel_data = self.processor.process_events(
             events
@@ -132,11 +164,34 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             latest_checkpoint_id = max(checkpoints.keys())
             checkpoint_event = checkpoints[latest_checkpoint_id]
 
+        self._check_read_format(checkpoint_event)
         # Build and return checkpoint tuple
         writes = writes_by_checkpoint.get(checkpoint_event.checkpoint_id, [])
+        if isinstance(self.checkpoint_event_client, AgentCoreSnapshotClient):
+            writes.extend(
+                self.checkpoint_event_client.get_pending_writes(
+                    checkpoint_config.thread_id,
+                    checkpoint_config.actor_id,
+                    checkpoint_event.checkpoint_id,
+                    self.max_results,
+                    checkpoint_ns=checkpoint_config.checkpoint_ns,
+                )
+            )
         return self.processor.build_checkpoint_tuple(
             checkpoint_event, writes, channel_data, checkpoint_config
         )
+
+    def _check_read_format(self, checkpoint: CheckpointEvent) -> None:
+        if (
+            checkpoint.snapshot_version is not None
+            and self.checkpoint_format != "snapshot"
+        ):
+            msg = (
+                "This checkpoint uses snapshot storage. Initialize "
+                "AgentCoreMemorySaver with checkpoint_format='snapshot' to restore "
+                "its pending writes."
+            )
+            raise InvalidConfigError(msg)
 
     def list(
         self,
@@ -148,17 +203,18 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
     ) -> Iterator[CheckpointTuple]:
         """List checkpoints from Bedrock AgentCore Memory."""
 
-        # TODO: There is room for caching here on the client side
-
         checkpoint_config = CheckpointerConfig.from_runnable_config(
             RunnableConfigDict(config) if config else {}
         )
         config_checkpoint_id = get_checkpoint_id(config) if config else None
+        snapshot_mode = self.checkpoint_format == "snapshot"
+        if snapshot_mode and limit is not None and limit <= 0:
+            return
 
         events = self.checkpoint_event_client.get_events(
             checkpoint_config.session_id,
             checkpoint_config.actor_id,
-            limit,
+            None if snapshot_mode else limit,
             self.max_results,
         )
 
@@ -180,10 +236,31 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             if before_checkpoint_id and checkpoint_id >= before_checkpoint_id:
                 continue
 
+            if (
+                snapshot_mode
+                and filter
+                and any(
+                    checkpoint_event.metadata.get(key) != value
+                    for key, value in filter.items()
+                )
+            ):
+                continue
+
             if limit is not None and count >= limit:
                 break
 
+            self._check_read_format(checkpoint_event)
             writes = writes_by_checkpoint.get(checkpoint_id, [])
+            if isinstance(self.checkpoint_event_client, AgentCoreSnapshotClient):
+                writes.extend(
+                    self.checkpoint_event_client.get_pending_writes(
+                        checkpoint_config.thread_id,
+                        checkpoint_config.actor_id,
+                        checkpoint_id,
+                        self.max_results,
+                        checkpoint_ns=checkpoint_config.checkpoint_ns,
+                    )
+                )
 
             yield self.processor.build_checkpoint_tuple(
                 checkpoint_event, writes, channel_data, checkpoint_config
@@ -199,56 +276,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         new_versions: ChannelVersions,
     ) -> RunnableConfig:
         """Save a checkpoint to AgentCore Memory."""
-        checkpoint_config = CheckpointerConfig.from_runnable_config(
-            RunnableConfigDict(config)
-        )
-
-        # Extract channel values
-        checkpoint_copy = dict(checkpoint)
-        channel_values: dict[str, Any] = {}
-        if "channel_values" in checkpoint_copy:
-            channel_values_obj = checkpoint_copy.pop("channel_values")
-            if isinstance(channel_values_obj, dict):
-                channel_values = channel_values_obj.copy()
-
-        # Create all events to be stored in a single batch
-        events_to_store: list[CheckpointEvent | ChannelDataEvent | WritesEvent] = []
-
-        # Create channel data events
-        for channel, version in new_versions.items():
-            channel_event = ChannelDataEvent(
-                channel=channel,
-                version=str(version),
-                value=channel_values.get(channel, EMPTY_CHANNEL_VALUE),
-                thread_id=checkpoint_config.thread_id,
-                checkpoint_ns=checkpoint_config.checkpoint_ns,
-            )
-            events_to_store.append(channel_event)
-
-        checkpoint_event = CheckpointEvent(
-            checkpoint_id=checkpoint["id"],
-            checkpoint_data=checkpoint_copy,
-            metadata=dict(get_checkpoint_metadata(config, metadata)),
-            parent_checkpoint_id=checkpoint_config.checkpoint_id,
-            thread_id=checkpoint_config.thread_id,
-            checkpoint_ns=checkpoint_config.checkpoint_ns,
-        )
-        events_to_store.append(checkpoint_event)
-        typed_events = cast(
-            list[CheckpointEvent | ChannelDataEvent | WritesEvent], events_to_store
-        )
-        self.checkpoint_event_client.store_blob_events_batch(
-            typed_events, checkpoint_config.session_id, checkpoint_config.actor_id
-        )
-
-        return {
-            "configurable": {
-                "thread_id": checkpoint_config.thread_id,
-                "actor_id": checkpoint_config.actor_id,
-                "checkpoint_ns": checkpoint_config.checkpoint_ns,
-                "checkpoint_id": checkpoint["id"],
-            }
-        }
+        return self.put_with_writes(config, checkpoint, metadata, new_versions, [])
 
     def put_writes(
         self,
@@ -281,8 +309,15 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             writes=write_items,
         )
 
+        session_id = checkpoint_config.session_id
+        if self.checkpoint_format == "snapshot":
+            session_id = writes_session_id(
+                checkpoint_config.thread_id,
+                checkpoint_config.checkpoint_id,
+                checkpoint_config.checkpoint_ns,
+            )
         self.checkpoint_event_client.store_blob_event(
-            writes_event, checkpoint_config.session_id, checkpoint_config.actor_id
+            writes_event, session_id, checkpoint_config.actor_id
         )
 
     def put_with_writes(
@@ -293,13 +328,14 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         new_versions: ChannelVersions,
         pending_writes: Sequence[PendingWrite],
     ) -> RunnableConfig:
-        """Persist checkpoint and all pending writes in a single API call.
+        """Persist a checkpoint and all buffered writes together.
 
         Args:
             config: The runnable config associated with this checkpoint.
             checkpoint: The checkpoint data to persist.
             metadata: Metadata associated with the checkpoint.
-            new_versions: Channel version information.
+            new_versions: Channel version changes supplied by LangGraph. Snapshots
+                include all current channels, including unchanged versions.
             pending_writes: All buffered writes to persist alongside the
                 checkpoint.
 
@@ -319,7 +355,14 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
 
         events_to_store: list[CheckpointEvent | ChannelDataEvent | WritesEvent] = []
 
-        for channel, version in new_versions.items():
+        # Snapshots include unchanged values so a resumed reader never needs to
+        # walk older checkpoints to reconstruct this state.
+        versions = (
+            checkpoint.get("channel_versions", {})
+            if self.checkpoint_format == "snapshot"
+            else new_versions
+        )
+        for channel, version in versions.items():
             channel_event = ChannelDataEvent(
                 channel=channel,
                 version=str(version),
@@ -355,12 +398,18 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             )
             events_to_store.append(writes_event)
 
-        typed_events = cast(
-            list[CheckpointEvent | ChannelDataEvent | WritesEvent], events_to_store
-        )
-        self.checkpoint_event_client.store_blob_events_batch(
-            typed_events, checkpoint_config.session_id, checkpoint_config.actor_id
-        )
+        if isinstance(self.checkpoint_event_client, AgentCoreSnapshotClient):
+            self.checkpoint_event_client.store_snapshot(
+                events_to_store,
+                checkpoint_config.session_id,
+                checkpoint_config.actor_id,
+            )
+        else:
+            self.checkpoint_event_client.store_blob_events_batch(
+                events_to_store,
+                checkpoint_config.session_id,
+                checkpoint_config.actor_id,
+            )
 
         return {
             "configurable": {
