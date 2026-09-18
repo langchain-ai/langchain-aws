@@ -2,14 +2,24 @@ import datetime
 import os
 import random
 import string
-from typing import Literal
+from collections import Counter
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from typing import Any, Literal
+from uuid import uuid4
 
 import pytest
 from langchain.agents import create_agent
 from langchain_aws import ChatBedrock
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
-from langgraph.checkpoint.base import Checkpoint, uuid6
+from langgraph.checkpoint.base import Checkpoint, empty_checkpoint, uuid6
+from langgraph.graph import END, START, MessagesState, StateGraph
 
+from langgraph_checkpoint_aws.checkpoint.agentcore.constants import (
+    CheckpointReadLimitError,
+)
 from langgraph_checkpoint_aws.checkpoint.agentcore.saver import AgentCoreMemorySaver
 
 
@@ -116,7 +126,7 @@ class TestAgentCoreMemorySaver:
                 config,
                 checkpoint,
                 checkpoint_metadata,
-                {"messages": "v2", "results": "v2"},
+                checkpoint["channel_versions"],
             )
 
             assert saved_config["configurable"]["checkpoint_id"] == checkpoint["id"]
@@ -126,6 +136,10 @@ class TestAgentCoreMemorySaver:
 
             checkpoint_tuple = memory_saver.get_tuple(saved_config)
             assert checkpoint_tuple.checkpoint["id"] == checkpoint["id"]
+            assert (
+                checkpoint_tuple.checkpoint["channel_values"]
+                == checkpoint["channel_values"]
+            )
 
             # Metadata includes original metadata plus actor_id from config
             expected_metadata = checkpoint_metadata.copy()
@@ -308,3 +322,169 @@ class TestAgentCoreMemorySaver:
 
         finally:
             memory_saver.delete_thread(thread_id, actor_id)
+
+
+@dataclass
+class MemoryCase:
+    memory_id: str
+    region: str
+    actor: str = field(default_factory=lambda: f"read-safety-{uuid4().hex}")
+    threads: set[str] = field(default_factory=set)
+    calls: Counter[str] = field(default_factory=Counter)
+
+    def config(self, thread: str = "thread") -> RunnableConfig:
+        self.threads.add(thread)
+        return {"configurable": {"actor_id": self.actor, "thread_id": thread}}
+
+    def saver(
+        self,
+        **kwargs: Any,
+    ) -> AgentCoreMemorySaver:
+        saver = AgentCoreMemorySaver(
+            self.memory_id,
+            region_name=self.region,
+            **kwargs,
+        )
+
+        def after_call(model: Any, **_: Any) -> None:
+            self.calls[model.name] += 1
+
+        saver.checkpoint_event_client.client._client.meta.events.register(
+            "after-call.bedrock-agentcore.*", after_call
+        )
+        return saver
+
+
+@pytest.fixture
+def memory_case() -> Iterator[MemoryCase]:
+    memory_id = os.environ.get("AGENTCORE_MEMORY_ID")
+    if not memory_id:
+        pytest.skip("AGENTCORE_MEMORY_ID environment variable not set")
+    case = MemoryCase(memory_id, os.environ.get("AWS_REGION", "us-west-2"))
+    try:
+        yield case
+    finally:
+        saver = case.saver()
+        for thread in case.threads:
+            saver.delete_thread(thread, case.actor)
+
+
+def make_checkpoint(index: int, values: dict[str, Any]) -> Checkpoint:
+    checkpoint = empty_checkpoint()
+    checkpoint["channel_values"] = values
+    checkpoint["channel_versions"] = {key: str(index) for key in values}
+    return checkpoint
+
+
+class TestAgentCoreReadLimits:
+    """Live read regressions using synthetic state without a language model."""
+
+    def test_limit_one_blocks_resume_and_explicit_unlimited_retry_retains_state(
+        self,
+        memory_case: MemoryCase,
+    ) -> None:
+        def reply(state: MessagesState) -> dict[str, Any]:
+            return {"messages": [AIMessage(content=str(state["messages"][0].content))]}
+
+        builder = StateGraph(MessagesState)
+        builder.add_node("reply", reply)
+        builder.add_edge(START, "reply")
+        builder.add_edge("reply", END)
+        config = memory_case.config()
+        first = memory_case.saver()
+        builder.compile(checkpointer=first).invoke(
+            {"messages": [HumanMessage("My preferred seat is a window.")]}, config
+        )
+        second = memory_case.saver(limit=1)
+        created = memory_case.calls["CreateEvent"]
+        with pytest.raises(CheckpointReadLimitError):
+            builder.compile(checkpointer=second).invoke(
+                {"messages": [HumanMessage("What seat do I prefer?")]}, config
+            )
+        assert memory_case.calls["CreateEvent"] == created
+
+        result = builder.compile(checkpointer=memory_case.saver()).invoke(
+            {"messages": [HumanMessage("What seat do I prefer?")]}, config
+        )
+
+        assert len(result["messages"]) == 4
+        assert result["messages"][-1].content == "My preferred seat is a window."
+
+    @pytest.mark.parametrize("page_size", [1, None])
+    def test_missing_unchanged_channel_fails_but_larger_prefix_succeeds(
+        self, memory_case: MemoryCase, page_size: int | None
+    ) -> None:
+        config = memory_case.config()
+        writer = memory_case.saver()
+        for index in range(1, 4):
+            state = make_checkpoint(index, {"counter": index, "static": "unchanged"})
+            state["channel_versions"]["static"] = "2" if index >= 2 else "1"
+            writer.put(
+                config,
+                state,
+                {"source": "loop", "step": index},
+                state["channel_versions"] if index <= 2 else {"counter": "3"},
+            )
+        with pytest.raises(CheckpointReadLimitError, match="missing 1 referenced"):
+            memory_case.saver(limit=2, max_results=page_size).get_tuple(config)
+        # Latest record + changed counter, then counter and static from checkpoint 2.
+        with pytest.warns(UserWarning, match="pending writes may be incomplete"):
+            restored = memory_case.saver(limit=4, max_results=page_size).get_tuple(
+                config
+            )
+        assert restored is not None
+        assert restored.checkpoint["channel_values"] == state["channel_values"]
+
+    def test_complete_channels_do_not_certify_older_pending_writes(
+        self,
+        memory_case: MemoryCase,
+    ) -> None:
+        config = memory_case.config()
+        writer = memory_case.saver()
+        state = make_checkpoint(1, {"counter": 1})
+        write_config: RunnableConfig = {
+            "configurable": {**config["configurable"], "checkpoint_id": state["id"]}
+        }
+        writer.put_writes(write_config, [("answer", "saved")], "task")
+        writer.put(
+            config, state, {"source": "loop", "step": 1}, state["channel_versions"]
+        )
+        with pytest.warns(UserWarning, match="pending writes may be incomplete"):
+            limited = memory_case.saver(limit=2).get_tuple(config)
+        assert limited is not None
+        assert limited.checkpoint["channel_values"] == state["channel_values"]
+        assert limited.pending_writes == []
+        full = writer.get_tuple(config)
+        assert full is not None
+        assert full.pending_writes == [("task", "answer", "saved")]
+
+    def test_history_limit_counts_checkpoints_after_filtering(
+        self,
+        memory_case: MemoryCase,
+    ) -> None:
+        config = memory_case.config()
+        saver = memory_case.saver()
+        saved = []
+        for index in range(1, 6):
+            checkpoint = make_checkpoint(
+                index, {"counter": index, "static": "unchanged"}
+            )
+            saved.append(
+                saver.put(
+                    config,
+                    checkpoint,
+                    {"source": "loop", "step": index},
+                    checkpoint["channel_versions"],
+                )
+            )
+        history = list(saver.list(config, limit=3))
+        assert [item.checkpoint["channel_values"]["counter"] for item in history] == [
+            5,
+            4,
+            3,
+        ]
+        filtered = list(
+            saver.list(config, limit=1, filter={"step": 3}, before=saved[-1])
+        )
+        assert len(filtered) == 1
+        assert filtered[0].checkpoint["channel_values"]["counter"] == 3
