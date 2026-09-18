@@ -644,6 +644,11 @@ class ChatBedrockNovaSonic(BaseChatModel):
         populate_by_name=True,
     )
 
+    @property
+    def model(self) -> str:
+        """Same as model_id."""
+        return self.model_id
+
     model_id: str = Field(
         default="amazon.nova-sonic-v1:0",
         alias="model",
