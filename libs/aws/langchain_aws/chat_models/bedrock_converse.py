@@ -783,6 +783,11 @@ class ChatBedrockConverse(AsyncTransportMixin, BaseChatModel):
         populate_by_name=True,
     )
 
+    @property
+    def model(self) -> str:
+        """Same as model_id."""
+        return self.model_id
+
     @classmethod
     def create_cache_point(cls, cache_type: str = "default") -> Dict[str, Any]:
         """Create a prompt caching configuration for Bedrock.
@@ -3475,9 +3480,9 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         elif "reasoning_content" in block:
             reasoning_dict = block.get("reasoning_content", {})
             # Invoke block format
-            if "reasoning_text" in reasoning_dict:
-                text = reasoning_dict.get("reasoning_text").get("text", "")
-                signature = reasoning_dict.get("reasoning_text").get("signature", "")
+            if reasoning_text := reasoning_dict.get("reasoning_text"):
+                text = reasoning_text.get("text", "")
+                signature = reasoning_text.get("signature", "")
                 lc_content.append(
                     {
                         "type": "reasoning_content",
