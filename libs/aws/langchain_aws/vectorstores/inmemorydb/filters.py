@@ -1,3 +1,4 @@
+import re
 from enum import Enum
 from functools import wraps
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
@@ -347,6 +348,7 @@ class InMemoryDBText(InMemoryDBFilterField):
         InMemoryDBFilterOperator.LIKE: "@%s:(%s)",
     }
     SUPPORTED_VAL_TYPES = (str, type(None))
+    _like_escaper = TokenEscaper(re.compile(r"[,.<>{}\[\]\\\"\':;!@#$^&()\-+=~\/]"))
 
     @check_operator_misuse
     def __eq__(self, other: str) -> "InMemoryDBFilterExpression":
@@ -382,7 +384,7 @@ class InMemoryDBText(InMemoryDBFilterField):
         return InMemoryDBFilterExpression(str(self))
 
     def __mod__(self, other: str) -> "InMemoryDBFilterExpression":
-        """Create a InMemoryDBText "LIKE" filter expression.
+        """Match text with wildcards, fuzzy matching, or term unions/intersections.
 
         Args:
             other: The text value to filter on.
@@ -405,9 +407,14 @@ class InMemoryDBText(InMemoryDBFilterField):
         if not self._value:
             return "*"
 
+        escaper = (
+            self._like_escaper
+            if self._operator == InMemoryDBFilterOperator.LIKE
+            else self.escaper
+        )
         return self.OPERATOR_MAP[self._operator] % (
             self._field,
-            self._value,
+            escaper.escape(self._value),
         )
 
 
