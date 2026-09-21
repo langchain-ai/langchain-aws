@@ -410,7 +410,7 @@ wheels = [
 
 [[package]]
 name = "bedrock-agentcore"
-version = "1.22.0"
+version = "1.23.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
@@ -422,9 +422,9 @@ dependencies = [
     { name = "uvicorn" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/89/45/a83059e17538ebc66a3a3354c6ea7fbde667d6da430cdb6a185b41e2c975/bedrock_agentcore-1.22.0.tar.gz", hash = "sha256:d5d7c5e61fd5118d2d8de87028a3522a99d86b4c82208f4d0f50d14cfd0e5150", size = 1145743, upload-time = "2026-08-18T21:34:53.733Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/22/a46a3e0e5147558916558570c86df6a0dcd1887b0d003199dbef401099f5/bedrock_agentcore-1.23.0.tar.gz", hash = "sha256:ef2aabc50c593d5433a889cd5c3a973c1e0d13b38bf9b1b305dcf499c72855b7", size = 1267873, upload-time = "2026-09-11T20:39:08.803Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0a/0c/be68acb4cda244b555bd591d2b4afaf2d8b549739f45e123f5e54b1f5b8b/bedrock_agentcore-1.22.0-py3-none-any.whl", hash = "sha256:b4906b9c2a290e54eccd13bcf99191b890d27eedd3aa28ba756aff61d83a4948", size = 501038, upload-time = "2026-08-18T21:34:51.845Z" },
+    { url = "https://files.pythonhosted.org/packages/b6/9b/32b5ef3163f629ce9de7ef3695a3f34fab1dcba07835409651fd630adb61/bedrock_agentcore-1.23.0-py3-none-any.whl", hash = "sha256:24581e548441efa3ecacbed1562f4cca68689f27ff84fd0ee6815d0ef33cd18d", size = 519578, upload-time = "2026-09-11T20:39:07.264Z" },
 ]
 
 [[package]]
@@ -1588,7 +1588,7 @@ requires-dist = [
     { name = "aws-bedrock-token-generator", marker = "extra == 'openai'", specifier = ">=1.1.0" },
     { name = "aws-sdk-bedrock-runtime", marker = "python_full_version >= '3.12' and extra == 'nova-sonic'", specifier = ">=0.10" },
     { name = "beautifulsoup4", marker = "extra == 'tools'", specifier = ">=4.13.4" },
-    { name = "bedrock-agentcore", marker = "python_full_version >= '3.10' and extra == 'tools'", specifier = ">=1.4.0" },
+    { name = "bedrock-agentcore", marker = "python_full_version >= '3.10' and extra == 'tools'", specifier = ">=1.23.0" },
     { name = "boto3", specifier = ">=1.43.64" },
     { name = "langchain-anthropic", marker = "extra == 'anthropic'" },
     { name = "langchain-core", specifier = ">=1.6.3" },
@@ -1612,7 +1612,7 @@ test = [
     { name = "anthropic", extras = ["bedrock"] },
     { name = "aws-bedrock-token-generator", specifier = ">=1.1.0" },
     { name = "beautifulsoup4", specifier = ">=4.13.4" },
-    { name = "bedrock-agentcore", specifier = ">=1.4.0" },
+    { name = "bedrock-agentcore", specifier = ">=1.23.0" },
     { name = "langchain", specifier = ">=1.0.0" },
     { name = "langchain-anthropic" },
     { name = "langchain-classic", specifier = ">=1.0.0" },
