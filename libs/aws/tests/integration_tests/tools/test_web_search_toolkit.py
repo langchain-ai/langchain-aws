@@ -6,6 +6,7 @@ creating one is a control plane operation with its own IAM requirements. Point
 """
 
 import os
+from urllib.parse import urlsplit
 
 import pytest
 from langchain_core.tools import ToolException
@@ -43,21 +44,26 @@ def test_search_returns_attributed_results() -> None:
 
 def test_include_domains_restricts_the_sources() -> None:
     """An include filter reaches the connector and narrows the results."""
+    domain = "docs.aws.amazon.com"
     with _toolkit() as toolkit:
         output = toolkit.get_tools()[0].invoke(
             {
                 "query": "AgentCore gateway",
                 "max_results": 5,
-                "include_domains": ["docs.aws.amazon.com"],
+                "include_domains": [domain],
             }
         )
 
     assert "Web search failed" not in output
     urls = [
-        line.strip() for line in output.splitlines() if line.strip().startswith("URL:")
+        line.strip().removeprefix("URL:").strip()
+        for line in output.splitlines()
+        if line.strip().startswith("URL:")
     ]
     assert urls, output
-    assert all("aws.amazon.com" in url for url in urls), urls
+    for url in urls:
+        host = urlsplit(url).hostname or ""
+        assert host == domain or host.endswith(f".{domain}"), url
 
 
 def test_a_query_over_the_limit_raises() -> None:
