@@ -168,7 +168,7 @@ class TestValkeyText:
 
     def test_text_escaping(self) -> None:
         expr = ValkeyFilter.text("title") == "test-value"
-        assert str(expr) == r'@title:("test\-value")'
+        assert str(expr) == '@title:("test-value")'
 
     def test_none_value(self) -> None:
         text = ValkeyFilter.text("title")

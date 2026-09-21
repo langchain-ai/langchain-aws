@@ -349,6 +349,7 @@ class InMemoryDBText(InMemoryDBFilterField):
     }
     SUPPORTED_VAL_TYPES = (str, type(None))
     _like_escaper = TokenEscaper(re.compile(r"[,.<>{}\[\]\\\"\':;!@#$^&()\-+=~\/]"))
+    _phrase_escaper = TokenEscaper(re.compile(r'[\\"]'))
 
     @check_operator_misuse
     def __eq__(self, other: str) -> "InMemoryDBFilterExpression":
@@ -410,7 +411,7 @@ class InMemoryDBText(InMemoryDBFilterField):
         escaper = (
             self._like_escaper
             if self._operator == InMemoryDBFilterOperator.LIKE
-            else self.escaper
+            else self._phrase_escaper
         )
         return self.OPERATOR_MAP[self._operator] % (
             self._field,

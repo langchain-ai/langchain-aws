@@ -13,8 +13,8 @@ from langchain_aws.vectorstores.inmemorydb.filters import (
 @pytest.mark.parametrize(
     ("op", "expected"),
     [
-        (operator.eq, '@content:("foo\\"\\)\\ \\|\\ \\(\\@ssn\\:\\(\\"\\*")'),
-        (operator.ne, '(-@content:"foo\\"\\)\\ \\|\\ \\(\\@ssn\\:\\(\\"\\*")'),
+        (operator.eq, '@content:("foo\\") | (@ssn:(\\"*")'),
+        (operator.ne, '(-@content:"foo\\") | (@ssn:(\\"*")'),
         (operator.mod, '@content:(foo\\"\\) | \\(\\@ssn\\:\\(\\"*)'),
     ],
 )
