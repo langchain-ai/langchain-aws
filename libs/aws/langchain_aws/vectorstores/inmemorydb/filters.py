@@ -1,4 +1,3 @@
-import re
 from enum import Enum
 from functools import wraps
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
@@ -348,8 +347,7 @@ class InMemoryDBText(InMemoryDBFilterField):
         InMemoryDBFilterOperator.LIKE: "@%s:(%s)",
     }
     SUPPORTED_VAL_TYPES = (str, type(None))
-    _like_escaper = TokenEscaper(re.compile(r"[,.<>{}\[\]\\\"\':;!@#$^&()\-+=~\/]"))
-    _phrase_escaper = TokenEscaper(re.compile(r'[\\"]'))
+    _UNSAFE_LIKE_CHARS = frozenset('"()@{}[]\\')
 
     @check_operator_misuse
     def __eq__(self, other: str) -> "InMemoryDBFilterExpression":
@@ -387,8 +385,15 @@ class InMemoryDBText(InMemoryDBFilterField):
     def __mod__(self, other: str) -> "InMemoryDBFilterExpression":
         """Match text with wildcards, fuzzy matching, or term unions/intersections.
 
+        Values are passed through unchanged so Redis retains its text tokenization.
+
         Args:
-            other: The text value to filter on.
+            other: A Redis text query preserving punctuation and documented wildcard,
+                fuzzy, union, and intersection syntax. Quotes, parentheses, field
+                sigils, braces, brackets, and backslashes are rejected.
+
+        Raises:
+            ValueError: If the value contains syntax that could escape the field.
 
         Example:
             ```python
@@ -403,20 +408,27 @@ class InMemoryDBText(InMemoryDBFilterField):
         self._set_value(other, self.SUPPORTED_VAL_TYPES, InMemoryDBFilterOperator.LIKE)  # type: ignore
         return InMemoryDBFilterExpression(str(self))
 
+    def _validate_like_value(self) -> None:
+        unsafe = self._UNSAFE_LIKE_CHARS.intersection(self._value)
+        if unsafe:
+            chars = "".join(sorted(unsafe))
+            msg = f"LIKE filter value contains unsupported query syntax: {chars!r}"
+            raise ValueError(msg)
+
+    def _escape_phrase_value(self) -> str:
+        return self._value.replace("\\", "\\\\").replace('"', '\\"')
+
     def __str__(self) -> str:
         """Return the query syntax for a InMemoryDBText filter expression."""
         if not self._value:
             return "*"
 
-        escaper = (
-            self._like_escaper
-            if self._operator == InMemoryDBFilterOperator.LIKE
-            else self._phrase_escaper
-        )
-        return self.OPERATOR_MAP[self._operator] % (
-            self._field,
-            escaper.escape(self._value),
-        )
+        if self._operator == InMemoryDBFilterOperator.LIKE:
+            self._validate_like_value()
+            value = self._value
+        else:
+            value = self._escape_phrase_value()
+        return self.OPERATOR_MAP[self._operator] % (self._field, value)
 
 
 class InMemoryDBFilterExpression:

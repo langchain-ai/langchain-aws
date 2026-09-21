@@ -15,10 +15,11 @@ from langchain_aws.vectorstores.inmemorydb.filters import (
     [
         (operator.eq, '@content:("foo\\") | (@ssn:(\\"*")'),
         (operator.ne, '(-@content:"foo\\") | (@ssn:(\\"*")'),
-        (operator.mod, '@content:(foo\\"\\) | \\(\\@ssn\\:\\(\\"*)'),
     ],
 )
-def test_text_escapes_query_structure(op: Callable[..., Any], expected: str) -> None:
+def test_text_phrase_escapes_query_structure(
+    op: Callable[..., Any], expected: str
+) -> None:
     expression = op(InMemoryDBText("content"), 'foo") | (@ssn:("*')
     assert str(expression) == expected
     assert str((InMemoryDBTag("tenant") == "acme") & expression) == (
@@ -33,10 +34,15 @@ def test_like_preserves_documented_patterns(value: str) -> None:
     assert str(InMemoryDBText("job") % value) == f"@job:({value})"
 
 
-def test_like_escapes_backslashes_before_delimiters() -> None:
-    assert str(InMemoryDBText("content") % r"x\) | (@tenant:{other}") == (
-        r"@content:(x\\\) | \(\@tenant\:\{other\})"
-    )
+def test_like_preserves_ordinary_punctuation() -> None:
+    value = "release-1.2, C++/Python: senior_dev's! #1 $5; a=b~c&d^e<z>"
+    assert str(InMemoryDBText("job") % value) == f"@job:({value})"
+
+
+@pytest.mark.parametrize("value", ['x") | (@tenant:{other}', r"x\) | @tenant:{other}"])
+def test_like_rejects_query_structure(value: str) -> None:
+    with pytest.raises(ValueError, match="unsupported query syntax"):
+        InMemoryDBText("content") % value
 
 
 def test_tag_escapes_value_alternation_but_preserves_lists() -> None:
