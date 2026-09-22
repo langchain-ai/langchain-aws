@@ -3265,14 +3265,14 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                         },
                     }
                 )
-            if "s3location" in block["video"]["source"]:
+            if "s3_location" in block["video"]["source"]:
                 lc_content.append(
                     {
                         "type": "video",
                         "source": {
                             "media_type": f"video/{block['video']['format']}",
                             "type": "s3Location",
-                            "data": block["video"]["source"]["s3location"],
+                            "data": block["video"]["source"]["s3_location"],
                         },
                     }
                 )
@@ -3561,7 +3561,13 @@ def _snake_to_camel(text: str) -> str:
 
 
 def _camel_to_snake(text: str) -> str:
-    pattern = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+    # The digit boundary matters for keys like "s3Location": without it the
+    # word break is missed, the key flattens to "s3location", and
+    # `_snake_to_camel` cannot restore it because there is no "_" left to
+    # split on.
+    pattern = re.compile(
+        r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|(?<=[0-9])(?=[A-Z])"
+    )
     return pattern.sub("_", text).lower()
 
 
