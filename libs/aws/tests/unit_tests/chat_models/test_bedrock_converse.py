@@ -56,6 +56,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _inline_reasoning_tags,
     _lc_content_to_bedrock,
     _messages_to_bedrock,
+    _mime_type_to_format,
     _parse_response,
     _parse_stream_event,
     _response_format_to_output_config,
@@ -8163,3 +8164,22 @@ def test__messages_to_bedrock_redacted_reasoning_dropped_when_rejected() -> None
     actual_messages, _ = _messages_to_bedrock(messages, model_id="deepseek.r1-v1:0")
 
     assert actual_messages[1] == {"role": "assistant", "content": [_ANSWER_BLOCK]}
+
+
+def test__mime_type_to_format_normalizes_parameters_and_case() -> None:
+    """MIME types are case-insensitive and may carry parameters (RFC 2045).
+
+    A value like ``text/plain; charset=utf-8`` is what HTTP headers and most
+    file-type detectors produce, and it names a format Bedrock supports, so it
+    must not be rejected.
+    """
+    assert _mime_type_to_format("text/plain; charset=utf-8") == "txt"
+    assert _mime_type_to_format("text/csv;charset=utf-8") == "csv"
+    assert _mime_type_to_format("video/mp4; codecs=avc1") == "mp4"
+
+    assert _mime_type_to_format("IMAGE/PNG") == "png"
+    assert _mime_type_to_format("Application/Pdf") == "pdf"
+
+    # Genuinely unsupported types still raise.
+    with pytest.raises(ValueError, match="Unsupported MIME type"):
+        _mime_type_to_format("application/zip")
