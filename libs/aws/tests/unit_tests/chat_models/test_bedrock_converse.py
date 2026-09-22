@@ -8163,3 +8163,35 @@ def test__messages_to_bedrock_redacted_reasoning_dropped_when_rejected() -> None
     actual_messages, _ = _messages_to_bedrock(messages, model_id="deepseek.r1-v1:0")
 
     assert actual_messages[1] == {"role": "assistant", "content": [_ANSWER_BLOCK]}
+
+
+def test__set_additional_properties_false_walks_prefix_items() -> None:
+    """Objects nested in a tuple-shaped array must be made strict too.
+
+    A tuple is represented as ``prefixItems`` (positional subschemas) rather
+    than the single ``items`` subschema used for lists, so an object nested
+    that way is only reachable through ``prefixItems``.
+    """
+    schema: dict = {
+        "type": "object",
+        "properties": {
+            "pair": {
+                "type": "array",
+                "prefixItems": [
+                    {"type": "object", "properties": {"a": {"type": "string"}}},
+                    {"type": "object", "properties": {"b": {"type": "string"}}},
+                ],
+            },
+            "many": {
+                "type": "array",
+                "items": {"type": "object", "properties": {"c": {"type": "string"}}},
+            },
+        },
+    }
+
+    _set_additional_properties_false(schema)
+
+    # The list form already worked; the tuple form must now match it.
+    assert schema["properties"]["many"]["items"]["additionalProperties"] is False
+    for sub_schema in schema["properties"]["pair"]["prefixItems"]:
+        assert sub_schema["additionalProperties"] is False
