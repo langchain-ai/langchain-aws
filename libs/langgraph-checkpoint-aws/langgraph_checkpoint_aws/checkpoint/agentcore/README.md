@@ -73,7 +73,10 @@ config = {
 response = agent.invoke(
     {
         "messages": [
-            {"role": "user", "content": "I like sushi with tuna. In general seafood is great."}
+            {
+                "role": "user",
+                "content": "I like sushi with tuna. In general seafood is great.",
+            }
         ]
     },
     config=config,
