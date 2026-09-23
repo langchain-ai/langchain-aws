@@ -4918,6 +4918,20 @@ def test_reasoning_effort_gpt_6_rejects_none() -> None:
         )  # type: ignore[call-arg]
 
 
+@pytest.mark.parametrize("model", ["us.openai.gpt-6-sol", "global.openai.gpt-6-luna"])
+@pytest.mark.parametrize("effort", ["none", "max"])
+def test_reasoning_effort_gpt_6_sol_luna(
+    model: str, effort: Literal["none", "max"]
+) -> None:
+    """Test reasoning effort use with GPT-6 Sol and Luna."""
+    llm = ChatBedrockConverse(
+        model=model,
+        region_name="us-east-1",
+        reasoning_effort=effort,
+    )  # type: ignore[call-arg]
+    assert llm.additional_model_request_fields == {"reasoning": {"effort": effort}}
+
+
 def test_reasoning_effort_unsupported_model_warns() -> None:
     """Test reasoning_effort on a model with no known translation warns and no-ops."""
     with pytest.warns(UserWarning, match="reasoning_effort is not supported"):
@@ -5212,6 +5226,23 @@ def test_temperature_omitted_when_unsupported() -> None:
         top_p=0.9,
     )
     assert llm.profile and llm.profile.get("temperature") is False
+
+    with pytest.warns(UserWarning, match="does not support"):
+        params = llm._converse_params()
+
+    assert "temperature" not in params["inferenceConfig"]
+    assert "topP" not in params["inferenceConfig"]
+
+
+@pytest.mark.parametrize("model", ["us.openai.gpt-6-sol", "global.openai.gpt-6-luna"])
+def test_temperature_omitted_gpt_6_sol_luna(model: str) -> None:
+    """GPT-6 Sol and Luna reject temperature/topP, so both are dropped."""
+    llm = ChatBedrockConverse(
+        model=model,
+        region_name="us-east-1",
+        temperature=0.2,
+        top_p=0.9,
+    )
 
     with pytest.warns(UserWarning, match="does not support"):
         params = llm._converse_params()
