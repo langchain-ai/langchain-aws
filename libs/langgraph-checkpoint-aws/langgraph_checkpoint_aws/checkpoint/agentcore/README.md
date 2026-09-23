@@ -22,24 +22,30 @@ pip install langgraph-checkpoint-aws
 ## Requirements
 
 ```text
-Python >=3.9
-langgraph >=0.2.55
-boto3 >=1.39.7
+Python >=3.10
+langgraph >=1.0.0
+boto3 >=1.43.64
 ```
 
 ## Usage - Checkpointer
 
+The agent example also requires LangChain and its AWS model integration:
+
+```bash
+pip install -U langchain langchain-aws
+```
+
 ```python
 # Import LangGraph and LangChain components
+from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
-from langgraph.prebuilt import create_react_agent
 
 # Import the AgentCoreMemory integrations
 from langgraph_checkpoint_aws import AgentCoreMemorySaver
 
 REGION = "us-west-2"
 MEMORY_ID = "YOUR_MEMORY_ID"
-MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+MODEL_ID = "us.anthropic.claude-sonnet-5"
 
 # Initialize checkpointer for state persistence. No additional setup required.
 # Sessions will be saved and persisted for actor_id/session_id combinations
@@ -48,10 +54,10 @@ checkpointer = AgentCoreMemorySaver(MEMORY_ID, region_name=REGION)
 # Initialize chat model
 model = init_chat_model(MODEL_ID, model_provider="bedrock_converse", region_name=REGION)
 
-# Create a pre-built langgraph agent (configurations work for custom agents too)
-graph = create_react_agent(
+# Create a LangChain agent with checkpoint persistence
+agent = create_agent(
     model=model,
-    tools=tools,
+    tools=[],  # Add tools here if needed
     checkpointer=checkpointer,  # AgentCoreMemorySaver we created above
 )
 
@@ -64,8 +70,12 @@ config = {
 }
 
 # Invoke the agent
-response = graph.invoke(
-    {"messages": [("human", "I like sushi with tuna. In general seafood is great.")]},
+response = agent.invoke(
+    {
+        "messages": [
+            {"role": "user", "content": "I like sushi with tuna. In general seafood is great."}
+        ]
+    },
     config=config,
 )
 ```
@@ -159,7 +169,9 @@ Ensure you have AWS credentials configured using one of these methods:
             "Action": [
                 "bedrock-agentcore:CreateEvent",
                 "bedrock-agentcore:ListEvents",
-                "bedrock-agentcore:GetEvent"
+                "bedrock-agentcore:GetEvent",
+                "bedrock-agentcore:ListSessions",
+                "bedrock-agentcore:DeleteEvent"
             ],
             "Resource": [
                 "*"
