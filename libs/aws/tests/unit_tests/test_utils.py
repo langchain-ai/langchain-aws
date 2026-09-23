@@ -16,6 +16,7 @@ from langchain_aws.utils import (
     _StaticCredentialProvider,
     count_tokens_api_supported_for_model,
     create_aws_client,
+    forced_tool_choice_unsupported,
     parse_model_provider,
     reasoning_effort_additional_fields,
     thinking_disabled_in_params,
@@ -498,6 +499,24 @@ def test_thinking_forced_tool_use_unsupported(
     model_id: str, expected_result: bool
 ) -> None:
     assert thinking_forced_tool_use_unsupported(model_id) == expected_result
+
+
+@pytest.mark.parametrize(
+    "model_id,expected_result",
+    [
+        ("us.anthropic.claude-fable-5-1", True),
+        ("anthropic.claude-opus-5-5", True),
+        ("us.anthropic.claude-opus-5-5", True),
+        ("global.anthropic.claude-opus-5-5", True),
+        ("global.anthropic.claude-opus-5", False),
+        ("global.anthropic.claude-fable-5", False),
+        ("us.anthropic.claude-sonnet-5", False),
+        ("global.anthropic.claude-opus-4-8", False),
+        ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", False),
+    ],
+)
+def test_forced_tool_choice_unsupported(model_id: str, expected_result: bool) -> None:
+    assert forced_tool_choice_unsupported(model_id) == expected_result
 
 
 @pytest.mark.parametrize(

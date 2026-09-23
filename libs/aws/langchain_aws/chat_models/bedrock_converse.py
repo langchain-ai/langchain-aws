@@ -83,6 +83,7 @@ from langchain_aws.tools.nova_tools import NovaSystemTool
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
+    forced_tool_choice_unsupported,
     parse_model_provider,
     reasoning_effort_additional_fields,
     thinking_enabled_in_params,
@@ -1176,7 +1177,7 @@ class ChatBedrockConverse(BaseChatModel):
             if "claude" in base_model:
                 # Tool choice not supported when thinking is enabled
                 thinking_params = self.additional_model_request_fields or {}
-                if "claude-fable-5-1" in base_model:
+                if forced_tool_choice_unsupported(base_model):
                     self.supports_tool_choice_values = ("auto",)
                 elif thinking_forced_tool_use_unsupported(
                     base_model
