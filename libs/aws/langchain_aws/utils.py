@@ -547,6 +547,11 @@ def thinking_on_by_default(model: str) -> bool:
     )
 
 
+def forced_tool_choice_unsupported(model: str) -> bool:
+    """Check if the model rejects forced tool use (`any` or a named tool)."""
+    return any(x in model for x in ("claude-fable-5-1", "claude-opus-5-5"))
+
+
 def thinking_forced_tool_use_unsupported(model: str) -> bool:
     """Check if the model rejects or ignores forced tool use with thinking enabled."""
     if "claude-opus-4-8" in model:
