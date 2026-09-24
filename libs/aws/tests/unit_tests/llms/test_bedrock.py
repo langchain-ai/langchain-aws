@@ -734,6 +734,27 @@ def test_prepare_input_max_tokens_key(provider: str, expected_key: str) -> None:
     assert body == {"messages": messages, expected_key: 64}
 
 
+def test_prepare_output_stream_for_openai_length_keeps_usage() -> None:
+    """A stream cut off at the token limit still reports usage."""
+    body = [
+        {
+            "chunk": {
+                "bytes": json.dumps(
+                    {
+                        "choices": [{"delta": {}, "finish_reason": "length"}],
+                        "amazon-bedrock-invocationMetrics": {
+                            "inputTokenCount": 23,
+                            "outputTokenCount": 16,
+                        },
+                    }
+                ).encode()
+            }
+        }
+    ]
+    chunks = list(LLMInputOutputAdapter.prepare_output_stream("openai", {"body": body}))
+    assert chunks[-1].generation_info["usage_metadata"]["output_tokens"] == 16
+
+
 def test_prepare_output_for_cohere(cohere_response):
     result = LLMInputOutputAdapter.prepare_output("cohere", cohere_response)
     assert result["text"] == "This is the Cohere output text."
