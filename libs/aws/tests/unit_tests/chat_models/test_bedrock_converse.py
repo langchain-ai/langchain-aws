@@ -7631,7 +7631,7 @@ def test_with_structured_output_prompt_prefill_include_raw() -> None:
 
 
 def test_with_structured_output_repairs_stringified_list_field() -> None:
-    """A List[Model] field emitted as a JSON string parses successfully (#1221).
+    """A nullable List[Model] JSON string parses successfully (#1221).
 
     Same repair as ChatBedrock: Claude models intermittently re-serialize a
     declared array field as a JSON string containing the correct value.
@@ -7646,7 +7646,7 @@ def test_with_structured_output_repairs_stringified_list_field() -> None:
         values: List[int] = Field(default_factory=list)
 
     class Output(BaseModel):
-        items: List[Entry]
+        items: Optional[List[Entry]] = None
 
     stringified = '[{"label": "Onboarding", "values": [1001, 1002]}]'
     message = AIMessage(

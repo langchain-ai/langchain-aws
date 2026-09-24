@@ -37,6 +37,38 @@ class TestRepairStringifiedJsonArgs:
     _PROPS = {
         "items": {"type": "array"},
         "meta": {"type": "object"},
+        "nullable_items": {
+            "anyOf": [{"type": "null"}, {"type": "array"}],
+        },
+        "nullable_meta": {
+            "anyOf": [{"type": "null"}, {"type": "object"}],
+        },
+        "multiple_null_meta": {
+            "anyOf": [
+                {"type": "null"},
+                {"type": "null"},
+                {"type": "object"},
+            ],
+        },
+        "ambiguous_scalar": {
+            "anyOf": [
+                {"type": "array"},
+                {"type": "string"},
+                {"type": "null"},
+            ],
+        },
+        "ambiguous_containers": {
+            "anyOf": [
+                {"type": "array"},
+                {"type": "object"},
+                {"type": "null"},
+            ],
+        },
+        "non_nullable_union": {"anyOf": [{"type": "array"}]},
+        "nullable_scalar": {"anyOf": [{"type": "null"}, {"type": "string"}]},
+        "boolean_true": True,
+        "boolean_false": False,
+        "malformed_truthy": "not-a-schema",
         "note": {"type": "string"},
     }
 
@@ -55,15 +87,52 @@ class TestRepairStringifiedJsonArgs:
             ),
             # stringified object -> unwrapped
             ({"meta": '{"k": "v"}'}, {"meta": {"k": "v"}}),
+            # nullable array -> unwrapped
+            (
+                {"nullable_items": '[{"label": "a"}]'},
+                {"nullable_items": [{"label": "a"}]},
+            ),
+            # nullable object -> unwrapped
+            (
+                {"nullable_meta": '{"k": "v"}'},
+                {"nullable_meta": {"k": "v"}},
+            ),
+            # multiple null branches plus one container -> unwrapped
+            (
+                {"multiple_null_meta": '{"k": "v"}'},
+                {"multiple_null_meta": {"k": "v"}},
+            ),
+            # nullable self-wrapped stringified array -> unwrapped one level deeper
+            (
+                {"nullable_items": '{"nullable_items": [{"label": "a"}]}'},
+                {"nullable_items": [{"label": "a"}]},
+            ),
             # declared-string field: JSON-looking value left untouched
             (
                 {"note": '["looks", "like", "json"]'},
                 {"note": '["looks", "like", "json"]'},
             ),
+            # native null values pass through unchanged
+            ({"nullable_items": None}, {"nullable_items": None}),
+            # textual null decodes to a scalar and remains untouched
+            ({"nullable_items": "null"}, {"nullable_items": "null"}),
             # malformed JSON left untouched (fails loudly downstream)
             ({"items": '[{"label": broken'}, {"items": '[{"label": broken'}),
             # parses but doesn't match the declared type -> untouched
             ({"items": '{"unrelated": 1}'}, {"items": '{"unrelated": 1}'}),
+            # nullable container with the wrong decoded type -> untouched
+            ({"nullable_meta": "[]"}, {"nullable_meta": "[]"}),
+            # multiple non-null anyOf branches are ambiguous and remain untouched
+            ({"ambiguous_scalar": "[]"}, {"ambiguous_scalar": "[]"}),
+            ({"ambiguous_containers": "[]"}, {"ambiguous_containers": "[]"}),
+            # a non-nullable anyOf does not identify a repairable container
+            ({"non_nullable_union": "[]"}, {"non_nullable_union": "[]"}),
+            # nullable scalar fields are not repaired
+            ({"nullable_scalar": '"value"'}, {"nullable_scalar": '"value"'}),
+            # non-dict property schemas are left untouched
+            ({"boolean_true": "[]"}, {"boolean_true": "[]"}),
+            ({"boolean_false": "[]"}, {"boolean_false": "[]"}),
+            ({"malformed_truthy": "[]"}, {"malformed_truthy": "[]"}),
             # well-formed args pass through unchanged
             (
                 {"items": [{"label": "a"}], "meta": {"k": "v"}, "note": "v1"},
@@ -76,9 +145,23 @@ class TestRepairStringifiedJsonArgs:
             "bare-array",
             "self-wrapped-array",
             "object",
+            "nullable-array",
+            "nullable-object",
+            "multiple-null-object",
+            "nullable-self-wrapped-array",
             "declared-string-untouched",
+            "native-null-untouched",
+            "textual-null-untouched",
             "malformed-json-untouched",
             "type-mismatch-untouched",
+            "nullable-type-mismatch-untouched",
+            "ambiguous-scalar-union-untouched",
+            "ambiguous-container-union-untouched",
+            "non-nullable-union-untouched",
+            "nullable-scalar-untouched",
+            "boolean-true-schema-untouched",
+            "boolean-false-schema-untouched",
+            "truthy-malformed-schema-untouched",
             "well-formed-passthrough",
             "unknown-field-untouched",
         ],
