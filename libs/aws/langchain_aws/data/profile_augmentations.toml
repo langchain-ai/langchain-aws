@@ -61,11 +61,9 @@ reasoning_effort_levels = ["low", "medium", "high"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."openai.gpt-6-sol"]
-temperature = false
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."openai.gpt-6-luna"]
-temperature = false
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."openai.gpt-5.6-terra"]
