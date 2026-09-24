@@ -593,10 +593,9 @@ class LLMInputOutputAdapter:
                 yield _get_invocation_metrics_chunk(chunk_obj)
                 return
 
-            elif (
-                provider in ("qwen", "openai")
-                and chunk_obj.get(output_key, [{}])[0].get("finish_reason", "")
-                == "stop"
+            elif provider in ("qwen", "openai") and (
+                chunk_obj.get(output_key, [{}])[0].get("finish_reason")
+                in ("stop", "length")
             ):
                 yield _get_invocation_metrics_chunk(chunk_obj)
                 return
@@ -644,10 +643,9 @@ class LLMInputOutputAdapter:
             ):
                 return
 
-            elif (
-                provider in ("qwen", "openai")
-                and chunk_obj.get(output_key, [{}])[0].get("finish_reason", "")
-                == "stop"
+            elif provider in ("qwen", "openai") and (
+                chunk_obj.get(output_key, [{}])[0].get("finish_reason")
+                in ("stop", "length")
             ):
                 yield _get_invocation_metrics_chunk(chunk_obj)
                 return
