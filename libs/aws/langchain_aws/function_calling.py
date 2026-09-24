@@ -168,7 +168,7 @@ def _repair_stringified_json_args(
     """Unwrap tool-call arguments if the model converted them to JSON strings."""
     repaired: Dict[str, Any] = {}
     for key, value in args.items():
-        declared = (properties.get(key) or {}).get("type")
+        declared = _get_container_type(properties.get(key))
         if not isinstance(value, str) or declared not in ("array", "object"):
             repaired[key] = value
             continue
@@ -189,6 +189,45 @@ def _repair_stringified_json_args(
         else:
             repaired[key] = value
     return repaired
+
+
+def _get_container_type(
+    property_schema: Any,
+) -> Optional[Literal["array", "object"]]:
+    """Return an unambiguous container type declared by a property schema."""
+    if not isinstance(property_schema, dict):
+        return None
+
+    if property_schema.get("type") == "array":
+        return "array"
+    if property_schema.get("type") == "object":
+        return "object"
+
+    any_of = property_schema.get("anyOf")
+    if not isinstance(any_of, list):
+        return None
+
+    has_null_branch = any(
+        isinstance(branch, dict) and branch.get("type") == "null" for branch in any_of
+    )
+    non_null_branches = [
+        branch
+        for branch in any_of
+        if not isinstance(branch, dict) or branch.get("type") != "null"
+    ]
+    if (
+        not has_null_branch
+        or len(non_null_branches) != 1
+        or not isinstance(non_null_branches[0], dict)
+    ):
+        return None
+
+    container_type = non_null_branches[0].get("type")
+    if container_type == "array":
+        return "array"
+    if container_type == "object":
+        return "object"
+    return None
 
 
 def _repair_stringified_tool_call_message(
