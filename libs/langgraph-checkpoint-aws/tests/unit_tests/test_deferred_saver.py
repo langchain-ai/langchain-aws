@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import operator
 import threading
-from typing import Any
+from typing import Annotated, Any, TypedDict
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -13,6 +14,8 @@ from langgraph.checkpoint.base import (
     CheckpointMetadata,
 )
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import Command, interrupt
 
 from langgraph_checkpoint_aws.checkpoint.deferred_saver import DeferredCheckpointSaver
 
@@ -1107,3 +1110,588 @@ class TestAsyncFlushCheckpointRace:
         result = deferred.get_tuple(_make_config(thread_id="t1"))
         assert result is not None
         assert result.checkpoint["id"] == "ckpt-new"
+
+
+class _BatchFlushableSaver(MemorySaver):
+    """MemorySaver that also satisfies the batch flush protocols."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.put_with_writes_calls = 0
+        self.aput_with_writes_calls = 0
+
+    def put_with_writes(
+        self,
+        config: RunnableConfig,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: Any,
+        pending_writes: Any,
+    ) -> RunnableConfig:
+        self.put_with_writes_calls += 1
+        return self.put(config, checkpoint, metadata, new_versions)
+
+    async def aput_with_writes(
+        self,
+        config: RunnableConfig,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: Any,
+        pending_writes: Any,
+    ) -> RunnableConfig:
+        self.aput_with_writes_calls += 1
+        return await self.aput(config, checkpoint, metadata, new_versions)
+
+
+class TestFlushWritesDisabled:
+    """flush_writes=False persists the checkpoint only."""
+
+    def test_default_persists_writes(self, memory_saver: MemorySaver) -> None:
+        """Default stays backward compatible: writes reach the saver."""
+        deferred = DeferredCheckpointSaver(memory_saver)
+        config = _make_config(thread_id="t1")
+        deferred.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), {})
+        deferred.put_writes(
+            _make_config(thread_id="t1", checkpoint_id="ckpt-1"),
+            [("ch1", "v1")],
+            "task-1",
+        )
+
+        with patch.object(memory_saver, "put_writes") as mock_pw:
+            deferred.flush()
+            mock_pw.assert_called_once()
+
+    def test_flush_does_not_call_put_writes(self, memory_saver: MemorySaver) -> None:
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        config = _make_config(thread_id="t1")
+        deferred.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), {})
+        write_config = _make_config(thread_id="t1", checkpoint_id="ckpt-1")
+        deferred.put_writes(write_config, [("ch1", "v1")], "task-1")
+        deferred.put_writes(write_config, [("ch2", "v2")], "task-2")
+
+        with (
+            patch.object(memory_saver, "put_writes") as mock_pw,
+            patch.object(memory_saver, "put", wraps=memory_saver.put) as mock_put,
+        ):
+            result = deferred.flush()
+
+        # Exactly one API call: the checkpoint. Zero write calls.
+        mock_put.assert_called_once()
+        mock_pw.assert_not_called()
+        assert result is not None
+        assert result["configurable"]["checkpoint_id"] == "ckpt-1"
+
+    def test_flush_discards_buffered_writes(self, memory_saver: MemorySaver) -> None:
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        config = _make_config(thread_id="t1")
+        deferred.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), {})
+        deferred.put_writes(
+            _make_config(thread_id="t1", checkpoint_id="ckpt-1"),
+            [("ch1", "v1")],
+            "task-1",
+        )
+
+        deferred.flush()
+
+        assert deferred.is_empty
+        assert not deferred.has_buffered_writes
+        # Nothing landed in the backend either.
+        persisted = memory_saver.get_tuple(_make_config(thread_id="t1"))
+        assert persisted is not None
+        assert not persisted.pending_writes
+
+    def test_checkpoint_state_is_preserved(self, memory_saver: MemorySaver) -> None:
+        """Skipping writes must not affect the persisted conversation state."""
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        config = _make_config(thread_id="t1")
+        deferred.put(
+            config, _make_checkpoint("ckpt-1"), _make_metadata(), {"messages": "v1"}
+        )
+        deferred.put_writes(
+            _make_config(thread_id="t1", checkpoint_id="ckpt-1"),
+            [("messages", "dropped")],
+            "task-1",
+        )
+
+        deferred.flush()
+
+        persisted = memory_saver.get_tuple(_make_config(thread_id="t1"))
+        assert persisted is not None
+        assert persisted.checkpoint["id"] == "ckpt-1"
+        assert persisted.checkpoint["channel_values"] == {"messages": ["hello"]}
+
+    def test_writes_still_visible_before_flush(self, memory_saver: MemorySaver) -> None:
+        """Buffered writes are still served to the running graph."""
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        config = _make_config(thread_id="t1")
+        deferred.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), {})
+        deferred.put_writes(
+            _make_config(thread_id="t1", checkpoint_id="ckpt-1"),
+            [("ch1", "v1")],
+            "task-1",
+        )
+
+        result = deferred.get_tuple(_make_config(thread_id="t1"))
+
+        assert result is not None
+        assert result.pending_writes == [("task-1", "ch1", "v1")]
+
+    def test_flush_returns_none_when_only_writes_buffered(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        deferred.put_writes(
+            _make_config(thread_id="t1", checkpoint_id="ckpt-1"),
+            [("ch1", "v1")],
+            "task-1",
+        )
+
+        with patch.object(memory_saver, "put_writes") as mock_pw:
+            result = deferred.flush()
+
+        assert result is None
+        assert deferred.is_empty
+        mock_pw.assert_not_called()
+
+    def test_flush_returns_none_when_empty(self, memory_saver: MemorySaver) -> None:
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        assert deferred.flush() is None
+
+    def test_flush_failure_restores_checkpoint_and_drops_writes(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        config = _make_config(thread_id="t1")
+        deferred.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), {})
+        deferred.put_writes(
+            _make_config(thread_id="t1", checkpoint_id="ckpt-1"),
+            [("ch1", "v1")],
+            "task-1",
+        )
+
+        with patch.object(
+            memory_saver, "put", side_effect=RuntimeError("network error")
+        ):
+            with pytest.raises(RuntimeError, match="network error"):
+                deferred.flush()
+
+        # The checkpoint is retryable; the writes were never persistable.
+        assert deferred.has_buffered_checkpoint
+        assert not deferred.has_buffered_writes
+
+    def test_flush_failure_does_not_clobber_new_checkpoint(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        config = _make_config(thread_id="t1")
+        deferred.put(config, _make_checkpoint("ckpt-old"), _make_metadata(), {})
+
+        def failing_put_that_races(*args: Any, **kwargs: Any) -> None:
+            deferred.put(config, _make_checkpoint("ckpt-new"), _make_metadata(1), {})
+            msg = "network error"
+            raise RuntimeError(msg)
+
+        with patch.object(memory_saver, "put", side_effect=failing_put_that_races):
+            with pytest.raises(RuntimeError, match="network error"):
+                deferred.flush()
+
+        result = deferred.get_tuple(_make_config(thread_id="t1"))
+        assert result is not None
+        assert result.checkpoint["id"] == "ckpt-new"
+
+    def test_flush_on_exit_persists_checkpoint_only(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        config = _make_config(thread_id="t1")
+
+        with patch.object(memory_saver, "put_writes") as mock_pw:
+            with deferred.flush_on_exit():
+                deferred.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), {})
+                deferred.put_writes(
+                    _make_config(thread_id="t1", checkpoint_id="ckpt-1"),
+                    [("ch1", "v1")],
+                    "task-1",
+                )
+
+        assert deferred.is_empty
+        mock_pw.assert_not_called()
+        assert memory_saver.get_tuple(_make_config(thread_id="t1")) is not None
+
+    def test_combining_with_batch_writes_raises(self) -> None:
+        """Both flags together is a contradiction, not a precedence question.
+
+        ``batch_writes=True`` already reaches one API call while keeping the
+        write records, so silently honoring ``flush_writes=False`` would trade
+        away durability the caller did not need to give up.
+        """
+        with pytest.raises(ValueError, match="contradictory"):
+            DeferredCheckpointSaver(
+                _BatchFlushableSaver(), batch_writes=True, flush_writes=False
+            )
+
+    def test_batch_writes_alone_still_batches(self) -> None:
+        """The recommended alternative keeps the single call and the writes."""
+        saver = _BatchFlushableSaver()
+        deferred = DeferredCheckpointSaver(saver, batch_writes=True)
+        config = _make_config(thread_id="t1")
+        deferred.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), {})
+        deferred.put_writes(
+            _make_config(thread_id="t1", checkpoint_id="ckpt-1"),
+            [("ch1", "v1")],
+            "task-1",
+        )
+
+        result = deferred.flush()
+
+        assert result is not None
+        assert saver.put_with_writes_calls == 1
+        assert deferred.is_empty
+
+    @pytest.mark.asyncio
+    async def test_aflush_does_not_call_aput_writes(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        config = _make_config(thread_id="t1")
+        await deferred.aput(config, _make_checkpoint("ckpt-1"), _make_metadata(), {})
+        await deferred.aput_writes(
+            _make_config(thread_id="t1", checkpoint_id="ckpt-1"),
+            [("ch1", "v1")],
+            "task-1",
+        )
+
+        with patch.object(
+            memory_saver, "aput_writes", new_callable=AsyncMock
+        ) as mock_apw:
+            result = await deferred.aflush()
+
+        mock_apw.assert_not_called()
+        assert result is not None
+        assert deferred.is_empty
+        persisted = await memory_saver.aget_tuple(_make_config(thread_id="t1"))
+        assert persisted is not None
+        assert persisted.checkpoint["id"] == "ckpt-1"
+        assert not persisted.pending_writes
+
+    @pytest.mark.asyncio
+    async def test_aflush_failure_restores_checkpoint_and_drops_writes(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        config = _make_config(thread_id="t1")
+        deferred.put(config, _make_checkpoint("ckpt-1"), _make_metadata(), {})
+        deferred.put_writes(
+            _make_config(thread_id="t1", checkpoint_id="ckpt-1"),
+            [("ch1", "v1")],
+            "task-1",
+        )
+
+        with patch.object(
+            memory_saver,
+            "aput",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("async fail"),
+        ):
+            with pytest.raises(RuntimeError, match="async fail"):
+                await deferred.aflush()
+
+        assert deferred.has_buffered_checkpoint
+        assert not deferred.has_buffered_writes
+
+    @pytest.mark.asyncio
+    async def test_aflush_on_exit_persists_checkpoint_only(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        config = _make_config(thread_id="t1")
+
+        with patch.object(
+            memory_saver, "aput_writes", new_callable=AsyncMock
+        ) as mock_apw:
+            async with deferred.aflush_on_exit():
+                await deferred.aput(
+                    config, _make_checkpoint("ckpt-1"), _make_metadata(), {}
+                )
+                await deferred.aput_writes(
+                    _make_config(thread_id="t1", checkpoint_id="ckpt-1"),
+                    [("ch1", "v1")],
+                    "task-1",
+                )
+
+        assert deferred.is_empty
+        mock_apw.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_abatch_writes_alone_still_batches(self) -> None:
+        """Async twin of :meth:`test_batch_writes_alone_still_batches`."""
+        saver = _BatchFlushableSaver()
+        deferred = DeferredCheckpointSaver(saver, batch_writes=True)
+        config = _make_config(thread_id="t1")
+        await deferred.aput(config, _make_checkpoint("ckpt-1"), _make_metadata(), {})
+        await deferred.aput_writes(
+            _make_config(thread_id="t1", checkpoint_id="ckpt-1"),
+            [("ch1", "v1")],
+            "task-1",
+        )
+
+        result = await deferred.aflush()
+
+        assert result is not None
+        assert saver.aput_with_writes_calls == 1
+        assert deferred.is_empty
+
+
+class _ConversationState(TypedDict):
+    messages: Annotated[list[str], operator.add]
+
+
+def _build_multi_node_graph(checkpointer: DeferredCheckpointSaver) -> Any:
+    """Compile a three-node graph so each turn produces several writes."""
+
+    def node_a(state: _ConversationState) -> _ConversationState:
+        return {"messages": ["a"]}
+
+    def node_b(state: _ConversationState) -> _ConversationState:
+        return {"messages": ["b"]}
+
+    def node_c(state: _ConversationState) -> _ConversationState:
+        return {"messages": ["c"]}
+
+    builder = StateGraph(_ConversationState)
+    builder.add_node("a", node_a)
+    builder.add_node("b", node_b)
+    builder.add_node("c", node_c)
+    builder.add_edge(START, "a")
+    builder.add_edge("a", "b")
+    builder.add_edge("b", "c")
+    builder.add_edge("c", END)
+    return builder.compile(checkpointer=checkpointer)
+
+
+class TestFlushWritesDisabledGraphRun:
+    """End-to-end graph runs with flush_writes=False."""
+
+    def test_multi_turn_conversation_state_is_preserved(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        """Conversation state accumulates across turns without write records."""
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        graph = _build_multi_node_graph(deferred)
+        config = _make_config(thread_id="conversation-1")
+
+        with patch.object(
+            memory_saver, "put_writes", wraps=memory_saver.put_writes
+        ) as mock_pw:
+            for turn in range(3):
+                with deferred.flush_on_exit():
+                    graph.invoke({"messages": [f"turn-{turn}"]}, config)
+
+        # No per-task write records were persisted for any turn.
+        mock_pw.assert_not_called()
+
+        # Every message from every turn survived in the persisted checkpoint.
+        state = graph.get_state(config)
+        assert state.values["messages"] == [
+            "turn-0",
+            "a",
+            "b",
+            "c",
+            "turn-1",
+            "a",
+            "b",
+            "c",
+            "turn-2",
+            "a",
+            "b",
+            "c",
+        ]
+
+    def test_graph_run_persists_single_checkpoint_per_turn(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        """A three-node turn costs exactly one put() at flush time."""
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        graph = _build_multi_node_graph(deferred)
+        config = _make_config(thread_id="conversation-2")
+
+        with patch.object(memory_saver, "put", wraps=memory_saver.put) as mock_put:
+            with deferred.flush_on_exit():
+                graph.invoke({"messages": ["hello"]}, config)
+
+        assert mock_put.call_count == 1
+        assert deferred.is_empty
+
+    @pytest.mark.asyncio
+    async def test_async_multi_turn_conversation_state_is_preserved(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=False)
+        graph = _build_multi_node_graph(deferred)
+        config = _make_config(thread_id="conversation-3")
+
+        with patch.object(
+            memory_saver, "aput_writes", new_callable=AsyncMock
+        ) as mock_apw:
+            for turn in range(2):
+                async with deferred.aflush_on_exit():
+                    await graph.ainvoke({"messages": [f"turn-{turn}"]}, config)
+
+        mock_apw.assert_not_called()
+
+        state = await graph.aget_state(config)
+        assert state.values["messages"] == [
+            "turn-0",
+            "a",
+            "b",
+            "c",
+            "turn-1",
+            "a",
+            "b",
+            "c",
+        ]
+
+
+def _build_fanout_graph(checkpointer: DeferredCheckpointSaver, calls: list[str]) -> Any:
+    """Fan out to two nodes, one of which pauses on ``interrupt()``."""
+
+    def completes(state: _ConversationState) -> _ConversationState:
+        calls.append("completes")
+        return {"messages": ["completes"]}
+
+    def pauses(state: _ConversationState) -> _ConversationState:
+        answer = interrupt("need input")
+        return {"messages": [f"human:{answer}"]}
+
+    def join(state: _ConversationState) -> _ConversationState:
+        return {"messages": ["join"]}
+
+    builder = StateGraph(_ConversationState)
+    builder.add_node("completes", completes)
+    builder.add_node("pauses", pauses)
+    builder.add_node("join", join)
+    builder.add_edge(START, "completes")
+    builder.add_edge(START, "pauses")
+    builder.add_edge("completes", "join")
+    builder.add_edge("pauses", "join")
+    builder.add_edge("join", END)
+    return builder.compile(checkpointer=checkpointer)
+
+
+def _build_flaky_fanout_graph(
+    checkpointer: DeferredCheckpointSaver, calls: list[str], *, fail: bool
+) -> Any:
+    """Fan out to two nodes, one of which raises when *fail* is set."""
+
+    def healthy(state: _ConversationState) -> _ConversationState:
+        calls.append("healthy")
+        return {"messages": ["healthy"]}
+
+    def flaky(state: _ConversationState) -> _ConversationState:
+        calls.append("flaky")
+        if fail:
+            msg = "transient boom"
+            raise RuntimeError(msg)
+        return {"messages": ["flaky"]}
+
+    def join(state: _ConversationState) -> _ConversationState:
+        return {"messages": ["join"]}
+
+    builder = StateGraph(_ConversationState)
+    builder.add_node("healthy", healthy)
+    builder.add_node("flaky", flaky)
+    builder.add_node("join", join)
+    builder.add_edge(START, "healthy")
+    builder.add_edge(START, "flaky")
+    builder.add_edge("healthy", "join")
+    builder.add_edge("flaky", "join")
+    builder.add_edge("join", END)
+    return builder.compile(checkpointer=checkpointer)
+
+
+class TestFlushWritesDisabledResumeSemantics:
+    """Lock in what a partially completed superstep loses.
+
+    Per-task write records are the receipts LangGraph uses on resume to tell
+    which tasks of the current superstep already ran.  Dropping them makes
+    node execution at-least-once instead of once.  These tests pin that
+    documented trade-off from both sides so a refactor cannot change it
+    silently.
+    """
+
+    @pytest.mark.parametrize(
+        ("flush_writes", "expect_requeued", "expect_reruns"),
+        [(True, False, 1), (False, True, 2)],
+    )
+    def test_interrupted_superstep_requeues_completed_task(
+        self,
+        memory_saver: MemorySaver,
+        flush_writes: bool,
+        expect_requeued: bool,
+        expect_reruns: int,
+    ) -> None:
+        """A completed sibling of an interrupted task re-runs when writes drop."""
+        calls: list[str] = []
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=flush_writes)
+        graph = _build_fanout_graph(deferred, calls)
+        config = _make_config(thread_id="interrupted-1")
+
+        with deferred.flush_on_exit():
+            graph.invoke({"messages": ["start"]}, config)
+
+        assert calls.count("completes") == 1
+
+        # What the backend still knows about the paused superstep.
+        state = graph.get_state(config)
+        assert "pauses" in state.next
+        assert ("completes" in state.next) is expect_requeued
+        # Without the write records the interrupt payload is gone, so a
+        # restarted process cannot tell what it asked the human.
+        assert bool(state.interrupts) is not expect_requeued
+
+        # Resuming succeeds either way — but re-runs the completed sibling.
+        resumed = DeferredCheckpointSaver(memory_saver, flush_writes=flush_writes)
+        graph = _build_fanout_graph(resumed, calls)
+        with resumed.flush_on_exit():
+            result = graph.invoke(Command(resume="yes"), config)
+
+        assert calls.count("completes") == expect_reruns
+        assert result["messages"].count("human:yes") == 1
+
+    @pytest.mark.parametrize(
+        ("flush_writes", "expect_reruns"),
+        [(True, 1), (False, 2)],
+    )
+    def test_failed_superstep_reruns_completed_task_on_retry(
+        self,
+        memory_saver: MemorySaver,
+        flush_writes: bool,
+        expect_reruns: int,
+    ) -> None:
+        """Retrying after a node raises re-runs siblings that had succeeded.
+
+        ``flush_on_exit`` flushes from its ``finally`` block, so this is the
+        exception path it advertises — and the one most likely to repeat a
+        node's side effects under ``flush_writes=False``.
+        """
+        calls: list[str] = []
+        config = _make_config(thread_id="failed-1")
+
+        deferred = DeferredCheckpointSaver(memory_saver, flush_writes=flush_writes)
+        graph = _build_flaky_fanout_graph(deferred, calls, fail=True)
+        with pytest.raises(RuntimeError, match="transient boom"):
+            with deferred.flush_on_exit():
+                graph.invoke({"messages": ["start"]}, config)
+
+        assert calls.count("healthy") == 1
+
+        # Retry the same thread with a healthy graph, as a restart would.
+        retried = DeferredCheckpointSaver(memory_saver, flush_writes=flush_writes)
+        graph = _build_flaky_fanout_graph(retried, calls, fail=False)
+        with retried.flush_on_exit():
+            result = graph.invoke(None, config)
+
+        assert calls.count("flaky") == 2
+        assert calls.count("healthy") == expect_reruns
+        # Channel values still converge; only the execution count differs.
+        assert result["messages"].count("healthy") == 1
