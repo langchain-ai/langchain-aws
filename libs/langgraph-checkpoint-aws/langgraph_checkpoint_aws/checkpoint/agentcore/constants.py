@@ -27,3 +27,9 @@ class EventNotFoundError(AgentCoreMemoryError):
     """Raised when expected event is not found."""
 
     pass
+
+
+class CheckpointReadLimitError(AgentCoreMemoryError):
+    """Raised when a capped read lacks a checkpoint record or referenced channel."""
+
+    pass
