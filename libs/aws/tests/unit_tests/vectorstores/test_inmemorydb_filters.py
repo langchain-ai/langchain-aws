@@ -62,3 +62,19 @@ def test_numeric_rejects_query_strings(op: Callable[..., Any]) -> None:
 
 def test_numeric_preserves_negative_decimal() -> None:
     assert str(InMemoryDBNum("price") == -1.5) == "@price:[-1.5 -1.5]"
+
+
+@pytest.mark.parametrize("field_type", [InMemoryDBTag, InMemoryDBText, InMemoryDBNum])
+@pytest.mark.parametrize(
+    "field",
+    ["", "a b", "a\tb", "a:b", "a@b", "a(b", "a)b", "a{b", "a}b", "a[b", "a]b"]
+    + ["a|b", 'a"b', "a\\b", "tenant:{acme} | @tenant"],
+)
+def test_field_rejects_query_structure(field_type: Any, field: str) -> None:
+    with pytest.raises(ValueError, match="Invalid filter field name"):
+        field_type(field)
+
+
+@pytest.mark.parametrize("field", ["tenant", "tenant_id", "user-id", "a.b"])
+def test_field_accepts_existing_names(field: str) -> None:
+    assert str(InMemoryDBTag(field) == "acme") == f"@{field}:{{acme}}"

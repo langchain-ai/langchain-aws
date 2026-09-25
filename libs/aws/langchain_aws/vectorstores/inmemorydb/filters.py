@@ -45,8 +45,16 @@ class InMemoryDBFilterField:
 
     escaper: "TokenEscaper" = TokenEscaper()
     OPERATORS: Dict[InMemoryDBFilterOperator, str] = {}
+    _UNSAFE_FIELD_CHARS = frozenset(':@(){}[]|"\\')
 
     def __init__(self, field: str):
+        if (
+            not field
+            or any(char.isspace() for char in field)
+            or self._UNSAFE_FIELD_CHARS.intersection(field)
+        ):
+            msg = f"Invalid filter field name: {field!r}"
+            raise ValueError(msg)
         self._field = field
         self._value: Any = None
         self._operator: InMemoryDBFilterOperator = InMemoryDBFilterOperator.EQ
