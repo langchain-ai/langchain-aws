@@ -321,6 +321,22 @@ def test_claude_fable_5_1_tool_choice_auto_only() -> None:
     assert chat_model.supports_tool_choice_values == ("auto",)
 
 
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "anthropic.claude-opus-5-5",
+        "us.anthropic.claude-opus-5-5",
+        "global.anthropic.claude-opus-5-5",
+    ],
+)
+def test_claude_opus_5_5_tool_choice_auto_only(model_id: str) -> None:
+    chat_model = ChatBedrockConverse(model=model_id, region_name="us-west-2")
+    assert chat_model.supports_tool_choice_values == ("auto",)
+    structured = chat_model.with_structured_output(GetWeather)
+    bound_kwargs = cast(RunnableBinding, structured.first).kwargs  # type: ignore[attr-defined]
+    assert bound_kwargs.get("tool_choice") is None
+
+
 def test_amazon_bind_tools_tool_choice() -> None:
     chat_model = ChatBedrockConverse(
         model="us.amazon.nova-lite-v1:0", region_name="us-east-1"
@@ -4916,6 +4932,23 @@ def test_reasoning_effort_gpt_6_rejects_none() -> None:
             region_name="us-east-1",
             reasoning_effort="none",
         )  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("model", ["us.openai.gpt-6-sol", "global.openai.gpt-6-luna"])
+@pytest.mark.parametrize("effort", ["none", "max"])
+def test_reasoning_effort_gpt_6_sol_luna(
+    model: str, effort: Literal["none", "max"]
+) -> None:
+    """Test reasoning effort use with GPT-6 Sol and Luna."""
+    llm = ChatBedrockConverse(
+        model=model,
+        region_name="us-east-1",
+        reasoning_effort=effort,
+        profile={
+            "reasoning_effort_levels": ["none", "low", "medium", "high", "xhigh", "max"]
+        },
+    )  # type: ignore[call-arg]
+    assert llm.additional_model_request_fields == {"reasoning": {"effort": effort}}
 
 
 def test_reasoning_effort_unsupported_model_warns() -> None:

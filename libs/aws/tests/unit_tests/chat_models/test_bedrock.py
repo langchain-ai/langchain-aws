@@ -863,6 +863,26 @@ def test_bind_tools_strict_passed_to_converse_api(
     assert func["strict"] is True
 
 
+@pytest.mark.parametrize(
+    "model_id,forced",
+    [
+        ("us.anthropic.claude-fable-5-1", False),
+        ("global.anthropic.claude-opus-5-5", False),
+        ("global.anthropic.claude-opus-5", True),
+    ],
+)
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_with_structured_output_no_forced_tool_choice(
+    mock_create_aws_client: Any, model_id: str, forced: bool
+) -> None:
+    """Models that reject forced tool use get no tool_choice in structured output."""
+    mock_create_aws_client.return_value = MagicMock()
+    chat_model = ChatBedrock(model=model_id, region="us-west-2")
+    structured = chat_model.with_structured_output(GetWeather)
+    bound_kwargs = cast(RunnableBinding, structured.first).kwargs  # type: ignore[attr-defined]
+    assert ("tool_choice" in bound_kwargs) is forced
+
+
 def test_with_structured_output_strict_warns_without_converse_api() -> None:
     chat_model = ChatBedrock(
         model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region="us-west-2"

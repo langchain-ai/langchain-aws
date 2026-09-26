@@ -422,7 +422,9 @@ class LLMInputOutputAdapter:
         elif provider in ("openai", "qwen"):
             input_body["messages"] = messages
             if max_tokens:
-                input_body["max_tokens"] = max_tokens
+                # GPT-5.x/GPT-6 reject `max_tokens`; gpt-oss accepts either key.
+                key = "max_completion_tokens" if provider == "openai" else "max_tokens"
+                input_body[key] = max_tokens
             if temperature is not None:
                 input_body["temperature"] = temperature
 
@@ -487,7 +489,10 @@ class LLMInputOutputAdapter:
             elif provider == "mistral":
                 text = response_body.get("outputs")[0].get("text")
             elif provider == "openai":
-                text = response_body.get("choices")[0].get("message").get("content")
+                # `content` is null when the token limit is hit during reasoning.
+                text = (
+                    response_body.get("choices")[0].get("message").get("content") or ""
+                )
             elif provider == "qwen":
                 text = response_body.get("choices")[0].get("message").get("content")
             else:
@@ -588,10 +593,9 @@ class LLMInputOutputAdapter:
                 yield _get_invocation_metrics_chunk(chunk_obj)
                 return
 
-            elif (
-                provider in ("qwen", "openai")
-                and chunk_obj.get(output_key, [{}])[0].get("finish_reason", "")
-                == "stop"
+            elif provider in ("qwen", "openai") and (
+                chunk_obj.get(output_key, [{}])[0].get("finish_reason")
+                in ("stop", "length")
             ):
                 yield _get_invocation_metrics_chunk(chunk_obj)
                 return
@@ -639,10 +643,9 @@ class LLMInputOutputAdapter:
             ):
                 return
 
-            elif (
-                provider in ("qwen", "openai")
-                and chunk_obj.get(output_key, [{}])[0].get("finish_reason", "")
-                == "stop"
+            elif provider in ("qwen", "openai") and (
+                chunk_obj.get(output_key, [{}])[0].get("finish_reason")
+                in ("stop", "length")
             ):
                 yield _get_invocation_metrics_chunk(chunk_obj)
                 return
