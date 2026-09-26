@@ -8196,3 +8196,37 @@ def test__messages_to_bedrock_redacted_reasoning_dropped_when_rejected() -> None
     actual_messages, _ = _messages_to_bedrock(messages, model_id="deepseek.r1-v1:0")
 
     assert actual_messages[1] == {"role": "assistant", "content": [_ANSWER_BLOCK]}
+
+
+def test__camel_to_snake_splits_on_digit_boundary() -> None:
+    """A word break after a digit must still be a break.
+
+    Without it ``s3Location`` flattens to ``s3location``, which
+    ``_snake_to_camel`` cannot restore because no ``_`` is left to split on.
+    """
+    assert _camel_to_snake("s3Location") == "s3_location"
+    assert _snake_to_camel("s3_location") == "s3Location"
+
+    # Existing keys must keep round-tripping unchanged.
+    for key in ("toolUseId", "additionalModelRequestFields", "maxTokens", "topP"):
+        assert _snake_to_camel(_camel_to_snake(key)) == key
+
+
+def test__bedrock_to_lc_preserves_s3_location_on_replay() -> None:
+    """An S3-sourced document must go back to Bedrock spelled as the API wants."""
+    bedrock_content = [
+        {
+            "document": {
+                "format": "pdf",
+                "name": "report",
+                "source": {"s3Location": {"uri": "s3://bucket/report.pdf"}},
+            }
+        }
+    ]
+
+    lc_content: list[Union[str, dict[str, Any]]] = list(_bedrock_to_lc(bedrock_content))
+    replayed = _lc_content_to_bedrock(lc_content)
+
+    assert replayed[0]["document"]["source"] == {
+        "s3Location": {"uri": "s3://bucket/report.pdf"}
+    }
