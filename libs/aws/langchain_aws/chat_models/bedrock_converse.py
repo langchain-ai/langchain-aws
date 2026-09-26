@@ -2709,12 +2709,17 @@ def _mime_type_to_format(mime_type: str) -> str:
             f"Invalid MIME type format: {mime_type}. Expected format: 'type/subtype'"
         )
 
-    if mime_type in MIME_TO_FORMAT:
-        return MIME_TO_FORMAT[mime_type]
+    # MIME types are case-insensitive and may carry parameters (RFC 2045),
+    # so "text/plain; charset=utf-8" and "IMAGE/PNG" name formats Bedrock
+    # supports. Normalize before matching rather than rejecting them.
+    normalized = mime_type.split(";")[0].strip().lower()
+
+    if normalized in MIME_TO_FORMAT:
+        return MIME_TO_FORMAT[normalized]
 
     # Fallback to original method of splitting on "/" for simple cases
     all_formats = set(MIME_TO_FORMAT.values())
-    format_part = mime_type.split("/")[1]
+    format_part = normalized.split("/")[1]
     if format_part in all_formats:
         return format_part
 
