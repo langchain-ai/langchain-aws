@@ -3451,7 +3451,13 @@ def _set_additional_properties_false(schema: dict) -> None:
 
     Bedrock structured outputs require this on every object in the JSON schema.
     Modifies *schema* in place. Also walks ``$defs``/``definitions``,
-    ``properties``, ``items``, and ``allOf``/``anyOf``/``oneOf``.
+    ``properties``, ``items``, ``prefixItems``, and ``allOf``/``anyOf``/``oneOf``.
+
+    Note:
+        Walking ``prefixItems`` keeps this consistent with ``items``, but does
+        not by itself make tuple-shaped arrays usable: some Bedrock models
+        reject the keyword outright with ``For 'array' type, property
+        'prefixItems' is not supported``.
     """
     if schema.get("type") == "object":
         schema["additionalProperties"] = False
@@ -3464,7 +3470,9 @@ def _set_additional_properties_false(schema: dict) -> None:
         for def_schema in (schema.get(keyword) or {}).values():
             if isinstance(def_schema, dict):
                 _set_additional_properties_false(def_schema)
-    for keyword in ("allOf", "anyOf", "oneOf"):
+    # ``prefixItems`` holds the positional subschemas of a tuple-shaped array,
+    # so an object nested in one is only reachable through it, not ``items``.
+    for keyword in ("allOf", "anyOf", "oneOf", "prefixItems"):
         for sub_schema in schema.get(keyword) or []:
             if isinstance(sub_schema, dict):
                 _set_additional_properties_false(sub_schema)
