@@ -65,6 +65,29 @@ def test_default_base_url_from_region() -> None:
     assert model.openai_api_base == "https://bedrock-mantle.us-east-1.api.aws/v1"
 
 
+@pytest.mark.parametrize(
+    "model_name, expected_path",
+    [
+        ("openai.gpt-6-sol", "/openai/v1"),
+        ("openai.gpt-6-luna", "/openai/v1"),
+        ("openai.gpt-5.6-sol", "/openai/v1"),
+        ("openai.gpt-oss-120b", "/v1"),
+        ("qwen.qwen3-32b", "/v1"),
+    ],
+)
+def test_default_base_url_route_by_model(model_name: str, expected_path: str) -> None:
+    """GPT-5.x/GPT-6 default to Mantle's ``/openai/v1`` route, others to ``/v1``."""
+    model = ChatOpenAIMantle(
+        model=model_name,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+    )
+    assert (
+        model.openai_api_base
+        == f"https://bedrock-mantle.us-east-1.api.aws{expected_path}"
+    )
+
+
 def test_explicit_base_url_is_respected() -> None:
     """An explicit base_url overrides the region-derived default."""
     custom = "https://bedrock-mantle.us-east-1.api.aws/openai/v1"
@@ -358,6 +381,13 @@ def test_guardrail_extra_headers_rejected_per_request() -> None:
             "hello",
             extra_headers={"X-Amzn-Bedrock-GuardrailIdentifier": "gr-1"},
         )
+
+
+def test_max_tokens_sent_as_max_completion_tokens() -> None:
+    """GPT-5.x/GPT-6 reject ``max_tokens``, so it is renamed like ``ChatOpenAI``."""
+    payload = _make_model(max_tokens=64)._get_request_payload("hello")
+    assert payload["max_completion_tokens"] == 64
+    assert "max_tokens" not in payload
 
 
 def test_non_guardrail_headers() -> None:
