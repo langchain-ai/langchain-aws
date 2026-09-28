@@ -1379,7 +1379,10 @@ class ChatBedrockConverse(BaseChatModel):
             bedrock_messages, system = self.raw_blocks, []
         else:
             bedrock_messages, system = _messages_to_bedrock(
-                messages, self.system, model_id=self._get_base_model()
+                messages,
+                self.system,
+                model_id=self._get_base_model(),
+                provider=self.provider,
             )
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
@@ -1457,7 +1460,10 @@ class ChatBedrockConverse(BaseChatModel):
             bedrock_messages, system = self.raw_blocks, []
         else:
             bedrock_messages, system = _messages_to_bedrock(
-                messages, self.system, model_id=self._get_base_model()
+                messages,
+                self.system,
+                model_id=self._get_base_model(),
+                provider=self.provider,
             )
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
@@ -2204,7 +2210,10 @@ class ChatBedrockConverse(BaseChatModel):
                 (self.raw_blocks, [])
                 if self.raw_blocks
                 else _messages_to_bedrock(
-                    messages, self.system, model_id=self._get_base_model()
+                    messages,
+                    self.system,
+                    model_id=self._get_base_model(),
+                    provider=self.provider,
                 )
             )
 
@@ -2344,6 +2353,7 @@ def _messages_to_bedrock(
     system: Optional[List[Union[str, Dict[str, Any]]]] = None,
     *,
     model_id: Optional[str] = None,
+    provider: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Handle Bedrock converse and Anthropic style content blocks"""
     for idx, message in enumerate(messages):
@@ -2439,11 +2449,19 @@ def _messages_to_bedrock(
                 curr = {"role": "user", "content": []}
 
             tool_result_content = []
+            image_blocks = []
             special_blocks = []
+            hoist_images = bool(provider) and provider not in (
+                "anthropic",
+                "amazon",
+                "meta",
+            )
 
             for block in content:
                 if _is_cache_point(block):
                     special_blocks.append(block)
+                elif hoist_images and isinstance(block, dict) and "image" in block:
+                    image_blocks.append(block)
                 else:
                     tool_result_content.append(block)
 
@@ -2456,6 +2474,7 @@ def _messages_to_bedrock(
                             "status": msg.status,
                         }
                     },
+                    *image_blocks,
                     *special_blocks,
                 ]
             )
