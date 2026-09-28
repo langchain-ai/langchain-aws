@@ -88,6 +88,29 @@ def test_default_base_url_route_by_model(model_name: str, expected_path: str) ->
     )
 
 
+@pytest.mark.parametrize(
+    "model_name, kwargs, expected",
+    [
+        ("openai.gpt-6-sol", {}, True),
+        ("openai.gpt-5.6-luna", {}, True),
+        ("openai.gpt-6-sol", {"use_responses_api": False}, False),
+        ("openai.gpt-oss-120b", {}, None),
+        ("qwen.qwen3-32b", {}, None),
+    ],
+)
+def test_default_use_responses_api_by_model(
+    model_name: str, kwargs: dict, expected: bool | None
+) -> None:
+    """GPT-5.x/GPT-6 default to the Responses API unless the caller sets it."""
+    model = ChatOpenAIMantle(
+        model=model_name,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+        **kwargs,
+    )
+    assert model.use_responses_api is expected
+
+
 def test_explicit_base_url_is_respected() -> None:
     """An explicit base_url overrides the region-derived default."""
     custom = "https://bedrock-mantle.us-east-1.api.aws/openai/v1"
