@@ -8196,3 +8196,83 @@ def test__messages_to_bedrock_redacted_reasoning_dropped_when_rejected() -> None
     actual_messages, _ = _messages_to_bedrock(messages, model_id="deepseek.r1-v1:0")
 
     assert actual_messages[1] == {"role": "assistant", "content": [_ANSWER_BLOCK]}
+
+
+def test_set_additional_properties_false_warns_on_open_map() -> None:
+    """An open map's value schema is overwritten, so it must not be silent."""
+    schema: dict = {
+        "type": "object",
+        "properties": {
+            "counts": {"type": "object", "additionalProperties": {"type": "integer"}},
+        },
+    }
+
+    with pytest.warns(UserWarning, match="counts"):
+        _set_additional_properties_false(schema)
+
+    # The override still happens: Anthropic models reject any other value.
+    assert schema["properties"]["counts"]["additionalProperties"] is False
+
+
+def test_set_additional_properties_false_warns_on_additional_properties_true() -> None:
+    """`dict[str, Any]` emits `additionalProperties: true`, also overwritten."""
+    schema: dict = {
+        "type": "object",
+        "properties": {"blob": {"type": "object", "additionalProperties": True}},
+    }
+
+    with pytest.warns(UserWarning, match="blob"):
+        _set_additional_properties_false(schema)
+
+    assert schema["properties"]["blob"]["additionalProperties"] is False
+
+
+def test_set_additional_properties_false_names_nested_open_map() -> None:
+    """The warning names the path of the offending field, not just the root."""
+    schema: dict = {
+        "type": "object",
+        "properties": {
+            "outer": {
+                "type": "object",
+                "properties": {
+                    "inner": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                    }
+                },
+            }
+        },
+    }
+
+    with pytest.warns(UserWarning, match=r"outer\.inner"):
+        _set_additional_properties_false(schema)
+
+
+def test_set_additional_properties_false_does_not_warn_for_plain_objects() -> None:
+    """Ordinary closed objects must stay warning-free."""
+    schema: dict = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "address": {"type": "object", "properties": {"city": {"type": "string"}}},
+        },
+        "$defs": {"Pet": {"type": "object", "properties": {"n": {"type": "string"}}}},
+    }
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _set_additional_properties_false(schema)
+
+    assert schema["additionalProperties"] is False
+    assert schema["$defs"]["Pet"]["additionalProperties"] is False
+
+
+def test_set_additional_properties_false_idempotent_on_already_false() -> None:
+    """Re-walking a schema that is already false must not warn."""
+    schema: dict = {"type": "object", "additionalProperties": False, "properties": {}}
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _set_additional_properties_false(schema)
+
+    assert schema["additionalProperties"] is False
