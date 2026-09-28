@@ -1346,6 +1346,38 @@ def test__messages_to_bedrock_keeps_cache_point_only_tool_result_valid() -> None
     ]
 
 
+@pytest.mark.parametrize(
+    "provider, hoisted",
+    [
+        ("openai", True),
+        ("xai", True),
+        ("anthropic", False),
+        ("meta", False),
+        (None, False),
+    ],
+)
+def test__messages_to_bedrock_tool_result_image_placement(
+    provider: Optional[str], hoisted: bool
+) -> None:
+    """Images move after the toolResult for providers that reject them inside it."""
+    image = {"image": {"format": "png", "source": {"bytes": b"png"}}}
+    messages: list[BaseMessage] = [
+        ToolMessage(content=[image], tool_call_id="call_abc", status="success"),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages, provider=provider)
+
+    tool_result = {"toolUseId": "call_abc", "status": "success"}
+    if hoisted:
+        expected = [
+            {"toolResult": {"content": [{"text": EMPTY_CONTENT}], **tool_result}},
+            image,
+        ]
+    else:
+        expected = [{"toolResult": {"content": [image], **tool_result}}]
+    assert actual_messages == [{"role": "user", "content": expected}]
+
+
 def test__messages_to_bedrock_leaves_empty_system_content_empty() -> None:
     """The tool result placeholder must not leak into the system prompt.
 
