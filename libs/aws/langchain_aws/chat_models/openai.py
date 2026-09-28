@@ -39,6 +39,8 @@ from langchain_aws.utils import (
 )
 
 _MANTLE_BASE_URL_TEMPLATE = "https://bedrock-mantle.{region}.api.aws/v1"
+# Mantle serves GPT-5.x/GPT-6 only under ``/openai/v1`` (gpt-oss only under ``/v1``).
+_MANTLE_OPENAI_BASE_URL_TEMPLATE = "https://bedrock-mantle.{region}.api.aws/openai/v1"
 
 _MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
 
@@ -191,7 +193,11 @@ class ChatOpenAIMantle(BaseChatOpenAI):
         if kwargs.get("guardrail_config") is not None:
             raise ValueError(_MANTLE_GUARDRAILS_ERR_MSG)
         _check_no_mantle_guardrail_headers(kwargs.get("extra_headers"))
-        return super()._get_request_payload(input_, stop=stop, **kwargs)
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+        # Same as ``ChatOpenAI``: GPT-5.x/GPT-6 reject the deprecated ``max_tokens``.
+        if "max_tokens" in payload:
+            payload["max_completion_tokens"] = payload.pop("max_tokens")
+        return payload
 
     @model_validator(mode="before")
     @classmethod
@@ -229,7 +235,14 @@ class ChatOpenAIMantle(BaseChatOpenAI):
                     "so the Bedrock API key is never sent to api.openai.com."
                 )
                 raise ValueError(msg)
-            values["base_url"] = _MANTLE_BASE_URL_TEMPLATE.format(region=region)
+            model = values.get("model") or values.get("model_name") or ""
+            template = (
+                _MANTLE_OPENAI_BASE_URL_TEMPLATE
+                if model.startswith("openai.gpt-")
+                and not model.startswith("openai.gpt-oss")
+                else _MANTLE_BASE_URL_TEMPLATE
+            )
+            values["base_url"] = template.format(region=region)
 
         # Route the Bedrock API key into the OpenAI ``api_key`` slot unless the
         # caller already set one explicitly. Precedence:
