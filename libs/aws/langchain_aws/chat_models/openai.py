@@ -222,6 +222,15 @@ class ChatOpenAIMantle(BaseChatOpenAI):
         # no region can be resolved, fail here rather than let ``BaseChatOpenAI``
         # fall back to the default OpenAI host — otherwise the Bedrock bearer token
         # copied into ``api_key`` below would be sent to ``api.openai.com``.
+        # Mantle serves the OpenAI GPT models (all but gpt-oss) under ``/openai/v1``,
+        # and GPT-5.6 / GPT-6 there accept function tools only on the Responses API.
+        model = values.get("model") or values.get("model_name") or ""
+        is_openai_gpt = model.startswith("openai.gpt-") and not model.startswith(
+            "openai.gpt-oss"
+        )
+        if is_openai_gpt and values.get("use_responses_api") is None:
+            values["use_responses_api"] = True
+
         has_explicit_base_url = bool(
             values.get("base_url") or values.get("openai_api_base")
         )
@@ -235,11 +244,9 @@ class ChatOpenAIMantle(BaseChatOpenAI):
                     "so the Bedrock API key is never sent to api.openai.com."
                 )
                 raise ValueError(msg)
-            model = values.get("model") or values.get("model_name") or ""
             template = (
                 _MANTLE_OPENAI_BASE_URL_TEMPLATE
-                if model.startswith("openai.gpt-")
-                and not model.startswith("openai.gpt-oss")
+                if is_openai_gpt
                 else _MANTLE_BASE_URL_TEMPLATE
             )
             values["base_url"] = template.format(region=region)
