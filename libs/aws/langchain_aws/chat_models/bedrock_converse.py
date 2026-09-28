@@ -149,6 +149,9 @@ _BM = TypeVar("_BM", bound=BaseModel)
 
 EMPTY_CONTENT = "."
 
+# Providers whose models reject an image block nested inside a `toolResult`.
+_TOOL_RESULT_IMAGE_UNSUPPORTED = frozenset({"openai", "xai"})
+
 MIME_TO_FORMAT = {
     # Image formats
     "image/png": "png",
@@ -2440,9 +2443,14 @@ def _messages_to_bedrock(
 
             tool_result_content = []
             special_blocks = []
+            hoist_images = _tool_result_images_unsupported(model_id)
 
             for block in content:
                 if _is_cache_point(block):
+                    special_blocks.append(block)
+                elif hoist_images and isinstance(block, dict) and "image" in block:
+                    # OpenAI and xAI models reject an image nested inside a
+                    # toolResult, but accept the same block beside it.
                     special_blocks.append(block)
                 else:
                     tool_result_content.append(block)
@@ -2467,6 +2475,23 @@ def _messages_to_bedrock(
         bedrock_messages.append({"role": "user", "content": [{"text": EMPTY_CONTENT}]})
 
     return bedrock_messages, bedrock_system
+
+
+def _tool_result_images_unsupported(model_id: Optional[str]) -> bool:
+    """Whether the model rejects an image block nested inside a ``toolResult``.
+
+    Bedrock accepts an image inside ``toolResult.content`` only for Anthropic
+    and Amazon (Nova) models. OpenAI (GPT) and xAI (grok) models fail the
+    request with ``ValidationException: This model doesn't support the image
+    field for user messages``, but accept the same image when it sits beside
+    the ``toolResult`` as an ordinary user content block.
+
+    Unknown providers keep the nested form, which is the long-standing
+    behaviour.
+    """
+    if not model_id:
+        return False
+    return parse_model_provider(model_id).lower() in _TOOL_RESULT_IMAGE_UNSUPPORTED
 
 
 def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:

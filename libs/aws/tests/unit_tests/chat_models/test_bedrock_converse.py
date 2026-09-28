@@ -8196,3 +8196,81 @@ def test__messages_to_bedrock_redacted_reasoning_dropped_when_rejected() -> None
     actual_messages, _ = _messages_to_bedrock(messages, model_id="deepseek.r1-v1:0")
 
     assert actual_messages[1] == {"role": "assistant", "content": [_ANSWER_BLOCK]}
+
+
+_TOOL_IMAGE_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="  # noqa: E501
+
+
+def _tool_message_with_image() -> list:
+    return [
+        HumanMessage("Describe the image returned by the tool."),
+        AIMessage("", tool_calls=[{"name": "get_image", "args": {}, "id": "t1"}]),
+        ToolMessage(
+            content=[
+                {"type": "image", "base64": _TOOL_IMAGE_PNG, "mime_type": "image/png"}
+            ],
+            tool_call_id="t1",
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    ["us.openai.gpt-5.6-terra", "openai.gpt-oss-20b-1:0", "us.xai.grok-4-fast"],
+)
+def test_tool_result_image_hoisted_for_openai_and_xai(model_id: str) -> None:
+    """These models reject an image nested inside a toolResult."""
+    messages, _ = _messages_to_bedrock(_tool_message_with_image(), model_id=model_id)
+
+    last = messages[-1]
+    assert last["role"] == "user"
+    tool_results = [b for b in last["content"] if "toolResult" in b]
+    images = [b for b in last["content"] if "image" in b]
+
+    assert len(tool_results) == 1
+    assert len(images) == 1, "image must sit beside the toolResult, not inside it"
+    assert not any("image" in b for b in tool_results[0]["toolResult"]["content"]), (
+        "no image may remain nested in the toolResult"
+    )
+    assert tool_results[0]["toolResult"]["toolUseId"] == "t1"
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    ["us.anthropic.claude-haiku-4-5-20251001-v1:0", "us.amazon.nova-pro-v1:0"],
+)
+def test_tool_result_image_stays_nested_for_anthropic_and_nova(model_id: str) -> None:
+    """Anthropic and Nova accept — and expect — the nested form."""
+    messages, _ = _messages_to_bedrock(_tool_message_with_image(), model_id=model_id)
+
+    last = messages[-1]
+    tool_results = [b for b in last["content"] if "toolResult" in b]
+    assert len(tool_results) == 1
+    assert any("image" in b for b in tool_results[0]["toolResult"]["content"]), (
+        "image must stay inside the toolResult for these providers"
+    )
+    assert not any("image" in b for b in last["content"])
+
+
+def test_tool_result_image_stays_nested_without_model_id() -> None:
+    """An unknown model keeps the long-standing nested behaviour."""
+    messages, _ = _messages_to_bedrock(_tool_message_with_image())
+
+    tool_results = [b for b in messages[-1]["content"] if "toolResult" in b]
+    assert any("image" in b for b in tool_results[0]["toolResult"]["content"])
+
+
+def test_tool_result_text_is_untouched_for_openai() -> None:
+    """Only image blocks move; text results are unaffected."""
+    messages, _ = _messages_to_bedrock(
+        [
+            HumanMessage("What did the tool say?"),
+            AIMessage("", tool_calls=[{"name": "f", "args": {}, "id": "t1"}]),
+            ToolMessage(content="42", tool_call_id="t1"),
+        ],
+        model_id="us.openai.gpt-5.6-terra",
+    )
+
+    tool_results = [b for b in messages[-1]["content"] if "toolResult" in b]
+    assert tool_results[0]["toolResult"]["content"] == [{"text": "42"}]
+    assert not any("image" in b for b in messages[-1]["content"])
