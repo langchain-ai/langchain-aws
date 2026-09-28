@@ -498,6 +498,18 @@ class ChatAnthropicMantle(ChatAnthropic):
 
     @model_validator(mode="before")
     @classmethod
+    def _resolve_gateway(cls, values: Any) -> Any:
+        """Resolve explicit endpoints without inheriting LangSmith gateway routing."""
+        if isinstance(values, dict) and not (
+            values.get("base_url") or values.get("anthropic_api_url")
+        ):
+            values["base_url"] = os.getenv("ANTHROPIC_API_URL") or os.getenv(
+                "ANTHROPIC_BASE_URL"
+            )
+        return values
+
+    @model_validator(mode="before")
+    @classmethod
     def _set_anthropic_api_key(cls, values: Any) -> Any:
         if isinstance(values, dict) and not values.get("anthropic_api_key"):
             values["anthropic_api_key"] = ""

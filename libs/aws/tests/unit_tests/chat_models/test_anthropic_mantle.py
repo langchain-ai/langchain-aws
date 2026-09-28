@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import anthropic
 import pytest
+from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel, ModelProfile
 from langchain_tests.unit_tests import ChatModelUnitTests
 from pydantic import SecretStr
@@ -109,6 +110,77 @@ def test_explicit_base_url_is_respected() -> None:
         bedrock_api_key=SecretStr("test-key"),
     )
     assert model.anthropic_api_url == custom
+
+
+@pytest.mark.parametrize("gateway_enabled", [False, True])
+@pytest.mark.parametrize("auth_mode", ["sigv4", "api_key"])
+@pytest.mark.parametrize(
+    "endpoint_source",
+    [
+        None,
+        "base_url",
+        "anthropic_api_url",
+        "ANTHROPIC_API_URL",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_BEDROCK_MANTLE_BASE_URL",
+    ],
+)
+async def test_endpoint_resolution_ignores_gateway(
+    monkeypatch: MonkeyPatch,
+    gateway_enabled: bool,
+    auth_mode: Literal["sigv4", "api_key"],
+    endpoint_source: str | None,
+) -> None:
+    _scrub_ambient_auth(monkeypatch)
+    for name in (
+        "LANGSMITH_GATEWAY",
+        "ANTHROPIC_API_URL",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_BEDROCK_MANTLE_BASE_URL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("LANGSMITH_GATEWAY_API_KEY", "synthetic-gateway-key")
+    if gateway_enabled:
+        monkeypatch.setenv("LANGSMITH_GATEWAY", "https://gateway.example.test")
+    custom_url = "https://bedrock-mantle.us-west-2.api.aws/anthropic"
+    kwargs: dict[str, Any] = {}
+    if endpoint_source in ("base_url", "anthropic_api_url"):
+        kwargs[endpoint_source] = custom_url
+    elif endpoint_source:
+        monkeypatch.setenv(endpoint_source, custom_url)
+    monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "synthetic-bedrock-key")
+    model = ChatAnthropicMantle(  # type: ignore[call-arg]
+        model=MODEL_NAME,
+        region_name="us-east-1",
+        auth_mode=auth_mode,
+        aws_access_key_id=SecretStr("dummy-access"),
+        aws_secret_access_key=SecretStr("dummy-secret"),
+        **kwargs,
+    )
+    expected_url = (
+        custom_url
+        if endpoint_source
+        else "https://bedrock-mantle.us-east-1.api.aws/anthropic"
+    )
+    try:
+        for client in (model._client, model._async_client):
+            assert str(client.base_url).rstrip("/") == expected_url
+            assert client._use_sigv4 is (auth_mode == "sigv4")
+            assert client.api_key == (
+                "synthetic-bedrock-key" if auth_mode == "api_key" else None
+            )
+        if gateway_enabled:
+            ordinary = ChatAnthropic(
+                model_name="claude-sonnet-5", timeout=None, stop=None
+            )
+            assert ordinary.anthropic_api_url == (
+                custom_url
+                if endpoint_source in ("ANTHROPIC_API_URL", "ANTHROPIC_BASE_URL")
+                else "https://gateway.example.test/anthropic"
+            )
+    finally:
+        model._client.close()
+        await model._async_client.close()
 
 
 def test_region_and_key_from_env() -> None:
