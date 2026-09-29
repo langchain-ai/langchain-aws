@@ -1625,7 +1625,7 @@ requires-dist = [
     { name = "playwright", marker = "extra == 'tools'", specifier = ">=1.53.0" },
     { name = "pydantic", specifier = ">=2.10.6,<3" },
     { name = "smithy-http", extras = ["awscrt"], marker = "python_full_version >= '3.12' and extra == 'nova-sonic'" },
-    { name = "valkey-glide-sync", marker = "extra == 'valkey'", specifier = ">=2.0.0" },
+    { name = "valkey-glide-sync", marker = "extra == 'valkey'", specifier = ">=2.5.2" },
 ]
 provides-extras = ["tools", "anthropic", "openai", "valkey", "nova-sonic"]
 
