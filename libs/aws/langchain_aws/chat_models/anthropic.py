@@ -20,7 +20,7 @@ from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
-from langchain_aws._version import _add_langchain_aws_version
+from langchain_aws._version import _add_langchain_aws_version, _tag_user_agent
 from langchain_aws.chat_models._anthropic_utils import _create_bedrock_client_params
 from langchain_aws.data._profiles import _PROFILES
 from langchain_aws.utils import (
@@ -253,12 +253,22 @@ class ChatAnthropicBedrock(ChatAnthropic):
     @cached_property
     def _client(self) -> Any:  # type: ignore[type-arg]
         """Get synchronous AnthropicBedrock client."""
-        return AnthropicBedrock(**self._client_params)
+        client = AnthropicBedrock(**self._client_params)
+        return client.with_options(
+            default_headers=_tag_user_agent(
+                self._client_params.get("default_headers"), client.user_agent
+            )
+        )
 
     @cached_property
     def _async_client(self) -> Any:  # type: ignore[type-arg]
         """Get asynchronous AnthropicBedrock client."""
-        return AsyncAnthropicBedrock(**self._client_params)
+        client = AsyncAnthropicBedrock(**self._client_params)
+        return client.with_options(
+            default_headers=_tag_user_agent(
+                self._client_params.get("default_headers"), client.user_agent
+            )
+        )
 
     def _get_ls_params(
         self,
@@ -638,14 +648,24 @@ class ChatAnthropicMantle(ChatAnthropic):
     @cached_property
     def _client(self) -> Any:  # type: ignore[type-arg]
         """Get synchronous AnthropicBedrockMantle client."""
-        return self._pin_client_auth_mode(AnthropicBedrockMantle(**self._client_params))
+        client = AnthropicBedrockMantle(**self._client_params)
+        client = client.with_options(
+            default_headers=_tag_user_agent(
+                self._client_params.get("default_headers"), client.user_agent
+            )
+        )
+        return self._pin_client_auth_mode(client)
 
     @cached_property
     def _async_client(self) -> Any:  # type: ignore[type-arg]
         """Get asynchronous AnthropicBedrockMantle client."""
-        return self._pin_client_auth_mode(
-            AsyncAnthropicBedrockMantle(**self._client_params)
+        client = AsyncAnthropicBedrockMantle(**self._client_params)
+        client = client.with_options(
+            default_headers=_tag_user_agent(
+                self._client_params.get("default_headers"), client.user_agent
+            )
         )
+        return self._pin_client_auth_mode(client)
 
     @model_validator(mode="after")
     def _set_model_profile(self) -> Self:
