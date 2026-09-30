@@ -60,6 +60,13 @@ reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 [overrides."us.anthropic.claude-sonnet-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
+[overrides."anthropic.claude-sonnet-5-5"]
+temperature = false # TODO: remove after base profile is merged to models.dev
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
+[overrides."global.anthropic.claude-sonnet-5-5"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
 [overrides."amazon.nova-2-lite-v1:0"]
 reasoning_effort_levels = ["low", "medium", "high"]
 

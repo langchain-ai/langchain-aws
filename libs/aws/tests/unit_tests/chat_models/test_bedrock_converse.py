@@ -327,9 +327,11 @@ def test_claude_fable_5_1_tool_choice_auto_only() -> None:
         "anthropic.claude-opus-5-5",
         "us.anthropic.claude-opus-5-5",
         "global.anthropic.claude-opus-5-5",
+        "anthropic.claude-sonnet-5-5",
+        "global.anthropic.claude-sonnet-5-5",
     ],
 )
-def test_claude_opus_5_5_tool_choice_auto_only(model_id: str) -> None:
+def test_claude_5_5_tool_choice_auto_only(model_id: str) -> None:
     chat_model = ChatBedrockConverse(model=model_id, region_name="us-west-2")
     assert chat_model.supports_tool_choice_values == ("auto",)
     structured = chat_model.with_structured_output(GetWeather)
