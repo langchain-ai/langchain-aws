@@ -99,6 +99,9 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
             ``SyncBatchFlushable`` or ``AsyncBatchFlushable``, flush uses
             a single ``put_with_writes`` call instead of 1 + N sequential
             calls.  Defaults to ``False`` for backward compatibility.
+        flush_writes: When ``True``, buffered writes are persisted during
+            flush.  Set to ``False`` to persist only the final checkpoint and
+            discard buffered writes on successful flush.
 
     Raises:
         ValueError: If *saver* is itself a ``DeferredCheckpointSaver``
@@ -114,7 +117,11 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
     """
 
     def __init__(
-        self, saver: BaseCheckpointSaver, *, batch_writes: bool = False
+        self,
+        saver: BaseCheckpointSaver,
+        *,
+        batch_writes: bool = False,
+        flush_writes: bool = True,
     ) -> None:
         if isinstance(saver, DeferredCheckpointSaver):
             msg = (
@@ -125,6 +132,7 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
         super().__init__()
         self._saver = saver
         self._batch_writes = batch_writes
+        self._flush_writes = flush_writes
         self._lock = threading.Lock()
         self._pending_checkpoint: _PendingCheckpoint | None = None
         self._pending_writes: list[_PendingWrite] = []
@@ -471,20 +479,24 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
             self._pending_writes.clear()
 
         if pending_cp is None:
-            if pending_writes:
+            if pending_writes and self._flush_writes:
                 with self._lock:
                     self._pending_writes = pending_writes + self._pending_writes
             return None
 
-        public_writes = [
-            PendingWrite(
-                config=w.config,
-                writes=w.writes,
-                task_id=w.task_id,
-                task_path=w.task_path,
-            )
-            for w in pending_writes
-        ]
+        public_writes = (
+            [
+                PendingWrite(
+                    config=w.config,
+                    writes=w.writes,
+                    task_id=w.task_id,
+                    task_path=w.task_path,
+                )
+                for w in pending_writes
+            ]
+            if self._flush_writes
+            else []
+        )
 
         try:
             result_config = self._saver.put_with_writes(  # type: ignore[attr-defined]
@@ -539,6 +551,11 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
                     if self._pending_checkpoint is None:
                         self._pending_checkpoint = pending_cp
                 raise
+
+        if not self._flush_writes:
+            with self._lock:
+                self._pending_writes.clear()
+            return result_config
 
         # --- Flush writes one at a time ---
         # Unlike the checkpoint, writes use a peek-then-pop pattern: we
@@ -597,20 +614,24 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
             self._pending_writes.clear()
 
         if pending_cp is None:
-            if pending_writes:
+            if pending_writes and self._flush_writes:
                 with self._lock:
                     self._pending_writes = pending_writes + self._pending_writes
             return None
 
-        public_writes = [
-            PendingWrite(
-                config=w.config,
-                writes=w.writes,
-                task_id=w.task_id,
-                task_path=w.task_path,
-            )
-            for w in pending_writes
-        ]
+        public_writes = (
+            [
+                PendingWrite(
+                    config=w.config,
+                    writes=w.writes,
+                    task_id=w.task_id,
+                    task_path=w.task_path,
+                )
+                for w in pending_writes
+            ]
+            if self._flush_writes
+            else []
+        )
 
         try:
             result_config = await self._saver.aput_with_writes(  # type: ignore[attr-defined]
@@ -659,6 +680,11 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
                     if self._pending_checkpoint is None:
                         self._pending_checkpoint = pending_cp
                 raise
+
+        if not self._flush_writes:
+            with self._lock:
+                self._pending_writes.clear()
+            return result_config
 
         # --- Flush writes one at a time ---
         while True:
