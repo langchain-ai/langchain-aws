@@ -508,6 +508,8 @@ def test_thinking_forced_tool_use_unsupported(
         ("anthropic.claude-opus-5-5", True),
         ("us.anthropic.claude-opus-5-5", True),
         ("global.anthropic.claude-opus-5-5", True),
+        ("anthropic.claude-sonnet-5-5", True),
+        ("global.anthropic.claude-sonnet-5-5", True),
         ("global.anthropic.claude-opus-5", False),
         ("global.anthropic.claude-fable-5", False),
         ("us.anthropic.claude-sonnet-5", False),
