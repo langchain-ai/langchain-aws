@@ -318,8 +318,8 @@ class TestAsyncValkeySaverGetTuple:
             }
         )
 
-        result = await saver.aget_tuple(config_without_id)
-        assert result is None
+        with pytest.raises(ValkeyError):
+            await saver.aget_tuple(config_without_id)
 
     @pytest.mark.asyncio
     async def test_aget_tuple_key_error(self, mock_valkey_client, mock_serializer):
@@ -329,8 +329,8 @@ class TestAsyncValkeySaverGetTuple:
 
         saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
-        result = await saver.aget_tuple(bad_config)
-        assert result is None
+        with pytest.raises(KeyError):
+            await saver.aget_tuple(bad_config)
 
     @pytest.mark.asyncio
     async def test_aget_tuple_no_checkpoint_ids(
@@ -442,8 +442,8 @@ class TestAsyncValkeySaverGetCheckpointDataErrorHandling:
 
         saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
-        result = await saver._get_checkpoint_data("thread", "ns", "checkpoint")
-        assert result == (None, [])
+        with pytest.raises(ValkeyError):
+            await saver._get_checkpoint_data("thread", "ns", "checkpoint")
 
     @pytest.mark.asyncio
     async def test_get_checkpoint_data_json_decode_error(
@@ -462,8 +462,8 @@ class TestAsyncValkeySaverGetCheckpointDataErrorHandling:
 
         saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
-        result = await saver._get_checkpoint_data("thread", "ns", "checkpoint")
-        assert result == (None, [])
+        with pytest.raises(orjson.JSONDecodeError):
+            await saver._get_checkpoint_data("thread", "ns", "checkpoint")
 
 
 class TestAsyncValkeySaverAlist:
@@ -490,11 +490,9 @@ class TestAsyncValkeySaverAlist:
 
         saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
-        result = []
-        async for item in saver.alist(sample_config):
-            result.append(item)
-
-        assert result == []
+        with pytest.raises(ValkeyError):
+            async for _ in saver.alist(sample_config):
+                pass
 
 
 class TestAsyncValkeySaverPut:
@@ -628,9 +626,9 @@ class TestAsyncValkeySaverErrorHandling:
 
         saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
-        # Should return None instead of raising exception due to error handling
-        result = await saver.aget_tuple(sample_config)
-        assert result is None
+        # A failed read must not look like a thread with no checkpoint
+        with pytest.raises(ConnectionError):
+            await saver.aget_tuple(sample_config)
 
     @pytest.mark.asyncio
     async def test_serialization_error_during_put(
@@ -663,9 +661,9 @@ class TestAsyncValkeySaverErrorHandling:
 
         saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
-        # Should return None instead of raising exception due to error handling
-        result = await saver.aget_tuple(sample_config)
-        assert result is None
+        # A failed read must not look like a thread with no checkpoint
+        with pytest.raises(asyncio.TimeoutError):
+            await saver.aget_tuple(sample_config)
 
 
 class TestAsyncValkeySaverKeyGeneration:
