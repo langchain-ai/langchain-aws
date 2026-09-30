@@ -1238,6 +1238,77 @@ def test_bedrock_runtime_missing_awscrt_raises() -> None:
         _create_client(region_name="us-east-1")
 
 
+def _apply_config_plugin_with_ua(
+    client_cls: mock.MagicMock, existing_ua_extra: str | None = None
+) -> mock.MagicMock:
+    """Run the config plugin against a config that models ``user_agent_extra``."""
+    plugins = client_cls.call_args[1]["plugins"]
+    config = mock.MagicMock(
+        spec=[
+            "endpoint_uri",
+            "region",
+            "aws_access_key_id",
+            "aws_secret_access_key",
+            "aws_session_token",
+            "aws_credentials_identity_resolver",
+            "transport",
+            "user_agent_extra",
+        ]
+    )
+    config.aws_access_key_id = None
+    config.aws_secret_access_key = None
+    config.aws_credentials_identity_resolver = None
+    config.user_agent_extra = existing_ua_extra
+    plugins[0](config)
+    return config
+
+
+def test_bedrock_runtime_user_agent_tagged(
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
+) -> None:
+    """Nova Sonic's smithy config carries the langchain-aws source tag in
+    ``user_agent_extra`` (the SDK appends it to the wire User-Agent)."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    client_cls, _, _ = mock_bedrock_runtime_sdk
+    with mock.patch.dict(os.environ, {}, clear=True):
+        _create_client(region_name="us-east-1")
+
+    config = _apply_config_plugin_with_ua(client_cls)
+    assert config.user_agent_extra == FRAMEWORK_UA_TOKEN
+
+
+def test_bedrock_runtime_user_agent_appends_to_existing(
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
+) -> None:
+    """An existing ``user_agent_extra`` is preserved and the tag appended once."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    client_cls, _, _ = mock_bedrock_runtime_sdk
+    with mock.patch.dict(os.environ, {}, clear=True):
+        _create_client(region_name="us-east-1")
+
+    config = _apply_config_plugin_with_ua(client_cls, existing_ua_extra="app/1.0")
+    assert config.user_agent_extra == f"app/1.0 {FRAMEWORK_UA_TOKEN}"
+
+
+def test_bedrock_runtime_user_agent_idempotent(
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
+) -> None:
+    """The tag is not duplicated if already present in ``user_agent_extra``."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    client_cls, _, _ = mock_bedrock_runtime_sdk
+    with mock.patch.dict(os.environ, {}, clear=True):
+        _create_client(region_name="us-east-1")
+
+    config = _apply_config_plugin_with_ua(
+        client_cls, existing_ua_extra=f"app/1.0 {FRAMEWORK_UA_TOKEN}"
+    )
+    assert config.user_agent_extra == f"app/1.0 {FRAMEWORK_UA_TOKEN}"
+    assert config.user_agent_extra.count(FRAMEWORK_UA_TOKEN) == 1
+
+
 # ---------------------------------------------------------------------------
 # _StaticCredentialProvider / _BedrockApiKeyProvider tests
 # ---------------------------------------------------------------------------
