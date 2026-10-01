@@ -43,6 +43,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
+from bedrock_agentcore.evaluation.spans import is_tool_span
+
 __all__ = [
     "ToolCall",
     "Trajectory",
@@ -61,13 +63,17 @@ _ARG_KEYS = ("gen_ai.tool.call.arguments", "input.value", "traceloop.entity.inpu
 _RESULT_KEYS = ("gen_ai.tool.call.result", "output.value", "traceloop.entity.output")
 
 
-def _is_tool_span(attrs: dict) -> bool:
-    """Whether a span represents a tool execution, under any convention."""
-    return (
-        attrs.get("gen_ai.operation.name") == "execute_tool"
-        or attrs.get("openinference.span.kind") == "TOOL"
-        or attrs.get("traceloop.span.kind") == "tool"
-    )
+def _is_tool_span(span_or_attrs: dict) -> bool:
+    """Whether a span records a tool call.
+
+    Delegates to `bedrock_agentcore.evaluation.spans.is_tool_span`, which is the
+    same three-convention check the SDK's own EvaluationClient uses. It lives in the
+    SDK so that adding a fourth instrumentation convention is one change there
+    rather than a change in every span reader. Accepts either a span document or
+    its attributes, since callers here have both.
+    """
+    span = span_or_attrs if "attributes" in span_or_attrs else {"attributes": span_or_attrs}
+    return is_tool_span(span)
 
 
 def _first(attrs: dict, keys: Iterable[str]) -> Any:

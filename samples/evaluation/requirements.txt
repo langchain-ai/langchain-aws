@@ -1,7 +1,10 @@
 # Notebooks 1 and 3 (the agent itself)
 langchain-aws[tools]>=1.7.6
 deepagents>=0.7.13
-bedrock-agentcore>=1.23.0
+# helpers/ imports bedrock_agentcore.evaluation.spans and a public WaitConfig,
+# added in SDK PRs #674 and #675. Both merged after the 1.23.1 tag, so this needs
+# the next release; >1.23.1 rather than a guessed number.
+bedrock-agentcore>1.23.1
 
 # Notebook 3 only (deployed runs emit the spans that Evaluations reads)
 aws-opentelemetry-distro>=0.18.0
