@@ -129,6 +129,13 @@ class TestTagUserAgent:
         result = _tag_user_agent({"User-Agent": "MyApp/1.0"}, "OpenAI/Python 3.22.1")
         assert result["User-Agent"] == f"MyApp/1.0 {FRAMEWORK_UA_TOKEN}"
 
+    def test_tags_caller_ua_that_merely_contains_the_token(self) -> None:
+        # A caller UA containing the token as a substring (not a distinct part)
+        # must still be tagged -- the idempotency check is exact-part, not substring.
+        caller = "my-x-client-framework:langchain-aws-proxy/2.0"
+        result = _tag_user_agent({"User-Agent": caller}, "OpenAI/Python 3.22.1")
+        assert result["User-Agent"] == f"{caller} {FRAMEWORK_UA_TOKEN}"
+
     def test_idempotent_when_token_already_present(self) -> None:
         already = f"OpenAI/Python 3.22.1 {FRAMEWORK_UA_TOKEN}"
         result = _tag_user_agent({"User-Agent": already}, "OpenAI/Python 3.22.1")

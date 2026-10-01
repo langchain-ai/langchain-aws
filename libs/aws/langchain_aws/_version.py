@@ -12,12 +12,11 @@ except PackageNotFoundError:
 
 #: Source marker appended to the wire ``User-Agent`` of non-boto SDK transports
 #: (the ``anthropic`` and ``openai`` SDKs used by the Mantle/Bedrock chat classes).
-#: The boto-based classes already carry ``x-client-framework:langchain-aws`` in
-#: their botocore ``user_agent_extra`` via the monkey-patch in ``__init__.py``;
-#: this is the equivalent attribution tag for the transports botocore never sees.
-#: It lands on the wire ``User-Agent``, so the Bedrock/Mantle backend services can
+#: It matches the token the boto-based classes already carry in their botocore
+#: ``user_agent_extra`` via the monkey-patch in ``__init__.py``, so the Bedrock and
+#: Mantle backend services see one consistent marker across every transport and can
 #: attribute usage to langchain-aws regardless of which chat class produced it.
-FRAMEWORK_UA_TOKEN = "langchain-aws"
+FRAMEWORK_UA_TOKEN = "x-client-framework:langchain-aws"
 
 
 def _tag_user_agent(
@@ -32,8 +31,11 @@ def _tag_user_agent(
     per-class tag, since the SDK's own UA prefix and the target operation already
     tell the classes apart on the wire.
 
-    A caller-supplied ``User-Agent`` is respected and left untouched; otherwise the
-    SDK's base UA is used and the token appended once (idempotent).
+    The token is appended to whatever ``User-Agent`` is in play -- the SDK's own
+    base UA, or a caller-supplied one -- so attribution survives even when a caller
+    sets their own ``User-Agent``. It is appended at most once (idempotent): if the
+    ``User-Agent`` already carries the token as a distinct space-delimited part, it
+    is left unchanged.
 
     Args:
         default_headers: Existing headers passed to the SDK client, or ``None``.
@@ -44,10 +46,12 @@ def _tag_user_agent(
     """
     headers = dict(default_headers or {})
     base_ua = headers.get("User-Agent", sdk_user_agent)
-    if FRAMEWORK_UA_TOKEN not in base_ua:
-        headers["User-Agent"] = f"{base_ua} {FRAMEWORK_UA_TOKEN}".strip()
-    else:
-        headers["User-Agent"] = base_ua
+    # Exact-part match, not a substring test: a caller UA that merely contains the
+    # token (e.g. ``my-x-client-framework:langchain-aws-proxy/2.0``) must still be
+    # tagged.
+    if not any(part == FRAMEWORK_UA_TOKEN for part in base_ua.split()):
+        base_ua = f"{base_ua} {FRAMEWORK_UA_TOKEN}".strip()
+    headers["User-Agent"] = base_ua
     return headers
 
 
