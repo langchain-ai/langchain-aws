@@ -5207,11 +5207,14 @@ def _bedrock_runtime_client() -> Any:
         _INPUT_TOO_LONG,
         "The model returned the following errors: Input is too long for requested "
         "model.",
-        "Too many input tokens. Max input tokens: 8192, request input token count: "
-        "9000",
-        "This model's maximum context length is 128000 tokens. Please reduce the "
-        "length of the prompt.",
-        "prompt is too long: 210000 tokens > 200000 maximum",
+        "The model returned the following errors: Input Tokens Exceeded: Number of "
+        "input tokens exceeds maximum length. Please update the input to try again.",
+        "The model returned the following errors: This model's maximum context "
+        "length is 131072 tokens. Please reduce the length of the prompt",
+        "The model returned the following errors: Mantle streaming error for "
+        'requestId 0: ErrorEvent { error: APIError { type: "BadRequestError", '
+        "code: Some(400), message: \"Input length (450236) exceeds model's "
+        'maximum context length (131072).", param: None } }',
     ],
 )
 def test_context_overflow_error_detection(message: str) -> None:

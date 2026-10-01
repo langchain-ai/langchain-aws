@@ -2328,10 +2328,12 @@ class BedrockContextOverflowError(ClientError, ContextOverflowError):
 # Lowercased fragments of the ValidationException messages Bedrock returns when
 # the prompt exceeds the model's context window.
 _CONTEXT_OVERFLOW_MARKERS = (
+    # Anthropic, DeepSeek R1
     "input is too long",
-    "too many input tokens",
+    # Amazon Nova
+    "input tokens exceeded",
+    # Meta Llama, Mistral, and models served through Mantle (e.g. gpt-oss, Qwen)
     "maximum context length",
-    "prompt is too long",
 )
 
 
