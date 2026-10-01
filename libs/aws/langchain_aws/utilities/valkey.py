@@ -68,6 +68,9 @@ def get_client(
     if username and password and "credentials" not in kwargs:
         kwargs["credentials"] = ServerCredentials(password, username)
 
+    # Tag CLIENT SETINFO LIB-NAME, e.g. GlidePySync(langchain-aws)
+    kwargs.setdefault("client_info_tag", "langchain-aws")
+
     # Create client based on cluster_mode
     if cluster_mode is True:
         # User explicitly wants cluster mode

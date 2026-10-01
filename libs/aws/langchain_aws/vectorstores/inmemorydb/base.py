@@ -1029,7 +1029,7 @@ class InMemoryVectorStore(VectorStore):
         if with_metadata:
             return_fields.extend(self._schema.metadata_keys)
 
-        if distance_threshold:
+        if distance_threshold is not None:
             params_dict["distance_threshold"] = distance_threshold
             return (
                 self._prepare_range_query(

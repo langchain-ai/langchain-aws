@@ -41,6 +41,37 @@ def test_profile() -> None:
     assert model.profile == {}
 
 
+def test_model_property_returns_model_id() -> None:
+    model_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    from_alias = ChatBedrock(model=model_id, region_name="us-west-2")
+    assert from_alias.model == from_alias.model_id == model_id
+
+    from_field = ChatBedrock(model_id=model_id, region_name="us-west-2")  # type: ignore[call-arg]
+    assert from_field.model == from_field.model_id == model_id
+
+
+def test_model_property_tracks_model_id() -> None:
+    model_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    llm = ChatBedrock(model=model_id, region_name="us-west-2")
+    llm.model_id = "foo.bar"
+    assert llm.model == "foo.bar"
+
+
+def test_model_property_not_serialized() -> None:
+    model_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    llm = ChatBedrock(model=model_id, region_name="us-west-2")
+    serialized = llm.model_dump(by_alias=True)
+    # `model` is the existing alias of the `model_id` field, and the property
+    # adds no additional serialized field.
+    expected_keys = {
+        field.alias or name
+        for name, field in ChatBedrock.model_fields.items()
+        if not field.exclude
+    }
+    assert set(serialized) == expected_keys
+    assert serialized["model"] == model_id
+
+
 def test__merge_messages() -> None:
     messages = [
         SystemMessage("foo"),  # type: ignore[misc]
@@ -830,6 +861,26 @@ def test_bind_tools_strict_passed_to_converse_api(
     bound_kwargs = cast(RunnableBinding, chat_model_with_tools).kwargs
     func = bound_kwargs["tools"][0]["function"]
     assert func["strict"] is True
+
+
+@pytest.mark.parametrize(
+    "model_id,forced",
+    [
+        ("us.anthropic.claude-fable-5-1", False),
+        ("global.anthropic.claude-opus-5-5", False),
+        ("global.anthropic.claude-opus-5", True),
+    ],
+)
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_with_structured_output_no_forced_tool_choice(
+    mock_create_aws_client: Any, model_id: str, forced: bool
+) -> None:
+    """Models that reject forced tool use get no tool_choice in structured output."""
+    mock_create_aws_client.return_value = MagicMock()
+    chat_model = ChatBedrock(model=model_id, region="us-west-2")
+    structured = chat_model.with_structured_output(GetWeather)
+    bound_kwargs = cast(RunnableBinding, structured.first).kwargs  # type: ignore[attr-defined]
+    assert ("tool_choice" in bound_kwargs) is forced
 
 
 def test_with_structured_output_strict_warns_without_converse_api() -> None:

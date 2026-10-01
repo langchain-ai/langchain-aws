@@ -77,6 +77,7 @@ from langchain_aws.utils import (
     anthropic_tokens_supported,
     count_tokens_api_supported_for_model,
     create_aws_client,
+    forced_tool_choice_unsupported,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
     thinking_forced_tool_use_unsupported,
@@ -980,6 +981,11 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         populate_by_name=True,
     )
 
+    @property
+    def model(self) -> str:
+        """Same as model_id."""
+        return self.model_id
+
     def _get_invocation_params(
         self, stop: Optional[List[str]] = None, **kwargs: Any
     ) -> Dict[str, Any]:
@@ -1565,9 +1571,10 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         ) or None
 
         base_model = self._get_base_model()
-        has_thinking = thinking_forced_tool_use_unsupported(
-            base_model
-        ) and thinking_in_params(self.model_kwargs or {})
+        has_thinking = forced_tool_choice_unsupported(base_model) or (
+            thinking_forced_tool_use_unsupported(base_model)
+            and thinking_in_params(self.model_kwargs or {})
+        )
 
         if has_thinking:
             llm = self.bind_tools(

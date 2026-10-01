@@ -83,6 +83,7 @@ from langchain_aws.tools.nova_tools import NovaSystemTool
 from langchain_aws.utils import (
     count_tokens_api_supported_for_model,
     create_aws_client,
+    forced_tool_choice_unsupported,
     parse_model_provider,
     reasoning_effort_additional_fields,
     thinking_enabled_in_params,
@@ -738,6 +739,11 @@ class ChatBedrockConverse(BaseChatModel):
         populate_by_name=True,
     )
 
+    @property
+    def model(self) -> str:
+        """Same as model_id."""
+        return self.model_id
+
     @classmethod
     def create_cache_point(cls, cache_type: str = "default") -> Dict[str, Any]:
         """Create a prompt caching configuration for Bedrock.
@@ -1171,7 +1177,7 @@ class ChatBedrockConverse(BaseChatModel):
             if "claude" in base_model:
                 # Tool choice not supported when thinking is enabled
                 thinking_params = self.additional_model_request_fields or {}
-                if "claude-fable-5-1" in base_model:
+                if forced_tool_choice_unsupported(base_model):
                     self.supports_tool_choice_values = ("auto",)
                 elif thinking_forced_tool_use_unsupported(
                     base_model
@@ -1373,7 +1379,10 @@ class ChatBedrockConverse(BaseChatModel):
             bedrock_messages, system = self.raw_blocks, []
         else:
             bedrock_messages, system = _messages_to_bedrock(
-                messages, self.system, model_id=self._get_base_model()
+                messages,
+                self.system,
+                model_id=self._get_base_model(),
+                provider=self.provider,
             )
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
@@ -1451,7 +1460,10 @@ class ChatBedrockConverse(BaseChatModel):
             bedrock_messages, system = self.raw_blocks, []
         else:
             bedrock_messages, system = _messages_to_bedrock(
-                messages, self.system, model_id=self._get_base_model()
+                messages,
+                self.system,
+                model_id=self._get_base_model(),
+                provider=self.provider,
             )
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
@@ -2198,7 +2210,10 @@ class ChatBedrockConverse(BaseChatModel):
                 (self.raw_blocks, [])
                 if self.raw_blocks
                 else _messages_to_bedrock(
-                    messages, self.system, model_id=self._get_base_model()
+                    messages,
+                    self.system,
+                    model_id=self._get_base_model(),
+                    provider=self.provider,
                 )
             )
 
@@ -2338,6 +2353,7 @@ def _messages_to_bedrock(
     system: Optional[List[Union[str, Dict[str, Any]]]] = None,
     *,
     model_id: Optional[str] = None,
+    provider: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Handle Bedrock converse and Anthropic style content blocks"""
     for idx, message in enumerate(messages):
@@ -2433,11 +2449,19 @@ def _messages_to_bedrock(
                 curr = {"role": "user", "content": []}
 
             tool_result_content = []
+            image_blocks = []
             special_blocks = []
+            hoist_images = bool(provider) and provider not in (
+                "anthropic",
+                "amazon",
+                "meta",
+            )
 
             for block in content:
                 if _is_cache_point(block):
                     special_blocks.append(block)
+                elif hoist_images and isinstance(block, dict) and "image" in block:
+                    image_blocks.append(block)
                 else:
                     tool_result_content.append(block)
 
@@ -2450,6 +2474,7 @@ def _messages_to_bedrock(
                             "status": msg.status,
                         }
                     },
+                    *image_blocks,
                     *special_blocks,
                 ]
             )
@@ -3327,9 +3352,9 @@ def _bedrock_to_lc(content: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         elif "reasoning_content" in block:
             reasoning_dict = block.get("reasoning_content", {})
             # Invoke block format
-            if "reasoning_text" in reasoning_dict:
-                text = reasoning_dict.get("reasoning_text").get("text", "")
-                signature = reasoning_dict.get("reasoning_text").get("signature", "")
+            if reasoning_text := reasoning_dict.get("reasoning_text"):
+                text = reasoning_text.get("text", "")
+                signature = reasoning_text.get("signature", "")
                 lc_content.append(
                     {
                         "type": "reasoning_content",

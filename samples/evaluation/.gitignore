@@ -1,0 +1,5 @@
+__pycache__/
+.DS_Store
+.env
+agentcore_eval_artifacts/
+eval_*.json
