@@ -455,7 +455,7 @@ class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
             return None
         except Exception as e:
             logger.error(f"Error getting item {op.namespace}/{op.key}: {e}")
-            return None
+            raise
 
     def _batch_put_op(self, op: PutOp) -> None:
         """Execute a PutOp operation.
