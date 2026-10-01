@@ -25,6 +25,7 @@ from langgraph_checkpoint_aws.checkpoint.agentcore.constants import (
     EventNotFoundError,
     InvalidConfigError,
 )
+from langgraph_checkpoint_aws.checkpoint.agentcore.helpers import EventReadResult
 from langgraph_checkpoint_aws.checkpoint.agentcore.models import (
     ChannelDataEvent,
     CheckpointEvent,
@@ -887,19 +888,28 @@ def test_integer_channel_versions_restore_values(service: EventService) -> None:
     assert restored.checkpoint["channel_values"] == state["channel_values"]
 
 
-@pytest.mark.parametrize("operation", ["get_tuple", "list"])
-def test_legacy_reads_still_pass_blob_limit_to_event_client(
-    service: EventService, operation: str
+def test_legacy_get_tuple_passes_blob_limit_to_event_client(
+    service: EventService,
 ) -> None:
     legacy = AgentCoreMemorySaver(MEMORY_ID, limit=7, max_results=3)
     with patch.object(
+        legacy.checkpoint_event_client,
+        "read_events",
+        return_value=EventReadResult([]),
+    ) as read:
+        legacy.get_tuple(config())
+    read.assert_called_once_with(THREAD_ID, ACTOR_ID, limit=7, max_results=3)
+
+
+def test_legacy_list_limit_counts_checkpoints_not_events(
+    service: EventService,
+) -> None:
+    legacy = AgentCoreMemorySaver(MEMORY_ID, max_results=3)
+    with patch.object(
         legacy.checkpoint_event_client, "get_events", return_value=[]
     ) as read:
-        if operation == "get_tuple":
-            legacy.get_tuple(config())
-        else:
-            list(legacy.list(config(), limit=7))
-    read.assert_called_once_with(THREAD_ID, ACTOR_ID, 7, 3)
+        list(legacy.list(config(), limit=7))
+    read.assert_called_once_with(THREAD_ID, ACTOR_ID, max_results=3)
 
 
 def test_specific_checkpoint_lookup_filters_out_data_chunks(

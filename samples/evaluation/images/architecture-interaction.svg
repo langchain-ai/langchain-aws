@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="1200" height="800" font-family="Helvetica, Arial, sans-serif" role="img" aria-label="Component interaction across five lanes: notebooks, the LangChain Deep Agent, AgentCore Browser and Code Interpreter, ADOT and CloudWatch telemetry, and AgentCore Evaluations with the improvement loop. Ten numbered steps run left to right and map onto the three notebooks.">
+  <title>Solution architecture: component interaction, ten steps across five lanes</title>
+  <defs>
+    <marker id="i_g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#5b6472"/></marker>
+    <marker id="i_b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#4d7f97"/></marker>
+    <marker id="i_o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#b8791f"/></marker>
+  </defs>
+  <rect width="1200" height="800" fill="#ffffff"/>
+
+  <text x="36" y="36" font-size="19" font-weight="600" fill="#1c2530">Solution architecture: how the components interact</text>
+  <text x="36" y="58" font-size="12.5" fill="#5b6472">Ten steps, left to right. Steps 1-5 are notebook 1, steps 6-7 notebook 2, steps 8-10 notebook 3.</text>
+
+  <!-- lane bands -->
+  <rect x="36" y="86" width="1128" height="82" rx="8" fill="#fafbfc" stroke="#dde3ea" stroke-width="1.4"/>
+  <rect x="36" y="176" width="1128" height="82" rx="8" fill="#f7f9fb" stroke="#dde3ea" stroke-width="1.4"/>
+  <rect x="36" y="266" width="1128" height="82" rx="8" fill="#fafbfc" stroke="#dde3ea" stroke-width="1.4"/>
+  <rect x="36" y="356" width="1128" height="82" rx="8" fill="#f7f9fb" stroke="#dde3ea" stroke-width="1.4"/>
+  <rect x="36" y="446" width="1128" height="158" rx="8" fill="#fafbfc" stroke="#dde3ea" stroke-width="1.4"/>
+
+  <text x="48" y="106" font-size="11" font-weight="600" fill="#5b6472">YOU / NOTEBOOK</text>
+  <text x="48" y="196" font-size="11" font-weight="600" fill="#5b6472">LANGCHAIN DEEP AGENTS</text>
+  <text x="48" y="286" font-size="11" font-weight="600" fill="#4d7f97">AGENTCORE TOOLS</text>
+  <text x="48" y="376" font-size="11" font-weight="600" fill="#4d7f97">TELEMETRY</text>
+  <text x="48" y="466" font-size="11" font-weight="600" fill="#5d8a5d">AGENTCORE EVALUATIONS AND IMPROVEMENT LOOP</text>
+
+  <!-- 1 build -->
+  <rect x="60" y="114" width="150" height="44" rx="6" fill="#eef2f7" stroke="#8a97a8" stroke-width="1.4"/>
+  <circle cx="72" cy="126" r="9" fill="#5b6472"/><text x="72" y="130" font-size="10" font-weight="600" text-anchor="middle" fill="#fff">1</text>
+  <text x="140" y="134" font-size="11" text-anchor="middle" fill="#1c2530">build the agent</text>
+  <text x="140" y="150" font-size="9.5" text-anchor="middle" fill="#7a8595">create_deep_agent</text>
+
+  <!-- 2 delegate -->
+  <rect x="238" y="204" width="164" height="44" rx="6" fill="#eef2f7" stroke="#8a97a8" stroke-width="1.4"/>
+  <circle cx="250" cy="216" r="9" fill="#5b6472"/><text x="250" y="220" font-size="10" font-weight="600" text-anchor="middle" fill="#fff">2</text>
+  <text x="324" y="224" font-size="11" text-anchor="middle" fill="#1c2530">coordinator delegates</text>
+  <text x="324" y="240" font-size="9.5" text-anchor="middle" fill="#7a8595">3 x task(), in parallel</text>
+
+  <!-- 3 browser -->
+  <rect x="238" y="294" width="164" height="44" rx="6" fill="#e6eef3" stroke="#4d7f97" stroke-width="1.4"/>
+  <circle cx="250" cy="306" r="9" fill="#4d7f97"/><text x="250" y="310" font-size="10" font-weight="600" text-anchor="middle" fill="#fff">3</text>
+  <text x="324" y="314" font-size="11" text-anchor="middle" fill="#1c2530">AgentCore Browser</text>
+  <text x="324" y="330" font-size="9.5" text-anchor="middle" fill="#7a8595">3 MicroVMs, pinned pages</text>
+
+  <!-- 4 interpreter -->
+  <rect x="430" y="294" width="164" height="44" rx="6" fill="#e6eef3" stroke="#4d7f97" stroke-width="1.4"/>
+  <circle cx="442" cy="306" r="9" fill="#4d7f97"/><text x="442" y="310" font-size="10" font-weight="600" text-anchor="middle" fill="#fff">4</text>
+  <text x="516" y="314" font-size="11" text-anchor="middle" fill="#1c2530">Code Interpreter</text>
+  <text x="516" y="330" font-size="9.5" text-anchor="middle" fill="#7a8595">margins, chart</text>
+
+  <!-- 5 spans -->
+  <rect x="430" y="384" width="164" height="44" rx="6" fill="#e6eef3" stroke="#4d7f97" stroke-width="1.4"/>
+  <circle cx="442" cy="396" r="9" fill="#4d7f97"/><text x="442" y="400" font-size="10" font-weight="600" text-anchor="middle" fill="#fff">5</text>
+  <text x="516" y="404" font-size="11" text-anchor="middle" fill="#1c2530">ADOT to CloudWatch</text>
+  <text x="516" y="420" font-size="9.5" text-anchor="middle" fill="#7a8595">aws/spans, gen_ai.*</text>
+
+  <!-- 6 trajectory -->
+  <rect x="628" y="534" width="176" height="52" rx="6" fill="#e8f0e8" stroke="#5d8a5d" stroke-width="1.4"/>
+  <circle cx="640" cy="546" r="9" fill="#5d8a5d"/><text x="640" y="550" font-size="10" font-weight="600" text-anchor="middle" fill="#fff">6</text>
+  <text x="716" y="554" font-size="11" text-anchor="middle" fill="#1c2530">Trajectory reader</text>
+  <text x="716" y="570" font-size="9.5" text-anchor="middle" fill="#7a8595">concurrency, wasted work</text>
+
+  <!-- 7 evaluate -->
+  <rect x="628" y="474" width="176" height="44" rx="6" fill="#e8f0e8" stroke="#5d8a5d" stroke-width="1.4"/>
+  <circle cx="640" cy="486" r="9" fill="#5d8a5d"/><text x="640" y="490" font-size="10" font-weight="600" text-anchor="middle" fill="#fff">7</text>
+  <text x="716" y="494" font-size="11" text-anchor="middle" fill="#1c2530">Evaluate API</text>
+  <text x="716" y="510" font-size="9.5" text-anchor="middle" fill="#7a8595">Builtin.* evaluators</text>
+
+  <!-- 8 insights -->
+  <rect x="836" y="504" width="152" height="52" rx="6" fill="#fbf0dd" stroke="#b8791f" stroke-width="1.4"/>
+  <circle cx="848" cy="516" r="9" fill="#b8791f"/><text x="848" y="520" font-size="10" font-weight="600" text-anchor="middle" fill="#fff">8</text>
+  <text x="912" y="524" font-size="11" text-anchor="middle" fill="#1c2530">Batch Insights</text>
+  <text x="912" y="540" font-size="9.5" text-anchor="middle" fill="#7a8595">root causes</text>
+
+  <!-- 9 recommendation -->
+  <rect x="1004" y="504" width="152" height="52" rx="6" fill="#fbf0dd" stroke="#b8791f" stroke-width="1.4"/>
+  <circle cx="1016" cy="516" r="9" fill="#b8791f"/><text x="1016" y="520" font-size="10" font-weight="600" text-anchor="middle" fill="#fff">9</text>
+  <text x="1080" y="524" font-size="11" text-anchor="middle" fill="#1c2530">Recommendation</text>
+  <text x="1080" y="540" font-size="9.5" text-anchor="middle" fill="#7a8595">new system prompt</text>
+
+  <!-- 10 bundle A/B -->
+  <rect x="1004" y="114" width="152" height="60" rx="6" fill="#fbf0dd" stroke="#b8791f" stroke-width="1.4"/>
+  <circle cx="1016" cy="126" r="9" fill="#b8791f"/><text x="1016" y="130" font-size="10" font-weight="600" text-anchor="middle" fill="#fff">10</text>
+  <text x="1080" y="134" font-size="11" text-anchor="middle" fill="#1c2530">Config Bundle A/B</text>
+  <text x="1080" y="150" font-size="9.5" text-anchor="middle" fill="#7a8595">control vs treatment</text>
+  <text x="1080" y="165" font-size="9.5" text-anchor="middle" fill="#7a8595">verdict, then promote</text>
+
+  <!-- arrows -->
+  <line x1="140" y1="158" x2="140" y2="216" stroke="#5b6472" stroke-width="1.6"/>
+  <line x1="140" y1="216" x2="230" y2="216" stroke="#5b6472" stroke-width="1.6" marker-end="url(#i_g)"/>
+  <line x1="324" y1="248" x2="324" y2="286" stroke="#5b6472" stroke-width="1.6" marker-end="url(#i_g)"/>
+  <line x1="402" y1="316" x2="422" y2="316" stroke="#5b6472" stroke-width="1.6" marker-end="url(#i_g)"/>
+  <line x1="516" y1="338" x2="516" y2="376" stroke="#4d7f97" stroke-width="1.6" marker-end="url(#i_b)"/>
+  <line x1="516" y1="428" x2="516" y2="496" stroke="#4d7f97" stroke-width="1.6"/>
+  <line x1="516" y1="496" x2="620" y2="496" stroke="#4d7f97" stroke-width="1.6" marker-end="url(#i_b)"/>
+  <line x1="560" y1="496" x2="560" y2="556" stroke="#4d7f97" stroke-width="1.6"/>
+  <line x1="560" y1="556" x2="620" y2="556" stroke="#4d7f97" stroke-width="1.6" marker-end="url(#i_b)"/>
+  <line x1="804" y1="530" x2="828" y2="530" stroke="#b8791f" stroke-width="1.6" marker-end="url(#i_o)"/>
+  <line x1="988" y1="530" x2="996" y2="530" stroke="#b8791f" stroke-width="1.6" marker-end="url(#i_o)"/>
+  <line x1="1080" y1="504" x2="1080" y2="182" stroke="#b8791f" stroke-width="1.6" marker-end="url(#i_o)"/>
+  <line x1="1004" y1="144" x2="258" y2="144" stroke="#b8791f" stroke-width="1.6"/>
+  <line x1="258" y1="144" x2="258" y2="196" stroke="#b8791f" stroke-width="1.6" marker-end="url(#i_o)"/>
+  <text x="600" y="138" font-size="10" fill="#b8791f">new prompt applied at invoke, no redeploy</text>
+
+  <!-- notebook grouping -->
+  <line x1="60" y1="632" x2="604" y2="632" stroke="#8a97a8" stroke-width="2"/>
+  <text x="332" y="652" font-size="11" text-anchor="middle" fill="#5b6472">notebook 1: measure one run, locally</text>
+  <line x1="620" y1="632" x2="812" y2="632" stroke="#5d8a5d" stroke-width="2"/>
+  <text x="716" y="652" font-size="11" text-anchor="middle" fill="#5d8a5d">notebook 2: score recorded traces</text>
+  <line x1="828" y1="632" x2="1164" y2="632" stroke="#b8791f" stroke-width="2"/>
+  <text x="996" y="652" font-size="11" text-anchor="middle" fill="#b8791f">notebook 3: close the loop, deployed</text>
+
+  <!-- notes -->
+  <text x="36" y="700" font-size="11.5" font-weight="600" fill="#1c2530">Two things this arrangement makes visible</text>
+  <text x="36" y="721" font-size="11" fill="#4a5563">Steps 6 and 7 read the SAME spans. One judges the work, the other judges the answer, and only one of them can see wasted effort.</text>
+  <text x="36" y="740" font-size="11" fill="#4a5563">Step 10 changes behavior without touching step 1. The bundle carries the prompt, so the deployed package never changes.</text>
+  <text x="36" y="766" font-size="10.5" fill="#7a8595">Steps 1-5 also run on AgentCore Runtime unchanged. LangSmith can observe steps 1-5 locally, but never reads CloudWatch spans.</text>
+</svg>

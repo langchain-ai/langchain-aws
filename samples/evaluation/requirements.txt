@@ -1,0 +1,12 @@
+# Notebooks 1 and 3 (the agent itself)
+langchain-aws[tools]>=1.7.6
+deepagents>=0.7.13
+bedrock-agentcore>=1.23.0
+
+# Notebook 3 only (deployed runs emit the spans that Evaluations reads)
+aws-opentelemetry-distro>=0.18.0
+opentelemetry-instrumentation-langchain>=0.55.0
+
+# Optional: LangSmith tracing and trajectory matchers for the local loop
+# langsmith>=0.4.0
+# agentevals>=0.0.8

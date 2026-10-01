@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+import warnings
 from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import Any, Literal, TypeAlias
 
@@ -25,6 +26,8 @@ from langgraph_checkpoint_aws.checkpoint.deferred_saver import PendingWrite
 
 from .constants import (
     EMPTY_CHANNEL_VALUE,
+    CheckpointReadLimitError,
+    EventNotFoundError,
     InvalidConfigError,
 )
 from .helpers import (
@@ -56,9 +59,15 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
     Args:
         memory_id: the ID of the memory resource created in AgentCore Memory
         serde: serialization protocol to be used. Defaults to JSONPlusSerializer
-        limit: Maximum decoded payload blobs for legacy checkpoint reads.
+        limit: Maximum successfully decoded payload blobs across all pages of a
+            get_tuple() or aget_tuple() read, not a checkpoint count. Must be
+            positive or None for no cap. Raises CheckpointReadLimitError if a
+            capped read lacks the requested checkpoint or referenced channel
+            blobs. Otherwise, a truncated read returns with a warning: pending
+            writes and latest-checkpoint selection cannot be guaranteed.
             Snapshot mode requires None so snapshot data is never truncated.
-        max_results: Maximum number of service events per pagination request.
+        max_results: Maximum service events per ListEvents page (1-100), or None
+            for the service default. Controls page size, not the total read limit.
         max_retries: maximum number of retry attempts for retryable errors.
         initial_backoff: initial backoff time in seconds for exponential backoff.
         max_backoff: maximum backoff time in seconds.
@@ -86,16 +95,18 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         if checkpoint_format not in ("legacy", "snapshot"):
             msg = "checkpoint_format must be 'legacy' or 'snapshot'."
             raise ValueError(msg)
-        if checkpoint_format == "snapshot":
-            if limit is not None:
-                msg = (
-                    "checkpoint_format='snapshot' requires limit=None. "
-                    "Snapshot reads retrieve the complete snapshot and its writes."
-                )
-                raise ValueError(msg)
-            if max_results is not None and not 1 <= max_results <= 100:
-                msg = "max_results must be between 1 and 100, or None."
-                raise ValueError(msg)
+        if checkpoint_format == "snapshot" and limit is not None:
+            msg = (
+                "checkpoint_format='snapshot' requires limit=None. "
+                "Snapshot reads retrieve the complete snapshot and its writes."
+            )
+            raise ValueError(msg)
+        if limit is not None and limit <= 0:
+            msg = "limit must be a positive integer, or None."
+            raise ValueError(msg)
+        if max_results is not None and not 1 <= max_results <= 100:
+            msg = "max_results must be between 1 and 100, or None."
+            raise ValueError(msg)
         self.limit = limit
         self.max_results = max_results
         self.checkpoint_format = checkpoint_format
@@ -133,6 +144,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
         )
 
         events = None
+        truncated = False
         if isinstance(self.checkpoint_event_client, AgentCoreSnapshotClient):
             events = self.checkpoint_event_client.get_snapshot(
                 checkpoint_config.session_id,
@@ -141,30 +153,67 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
                 self.max_results,
             )
         if events is None:
-            events = self.checkpoint_event_client.get_events(
+            read = self.checkpoint_event_client.read_events(
                 checkpoint_config.session_id,
                 checkpoint_config.actor_id,
-                self.limit,
-                self.max_results,
+                limit=self.limit,
+                max_results=self.max_results,
             )
+            events = read.events
+            truncated = read.truncated
 
         checkpoints, writes_by_checkpoint, channel_data = self.processor.process_events(
             events
         )
 
-        if not checkpoints:
-            return None
-
-        # Find the specific checkpoint if `checkpoint_id` is provided or return the latest one # noqa: E501
+        checkpoint_event = None
         if checkpoint_config.checkpoint_id:
             checkpoint_event = checkpoints.get(checkpoint_config.checkpoint_id)
-            if not checkpoint_event:
-                return None
-        else:
+        elif checkpoints:
             latest_checkpoint_id = max(checkpoints.keys())
             checkpoint_event = checkpoints[latest_checkpoint_id]
 
+        if checkpoint_event is None:
+            if truncated:
+                msg = (
+                    f"Checkpoint read truncated by limit={self.limit} before "
+                    "the requested checkpoint record was found. Increase limit "
+                    "or use limit=None. No checkpoint was returned."
+                )
+                raise CheckpointReadLimitError(msg)
+            return None
+
         self._check_read_format(checkpoint_event)
+
+        missing = self.processor.missing_channel_versions(checkpoint_event, events)
+        if missing:
+            msg = (
+                f"Checkpoint read is missing {len(missing)} referenced "
+                "channel/version blob(s)."
+            )
+            if truncated:
+                msg += (
+                    f" History was truncated by limit={self.limit}; increase "
+                    "limit or use limit=None. No checkpoint was returned."
+                )
+                raise CheckpointReadLimitError(msg)
+            msg += " Event history was exhausted. No checkpoint was returned."
+            raise EventNotFoundError(msg)
+
+        if truncated:
+            msg = (
+                f"Checkpoint history was truncated by limit={self.limit}. "
+                "All referenced channel blobs for the selected checkpoint were "
+                "retrieved, but pending writes may be incomplete."
+            )
+            if checkpoint_config.checkpoint_id is None:
+                msg += " A newer checkpoint may exist in unread history."
+            warnings.warn(
+                msg + " Use limit=None to read all history for recovery.",
+                UserWarning,
+                stacklevel=2,
+            )
+
         # Build and return checkpoint tuple
         writes = writes_by_checkpoint.get(checkpoint_event.checkpoint_id, [])
         if isinstance(self.checkpoint_event_client, AgentCoreSnapshotClient):
@@ -207,15 +256,13 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             RunnableConfigDict(config) if config else {}
         )
         config_checkpoint_id = get_checkpoint_id(config) if config else None
-        snapshot_mode = self.checkpoint_format == "snapshot"
-        if snapshot_mode and limit is not None and limit <= 0:
+        if limit is not None and limit <= 0:
             return
 
         events = self.checkpoint_event_client.get_events(
             checkpoint_config.session_id,
             checkpoint_config.actor_id,
-            None if snapshot_mode else limit,
-            self.max_results,
+            max_results=self.max_results,
         )
 
         checkpoints, writes_by_checkpoint, channel_data = self.processor.process_events(
@@ -236,13 +283,9 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             if before_checkpoint_id and checkpoint_id >= before_checkpoint_id:
                 continue
 
-            if (
-                snapshot_mode
-                and filter
-                and any(
-                    checkpoint_event.metadata.get(key) != value
-                    for key, value in filter.items()
-                )
+            if filter and any(
+                checkpoint_event.metadata.get(key) != value
+                for key, value in filter.items()
             ):
                 continue
 

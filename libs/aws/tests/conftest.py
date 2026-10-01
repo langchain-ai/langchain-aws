@@ -74,9 +74,11 @@ def remove_response_headers(response: dict) -> dict:
     return _coerce_bytesio(response)
 
 
-@pytest.fixture(scope="session")
-def vcr_config() -> dict:
-    """Extend the default configuration coming from langchain_tests."""
+@pytest.fixture
+def vcr_config(monkeypatch: pytest.MonkeyPatch) -> dict:
+    """Keep native AWS cassettes independent of ambient gateway routing."""
+    monkeypatch.delenv("LANGSMITH_GATEWAY", raising=False)
+    monkeypatch.delenv("LANGSMITH_GATEWAY_API_KEY", raising=False)
     config = base_vcr_config().copy()
     config["before_record_request"] = remove_request_headers
     config["before_record_response"] = remove_response_headers
