@@ -623,6 +623,21 @@ def test_newer_legacy_writer_is_not_hidden_by_snapshot_lookup(
     assert result.checkpoint["id"] == checkpoint(2)["id"]
 
 
+def test_legacy_write_after_snapshot_keeps_channels(
+    service: EventService, saver: AgentCoreMemorySaver
+) -> None:
+    """An older-release replica's diff on a snapshot thread drops no channels."""
+    save(saver, 1)
+    # Stores only "messages"; "unchanged" lives only in the snapshot above.
+    store_legacy_checkpoint(saver, 2, with_channels=False)
+
+    result = saver.get_tuple(config())
+
+    assert result is not None
+    assert result.checkpoint["id"] == checkpoint(2)["id"]
+    assert result.checkpoint["channel_values"] == checkpoint(2)["channel_values"]
+
+
 def test_list_limit_counts_checkpoints_and_applies_metadata_filter(
     service: EventService, saver: AgentCoreMemorySaver
 ) -> None:

@@ -83,6 +83,26 @@ response = agent.invoke(
 )
 ```
 
+### Snapshot checkpoint_format mode
+
+By default (`checkpoint_format="legacy"`), reading the latest checkpoint scans the whole session, so read latency grows with the number of checkpoints in a thread. `checkpoint_format="snapshot"` stores each checkpoint as a complete snapshot, so the latest checkpoint loads in two `ListEvents` calls regardless of thread length.
+
+```python
+checkpointer = AgentCoreMemorySaver(
+    MEMORY_ID,
+    region_name=REGION,
+    checkpoint_format="snapshot",
+)
+```
+
+Before switching an existing deployment:
+
+- **Switch every worker on a thread together.** Workers on a newer release that use `legacy` will reject snapshot checkpoints with an `InvalidConfigError`. Workers on an older release without this option can't detect them, and will miss pending writes stored by snapshot mode.
+- **Resolve pending interrupts first.** A thread paused at an `interrupt()` when you switch can lose the pending resume.
+- **Switching is a one-way door.** Existing `legacy` threads keep working in `snapshot` mode, but once a thread has a snapshot checkpoint it can't be read in `legacy` mode or by earlier releases.
+- **Leave `limit` unset.** The constructor raises a `ValueError` if `limit` is set with `checkpoint_format="snapshot"`.
+- **Grant `GetEvent` and `ListSessions`.** Snapshot mode needs both; policies written for earlier releases may not include `ListSessions` (see [Required AWS permissions](#required-aws-permissions)).
+
 ## Usage - Memory Store
 
 ```python
