@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import asyncio
 import random
-from collections.abc import AsyncIterator, Iterator, Sequence
-from typing import Any, TypeAlias, cast
+from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 from langchain_core.runnables import RunnableConfig, run_in_executor
 from langgraph.checkpoint.base import (
@@ -20,6 +20,18 @@ from langgraph.checkpoint.base import (
     get_checkpoint_id,
     get_checkpoint_metadata,
 )
+
+if TYPE_CHECKING:
+    # `DeltaChannelHistory` was added to `langgraph-checkpoint` alongside
+    # `DeltaChannel`/`get_delta_channel_history` support and does not exist
+    # in `langgraph-checkpoint` 3.0.0, the package's declared floor
+    # (`langgraph-checkpoint>=3.0.0,<5.0.0`). A module-level import would
+    # make importing this whole package fail on 3.0.x. It is only ever used
+    # here as a type annotation, and `from __future__ import annotations`
+    # (above) makes all annotations in this module lazy strings, so a
+    # `TYPE_CHECKING`-only import is sufficient: static type checkers still
+    # resolve it, and nothing evaluates it at runtime.
+    from langgraph.checkpoint.base import DeltaChannelHistory
 
 from langgraph_checkpoint_aws.checkpoint.deferred_saver import PendingWrite
 
@@ -34,6 +46,7 @@ from .helpers import (
     AgentCoreEventClient,
     EventProcessor,
     EventSerializer,
+    EventType,
 )
 from .models import (
     ChannelDataEvent,
@@ -190,6 +203,173 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             )
 
             count += 1
+
+    def get_delta_channel_history(
+        self, *, config: RunnableConfig, channels: Sequence[str]
+    ) -> Mapping[str, DeltaChannelHistory]:
+        """Walk the parent chain returning per-channel writes and seed.
+
+        !!! warning "Beta"
+
+            `get_delta_channel_history` is part of langgraph's `DeltaChannel`
+            support surface and is marked Beta upstream: the signature,
+            return shape (`DeltaChannelHistory`), and interaction with
+            `_DeltaSnapshot` blobs may change. Re-check this override
+            against `BaseCheckpointSaver.get_delta_channel_history` on any
+            `langgraph-checkpoint` upgrade.
+
+        The base implementation issues one `get_tuple` (one AgentCore
+        `ListEvents` round trip) per ancestor checkpoint, which is O(depth)
+        network calls and dominates resume latency on long-running threads.
+        This override instead pages through the thread's events in bulk via
+        `AgentCoreEventClient.iter_event_pages`, reconstructs checkpoints
+        from them locally, and replays the identical parent-chain walk —
+        stopping as soon as the walk is satisfied rather than always
+        fetching the full thread history.
+
+        Args:
+            config: Configuration identifying the target checkpoint.
+            channels: Channel names to walk for. Empty returns an empty
+                mapping.
+
+        Returns:
+            Per-channel `DeltaChannelHistory` for every name in `channels`.
+        """
+        if not channels:
+            return {}
+
+        checkpoint_config = CheckpointerConfig.from_runnable_config(
+            RunnableConfigDict(config)
+        )
+        target_tuple = self.get_tuple(config)
+
+        tuples_by_id: dict[str, CheckpointTuple] = {}
+        result, complete = self._replay_delta_channel_history(
+            target_tuple, tuples_by_id, channels
+        )
+
+        if not complete:
+            all_events: list[EventType] = []
+            for page in self.checkpoint_event_client.iter_event_pages(
+                checkpoint_config.session_id,
+                checkpoint_config.actor_id,
+                max_results=self.max_results,
+            ):
+                all_events.extend(page)
+                tuples_by_id = self._tuples_by_checkpoint_id(
+                    all_events, checkpoint_config
+                )
+                result, complete = self._replay_delta_channel_history(
+                    target_tuple, tuples_by_id, channels
+                )
+                if complete:
+                    break
+
+        return result
+
+    async def aget_delta_channel_history(
+        self, *, config: RunnableConfig, channels: Sequence[str]
+    ) -> Mapping[str, DeltaChannelHistory]:
+        """Async version of `get_delta_channel_history`.
+
+        !!! warning "Beta"
+
+            See `get_delta_channel_history` for caveats; this method shares
+            the same beta status upstream.
+        """
+        return await run_in_executor(
+            None, self.get_delta_channel_history, config=config, channels=channels
+        )
+
+    def _tuples_by_checkpoint_id(
+        self,
+        events: Sequence[EventType],
+        checkpoint_config: CheckpointerConfig,
+    ) -> dict[str, CheckpointTuple]:
+        """Reconstruct `CheckpointTuple`s keyed by checkpoint id from events.
+
+        Args:
+            events: All events fetched so far for the thread.
+            checkpoint_config: The thread/actor/namespace being walked.
+
+        Returns:
+            Every checkpoint reconstructable from `events`, keyed by its id.
+        """
+        checkpoints, writes_by_checkpoint, channel_data = self.processor.process_events(
+            list(events)
+        )
+        return {
+            checkpoint_id: self.processor.build_checkpoint_tuple(
+                checkpoint_event,
+                writes_by_checkpoint.get(checkpoint_id, []),
+                channel_data,
+                checkpoint_config,
+            )
+            for checkpoint_id, checkpoint_event in checkpoints.items()
+        }
+
+    @staticmethod
+    def _replay_delta_channel_history(
+        target_tuple: CheckpointTuple | None,
+        tuples_by_id: dict[str, CheckpointTuple],
+        channels: Sequence[str],
+    ) -> tuple[dict[str, DeltaChannelHistory], bool]:
+        """Replay the base `get_delta_channel_history` walk against known tuples.
+
+        Mirrors `BaseCheckpointSaver.get_delta_channel_history` exactly:
+        same write ordering (writes are collected newest-to-oldest per
+        ancestor then reversed once at the end, giving oldest-to-newest
+        overall), and the same seed selection at the nearest ancestor whose
+        `channel_values[ch]` is populated. The only difference is that
+        ancestors are looked up in an in-memory `tuples_by_id` map — built
+        from `parent_config` links, never from fetch order — instead of one
+        `get_tuple` call per ancestor.
+
+        Args:
+            target_tuple: The checkpoint tuple identified by the caller's
+                config.
+            tuples_by_id: Checkpoints reconstructed so far, keyed by
+                checkpoint id. Ancestors not yet fetched are simply absent.
+            channels: Channel names to walk for.
+
+        Returns:
+            The per-channel result built from the tuples available so far,
+            and whether the walk is complete (reached the root, or every
+            channel is seeded) as opposed to stalled on an ancestor that
+            has not been fetched yet.
+        """
+        collected_by_ch: dict[str, list[tuple[str, str, Any]]] = {
+            c: [] for c in channels
+        }
+        seed_by_ch: dict[str, Any] = {}
+        remaining: set[str] = set(channels)
+        cursor_config = target_tuple.parent_config if target_tuple else None
+        complete = True
+
+        while cursor_config is not None and remaining:
+            cursor_id = get_checkpoint_id(cursor_config)
+            tup = tuples_by_id.get(cursor_id) if cursor_id is not None else None
+            if tup is None:
+                complete = False
+                break
+            if tup.pending_writes:
+                for write in reversed(tup.pending_writes):
+                    if write[1] in remaining:
+                        collected_by_ch[write[1]].append(write)
+            for ch in list(remaining):
+                if ch in tup.checkpoint["channel_values"]:
+                    seed_by_ch[ch] = tup.checkpoint["channel_values"][ch]
+                    remaining.discard(ch)
+            cursor_config = tup.parent_config
+
+        result: dict[str, DeltaChannelHistory] = {}
+        for ch in channels:
+            entry: DeltaChannelHistory = {"writes": list(reversed(collected_by_ch[ch]))}
+            if ch in seed_by_ch:
+                entry["seed"] = seed_by_ch[ch]
+            result[ch] = entry
+
+        return result, complete
 
     def put(
         self,
