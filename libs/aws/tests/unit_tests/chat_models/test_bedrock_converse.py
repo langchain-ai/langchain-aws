@@ -5181,6 +5181,194 @@ def test_stream_with_iam_permission_error() -> None:
     assert "Example policy statement" in error_message
 
 
+_INPUT_TOO_LONG = "Input is too long for requested model."
+
+
+def _validation_error_response(message: str, code: str = "ValidationException") -> Any:
+    return {
+        "Error": {"Code": code, "Message": message},
+        "ResponseMetadata": {"RequestId": "test-request-id"},
+    }
+
+
+def _bedrock_runtime_client() -> Any:
+    # boto3.client is mocked in conftest; botocore gives a real client for Stubber.
+    return botocore.session.get_session().create_client(
+        "bedrock-runtime",
+        region_name="us-east-1",
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+    )
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        _INPUT_TOO_LONG,
+        "The model returned the following errors: Input is too long for requested "
+        "model.",
+        "Too many input tokens. Max input tokens: 8192, request input token count: "
+        "9000",
+        "This model's maximum context length is 128000 tokens. Please reduce the "
+        "length of the prompt.",
+        "prompt is too long: 210000 tokens > 200000 maximum",
+    ],
+)
+def test_context_overflow_error_detection(message: str) -> None:
+    from botocore.exceptions import ClientError
+    from langchain_core.exceptions import ContextOverflowError
+
+    from langchain_aws.chat_models.bedrock_converse import (
+        BedrockContextOverflowError,
+        _handle_bedrock_error,
+    )
+
+    error = ClientError(_validation_error_response(message), "Converse")
+
+    with pytest.raises(ContextOverflowError) as exc_info:
+        _handle_bedrock_error(error)
+
+    assert isinstance(exc_info.value, BedrockContextOverflowError)
+    assert isinstance(exc_info.value, ClientError)
+    assert exc_info.value.response == error.response
+    assert exc_info.value.operation_name == "Converse"
+    assert str(exc_info.value) == str(error)
+    assert exc_info.value.__cause__ is error
+
+
+def test_context_overflow_requires_validation_exception() -> None:
+    from botocore.exceptions import ClientError
+
+    from langchain_aws.chat_models.bedrock_converse import _handle_bedrock_error
+
+    error = ClientError(
+        _validation_error_response(_INPUT_TOO_LONG, code="ThrottlingException"),
+        "Converse",
+    )
+
+    with pytest.raises(ClientError) as exc_info:
+        _handle_bedrock_error(error)
+
+    assert exc_info.value is error
+
+
+def test_context_overflow_preserves_modeled_exception_type() -> None:
+    from langchain_core.exceptions import ContextOverflowError
+
+    from langchain_aws.chat_models.bedrock_converse import _handle_bedrock_error
+
+    client = _bedrock_runtime_client()
+    error = client.exceptions.ValidationException(
+        _validation_error_response(_INPUT_TOO_LONG), "Converse"
+    )
+
+    with pytest.raises(client.exceptions.ValidationException) as exc_info:
+        _handle_bedrock_error(error)
+
+    assert isinstance(exc_info.value, ContextOverflowError)
+    assert type(exc_info.value).__name__ == "ValidationException"
+
+
+def test_invoke_raises_context_overflow_error() -> None:
+    from botocore.stub import Stubber
+    from langchain_core.exceptions import ContextOverflowError
+
+    client = _bedrock_runtime_client()
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-east-1",
+        client=client,
+    )
+    stubber = Stubber(client)
+    stubber.add_client_error(
+        "converse",
+        service_error_code="ValidationException",
+        service_message=_INPUT_TOO_LONG,
+        http_status_code=400,
+    )
+
+    with stubber, pytest.raises(ContextOverflowError) as exc_info:
+        llm.invoke("hello")
+
+    assert isinstance(exc_info.value, client.exceptions.ValidationException)
+
+
+def test_stream_raises_context_overflow_error() -> None:
+    from botocore.stub import Stubber
+    from langchain_core.exceptions import ContextOverflowError
+
+    client = _bedrock_runtime_client()
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-east-1",
+        client=client,
+    )
+    stubber = Stubber(client)
+    stubber.add_client_error(
+        "converse_stream",
+        service_error_code="ValidationException",
+        service_message=_INPUT_TOO_LONG,
+        http_status_code=400,
+    )
+
+    with stubber, pytest.raises(ContextOverflowError) as exc_info:
+        list(llm.stream("hello"))
+
+    assert isinstance(exc_info.value, client.exceptions.ValidationException)
+
+
+def test_stream_raises_context_overflow_error_from_event_stream() -> None:
+    from botocore.exceptions import EventStreamError
+    from langchain_core.exceptions import ContextOverflowError
+
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )
+    error = EventStreamError(
+        _validation_error_response(_INPUT_TOO_LONG, code="validationException"),
+        "ConverseStream",
+    )
+
+    def _events() -> Iterator[dict]:
+        raise error
+        yield {}
+
+    mock_client = mock.Mock()
+    mock_client.converse_stream.return_value = {"stream": _events()}
+    llm.client = mock_client
+
+    with pytest.raises(ContextOverflowError) as exc_info:
+        list(llm._stream([HumanMessage(content="hello")]))
+
+    assert isinstance(exc_info.value, EventStreamError)
+    assert exc_info.value.__cause__ is error
+
+
+def test_stream_reraises_other_event_stream_errors() -> None:
+    from botocore.exceptions import EventStreamError
+
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region_name="us-east-1"
+    )
+    error = EventStreamError(
+        _validation_error_response("Too many requests", code="throttlingException"),
+        "ConverseStream",
+    )
+
+    def _events() -> Iterator[dict]:
+        raise error
+        yield {}
+
+    mock_client = mock.Mock()
+    mock_client.converse_stream.return_value = {"stream": _events()}
+    llm.client = mock_client
+
+    with pytest.raises(EventStreamError) as exc_info:
+        list(llm._stream([HumanMessage(content="hello")]))
+
+    assert exc_info.value is error
+
+
 def test_reasoning_config_validation_only_applies_to_nova_2() -> None:
     """Test that reasoning config validation only applies to Nova 2 models."""
     # Should not raise an error for non-Nova-2 models even with invalid config
