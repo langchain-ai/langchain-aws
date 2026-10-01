@@ -2324,6 +2324,10 @@ def _append_to_system_message(
 class BedrockContextOverflowError(ClientError, ContextOverflowError):
     """ClientError raised when input exceeds the Bedrock model's context window."""
 
+    def __reduce__(self) -> Tuple[Any, ...]:
+        # ClientError.__reduce__ rebuilds a plain ClientError, losing the overflow type.
+        return BedrockContextOverflowError, (self.response, self.operation_name)
+
 
 # Lowercased fragments of the ValidationException messages Bedrock returns when
 # the prompt exceeds the model's context window.

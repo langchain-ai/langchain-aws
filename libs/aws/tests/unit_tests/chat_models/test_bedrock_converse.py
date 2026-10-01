@@ -5272,6 +5272,40 @@ def test_context_overflow_preserves_modeled_exception_type() -> None:
     assert type(exc_info.value).__name__ == "ValidationException"
 
 
+def test_context_overflow_error_survives_pickling() -> None:
+    import pickle
+
+    from botocore.exceptions import ClientError, EventStreamError
+    from langchain_core.exceptions import ContextOverflowError
+
+    from langchain_aws.chat_models.bedrock_converse import (
+        BedrockContextOverflowError,
+        _raise_if_context_overflow,
+    )
+
+    client = _bedrock_runtime_client()
+    errors = [
+        ClientError(_validation_error_response(_INPUT_TOO_LONG), "Converse"),
+        client.exceptions.ValidationException(
+            _validation_error_response(_INPUT_TOO_LONG), "Converse"
+        ),
+        EventStreamError(
+            _validation_error_response(_INPUT_TOO_LONG, code="validationException"),
+            "ConverseStream",
+        ),
+    ]
+    for error in errors:
+        with pytest.raises(ContextOverflowError) as exc_info:
+            _raise_if_context_overflow(error)
+
+        restored = pickle.loads(pickle.dumps(exc_info.value))
+
+        assert isinstance(restored, BedrockContextOverflowError)
+        assert isinstance(restored, ClientError)
+        assert restored.response == error.response
+        assert restored.operation_name == error.operation_name
+
+
 def test_invoke_raises_context_overflow_error() -> None:
     from botocore.stub import Stubber
     from langchain_core.exceptions import ContextOverflowError
