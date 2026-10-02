@@ -2338,7 +2338,7 @@ _CONTEXT_OVERFLOW_MARKERS = (
     "prompt is too long",
     # Amazon Nova
     "input tokens exceeded",
-    # Meta Llama, Mistral, and models served through Mantle (e.g. gpt-oss, Qwen)
+    # Meta Llama, Mistral, and other open-weight models (e.g. gpt-oss, Qwen, DeepSeek V3)
     "maximum context length",
     # OpenAI GPT; also matched by langchain-openai
     "context_length_exceeded",
