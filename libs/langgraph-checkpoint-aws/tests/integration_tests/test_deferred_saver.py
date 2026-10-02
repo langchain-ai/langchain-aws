@@ -12,6 +12,7 @@ import pytest
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
+    ChannelVersions,
     Checkpoint,
     CheckpointMetadata,
     uuid6,
@@ -51,7 +52,8 @@ def _has_async_support(saver: BaseCheckpointSaver) -> bool:
         return False
 
 
-_NEW_VERSIONS = {"messages": "v1"}  # matches _make_checkpoint's channel_versions
+# Matches the channel_versions in _make_checkpoint.
+_NEW_VERSIONS: ChannelVersions = {"messages": "v1"}
 
 
 def _make_checkpoint() -> Checkpoint:
