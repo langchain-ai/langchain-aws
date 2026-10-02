@@ -28,6 +28,25 @@ class _PendingCheckpoint(NamedTuple):
     new_versions: ChannelVersions
 
 
+def _merge_pending(
+    older: _PendingCheckpoint | None, newer: _PendingCheckpoint
+) -> _PendingCheckpoint:
+    """Carry an older buffered checkpoint's ``new_versions`` into a newer one.
+
+    Each ``put()`` only lists the channels changed by its own step, so keeping
+    just the latest ``new_versions`` would skip channels written earlier in the
+    run. The newer checkpoint already holds every channel's current value.
+    """
+    if older is None or _thread_key(older.config) != _thread_key(newer.config):
+        return newer
+    return newer._replace(new_versions={**older.new_versions, **newer.new_versions})
+
+
+def _thread_key(config: RunnableConfig) -> tuple[Any, Any]:
+    configurable = config["configurable"]
+    return configurable["thread_id"], configurable.get("checkpoint_ns", "")
+
+
 class _PendingWrite(NamedTuple):
     """Captured arguments to ``BaseCheckpointSaver.put_writes()``.
 
@@ -186,11 +205,14 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
             }
         }
         with self._lock:
-            self._pending_checkpoint = _PendingCheckpoint(
-                config=config,
-                checkpoint=checkpoint,
-                metadata=metadata,
-                new_versions=new_versions,
+            self._pending_checkpoint = _merge_pending(
+                self._pending_checkpoint,
+                _PendingCheckpoint(
+                    config=config,
+                    checkpoint=checkpoint,
+                    metadata=metadata,
+                    new_versions=new_versions,
+                ),
             )
             self._last_config = result_config
         return result_config
@@ -498,6 +520,10 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
             with self._lock:
                 if self._pending_checkpoint is None:
                     self._pending_checkpoint = pending_cp
+                else:
+                    self._pending_checkpoint = _merge_pending(
+                        pending_cp, self._pending_checkpoint
+                    )
                 self._pending_writes = [
                     _PendingWrite(
                         config=w.config,
@@ -538,6 +564,10 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
                 with self._lock:
                     if self._pending_checkpoint is None:
                         self._pending_checkpoint = pending_cp
+                    else:
+                        self._pending_checkpoint = _merge_pending(
+                            pending_cp, self._pending_checkpoint
+                        )
                 raise
 
         # --- Flush writes one at a time ---
@@ -624,6 +654,10 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
             with self._lock:
                 if self._pending_checkpoint is None:
                     self._pending_checkpoint = pending_cp
+                else:
+                    self._pending_checkpoint = _merge_pending(
+                        pending_cp, self._pending_checkpoint
+                    )
                 self._pending_writes = [
                     _PendingWrite(
                         config=w.config,
@@ -658,6 +692,10 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
                 with self._lock:
                     if self._pending_checkpoint is None:
                         self._pending_checkpoint = pending_cp
+                    else:
+                        self._pending_checkpoint = _merge_pending(
+                            pending_cp, self._pending_checkpoint
+                        )
                 raise
 
         # --- Flush writes one at a time ---
