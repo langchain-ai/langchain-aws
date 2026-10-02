@@ -51,6 +51,9 @@ def _has_async_support(saver: BaseCheckpointSaver) -> bool:
         return False
 
 
+_NEW_VERSIONS = {"messages": "v1"}  # matches _make_checkpoint's channel_versions
+
+
 def _make_checkpoint() -> Checkpoint:
     return Checkpoint(
         v=1,
@@ -194,7 +197,7 @@ class TestDeferredCheckpointSaver:
                 config,
                 _make_checkpoint(),
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
             assert not deferred.is_empty
 
@@ -225,7 +228,7 @@ class TestDeferredCheckpointSaver:
                 config,
                 checkpoint,
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
             deferred.flush()
 
@@ -269,7 +272,7 @@ class TestDeferredCheckpointSaver:
                     config,
                     _make_checkpoint(),
                     {"source": "input", "step": 1},
-                    {},
+                    _NEW_VERSIONS,
                 )
 
             assert deferred.is_empty
@@ -298,7 +301,7 @@ class TestDeferredCheckpointSaver:
                 config,
                 checkpoint,
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
 
             result = deferred.get_tuple(config)
@@ -331,9 +334,9 @@ class TestDeferredCheckpointSaver:
         ckpt_3 = _make_checkpoint()
 
         try:
-            deferred.put(config, ckpt_1, metadata, {})
-            deferred.put(config, ckpt_2, metadata, {})
-            deferred.put(config, ckpt_3, metadata, {})
+            deferred.put(config, ckpt_1, metadata, _NEW_VERSIONS)
+            deferred.put(config, ckpt_2, metadata, _NEW_VERSIONS)
+            deferred.put(config, ckpt_3, metadata, _NEW_VERSIONS)
 
             deferred.flush()
 
@@ -363,7 +366,7 @@ class TestDeferredCheckpointSaver:
                 config,
                 _make_checkpoint(),
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
             assert not deferred.is_empty
 
@@ -401,7 +404,7 @@ class TestDeferredCheckpointSaver:
                 config,
                 checkpoint,
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
             deferred.put_writes(write_config, [("messages", "hello")], "task-1")
 
@@ -435,7 +438,7 @@ class TestDeferredCheckpointSaver:
                     config,
                     ckpt_1,
                     {"source": "input", "step": 1},
-                    {},
+                    _NEW_VERSIONS,
                 )
 
             with deferred.flush_on_exit():
@@ -443,7 +446,7 @@ class TestDeferredCheckpointSaver:
                     config,
                     ckpt_2,
                     {"source": "loop", "step": 2},
-                    {},
+                    _NEW_VERSIONS,
                 )
 
             # Both checkpoints should be persisted
@@ -474,7 +477,7 @@ class TestDeferredCheckpointSaver:
                         config,
                         _make_checkpoint(),
                         {"source": "input", "step": 1},
-                        {},
+                        _NEW_VERSIONS,
                     )
                     msg = "simulated"
                     raise ValueError(msg)
@@ -507,7 +510,7 @@ class TestDeferredCheckpointSaver:
                 config,
                 checkpoint,
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
             deferred.flush()
 
@@ -540,7 +543,7 @@ class TestDeferredCheckpointSaver:
                 config,
                 _make_checkpoint(),
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
 
             # Buffered — list should return nothing
@@ -571,7 +574,7 @@ class TestDeferredCheckpointSaver:
                 config,
                 _make_checkpoint(),
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
 
             result1 = deferred.flush()
@@ -604,7 +607,7 @@ class TestDeferredCheckpointSaver:
                 config,
                 checkpoint,
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
 
             result = deferred.flush()
@@ -643,7 +646,7 @@ class TestDeferredCheckpointSaver:
                 config_ns_a,
                 ckpt_ns_a,
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
             deferred.flush()
 
@@ -651,7 +654,7 @@ class TestDeferredCheckpointSaver:
                 config_ns_b,
                 ckpt_ns_b,
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
             deferred.flush()
 
@@ -727,7 +730,7 @@ class TestDeferredCheckpointSaver:
                 config,
                 checkpoint,
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
             deferred.put_writes(
                 write_config,
@@ -777,7 +780,7 @@ class TestDeferredCheckpointSaver:
                 config,
                 checkpoint,
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
             deferred.put_writes(
                 write_config,
@@ -837,7 +840,7 @@ class TestDeferredCheckpointSaver:
                 config,
                 checkpoint,
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
             assert deferred.has_buffered_checkpoint
 
@@ -884,7 +887,7 @@ class TestDeferredCheckpointSaver:
                 config,
                 checkpoint,
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
             await deferred.aflush()
 
@@ -918,7 +921,7 @@ class TestDeferredCheckpointSaver:
                     config,
                     _make_checkpoint(),
                     {"source": "input", "step": 1},
-                    {},
+                    _NEW_VERSIONS,
                 )
 
             assert deferred.is_empty
@@ -949,7 +952,7 @@ class TestDeferredCheckpointSaver:
                 config,
                 _make_checkpoint(),
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
 
             # Before flush — alist should return nothing
@@ -994,7 +997,7 @@ class TestDeferredCheckpointSaver:
                 config,
                 checkpoint,
                 {"source": "input", "step": 1},
-                {},
+                _NEW_VERSIONS,
             )
 
             # Now buffer only writes (no deferred.put)
