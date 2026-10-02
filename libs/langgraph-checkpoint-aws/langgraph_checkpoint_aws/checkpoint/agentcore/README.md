@@ -22,24 +22,30 @@ pip install langgraph-checkpoint-aws
 ## Requirements
 
 ```text
-Python >=3.9
-langgraph >=0.2.55
-boto3 >=1.39.7
+Python >=3.10
+langgraph >=1.0.0
+boto3 >=1.43.64
 ```
 
 ## Usage - Checkpointer
 
+The agent example also requires LangChain and its AWS model integration:
+
+```bash
+pip install -U langchain langchain-aws
+```
+
 ```python
 # Import LangGraph and LangChain components
+from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
-from langgraph.prebuilt import create_react_agent
 
 # Import the AgentCoreMemory integrations
 from langgraph_checkpoint_aws import AgentCoreMemorySaver
 
 REGION = "us-west-2"
 MEMORY_ID = "YOUR_MEMORY_ID"
-MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+MODEL_ID = "us.anthropic.claude-sonnet-5"
 
 # Initialize checkpointer for state persistence. No additional setup required.
 # Sessions will be saved and persisted for actor_id/session_id combinations
@@ -48,10 +54,10 @@ checkpointer = AgentCoreMemorySaver(MEMORY_ID, region_name=REGION)
 # Initialize chat model
 model = init_chat_model(MODEL_ID, model_provider="bedrock_converse", region_name=REGION)
 
-# Create a pre-built langgraph agent (configurations work for custom agents too)
-graph = create_react_agent(
+# Create a LangChain agent with checkpoint persistence
+agent = create_agent(
     model=model,
-    tools=tools,
+    tools=[],  # Add tools here if needed
     checkpointer=checkpointer,  # AgentCoreMemorySaver we created above
 )
 
@@ -64,11 +70,38 @@ config = {
 }
 
 # Invoke the agent
-response = graph.invoke(
-    {"messages": [("human", "I like sushi with tuna. In general seafood is great.")]},
+response = agent.invoke(
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "I like sushi with tuna. In general seafood is great.",
+            }
+        ]
+    },
     config=config,
 )
 ```
+
+### Snapshot checkpoint_format mode
+
+By default (`checkpoint_format="legacy"`), reading the latest checkpoint scans the whole session, so read latency grows with the number of checkpoints in a thread. `checkpoint_format="snapshot"` stores each checkpoint as a complete snapshot, so the latest checkpoint loads in two `ListEvents` calls regardless of thread length.
+
+```python
+checkpointer = AgentCoreMemorySaver(
+    MEMORY_ID,
+    region_name=REGION,
+    checkpoint_format="snapshot",
+)
+```
+
+Before switching an existing deployment:
+
+- **Switch every worker on a thread together.** Workers on a newer release that use `legacy` will reject snapshot checkpoints with an `InvalidConfigError`. Workers on an older release without this option can't detect them, and will miss pending writes stored by snapshot mode.
+- **Resolve pending interrupts first.** A thread paused at an `interrupt()` when you switch can lose the pending resume.
+- **Switching is a one-way door.** Existing `legacy` threads keep working in `snapshot` mode, but once a thread has a snapshot checkpoint it can't be read in `legacy` mode or by earlier releases.
+- **Leave `limit` unset.** The constructor raises a `ValueError` if `limit` is set with `checkpoint_format="snapshot"`.
+- **Grant `GetEvent` and `ListSessions`.** Snapshot mode needs both; policies written for earlier releases may not include `ListSessions` (see [Required AWS permissions](#required-aws-permissions)).
 
 ## Usage - Memory Store
 
@@ -159,7 +192,9 @@ Ensure you have AWS credentials configured using one of these methods:
             "Action": [
                 "bedrock-agentcore:CreateEvent",
                 "bedrock-agentcore:ListEvents",
-                "bedrock-agentcore:GetEvent"
+                "bedrock-agentcore:GetEvent",
+                "bedrock-agentcore:ListSessions",
+                "bedrock-agentcore:DeleteEvent"
             ],
             "Resource": [
                 "*"
