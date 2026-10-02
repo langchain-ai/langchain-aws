@@ -442,3 +442,45 @@ def test_chat_anthropic_bedrock_per_request_guardrail_validates() -> None:
             stop=None,
             guardrail_config={"guardrailIdentifier": "gr-abc123"},
         )
+
+
+def _built_request_ua(client: object) -> str:
+    """Read the wire ``user-agent`` header off an anthropic SDK client."""
+    from anthropic._models import FinalRequestOptions
+
+    req = client._build_request(  # type: ignore[attr-defined]
+        FinalRequestOptions(method="post", url="/v1/messages", json_data={})
+    )
+    return req.headers["user-agent"]
+
+
+def test_chat_anthropic_bedrock_user_agent_tagged() -> None:
+    """The sync/async clients carry the langchain-aws source tag on the wire UA,
+    with the SDK's own ``AnthropicBedrock`` prefix preserved."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        aws_access_key_id=SecretStr("test-key"),
+        aws_secret_access_key=SecretStr("test-secret"),
+    )
+    for client in (model._client, model._async_client):
+        ua = _built_request_ua(client)
+        assert ua.endswith(f" {FRAMEWORK_UA_TOKEN}")
+        assert "AnthropicBedrock/Python" in ua
+
+
+def test_chat_anthropic_bedrock_user_agent_respects_caller_header() -> None:
+    """A caller-supplied ``User-Agent`` gets the tag appended, not overwritten."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        aws_access_key_id=SecretStr("test-key"),
+        aws_secret_access_key=SecretStr("test-secret"),
+        default_headers={"User-Agent": "MyApp/1.0"},
+    )
+    ua = _built_request_ua(model._client)
+    assert ua == f"MyApp/1.0 {FRAMEWORK_UA_TOKEN}"

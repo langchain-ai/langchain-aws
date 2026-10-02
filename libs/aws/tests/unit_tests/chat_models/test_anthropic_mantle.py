@@ -796,3 +796,32 @@ def test_api_key_snapshot_survives_env_mutation() -> None:
         client = model._client
         assert client._use_sigv4 is False
         assert client.api_key == "key-A"
+
+
+def _mantle_built_request_ua(client: object) -> str:
+    """Read the wire ``user-agent`` header off an AnthropicBedrockMantle client."""
+    from anthropic._models import FinalRequestOptions
+
+    req = client._build_request(  # type: ignore[attr-defined]
+        FinalRequestOptions(method="post", url="/v1/messages", json_data={})
+    )
+    return req.headers["user-agent"]
+
+
+def test_mantle_user_agent_tagged() -> None:
+    """The Mantle clients carry the langchain-aws source tag on the wire UA, with
+    the SDK's own ``AnthropicBedrockMantle`` prefix preserved, and sigv4 pinning
+    survives the tagging copy."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    model = ChatAnthropicMantle(  # type: ignore[call-arg]
+        model_name=MODEL_NAME,
+        region_name="us-east-1",
+        aws_access_key_id=SecretStr("key-id"),
+        aws_secret_access_key=SecretStr("sec-key"),
+    )
+    for client in (model._client, model._async_client):
+        ua = _mantle_built_request_ua(client)
+        assert ua.endswith(f" {FRAMEWORK_UA_TOKEN}")
+        assert "AnthropicBedrockMantle/Python" in ua
+        assert client._use_sigv4 is True
