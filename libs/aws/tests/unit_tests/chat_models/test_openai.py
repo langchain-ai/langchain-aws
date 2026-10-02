@@ -1,9 +1,12 @@
 """ChatOpenAIMantle unit tests."""
 
-from typing import Tuple, Type, cast
-from unittest.mock import patch
+from collections.abc import AsyncIterator, Iterator
+from typing import Any, Tuple, Type, cast
+from unittest.mock import MagicMock, patch
 
+import openai
 import pytest
+from langchain_core.exceptions import ContextOverflowError
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
 from langchain_openai.chat_models.base import BaseChatOpenAI
@@ -12,6 +15,10 @@ from pydantic import BaseModel, SecretStr
 from pytest import MonkeyPatch
 
 from langchain_aws import ChatOpenAIMantle
+from langchain_aws.chat_models.openai import (
+    MantleAPIContextOverflowError,
+    MantleContextOverflowError,
+)
 from langchain_aws.utils import _BedrockApiKeyProvider
 
 MODEL_NAME = "openai.gpt-oss-120b"
@@ -419,3 +426,108 @@ def test_non_guardrail_headers() -> None:
         "hello", extra_headers={"X-Another-Header": "ok"}
     )
     assert payload["extra_headers"] == {"X-Another-Header": "ok"}
+
+
+_MANTLE_OVERFLOW = (
+    'ErrorEvent { error: APIError { type: "BadRequestError", code: Some(400), '
+    "message: \"Input length (213426) exceeds model's maximum context length "
+    '(131072).", param: None } }'
+)
+
+
+def _response() -> Any:
+    # Stand-in for the SDK's HTTP response; the error classes only read these.
+    return MagicMock(status_code=400, headers={}, request=MagicMock())
+
+
+def _bad_request(message: str) -> openai.BadRequestError:
+    return openai.BadRequestError(message, response=_response(), body=None)
+
+
+def _api_error(message: str) -> openai.APIError:
+    return openai.APIError(message, cast(Any, MagicMock()), body=None)
+
+
+def _raising_stream(error: Exception) -> Iterator[Any]:
+    raise error
+    yield  # pragma: no cover
+
+
+async def _raising_astream(error: Exception) -> AsyncIterator[Any]:
+    raise error
+    yield  # pragma: no cover
+
+
+def test_invoke_context_overflow_raises_context_overflow_error() -> None:
+    error = _bad_request(_MANTLE_OVERFLOW)
+    with patch.object(BaseChatOpenAI, "_generate", side_effect=error):
+        with pytest.raises(ContextOverflowError) as exc_info:
+            _make_model().invoke("hello")
+
+    assert isinstance(exc_info.value, MantleContextOverflowError)
+    assert isinstance(exc_info.value, openai.BadRequestError)
+    assert exc_info.value.__cause__ is error
+
+
+@pytest.mark.parametrize("model", [MODEL_NAME, "openai.gpt-5.6-sol"])
+def test_stream_context_overflow_raises_context_overflow_error(model: str) -> None:
+    # gpt-oss streams over Chat Completions; GPT-5.x over the Responses API.
+    error = _api_error(_MANTLE_OVERFLOW)
+    route = "_stream" if model == MODEL_NAME else "_stream_responses"
+    with patch.object(
+        BaseChatOpenAI, route, side_effect=lambda *a, **k: _raising_stream(error)
+    ):
+        with pytest.raises(ContextOverflowError) as exc_info:
+            llm = ChatOpenAIMantle(
+                model=model,
+                region_name="us-east-1",
+                bedrock_api_key=SecretStr("test-key"),
+            )
+            list(llm.stream("hello"))
+
+    assert isinstance(exc_info.value, MantleAPIContextOverflowError)
+    assert isinstance(exc_info.value, openai.APIError)
+    assert exc_info.value.__cause__ is error
+
+
+async def test_async_context_overflow_raises_context_overflow_error() -> None:
+    invoke_error = _bad_request(_MANTLE_OVERFLOW)
+    stream_error = _api_error(_MANTLE_OVERFLOW)
+    with (
+        patch.object(BaseChatOpenAI, "_agenerate", side_effect=invoke_error),
+        patch.object(
+            BaseChatOpenAI,
+            "_astream",
+            side_effect=lambda *a, **k: _raising_astream(stream_error),
+        ),
+    ):
+        with pytest.raises(MantleContextOverflowError):
+            await _make_model().ainvoke("hello")
+        with pytest.raises(MantleAPIContextOverflowError):
+            async for _ in _make_model().astream("hello"):
+                pass
+
+
+class _AlreadyOverflow(openai.BadRequestError, ContextOverflowError):
+    pass
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        _bad_request("Invalid 'max_output_tokens': integer below minimum value"),
+        # e.g. GPT-5.x overflows, already classified by langchain-openai
+        _AlreadyOverflow(
+            "context_length_exceeded: maximum context length",
+            response=_response(),
+            body=None,
+        ),
+    ],
+    ids=["other_error", "already_context_overflow"],
+)
+def test_errors_are_reraised_unchanged(error: openai.BadRequestError) -> None:
+    with patch.object(BaseChatOpenAI, "_generate", side_effect=error):
+        with pytest.raises(openai.BadRequestError) as exc_info:
+            _make_model().invoke("hello")
+
+    assert exc_info.value is error
