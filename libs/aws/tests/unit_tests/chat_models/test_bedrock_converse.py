@@ -5215,6 +5215,14 @@ def _bedrock_runtime_client() -> Any:
         'requestId 0: ErrorEvent { error: APIError { type: "BadRequestError", '
         "code: Some(400), message: \"Input length (450236) exceeds model's "
         'maximum context length (131072).", param: None } }',
+        "prompt is too long: 1052304 tokens > 1000000 maximum",
+        "The model returned the following errors: context_length_exceeded: Your "
+        "input exceeds the context window of this model. Please adjust your input "
+        "and try again.",
+        "Your input exceeds the context window of this model.",
+        "Input tokens exceed the configured limit of 272000 tokens. Your messages "
+        "resulted in 450236 tokens.",
+        "prompt tokens (450236) exceed model maximum (262144)",
     ],
 )
 def test_context_overflow_error_detection(message: str) -> None:
@@ -5237,6 +5245,27 @@ def test_context_overflow_error_detection(message: str) -> None:
     assert exc_info.value.operation_name == "Converse"
     assert str(exc_info.value) == str(error)
     assert exc_info.value.__cause__ is error
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "The maximum tokens you requested exceeds the model limit of 64000. Try "
+        "again with a maximum tokens value that is lower than 64000.",
+        "Malformed input request: #: extraneous key [foo] is not permitted",
+    ],
+)
+def test_context_overflow_ignores_other_validation_errors(message: str) -> None:
+    from botocore.exceptions import ClientError
+
+    from langchain_aws.chat_models.bedrock_converse import _handle_bedrock_error
+
+    error = ClientError(_validation_error_response(message), "Converse")
+
+    with pytest.raises(ClientError) as exc_info:
+        _handle_bedrock_error(error)
+
+    assert exc_info.value is error
 
 
 def test_context_overflow_requires_validation_exception() -> None:
