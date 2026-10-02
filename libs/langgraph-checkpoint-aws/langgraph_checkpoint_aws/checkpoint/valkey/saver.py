@@ -202,7 +202,7 @@ class ValkeySaver(BaseValkeySaver):
 
         except (ValkeyError, orjson.JSONDecodeError) as e:
             logger.error(f"Error retrieving checkpoint data for {checkpoint_id}: {e}")
-            return None, []
+            raise
 
     def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         """Get a checkpoint tuple from the database.
@@ -276,7 +276,7 @@ class ValkeySaver(BaseValkeySaver):
 
         except (ValkeyError, KeyError) as e:
             logger.error(f"Error in get_tuple: {e}")
-            return None
+            raise
 
     def list(
         self,
@@ -395,7 +395,7 @@ class ValkeySaver(BaseValkeySaver):
 
         except ValkeyError as e:
             logger.error(f"Error in list: {e}")
-            return
+            raise
 
     def put(
         self,
