@@ -26,7 +26,7 @@ from typing import (
 
 from botocore.exceptions import ClientError
 from langchain_core.callbacks import CallbackManagerForLLMRun
-from langchain_core.exceptions import OutputParserException
+from langchain_core.exceptions import ContextOverflowError, OutputParserException
 from langchain_core.language_models import (
     BaseChatModel,
     LanguageModelInput,
@@ -1544,6 +1544,10 @@ class ChatBedrockConverse(BaseChatModel):
                             generation_chunk.text, chunk=generation_chunk
                         )
                     yield generation_chunk
+        except ClientError as e:
+            # Bedrock can also report the overflow as an event after the stream opens.
+            _raise_if_context_overflow(e)
+            raise
         finally:
             if hasattr(stream, "close"):
                 stream.close()
@@ -2317,6 +2321,79 @@ def _append_to_system_message(
     return [SystemMessage(content=new_content), *messages[1:]]
 
 
+class BedrockContextOverflowError(ClientError, ContextOverflowError):
+    """ClientError raised when input exceeds the Bedrock model's context window."""
+
+    def __reduce__(self) -> Tuple[Any, ...]:
+        # ClientError.__reduce__ rebuilds a plain ClientError, losing the overflow type.
+        return BedrockContextOverflowError, (self.response, self.operation_name)
+
+
+# Lowercased fragments of the ValidationException messages Bedrock returns when
+# the prompt exceeds the model's context window.
+_CONTEXT_OVERFLOW_MARKERS = (
+    # Claude Sonnet 4.5, DeepSeek R1
+    "input is too long",
+    # Claude Haiku 4.5 and newer Claude models; also matched by langchain-anthropic
+    "prompt is too long",
+    # Amazon Nova
+    "input tokens exceeded",
+    # Meta Llama, Mistral, and other open-weight models (gpt-oss, Qwen, DeepSeek V3)
+    "maximum context length",
+    # OpenAI GPT; also matched by langchain-openai
+    "context_length_exceeded",
+    "exceeds the context window",
+    "input tokens exceed the configured limit",
+    # Kimi K3
+    "exceed model maximum",
+    # matched by LiteLLM (Bedrock, vLLM/SGLang)
+    "too many input tokens",
+    "is longer than the model's context length",
+)
+
+
+_CONTEXT_OVERFLOW_ERROR_TYPES: Dict[
+    Type[ClientError], Type[BedrockContextOverflowError]
+] = {}
+
+
+def _context_overflow_error_type(
+    error_type: Type[ClientError],
+) -> Type[BedrockContextOverflowError]:
+    """Return a subclass of both `error_type` and `BedrockContextOverflowError`.
+
+    Subclassing the original type keeps handlers that catch boto3's modeled
+    exceptions, such as `client.exceptions.ValidationException`, working.
+    """
+    if issubclass(BedrockContextOverflowError, error_type):
+        return BedrockContextOverflowError
+    if error_type not in _CONTEXT_OVERFLOW_ERROR_TYPES:
+        _CONTEXT_OVERFLOW_ERROR_TYPES[error_type] = cast(
+            Type[BedrockContextOverflowError],
+            type(error_type.__name__, (error_type, BedrockContextOverflowError), {}),
+        )
+    return _CONTEXT_OVERFLOW_ERROR_TYPES[error_type]
+
+
+def _raise_if_context_overflow(error: ClientError) -> None:
+    """Re-raise `error` as a `ContextOverflowError` if it reports a context overflow.
+
+    Args:
+        error: The ClientError from boto3.
+
+    Raises:
+        BedrockContextOverflowError: If the error is a context window overflow.
+    """
+    error_info = error.response.get("Error", {})
+    # Event stream errors use a lowercase code, e.g. "validationException".
+    if error_info.get("Code", "").lower() != "validationexception":
+        return
+    error_message = str(error_info.get("Message", "")).lower()
+    if any(marker in error_message for marker in _CONTEXT_OVERFLOW_MARKERS):
+        overflow_type = _context_overflow_error_type(type(error))
+        raise overflow_type(error.response, error.operation_name) from error
+
+
 def _handle_bedrock_error(error: ClientError) -> None:
     """Handle Bedrock API errors and provide enhanced error messages.
 
@@ -2324,9 +2401,12 @@ def _handle_bedrock_error(error: ClientError) -> None:
         error: The ClientError from boto3
 
     Raises:
+        BedrockContextOverflowError: If the input exceeds the model's context window
         ValueError: Enhanced error with helpful message for IAM permission issues
         ClientError: Re-raises the original error if not a known case
     """
+    _raise_if_context_overflow(error)
+
     error_code = error.response.get("Error", {}).get("Code", "")
     error_message = str(error)
 
