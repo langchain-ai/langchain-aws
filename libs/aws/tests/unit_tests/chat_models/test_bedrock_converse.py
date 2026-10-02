@@ -5223,6 +5223,9 @@ def _bedrock_runtime_client() -> Any:
         "Input tokens exceed the configured limit of 272000 tokens. Your messages "
         "resulted in 450236 tokens.",
         "prompt tokens (450236) exceed model maximum (262144)",
+        "Too many input tokens.",
+        "The input (450236 tokens) is longer than the model's context length "
+        "(131072 tokens).",
     ],
 )
 def test_context_overflow_error_detection(message: str) -> None:

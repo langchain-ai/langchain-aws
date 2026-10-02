@@ -2346,6 +2346,9 @@ _CONTEXT_OVERFLOW_MARKERS = (
     "input tokens exceed the configured limit",
     # Kimi K3
     "exceed model maximum",
+    # matched by LiteLLM (Bedrock, vLLM/SGLang)
+    "too many input tokens",
+    "is longer than the model's context length",
 )
 
 
