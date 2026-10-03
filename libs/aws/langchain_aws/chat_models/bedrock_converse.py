@@ -2253,6 +2253,14 @@ _method_doc = """\
           and stops generation at the closing fence. Useful for models
           without native JSON-schema (Amazon Nova).
 
+        .. note::
+            ``"json_schema"`` cannot express an open map (``dict[str, X]`` or
+            ``dict[str, Any]``). Bedrock requires ``additionalProperties:
+            false`` on every object, which constrains generation to an object
+            that admits no keys, so such a field always comes back empty; a
+            warning is emitted naming the field. Model it as a list of
+            ``{key, value}`` objects, or use ``method="function_calling"``.
+
 """
 ChatBedrockConverse.with_structured_output.__doc__ = _base_wso_doc.replace(
     "Raises:", _method_doc + "Raises:", 1
@@ -3545,28 +3553,49 @@ def _response_format_to_output_config(
     }
 
 
-def _set_additional_properties_false(schema: dict) -> None:
+def _set_additional_properties_false(schema: dict, _path: str = "") -> None:
     """Recursively set ``additionalProperties: false`` on object-type schemas.
 
     Bedrock structured outputs require this on every object in the JSON schema.
     Modifies *schema* in place. Also walks ``$defs``/``definitions``,
     ``properties``, ``items``, and ``allOf``/``anyOf``/``oneOf``.
+
+    An open map (``dict[str, X]``, which pydantic emits as ``additionalProperties:
+    {value schema}``, or ``dict[str, Any]``, emitted as ``additionalProperties:
+    true``) cannot be expressed this way: forcing ``false`` constrains generation
+    to an object that admits no keys, so the map comes back empty. Anthropic
+    models reject every other value, so the override has to stay -- but it warns
+    instead of discarding the schema silently.
     """
     if schema.get("type") == "object":
+        existing = schema.get("additionalProperties")
+        if existing is not None and existing is not False:
+            warnings.warn(
+                f"Bedrock structured output requires `additionalProperties: "
+                f"false` on every object, so the open map at "
+                f"`{_path or '<root>'}` will be sent with no keys allowed and "
+                f"will come back empty. Model the field as a list of "
+                f"`{{key, value}}` objects, or use "
+                f'`with_structured_output(..., method="function_calling")`.',
+                UserWarning,
+                stacklevel=2,
+            )
         schema["additionalProperties"] = False
-        for prop_schema in (schema.get("properties") or {}).values():
+        for prop_name, prop_schema in (schema.get("properties") or {}).items():
             if isinstance(prop_schema, dict):
-                _set_additional_properties_false(prop_schema)
+                _set_additional_properties_false(
+                    prop_schema, f"{_path}.{prop_name}" if _path else str(prop_name)
+                )
     if "items" in schema and isinstance(schema["items"], dict):
-        _set_additional_properties_false(schema["items"])
+        _set_additional_properties_false(schema["items"], f"{_path}[]")
     for keyword in ("$defs", "definitions"):
-        for def_schema in (schema.get(keyword) or {}).values():
+        for def_name, def_schema in (schema.get(keyword) or {}).items():
             if isinstance(def_schema, dict):
-                _set_additional_properties_false(def_schema)
+                _set_additional_properties_false(def_schema, f"{keyword}.{def_name}")
     for keyword in ("allOf", "anyOf", "oneOf"):
         for sub_schema in schema.get(keyword) or []:
             if isinstance(sub_schema, dict):
-                _set_additional_properties_false(sub_schema)
+                _set_additional_properties_false(sub_schema, _path)
 
 
 def _strip_null_anyof(schema: Any) -> Any:
