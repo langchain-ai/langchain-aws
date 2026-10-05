@@ -409,8 +409,6 @@ class DynamoDBSaver(BaseCheckpointSaver):
         if before is not None:
             before_checkpoint_id = before.get("configurable", {}).get("checkpoint_id")
 
-        items_yielded = 0
-
         # Get list of checkpoints
         for checkpoint_data in self.repo.list_checkpoints(
             thread_id=thread_id,
@@ -453,8 +451,6 @@ class DynamoDBSaver(BaseCheckpointSaver):
                 parent_config=parent_config,
                 pending_writes=pending_writes,
             )
-
-            items_yielded += 1
 
     async def alist(
         self,
