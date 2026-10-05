@@ -1225,10 +1225,17 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
         # usage metadata
         if usage := llm_output.get("usage"):
-            input_tokens = usage.get("prompt_tokens", 0)
             output_tokens = usage.get("completion_tokens", 0)
             cache_read_input_tokens = usage.get("cache_read_input_tokens", 0)
             cache_write_input_tokens = usage.get("cache_write_input_tokens", 0)
+            # `prompt_tokens` counts only uncached input. `UsageMetadata`
+            # documents `input_tokens` as the sum of all input token types, and
+            # `ChatBedrockConverse` has summed them since #1023.
+            input_tokens = (
+                usage.get("prompt_tokens", 0)
+                + cache_read_input_tokens
+                + cache_write_input_tokens
+            )
             usage_metadata = UsageMetadata(
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,

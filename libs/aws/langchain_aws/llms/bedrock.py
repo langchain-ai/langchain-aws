@@ -250,10 +250,16 @@ def _get_invocation_metrics_chunk(chunk: Dict[str, Any]) -> GenerationChunk:
         output_tokens = metrics.get("outputTokenCount", 0)
         cache_read_input_tokens = metrics.get("cacheReadInputTokenCount", 0)
         cache_write_input_tokens = metrics.get("cacheWriteInputTokenCount", 0)
+        # `inputTokenCount` counts only uncached input, so the cache totals are
+        # added in: `UsageMetadata.input_tokens` is the sum of all input token
+        # types, and `total_tokens` is `input_tokens` + `output_tokens`.
+        total_input_tokens = (
+            input_tokens + cache_read_input_tokens + cache_write_input_tokens
+        )
         generation_info["usage_metadata"] = {
-            "input_tokens": input_tokens,
+            "input_tokens": total_input_tokens,
             "output_tokens": output_tokens,
-            "total_tokens": input_tokens + output_tokens,
+            "total_tokens": total_input_tokens + output_tokens,
             "input_token_details": {
                 "cache_creation": cache_write_input_tokens,
                 "cache_read": cache_read_input_tokens,
@@ -519,6 +525,7 @@ class LLMInputOutputAdapter:
                 "cache_write_input_tokens": cache_write_input_tokens,
                 "total_tokens": prompt_tokens
                 + cache_read_input_tokens
+                + cache_write_input_tokens
                 + completion_tokens,
             },
             "stop_reason": response_body.get("stop_reason"),
