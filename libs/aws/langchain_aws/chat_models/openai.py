@@ -10,15 +10,22 @@ structured output, streaming, tracing, multimodal) is inherited unchanged.
 
 import os
 from collections.abc import AsyncIterator, Iterator
-from typing import Any, Literal, cast
+from typing import Any, Literal, NoReturn, cast
 
+import openai
+from langchain_core.callbacks import (
+    AsyncCallbackManagerForLLMRun,
+    CallbackManagerForLLMRun,
+)
+from langchain_core.exceptions import ContextOverflowError
 from langchain_core.language_models import (
     LanguageModelInput,
     ModelProfile,
     ModelProfileRegistry,
 )
 from langchain_core.language_models.chat_models import LangSmithParams
-from langchain_core.outputs import ChatGenerationChunk
+from langchain_core.messages import BaseMessage
+from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable
 from langchain_core.utils import secret_from_env
 from langchain_openai.chat_models.base import (
@@ -44,11 +51,38 @@ _MANTLE_OPENAI_BASE_URL_TEMPLATE = "https://bedrock-mantle.{region}.api.aws/open
 
 _MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
 
+_MANTLE_CONTEXT_OVERFLOW_MARKER = "maximum context length"
+
 
 def _get_default_model_profile(model_name: str) -> ModelProfile:
     """Return the static capability profile for a Mantle model, or an empty one."""
     default = _MODEL_PROFILES.get(model_name) or {}
     return default.copy()
+
+
+class MantleContextOverflowError(openai.BadRequestError, ContextOverflowError):
+    """BadRequestError raised when input exceeds the Mantle model's context window."""
+
+
+class MantleAPIContextOverflowError(openai.APIError, ContextOverflowError):
+    """APIError raised when input exceeds the Mantle model's context window."""
+
+
+def _handle_mantle_error(error: openai.APIError) -> NoReturn:
+    """Handle Mantle API errors not covered by base langchain-openai."""
+    is_overflow = not isinstance(error, ContextOverflowError) and (
+        _MANTLE_CONTEXT_OVERFLOW_MARKER in str(error).lower()
+    )
+    if is_overflow and isinstance(error, openai.BadRequestError):
+        raise MantleContextOverflowError(
+            message=error.message, response=error.response, body=error.body
+        ) from error
+    if is_overflow:
+        raise MantleAPIContextOverflowError(
+            message=error.message, request=error.request, body=error.body
+        ) from error
+
+    raise error
 
 
 def _plain_secret(value: Any) -> str | None:
@@ -335,22 +369,53 @@ class ChatOpenAIMantle(BaseChatOpenAI):
         params["ls_provider"] = "openai-mantle"
         return params
 
+    def _generate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: CallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        try:
+            return super()._generate(messages, stop, run_manager, **kwargs)
+        except openai.APIError as e:
+            _handle_mantle_error(e)
+
+    async def _agenerate(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+        run_manager: AsyncCallbackManagerForLLMRun | None = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        try:
+            return await super()._agenerate(messages, stop, run_manager, **kwargs)
+        except openai.APIError as e:
+            _handle_mantle_error(e)
+
     def _stream(self, *args: Any, **kwargs: Any) -> Iterator[ChatGenerationChunk]:
         """Route to the Chat Completions or Responses API."""
-        if self._use_responses_api({**kwargs, **self.model_kwargs}):
-            return super()._stream_responses(*args, **kwargs)
-        return super()._stream(*args, **kwargs)
+        try:
+            if self._use_responses_api({**kwargs, **self.model_kwargs}):
+                yield from super()._stream_responses(*args, **kwargs)
+            else:
+                yield from super()._stream(*args, **kwargs)
+        except openai.APIError as e:
+            _handle_mantle_error(e)
 
     async def _astream(
         self, *args: Any, **kwargs: Any
     ) -> AsyncIterator[ChatGenerationChunk]:
         """Route to the Chat Completions or Responses API."""
-        if self._use_responses_api({**kwargs, **self.model_kwargs}):
-            async for chunk in super()._astream_responses(*args, **kwargs):
-                yield chunk
-        else:
-            async for chunk in super()._astream(*args, **kwargs):
-                yield chunk
+        try:
+            if self._use_responses_api({**kwargs, **self.model_kwargs}):
+                async for chunk in super()._astream_responses(*args, **kwargs):
+                    yield chunk
+            else:
+                async for chunk in super()._astream(*args, **kwargs):
+                    yield chunk
+        except openai.APIError as e:
+            _handle_mantle_error(e)
 
     def with_structured_output(
         self,

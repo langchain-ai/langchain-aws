@@ -1,5 +1,6 @@
 """ChatAnthropicMantle unit tests."""
 
+import warnings
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal, Tuple, Type, cast
@@ -10,7 +11,7 @@ import pytest
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel, ModelProfile
 from langchain_tests.unit_tests import ChatModelUnitTests
-from pydantic import SecretStr
+from pydantic import BaseModel, SecretStr
 from pytest import MonkeyPatch
 
 from langchain_aws import ChatAnthropicMantle
@@ -465,6 +466,53 @@ def test_non_guardrail_headers_still_allowed() -> None:
         "hello", extra_headers={"X-Another-Header": "ok"}
     )
     assert payload["extra_headers"] == {"X-Another-Header": "ok"}
+
+
+def test_unsupported_sampling_params_dropped() -> None:
+    """Models whose profile rejects temperature get sampling params dropped."""
+    model = ChatAnthropicMantle(  # type: ignore[call-arg]
+        model_name="anthropic.claude-opus-5-5",
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+        temperature=0.2,
+    )
+    with pytest.warns(UserWarning, match="does not support temperature"):
+        payload = model._get_request_payload("hello")
+    assert "temperature" not in payload
+
+
+@pytest.mark.parametrize(
+    "model_name, expected",
+    [("anthropic.claude-opus-5-5", "auto"), ("anthropic.claude-sonnet-5", "any")],
+)
+def test_forced_tool_choice_downgraded_when_unsupported(
+    model_name: str, expected: str
+) -> None:
+    """Forced tool_choice becomes auto for models that reject it."""
+    model = ChatAnthropicMantle(  # type: ignore[call-arg]
+        model_name=model_name,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+    )
+    tool = {"name": "t", "description": "d", "input_schema": {"type": "object"}}
+    bound = cast(Any, model.bind_tools([tool], tool_choice="any"))
+    assert bound.kwargs["tool_choice"]["type"] == expected
+
+
+def test_structured_output_downgrade_is_quiet() -> None:
+    """Structured output on a model without forced tool use emits no warning."""
+    model = ChatAnthropicMantle(  # type: ignore[call-arg]
+        model_name="anthropic.claude-opus-5-5",
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+    )
+
+    class City(BaseModel):
+        name: str
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        model.with_structured_output(City)
 
 
 def test_explicit_sigv4_credentials_select_sigv4_at_sdk_level() -> None:

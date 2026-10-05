@@ -1,6 +1,8 @@
 """Anthropic Bedrock chat models."""
 
 import os
+import warnings
+from collections.abc import Callable, Mapping, Sequence
 from functools import cached_property
 from typing import Any, Literal, cast
 
@@ -12,10 +14,16 @@ from anthropic import (
     AsyncAnthropicBedrockMantle,
 )
 from langchain_anthropic.chat_models import ChatAnthropic
-from langchain_core.language_models import ModelProfile, ModelProfileRegistry
+from langchain_core.language_models import (
+    LanguageModelInput,
+    ModelProfile,
+    ModelProfileRegistry,
+)
 from langchain_core.language_models.chat_models import LangSmithParams
-from langchain_core.messages import AIMessageChunk
+from langchain_core.messages import AIMessage, AIMessageChunk
 from langchain_core.messages.ai import InputTokenDetails, UsageMetadata
+from langchain_core.runnables import Runnable
+from langchain_core.tools import BaseTool
 from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
@@ -27,6 +35,7 @@ from langchain_aws.utils import (
     _MANTLE_GUARDRAILS_ERR_MSG,
     MODEL_ID_GEO_PREFIXES,
     _check_no_mantle_guardrail_headers,
+    forced_tool_choice_unsupported,
 )
 
 _MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
@@ -549,7 +558,47 @@ class ChatAnthropicMantle(ChatAnthropic):
         if kwargs.get("guardrail_config") is not None:
             raise ValueError(_MANTLE_GUARDRAILS_ERR_MSG)
         _check_no_mantle_guardrail_headers(kwargs.get("extra_headers"))
-        return super()._get_request_payload(input_, stop=stop, **kwargs)
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+
+        if self.profile and self.profile.get("temperature") is False:
+            extra_body = payload.get("extra_body") or {}
+            ignored = []
+            for key in ("temperature", "top_p", "top_k"):
+                top_level = payload.pop(key, None)
+                in_extra_body = extra_body.pop(key, None)
+                if top_level is not None or in_extra_body is not None:
+                    ignored.append(key)
+            if "extra_body" in payload and not extra_body:
+                del payload["extra_body"]
+            if ignored:
+                warnings.warn(
+                    f"Model {self.model} does not support {' or '.join(ignored)}; "
+                    f"ignoring the provided value{'s' if len(ignored) > 1 else ''}.",
+                    stacklevel=2,
+                )
+        return payload
+
+    def bind_tools(
+        self,
+        tools: Sequence[Mapping[str, Any] | type | Callable | BaseTool],
+        *,
+        tool_choice: dict[str, str] | str | None = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, AIMessage]:
+        choice_type = (
+            tool_choice.get("type") if isinstance(tool_choice, dict) else tool_choice
+        )
+        if choice_type not in (None, "auto", "none") and forced_tool_choice_unsupported(
+            self.model
+        ):
+            if "ls_structured_output_format" not in kwargs:
+                warnings.warn(
+                    f"Model {self.model} does not support forced tool_choice; "
+                    "using tool_choice 'auto' instead.",
+                    stacklevel=2,
+                )
+            tool_choice = "auto"
+        return super().bind_tools(tools, tool_choice=tool_choice, **kwargs)
 
     @model_validator(mode="after")
     def _validate_auth_mode(self) -> Self:

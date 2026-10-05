@@ -1107,3 +1107,156 @@ class TestAsyncFlushCheckpointRace:
         result = deferred.get_tuple(_make_config(thread_id="t1"))
         assert result is not None
         assert result.checkpoint["id"] == "ckpt-new"
+
+
+class _BatchMemorySaver(MemorySaver):
+    """MemorySaver with the batch protocol, recording what reaches it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.flushed_versions: list[dict[str, Any]] = []
+
+    def put_with_writes(
+        self, config, checkpoint, metadata, new_versions, pending_writes
+    ):
+        self.flushed_versions.append(dict(new_versions))
+        result = self.put(config, checkpoint, metadata, new_versions)
+        for w in pending_writes:
+            self.put_writes(result, w.writes, w.task_id, w.task_path)
+        return result
+
+    async def aput_with_writes(
+        self, config, checkpoint, metadata, new_versions, pending_writes
+    ):
+        return self.put_with_writes(
+            config, checkpoint, metadata, new_versions, pending_writes
+        )
+
+
+def _two_step_graph():
+    from typing import TypedDict
+
+    from langgraph.graph import END, START, StateGraph
+
+    class State(TypedDict):
+        a: str
+        b: str
+
+    graph = StateGraph(State)
+    graph.add_node("step1", lambda state: {"a": "from step1"})
+    graph.add_node("step2", lambda state: {"b": "from step2"})
+    graph.add_edge(START, "step1")
+    graph.add_edge("step1", "step2")
+    graph.add_edge("step2", END)
+    return graph
+
+
+class TestNewVersionsMerge:
+    """Channels written before the last step survive the flush."""
+
+    @pytest.mark.parametrize("batch_writes", [False, True])
+    def test_channels_from_earlier_steps_survive_flush(
+        self, batch_writes: bool
+    ) -> None:
+        saver = _BatchMemorySaver()
+        deferred = DeferredCheckpointSaver(saver, batch_writes=batch_writes)
+        graph = _two_step_graph()
+        config = _make_config(thread_id="t1")
+
+        graph.compile(checkpointer=deferred).invoke({}, config)
+        deferred.flush()
+
+        state = graph.compile(checkpointer=saver).get_state(config)
+        assert state.values == {"a": "from step1", "b": "from step2"}
+        assert bool(saver.flushed_versions) is batch_writes
+
+    async def test_channels_from_earlier_steps_survive_aflush(self) -> None:
+        saver = _BatchMemorySaver()
+        deferred = DeferredCheckpointSaver(saver, batch_writes=True)
+        graph = _two_step_graph()
+        config = _make_config(thread_id="t1")
+
+        await graph.compile(checkpointer=deferred).ainvoke({}, config)
+        await deferred.aflush()
+
+        state = graph.compile(checkpointer=saver).get_state(config)
+        assert state.values == {"a": "from step1", "b": "from step2"}
+
+    def test_newer_version_wins(self) -> None:
+        saver = _BatchMemorySaver()
+        deferred = DeferredCheckpointSaver(saver, batch_writes=True)
+        config = _make_config(thread_id="t1")
+
+        deferred.put(config, _make_checkpoint("ckpt-1"), _make_metadata(0), {"a": 1})
+        deferred.put(
+            config, _make_checkpoint("ckpt-2"), _make_metadata(1), {"a": 2, "b": 2}
+        )
+        deferred.flush()
+
+        assert saver.flushed_versions == [{"a": 2, "b": 2}]
+
+    def test_versions_not_merged_across_threads(self) -> None:
+        saver = _BatchMemorySaver()
+        deferred = DeferredCheckpointSaver(saver, batch_writes=True)
+
+        deferred.put(
+            _make_config(thread_id="t1"),
+            _make_checkpoint("ckpt-1"),
+            _make_metadata(0),
+            {"a": 1},
+        )
+        deferred.put(
+            _make_config(thread_id="t2"),
+            _make_checkpoint("ckpt-2"),
+            _make_metadata(0),
+            {"b": 1},
+        )
+        deferred.flush()
+
+        assert saver.flushed_versions == [{"b": 1}]
+
+    def test_failed_flush_merges_into_racing_checkpoint(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        """A put() racing a failed flush keeps the failed checkpoint's versions."""
+        deferred = DeferredCheckpointSaver(memory_saver)
+        config = _make_config(thread_id="t1")
+        deferred.put(config, _make_checkpoint("ckpt-old"), _make_metadata(), {"a": 1})
+
+        def failing_put_that_races(*args, **kwargs):
+            deferred.put(
+                config, _make_checkpoint("ckpt-new"), _make_metadata(1), {"b": 1}
+            )
+            msg = "network error"
+            raise RuntimeError(msg)
+
+        with patch.object(memory_saver, "put", side_effect=failing_put_that_races):
+            with pytest.raises(RuntimeError, match="network error"):
+                deferred.flush()
+
+        with patch.object(memory_saver, "put") as put:
+            deferred.flush()
+        assert put.call_args.args[1]["id"] == "ckpt-new"
+        assert put.call_args.args[3] == {"a": 1, "b": 1}
+
+    def test_failed_batched_flush_merges_into_racing_checkpoint(self) -> None:
+        saver = _BatchMemorySaver()
+        deferred = DeferredCheckpointSaver(saver, batch_writes=True)
+        config = _make_config(thread_id="t1")
+        deferred.put(config, _make_checkpoint("ckpt-old"), _make_metadata(), {"a": 1})
+
+        def failing_flush_that_races(*args, **kwargs):
+            deferred.put(
+                config, _make_checkpoint("ckpt-new"), _make_metadata(1), {"b": 1}
+            )
+            msg = "network error"
+            raise RuntimeError(msg)
+
+        with patch.object(
+            saver, "put_with_writes", side_effect=failing_flush_that_races
+        ):
+            with pytest.raises(RuntimeError, match="network error"):
+                deferred.flush()
+
+        deferred.flush()
+        assert saver.flushed_versions == [{"a": 1, "b": 1}]

@@ -82,6 +82,8 @@ class CheckpointEvent(BaseModel):
     parent_checkpoint_id: str | None = None
     thread_id: str
     checkpoint_ns: str = ""
+    snapshot_version: int | None = None
+    chunk_event_ids: list[str] = Field(default_factory=list)
 
 
 class ChannelDataEvent(BaseModel):
