@@ -3672,15 +3672,15 @@ def _format_openai_image_url(image_url: str) -> Dict:
     And throws an error if url is not a b64 image.
 
     """
-    regex = r"^data:image/(?P<media_type>.+);base64,(?P<data>.+)$"
-    match = re.match(regex, image_url)
+    regex = r"^data:(?P<mime_type>image/.+);base64,(?P<data>.+)$"
+    match = re.match(regex, image_url, re.IGNORECASE)
     if match is None:
         raise ValueError(
             "The image URL provided is not supported. Expected image URL format is "
             "base64-encoded images. Example: data:image/png;base64,'/9j/4AAQSk'..."
         )
     return {
-        "format": match.group("media_type"),
+        "format": _mime_type_to_format(match.group("mime_type")),
         "source": {"bytes": _b64str_to_bytes(match.group("data"))},
     }
 
@@ -3692,15 +3692,15 @@ def _format_openai_video_url(video_url: str) -> Dict:
     And throws an error if url is not a b64 video.
 
     """
-    regex = r"^data:video/(?P<media_type>.+);base64,(?P<data>.+)$"
-    match = re.match(regex, video_url)
+    regex = r"^data:(?P<mime_type>video/.+);base64,(?P<data>.+)$"
+    match = re.match(regex, video_url, re.IGNORECASE)
     if match is None:
         raise ValueError(
             "The video URL provided is not supported. Expected video URL format is "
             "base64-encoded video. Example: data:video/mp4;base64,'/9j/4AAQSk'..."
         )
     return {
-        "format": match.group("media_type"),
+        "format": _mime_type_to_format(match.group("mime_type")),
         "source": {"bytes": _b64str_to_bytes(match.group("data"))},
     }
 

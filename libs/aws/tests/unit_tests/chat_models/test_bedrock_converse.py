@@ -51,6 +51,8 @@ from langchain_aws.chat_models.bedrock_converse import (
     _extract_response_metadata,
     _extract_usage_metadata,
     _format_data_content_block,
+    _format_openai_image_url,
+    _format_openai_video_url,
     _format_tools,
     _has_tool_use_or_result_blocks,
     _inline_reasoning_tags,
@@ -8183,3 +8185,8 @@ def test__mime_type_to_format_normalizes_parameters_and_case() -> None:
     # Genuinely unsupported types still raise.
     with pytest.raises(ValueError, match="Unsupported MIME type"):
         _mime_type_to_format("application/zip")
+
+    # OpenAI-style data URLs take the same path.
+    image = _format_openai_image_url("data:image/PNG;base64,aGk=")
+    video = _format_openai_video_url("data:video/quicktime;base64,aGk=")
+    assert (image["format"], video["format"]) == ("png", "mov")
