@@ -12,7 +12,7 @@ authors = []
 version = "1.8.0"
 requires-python = ">=3.10"
 dependencies = [
-    "langchain-core>=1.6.3",
+    "langchain-core>=1.6.7",
     "boto3>=1.43.64",
     "pydantic>=2.10.6,<3",
     "numpy>=1.0.0,<3",

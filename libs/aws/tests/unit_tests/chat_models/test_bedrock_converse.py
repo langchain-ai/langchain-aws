@@ -811,6 +811,218 @@ def test__messages_to_bedrock_ignores_foreign_reasoning_block() -> None:
     ]
 
 
+def test__messages_to_bedrock_v1_preserves_redacted_reasoning() -> None:
+    """Encrypted reasoning survives v1 replay so the model can reuse it."""
+    messages = [
+        HumanMessage(content="What is 2 + 2?"),
+        AIMessage(
+            content=[
+                {"type": "reasoning", "extras": {"redacted_content": b"rsn_opaque"}},
+                {"type": "text", "text": "4"},
+            ],
+            response_metadata={
+                "output_version": "v1",
+                "model_provider": "bedrock_converse",
+            },
+        ),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages, model_id="openai.gpt-6-luna")
+
+    assert actual_messages == [
+        {"role": "user", "content": [{"text": "What is 2 + 2?"}]},
+        {
+            "role": "assistant",
+            "content": [
+                {"reasoningContent": {"redactedContent": b"rsn_opaque"}},
+                {"text": "4"},
+            ],
+        },
+    ]
+
+
+_CLAUDE = "us.anthropic.claude-sonnet-5-5"
+_LUNA = "us.openai.gpt-6-luna"
+_CLAUDE_REASONING = {
+    "type": "reasoning_content",
+    "reasoning_content": {"text": "", "signature": "claude_signature"},
+}
+_CLAUDE_REASONING_V1 = {
+    "type": "reasoning",
+    "extras": {"signature": "claude_signature"},
+}
+_LUNA_REASONING = {
+    "type": "reasoning_content",
+    "reasoning_content": {"redacted_content": b"rsn_opaque"},
+}
+_LUNA_REASONING_V1 = {
+    "type": "reasoning",
+    "extras": {"redacted_content": b"rsn_opaque"},
+}
+_CLAUDE_REASONING_BEDROCK = {
+    "reasoningContent": {"reasoningText": {"text": "", "signature": "claude_signature"}}
+}
+_LUNA_REASONING_BEDROCK = {"reasoningContent": {"redactedContent": b"rsn_opaque"}}
+
+
+def _assistant_turn(
+    reasoning: dict, text: str, *, model_name: Optional[str], v1: bool = False
+) -> AIMessage:
+    response_metadata: dict = {"model_provider": "bedrock_converse"}
+    if model_name is not None:
+        response_metadata["model_name"] = model_name
+    if v1:
+        response_metadata["output_version"] = "v1"
+    return AIMessage(
+        content=[reasoning, {"type": "text", "text": text}],
+        response_metadata=response_metadata,
+    )
+
+
+def _replayed_assistant_content(
+    message: AIMessage, *, model_id: str, provider: Optional[str] = None
+) -> list:
+    actual_messages, _ = _messages_to_bedrock(
+        [HumanMessage(content="What is 2 + 2?"), message],
+        model_id=model_id,
+        provider=provider,
+    )
+    return actual_messages[1]["content"]
+
+
+@pytest.mark.parametrize(
+    ("reasoning", "source", "target", "v1"),
+    [
+        (_CLAUDE_REASONING, _CLAUDE, "openai.gpt-6-luna", False),
+        (_CLAUDE_REASONING_V1, _CLAUDE, "openai.gpt-6-luna", True),
+        (_LUNA_REASONING, _LUNA, "anthropic.claude-sonnet-5-5", False),
+        (_LUNA_REASONING_V1, _LUNA, "anthropic.claude-sonnet-5-5", True),
+    ],
+)
+def test__messages_to_bedrock_drops_reasoning_from_other_provider(
+    reasoning: dict, source: str, target: str, v1: bool
+) -> None:
+    message = _assistant_turn(reasoning, "4", model_name=source, v1=v1)
+    original_content = list(message.content)
+
+    assert _replayed_assistant_content(message, model_id=target) == [{"text": "4"}]
+    assert message.content == original_content
+
+
+@pytest.mark.parametrize(
+    ("reasoning", "source", "target", "v1", "expected"),
+    [
+        (
+            _CLAUDE_REASONING,
+            _CLAUDE,
+            "anthropic.claude-sonnet-5",
+            False,
+            _CLAUDE_REASONING_BEDROCK,
+        ),
+        (
+            _CLAUDE_REASONING_V1,
+            _CLAUDE,
+            "anthropic.claude-sonnet-5",
+            True,
+            _CLAUDE_REASONING_BEDROCK,
+        ),
+        (
+            _LUNA_REASONING,
+            _LUNA,
+            "openai.gpt-5.6-luna",
+            False,
+            _LUNA_REASONING_BEDROCK,
+        ),
+        (
+            _LUNA_REASONING_V1,
+            _LUNA,
+            "openai.gpt-5.6-luna",
+            True,
+            _LUNA_REASONING_BEDROCK,
+        ),
+    ],
+)
+def test__messages_to_bedrock_keeps_reasoning_from_same_provider(
+    reasoning: dict, source: str, target: str, v1: bool, expected: dict
+) -> None:
+    message = _assistant_turn(reasoning, "4", model_name=source, v1=v1)
+
+    assert _replayed_assistant_content(message, model_id=target) == [
+        expected,
+        {"text": "4"},
+    ]
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [None, "arn:aws:bedrock:us-east-1:123456789012:custom-model/abc"],
+)
+def test__messages_to_bedrock_keeps_reasoning_from_unknown_provider(
+    model_name: Optional[str],
+) -> None:
+    message = _assistant_turn(_CLAUDE_REASONING, "4", model_name=model_name)
+
+    assert _replayed_assistant_content(message, model_id="openai.gpt-6-luna") == [
+        _CLAUDE_REASONING_BEDROCK,
+        {"text": "4"},
+    ]
+
+
+def test__messages_to_bedrock_keeps_reasoning_for_unknown_target() -> None:
+    message = _assistant_turn(_CLAUDE_REASONING, "4", model_name=_CLAUDE)
+    arn = "arn:aws:bedrock:us-east-1:123456789012:custom-model/abc"
+
+    assert _replayed_assistant_content(message, model_id=arn) == [
+        _CLAUDE_REASONING_BEDROCK,
+        {"text": "4"},
+    ]
+
+
+def test__messages_to_bedrock_explicit_provider_identifies_target() -> None:
+    message = _assistant_turn(_CLAUDE_REASONING, "4", model_name=_CLAUDE)
+    arn = "arn:aws:bedrock:us-east-1:123456789012:custom-model/abc"
+
+    assert _replayed_assistant_content(message, model_id=arn, provider="openai") == [
+        {"text": "4"}
+    ]
+
+
+def test__messages_to_bedrock_drops_foreign_reasoning_before_merging_turns() -> None:
+    """Consecutive turns from different models are judged separately."""
+    messages = [
+        HumanMessage(content="What is 2 + 2?"),
+        _assistant_turn(_CLAUDE_REASONING, "4", model_name=_CLAUDE),
+        _assistant_turn(_LUNA_REASONING, "Still 4.", model_name=_LUNA),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages, model_id="openai.gpt-6-luna")
+
+    assert actual_messages[1] == {
+        "role": "assistant",
+        "content": [{"text": "4"}, _LUNA_REASONING_BEDROCK, {"text": "Still 4."}],
+    }
+
+
+def test__messages_to_bedrock_keeps_tool_calls_when_dropping_reasoning() -> None:
+    message = AIMessage(
+        content=[_CLAUDE_REASONING],
+        tool_calls=[
+            {"id": "call_abc", "name": "get_weather", "args": {"city": "Paris"}}
+        ],
+        response_metadata={"model_provider": "bedrock_converse", "model_name": _CLAUDE},
+    )
+
+    assert _replayed_assistant_content(message, model_id="openai.gpt-6-luna") == [
+        {
+            "toolUse": {
+                "toolUseId": "call_abc",
+                "input": {"city": "Paris"},
+                "name": "get_weather",
+            }
+        }
+    ]
+
+
 def test__messages_to_bedrock_preserves_ai_cache_point() -> None:
     """Preserve cache points when replaying normalized assistant history."""
     messages = [
