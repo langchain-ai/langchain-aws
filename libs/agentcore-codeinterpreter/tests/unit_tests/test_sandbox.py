@@ -7,7 +7,9 @@ AWS credential requirements.
 from __future__ import annotations
 
 import asyncio
+import subprocess
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -24,6 +26,7 @@ from deepagents.backends.protocol import (
 from deepagents.backends.sandbox import BaseSandbox
 
 from langchain_agentcore_codeinterpreter import AgentCoreSandbox
+from langchain_agentcore_codeinterpreter import sandbox as sandbox_module
 from langchain_agentcore_codeinterpreter.sandbox import (
     _AGENTCORE_EXECUTOR,
     SessionExpiredError,
@@ -204,6 +207,131 @@ def test_upload_files_handles_session_expiry() -> None:
     sandbox, _ = _make_expired_sandbox()
     result = sandbox.upload_files([("/a.txt", b"data")])
     assert result[0].error == "permission_denied"
+
+
+@pytest.fixture
+def small_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Shrink the writeFiles budget so tests can exercise batching cheaply."""
+    monkeypatch.setattr(sandbox_module, "_WRITE_FILES_BUDGET_BYTES", 40)
+    monkeypatch.setattr(sandbox_module, "_PART_BYTES", 24)
+
+
+def _calls(mock: MagicMock, method: str) -> list[Any]:
+    return [c for c in mock.invoke.call_args_list if c.kwargs["method"] == method]
+
+
+@pytest.mark.usefixtures("small_budget")
+def test_upload_files_batches_requests_within_budget() -> None:
+    """Files exceeding one request's budget together go in separate requests."""
+    sandbox, mock = _make_sandbox()
+    files = [(f"/f{i}.txt", b"x" * 15) for i in range(3)]
+
+    result = sandbox.upload_files(files)
+
+    batches = [c.kwargs["params"]["content"] for c in _calls(mock, "writeFiles")]
+    assert [[e["path"] for e in b] for b in batches] == [
+        ["f0.txt"],
+        ["f1.txt"],
+        ["f2.txt"],
+    ]
+    assert [r.error for r in result] == [None, None, None]
+
+
+@pytest.mark.usefixtures("small_budget")
+def test_upload_files_failed_batch_only_fails_its_files() -> None:
+    """A failing request should not mark files from other requests as failed."""
+    sandbox, mock = _make_sandbox()
+    mock.invoke.side_effect = [{"stream": []}, RuntimeError("boom")]
+
+    result = sandbox.upload_files([("/a.txt", b"x" * 15), ("/b.txt", b"y" * 15)])
+
+    assert [r.error for r in result] == [None, "permission_denied"]
+
+
+@pytest.mark.usefixtures("small_budget")
+def test_upload_files_splits_oversized_file_and_assembles() -> None:
+    """An oversized file is uploaded as blob parts, then joined in the sandbox."""
+    sandbox, mock = _make_sandbox(cwd="/work")
+    content = bytes(range(60))
+
+    result = sandbox.upload_files([("/work/big.bin", content)])
+
+    parts = [c.kwargs["params"]["content"] for c in _calls(mock, "writeFiles")]
+    assert all(len(p) == 1 and "blob" in p[0] for p in parts)
+    assert b"".join(p[0]["blob"] for p in parts) == content
+    assert all(p[0]["path"].startswith("big.bin.part-") for p in parts)
+    (command,) = [c.kwargs["params"]["command"] for c in _calls(mock, "executeCommand")]
+    assert command.endswith(" /work/big.bin")
+    assert result[0].error is None
+
+
+@pytest.mark.usefixtures("small_budget")
+def test_upload_files_assembly_failure_cleans_up() -> None:
+    """A failed join returns an error and removes the parts and scratch file."""
+    sandbox, mock = _make_sandbox(cwd="/work")
+
+    def invoke(method: str, params: dict[str, Any]) -> dict[str, Any]:
+        if method == "executeCommand" and not params["command"].startswith("rm"):
+            return {"stream": [{"result": {"exitCode": 1, "content": []}}]}
+        return {"stream": []}
+
+    mock.invoke.side_effect = invoke
+
+    result = sandbox.upload_files([("/work/big.bin", b"z" * 60)])
+
+    assert result[0].error is not None
+    assert "Failed to assemble" in result[0].error
+    commands = [c.kwargs["params"]["command"] for c in _calls(mock, "executeCommand")]
+    assert commands[-1].startswith("rm -f ")
+    assert commands[-1].count(".part-") == 3
+    assert ".assembling-" in commands[-1]
+
+
+@pytest.mark.usefixtures("small_budget")
+def test_upload_files_part_failure_removes_written_parts() -> None:
+    """If a part fails to upload, earlier parts are removed and no join runs."""
+    sandbox, mock = _make_sandbox(cwd="/work")
+    mock.invoke.side_effect = [{"stream": []}, RuntimeError("boom"), {"stream": []}]
+
+    result = sandbox.upload_files([("/work/big.bin", b"z" * 60)])
+
+    assert result[0].error == "permission_denied"
+    (command,) = [c.kwargs["params"]["command"] for c in _calls(mock, "executeCommand")]
+    assert command.startswith("rm -f ")
+    assert command.count(".part-") == 1
+
+
+def test_assemble_command_joins_parts(tmp_path: Path) -> None:
+    """The join command should rebuild the file even with shell-hostile names."""
+    chunks = [b"first;", b" $(echo no)", b"'last'"]
+    parts = []
+    for n, chunk in enumerate(chunks):
+        part = tmp_path / f"it's a part {n}"
+        part.write_bytes(chunk)
+        parts.append(str(part))
+    target = tmp_path / "out file"
+    command = sandbox_module._assemble_command(
+        parts, str(tmp_path / "scratch"), str(target), sum(map(len, chunks))
+    )
+
+    subprocess.run(["sh", "-c", command], check=True)
+
+    assert target.read_bytes() == b"".join(chunks)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["out file"]
+
+
+def test_assemble_command_rejects_size_mismatch(tmp_path: Path) -> None:
+    """A size mismatch should fail without replacing the target."""
+    part = tmp_path / "part"
+    part.write_bytes(b"abc")
+    target = tmp_path / "target"
+    target.write_bytes(b"original")
+    command = sandbox_module._assemble_command(
+        [str(part)], str(tmp_path / "scratch"), str(target), 4
+    )
+
+    assert subprocess.run(["sh", "-c", command]).returncode != 0
+    assert target.read_bytes() == b"original"
 
 
 # ------------------------------------------------------------------

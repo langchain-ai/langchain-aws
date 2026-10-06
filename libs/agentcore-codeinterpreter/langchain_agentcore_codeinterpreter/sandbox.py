@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import logging
+import shlex
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
@@ -33,6 +36,91 @@ logger = logging.getLogger(__name__)
 _AGENTCORE_EXECUTOR = ThreadPoolExecutor(
     max_workers=4, thread_name_prefix="agentcore-sandbox"
 )
+
+# AgentCore caps each request payload at 100 MB. Requests are JSON, so blobs
+# travel base64-encoded and text JSON-escaped; the slack covers the envelope.
+_WRITE_FILES_BUDGET_BYTES = 90_000_000
+
+# Raw bytes per part when one file must be split; base64 keeps it in budget.
+_PART_BYTES = _WRITE_FILES_BUDGET_BYTES // 4 * 3
+
+
+def _write_entry(rel_path: str, content: bytes) -> dict[str, str | bytes]:
+    """Build a ``writeFiles`` entry, sending UTF-8 content as text.
+
+    Args:
+        rel_path: Cwd-relative destination path.
+        content: File contents.
+
+    Returns:
+        Entry with ``text`` for UTF-8 content, otherwise ``blob``.
+    """
+    try:
+        return {"path": rel_path, "text": content.decode("utf-8")}
+    except UnicodeDecodeError:
+        return {"path": rel_path, "blob": content}
+
+
+def _encoded_size(entry: dict[str, str | bytes]) -> int:
+    """Estimate the bytes an entry occupies in the serialized request.
+
+    Args:
+        entry: A ``writeFiles`` entry from ``_write_entry``.
+
+    Returns:
+        JSON-escaped text size, or base64 size for blobs, plus the path.
+    """
+    size = len(json.dumps(entry["path"]))
+    if "text" in entry:
+        return size + len(json.dumps(entry["text"]))
+    return size + 4 * ((len(entry["blob"]) + 2) // 3)
+
+
+def _group_by_budget(sizes: list[tuple[int, int]]) -> list[list[int]]:
+    """Greedily pack ``(index, size)`` pairs into request-sized groups.
+
+    Args:
+        sizes: Entry indices paired with their encoded sizes, each within
+            ``_WRITE_FILES_BUDGET_BYTES``.
+
+    Returns:
+        Lists of indices whose combined size fits one request.
+    """
+    groups: list[list[int]] = []
+    total = _WRITE_FILES_BUDGET_BYTES
+    for index, size in sizes:
+        if total + size > _WRITE_FILES_BUDGET_BYTES:
+            groups.append([])
+            total = 0
+        groups[-1].append(index)
+        total += size
+    return groups
+
+
+def _assemble_command(parts: list[str], scratch: str, target: str, size: int) -> str:
+    """Build a shell command that concatenates parts into ``target``.
+
+    Each part is deleted once appended to keep peak disk use near one copy,
+    and the result is size-checked before it atomically replaces ``target``.
+
+    Args:
+        parts: Absolute part paths in order.
+        scratch: Absolute path to assemble into before the final move.
+        target: Absolute destination path.
+        size: Expected byte size of the assembled file.
+
+    Returns:
+        A command safe to pass to ``execute``.
+    """
+    tmp = shlex.quote(scratch)
+    appends = " && ".join(
+        f"cat {shlex.quote(part)} >> {tmp} && rm -f {shlex.quote(part)}"
+        for part in parts
+    )
+    return (
+        f": > {tmp} && {appends} && "
+        f'test "$(wc -c < {tmp})" -eq {size} && mv -f {tmp} {shlex.quote(target)}'
+    )
 
 
 def _normalize_relative_path(path: str) -> str:
@@ -443,6 +531,10 @@ class AgentCoreSandbox(BaseSandbox):
         """Upload files to the AgentCore sandbox.
 
         Text files are sent directly; binary files are sent as raw blobs.
+        Files are batched into ``writeFiles`` requests that fit AgentCore's
+        100 MB payload cap, so a failed request only fails its own files. A
+        file too large for one request is uploaded in parts and assembled
+        in the sandbox.
 
         Args:
             files: List of ``(path, content)`` tuples to upload.
@@ -451,35 +543,104 @@ class AgentCoreSandbox(BaseSandbox):
             List of :class:`FileUploadResponse` objects in the same order
             as the input files.
         """
-        file_list: list[dict[str, str | bytes]] = []
+        entries = [_write_entry(self._to_relative_path(p), c) for p, c in files]
+        sizes = [_encoded_size(entry) for entry in entries]
+        errors: list[str | None] = [None] * len(files)
 
-        for path, content in files:
-            rel_path = self._to_relative_path(path)
-            try:
-                text_content = content.decode("utf-8")
-                file_list.append({"path": rel_path, "text": text_content})
-            except UnicodeDecodeError:
-                file_list.append({"path": rel_path, "blob": content})
-
-        try:
-            if file_list:
-                self._invoke(method="writeFiles", params={"content": file_list})
-            return [FileUploadResponse(path=path, error=None) for path, _ in files]
-        except SessionExpiredError:
-            logger.error(
-                "AgentCore session expired while uploading files: %s",
-                [p for p, _ in files],
+        fitting = [
+            (i, s) for i, s in enumerate(sizes) if s <= _WRITE_FILES_BUDGET_BYTES
+        ]
+        for group in _group_by_budget(fitting):
+            error = self._write_entries(
+                [entries[i] for i in group], [files[i][0] for i in group]
             )
-            return [
-                FileUploadResponse(path=path, error="permission_denied")
-                for path, _ in files
-            ]
+            for i in group:
+                errors[i] = error
+
+        for i, size in enumerate(sizes):
+            if size > _WRITE_FILES_BUDGET_BYTES:
+                path, content = files[i]
+                errors[i] = self._upload_in_parts(
+                    path, str(entries[i]["path"]), content
+                )
+
+        return [
+            FileUploadResponse(path=path, error=error)
+            for (path, _), error in zip(files, errors)
+        ]
+
+    def _write_entries(
+        self, entries: list[dict[str, str | bytes]], paths: list[str]
+    ) -> str | None:
+        """Send one ``writeFiles`` request.
+
+        Args:
+            entries: Entries to write, together within the request budget.
+            paths: Caller-provided paths, for logging.
+
+        Returns:
+            ``None`` on success, otherwise the error for every entry.
+        """
+        try:
+            self._invoke(method="writeFiles", params={"content": entries})
+        except SessionExpiredError:
+            logger.error("AgentCore session expired while uploading files: %s", paths)
+            return "permission_denied"
         except Exception:
-            logger.exception("Error uploading files: %s", [p for p, _ in files])
-            return [
-                FileUploadResponse(path=path, error="permission_denied")
-                for path, _ in files
-            ]
+            logger.exception("Error uploading files: %s", paths)
+            return "permission_denied"
+        return None
+
+    def _upload_in_parts(self, path: str, rel_path: str, content: bytes) -> str | None:
+        """Upload an oversized file as blob parts and concatenate them in place.
+
+        Args:
+            path: Caller-provided path, for logging and errors.
+            rel_path: Cwd-relative destination path.
+            content: File contents.
+
+        Returns:
+            ``None`` on success, otherwise an error string. Parts already
+            written are removed on failure.
+        """
+        try:
+            cwd = self._get_cwd()
+        except RuntimeError:
+            logger.exception("Error uploading file in parts: %s", path)
+            return "permission_denied"
+
+        tag = uuid.uuid4().hex
+        offsets = range(0, len(content), _PART_BYTES)
+        parts = [f"{rel_path}.part-{tag}-{n:05d}" for n in range(len(offsets))]
+        scratch = f"{cwd}/{rel_path}.assembling-{tag}"
+        written: list[str] = []
+
+        for part, start in zip(parts, offsets):
+            blob = content[start : start + _PART_BYTES]
+            error = self._write_entries([{"path": part, "blob": blob}], [path])
+            if error is not None:
+                self._remove([f"{cwd}/{p}" for p in written])
+                return error
+            written.append(part)
+
+        absolute = [f"{cwd}/{p}" for p in parts]
+        command = _assemble_command(
+            absolute, scratch, f"{cwd}/{rel_path}", len(content)
+        )
+        result = self.execute(command)
+        if result.exit_code != 0:
+            self._remove([*absolute, scratch])
+            return f"Failed to assemble '{path}' from parts: {result.output}"
+        return None
+
+    def _remove(self, paths: list[str]) -> None:
+        """Best-effort removal of leftover upload files.
+
+        Args:
+            paths: Absolute paths to delete.
+        """
+        if paths:
+            self.execute("rm -f " + " ".join(shlex.quote(p) for p in paths))
 
     def ls(self, path: str) -> LsResult:
         """List a directory, resolving ``path`` against the sandbox cwd."""
