@@ -171,6 +171,7 @@ MIME_TO_FORMAT = {
     "video/webm": "webm",
     "video/x-flv": "flv",
     "video/mpeg": "mpeg",
+    "video/mpg": "mpg",
     "video/x-ms-wmv": "wmv",
     "video/3gpp": "three_gp",
 }

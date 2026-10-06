@@ -8190,3 +8190,8 @@ def test__mime_type_to_format_normalizes_parameters_and_case() -> None:
     image = _format_openai_image_url("data:image/PNG;base64,aGk=")
     video = _format_openai_video_url("data:video/quicktime;base64,aGk=")
     assert (image["format"], video["format"]) == ("png", "mov")
+
+    # `mpg` is a Bedrock format with no MIME entry, so routing these helpers
+    # through `_mime_type_to_format` would have started rejecting it.
+    assert _format_openai_video_url("data:video/mpg;base64,aGk=")["format"] == "mpg"
+    assert _mime_type_to_format("video/mpg") == "mpg"
