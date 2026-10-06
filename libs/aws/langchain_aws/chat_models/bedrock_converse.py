@@ -2428,6 +2428,79 @@ def _handle_bedrock_error(error: ClientError) -> None:
     raise error
 
 
+_REASONING_BLOCK_TYPES = frozenset(
+    {"reasoning", "reasoning_content", "thinking", "redacted_thinking"}
+)
+
+
+def _known_model_provider(model_id: Optional[str]) -> Optional[str]:
+    """Return the provider encoded in a Bedrock model ID, or `None` if unknowable.
+
+    ARNs for custom, provisioned, and application inference profile models do
+    not encode the provider.
+    """
+    if not model_id or model_id.startswith("arn:"):
+        return None
+    return parse_model_provider(model_id).lower()
+
+
+def _drop_foreign_reasoning(
+    message: AIMessage,
+    *,
+    model_id: Optional[str],
+    provider: Optional[str],
+) -> AIMessage:
+    """Drop reasoning blocks that a different model provider produced.
+
+    Reasoning carries provider-specific state (signatures, encrypted payloads)
+    that other providers reject outright, so replaying it after switching
+    models mid-thread fails the request. When either side's provider is
+    unknown, the message is returned unchanged.
+
+    Args:
+        message: Assistant message in Converse content format.
+        model_id: Model ID of the model the request is being sent to.
+        provider: Provider of the model the request is being sent to, which
+            takes precedence over the one parsed from `model_id`.
+
+    Returns:
+        The message, or a copy of it without reasoning blocks.
+    """
+    if isinstance(message.content, str):
+        return message
+    if message.response_metadata.get("model_provider") not in (
+        None,
+        "bedrock_converse",
+        "bedrock",
+    ):
+        return message
+    model_name = message.response_metadata.get("model_name")
+    source_provider = (
+        _known_model_provider(model_name) if isinstance(model_name, str) else None
+    )
+    target_provider = (provider or "").lower() or _known_model_provider(model_id)
+    if (
+        source_provider is None
+        or target_provider is None
+        or source_provider == target_provider
+    ):
+        return message
+
+    content = [
+        block
+        for block in message.content
+        if not (isinstance(block, dict) and block.get("type") in _REASONING_BLOCK_TYPES)
+    ]
+    if len(content) == len(message.content):
+        return message
+    logger.debug(
+        "Dropping reasoning blocks produced by provider %s; %s rejects them",
+        source_provider,
+        target_provider,
+    )
+    return message.model_copy(update={"content": content})
+
+
 def _messages_to_bedrock(
     messages: List[BaseMessage],
     system: Optional[List[Union[str, Dict[str, Any]]]] = None,
@@ -2464,6 +2537,9 @@ def _messages_to_bedrock(
                 messages[idx] = message.model_copy(
                     update={"content": cast(list, normalized)}
                 )
+        messages[idx] = _drop_foreign_reasoning(
+            cast(AIMessage, messages[idx]), model_id=model_id, provider=provider
+        )
 
     bedrock_messages: List[Dict[str, Any]] = []
     bedrock_system: List[Dict[str, Any]] = []
