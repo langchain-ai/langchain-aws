@@ -811,6 +811,36 @@ def test__messages_to_bedrock_ignores_foreign_reasoning_block() -> None:
     ]
 
 
+def test__messages_to_bedrock_v1_preserves_redacted_reasoning() -> None:
+    """Encrypted reasoning survives v1 replay so the model can reuse it."""
+    messages = [
+        HumanMessage(content="What is 2 + 2?"),
+        AIMessage(
+            content=[
+                {"type": "reasoning", "extras": {"redacted_content": b"rsn_opaque"}},
+                {"type": "text", "text": "4"},
+            ],
+            response_metadata={
+                "output_version": "v1",
+                "model_provider": "bedrock_converse",
+            },
+        ),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages, model_id="openai.gpt-6-luna")
+
+    assert actual_messages == [
+        {"role": "user", "content": [{"text": "What is 2 + 2?"}]},
+        {
+            "role": "assistant",
+            "content": [
+                {"reasoningContent": {"redactedContent": b"rsn_opaque"}},
+                {"text": "4"},
+            ],
+        },
+    ]
+
+
 def test__messages_to_bedrock_preserves_ai_cache_point() -> None:
     """Preserve cache points when replaying normalized assistant history."""
     messages = [
