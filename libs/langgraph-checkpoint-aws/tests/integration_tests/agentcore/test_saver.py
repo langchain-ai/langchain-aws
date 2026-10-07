@@ -78,7 +78,7 @@ class TestAgentCoreMemorySaver:
 
     @pytest.fixture
     def memory_id(self):
-        memory_id = "langchain_aws_rel_120_it-5vTLPR9S5X"  # os.environ.get("AGENTCORE_MEMORY_ID")
+        memory_id = os.environ.get("AGENTCORE_MEMORY_ID")
         if not memory_id:
             pytest.skip("AGENTCORE_MEMORY_ID environment variable not set")
         return memory_id
@@ -364,7 +364,7 @@ class MemoryCase:
 
 @pytest.fixture
 def memory_case() -> Iterator[MemoryCase]:
-    memory_id = "langchain_aws_rel_120_it-5vTLPR9S5X" # os.environ.get("AGENTCORE_MEMORY_ID")
+    memory_id = os.environ.get("AGENTCORE_MEMORY_ID")
     if not memory_id:
         pytest.skip("AGENTCORE_MEMORY_ID environment variable not set")
     case = MemoryCase(memory_id, os.environ.get("AWS_REGION", "us-west-2"))
