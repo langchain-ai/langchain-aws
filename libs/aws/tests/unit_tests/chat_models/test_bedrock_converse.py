@@ -1327,7 +1327,7 @@ def test__messages_to_bedrock_replays_streamed_tool_use_with_invalid_json() -> N
     that raw text in its ``tool_use`` block; replaying it must not raise.
     """
     raw = '{"patterns": stand.?alone|incremental}'
-    events = [
+    events: list[dict[str, Any]] = [
         {
             "contentBlockStart": {
                 "contentBlockIndex": 0,
@@ -1350,6 +1350,7 @@ def test__messages_to_bedrock_replays_streamed_tool_use_with_invalid_json() -> N
     message = chunks[0]
     for chunk in chunks[1:]:
         message += chunk
+    assert isinstance(message, AIMessageChunk)
     assert message.tool_calls == []
     assert [tc["id"] for tc in message.invalid_tool_calls] == ["toolu_1"]
 
