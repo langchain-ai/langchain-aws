@@ -333,13 +333,13 @@ class AgentCoreEventClient:
         chunks = self._chunk_payload(blobs, max_payload_items, max_payload_bytes)
         timestamp = datetime.datetime.now(datetime.timezone.utc)
 
-        for chunk in chunks:
+        for index, chunk in enumerate(chunks):
             payload = [{"blob": b} for b in chunk]
             self.client.create_event(
                 memoryId=self.memory_id,
                 actorId=actor_id,
                 sessionId=session_id,
-                eventTimestamp=timestamp,
+                eventTimestamp=timestamp + datetime.timedelta(milliseconds=index),
                 payload=payload,
             )
 
