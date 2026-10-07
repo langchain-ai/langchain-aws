@@ -20,7 +20,14 @@ from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph_checkpoint_aws.checkpoint.agentcore.constants import (
     CheckpointReadLimitError,
 )
+from langgraph_checkpoint_aws.checkpoint.agentcore.helpers import EventType
+from langgraph_checkpoint_aws.checkpoint.agentcore.models import (
+    CheckpointerConfig,
+    WriteItem,
+    WritesEvent,
+)
 from langgraph_checkpoint_aws.checkpoint.agentcore.saver import AgentCoreMemorySaver
+from langgraph_checkpoint_aws.checkpoint.deferred_saver import PendingWrite
 
 
 def generate_valid_session_id():
@@ -71,7 +78,7 @@ class TestAgentCoreMemorySaver:
 
     @pytest.fixture
     def memory_id(self):
-        memory_id = os.environ.get("AGENTCORE_MEMORY_ID")
+        memory_id = "langchain_aws_rel_120_it-5vTLPR9S5X"  # os.environ.get("AGENTCORE_MEMORY_ID")
         if not memory_id:
             pytest.skip("AGENTCORE_MEMORY_ID environment variable not set")
         return memory_id
@@ -357,7 +364,7 @@ class MemoryCase:
 
 @pytest.fixture
 def memory_case() -> Iterator[MemoryCase]:
-    memory_id = os.environ.get("AGENTCORE_MEMORY_ID")
+    memory_id = "langchain_aws_rel_120_it-5vTLPR9S5X" # os.environ.get("AGENTCORE_MEMORY_ID")
     if not memory_id:
         pytest.skip("AGENTCORE_MEMORY_ID environment variable not set")
     case = MemoryCase(memory_id, os.environ.get("AWS_REGION", "us-west-2"))
@@ -488,3 +495,72 @@ class TestAgentCoreReadLimits:
         )
         assert len(filtered) == 1
         assert filtered[0].checkpoint["channel_values"]["counter"] == 3
+
+
+class TestAgentCoreChunkedWrites:
+    """Live ordering checks for writes split across multiple CreateEvent calls."""
+
+    def test_chunked_batch_reads_back_in_write_order(
+        self,
+        memory_case: MemoryCase,
+    ) -> None:
+        config = memory_case.config("chunk-order")
+        session_id = CheckpointerConfig.from_runnable_config(dict(config)).session_id
+        client = memory_case.saver().checkpoint_event_client
+        events: list[EventType] = [
+            WritesEvent(
+                checkpoint_id=f"{i:03d}",
+                writes=[WriteItem(task_id="task", channel="channel", value=i)],
+            )
+            for i in range(20)
+        ]
+
+        client.store_blob_events_batch(
+            events, session_id, memory_case.actor, max_payload_items=1
+        )
+
+        stored = client.get_events(session_id, memory_case.actor)
+        order = [int(event.checkpoint_id) for event in stored]  # type: ignore[union-attr]
+        assert order == list(range(20))[::-1]
+
+    def test_large_checkpoint_write_round_trips_with_ordered_chunks(
+        self,
+        memory_case: MemoryCase,
+    ) -> None:
+        config = memory_case.config("large-write")
+        checkpoint_config = CheckpointerConfig.from_runnable_config(dict(config))
+        saver = memory_case.saver()
+        state = make_checkpoint(1, {"counter": 1})
+        write_config: RunnableConfig = {
+            "configurable": {**config["configurable"], "checkpoint_id": state["id"]}
+        }
+        pending = [
+            PendingWrite(write_config, [("result", i)], f"task-{i:03d}", "")
+            for i in range(150)
+        ]
+
+        saver.put_with_writes(
+            config,
+            state,
+            {"source": "loop", "step": 1},
+            state["channel_versions"],
+            pending,
+        )
+
+        raw = saver.checkpoint_event_client.client.list_events(
+            memoryId=memory_case.memory_id,
+            actorId=memory_case.actor,
+            sessionId=checkpoint_config.session_id,
+            includePayloads=False,
+            maxResults=100,
+        )["events"]
+        assert len(raw) == 2
+        assert len({event["eventTimestamp"] for event in raw}) == len(raw)
+
+        restored = saver.get_tuple(config)
+        assert restored is not None
+        assert restored.checkpoint["channel_values"] == state["channel_values"]
+        assert restored.pending_writes is not None
+        assert sorted(restored.pending_writes) == sorted(
+            (f"task-{i:03d}", "result", i) for i in range(150)
+        )
