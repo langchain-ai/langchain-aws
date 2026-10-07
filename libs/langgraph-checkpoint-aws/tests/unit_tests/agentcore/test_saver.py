@@ -3,6 +3,7 @@ Unit tests for AgentCore Memory Checkpoint Saver.
 """
 
 import asyncio
+import datetime
 import hashlib
 import json
 import time
@@ -1688,13 +1689,13 @@ class TestAgentCoreEventClient:
         assert isinstance(event_1, CheckpointEvent)
         assert isinstance(event_2, WritesEvent)
 
-    def test_store_blob_events_batch_uses_same_timestamp(
+    def test_store_blob_events_batch_uses_increasing_timestamps(
         self,
         client,
         mock_boto_client,
         sample_channel_data_event,
     ):
-        """All chunked calls use the same eventTimestamp."""
+        """Chunked calls get strictly increasing timestamps, 1 ms apart."""
         events = [sample_channel_data_event] * 5
         client.store_blob_events_batch(
             events, "session_id", "actor_id", max_payload_items=2
@@ -1705,8 +1706,9 @@ class TestAgentCoreEventClient:
             call_entry[1]["eventTimestamp"]
             for call_entry in mock_boto_client.create_event.call_args_list
         ]
-        # All timestamps should be identical
-        assert timestamps[0] == timestamps[1] == timestamps[2]
+        assert [t - timestamps[0] for t in timestamps] == [
+            datetime.timedelta(milliseconds=i) for i in range(3)
+        ]
 
     def test_store_blob_events_batch_uses_correct_session_and_actor(
         self,
