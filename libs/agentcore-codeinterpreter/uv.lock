@@ -843,9 +843,9 @@ typing = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bedrock-agentcore", specifier = ">=1.1.4" },
+    { name = "bedrock-agentcore", specifier = ">=1.1.5" },
     { name = "boto3", specifier = ">=1.42.42" },
-    { name = "deepagents", specifier = ">=0.1.0" },
+    { name = "deepagents", specifier = ">=0.5.6" },
 ]
 
 [package.metadata.requires-dev]
