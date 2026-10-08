@@ -3739,9 +3739,10 @@ def _tool_input_to_bedrock(tool_input: Any) -> Any:
     if not tool_input:
         return {}
     try:
-        return parse_partial_json(tool_input)
+        parsed = parse_partial_json(tool_input)
     except json.JSONDecodeError:
         return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _upsert_tool_calls_to_bedrock_content(
