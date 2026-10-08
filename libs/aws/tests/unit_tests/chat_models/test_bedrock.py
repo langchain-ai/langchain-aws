@@ -2389,6 +2389,7 @@ def test_system_prompt_string_format() -> None:
         "us.anthropic.claude-sonnet-5",
         "global.anthropic.claude-opus-5",
         "global.anthropic.claude-fable-5",
+        "us.anthropic.claude-haiku-5-5",
     ],
 )
 def test_stream_thinking_on_by_default_returns_block_content(model_id: str) -> None:
