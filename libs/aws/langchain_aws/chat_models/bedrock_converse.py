@@ -3227,9 +3227,7 @@ def _lc_content_to_bedrock(
                     }
                 )
         elif block["type"] == "tool_use":
-            tool_input = block["input"]
-            if isinstance(tool_input, str):
-                tool_input = parse_partial_json(tool_input) if tool_input else {}
+            tool_input = _tool_input_to_bedrock(block["input"])
             bedrock_content.append(
                 {
                     "toolUse": {
@@ -3241,9 +3239,7 @@ def _lc_content_to_bedrock(
             )
         elif block["type"] == "server_tool_use":
             # System tools use toolUse format (same as regular tools)
-            tool_input = block["input"]
-            if isinstance(tool_input, str):
-                tool_input = parse_partial_json(tool_input) if tool_input else {}
+            tool_input = _tool_input_to_bedrock(block["input"])
             bedrock_content.append(
                 {
                     "toolUse": {
@@ -3804,6 +3800,25 @@ def _str_if_single_text_block(
     if len(content) == 1 and content[0]["type"] == "text":
         return content[0]["text"]
     return content
+
+
+def _tool_input_to_bedrock(tool_input: Any) -> Any:
+    """Return a tool-use input in the form Bedrock accepts on replay.
+
+    A streamed input is the raw argument text. With the fine-grained tool streaming
+    beta Bedrock does not validate it, so it may not parse; such a call is already
+    reported in ``invalid_tool_calls``. Replay it with an empty input, as an
+    ``invalid_tool_call`` block is, so its error result still has a tool use.
+    """
+    if not isinstance(tool_input, str):
+        return tool_input
+    if not tool_input:
+        return {}
+    try:
+        parsed = parse_partial_json(tool_input)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _upsert_tool_calls_to_bedrock_content(

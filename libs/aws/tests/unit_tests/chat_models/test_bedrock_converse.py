@@ -1531,6 +1531,60 @@ def test__messages_to_bedrock_drops_unidentified_invalid_tool_call() -> None:
     ]
 
 
+def test__messages_to_bedrock_replays_streamed_tool_use_with_invalid_json() -> None:
+    """A streamed tool call whose arguments are not valid JSON must replay.
+
+    With the ``fine-grained-tool-streaming`` beta Bedrock does not validate tool
+    input, so the model can send e.g. an unquoted string. The streamed message keeps
+    that raw text in its ``tool_use`` block; replaying it must not raise.
+    """
+    raw = '{"patterns": stand.?alone|incremental}'
+    events: list[dict[str, Any]] = [
+        {
+            "contentBlockStart": {
+                "contentBlockIndex": 0,
+                "start": {"toolUse": {"toolUseId": "toolu_1", "name": "grep"}},
+            }
+        },
+        *(
+            {
+                "contentBlockDelta": {
+                    "contentBlockIndex": 0,
+                    "delta": {"toolUse": {"input": raw[i : i + 8]}},
+                }
+            }
+            for i in range(0, len(raw), 8)
+        ),
+        {"contentBlockStop": {"contentBlockIndex": 0}},
+        {"messageStop": {"stopReason": "tool_use"}},
+    ]
+    chunks = [c for c in map(_parse_stream_event, events) if c is not None]
+    message = chunks[0]
+    for chunk in chunks[1:]:
+        message += chunk
+    assert isinstance(message, AIMessageChunk)
+    assert message.tool_calls == []
+    assert [tc["id"] for tc in message.invalid_tool_calls] == ["toolu_1"]
+
+    actual_messages, _ = _messages_to_bedrock(
+        [
+            HumanMessage("Search the skills"),
+            message,
+            ToolMessage(
+                json.dumps({"INVALID_JSON": raw}),
+                tool_call_id="toolu_1",
+                status="error",
+            ),
+        ]
+    )
+
+    assert actual_messages[1] == {
+        "role": "assistant",
+        "content": [{"toolUse": {"toolUseId": "toolu_1", "name": "grep", "input": {}}}],
+    }
+    assert actual_messages[2]["content"][0]["toolResult"]["toolUseId"] == "toolu_1"
+
+
 def test__messages_to_bedrock_keeps_cache_point_only_tool_result_valid() -> None:
     """Cache points move outside the toolResult, which must not be left empty."""
     messages: list[BaseMessage] = [
