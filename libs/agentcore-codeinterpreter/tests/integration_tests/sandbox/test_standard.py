@@ -9,17 +9,15 @@ import importlib.metadata
 import os
 from typing import TYPE_CHECKING, ClassVar
 
-import deepagents.backends.sandbox as _base_sandbox
 import pytest
 from langchain_tests.integration_tests import SandboxIntegrationTests
 from packaging.version import Version
 
 from langchain_agentcore_codeinterpreter import AgentCoreSandbox
 
-_WRITE_OVERWRITES = Version(importlib.metadata.version("deepagents")) >= Version(
-    "0.7.0"
-)
-_GLOB_RETURNS_ABSOLUTE = hasattr(_base_sandbox, "_absolutize_glob_path")
+_DEEPAGENTS_VERSION = Version(importlib.metadata.version("deepagents"))
+_WRITE_OVERWRITES = _DEEPAGENTS_VERSION >= Version("0.7.0")
+_GLOB_07_BEHAVIOR = _DEEPAGENTS_VERSION >= Version("0.7.7")
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -74,7 +72,7 @@ class TestAgentCoreSandboxStandard(SandboxIntegrationTests):
     ) -> None:
         super().test_upload_relative_path_returns_invalid_path(sandbox_backend)
 
-    # langchain-tests 1.1.9 predates two BaseSandbox changes in deepagents 0.7.
+    # langchain-tests 1.1.9 predates these BaseSandbox changes in deepagents 0.7.
     # These only fail on the releases that made them, so the marks are scoped.
 
     @pytest.mark.xfail(
@@ -88,8 +86,8 @@ class TestAgentCoreSandboxStandard(SandboxIntegrationTests):
         super().test_write_existing_file_fails(sandbox_backend, sandbox_test_root)
 
     _GLOB_ABSOLUTE_MARK = pytest.mark.xfail(
-        _GLOB_RETURNS_ABSOLUTE,
-        reason="deepagents 0.7 BaseSandbox.glob returns absolute paths",
+        _GLOB_07_BEHAVIOR,
+        reason="deepagents>=0.7.7 BaseSandbox.glob returns absolute paths",
         strict=True,
     )
 
@@ -105,7 +103,11 @@ class TestAgentCoreSandboxStandard(SandboxIntegrationTests):
     ) -> None:
         super().test_glob_basic_pattern(sandbox_backend, sandbox_test_root)
 
-    @_GLOB_ABSOLUTE_MARK
+    @pytest.mark.xfail(
+        _GLOB_07_BEHAVIOR,
+        reason="deepagents>=0.7.7 BaseSandbox.glob returns files only, no directories",
+        strict=True,
+    )
     def test_glob_with_directories(
         self, sandbox_backend: SandboxBackendProtocol, sandbox_test_root: str
     ) -> None:
