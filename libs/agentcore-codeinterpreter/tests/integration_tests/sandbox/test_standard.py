@@ -5,13 +5,21 @@ Requires AWS credentials with AgentCore Code Interpreter access.
 
 from __future__ import annotations
 
+import importlib.metadata
 import os
 from typing import TYPE_CHECKING, ClassVar
 
+import deepagents.backends.sandbox as _base_sandbox
 import pytest
 from langchain_tests.integration_tests import SandboxIntegrationTests
+from packaging.version import Version
 
 from langchain_agentcore_codeinterpreter import AgentCoreSandbox
+
+_WRITE_OVERWRITES = Version(importlib.metadata.version("deepagents")) >= Version(
+    "0.7.0"
+)
+_GLOB_RETURNS_ABSOLUTE = hasattr(_base_sandbox, "_absolutize_glob_path")
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -65,3 +73,58 @@ class TestAgentCoreSandboxStandard(SandboxIntegrationTests):
         self, sandbox_backend: SandboxBackendProtocol
     ) -> None:
         super().test_upload_relative_path_returns_invalid_path(sandbox_backend)
+
+    # langchain-tests 1.1.9 predates two BaseSandbox changes in deepagents 0.7.
+    # These only fail on the releases that made them, so the marks are scoped.
+
+    @pytest.mark.xfail(
+        _WRITE_OVERWRITES,
+        reason="deepagents>=0.7.0 write() overwrites existing files by design",
+        strict=True,
+    )
+    def test_write_existing_file_fails(
+        self, sandbox_backend: SandboxBackendProtocol, sandbox_test_root: str
+    ) -> None:
+        super().test_write_existing_file_fails(sandbox_backend, sandbox_test_root)
+
+    _GLOB_ABSOLUTE_MARK = pytest.mark.xfail(
+        _GLOB_RETURNS_ABSOLUTE,
+        reason="deepagents 0.7 BaseSandbox.glob returns absolute paths",
+        strict=True,
+    )
+
+    @_GLOB_ABSOLUTE_MARK
+    def test_glob(
+        self, sandbox_backend: SandboxBackendProtocol, sandbox_test_root: str
+    ) -> None:
+        super().test_glob(sandbox_backend, sandbox_test_root)
+
+    @_GLOB_ABSOLUTE_MARK
+    def test_glob_basic_pattern(
+        self, sandbox_backend: SandboxBackendProtocol, sandbox_test_root: str
+    ) -> None:
+        super().test_glob_basic_pattern(sandbox_backend, sandbox_test_root)
+
+    @_GLOB_ABSOLUTE_MARK
+    def test_glob_with_directories(
+        self, sandbox_backend: SandboxBackendProtocol, sandbox_test_root: str
+    ) -> None:
+        super().test_glob_with_directories(sandbox_backend, sandbox_test_root)
+
+    @_GLOB_ABSOLUTE_MARK
+    def test_glob_hidden_files_explicitly(
+        self, sandbox_backend: SandboxBackendProtocol, sandbox_test_root: str
+    ) -> None:
+        super().test_glob_hidden_files_explicitly(sandbox_backend, sandbox_test_root)
+
+    @_GLOB_ABSOLUTE_MARK
+    def test_glob_with_character_class(
+        self, sandbox_backend: SandboxBackendProtocol, sandbox_test_root: str
+    ) -> None:
+        super().test_glob_with_character_class(sandbox_backend, sandbox_test_root)
+
+    @_GLOB_ABSOLUTE_MARK
+    def test_glob_with_question_mark(
+        self, sandbox_backend: SandboxBackendProtocol, sandbox_test_root: str
+    ) -> None:
+        super().test_glob_with_question_mark(sandbox_backend, sandbox_test_root)

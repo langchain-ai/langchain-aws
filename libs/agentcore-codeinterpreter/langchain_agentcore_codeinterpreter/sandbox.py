@@ -7,6 +7,7 @@ import base64
 import inspect
 import logging
 import shlex
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
@@ -495,16 +496,22 @@ class AgentCoreSandbox(BaseSandbox):
         """
         to_run = command
         if timeout:
-            to_run = f"timeout -k 5 {int(timeout)}s bash -c {shlex.quote(command)}"
+            # ``sh`` rather than ``bash``: commands normally run under /bin/sh,
+            # and ``bash -c`` would leave POSIX mode and change their behavior.
+            to_run = f"timeout -k 5 {int(timeout)}s sh -c {shlex.quote(command)}"
         try:
+            started = time.monotonic()
             response = self._invoke(method="executeCommand", params={"command": to_run})
+            elapsed = time.monotonic() - started
             output, exit_code = _extract_text_from_stream(response)
             # executeCommand runs under a pseudo-terminal, which turns every
             # "\n" the command writes into "\r\n". Undoing exactly that
             # mapping restores the original bytes, including any "\r\n" a
             # file really contains (the terminal renders those as "\r\r\n").
             output = output.replace("\r\n", "\n")
-            if timeout and exit_code == _TIMEOUT_EXIT_CODE:
+            # A command can exit 124 on its own, so only call it a timeout when
+            # the call also lasted at least as long as the limit.
+            if timeout and exit_code == _TIMEOUT_EXIT_CODE and elapsed >= int(timeout):
                 note = f"Command timed out after {int(timeout)} seconds."
                 output = f"{output}\n{note}" if output else note
             return ExecuteResponse(

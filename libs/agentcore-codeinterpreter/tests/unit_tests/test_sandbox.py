@@ -1090,7 +1090,7 @@ def test_execute_timeout_wraps_command() -> None:
     sandbox, mock = _make_sandbox(_result(0))
     sandbox.execute("echo 'a b' && sleep 1", timeout=30)
     sent = mock.invoke.call_args.kwargs["params"]["command"]
-    assert sent == "timeout -k 5 30s bash -c 'echo '\"'\"'a b'\"'\"' && sleep 1'"
+    assert sent == "timeout -k 5 30s sh -c 'echo '\"'\"'a b'\"'\"' && sleep 1'"
 
 
 def test_execute_zero_timeout_means_no_limit() -> None:
@@ -1101,9 +1101,25 @@ def test_execute_zero_timeout_means_no_limit() -> None:
 
 def test_execute_timeout_expiry_is_explained() -> None:
     sandbox, _ = _make_sandbox(_result(124, is_error=True))
-    result = sandbox.execute("sleep 99", timeout=2)
+    with patch(
+        "langchain_agentcore_codeinterpreter.sandbox.time.monotonic",
+        side_effect=[100.0, 102.5],
+    ):
+        result = sandbox.execute("sleep 99", timeout=2)
     assert result.exit_code == 124
     assert "timed out after 2 seconds" in result.output
+
+
+def test_execute_early_124_with_timeout_is_not_called_a_timeout() -> None:
+    """A command that exits 124 before the limit did not time out."""
+    sandbox, _ = _make_sandbox(_result(124, "own 124", is_error=True))
+    with patch(
+        "langchain_agentcore_codeinterpreter.sandbox.time.monotonic",
+        side_effect=[100.0, 100.4],
+    ):
+        result = sandbox.execute("exit 124", timeout=30)
+    assert result.exit_code == 124
+    assert result.output == "own 124"
 
 
 def test_execute_exit_124_without_timeout_is_left_alone() -> None:
