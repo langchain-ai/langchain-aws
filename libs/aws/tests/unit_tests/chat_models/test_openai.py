@@ -255,6 +255,19 @@ def test_profile_mid_conversation_tool_definitions_need_responses_api() -> None:
     assert model.profile.get("mid_conversation_tool_definitions") is False
 
 
+def test_explicit_profile_keeps_mid_conversation_tool_definitions() -> None:
+    """A caller-supplied profile is not adjusted for the API in use."""
+    custom = {"mid_conversation_tool_definitions": True}
+    model = ChatOpenAIMantle(
+        model="openai.gpt-5.5",
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+        use_responses_api=False,
+        profile=custom,  # type: ignore[arg-type]
+    )
+    assert model.profile == custom
+
+
 def test_profile_empty_for_unknown_model() -> None:
     """An unknown model resolves to an empty profile rather than raising."""
     model = ChatOpenAIMantle(
