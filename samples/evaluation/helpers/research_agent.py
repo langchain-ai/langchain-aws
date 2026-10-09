@@ -17,8 +17,11 @@ context. That reduction is the whole reason to delegate, and it is measurable he
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from dataclasses import fields as fields_of
 from pathlib import Path
@@ -26,7 +29,11 @@ from typing import Any
 
 from botocore.config import Config as BotoConfig
 from deepagents import create_deep_agent
+from langchain.agents.middleware import AgentMiddleware
 from langchain_aws import ChatBedrockConverse
+from langchain_core.messages import ToolMessage
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "Company",
@@ -331,6 +338,66 @@ def build_model(model_id: str | None = None, region: str | None = None) -> ChatB
     )
 
 
+#: Upper bounds, not expected durations. A browser call normally takes 1 to 10 s and a
+#: research subagent 15 to 45 s.
+BROWSER_TOOL_TIMEOUT_S = 60.0
+SUBAGENT_TIMEOUT_S = 300.0
+
+_BROWSER_TOOLS = (
+    "navigate_browser", "extract_text", "extract_hyperlinks", "click_element",
+    "get_elements", "current_webpage", "navigate_back", "type_text",
+    "scroll_page", "wait_for_element", "take_screenshot",
+)
+
+
+class ToolDeadlineMiddleware(AgentMiddleware):
+    """Give selected tools a deadline, and turn a missed one into an error message.
+
+    The LangChain fault-tolerance guide routes transient failures through retry
+    middleware and recoverable ones back to the model, but both start from an
+    exception. A call that hangs never raises, so without a deadline one stuck
+    browser read holds the subagent, and through it the whole run, indefinitely.
+    The deadline supplies the exception; the error ``ToolMessage`` lets the model
+    recover the way the guide recommends.
+
+    Args:
+        timeouts: Seconds allowed per tool name. Tools not listed are untouched.
+        on_timeout: Optional coroutine run after a timeout, for example to reset
+            a session the cancelled call left in a bad state.
+        advice: Appended to the error so the model knows what to do next.
+    """
+
+    def __init__(
+        self,
+        timeouts: dict[str, float],
+        *,
+        on_timeout: Callable[[Any], Awaitable[None]] | None = None,
+        advice: str = "",
+    ) -> None:
+        super().__init__()
+        self.timeouts = timeouts
+        self.on_timeout = on_timeout
+        self.advice = advice
+
+    async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
+        name = request.tool_call["name"]
+        limit = self.timeouts.get(name)
+        if limit is None:
+            return await handler(request)
+        try:
+            return await asyncio.wait_for(handler(request), limit)
+        except asyncio.TimeoutError:
+            logger.warning("%s exceeded its %g s deadline", name, limit)
+            if self.on_timeout is not None:
+                await self.on_timeout(request)
+            return ToolMessage(
+                content=f"{name} did not finish within {limit:g} s. {self.advice}".strip(),
+                tool_call_id=request.tool_call["id"],
+                name=name,
+                status="error",
+            )
+
+
 async def build_research_agent(
     model: Any,
     *,
@@ -362,7 +429,25 @@ async def build_research_agent(
         if hasattr(toolkit, "session_manager"):
             toolkit.session_manager.session_wait_timeout = 90.0
         toolkits.append(toolkit)
+
+        async def reset_browser(_request: Any, toolkit: Any = toolkit) -> None:
+            # A call that hung leaves its session marked in use, so the next call
+            # would wait on it too. Dropping the session gives the retry a fresh
+            # browser; the model is told to navigate again.
+            try:
+                await asyncio.wait_for(toolkit.session_manager.close_all_browsers(), 15)
+            except Exception as exc:  # noqa: BLE001 - the session may already be gone
+                logger.warning("browser reset after timeout failed: %s", exc)
+
         subagents.append({
+            "middleware": [
+                ToolDeadlineMiddleware(
+                    {name: BROWSER_TOOL_TIMEOUT_S for name in _BROWSER_TOOLS},
+                    on_timeout=reset_browser,
+                    advice="The browser session was reset. Navigate to the URL "
+                    "again before reading the page.",
+                )
+            ],
             "name": f"research-{company.slug}",
             "description": (
                 f"Researches {company.name} from its fiscal {company.fiscal_year} "
@@ -396,6 +481,15 @@ async def build_research_agent(
         ),
         name="due-diligence-coordinator",
         checkpointer=None,
+        # A subagent that never returns would otherwise hold the whole run. The
+        # coordinator gets an error for that task and reports what it has.
+        middleware=[
+            ToolDeadlineMiddleware(
+                {"task": SUBAGENT_TIMEOUT_S},
+                advice="Report this company's figures as unavailable rather than "
+                "retrying, and continue with the others.",
+            )
+        ],
     )
     return agent, toolkits
 
