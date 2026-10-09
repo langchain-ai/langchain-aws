@@ -51,13 +51,13 @@ def test_profile_omits_mid_conversation_support(beta_use_converse_api: bool) -> 
     )
     assert model.profile
     assert "mid_conversation_system_messages" not in model.profile
-    assert "mid_conversation_tool_definitions" not in model.profile
+    assert "mid_conversation_tools" not in model.profile
 
 
 def test_explicit_profile_keeps_mid_conversation_support() -> None:
     profile = {
         "mid_conversation_system_messages": True,
-        "mid_conversation_tool_definitions": True,
+        "mid_conversation_tools": True,
     }
     model = ChatBedrock(
         model_id="global.anthropic.claude-sonnet-5-5",

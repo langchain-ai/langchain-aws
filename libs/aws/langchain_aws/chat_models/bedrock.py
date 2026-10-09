@@ -970,7 +970,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         # and `ChatOpenAIMantle` call. This class rejects a non-leading system
         # message (or hoists it, on Converse), so it can't send one in place.
         profile.pop("mid_conversation_system_messages", None)
-        profile.pop("mid_conversation_tool_definitions", None)
+        profile.pop("mid_conversation_tools", None)
         return profile
 
     @property

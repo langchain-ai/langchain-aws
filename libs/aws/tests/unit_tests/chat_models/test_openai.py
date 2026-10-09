@@ -220,7 +220,7 @@ def test_explicit_profile_is_respected() -> None:
 
 
 @pytest.mark.parametrize(
-    ("model_name", "system_messages", "tool_definitions"),
+    ("model_name", "system_messages", "tools"),
     [
         ("openai.gpt-5.5", True, True),
         ("openai.gpt-6.1-sol", True, True),
@@ -229,7 +229,7 @@ def test_explicit_profile_is_respected() -> None:
     ],
 )
 def test_profile_mid_conversation_support(
-    model_name: str, system_messages: bool | None, tool_definitions: bool | None
+    model_name: str, system_messages: bool | None, tools: bool | None
 ) -> None:
     """The profile declares which mid-conversation changes Mantle accepts."""
     model = ChatOpenAIMantle(
@@ -239,10 +239,10 @@ def test_profile_mid_conversation_support(
     )
     assert model.profile is not None
     assert model.profile.get("mid_conversation_system_messages") is system_messages
-    assert model.profile.get("mid_conversation_tool_definitions") is tool_definitions
+    assert model.profile.get("mid_conversation_tools") is tools
 
 
-def test_profile_mid_conversation_tool_definitions_need_responses_api() -> None:
+def test_profile_mid_conversation_tools_need_responses_api() -> None:
     """Chat Completions has no `additional_tools` input item."""
     model = ChatOpenAIMantle(
         model="openai.gpt-5.5",
@@ -252,12 +252,12 @@ def test_profile_mid_conversation_tool_definitions_need_responses_api() -> None:
     )
     assert model.profile is not None
     assert model.profile.get("mid_conversation_system_messages") is True
-    assert model.profile.get("mid_conversation_tool_definitions") is False
+    assert model.profile.get("mid_conversation_tools") is False
 
 
-def test_explicit_profile_keeps_mid_conversation_tool_definitions() -> None:
+def test_explicit_profile_keeps_mid_conversation_tools() -> None:
     """A caller-supplied profile is not adjusted for the API in use."""
-    custom = {"mid_conversation_tool_definitions": True}
+    custom = {"mid_conversation_tools": True}
     model = ChatOpenAIMantle(
         model="openai.gpt-5.5",
         region_name="us-east-1",

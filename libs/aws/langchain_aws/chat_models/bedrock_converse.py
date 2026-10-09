@@ -1237,7 +1237,7 @@ class ChatBedrockConverse(BaseChatModel):
         # and `ChatOpenAIMantle` call. Converse hoists every system message into
         # `system`, so it can't send one in place.
         profile.pop("mid_conversation_system_messages", None)
-        profile.pop("mid_conversation_tool_definitions", None)
+        profile.pop("mid_conversation_tools", None)
         return profile
 
     def _reasoning_effort_fields(self, effort: str) -> Dict[str, Any]:

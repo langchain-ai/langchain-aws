@@ -8,208 +8,208 @@ image_tool_message = true
 
 [overrides."anthropic.claude-fable-5-1"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."global.anthropic.claude-fable-5-1"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."us.anthropic.claude-fable-5-1"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."anthropic.claude-fable-5"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."eu.anthropic.claude-fable-5"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."global.anthropic.claude-fable-5"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."us.anthropic.claude-fable-5"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."anthropic.claude-opus-4-8"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."au.anthropic.claude-opus-4-8"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."eu.anthropic.claude-opus-4-8"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."global.anthropic.claude-opus-4-8"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."jp.anthropic.claude-opus-4-8"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."us.anthropic.claude-opus-4-8"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."anthropic.claude-opus-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."au.anthropic.claude-opus-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."eu.anthropic.claude-opus-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."global.anthropic.claude-opus-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."in.anthropic.claude-opus-5"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."jp.anthropic.claude-opus-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."us.anthropic.claude-opus-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."anthropic.claude-opus-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."au.anthropic.claude-opus-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."eu.anthropic.claude-opus-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."global.anthropic.claude-opus-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."jp.anthropic.claude-opus-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."us.anthropic.claude-opus-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."anthropic.claude-sonnet-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = false
+mid_conversation_tools = false
 
 [overrides."au.anthropic.claude-sonnet-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = false
+mid_conversation_tools = false
 
 [overrides."eu.anthropic.claude-sonnet-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = false
+mid_conversation_tools = false
 
 [overrides."global.anthropic.claude-sonnet-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = false
+mid_conversation_tools = false
 
 [overrides."in.anthropic.claude-sonnet-5"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = false
+mid_conversation_tools = false
 
 [overrides."jp.anthropic.claude-sonnet-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = false
+mid_conversation_tools = false
 
 [overrides."us.anthropic.claude-sonnet-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = false
+mid_conversation_tools = false
 
 [overrides."anthropic.claude-sonnet-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."eu.anthropic.claude-sonnet-5-5"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."global.anthropic.claude-sonnet-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."us.anthropic.claude-sonnet-5-5"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."anthropic.claude-haiku-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."au.anthropic.claude-haiku-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."eu.anthropic.claude-haiku-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."global.anthropic.claude-haiku-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."jp.anthropic.claude-haiku-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."us.anthropic.claude-haiku-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."amazon.nova-2-lite-v1:0"]
 reasoning_effort_levels = ["low", "medium", "high"]
 
 [overrides."openai.gpt-6.1-sol"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."openai.gpt-6-astra"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
@@ -217,7 +217,7 @@ reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 [overrides."openai.gpt-6-sol"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."openai.gpt-6-luna"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
@@ -228,20 +228,20 @@ reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 [overrides."openai.gpt-5.6-luna"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."openai.gpt-5.6-sol"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."openai.gpt-5.5"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."openai.gpt-5.4"]
 mid_conversation_system_messages = true
-mid_conversation_tool_definitions = true
+mid_conversation_tools = true
 
 [overrides."openai.gpt-oss-120b"]
 reasoning_effort_levels = ["low", "medium", "high"]
