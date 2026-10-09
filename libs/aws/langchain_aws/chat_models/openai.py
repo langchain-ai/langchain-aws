@@ -328,7 +328,13 @@ class ChatOpenAIMantle(BaseChatOpenAI):
     def _resolve_profile(self) -> Self:
         """Populate the model profile from static data unless one was supplied."""
         if not self.profile:
-            self.profile = _get_default_model_profile(self.model_name)
+            profile = _get_default_model_profile(self.model_name)
+            if profile.get(
+                "mid_conversation_tool_definitions"
+            ) and not self._use_responses_api({}):
+                # Only the Responses API carries an `additional_tools` input item.
+                profile["mid_conversation_tool_definitions"] = False
+            self.profile = profile
         return self
 
     @property

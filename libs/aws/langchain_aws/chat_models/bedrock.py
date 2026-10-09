@@ -965,7 +965,13 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     def _resolve_model_profile(self) -> ModelProfile | None:
         """Return the default model profile for this model."""
         model_id = self.base_model_id if self.base_model_id else self.model_id
-        return _get_default_model_profile(model_id)
+        profile = _get_default_model_profile(model_id)
+        # The data describes the APIs `ChatAnthropicBedrock`, `ChatAnthropicMantle`
+        # and `ChatOpenAIMantle` call. This class rejects a non-leading system
+        # message (or hoists it, on Converse), so it can't send one in place.
+        profile.pop("mid_conversation_system_messages", None)
+        profile.pop("mid_conversation_tool_definitions", None)
+        return profile
 
     @property
     def lc_attributes(self) -> Dict[str, Any]:

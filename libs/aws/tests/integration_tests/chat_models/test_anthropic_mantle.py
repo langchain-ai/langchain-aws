@@ -27,6 +27,7 @@ from typing import Type
 
 import pytest
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_tests.integration_tests import ChatModelIntegrationTests
 
 from langchain_aws import ChatAnthropicMantle
@@ -136,3 +137,35 @@ def test_auth_mode_api_key_live(monkeypatch: pytest.MonkeyPatch) -> None:
     response = model.invoke("Say OK and nothing else.")
     assert isinstance(response.content, (str, list))
     assert response.content
+
+
+def test_system_tool_addition() -> None:
+    model = ChatAnthropicMantle(  # type: ignore[call-arg]
+        model_name="anthropic.claude-opus-5-5",
+        region_name=os.getenv("AWS_REGION", "us-east-1"),
+    )
+    response = model.invoke(
+        [
+            HumanMessage("What time is it?"),
+            SystemMessage(
+                [
+                    {
+                        "type": "tool_addition",
+                        "tool": {
+                            "type": "tool_definition",
+                            "definition": {
+                                "name": "get_time",
+                                "description": "Get the current time.",
+                                "input_schema": {
+                                    "type": "object",
+                                    "properties": {},
+                                },
+                            },
+                        },
+                    }
+                ]
+            ),
+        ]
+    )
+    assert isinstance(response, AIMessage)
+    assert response.tool_calls[0]["name"] == "get_time"
