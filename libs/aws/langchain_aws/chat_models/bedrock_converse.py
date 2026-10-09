@@ -1232,7 +1232,13 @@ class ChatBedrockConverse(BaseChatModel):
     def _resolve_model_profile(self) -> ModelProfile | None:
         """Return the default model profile for this model."""
         model_id = self._get_base_model()
-        return _get_default_model_profile(model_id)
+        profile = _get_default_model_profile(model_id)
+        # The data describes the APIs `ChatAnthropicBedrock`, `ChatAnthropicMantle`
+        # and `ChatOpenAIMantle` call. Converse hoists every system message into
+        # `system`, so it can't send one in place.
+        profile.pop("mid_conversation_system_messages", None)
+        profile.pop("mid_conversation_tool_definitions", None)
+        return profile
 
     def _reasoning_effort_fields(self, effort: str) -> Dict[str, Any]:
         """Validate `effort` against the model profile and translate to request

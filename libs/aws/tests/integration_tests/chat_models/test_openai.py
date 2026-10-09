@@ -26,6 +26,7 @@ from typing import Type
 
 import pytest
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_tests.integration_tests import ChatModelIntegrationTests
 
 from langchain_aws import ChatOpenAIMantle
@@ -128,3 +129,37 @@ def test_credential_derived_auth_live() -> None:
     response = model.invoke("What is 2 + 2? Reply with just the number.")
     assert isinstance(response.content, str)
     assert "4" in response.content
+
+
+@requires_static_key
+def test_system_additional_tools() -> None:
+    model = ChatOpenAIMantle(
+        model="openai.gpt-5.5",
+        region_name=os.getenv("AWS_REGION", "us-east-1"),
+    )
+    response = model.invoke(
+        [
+            HumanMessage("What time is it?"),
+            SystemMessage(
+                [
+                    {
+                        "type": "additional_tools",
+                        "role": "developer",
+                        "tools": [
+                            {
+                                "type": "function",
+                                "name": "get_time",
+                                "description": "Get the current time.",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {},
+                                },
+                            }
+                        ],
+                    }
+                ]
+            ),
+        ]
+    )
+    assert isinstance(response, AIMessage)
+    assert response.tool_calls[0]["name"] == "get_time"

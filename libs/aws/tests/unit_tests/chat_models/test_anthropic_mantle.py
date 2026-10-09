@@ -402,6 +402,31 @@ def test_model_profile(model_name: str) -> None:
     assert "max_input_tokens" in model.profile
 
 
+@pytest.mark.parametrize(
+    ("model_name", "system_messages", "tool_definitions"),
+    [
+        ("anthropic.claude-opus-5-5", True, True),
+        ("anthropic.claude-opus-4-8", True, True),
+        # Not in the profile data; resolved from the bare model ID.
+        ("us-gov.anthropic.claude-opus-5", True, True),
+        ("anthropic.claude-sonnet-5", True, False),
+        ("anthropic.claude-haiku-4-5-20251001-v1:0", None, None),
+    ],
+)
+def test_model_profile_mid_conversation_support(
+    model_name: str, system_messages: bool | None, tool_definitions: bool | None
+) -> None:
+    """The profile declares which mid-conversation changes Mantle accepts."""
+    model = ChatAnthropicMantle(  # type: ignore[call-arg]
+        model=model_name,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+    )
+    assert model.profile is not None
+    assert model.profile.get("mid_conversation_system_messages") is system_messages
+    assert model.profile.get("mid_conversation_tool_definitions") is tool_definitions
+
+
 def test_explicit_profile_is_respected() -> None:
     """An explicitly supplied profile is not overwritten."""
     profile = ModelProfile(max_input_tokens=123)
