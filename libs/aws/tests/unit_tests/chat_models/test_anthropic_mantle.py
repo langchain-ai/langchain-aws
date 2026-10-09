@@ -403,7 +403,7 @@ def test_model_profile(model_name: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("model_name", "system_messages", "tool_definitions"),
+    ("model_name", "system_messages", "tools"),
     [
         ("anthropic.claude-opus-5-5", True, True),
         ("anthropic.claude-opus-4-8", True, True),
@@ -414,7 +414,7 @@ def test_model_profile(model_name: str) -> None:
     ],
 )
 def test_model_profile_mid_conversation_support(
-    model_name: str, system_messages: bool | None, tool_definitions: bool | None
+    model_name: str, system_messages: bool | None, tools: bool | None
 ) -> None:
     """The profile declares which mid-conversation changes Mantle accepts."""
     model = ChatAnthropicMantle(  # type: ignore[call-arg]
@@ -424,7 +424,7 @@ def test_model_profile_mid_conversation_support(
     )
     assert model.profile is not None
     assert model.profile.get("mid_conversation_system_messages") is system_messages
-    assert model.profile.get("mid_conversation_tool_definitions") is tool_definitions
+    assert model.profile.get("mid_conversation_tools") is tools
 
 
 def test_explicit_profile_is_respected() -> None:
