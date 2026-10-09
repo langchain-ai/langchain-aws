@@ -274,7 +274,7 @@ async def trajectory_from_langchain_events(
     *,
     query: str,
     thread_id: str,
-    recursion_limit: int = 60,
+    recursion_limit: int = 150,
     delegation_tools: frozenset[str] = frozenset({"task"}),
 ) -> tuple[Trajectory, str]:
     """Run a LangChain agent locally and record its trajectory from events.
@@ -289,8 +289,8 @@ async def trajectory_from_langchain_events(
     never appear there, so any check about subagent behavior read off `messages`
     is vacuously true.
 
-    `recursion_limit` defaults well above LangGraph's 25: a multi-subagent fan-out
-    that retries anything trips that ceiling and dies mid-run.
+    `recursion_limit` defaults well above LangGraph's 25. Every middleware hook is a
+    graph step, and recent deepagents releases run more of them per turn.
 
     Returns:
         `(trajectory, final_answer)`. On an exception the partial trajectory is
