@@ -219,6 +219,55 @@ def test_explicit_profile_is_respected() -> None:
     assert model.profile == custom
 
 
+@pytest.mark.parametrize(
+    ("model_name", "system_messages", "tools"),
+    [
+        ("openai.gpt-5.5", True, True),
+        ("openai.gpt-6.1-sol", True, True),
+        ("openai.gpt-6-luna", None, None),
+        ("openai.gpt-oss-120b", None, None),
+    ],
+)
+def test_profile_mid_conversation_support(
+    model_name: str, system_messages: bool | None, tools: bool | None
+) -> None:
+    """The profile declares which mid-conversation changes Mantle accepts."""
+    model = ChatOpenAIMantle(
+        model=model_name,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+    )
+    assert model.profile is not None
+    assert model.profile.get("mid_conversation_system_messages") is system_messages
+    assert model.profile.get("mid_conversation_tools") is tools
+
+
+def test_profile_mid_conversation_tools_need_responses_api() -> None:
+    """Chat Completions has no `additional_tools` input item."""
+    model = ChatOpenAIMantle(
+        model="openai.gpt-5.5",
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+        use_responses_api=False,
+    )
+    assert model.profile is not None
+    assert model.profile.get("mid_conversation_system_messages") is True
+    assert model.profile.get("mid_conversation_tools") is False
+
+
+def test_explicit_profile_keeps_mid_conversation_tools() -> None:
+    """A caller-supplied profile is not adjusted for the API in use."""
+    custom = {"mid_conversation_tools": True}
+    model = ChatOpenAIMantle(
+        model="openai.gpt-5.5",
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+        use_responses_api=False,
+        profile=custom,  # type: ignore[arg-type]
+    )
+    assert model.profile == custom
+
+
 def test_profile_empty_for_unknown_model() -> None:
     """An unknown model resolves to an empty profile rather than raising."""
     model = ChatOpenAIMantle(

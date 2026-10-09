@@ -41,6 +41,32 @@ def test_profile() -> None:
     assert model.profile == {}
 
 
+@pytest.mark.parametrize("beta_use_converse_api", [False, True])
+def test_profile_omits_mid_conversation_support(beta_use_converse_api: bool) -> None:
+    """Neither InvokeModel nor Converse can send a system message in place."""
+    model = ChatBedrock(
+        model_id="global.anthropic.claude-sonnet-5-5",
+        region_name="us-west-2",
+        beta_use_converse_api=beta_use_converse_api,
+    )
+    assert model.profile
+    assert "mid_conversation_system_messages" not in model.profile
+    assert "mid_conversation_tools" not in model.profile
+
+
+def test_explicit_profile_keeps_mid_conversation_support() -> None:
+    profile = {
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
+    }
+    model = ChatBedrock(
+        model_id="global.anthropic.claude-sonnet-5-5",
+        region_name="us-west-2",
+        profile=profile,
+    )
+    assert model.profile == profile
+
+
 def test_model_property_returns_model_id() -> None:
     model_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
     from_alias = ChatBedrock(model=model_id, region_name="us-west-2")
