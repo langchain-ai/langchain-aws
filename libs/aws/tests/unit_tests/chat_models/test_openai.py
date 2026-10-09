@@ -428,6 +428,30 @@ def test_non_guardrail_headers() -> None:
     assert payload["extra_headers"] == {"X-Another-Header": "ok"}
 
 
+def test_openai_mantle_user_agent_tagged() -> None:
+    """The OpenAI SDK's wire User-Agent carries the langchain-aws source tag, with
+    the ``OpenAI/Python`` prefix preserved. ``default_headers`` is what
+    ``BaseChatOpenAI`` forwards to the client's wire UA."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    model = _make_model()
+    headers = model.default_headers
+    assert headers is not None
+    ua = headers["User-Agent"]
+    assert ua.endswith(f" {FRAMEWORK_UA_TOKEN}")
+    assert ua.startswith("OpenAI/Python")
+
+
+def test_openai_mantle_user_agent_respects_caller_header() -> None:
+    """A caller-supplied ``User-Agent`` gets the tag appended, not overwritten."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    model = _make_model(default_headers={"User-Agent": "MyApp/1.0"})
+    headers = model.default_headers
+    assert headers is not None
+    assert headers["User-Agent"] == f"MyApp/1.0 {FRAMEWORK_UA_TOKEN}"
+
+
 _MANTLE_OVERFLOW = (
     'ErrorEvent { error: APIError { type: "BadRequestError", code: Some(400), '
     "message: \"Input length (213426) exceeds model's maximum context length "

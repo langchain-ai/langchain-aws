@@ -9,7 +9,7 @@ from langchain_aws import (
     ChatBedrock,
     ChatBedrockConverse,
 )
-from langchain_aws._version import __version__
+from langchain_aws._version import FRAMEWORK_UA_TOKEN, __version__, _tag_user_agent
 from langchain_aws.chat_models.sagemaker_endpoint import (
     ChatModelContentHandler,
     ChatSagemakerEndpoint,
@@ -106,3 +106,43 @@ def test_anthropic_bedrock_adds_langchain_aws_version_metadata() -> None:
     )
 
     _assert_langchain_aws_version(model)
+
+
+class TestTagUserAgent:
+    """Unit tests for the ``_tag_user_agent`` source-marker helper."""
+
+    def test_appends_token_to_sdk_user_agent_when_no_headers(self) -> None:
+        result = _tag_user_agent(None, "OpenAI/Python 3.22.1")
+        assert result["User-Agent"] == f"OpenAI/Python 3.22.1 {FRAMEWORK_UA_TOKEN}"
+
+    def test_appends_token_when_headers_have_no_user_agent(self) -> None:
+        result = _tag_user_agent({"X-Custom": "v"}, "AnthropicBedrock/Python 1.9.0")
+        assert result["X-Custom"] == "v"
+        assert (
+            result["User-Agent"]
+            == f"AnthropicBedrock/Python 1.9.0 {FRAMEWORK_UA_TOKEN}"
+        )
+
+    def test_respects_caller_supplied_user_agent(self) -> None:
+        # A caller who set User-Agent themselves gets the token appended to THAT,
+        # not to the SDK's base UA.
+        result = _tag_user_agent({"User-Agent": "MyApp/1.0"}, "OpenAI/Python 3.22.1")
+        assert result["User-Agent"] == f"MyApp/1.0 {FRAMEWORK_UA_TOKEN}"
+
+    def test_tags_caller_ua_that_merely_contains_the_token(self) -> None:
+        # A caller UA containing the token as a substring (not a distinct part)
+        # must still be tagged -- the idempotency check is exact-part, not substring.
+        caller = "my-x-client-framework:langchain-aws-proxy/2.0"
+        result = _tag_user_agent({"User-Agent": caller}, "OpenAI/Python 3.22.1")
+        assert result["User-Agent"] == f"{caller} {FRAMEWORK_UA_TOKEN}"
+
+    def test_idempotent_when_token_already_present(self) -> None:
+        already = f"OpenAI/Python 3.22.1 {FRAMEWORK_UA_TOKEN}"
+        result = _tag_user_agent({"User-Agent": already}, "OpenAI/Python 3.22.1")
+        assert result["User-Agent"] == already
+        assert result["User-Agent"].count(FRAMEWORK_UA_TOKEN) == 1
+
+    def test_does_not_mutate_input_headers(self) -> None:
+        original = {"X-Custom": "v"}
+        _tag_user_agent(original, "OpenAI/Python 3.22.1")
+        assert original == {"X-Custom": "v"}
