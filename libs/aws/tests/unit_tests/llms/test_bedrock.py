@@ -784,6 +784,33 @@ def test_prepare_output_for_anthropic(anthropic_response):
     assert result["stop_reason"] is None
 
 
+def test_prepare_output_total_tokens_includes_cache_tokens() -> None:
+    """`total_tokens` counts cache writes as well as cache reads.
+
+    `prompt_tokens` stays the raw uncached count from Bedrock.
+    """
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {"content": [{"type": "text", "text": "ok"}], "stop_reason": "end_turn"}
+    ).encode()
+    response = dict(
+        body=body,
+        ResponseMetadata={
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "726",
+                "x-amzn-bedrock-output-token-count": "114",
+                "x-amzn-bedrock-cache-read-input-token-count": "31426",
+                "x-amzn-bedrock-cache-write-input-token-count": "2048",
+            }
+        },
+    )
+
+    result = LLMInputOutputAdapter.prepare_output("anthropic", response)
+
+    assert result["usage"]["prompt_tokens"] == 726
+    assert result["usage"]["total_tokens"] == 726 + 31426 + 2048 + 114
+
+
 def test_prepare_output_for_ai21(ai21_response):
     result = LLMInputOutputAdapter.prepare_output("ai21", ai21_response)
     assert result["text"] == "This is the AI21 output text."
