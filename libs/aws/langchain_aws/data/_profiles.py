@@ -214,6 +214,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "anthropic.claude-opus-4-1-20250805-v1:0": {
         "name": "Claude Opus 4.1",
@@ -660,6 +667,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "au.anthropic.claude-opus-4-6-v1": {
         "name": "AU Anthropic Claude Opus 4.6",
@@ -1145,6 +1159,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "eu.anthropic.claude-opus-4-5-20251101-v1:0": {
         "name": "Claude Opus 4.5 (EU)",
@@ -1583,6 +1604,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "global.anthropic.claude-opus-4-5-20251101-v1:0": {
         "name": "Claude Opus 4.5 (Global)",
@@ -2504,6 +2532,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "jp.anthropic.claude-opus-4-7": {
         "name": "Claude Opus 4.7 (JP)",
@@ -4162,6 +4197,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "us.anthropic.claude-opus-4-1-20250805-v1:0": {
         "name": "Claude Opus 4.1 (US)",
