@@ -7074,6 +7074,115 @@ def test_set_additional_properties_false_deeply_nested() -> None:
     )
 
 
+def test_set_additional_properties_false_warns_on_dict_value_schema() -> None:
+    """Overwriting a dict value schema warns and names the field (issue #1309)."""
+    schema: dict = {
+        "type": "object",
+        "properties": {
+            "counts": {
+                "type": "object",
+                "additionalProperties": {"type": "integer"},
+            },
+        },
+    }
+    with pytest.warns(UserWarning, match="counts"):
+        _set_additional_properties_false(schema)
+    # Behavior is unchanged: the value schema is still stamped False
+    assert schema["properties"]["counts"]["additionalProperties"] is False
+
+
+def test_set_additional_properties_false_warns_on_dict_any() -> None:
+    """Overwriting additionalProperties: true (dict[str, Any]) warns (issue #1309)."""
+    schema: dict = {
+        "type": "object",
+        "properties": {
+            "anything": {
+                "type": "object",
+                "additionalProperties": True,
+            },
+        },
+    }
+    with pytest.warns(UserWarning, match="anything"):
+        _set_additional_properties_false(schema)
+    assert schema["properties"]["anything"]["additionalProperties"] is False
+
+
+def test_set_additional_properties_false_no_warning_for_plain_objects() -> None:
+    """Plain object schemas (no value schema to clobber) warn nothing."""
+    schema: dict = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "address": {
+                "type": "object",
+                "properties": {"street": {"type": "string"}},
+            },
+        },
+    }
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _set_additional_properties_false(schema)
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["address"]["additionalProperties"] is False
+
+
+def test_set_additional_properties_false_warns_with_nested_path() -> None:
+    """The warning names nested dict fields with a dotted path (issue #1309)."""
+    schema: dict = {
+        "type": "object",
+        "properties": {
+            "address": {
+                "type": "object",
+                "properties": {
+                    "counts": {
+                        "type": "object",
+                        "additionalProperties": {"type": "integer"},
+                    },
+                },
+            },
+        },
+    }
+    with pytest.warns(UserWarning, match=r"address\.counts"):
+        _set_additional_properties_false(schema)
+    assert (
+        schema["properties"]["address"]["properties"]["counts"]["additionalProperties"]
+        is False
+    )
+
+
+def test_set_additional_properties_false_already_false_no_warning() -> None:
+    """Schemas already carrying additionalProperties: false warn nothing."""
+    schema: dict = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "counts": {
+                "type": "object",
+                "additionalProperties": False,
+            },
+        },
+    }
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _set_additional_properties_false(schema)
+
+
+def test_json_schema_warns_for_pydantic_dict_field() -> None:
+    """with_structured_output warns naming a pydantic dict[str, X] field (#1309)."""
+
+    class LetterCounts(BaseModel):
+        counts: dict[str, int] = Field(
+            description="Number of words for each first letter"
+        )
+
+    chat_model = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+    )  # type: ignore[call-arg]
+    with pytest.warns(UserWarning, match="counts"):
+        chat_model.with_structured_output(LetterCounts, method="json_schema")
+
+
 def test_response_format_translates_to_output_config() -> None:
     """response_format kwarg is translated to Bedrock outputConfig."""
     mocked_client = mock.MagicMock()
