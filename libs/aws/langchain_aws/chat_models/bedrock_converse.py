@@ -3624,22 +3624,58 @@ def _set_additional_properties_false(schema: dict) -> None:
     Bedrock structured outputs require this on every object in the JSON schema.
     Modifies *schema* in place. Also walks ``$defs``/``definitions``,
     ``properties``, ``items``, and ``allOf``/``anyOf``/``oneOf``.
+
+    Warns (naming the field) when overwriting a non-``False``
+    ``additionalProperties`` value, e.g. the value schema pydantic emits for
+    ``dict[str, X]`` fields: Bedrock then constrains generation to a keyless
+    object, so such maps may silently come back empty on some models.
+    """
+    _set_additional_properties_false_at_path(schema, path="")
+
+
+def _set_additional_properties_false_at_path(schema: dict, path: str) -> None:
+    """Recursive worker for :func:`_set_additional_properties_false`.
+
+    Args:
+        schema: The (sub-)schema to process in place.
+        path: Dotted path of the field being processed, used to name the
+            field in the overwrite warning ("" for the root schema).
     """
     if schema.get("type") == "object":
+        existing = schema.get("additionalProperties")
+        if existing is not None and existing is not False:
+            field = path or "<root schema>"
+            warnings.warn(
+                f"Overwriting additionalProperties for field '{field}': Bedrock "
+                "structured outputs require additionalProperties: false on "
+                "every object, so the value schema of this mapping is discarded "
+                "and the map may come back empty on some models. Consider "
+                "modeling the field as a list of {'key': ..., 'value': ...} "
+                "objects, or use method='function_calling' instead.",
+                UserWarning,
+                stacklevel=3,
+            )
         schema["additionalProperties"] = False
-        for prop_schema in (schema.get("properties") or {}).values():
+        for prop_name, prop_schema in (schema.get("properties") or {}).items():
             if isinstance(prop_schema, dict):
-                _set_additional_properties_false(prop_schema)
+                _set_additional_properties_false_at_path(
+                    prop_schema, f"{path}.{prop_name}" if path else prop_name
+                )
     if "items" in schema and isinstance(schema["items"], dict):
-        _set_additional_properties_false(schema["items"])
+        _set_additional_properties_false_at_path(schema["items"], f"{path}[]")
     for keyword in ("$defs", "definitions"):
-        for def_schema in (schema.get(keyword) or {}).values():
+        for def_name, def_schema in (schema.get(keyword) or {}).items():
             if isinstance(def_schema, dict):
-                _set_additional_properties_false(def_schema)
+                child_path = (
+                    f"{path}.{keyword}.{def_name}" if path else f"{keyword}.{def_name}"
+                )
+                _set_additional_properties_false_at_path(def_schema, child_path)
     for keyword in ("allOf", "anyOf", "oneOf"):
-        for sub_schema in schema.get(keyword) or []:
+        for index, sub_schema in enumerate(schema.get(keyword) or []):
             if isinstance(sub_schema, dict):
-                _set_additional_properties_false(sub_schema)
+                _set_additional_properties_false_at_path(
+                    sub_schema, f"{path}.{keyword}[{index}]"
+                )
 
 
 def _strip_null_anyof(schema: Any) -> Any:
