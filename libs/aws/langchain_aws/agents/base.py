@@ -227,6 +227,8 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
                 session_id: The session id to use. If not provided, a new session will
                     be started
                 end_session: Boolean indicating whether to end a session or not
+                session_attributes: Attributes that persist for the session
+                prompt_session_attributes: Attributes available for the current turn
                 intermediate_steps: The intermediate steps that are used to provide RoC
                     invocation details
             config: The optional RunnableConfig
@@ -269,6 +271,15 @@ class BedrockAgentsRunnable(RunnableSerializable[Dict, OutputType]):
             else:
                 agent_input["inputText"] = input.get("input", "")
                 agent_input["sessionId"] = input.get("session_id", str(uuid.uuid4()))
+
+            for input_key, state_key in (
+                ("session_attributes", "sessionAttributes"),
+                ("prompt_session_attributes", "promptSessionAttributes"),
+            ):
+                if input.get(input_key) is not None:
+                    agent_input.setdefault("sessionState", {})[state_key] = input[
+                        input_key
+                    ]
 
             output = self.client.invoke_agent(**agent_input)
         except Exception as e:
