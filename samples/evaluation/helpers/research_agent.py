@@ -32,6 +32,7 @@ from deepagents import create_deep_agent
 from langchain.agents.middleware import AgentMiddleware
 from langchain_aws import ChatBedrockConverse
 from langchain_core.messages import ToolMessage
+from langchain_core.tools import ToolException
 
 logger = logging.getLogger(__name__)
 
@@ -350,15 +351,16 @@ _BROWSER_TOOLS = (
 )
 
 
-class ToolDeadlineMiddleware(AgentMiddleware):
-    """Give selected tools a deadline, and turn a missed one into an error message.
+class ToolGuardMiddleware(AgentMiddleware):
+    """Give selected tools a deadline, and turn a timeout or tool error into a message.
 
     The LangChain fault-tolerance guide routes transient failures through retry
     middleware and recoverable ones back to the model, but both start from an
     exception. A call that hangs never raises, so without a deadline one stuck
     browser read holds the subagent, and through it the whole run, indefinitely.
     The deadline supplies the exception; the error ``ToolMessage`` lets the model
-    recover the way the guide recommends.
+    recover the way the guide recommends. A ``ToolException``, such as Playwright's
+    own navigation timeout, is returned the same way instead of ending the run.
 
     Args:
         timeouts: Seconds allowed per tool name. Tools not listed are untouched.
@@ -390,12 +392,16 @@ class ToolDeadlineMiddleware(AgentMiddleware):
             logger.warning("%s exceeded its %g s deadline", name, limit)
             if self.on_timeout is not None:
                 await self.on_timeout(request)
-            return ToolMessage(
-                content=f"{name} did not finish within {limit:g} s. {self.advice}".strip(),
-                tool_call_id=request.tool_call["id"],
-                name=name,
-                status="error",
-            )
+            content = f"{name} did not finish within {limit:g} s. {self.advice}"
+        except ToolException as exc:
+            logger.warning("%s failed: %s", name, exc)
+            content = f"{name} failed: {exc}"
+        return ToolMessage(
+            content=content.strip(),
+            tool_call_id=request.tool_call["id"],
+            name=name,
+            status="error",
+        )
 
 
 async def build_research_agent(
@@ -441,7 +447,7 @@ async def build_research_agent(
 
         subagents.append({
             "middleware": [
-                ToolDeadlineMiddleware(
+                ToolGuardMiddleware(
                     {name: BROWSER_TOOL_TIMEOUT_S for name in _BROWSER_TOOLS},
                     on_timeout=reset_browser,
                     advice="The browser session was reset. Navigate to the URL "
@@ -484,7 +490,7 @@ async def build_research_agent(
         # A subagent that never returns would otherwise hold the whole run. The
         # coordinator gets an error for that task and reports what it has.
         middleware=[
-            ToolDeadlineMiddleware(
+            ToolGuardMiddleware(
                 {"task": SUBAGENT_TIMEOUT_S},
                 advice="Report this company's figures as unavailable rather than "
                 "retrying, and continue with the others.",
