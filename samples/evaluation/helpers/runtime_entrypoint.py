@@ -95,9 +95,11 @@ async def invoke(payload, context):
                 # thread_id keys the browser and interpreter sessions, so tying it to
                 # the runtime session keeps one caller's sandboxes together.
                 "configurable": {"thread_id": session_id},
-                # 60 rather than LangGraph's default 25: a four-subagent fan-out that
-                # retries anything trips the default ceiling and dies mid-run.
-                "recursion_limit": 60,
+                # Well above LangGraph's default 25. Every middleware hook is a graph
+                # step, and deepagents 0.7.23 runs more of them per turn than 0.7.13,
+                # so a run that fit in 60 steps there needs more now. A guard against
+                # runaway loops, not a target: a healthy run uses far fewer.
+                "recursion_limit": 150,
             },
         )
         return {"result": _final_text(result.get("messages", []))}

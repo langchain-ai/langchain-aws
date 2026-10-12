@@ -145,6 +145,10 @@ Each of these cost real debugging time and is called out in the notebook where i
   cannot confirm an artifact. Use `execute_command "ls -la"`.
 - **`recursion_limit` defaults to 25**, too low for a four-subagent fan-out. Raising it is
   a guard rail, not a fix: an unbounded retry loop will find the new ceiling too.
+- **A browser read can hang with no error.** `page.content()` has no timeout, so one stuck
+  call held the whole run. `helpers/research_agent.py` gives browser tools a 60 s deadline and
+  each research subagent 300 s, following the LangChain fault-tolerance pattern: the missed
+  deadline becomes an error message the model recovers from.
 - **botocore's default connection pool of 10** is too small for a three-way fan-out and
   produces `Connection reset by peer` mid-run.
 - **`EvaluationClient.run` returns a flat `list[dict]`**, not objects. Reading it as
