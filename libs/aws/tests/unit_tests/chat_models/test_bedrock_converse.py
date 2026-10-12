@@ -49,6 +49,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _count_cache_points,
     _expand_inline_reasoning,
     _extract_response_metadata,
+    _extract_thinking_tokens,
     _extract_usage_metadata,
     _format_data_content_block,
     _format_tools,
@@ -6332,6 +6333,79 @@ def test_closing_stream_early_does_not_report_incomplete_response() -> None:
     stream.close()
 
     transport.close.assert_called_once()
+
+
+_NATIVE_USAGE = {
+    "usage": {"output_tokens": 565, "output_tokens_details": {"thinking_tokens": 562}}
+}
+
+
+@pytest.mark.parametrize(
+    ("additional_fields", "expected"),
+    [
+        (_NATIVE_USAGE, 562),
+        (None, None),
+        ({}, None),
+        ({"usage": {"output_tokens": 3}}, None),
+        ({"usage": {"output_tokens_details": {"thinking_tokens": "562"}}}, None),
+        ({"usage": "not-a-dict"}, None),
+    ],
+)
+def test__extract_thinking_tokens(
+    additional_fields: Optional[Dict[str, Any]], expected: Optional[int]
+) -> None:
+    assert _extract_thinking_tokens(additional_fields) == expected
+
+
+def test_invoke_maps_converse_thinking_tokens_to_reasoning() -> None:
+    client = mock.MagicMock()
+    client.converse.return_value = {
+        "output": {"message": {"role": "assistant", "content": [{"text": "42"}]}},
+        "stopReason": "end_turn",
+        "usage": {"inputTokens": 20, "outputTokens": 565, "totalTokens": 585},
+        "additionalModelResponseFields": _NATIVE_USAGE,
+    }
+    model = ChatBedrockConverse(
+        client=client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        additional_model_response_field_paths=["/usage"],
+    )
+
+    response = model.invoke("hi")
+
+    assert client.converse.call_args.kwargs["additionalModelResponseFieldPaths"] == [
+        "/usage"
+    ]
+    assert response.usage_metadata is not None
+    assert response.usage_metadata["output_tokens"] == 565
+    assert response.usage_metadata["output_token_details"] == {"reasoning": 562}
+
+
+def test_stream_maps_converse_thinking_tokens_to_reasoning_once() -> None:
+    events = _completion_events()
+    message_stop = next(e for e in events if "messageStop" in e)
+    message_stop["messageStop"]["additionalModelResponseFields"] = _NATIVE_USAGE
+    model, _ = _streaming_model(events)
+
+    chunks = list(model.stream("hi"))
+    merged = sum(chunks[1:], chunks[0])
+
+    assert [
+        c.usage_metadata.get("output_token_details") for c in chunks if c.usage_metadata
+    ] == [{"reasoning": 562}]
+    assert merged.usage_metadata is not None
+    assert merged.usage_metadata["output_tokens"] == 2
+    assert merged.usage_metadata["output_token_details"] == {"reasoning": 562}
+
+
+def test_stream_without_thinking_tokens_has_no_output_token_details() -> None:
+    model, _ = _streaming_model(_completion_events())
+
+    response = model.invoke("hi")
+
+    assert response.usage_metadata is not None
+    assert "output_token_details" not in response.usage_metadata
 
 
 def test_incomplete_stream_reports_error_callback(

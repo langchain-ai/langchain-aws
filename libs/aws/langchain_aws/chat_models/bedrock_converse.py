@@ -47,7 +47,12 @@ from langchain_core.messages import (
     merge_message_runs,
 )
 from langchain_core.messages import content as types
-from langchain_core.messages.ai import AIMessageChunk, InputTokenDetails, UsageMetadata
+from langchain_core.messages.ai import (
+    AIMessageChunk,
+    InputTokenDetails,
+    OutputTokenDetails,
+    UsageMetadata,
+)
 from langchain_core.messages.tool import tool_call as create_tool_call
 from langchain_core.messages.tool import tool_call_chunk
 from langchain_core.output_parsers.base import OutputParserLike
@@ -1514,11 +1519,18 @@ class ChatBedrockConverse(BaseChatModel):
             _handle_bedrock_error(e)
         added_model_name = False
         received_message_stop = False
+        reasoning_tokens: Optional[int] = None
         stream = response["stream"]
         try:
             for event in stream:
-                received_message_stop |= "messageStop" in event
-                if message_chunk := _parse_stream_event(event):
+                if "messageStop" in event:
+                    received_message_stop = True
+                    reasoning_tokens = _extract_thinking_tokens(
+                        event["messageStop"].get("additionalModelResponseFields")
+                    )
+                if message_chunk := _parse_stream_event(
+                    event, reasoning_tokens=reasoning_tokens
+                ):
                     if (
                         hasattr(message_chunk, "usage_metadata")
                         and message_chunk.usage_metadata
@@ -2654,7 +2666,19 @@ def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:
     return response_metadata
 
 
-def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
+def _extract_thinking_tokens(
+    additional_fields: Optional[Dict[str, Any]],
+) -> Optional[int]:
+    """Read thinking tokens from `additionalModelResponseFields` (`["/usage"]`)."""
+    usage = (additional_fields or {}).get("usage")
+    details = usage.get("output_tokens_details") if isinstance(usage, dict) else None
+    tokens = details.get("thinking_tokens") if isinstance(details, dict) else None
+    return tokens if isinstance(tokens, int) else None
+
+
+def _extract_usage_metadata(
+    response: Dict[str, Any], *, reasoning_tokens: Optional[int] = None
+) -> UsageMetadata:
     usage_dict = response.pop("usage")
 
     bedrock_input_tokens = usage_dict.get("inputTokens", 0)
@@ -2695,6 +2719,9 @@ def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
         ),
         total_tokens=total_tokens,
     )
+    # Thinking tokens are a subset of output_tokens, not additive.
+    if reasoning_tokens is not None:
+        usage["output_token_details"] = OutputTokenDetails(reasoning=reasoning_tokens)
     return usage
 
 
@@ -2798,7 +2825,12 @@ def _parse_response(
         open_tag, close_tag = inline_reasoning_tags
         lc_content = _expand_inline_reasoning(lc_content, open_tag, close_tag)
     tool_calls = _extract_tool_calls(lc_content)
-    usage = _extract_usage_metadata(response)
+    usage = _extract_usage_metadata(
+        response,
+        reasoning_tokens=_extract_thinking_tokens(
+            response.get("additionalModelResponseFields")
+        ),
+    )
     return AIMessage(
         content=_str_if_single_text_block(lc_content),  # type: ignore[arg-type]
         usage_metadata=usage,
@@ -2807,7 +2839,9 @@ def _parse_response(
     )
 
 
-def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
+def _parse_stream_event(
+    event: Dict[str, Any], *, reasoning_tokens: Optional[int] = None
+) -> Optional[BaseMessageChunk]:
     if "messageStart" in event:
         # TODO: needed?
         return (
@@ -2866,7 +2900,9 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         # TODO: snake case response metadata?
         return AIMessageChunk(content="", response_metadata=event["messageStop"])
     elif "metadata" in event:
-        usage = _extract_usage_metadata(event["metadata"])
+        usage = _extract_usage_metadata(
+            event["metadata"], reasoning_tokens=reasoning_tokens
+        )
         return AIMessageChunk(
             content="", response_metadata=event["metadata"], usage_metadata=usage
         )
