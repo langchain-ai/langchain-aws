@@ -2932,9 +2932,16 @@ def _format_data_content_block(block: dict) -> dict:
             if "mimeType" not in block:
                 error_message = "mime_type key is required for base64 data."
                 raise ValueError(error_message)
+            mime_type = block["mimeType"]
+            if mime_type not in MIME_TO_FORMAT and (
+                mime_type.startswith("text/") or mime_type == "application/xml"
+            ):
+                doc_format = "txt"
+            else:
+                doc_format = _mime_type_to_format(mime_type)
             formatted_block = {
                 "document": {
-                    "format": _mime_type_to_format(block["mimeType"]),
+                    "format": doc_format,
                     "source": {
                         "bytes": _b64str_to_bytes(
                             block.get("base64") or block.get("data", "")

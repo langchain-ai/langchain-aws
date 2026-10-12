@@ -3373,6 +3373,45 @@ def test__lc_content_to_bedrock_mime_types_invalid() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("mime_type", "expected_format"),
+    [
+        ("text/css", "txt"),
+        ("text/calendar", "txt"),
+        ("application/xml", "txt"),
+        ("text/csv", "csv"),
+        ("text/html", "html"),
+    ],
+)
+def test__lc_content_to_bedrock_text_file_mime_types(
+    mime_type: str, expected_format: str
+) -> None:
+    bedrock_content = _lc_content_to_bedrock(
+        [
+            {
+                "type": "file",
+                "base64": base64.b64encode(b"test_data").decode("utf-8"),
+                "mime_type": mime_type,
+                "filename": "test_file",
+            }
+        ]
+    )
+    assert bedrock_content[0]["document"]["format"] == expected_format
+
+
+def test__lc_content_to_bedrock_text_mime_type_image_still_rejected() -> None:
+    with pytest.raises(ValueError, match="Unsupported MIME type"):
+        _lc_content_to_bedrock(
+            [
+                {
+                    "type": "image",
+                    "base64": base64.b64encode(b"test_data").decode("utf-8"),
+                    "mime_type": "text/css",
+                }
+            ]
+        )
+
+
 def test__lc_content_to_bedrock_empty_content() -> None:
     content: List[Union[str, Dict[str, Any]]] = []
 
