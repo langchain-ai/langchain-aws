@@ -20,7 +20,28 @@ from langgraph.store.base import (
     SearchOp,
 )
 
+from langgraph_checkpoint_aws.checkpoint.agentcore.helpers import (
+    convert_langchain_messages_to_event_messages,
+)
 from langgraph_checkpoint_aws.store.agentcore.store import AgentCoreMemoryStore
+
+
+@pytest.mark.filterwarnings("error::langchain_core._api.LangChainDeprecationWarning")
+def test_convert_messages_uses_text_property() -> None:
+    messages = [
+        HumanMessage(content="Hello"),
+        AIMessage(content=[{"type": "text", "text": "Hi"}]),
+        ToolMessage(content="Result", tool_call_id="call-1"),
+        SystemMessage(content="Instructions"),
+        HumanMessage(content=" "),
+        HumanMessage(content="Saved", additional_kwargs={"event_id": "event-1"}),
+    ]
+    assert convert_langchain_messages_to_event_messages(messages) == [
+        ("Hello", "USER"),
+        ("Hi", "ASSISTANT"),
+        ("Result", "TOOL"),
+        ("Instructions", "OTHER"),
+    ]
 
 
 class TestAgentCoreMemoryStore:
