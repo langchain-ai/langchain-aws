@@ -23,7 +23,7 @@ from unittest import mock
 import botocore.session
 import pytest
 from botocore.model import StructureShape
-from langchain_core.language_models import BaseChatModel
+from langchain_core.language_models import BaseChatModel, ModelProfile
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -132,6 +132,30 @@ def test_profile() -> None:
 
     model = ChatBedrockConverse(model="foo")
     assert model.profile == {}
+
+
+@pytest.mark.parametrize(
+    "model_id", ["global.anthropic.claude-sonnet-5-5", "openai.gpt-5.5"]
+)
+def test_profile_omits_mid_conversation_support(model_id: str) -> None:
+    """Converse moves every system message into `system`."""
+    model = ChatBedrockConverse(model=model_id, region_name="us-west-2")
+    assert model.profile
+    assert "mid_conversation_system_messages" not in model.profile
+    assert "mid_conversation_tools" not in model.profile
+
+
+def test_explicit_profile_keeps_mid_conversation_support() -> None:
+    profile: ModelProfile = {
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
+    }
+    model = ChatBedrockConverse(
+        model="global.anthropic.claude-sonnet-5-5",
+        region_name="us-west-2",
+        profile=profile,
+    )
+    assert model.profile == profile
 
 
 def test_model_property_returns_model_id() -> None:

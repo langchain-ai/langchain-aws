@@ -140,6 +140,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "anthropic.claude-fable-5-1": {
         "name": "Claude Fable 5.1",
@@ -164,6 +166,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "anthropic.claude-haiku-4-5-20251001-v1:0": {
         "name": "Claude Haiku 4.5",
@@ -221,6 +225,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "anthropic.claude-opus-4-1-20250805-v1:0": {
         "name": "Claude Opus 4.1",
@@ -344,6 +350,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "anthropic.claude-opus-5": {
         "name": "Claude Opus 5",
@@ -375,6 +383,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "anthropic.claude-opus-5-5": {
         "name": "Claude Opus 5.5",
@@ -406,6 +416,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "anthropic.claude-sonnet-4-5-20250929-v1:0": {
         "name": "Claude Sonnet 4.5",
@@ -488,6 +500,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": False,
     },
     "anthropic.claude-sonnet-5-5": {
         "name": "Claude Sonnet 5.5",
@@ -520,6 +534,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "apac.amazon.nova-lite-v1:0": {
         "name": "Nova Lite (APAC)",
@@ -674,6 +690,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "au.anthropic.claude-opus-4-6-v1": {
         "name": "AU Anthropic Claude Opus 4.6",
@@ -747,6 +765,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "au.anthropic.claude-opus-5": {
         "name": "Claude Opus 5 (AU)",
@@ -778,6 +798,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "au.anthropic.claude-opus-5-5": {
         "name": "Claude Opus 5.5 (AU)",
@@ -809,6 +831,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "au.anthropic.claude-sonnet-4-5-20250929-v1:0": {
         "name": "Claude Sonnet 4.5 (AU)",
@@ -891,6 +915,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": False,
     },
     "ca.amazon.nova-lite-v1:0": {
         "name": "Nova Lite (CA)",
@@ -1109,6 +1135,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "eu.anthropic.claude-haiku-4-5-20251001-v1:0": {
         "name": "Claude Haiku 4.5 (EU)",
@@ -1166,6 +1194,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "eu.anthropic.claude-opus-4-5-20251101-v1:0": {
         "name": "Claude Opus 4.5 (EU)",
@@ -1264,6 +1294,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "eu.anthropic.claude-opus-5": {
         "name": "Claude Opus 5 (EU)",
@@ -1295,6 +1327,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "eu.anthropic.claude-opus-5-5": {
         "name": "Claude Opus 5.5 (EU)",
@@ -1326,6 +1360,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "eu.anthropic.claude-sonnet-4-20250514-v1:0": {
         "name": "Claude Sonnet 4 (EU)",
@@ -1433,6 +1469,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": False,
     },
     "eu.anthropic.claude-sonnet-5-5": {
         "name": "Claude Sonnet 5.5 (EU)",
@@ -1458,6 +1496,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "eu.mistral.pixtral-large-2502-v1:0": {
         "name": "Pixtral Large (25.02) (EU)",
@@ -1530,6 +1570,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "global.anthropic.claude-fable-5-1": {
         "name": "Claude Fable 5.1 (Global)",
@@ -1554,6 +1596,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "global.anthropic.claude-haiku-4-5-20251001-v1:0": {
         "name": "Claude Haiku 4.5 (Global)",
@@ -1611,6 +1655,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "global.anthropic.claude-opus-4-5-20251101-v1:0": {
         "name": "Claude Opus 4.5 (Global)",
@@ -1709,6 +1755,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "global.anthropic.claude-opus-5": {
         "name": "Claude Opus 5 (Global)",
@@ -1740,6 +1788,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "global.anthropic.claude-opus-5-5": {
         "name": "Claude Opus 5.5 (Global)",
@@ -1771,6 +1821,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "global.anthropic.claude-sonnet-4-20250514-v1:0": {
         "name": "Claude Sonnet 4 (Global)",
@@ -1878,6 +1930,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": False,
     },
     "global.anthropic.claude-sonnet-5-5": {
         "name": "Claude Sonnet 5.5 (Global)",
@@ -1910,6 +1964,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "global.moonshotai.kimi-k3": {
         "name": "Kimi K3 (Global)",
@@ -2383,6 +2439,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "in.anthropic.claude-sonnet-5": {
         "name": "Claude Sonnet 5 (India)",
@@ -2408,6 +2466,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": False,
     },
     "in.openai.gpt-5.6-luna": {
         "name": "GPT-5.6 Luna (India)",
@@ -2539,6 +2599,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "jp.anthropic.claude-opus-4-7": {
         "name": "Claude Opus 4.7 (JP)",
@@ -2587,6 +2649,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "jp.anthropic.claude-opus-5": {
         "name": "Claude Opus 5 (JP)",
@@ -2618,6 +2682,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "jp.anthropic.claude-opus-5-5": {
         "name": "Claude Opus 5.5 (JP)",
@@ -2649,6 +2715,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "jp.anthropic.claude-sonnet-4-5-20250929-v1:0": {
         "name": "Claude Sonnet 4.5 (JP)",
@@ -2731,6 +2799,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": False,
     },
     "meta.llama3-1-70b-instruct-v1:0": {
         "name": "Llama 3.1 70B Instruct",
@@ -3335,6 +3405,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "openai.gpt-5.5": {
         "name": "GPT-5.5",
@@ -3360,6 +3432,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "openai.gpt-5.6-luna": {
         "name": "GPT-5.6 Luna",
@@ -3393,6 +3467,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "openai.gpt-5.6-sol": {
         "name": "GPT-5.6 Sol",
@@ -3426,6 +3502,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "openai.gpt-5.6-terra": {
         "name": "GPT-5.6 Terra",
@@ -3557,6 +3635,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "openai.gpt-6.1-sol": {
         "name": "GPT-6.1 Sol",
@@ -3582,6 +3662,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "openai.gpt-oss-120b": {
         "name": "gpt-oss-120b",
@@ -4123,6 +4205,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "us.anthropic.claude-fable-5-1": {
         "name": "Claude Fable 5.1 (US)",
@@ -4147,6 +4231,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "us.anthropic.claude-haiku-4-5-20251001-v1:0": {
         "name": "Claude Haiku 4.5 (US)",
@@ -4204,6 +4290,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "us.anthropic.claude-opus-4-1-20250805-v1:0": {
         "name": "Claude Opus 4.1 (US)",
@@ -4327,6 +4415,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "us.anthropic.claude-opus-5": {
         "name": "Claude Opus 5 (US)",
@@ -4358,6 +4448,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "us.anthropic.claude-opus-5-5": {
         "name": "Claude Opus 5.5 (US)",
@@ -4389,6 +4481,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "us.anthropic.claude-sonnet-4-20250514-v1:0": {
         "name": "Claude Sonnet 4 (US)",
@@ -4496,6 +4590,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
             "xhigh",
             "max",
         ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": False,
     },
     "us.anthropic.claude-sonnet-5-5": {
         "name": "Claude Sonnet 5.5 (US)",
@@ -4521,6 +4617,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "image_url_inputs": True,
         "pdf_tool_message": True,
         "image_tool_message": True,
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "us.deepseek.r1-v1:0": {
         "name": "DeepSeek-R1 (US)",
