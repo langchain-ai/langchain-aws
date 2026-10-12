@@ -3651,7 +3651,7 @@ def _set_additional_properties_false_at_path(schema: dict, path: str) -> None:
                 "every object, so the value schema of this mapping is discarded "
                 "and the map may come back empty on some models. Consider "
                 "modeling the field as a list of {'key': ..., 'value': ...} "
-                "objects, or use method='function_calling' instead.",
+                "objects, or use method='function_calling' without strict=True.",
                 UserWarning,
                 stacklevel=3,
             )
