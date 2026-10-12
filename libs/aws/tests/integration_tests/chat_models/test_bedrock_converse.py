@@ -1253,6 +1253,24 @@ def test_bedrock_pdf_inputs() -> None:
     _ = model.invoke([message])
 
 
+def test_bedrock_text_file_inputs() -> None:
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
+
+    message = HumanMessage(
+        [
+            {"type": "text", "text": "What color does this stylesheet set?"},
+            {
+                "type": "file",
+                "mime_type": "text/css",
+                "base64": base64.b64encode(b"body { color: red; }").decode("utf-8"),
+                "name": "styles",
+            },
+        ]
+    )
+    response = model.invoke([message])
+    assert "red" in response.text.lower()
+
+
 def test_get_num_tokens_from_messages_integration() -> None:
     chat = ChatBedrockConverse(
         model="us.anthropic.claude-sonnet-4-6",
