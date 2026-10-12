@@ -732,13 +732,13 @@ def convert_langchain_messages_to_event_messages(
     Returns:
         List of AgentCore event tuples (text, role)
     """
-    converted_messages = []
+    converted_messages: list[tuple[str, str]] = []
     for msg in messages:
         # Skip if event already saved
         if msg.additional_kwargs.get("event_id") is not None:
             continue
 
-        text = msg.text()
+        text = msg.text
         if not text.strip():
             continue
 
