@@ -1520,16 +1520,16 @@ wheels = [
 
 [[package]]
 name = "langchain-anthropic"
-version = "1.7.5"
+version = "1.7.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anthropic" },
     { name = "langchain-core" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/91/e6/45ead93ef6d9f244b502a6a32bf9a185b3da1cc7fa8003896a102dadac09/langchain_anthropic-1.7.5.tar.gz", hash = "sha256:6016f38e5c4bf12c16ecfa76abf133a978f459f4d2887b8e28435ae1ff00beb3", size = 764625, upload-time = "2026-09-29T15:22:07.106Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3c/45/b369666909be4a6f58877b18e692655ee792e06047c6c572d1218e09a31c/langchain_anthropic-1.7.6.tar.gz", hash = "sha256:e5b41959a39810e69bc608fd6622b7d5d017bde93f858b09332fbb6ac764c393", size = 765188, upload-time = "2026-10-12T14:39:58.537Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/eb/a8/c507f2c1859b584843983e98bc71e0066c16a77e6c181921c928e0fdbcf7/langchain_anthropic-1.7.5-py3-none-any.whl", hash = "sha256:b21ef0e0c2d6175235a5b7eef4f5f89057df92d42dbfab66920a05605ef7173a", size = 65239, upload-time = "2026-09-29T15:22:05.832Z" },
+    { url = "https://files.pythonhosted.org/packages/97/d6/da1ba42b7c26cd511c9be5473dbb178c51b07a337e94f09188d45f0306a2/langchain_anthropic-1.7.6-py3-none-any.whl", hash = "sha256:06bee97006d99e9a04abc4bd56599fc356c0c7f7f2a97629645cb603d9785c73", size = 65535, upload-time = "2026-10-12T14:39:57.386Z" },
 ]
 
 [[package]]
@@ -1617,8 +1617,8 @@ requires-dist = [
     { name = "beautifulsoup4", marker = "extra == 'tools'", specifier = ">=4.13.4" },
     { name = "bedrock-agentcore", marker = "python_full_version >= '3.10' and extra == 'tools'", specifier = ">=1.23.0" },
     { name = "boto3", specifier = ">=1.43.64" },
-    { name = "langchain-anthropic", marker = "extra == 'anthropic'" },
-    { name = "langchain-core", specifier = ">=1.6.7" },
+    { name = "langchain-anthropic", marker = "extra == 'anthropic'", specifier = ">=1.7.6" },
+    { name = "langchain-core", specifier = ">=1.6.10" },
     { name = "langchain-openai", marker = "extra == 'openai'", specifier = ">=1.0.0" },
     { name = "numpy", specifier = ">=1.0.0,<3" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.106.0" },
@@ -1690,7 +1690,7 @@ wheels = [
 
 [[package]]
 name = "langchain-core"
-version = "1.6.7"
+version = "1.6.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
@@ -1704,9 +1704,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "uuid-utils" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0b/0e/cd8ace920319158f1111ad3e6d6a418254fad7594402a57560ff285d5127/langchain_core-1.6.7.tar.gz", hash = "sha256:55842ca61ffb460787c6f62c8bf775275972e9b9a3fd9b2210931eb77d038e2d", size = 1009564, upload-time = "2026-10-06T15:46:53.498Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f7/00/0a95f74a79908e7bc844a82fca35c1afc55689f55aaed086e95745946db8/langchain_core-1.6.10.tar.gz", hash = "sha256:3ad7a64eab150c1fea9f8a748b1c076aa1a960c5cf7c28d81a841a2f2dbffad1", size = 1010280, upload-time = "2026-10-12T14:13:51.184Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/af/fb/12b08f501fb2fc379b82eb5c391b56c6ecc70d30aedeb4acb44de03a9252/langchain_core-1.6.7-py3-none-any.whl", hash = "sha256:e12cb80b2008b0484c33d209c42d6290ef173f7be9d639b372aba0d438676cdd", size = 572761, upload-time = "2026-10-06T15:46:52.069Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/2c/6ed698c6b451af0ed0efdbe94a703c18aea768d925347d8d1efd5645ae8c/langchain_core-1.6.10-py3-none-any.whl", hash = "sha256:14341bdd8b42d0dd9a53dbbcd8b0599ab47b0c718c7caa12e3eb5c50b32cffcb", size = 573253, upload-time = "2026-10-12T14:13:49.616Z" },
 ]
 
 [[package]]
