@@ -3028,10 +3028,23 @@ def _format_data_content_block(block: dict) -> dict:
             error_message = "Video data only supported through in-line base64 format."
             raise ValueError(error_message)
 
+    elif block["type"] == "text-plain":
+        if "text" not in block:
+            error_message = "Key text is required for text-plain blocks."
+            raise ValueError(error_message)
+        formatted_block = {
+            "document": {
+                "format": "txt",
+                "source": {"text": block["text"]},
+            }
+        }
+        if name := block.get("name"):
+            formatted_block["document"]["name"] = name
+
     else:
         error_message = (
             f"Unsupported data content block type: '{block['type']}'. "
-            f"Supported types are: 'image', 'file', 'video'."
+            f"Supported types are: 'image', 'file', 'video', 'text-plain'."
         )
         raise ValueError(error_message)
 
