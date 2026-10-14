@@ -82,6 +82,10 @@ def _convert_from_v1_to_converse(
                 if "reasoning_content" not in new_block:
                     new_block["reasoning_content"] = {}
                 new_block["reasoning_content"]["signature"] = signature
+            if redacted := block.get("extras", {}).get("redacted_content"):
+                if "reasoning_content" not in new_block:
+                    new_block["reasoning_content"] = {}
+                new_block["reasoning_content"]["redacted_content"] = redacted
 
             new_content.append(new_block)
 

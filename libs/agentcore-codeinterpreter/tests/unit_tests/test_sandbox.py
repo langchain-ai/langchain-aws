@@ -26,8 +26,14 @@ from deepagents.backends.sandbox import BaseSandbox
 from langchain_agentcore_codeinterpreter import AgentCoreSandbox
 from langchain_agentcore_codeinterpreter.sandbox import (
     _AGENTCORE_EXECUTOR,
+    _BASE_GREP_HAS_MAX_COUNT,
+    _BASE_HAS_DELETE,
+    INTEGRATION_SOURCE,
     SessionExpiredError,
 )
+
+#: Extra kwargs BaseSandbox.grep receives, which depends on the deepagents version.
+_GREP_KW: dict[str, Any] = {"max_count": None} if _BASE_GREP_HAS_MAX_COUNT else {}
 
 
 def _make_sandbox(
@@ -87,8 +93,9 @@ def test_execute_calls_invoke_correctly() -> None:
             "stream": [
                 {
                     "result": {
-                        "exitCode": 0,
                         "content": [{"type": "text", "text": "ok"}],
+                        "isError": False,
+                        "structuredContent": {"exitCode": 0, "stdout": "ok"},
                     }
                 }
             ]
@@ -103,13 +110,17 @@ def test_execute_calls_invoke_correctly() -> None:
     assert result.truncated is False
 
 
-def test_execute_defaults_exit_code_to_zero() -> None:
-    """When the stream has no exitCode, execute() should default to 0."""
+def test_execute_unknown_exit_code_is_none() -> None:
+    """With no exit code reported, execute() returns None, not success.
+
+    Deep Agents reads None as "could not be determined". Reporting 0 told the
+    agent that commands of unknown outcome had succeeded.
+    """
     sandbox, _ = _make_sandbox(
         {"stream": [{"result": {"content": [{"type": "text", "text": "no code"}]}}]}
     )
     result = sandbox.execute("cmd")
-    assert result.exit_code == 0
+    assert result.exit_code is None
 
 
 def test_execute_handles_exception() -> None:
@@ -519,7 +530,7 @@ def _make_successful_invoke(cwd: str = "") -> Any:
 
 def test_write_strips_cwd_prefix_from_upload_path() -> None:
     """upload path must be cwd-relative so writeFiles doesn't double the prefix."""
-    cwd = "/opt/amazon/genesis1p-tools/var"
+    cwd = "/opt/sandbox/var"
     sandbox, mock = _make_sandbox(cwd=cwd)
     mock.invoke.side_effect = _make_successful_invoke(cwd)
 
@@ -573,7 +584,7 @@ def test_write_returns_resolved_path_not_virtual_path() -> None:
     use the same path that was returned by write() — otherwise the shell cannot
     find the file because AgentCore resolves uploads relative to cwd, not to "/".
     """
-    cwd = "/opt/amazon/genesis1p-tools/var"
+    cwd = "/opt/sandbox/var"
     sandbox, mock = _make_sandbox(cwd=cwd)
     mock.invoke.side_effect = _make_successful_invoke(cwd)
 
@@ -665,7 +676,9 @@ def test_read_plane_resolves_virtual_paths(
     ) as mock_method:
         if method_name == "grep":
             result = sandbox.grep(extra_args[0], virtual_path)
-            mock_method.assert_called_once_with(extra_args[0], expected_path, None)
+            mock_method.assert_called_once_with(
+                extra_args[0], expected_path, None, **_GREP_KW
+            )
         elif method_name == "glob":
             result = sandbox.glob(extra_args[0], virtual_path)
             mock_method.assert_called_once_with(extra_args[0], expected_path)
@@ -690,7 +703,7 @@ def test_grep_with_none_path_passes_through() -> None:
         BaseSandbox, "grep", return_value=GrepResult(matches=[])
     ) as mock_grep:
         sandbox.grep("needle")
-        mock_grep.assert_called_once_with("needle", None, None)
+        mock_grep.assert_called_once_with("needle", None, None, **_GREP_KW)
 
 
 def test_glob_with_none_path_passes_through() -> None:
@@ -942,7 +955,9 @@ def test_agrep_routes_through_cwd_aware_sync_grep() -> None:
         BaseSandbox, "grep", return_value=GrepResult(matches=[])
     ) as mock_grep:
         asyncio.run(sandbox.agrep("needle", "/workspace"))
-        mock_grep.assert_called_once_with("needle", "/opt/sandbox/workspace", None)
+        mock_grep.assert_called_once_with(
+            "needle", "/opt/sandbox/workspace", None, **_GREP_KW
+        )
 
 
 def test_aglob_routes_through_cwd_aware_sync_glob() -> None:
@@ -964,5 +979,280 @@ def test_aglob_routes_through_cwd_aware_sync_glob() -> None:
 def test_dedicated_executor_exists() -> None:
     """The module-level executor should be configured."""
     assert _AGENTCORE_EXECUTOR is not None
-    assert _AGENTCORE_EXECUTOR._max_workers == 4
+    assert _AGENTCORE_EXECUTOR._max_workers == 16
     assert _AGENTCORE_EXECUTOR._thread_name_prefix == "agentcore-sandbox"
+
+
+# ------------------------------------------------------------------
+# Exit codes, in the shape the service returns them
+# ------------------------------------------------------------------
+
+
+def _result(exit_code: int | None, text: str = "", *, is_error: bool = False) -> dict:
+    """A live-shaped executeCommand result: exit code under structuredContent."""
+    content = [{"type": "text", "text": text}] if text else []
+    structured: dict[str, Any] = {"stdout": text, "stderr": ""}
+    if exit_code is not None:
+        structured["exitCode"] = exit_code
+    return {
+        "stream": [
+            {
+                "result": {
+                    "content": content,
+                    "isError": is_error,
+                    "structuredContent": structured,
+                }
+            }
+        ]
+    }
+
+
+@pytest.mark.parametrize("code", [0, 1, 2, 3, 127])
+def test_execute_reads_exit_code_from_structured_content(code: int) -> None:
+    """The service reports exitCode only under structuredContent."""
+    sandbox, _ = _make_sandbox(_result(code, is_error=code != 0))
+    assert sandbox.execute("cmd").exit_code == code
+
+
+def test_execute_uses_is_error_when_no_exit_code() -> None:
+    """isError without any exit code still reports failure."""
+    sandbox, _ = _make_sandbox(
+        {"stream": [{"result": {"content": [], "isError": True}}]}
+    )
+    assert sandbox.execute("cmd").exit_code == 1
+
+
+def test_write_refuses_existing_file() -> None:
+    """write() must fail on an existing file.
+
+    BaseSandbox decides this from the preflight command's exit code, so this
+    only works once that exit code is read from the right field.
+    """
+    sandbox, mock = _make_sandbox(cwd="/work")
+    mock.invoke.return_value = _result(1, "Error: File '/work/a.txt' already exists")
+    result = sandbox.write("/a.txt", "x")
+    assert result.error is not None
+    assert not [
+        c for c in mock.invoke.call_args_list if c.kwargs["method"] == "writeFiles"
+    ]
+
+
+# ------------------------------------------------------------------
+# writeFiles failures returned as isError
+# ------------------------------------------------------------------
+
+
+def test_upload_files_reports_is_error_result() -> None:
+    """A writeFiles result with isError must not be reported as success."""
+    sandbox, _ = _make_sandbox(
+        {
+            "stream": [
+                {
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Error executing tool write_files: Invalid "
+                                "file path: potential path traversal detected",
+                            }
+                        ],
+                        "isError": True,
+                    }
+                }
+            ]
+        }
+    )
+    result = sandbox.upload_files([("../../etc/x", b"x")])
+    assert result[0].error is not None
+
+
+def test_non_write_is_error_does_not_raise() -> None:
+    """Only writeFiles turns isError into an exception; commands report it."""
+    sandbox, _ = _make_sandbox(_result(2, "ls: cannot access", is_error=True))
+    result = sandbox.execute("ls /nope")
+    assert result.exit_code == 2
+    assert "cannot access" in result.output
+
+
+# ------------------------------------------------------------------
+# timeout
+# ------------------------------------------------------------------
+
+
+def test_execute_without_timeout_sends_command_unchanged() -> None:
+    sandbox, mock = _make_sandbox(_result(0))
+    sandbox.execute("echo hi")
+    assert mock.invoke.call_args.kwargs["params"] == {"command": "echo hi"}
+
+
+def test_execute_timeout_wraps_command() -> None:
+    """timeout runs the command under GNU timeout, quoted as one argument."""
+    sandbox, mock = _make_sandbox(_result(0))
+    sandbox.execute("echo 'a b' && sleep 1", timeout=30)
+    sent = mock.invoke.call_args.kwargs["params"]["command"]
+    assert sent == "timeout -k 5 30s sh -c 'echo '\"'\"'a b'\"'\"' && sleep 1'"
+
+
+def test_execute_zero_timeout_means_no_limit() -> None:
+    sandbox, mock = _make_sandbox(_result(0))
+    sandbox.execute("echo hi", timeout=0)
+    assert mock.invoke.call_args.kwargs["params"] == {"command": "echo hi"}
+
+
+def test_execute_timeout_expiry_is_explained() -> None:
+    sandbox, _ = _make_sandbox(_result(124, is_error=True))
+    with patch(
+        "langchain_agentcore_codeinterpreter.sandbox.time.monotonic",
+        side_effect=[100.0, 102.5],
+    ):
+        result = sandbox.execute("sleep 99", timeout=2)
+    assert result.exit_code == 124
+    assert "timed out after 2 seconds" in result.output
+
+
+def test_execute_early_124_with_timeout_is_not_called_a_timeout() -> None:
+    """A command that exits 124 before the limit did not time out."""
+    sandbox, _ = _make_sandbox(_result(124, "own 124", is_error=True))
+    with patch(
+        "langchain_agentcore_codeinterpreter.sandbox.time.monotonic",
+        side_effect=[100.0, 100.4],
+    ):
+        result = sandbox.execute("exit 124", timeout=30)
+    assert result.exit_code == 124
+    assert result.output == "own 124"
+
+
+def test_execute_exit_124_without_timeout_is_left_alone() -> None:
+    sandbox, _ = _make_sandbox(_result(124, "own 124", is_error=True))
+    result = sandbox.execute("exit 124")
+    assert result.output == "own 124"
+
+
+# ------------------------------------------------------------------
+# grep max_count and delete, on deepagents versions that have them
+# ------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not _BASE_GREP_HAS_MAX_COUNT, reason="deepagents without max_count")
+def test_grep_forwards_max_count() -> None:
+    sandbox, _ = _make_sandbox(cwd="/opt/sandbox")
+    with patch.object(BaseSandbox, "grep", return_value=GrepResult(matches=[])) as g:
+        sandbox.grep("needle", "/src", max_count=5)
+        g.assert_called_once_with("needle", "/opt/sandbox/src", None, max_count=5)
+
+
+@pytest.mark.skipif(not _BASE_GREP_HAS_MAX_COUNT, reason="deepagents without max_count")
+def test_agrep_forwards_max_count() -> None:
+    sandbox, _ = _make_sandbox(cwd="/opt/sandbox")
+    with patch.object(BaseSandbox, "grep", return_value=GrepResult(matches=[])) as g:
+        asyncio.run(sandbox.agrep("needle", "/src", max_count=5))
+        g.assert_called_once_with("needle", "/opt/sandbox/src", None, max_count=5)
+
+
+def test_grep_signature_advertises_max_count() -> None:
+    """deepagents detects support from the signature, so it must be present."""
+    import inspect
+
+    assert "max_count" in inspect.signature(AgentCoreSandbox.grep).parameters
+    assert "max_count" in inspect.signature(AgentCoreSandbox.agrep).parameters
+
+
+@pytest.mark.skipif(not _BASE_HAS_DELETE, reason="deepagents without delete")
+def test_delete_resolves_against_cwd() -> None:
+    """delete() targets the same file read() would read."""
+    sandbox, _ = _make_sandbox(cwd="/opt/sandbox")
+    with patch.object(BaseSandbox, "delete", return_value=MagicMock()) as d:
+        sandbox.delete("/notes.txt")
+        d.assert_called_once_with("/opt/sandbox/notes.txt")
+
+
+@pytest.mark.skipif(not _BASE_HAS_DELETE, reason="deepagents without delete")
+def test_adelete_runs_on_dedicated_executor() -> None:
+    sandbox, _ = _make_sandbox(cwd="/opt/sandbox")
+    seen: list[str] = []
+
+    def fake_delete(self: Any, path: str) -> Any:
+        import threading
+
+        seen.append(threading.current_thread().name)
+        return MagicMock(path=path)
+
+    with patch.object(BaseSandbox, "delete", fake_delete):
+        asyncio.run(sandbox.adelete("/notes.txt"))
+    assert seen and seen[0].startswith("agentcore-sandbox")
+
+
+# ------------------------------------------------------------------
+# create(), telemetry and lifecycle
+# ------------------------------------------------------------------
+
+
+def test_create_tags_session_and_starts_it() -> None:
+    with patch(
+        "bedrock_agentcore.tools.code_interpreter_client.CodeInterpreter"
+    ) as ci_cls:
+        sandbox = AgentCoreSandbox.create(
+            region="us-east-1", session_timeout_seconds=3600, cwd="/w"
+        )
+    ci_cls.assert_called_once_with(
+        region="us-east-1", session=None, integration_source=INTEGRATION_SOURCE
+    )
+    ci_cls.return_value.start.assert_called_once_with(session_timeout_seconds=3600)
+    assert sandbox._cwd == "/w"
+    assert INTEGRATION_SOURCE == "langchain-deepagents"
+
+
+def test_create_passes_identifier_and_session() -> None:
+    session = object()
+    with patch(
+        "bedrock_agentcore.tools.code_interpreter_client.CodeInterpreter"
+    ) as ci_cls:
+        AgentCoreSandbox.create(
+            region="us-west-2", boto3_session=session, identifier="my-ci"
+        )
+    assert ci_cls.call_args.kwargs["session"] is session
+    ci_cls.return_value.start.assert_called_once_with(
+        session_timeout_seconds=900, identifier="my-ci"
+    )
+
+
+def test_context_manager_stops_owned_session_once() -> None:
+    with patch(
+        "bedrock_agentcore.tools.code_interpreter_client.CodeInterpreter"
+    ) as ci_cls:
+        with AgentCoreSandbox.create(region="us-west-2") as sandbox:
+            pass
+        sandbox.close()
+    ci_cls.return_value.stop.assert_called_once()
+
+
+def test_async_context_manager_stops_owned_session() -> None:
+    async def run() -> MagicMock:
+        with patch(
+            "bedrock_agentcore.tools.code_interpreter_client.CodeInterpreter"
+        ) as ci_cls:
+            async with AgentCoreSandbox.create(region="us-west-2"):
+                pass
+            return ci_cls
+
+    ci_cls = asyncio.run(run())
+    ci_cls.return_value.stop.assert_called_once()
+
+
+def test_caller_supplied_interpreter_is_left_running() -> None:
+    sandbox, mock = _make_sandbox()
+    with sandbox:
+        pass
+    mock.stop.assert_not_called()
+
+
+def test_execute_undoes_pty_line_endings() -> None:
+    """The service's pseudo-terminal turns "\\n" into "\\r\\n"; execute() undoes it."""
+    sandbox, _ = _make_sandbox(_result(0, "Line 1\r\nLine 2\r\n"))
+    assert sandbox.execute("cat f").output == "Line 1\nLine 2\n"
+
+
+def test_execute_preserves_real_crlf() -> None:
+    """A file's own "\\r\\n" arrives as "\\r\\r\\n" and must come back as "\\r\\n"."""
+    sandbox, _ = _make_sandbox(_result(0, "a\r\r\nb\r\r\n"))
+    assert sandbox.execute("cat crlf.txt").output == "a\r\nb\r\n"

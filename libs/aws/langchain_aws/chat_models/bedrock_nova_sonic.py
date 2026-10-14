@@ -137,7 +137,7 @@ class NovaSonicSession:
         """Initialize a Nova Sonic session.
 
         Args:
-            client: The ``BedrockRuntimeClient`` instance.
+            client: The ``AsyncBedrockRuntimeClient`` instance.
             model_id: The Nova Sonic model identifier.
             system_prompt: Optional system prompt for the conversation.
             voice_id: Voice identifier for audio output.
@@ -644,6 +644,11 @@ class ChatBedrockNovaSonic(BaseChatModel):
         populate_by_name=True,
     )
 
+    @property
+    def model(self) -> str:
+        """Same as model_id."""
+        return self.model_id
+
     model_id: str = Field(
         default="amazon.nova-sonic-v1:0",
         alias="model",
@@ -845,6 +850,7 @@ class ChatBedrockNovaSonic(BaseChatModel):
     def _identifying_params(self) -> Dict[str, Any]:
         """Return identifying parameters for tracing."""
         return {
+            "model": self.model_id,
             "model_id": self.model_id,
             "voice_id": self.voice_id,
             "max_tokens": self.max_tokens,

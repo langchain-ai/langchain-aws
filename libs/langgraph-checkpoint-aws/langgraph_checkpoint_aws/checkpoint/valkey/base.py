@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import random
 from collections.abc import Sequence
 from typing import Any, cast
 
+import orjson
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import (
     WRITES_IDX_MAP,
@@ -20,6 +22,13 @@ from langgraph.checkpoint.base import (
 )
 
 from .utils import set_client_info, set_client_name
+
+# Number of optimistic-lock attempts for the writes read-modify-write transaction
+# before giving up. Contention is bounded by the number of tasks flushing writes
+# for the same checkpoint concurrently, so this is only ever reached pathologically.
+_PUT_WRITES_MAX_ATTEMPTS = 100
+
+logger = logging.getLogger(__name__)
 
 
 class BaseValkeySaver(BaseCheckpointSaver[str]):
@@ -223,6 +232,74 @@ class BaseValkeySaver(BaseCheckpointSaver[str]):
             }
             serialized_writes.append(write_data)
         return serialized_writes
+
+    @staticmethod
+    def _parse_writes_blob(existing_data: Any) -> list[dict[str, Any]]:
+        """Parse the stored writes blob into a list, tolerating legacy/foreign shapes.
+
+        Args:
+            existing_data: Raw value read back from Valkey for a writes key. May be
+                `None`, `str`, `bytes`, or (in tests) another type.
+
+        Returns:
+            The decoded list of write records, or an empty list if the value is
+            missing or not a JSON list.
+        """
+        if not existing_data:
+            return []
+        if isinstance(existing_data, str):
+            existing_data = existing_data.encode("utf-8")
+        elif not isinstance(existing_data, (bytes, bytearray, memoryview)):
+            try:
+                existing_data = orjson.dumps(existing_data)
+            except (TypeError, ValueError):
+                return []
+        try:
+            parsed = orjson.loads(existing_data)
+        except (orjson.JSONDecodeError, TypeError, ValueError):
+            logger.warning(
+                "Discarding un-decodable checkpoint writes blob; existing "
+                "writes for this checkpoint will be replaced."
+            )
+            return []
+        if not isinstance(parsed, list):
+            logger.warning(
+                "Checkpoint writes blob was not a JSON list; existing "
+                "writes for this checkpoint will be replaced."
+            )
+            return []
+        return parsed
+
+    @staticmethod
+    def _merge_writes(
+        existing_writes: list[dict[str, Any]],
+        new_writes: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Merge new writes into existing ones, deduped by `(task_id, idx)`.
+
+        Mirrors `InMemorySaver.put_writes`: a positional write (`idx >= 0`) is only
+        recorded once, so replaying a task around an `interrupt()`/resume does not
+        duplicate its writes, while special channels (`idx < 0`, e.g. error/interrupt/
+        resume) overwrite in place.
+
+        Args:
+            existing_writes: Writes already stored for the checkpoint.
+            new_writes: Writes to add.
+
+        Returns:
+            The merged list.
+        """
+        merged = list(existing_writes)
+        index = {(w["task_id"], w["idx"]): i for i, w in enumerate(merged)}
+        for write in new_writes:
+            key = (write["task_id"], write["idx"])
+            position = index.get(key)
+            if position is None:
+                index[key] = len(merged)
+                merged.append(write)
+            elif write["idx"] < 0:
+                merged[position] = write
+        return merged
 
     def _should_include_checkpoint(
         self,

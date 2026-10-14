@@ -2,6 +2,8 @@
 Unit tests for AgentCore Memory Store.
 """
 
+import asyncio
+import time
 from datetime import datetime, timezone
 from unittest.mock import ANY, MagicMock, Mock, patch
 
@@ -18,7 +20,28 @@ from langgraph.store.base import (
     SearchOp,
 )
 
+from langgraph_checkpoint_aws.checkpoint.agentcore.helpers import (
+    convert_langchain_messages_to_event_messages,
+)
 from langgraph_checkpoint_aws.store.agentcore.store import AgentCoreMemoryStore
+
+
+@pytest.mark.filterwarnings("error::langchain_core._api.LangChainDeprecationWarning")
+def test_convert_messages_uses_text_property() -> None:
+    messages = [
+        HumanMessage(content="Hello"),
+        AIMessage(content=[{"type": "text", "text": "Hi"}]),
+        ToolMessage(content="Result", tool_call_id="call-1"),
+        SystemMessage(content="Instructions"),
+        HumanMessage(content=" "),
+        HumanMessage(content="Saved", additional_kwargs={"event_id": "event-1"}),
+    ]
+    assert convert_langchain_messages_to_event_messages(messages) == [
+        ("Hello", "USER"),
+        ("Hi", "ASSISTANT"),
+        ("Result", "TOOL"),
+        ("Instructions", "OTHER"),
+    ]
 
 
 class TestAgentCoreMemoryStore:
@@ -83,6 +106,21 @@ class TestAgentCoreMemoryStore:
         """Test initialization requires memory_id."""
         with pytest.raises(TypeError):
             AgentCoreMemoryStore()
+
+    def test_init_with_caller_config(self, memory_id):
+        """Test successful merge of user Config into final boto client config"""
+        from botocore.config import Config
+
+        with patch("boto3.client") as mock_boto3_client:
+            AgentCoreMemoryStore(
+                memory_id=memory_id,
+                region_name="us-west-2",
+                config=Config(read_timeout=10),
+            )
+        merged = mock_boto3_client.call_args[1]["config"]
+        assert merged.read_timeout == 10
+        assert merged.retries["mode"] == "adaptive"
+        assert "langgraph_agentcore_memory_store" in merged.user_agent_extra
 
     def test_batch_get_op_success(self, store, mock_boto_client, sample_memory_record):
         """Test successful GetOp operation."""
@@ -263,10 +301,41 @@ class TestAgentCoreMemoryStore:
 
         mock_boto_client.retrieve_memory_records.assert_called_once_with(
             memoryId="test-memory-id",
+            namespacePath="/test_actor",
+            searchCriteria={"searchQuery": "test query", "topK": 5},
+            maxResults=5,
+        )
+        call_kwargs = mock_boto_client.retrieve_memory_records.call_args.kwargs
+        assert "namespace" not in call_kwargs
+
+    def test_batch_search_op_exact_match(
+        self, mock_boto_client, memory_id, sample_memory_record
+    ):
+        """Test SearchOp uses the exact-match namespace when hierarchical_search
+        is disabled."""
+        with patch("boto3.client") as mock_boto3_client:
+            mock_boto3_client.return_value = mock_boto_client
+            store = AgentCoreMemoryStore(memory_id=memory_id, hierarchical_search=False)
+
+        mock_boto_client.retrieve_memory_records.return_value = {
+            "memoryRecordSummaries": [sample_memory_record]
+        }
+
+        ops = [
+            SearchOp(
+                namespace_prefix=("test_actor",), query="test query", limit=5, offset=0
+            )
+        ]
+        store.batch(ops)
+
+        mock_boto_client.retrieve_memory_records.assert_called_once_with(
+            memoryId="test-memory-id",
             namespace="/test_actor",
             searchCriteria={"searchQuery": "test query", "topK": 5},
             maxResults=5,
         )
+        call_kwargs = mock_boto_client.retrieve_memory_records.call_args.kwargs
+        assert "namespacePath" not in call_kwargs
 
     def test_batch_search_op_no_query(self, store, mock_boto_client):
         """Test SearchOp without query returns empty results."""
@@ -359,18 +428,139 @@ class TestAgentCoreMemoryStore:
         with pytest.raises(ValueError, match="Unknown operation type"):
             store.batch(ops)
 
-    def test_abatch_not_implemented(self, store):
-        """Test that abatch raises NotImplementedError."""
-        ops = [SearchOp(namespace_prefix=("test_actor",), query="test", limit=5)]
+    async def test_abatch_mixed_operations(
+        self, store, mock_boto_client, sample_memory_record, sample_item_data
+    ):
+        """Test abatch delegates to batch and preserves result order."""
+        mock_boto_client.get_memory_record.return_value = {
+            "memoryRecord": sample_memory_record
+        }
+        mock_boto_client.retrieve_memory_records.return_value = {
+            "memoryRecordSummaries": [sample_memory_record]
+        }
+        mock_boto_client.create_event.return_value = {"event": {"eventId": "event-123"}}
 
-        # Use asyncio to test async method
-        import asyncio
+        ops = [
+            GetOp(namespace=("test_actor", "test_session"), key="test-key"),
+            PutOp(
+                namespace=("test_actor", "test_session"),
+                key="new-key",
+                value=sample_item_data,
+            ),
+            SearchOp(namespace_prefix=("test_actor",), query="test query", limit=5),
+            ListNamespacesOp(limit=10),
+        ]
+        results = await store.abatch(ops)
 
-        async def test_async():
-            with pytest.raises(NotImplementedError):
-                await store.abatch(ops)
+        assert len(results) == 4
+        assert isinstance(results[0], Item)  # GetOp
+        assert results[1] is None  # PutOp
+        assert isinstance(results[2], list)  # SearchOp
+        assert results[3] == []  # ListNamespacesOp
+        mock_boto_client.create_event.assert_called_once()
 
-        asyncio.run(test_async())
+    async def test_abatch_consumes_lazy_iterable(self, store, mock_boto_client):
+        """Test abatch materializes generator ops before the executor thread."""
+        mock_boto_client.retrieve_memory_records.return_value = {
+            "memoryRecordSummaries": []
+        }
+
+        ops = (
+            SearchOp(namespace_prefix=("test_actor",), query="test", limit=5)
+            for _ in range(2)
+        )
+        results = await store.abatch(ops)
+
+        assert results == [[], []]
+
+    async def test_async_convenience_methods_route_through_abatch(
+        self, store, mock_boto_client, sample_memory_record, sample_item_data
+    ):
+        """Test BaseStore's aget/aput/asearch work against the sync client."""
+        mock_boto_client.get_memory_record.return_value = {
+            "memoryRecord": sample_memory_record
+        }
+        mock_boto_client.retrieve_memory_records.return_value = {
+            "memoryRecordSummaries": [sample_memory_record]
+        }
+        mock_boto_client.create_event.return_value = {"event": {"eventId": "event-123"}}
+
+        await store.aput(("test_actor", "test_session"), "key1", sample_item_data)
+        mock_boto_client.create_event.assert_called_once()
+
+        item = await store.aget(("test_actor", "test_session"), "test-key")
+        assert isinstance(item, Item)
+
+        found = await store.asearch(("test_actor",), query="test query", limit=5)
+        assert len(found) == 1
+        assert isinstance(found[0], SearchItem)
+
+    async def test_abatch_does_not_block_event_loop(self, store, mock_boto_client):
+        """Test the event loop keeps running while abatch waits on the client."""
+        call_duration = 0.2
+
+        def slow_search(**kwargs):
+            time.sleep(call_duration)
+            return {"memoryRecordSummaries": []}
+
+        mock_boto_client.retrieve_memory_records.side_effect = slow_search
+        heartbeats = 0
+
+        async def heartbeat():
+            nonlocal heartbeats
+            while True:
+                await asyncio.sleep(0.01)
+                heartbeats += 1
+
+        ticker = asyncio.create_task(heartbeat())
+        try:
+            await store.abatch(
+                [SearchOp(namespace_prefix=("test_actor",), query="q", limit=1)]
+            )
+        finally:
+            ticker.cancel()
+
+        assert heartbeats >= 5
+
+    async def test_abatch_runs_ops_concurrently(self, store, mock_boto_client):
+        """Test concurrent abatch calls overlap instead of serializing."""
+        call_duration = 0.2
+        n_calls = 4
+
+        def slow_search(**kwargs):
+            time.sleep(call_duration)
+            return {"memoryRecordSummaries": []}
+
+        mock_boto_client.retrieve_memory_records.side_effect = slow_search
+        op = SearchOp(namespace_prefix=("test_actor",), query="q", limit=1)
+
+        start = time.perf_counter()
+        await asyncio.gather(*(store.abatch([op]) for _ in range(n_calls)))
+        elapsed = time.perf_counter() - start
+
+        assert elapsed < (n_calls * call_duration) * 0.75
+
+    async def test_abatch_propagates_validation_errors(self, store):
+        """Test ValueErrors raised on the executor thread reach the awaiter."""
+        with pytest.raises(ValueError, match="'message' key"):
+            await store.aput(
+                ("test_actor", "test_session"), "k", {"message": "not a message"}
+            )
+
+        with pytest.raises(ValueError, match="tuple of \\(actor_id, session_id\\)"):
+            await store.aput(("only_actor",), "k", {"message": HumanMessage("hi")})
+
+    async def test_abatch_propagates_client_errors(self, store, mock_boto_client):
+        """Test botocore ClientErrors surface unchanged through abatch."""
+        mock_boto_client.get_memory_record.side_effect = ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "denied"}},
+            "GetMemoryRecord",
+        )
+
+        with pytest.raises(ClientError) as exc_info:
+            await store.aget(("test_actor", "test_session"), "mem-" + "0" * 40)
+
+        assert exc_info.value.response["Error"]["Code"] == "AccessDeniedException"
 
     def test_convert_memory_record_to_item(self, store, sample_memory_record):
         """Test conversion of memory record to Item."""
@@ -463,7 +653,7 @@ class TestAgentCoreMemoryStore:
         store.batch(ops)
 
         call_args = mock_boto_client.retrieve_memory_records.call_args[1]
-        assert call_args["namespace"] == "/single_actor"
+        assert call_args["namespacePath"] == "/single_actor"
 
     def test_search_with_pagination_parameters(
         self, store, mock_boto_client, sample_memory_record

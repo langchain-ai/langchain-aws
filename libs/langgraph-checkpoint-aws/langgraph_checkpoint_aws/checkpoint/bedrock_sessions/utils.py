@@ -436,9 +436,10 @@ def process_aws_client_args(
     session_kwargs: dict[str, Any] = {}
     client_kwargs: dict[str, Any] = {}
 
-    # Session parameters
+    # Set the default region for new sessions and the explicit region for each client.
     if region_name is not None:
         session_kwargs["region_name"] = region_name
+        client_kwargs["region_name"] = region_name
     if credentials_profile_name is not None:
         session_kwargs["profile_name"] = credentials_profile_name
     if aws_access_key_id is not None:
@@ -471,14 +472,15 @@ def create_client_config(config: Config | None = None) -> Config:
         Config: New config object with combined user agent
 
     """
-    config_kwargs: dict[str, Any] = {}
-    existing_user_agent = getattr(config, "user_agent_extra", "") if config else ""
-    new_user_agent = (
-        f"{existing_user_agent} x-client-framework:langgraph-checkpoint-aws "
-        f"md/sdk_user_agent/{SDK_USER_AGENT}".strip()
+    framework_ua = (
+        f"x-client-framework:langgraph-checkpoint-aws "
+        f"md/sdk_user_agent/{SDK_USER_AGENT}"
     )
-
-    return Config(user_agent_extra=new_user_agent, **config_kwargs)
+    if config is None:
+        return Config(user_agent_extra=framework_ua)
+    existing_user_agent = getattr(config, "user_agent_extra", "") or ""
+    new_user_agent = f"{existing_user_agent} {framework_ua}".strip()
+    return config.merge(Config(user_agent_extra=new_user_agent))
 
 
 async def run_boto3_in_executor(func: Callable[..., T], *args: Any, **kwargs: Any) -> T:

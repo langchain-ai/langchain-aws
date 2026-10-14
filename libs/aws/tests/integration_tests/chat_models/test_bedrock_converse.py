@@ -1,6 +1,7 @@
 """Standard LangChain interface tests"""
 
 import base64
+import json
 import time
 from typing import Any, Literal, Optional, Type
 from uuid import uuid4
@@ -60,33 +61,141 @@ class TestBedrockMistralStandard(ChatModelIntegrationTests):
 
     @property
     def chat_model_params(self) -> dict:
-        return {"model": "mistral.mistral-large-2402-v1:0"}
+        return {"model": "mistral.mistral-large-3-675b-instruct"}
 
     @property
     def standard_chat_model_params(self) -> dict:
-        return {"temperature": 0, "max_tokens": 100, "stop": []}
+        return {"temperature": 0, "max_tokens": 100}
 
     @property
     def has_tool_choice(self) -> bool:
         return False
 
-    # This standard test feeds back an AIMessage whose content mixes a text
-    # block and a `tool_use` block in a single assistant turn. Mistral models on
-    # Bedrock reject that turn shape with
-    # `ValidationException: messages.1.content: Conversation blocks and tool use
-    # blocks cannot be provided in the same turn` (Anthropic models accept it, so
-    # the conversion in `_messages_to_bedrock` is correct and must not change).
     @pytest.mark.xfail(
-        reason=(
-            "Mistral on Bedrock rejects an assistant turn that mixes text and "
-            "tool_use blocks: 'Conversation blocks and tool use blocks cannot be "
-            "provided in the same turn'."
-        )
+        reason="Mistral Large 3 does not support the stopSequences field."
     )
+    def test_stop_sequence(self, model: BaseChatModel) -> None:
+        super().test_stop_sequence(model)
+
+    TOOL_CALL_ID = "abcd12345"
+    ID_XFAIL_MSG = (
+        "Mistral Large 3 requires 9-char alphanumeric tool call IDs vs the 'abc123' "
+        "hardcoded by the standard tests. Replaced by the *_mistral_id variants below."
+    )
+
+    @pytest.mark.xfail(reason=ID_XFAIL_MSG)
+    def test_tool_message_histories_string_content(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        super().test_tool_message_histories_string_content(model, my_adder_tool)
+
+    @pytest.mark.xfail(reason=ID_XFAIL_MSG)
     def test_tool_message_histories_list_content(
         self, model: BaseChatModel, my_adder_tool: BaseTool
     ) -> None:
         super().test_tool_message_histories_list_content(model, my_adder_tool)
+
+    @pytest.mark.xfail(reason=ID_XFAIL_MSG)
+    def test_tool_message_error_status(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        super().test_tool_message_error_status(model, my_adder_tool)
+
+    def test_tool_message_histories_string_content_mistral_id(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        if not self.has_tool_calling:
+            pytest.skip("Test requires tool calling.")
+
+        model_with_tools = model.bind_tools([my_adder_tool])
+        messages = [
+            HumanMessage("What is 1 + 2"),
+            AIMessage(
+                "",
+                tool_calls=[
+                    {
+                        "name": "my_adder_tool",
+                        "args": {"a": 1, "b": 2},
+                        "id": self.TOOL_CALL_ID,
+                        "type": "tool_call",
+                    },
+                ],
+            ),
+            ToolMessage(
+                json.dumps({"result": 3}),
+                name="my_adder_tool",
+                tool_call_id=self.TOOL_CALL_ID,
+            ),
+        ]
+        result = model_with_tools.invoke(messages)
+        assert isinstance(result, AIMessage)
+
+    def test_tool_message_histories_list_content_mistral_id(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        if not self.has_tool_calling:
+            pytest.skip("Test requires tool calling.")
+
+        model_with_tools = model.bind_tools([my_adder_tool])
+        messages = [
+            HumanMessage("What is 1 + 2"),
+            AIMessage(
+                [
+                    {"type": "text", "text": "some text"},
+                    {
+                        "type": "tool_use",
+                        "id": self.TOOL_CALL_ID,
+                        "name": "my_adder_tool",
+                        "input": {"a": 1, "b": 2},
+                    },
+                ],
+                tool_calls=[
+                    {
+                        "name": "my_adder_tool",
+                        "args": {"a": 1, "b": 2},
+                        "id": self.TOOL_CALL_ID,
+                        "type": "tool_call",
+                    },
+                ],
+            ),
+            ToolMessage(
+                json.dumps({"result": 3}),
+                name="my_adder_tool",
+                tool_call_id=self.TOOL_CALL_ID,
+            ),
+        ]
+        result = model_with_tools.invoke(messages)
+        assert isinstance(result, AIMessage)
+
+    def test_tool_message_error_status_mistral_id(
+        self, model: BaseChatModel, my_adder_tool: BaseTool
+    ) -> None:
+        if not self.has_tool_calling:
+            pytest.skip("Test requires tool calling.")
+
+        model_with_tools = model.bind_tools([my_adder_tool])
+        messages = [
+            HumanMessage("What is 1 + 2"),
+            AIMessage(
+                "",
+                tool_calls=[
+                    {
+                        "name": "my_adder_tool",
+                        "args": {"a": 1},
+                        "id": self.TOOL_CALL_ID,
+                        "type": "tool_call",
+                    },
+                ],
+            ),
+            ToolMessage(
+                "Error: Missing required argument 'b'.",
+                name="my_adder_tool",
+                tool_call_id=self.TOOL_CALL_ID,
+                status="error",
+            ),
+        ]
+        result = model_with_tools.invoke(messages)
+        assert isinstance(result, AIMessage)
 
 
 class TestBedrockNovaStandard(ChatModelIntegrationTests):
@@ -115,42 +224,44 @@ class TestBedrockNovaStandard(ChatModelIntegrationTests):
         super().test_tool_message_histories_list_content(model, my_adder_tool)
 
 
-class TestBedrockCohereStandard(ChatModelIntegrationTests):
+class TestBedrockXaiStandard(ChatModelIntegrationTests):
     @property
     def chat_model_class(self) -> Type[BaseChatModel]:
         return ChatBedrockConverse
 
     @property
     def chat_model_params(self) -> dict:
-        return {"model": "cohere.command-r-plus-v1:0"}
+        return {"model": "global.xai.grok-4.6", "timeout": 300}
 
     @property
     def standard_chat_model_params(self) -> dict:
-        return {"temperature": 0, "max_tokens": 100, "stop": []}
+        return {"max_tokens": 1024}
+
+    @pytest.mark.xfail(reason="Grok does not support the stopSequences field.")
+    def test_stop_sequence(self, model: BaseChatModel) -> None:
+        super().test_stop_sequence(model)
+
+
+class TestBedrockOpenAIStandard(ChatModelIntegrationTests):
+    @property
+    def chat_model_class(self) -> Type[BaseChatModel]:
+        return ChatBedrockConverse
 
     @property
-    def has_tool_choice(self) -> bool:
-        return False
+    def chat_model_params(self) -> dict:
+        return {"model": "us.openai.gpt-6-astra", "timeout": 300}
 
-    @pytest.mark.xfail(reason="Cohere models don't support tool_choice.")
-    def test_structured_few_shot_examples(
-        self, model: BaseChatModel, my_adder_tool: BaseTool
-    ) -> None:
-        pass
+    @property
+    def standard_chat_model_params(self) -> dict:
+        return {"max_tokens": 1024}
 
-    @pytest.mark.xfail(reason="Cohere models don't support tool_choice.")
-    def test_unicode_tool_call_integration(
-        self,
-        model: BaseChatModel,
-        *,
-        tool_choice: Optional[str] = None,
-        force_tool_call: bool = False,
-    ) -> None:
-        pass
+    @property
+    def supports_image_inputs(self) -> bool:
+        return True
 
-    @pytest.mark.xfail(reason="Generates invalid tool call.")
-    def test_tool_calling_with_no_arguments(self, model: BaseChatModel) -> None:
-        pass
+    @pytest.mark.xfail(reason="GPT-6 Astra does not support the stopSequences field.")
+    def test_stop_sequence(self, model: BaseChatModel) -> None:
+        super().test_stop_sequence(model)
 
 
 class TestBedrockMetaStandard(ChatModelIntegrationTests):
@@ -160,7 +271,7 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
 
     @property
     def chat_model_params(self) -> dict:
-        return {"model": "us.meta.llama3-2-90b-instruct-v1:0"}
+        return {"model": "us.meta.llama4-scout-17b-instruct-v1:0"}
 
     @property
     def standard_chat_model_params(self) -> dict:
@@ -186,31 +297,12 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
     ) -> None:
         pass
 
-    # TODO: This needs investigation, if this is a bug with Bedrock or Llama models,
-    # but this test consistently seem to return single quoted input values {input: '3'}
-    # instead of {input: 3} failing the test. Upon checking with tools with non-numeric
-    # inputs, tool calling seems to work as expected with Bedrock and Llama models.
-    # Same problem with tool_calling_async, below.
-    @pytest.mark.xfail(
-        reason="Bedrock Meta models tend to return string values for integer inputs ."
-    )
-    def test_tool_calling(self, model: BaseChatModel) -> None:
-        super().test_tool_calling(model)
-
-    @pytest.mark.xfail(
-        reason="Bedrock Meta models tend to return string values for integer inputs ."
-    )
-    async def test_tool_calling_async(self, model: BaseChatModel) -> None:
-        await super().test_tool_calling_async(model)
-
-    @pytest.mark.xfail(reason="Meta models don't support tool_choice.")
-    def test_tool_calling_with_no_arguments(self, model: BaseChatModel) -> None:
-        pass
-
-    # See `TestBedrockMistralStandard` above: the synthetic history mixes a text
-    # block and a tool_use block in one assistant turn, which Meta models on Bedrock
-    # reject with 'Conversation blocks and tool use blocks cannot be provided in the
-    # same turn' (Anthropic models accept it).
+    # This standard test feeds back an AIMessage whose content mixes a text
+    # block and a `tool_use` block in a single assistant turn. Meta models on
+    # Bedrock reject that turn shape with `ValidationException: Conversation
+    # blocks and tool use blocks cannot be provided in the same turn`
+    # (Anthropic models accept it, so the conversion in `_messages_to_bedrock`
+    # is correct and must not change).
     @pytest.mark.xfail(
         reason=(
             "Meta on Bedrock rejects an assistant turn that mixes text and "
@@ -225,9 +317,7 @@ class TestBedrockMetaStandard(ChatModelIntegrationTests):
 
 
 def test_multiple_system_messages_anthropic() -> None:
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
     system1 = SystemMessage(content="You are a helpful assistant.")
     system2 = SystemMessage(content="Always respond in a concise manner.")
@@ -235,7 +325,7 @@ def test_multiple_system_messages_anthropic() -> None:
     response = model.invoke([system1, system2, human])
 
     assert isinstance(response, AIMessage)
-    assert isinstance(response.content, str)
+    assert response.text
 
 
 class ClassifyQuery(BaseModel):
@@ -247,9 +337,7 @@ class ClassifyQuery(BaseModel):
 
 
 def test_structured_output_snake_case() -> None:
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
     chat = model.with_structured_output(ClassifyQuery)
     for chunk in chat.stream("How big are cats?"):
@@ -257,7 +345,7 @@ def test_structured_output_snake_case() -> None:
 
 
 def test_tool_calling_snake_case() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
     def classify_query(query_type: Literal["cat", "dog"]) -> None:
         pass
@@ -289,7 +377,7 @@ def test_tool_calling_snake_case() -> None:
 
 
 def test_tool_calling_camel_case() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
     def classifyQuery(queryType: Literal["cat", "dog"]) -> None:
         pass
@@ -314,7 +402,7 @@ def test_tool_calling_camel_case() -> None:
 
 
 def test_tool_calling_strict() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-6")
 
     class GetWeather(BaseModel):
         """Get the current weather in a given location."""
@@ -332,9 +420,7 @@ def test_tool_calling_strict() -> None:
 
 
 def test_structured_output_streaming() -> None:
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
     query = (
         "What weighs more, a pound of bricks or a pound of feathers? "
         "Limit your response to 20 words."
@@ -411,9 +497,7 @@ def test_tool_use_with_cache_point() -> None:
         tool_classes.append(tool_class)
 
     # Create the model instance
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
     # Create cache point configuration
     cache_point = ChatBedrockConverse.create_cache_point()
@@ -457,7 +541,7 @@ def _get_weather(city: str) -> str:
 
 def test_cache_control_anthropic() -> None:
     llm = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model="us.anthropic.claude-sonnet-5",
         system=[_LONG_SYSTEM_PROMPT],
     )
     r1 = llm.invoke(
@@ -477,7 +561,7 @@ def test_cache_control_anthropic() -> None:
 @pytest.mark.xfail(reason="TODO: fails sporadically, suspect transient issue.")
 def test_cache_control_anthropic_multi_turn() -> None:
     llm = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model="us.anthropic.claude-sonnet-5",
         system=[_LONG_SYSTEM_PROMPT],
     )
     llm_with_tools = llm.bind_tools([_get_weather], tool_choice="any")
@@ -502,6 +586,27 @@ def test_cache_control_anthropic_multi_turn() -> None:
     details = r2.usage_metadata.get("input_token_details", {})
     cache_read = details.get("cache_read", 0) or 0
     assert cache_read > 0, f"Expected cache read on turn 2, got {cache_read}"
+
+
+def test_cache_control_anthropic_with_manual_cache_points() -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5",
+        system=[_LONG_SYSTEM_PROMPT],
+    )
+    llm_with_tools = llm.bind_tools([_get_weather])
+    cache_point = ChatBedrockConverse.create_cache_point()
+    messages = [
+        HumanMessage(content=[{"type": "text", "text": "A" * 400}, cache_point]),
+        AIMessage(content=[{"type": "text", "text": "Noted."}, cache_point]),
+        HumanMessage(content=[{"type": "text", "text": "B" * 400}, cache_point]),
+        AIMessage(content="Also noted."),
+        HumanMessage(content="Reply with exactly: OK"),
+    ]
+    r = llm_with_tools.invoke(
+        messages, cache_control={"type": "ephemeral", "ttl": "5m"}
+    )
+    assert isinstance(r, AIMessage)
+    assert r.content
 
 
 def test_cache_control_nova() -> None:
@@ -618,8 +723,7 @@ def test_nova_tool_call_no_inline_thinking_leak(prompt: str) -> None:
 def test_guardrails() -> None:
     params = {
         "region_name": "us-west-2",
-        "model": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-        "temperature": 0,
+        "model": "us.anthropic.claude-sonnet-5",
         "max_tokens": 100,
         "stop": [],
         "guardrail_config": {
@@ -801,7 +905,7 @@ def test_agent_loop(output_version: Literal["v0", "v1"]) -> None:
         return "It's sunny."
 
     llm = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        model="us.anthropic.claude-sonnet-5",
         output_version=output_version,
     )
     llm_with_tools = llm.bind_tools([get_weather])
@@ -811,12 +915,13 @@ def test_agent_loop(output_version: Literal["v0", "v1"]) -> None:
     tool_calls = tool_call_message.tool_calls
     assert len(tool_calls) == 1
     tool_call = tool_calls[0]
+    ai_tool_call_message = AIMessage(content="", tool_calls=[tool_call])
     tool_message = get_weather.invoke(tool_call)
     assert isinstance(tool_message, ToolMessage)
     response = llm_with_tools.invoke(
         [
             input_message,
-            tool_call_message,
+            ai_tool_call_message,
             tool_message,
         ]
     )
@@ -832,7 +937,7 @@ def test_agent_loop_streaming(output_version: Literal["v0", "v1"]) -> None:
         return "It's sunny."
 
     llm = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        model="us.anthropic.claude-sonnet-5",
         output_version=output_version,
     )
     llm_with_tools = llm.bind_tools([get_weather])
@@ -878,7 +983,7 @@ def test_streaming_tool_use_round_trip() -> None:
         return "It's sunny and 72F."
 
     llm = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model="us.anthropic.claude-sonnet-5",
     )
     llm_with_tools = llm.bind_tools([get_weather], tool_choice="any")
 
@@ -923,15 +1028,22 @@ def test_streaming_tool_use_round_trip() -> None:
 @pytest.mark.parametrize("output_version", ["v0", "v1"])
 def test_thinking(output_version: Literal["v0", "v1"]) -> None:
     llm = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        model="us.anthropic.claude-sonnet-5",
         max_tokens=4096,
         additional_model_request_fields={
-            "thinking": {"type": "enabled", "budget_tokens": 1024},
+            "thinking": {"type": "adaptive", "display": "summarized"},
         },
         output_version=output_version,
     )
 
-    input_message = {"role": "user", "content": "What is 3^3?"}
+    input_message = {
+        "role": "user",
+        "content": (
+            "What is the smallest positive integer n such that n! is divisible "
+            "by 10^6? Reason through this carefully step by step before "
+            "answering."
+        ),
+    }
     full: Optional[BaseMessageChunk] = None
     for chunk in llm.stream([input_message]):
         assert isinstance(chunk, AIMessageChunk)
@@ -958,7 +1070,13 @@ def test_thinking(output_version: Literal["v0", "v1"]) -> None:
     assert content_blocks[0].get("reasoning")
     assert "signature" in content_blocks[0]["extras"]
 
-    next_message = {"role": "user", "content": "Thanks!"}
+    next_message = {
+        "role": "user",
+        "content": (
+            "Now find the smallest n such that n! is divisible by 10^9. "
+            "Reason through it step by step as before."
+        ),
+    }
     response = llm.invoke([input_message, full, next_message])
 
     if output_version == "v0":
@@ -1019,7 +1137,7 @@ STANDARD_PDF_DOCUMENT = {
 @pytest.mark.vcr
 @pytest.mark.parametrize("document", [PLAINTEXT_DOCUMENT, BLOCKS_DOCUMENT])
 def test_citations(document: dict[str, Any]) -> None:
-    llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-20250514-v1:0")
+    llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
     input_message = {
         "role": "user",
@@ -1057,7 +1175,7 @@ def test_citations(document: dict[str, Any]) -> None:
 @pytest.mark.parametrize("output_version", ["v0", "v1"])
 def test_citations_v1(output_version: Literal["v0", "v1"]) -> None:
     llm = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        model="us.anthropic.claude-sonnet-5",
         output_version=output_version,
     )
 
@@ -1093,7 +1211,7 @@ def test_citations_v1(output_version: Literal["v0", "v1"]) -> None:
 
 @pytest.mark.vcr
 def test_pdf_citations() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
     message = HumanMessage(
         [
@@ -1106,7 +1224,7 @@ def test_pdf_citations() -> None:
 
 
 def test_bedrock_pdf_inputs() -> None:
-    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
     message = HumanMessage(
         [
@@ -1135,9 +1253,27 @@ def test_bedrock_pdf_inputs() -> None:
     _ = model.invoke([message])
 
 
+def test_bedrock_text_file_inputs() -> None:
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
+
+    message = HumanMessage(
+        [
+            {"type": "text", "text": "What color does this stylesheet set?"},
+            {
+                "type": "file",
+                "mime_type": "text/css",
+                "base64": base64.b64encode(b"body { color: red; }").decode("utf-8"),
+                "name": "styles",
+            },
+        ]
+    )
+    response = model.invoke([message])
+    assert "red" in response.text.lower()
+
+
 def test_get_num_tokens_from_messages_integration() -> None:
     chat = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model="us.anthropic.claude-sonnet-4-6",
     )
 
     base_messages = [
@@ -1148,7 +1284,7 @@ def test_get_num_tokens_from_messages_integration() -> None:
     token_count = chat.get_num_tokens_from_messages(base_messages)
 
     assert isinstance(token_count, int)
-    assert token_count == 38
+    assert token_count == 39
 
 
 @pytest.mark.parametrize("streaming", [False, True])
@@ -1204,9 +1340,7 @@ class GetWeather(BaseModel):
 
 def test_structured_output_json_schema_pydantic() -> None:
     """Test method='json_schema' with Pydantic model returns validated instance."""
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-6")
     structured = model.with_structured_output(JokeSchema, method="json_schema")
     result = structured.invoke("Tell me a short joke about programming")
     assert isinstance(result, JokeSchema)
@@ -1216,9 +1350,7 @@ def test_structured_output_json_schema_pydantic() -> None:
 
 def test_structured_output_json_schema_dict() -> None:
     """Test method='json_schema' with dict schema returns matching dict."""
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-6")
     schema = {
         "title": "Joke",
         "description": "A joke with setup and punchline.",
@@ -1241,9 +1373,7 @@ def test_structured_output_json_schema_dict() -> None:
 
 def test_structured_output_json_schema_streaming() -> None:
     """Test that streaming works with method='json_schema'."""
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-6")
     structured = model.with_structured_output(JokeSchema, method="json_schema")
     result = None
     for chunk in structured.stream("Tell me a short joke about programming"):
@@ -1255,9 +1385,7 @@ def test_structured_output_json_schema_streaming() -> None:
 
 def test_structured_output_json_schema_include_raw() -> None:
     """Test include_raw=True returns dict with raw, parsed, parsing_error."""
-    model = ChatBedrockConverse(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", temperature=0
-    )
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-6")
     structured = model.with_structured_output(
         JokeSchema, method="json_schema", include_raw=True
     )

@@ -25,6 +25,7 @@ class TestProcessAWSClientArgs:
         )
 
         assert session_kwargs["region_name"] == "us-east-1"
+        assert client_kwargs["region_name"] == "us-east-1"
         assert client_kwargs["endpoint_url"] == "http://localhost:8000"
         assert "config" in client_kwargs
 
@@ -35,6 +36,7 @@ class TestProcessAWSClientArgs:
         assert session_kwargs == {}
         assert "config" in client_kwargs
         assert "endpoint_url" not in client_kwargs
+        assert "region_name" not in client_kwargs
 
 
 class TestCreateClientConfig:
@@ -53,6 +55,20 @@ class TestCreateClientConfig:
         config = create_client_config(existing_config)
         assert "my-app/1.0" in config.user_agent_extra
         assert "langgraph-dynamodb" in config.user_agent_extra
+
+    def test_caller_config_values_preserved(self):
+        """Caller-set values like timeouts survive the merge."""
+        caller = Config(connect_timeout=5, read_timeout=10, max_pool_connections=25)
+        config = create_client_config(caller)
+        assert config.connect_timeout == 5
+        assert config.read_timeout == 10
+        assert config.max_pool_connections == 25
+        # adaptive retry default applies when the caller did not set retries
+        assert config.retries == {"mode": "adaptive", "max_attempts": 5}
+
+    def test_caller_retries_win_over_default(self):
+        config = create_client_config(Config(retries={"max_attempts": 1}))
+        assert config.retries == {"max_attempts": 1}
 
 
 class TestCreateDynamoDBClient:
@@ -86,3 +102,26 @@ class TestCreateDynamoDBClient:
         assert client_kwargs["endpoint_url"] == "http://localhost:8000"
         assert "config" in client_kwargs
         assert "langgraph-dynamodb" in client_kwargs["config"].user_agent_extra
+
+    @patch("langgraph_checkpoint_aws.checkpoint.dynamodb.utils.boto3.Session")
+    def test_region_applies_to_caller_provided_session(self, mock_session_class):
+        """region_name must reach the client even when the session is supplied."""
+        session = Mock()
+        session.client.return_value = Mock()
+
+        create_dynamodb_client(session=session, region_name="eu-west-1")
+
+        mock_session_class.assert_not_called()
+        client_kwargs = session.client.call_args[1]
+        assert client_kwargs["region_name"] == "eu-west-1"
+
+    @patch("langgraph_checkpoint_aws.checkpoint.dynamodb.utils.boto3.Session")
+    def test_no_region_leaves_session_default(self, mock_session_class):
+        """Without region_name the caller's session default is left alone."""
+        session = Mock()
+        session.client.return_value = Mock()
+
+        create_dynamodb_client(session=session)
+
+        mock_session_class.assert_not_called()
+        assert "region_name" not in session.client.call_args[1]

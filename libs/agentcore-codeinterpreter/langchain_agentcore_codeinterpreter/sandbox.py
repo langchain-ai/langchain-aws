@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
 import logging
+import shlex
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
@@ -23,16 +26,38 @@ from deepagents.backends.protocol import (
 from deepagents.backends.sandbox import BaseSandbox
 
 if TYPE_CHECKING:
+    from types import TracebackType
+
     from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 
 logger = logging.getLogger(__name__)
 
 # Dedicated thread pool for AgentCore boto3 calls. Isolates sandbox I/O
 # from the default asyncio executor so long-running stream reads don't
-# starve other async work (LLM calls, tool dispatch, etc.).
+# starve other async work (LLM calls, tool dispatch, etc.). Shared by every
+# sandbox in the process, so it is sized for several subagents working at
+# once; InvokeCodeInterpreter is throttled at 30 TPS per account, which
+# bounds how much a larger pool could help.
 _AGENTCORE_EXECUTOR = ThreadPoolExecutor(
-    max_workers=4, thread_name_prefix="agentcore-sandbox"
+    max_workers=16, thread_name_prefix="agentcore-sandbox"
 )
+
+#: Reported to the AgentCore SDK so usage from Deep Agents is attributed
+#: separately from the ``langchain`` source the langchain-aws toolkits use.
+INTEGRATION_SOURCE = "langchain-deepagents"
+
+#: Exit status GNU ``timeout`` returns when it stops a command.
+_TIMEOUT_EXIT_CODE = 124
+
+# Newer deepagents releases add methods and parameters to BaseSandbox. The
+# overrides below only forward to them when the installed version has them,
+# so the package keeps working on the minimum supported deepagents.
+_BASE_HAS_DELETE = hasattr(BaseSandbox, "delete")
+_BASE_GREP_HAS_MAX_COUNT = "max_count" in inspect.signature(BaseSandbox.grep).parameters
+
+
+class _ToolError(Exception):
+    """A tool call the service answered with ``isError`` instead of raising."""
 
 
 def _normalize_relative_path(path: str) -> str:
@@ -68,6 +93,11 @@ def _extract_text_from_stream(response: dict[str, Any]) -> tuple[str, int | None
     Iterates through the streamed response events and collects text content,
     error messages, and the exit code.
 
+    The service reports the exit code in ``result["structuredContent"]["exitCode"]``,
+    which is where the InvokeCodeInterpreter API reference documents it. A
+    top-level ``result["exitCode"]`` is still read as a fallback. When neither is
+    present, ``isError`` is used to tell failure from an undetermined outcome.
+
     Args:
         response: Response dict from a code interpreter invocation.
 
@@ -84,8 +114,13 @@ def _extract_text_from_stream(response: dict[str, Any]) -> tuple[str, int | None
 
         result = event["result"]
 
-        if "exitCode" in result:
+        structured = result.get("structuredContent") or {}
+        if "exitCode" in structured:
+            exit_code = structured["exitCode"]
+        elif "exitCode" in result:
             exit_code = result["exitCode"]
+        elif result.get("isError") and exit_code is None:
+            exit_code = 1
 
         for content_item in result.get("content", []):
             content_type = content_item.get("type")
@@ -172,8 +207,7 @@ class AgentCoreSandbox(BaseSandbox):
 
     !!! note
 
-        When the sandbox working directory is not ``/`` (e.g.
-        ``/opt/amazon/genesis1p-tools/var/``), paths must be resolved
+        When the sandbox working directory is not ``/``, paths must be resolved
         against the real cwd before shell preflight commands and stripped of
         the cwd prefix before the AgentCore ``writeFiles``/``readFiles`` APIs.
         Pass the known cwd via the ``cwd`` constructor argument, or let the
@@ -182,19 +216,11 @@ class AgentCoreSandbox(BaseSandbox):
     Example:
         .. code-block:: python
 
-            from bedrock_agentcore.tools.code_interpreter_client import (
-                CodeInterpreter,
-            )
             from langchain_agentcore_codeinterpreter import AgentCoreSandbox
 
-            interpreter = CodeInterpreter(region="us-west-2")
-            interpreter.start()
-
-            backend = AgentCoreSandbox(interpreter=interpreter)
-            result = backend.execute("echo hello")
-            print(result.output)
-
-            interpreter.stop()
+            with AgentCoreSandbox.create(region="us-west-2") as backend:
+                result = backend.execute("echo hello")
+                print(result.output)
     """
 
     def __init__(
@@ -205,10 +231,14 @@ class AgentCoreSandbox(BaseSandbox):
     ) -> None:
         """Create a backend wrapping an active CodeInterpreter session.
 
+        Prefer :meth:`create`, which starts the session, tags it for usage
+        attribution and stops it on exit. Use this constructor when you need
+        to configure the :class:`CodeInterpreter` yourself; its lifecycle then
+        stays with you.
+
         Args:
             interpreter: A started :class:`CodeInterpreter` instance.
-            cwd: The sandbox working directory (e.g.
-                ``"/opt/amazon/genesis1p-tools/var"``). When provided,
+            cwd: The sandbox working directory. When provided,
                 ``write()`` uses it to resolve virtual paths to real absolute
                 paths and to strip the prefix before the AgentCore
                 ``writeFiles`` API. When omitted, the cwd is detected
@@ -216,6 +246,90 @@ class AgentCoreSandbox(BaseSandbox):
         """
         self._interpreter = interpreter
         self._cwd: str | None = cwd.rstrip("/") if cwd is not None else None
+        self._owns_interpreter = False
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        region: str,
+        boto3_session: Any = None,
+        identifier: str | None = None,
+        session_timeout_seconds: int = 900,
+        cwd: str | None = None,
+    ) -> AgentCoreSandbox:
+        """Start a Code Interpreter session and return a sandbox that owns it.
+
+        The session is tagged so AgentCore can attribute its usage to Deep
+        Agents. Closing the sandbox, directly or by leaving a ``with`` block,
+        stops the session.
+
+        Args:
+            region: AWS region for the Code Interpreter.
+            boto3_session: Session to take credentials from. Defaults to the
+                standard boto3 credential chain.
+            identifier: Code interpreter to start a session on. Defaults to
+                the built-in ``aws.codeinterpreter.v1``; pass a custom one
+                for VPC networking or an execution role.
+            session_timeout_seconds: Session lifetime. AgentCore's default is
+                15 minutes, which long agent runs can exceed; the maximum is
+                28,800 (8 hours).
+            cwd: The sandbox working directory, if already known.
+
+        Returns:
+            A sandbox wrapping the started session.
+        """
+        from bedrock_agentcore.tools.code_interpreter_client import (
+            CodeInterpreter,
+        )
+
+        interpreter = CodeInterpreter(
+            region=region,
+            session=boto3_session,
+            integration_source=INTEGRATION_SOURCE,
+        )
+        start_kwargs: dict[str, Any] = {
+            "session_timeout_seconds": session_timeout_seconds
+        }
+        if identifier is not None:
+            start_kwargs["identifier"] = identifier
+        interpreter.start(**start_kwargs)
+        sandbox = cls(interpreter=interpreter, cwd=cwd)
+        sandbox._owns_interpreter = True
+        return sandbox
+
+    def close(self) -> None:
+        """Stop the session if this sandbox started it through :meth:`create`.
+
+        A sandbox built from a caller-supplied interpreter leaves it running,
+        since the caller manages that lifecycle.
+        """
+        if self._owns_interpreter:
+            self._owns_interpreter = False
+            self._interpreter.stop()
+
+    def __enter__(self) -> AgentCoreSandbox:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    async def __aenter__(self) -> AgentCoreSandbox:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(_AGENTCORE_EXECUTOR, self.close)
 
     def _get_cwd(self) -> str:
         """Return the sandbox working directory, detecting it lazily if needed.
@@ -225,7 +339,7 @@ class AgentCoreSandbox(BaseSandbox):
         """
         if self._cwd is None:
             result = self.execute("pwd")
-            if result.exit_code != 0 or not result.output.strip():
+            if result.exit_code not in (0, None) or not result.output.strip():
                 raise RuntimeError(
                     f"Failed to detect sandbox working directory: "
                     f"exit_code={result.exit_code}, output={result.output!r}"
@@ -323,6 +437,10 @@ class AgentCoreSandbox(BaseSandbox):
 
         Raises:
             SessionExpiredError: If the session has expired or been terminated.
+            _ToolError: If ``writeFiles`` reports failure. The service returns
+                such failures as an ``isError`` result rather than an
+                exception, so without this an upload that wrote nothing would
+                be reported as a success.
         """
         try:
             response = self._interpreter.invoke(method=method, params=params)
@@ -335,6 +453,13 @@ class AgentCoreSandbox(BaseSandbox):
         # Eagerly consume the lazy EventStream to release the HTTP connection.
         if "stream" in response:
             response["stream"] = list(response["stream"])
+
+        if method == "writeFiles":
+            for event in response.get("stream", []):
+                result = event.get("result") or {}
+                if result.get("isError"):
+                    text, _ = _extract_text_from_stream({"stream": [event]})
+                    raise _ToolError(text or "writeFiles failed")
 
         return response
 
@@ -351,28 +476,47 @@ class AgentCoreSandbox(BaseSandbox):
         self,
         command: str,
         *,
-        timeout: int | None = None,  # noqa: ARG002
+        timeout: int | None = None,
     ) -> ExecuteResponse:
         """Execute a shell command inside the sandbox.
 
         Args:
             command: Shell command string to execute.
-            timeout: Unused. AgentCore does not support per-command timeouts.
-                Accepted for interface compatibility with
-                :class:`SandboxBackendProtocol`.
+            timeout: Seconds to let the command run before it is stopped.
+                ``None`` or ``0`` means no limit beyond the service's own
+                request timeout. Enforced with GNU ``timeout`` inside the
+                sandbox, which sends SIGTERM and then SIGKILL five seconds
+                later.
 
         Returns:
             Response containing the command output, exit code, and truncation
-            flag.
+            flag. ``exit_code`` is ``None`` when the service did not report
+            one, which Deep Agents treats as an unknown outcome rather than a
+            success.
         """
+        to_run = command
+        if timeout:
+            # ``sh`` rather than ``bash``: commands normally run under /bin/sh,
+            # and ``bash -c`` would leave POSIX mode and change their behavior.
+            to_run = f"timeout -k 5 {int(timeout)}s sh -c {shlex.quote(command)}"
         try:
-            response = self._invoke(
-                method="executeCommand", params={"command": command}
-            )
+            started = time.monotonic()
+            response = self._invoke(method="executeCommand", params={"command": to_run})
+            elapsed = time.monotonic() - started
             output, exit_code = _extract_text_from_stream(response)
+            # executeCommand runs under a pseudo-terminal, which turns every
+            # "\n" the command writes into "\r\n". Undoing exactly that
+            # mapping restores the original bytes, including any "\r\n" a
+            # file really contains (the terminal renders those as "\r\r\n").
+            output = output.replace("\r\n", "\n")
+            # A command can exit 124 on its own, so only call it a timeout when
+            # the call also lasted at least as long as the limit.
+            if timeout and exit_code == _TIMEOUT_EXIT_CODE and elapsed >= int(timeout):
+                note = f"Command timed out after {int(timeout)} seconds."
+                output = f"{output}\n{note}" if output else note
             return ExecuteResponse(
                 output=output,
-                exit_code=exit_code if exit_code is not None else 0,
+                exit_code=exit_code,
                 truncated=False,
             )
         except SessionExpiredError:
@@ -499,10 +643,41 @@ class AgentCoreSandbox(BaseSandbox):
         pattern: str,
         path: str | None = None,
         glob: str | None = None,
+        *,
+        max_count: int | None = None,
     ) -> GrepResult:
-        """Search file contents, resolving ``path`` against the sandbox cwd."""
+        """Search file contents, resolving ``path`` against the sandbox cwd.
+
+        ``max_count`` is passed to ``BaseSandbox`` so the search stops early
+        inside the sandbox, rather than returning every match for Deep Agents
+        to trim afterwards. Older deepagents releases without the parameter
+        ignore it.
+        """
         resolved = self._to_absolute_path(path) if path else path
+        if _BASE_GREP_HAS_MAX_COUNT:
+            # Only reached on deepagents releases that accept max_count; the
+            # type checker sees whichever version is locked.
+            return super().grep(pattern, resolved, glob, max_count=max_count)  # type: ignore[call-arg]
         return super().grep(pattern, resolved, glob)
+
+    if _BASE_HAS_DELETE:
+
+        def delete(self, file_path: str) -> Any:
+            """Delete a file, resolving ``file_path`` against the sandbox cwd.
+
+            Without this, ``BaseSandbox`` would run the delete on the raw path,
+            so ``delete("/notes.txt")`` targeted ``/notes.txt`` while
+            ``read("/notes.txt")`` read ``<cwd>/notes.txt``.
+            """
+            return super().delete(self._to_absolute_path(file_path))  # type: ignore[misc]
+
+        async def adelete(self, file_path: str) -> Any:
+            """Async version of :meth:`delete`, run on the sandbox executor."""
+            loop = asyncio.get_running_loop()
+            return await loop.run_in_executor(
+                _AGENTCORE_EXECUTOR,
+                lambda: self.delete(file_path),
+            )
 
     def glob(
         self,
@@ -689,6 +864,8 @@ class AgentCoreSandbox(BaseSandbox):
         pattern: str,
         path: str | None = None,
         glob: str | None = None,
+        *,
+        max_count: int | None = None,
     ) -> GrepResult:
         """Async version of :meth:`grep`.
 
@@ -697,6 +874,8 @@ class AgentCoreSandbox(BaseSandbox):
             path: Directory or file to search in, resolved against the sandbox
                 cwd. When ``None``, the ``BaseSandbox`` default is used.
             glob: Optional file-name glob to restrict the search.
+            max_count: Stop after this many matches, when supported by the
+                installed deepagents.
 
         Returns:
             ``GrepResult`` with a list of matches or ``error`` on failure.
@@ -704,7 +883,7 @@ class AgentCoreSandbox(BaseSandbox):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             _AGENTCORE_EXECUTOR,
-            lambda: self.grep(pattern, path, glob),
+            lambda: self.grep(pattern, path, glob, max_count=max_count),
         )
 
     async def aglob(

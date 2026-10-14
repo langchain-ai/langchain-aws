@@ -23,7 +23,7 @@ on:
       test-file:
         required: true
         type: string
-        default: "tests/integration_tests/**/test*.py"
+        default: "tests/integration_tests/"
         description: "Which test file to run"
 
 env:

@@ -42,10 +42,13 @@ from langchain_core.messages import content as types
 from langchain_core.messages.ai import UsageMetadata
 from langchain_core.messages.tool import ToolCall, ToolMessage
 from langchain_core.messages.utils import convert_to_openai_messages
-from langchain_core.output_parsers import JsonOutputKeyToolsParser, PydanticToolsParser
 from langchain_core.output_parsers.base import OutputParserLike
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
-from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
+from langchain_core.runnables import (
+    Runnable,
+    RunnableMap,
+    RunnablePassthrough,
+)
 from langchain_core.tools import BaseTool
 from langchain_core.utils import get_pydantic_field_names
 from langchain_core.utils.function_calling import convert_to_openai_tool
@@ -60,6 +63,8 @@ from langchain_aws.function_calling import (
     AnthropicTool,
     ToolsOutputParser,
     _lc_tool_calls_to_anthropic_tool_use_blocks,
+    _RepairingJsonOutputKeyToolsParser,
+    _RepairingPydanticToolsParser,
     convert_to_anthropic_tool,
     get_system_message,
 )
@@ -72,8 +77,10 @@ from langchain_aws.utils import (
     anthropic_tokens_supported,
     count_tokens_api_supported_for_model,
     create_aws_client,
+    forced_tool_choice_unsupported,
     get_num_tokens_anthropic,
     get_token_ids_anthropic,
+    thinking_forced_tool_use_unsupported,
     thinking_in_params,
     trim_message_whitespace,
 )
@@ -637,9 +644,16 @@ def _format_anthropic_messages(
                             )
                     elif item["type"] in ["thinking", "redacted_thinking"]:
                         # Store thinking blocks separately
-                        thinking_blocks.append(
-                            {k: v for k, v in item.items() if k != "index"}
-                        )
+                        thinking_block = {k: v for k, v in item.items() if k != "index"}
+                        # Adaptive-only thinking models (i.e. Claude 4.7+) stream
+                        # signature-only thinking blocks on "omitted" display mode.
+                        # Need to include thinking field or Invoke API throws an error
+                        if (
+                            thinking_block["type"] == "thinking"
+                            and "thinking" not in thinking_block
+                        ):
+                            thinking_block["thinking"] = ""
+                        thinking_blocks.append(thinking_block)
                     elif item["type"] == "text":
                         text = item.get("text", "")
                         # Only add non-empty strings for now as empty ones are not
@@ -951,7 +965,13 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     def _resolve_model_profile(self) -> ModelProfile | None:
         """Return the default model profile for this model."""
         model_id = self.base_model_id if self.base_model_id else self.model_id
-        return _get_default_model_profile(model_id)
+        profile = _get_default_model_profile(model_id)
+        # The data describes the APIs `ChatAnthropicBedrock`, `ChatAnthropicMantle`
+        # and `ChatOpenAIMantle` call. This class rejects a non-leading system
+        # message (or hoists it, on Converse), so it can't send one in place.
+        profile.pop("mid_conversation_system_messages", None)
+        profile.pop("mid_conversation_tools", None)
+        return profile
 
     @property
     def lc_attributes(self) -> Dict[str, Any]:
@@ -967,6 +987,20 @@ class ChatBedrock(BaseChatModel, BedrockBase):
         populate_by_name=True,
     )
 
+    @property
+    def model(self) -> str:
+        """Same as model_id."""
+        return self.model_id
+
+    def _get_invocation_params(
+        self, stop: Optional[List[str]] = None, **kwargs: Any
+    ) -> Dict[str, Any]:
+        """Get the parameters used to invoke the model, for tracing purposes."""
+        return {
+            "model": self.base_model_id or self.model_id,
+            **super()._get_invocation_params(stop=stop, **kwargs),
+        }
+
     def _get_ls_params(
         self, stop: Optional[List[str]] = None, **kwargs: Any
     ) -> LangSmithParams:
@@ -977,7 +1011,7 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             ls_model_name=params.get("model") or self.model_id,
             ls_model_type="chat",
         )
-        if ls_temperature := params.get("temperature", self.temperature):
+        if (ls_temperature := params.get("temperature", self.temperature)) is not None:
             ls_params["ls_temperature"] = ls_temperature
         if ls_max_tokens := params.get("max_tokens", self.max_tokens):
             ls_params["ls_max_tokens"] = ls_max_tokens
@@ -1354,15 +1388,9 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             formatted_tools = [convert_to_anthropic_tool(tool) for tool in tools]
 
             base_model = self._get_base_model()
-            if any(
-                x in base_model
-                for x in (
-                    "claude-3-7-",
-                    "claude-opus-4-",
-                    "claude-sonnet-4-",
-                    "claude-haiku-4-",
-                )
-            ) and thinking_in_params(self.model_kwargs or {}):
+            if thinking_forced_tool_use_unsupported(base_model) and thinking_in_params(
+                self.model_kwargs or {}
+            ):
                 forced = False
                 if isinstance(tool_choice, bool):
                     forced = bool(tool_choice)
@@ -1542,18 +1570,17 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                 f"Structured output is not supported for model {self._get_base_model()}"
             )
 
-        tool_name = convert_to_anthropic_tool(schema)["name"]
+        anthropic_tool = convert_to_anthropic_tool(schema)
+        tool_name = anthropic_tool["name"]
+        schema_properties = (anthropic_tool.get("input_schema") or {}).get(
+            "properties"
+        ) or None
 
         base_model = self._get_base_model()
-        has_thinking = any(
-            x in base_model
-            for x in (
-                "claude-3-7-",
-                "claude-opus-4-",
-                "claude-sonnet-4-",
-                "claude-haiku-4-",
-            )
-        ) and thinking_in_params(self.model_kwargs or {})
+        has_thinking = forced_tool_choice_unsupported(base_model) or (
+            thinking_forced_tool_use_unsupported(base_model)
+            and thinking_in_params(self.model_kwargs or {})
+        )
 
         if has_thinking:
             llm = self.bind_tools(
@@ -1574,22 +1601,33 @@ class ChatBedrock(BaseChatModel, BedrockBase):
                     "schema": convert_to_openai_tool(schema),
                 },
             )
+
         if isinstance(schema, type) and is_basemodel_subclass(schema):
             if self.streaming:
-                output_parser: OutputParserLike = PydanticToolsParser(
-                    first_tool_only=True, tools=[schema]
+                output_parser: OutputParserLike = _RepairingPydanticToolsParser(
+                    first_tool_only=True,
+                    tools=[schema],
+                    schema_properties=schema_properties,
                 )
             else:
                 output_parser = ToolsOutputParser(
-                    first_tool_only=True, pydantic_schemas=[schema]
+                    first_tool_only=True,
+                    pydantic_schemas=[schema],
+                    schema_properties=schema_properties,
                 )
         else:
             if self.streaming:
-                output_parser = JsonOutputKeyToolsParser(
-                    first_tool_only=True, key_name=tool_name
+                output_parser = _RepairingJsonOutputKeyToolsParser(
+                    first_tool_only=True,
+                    key_name=tool_name,
+                    schema_properties=schema_properties,
                 )
             else:
-                output_parser = ToolsOutputParser(first_tool_only=True, args_only=True)
+                output_parser = ToolsOutputParser(
+                    first_tool_only=True,
+                    args_only=True,
+                    schema_properties=schema_properties,
+                )
 
         if has_thinking:
 

@@ -1,31 +1,93 @@
 """Anthropic Bedrock chat models."""
 
 import os
-import re
+import warnings
+from collections.abc import Callable, Mapping, Sequence
 from functools import cached_property
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import anthropic
-from anthropic import AnthropicBedrock, AsyncAnthropicBedrock
+from anthropic import (
+    AnthropicBedrock,
+    AnthropicBedrockMantle,
+    AsyncAnthropicBedrock,
+    AsyncAnthropicBedrockMantle,
+)
 from langchain_anthropic.chat_models import ChatAnthropic
-from langchain_core.language_models import ModelProfile, ModelProfileRegistry
+from langchain_core.language_models import (
+    LanguageModelInput,
+    ModelProfile,
+    ModelProfileRegistry,
+)
 from langchain_core.language_models.chat_models import LangSmithParams
-from langchain_core.messages import AIMessageChunk
+from langchain_core.messages import AIMessage, AIMessageChunk
 from langchain_core.messages.ai import InputTokenDetails, UsageMetadata
+from langchain_core.runnables import Runnable
+from langchain_core.tools import BaseTool
 from langchain_core.utils import secret_from_env
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
-from langchain_aws._version import _add_langchain_aws_version
+from langchain_aws._version import _add_langchain_aws_version, _tag_user_agent
 from langchain_aws.chat_models._anthropic_utils import _create_bedrock_client_params
 from langchain_aws.data._profiles import _PROFILES
+from langchain_aws.utils import (
+    _MANTLE_GUARDRAILS_ERR_MSG,
+    MODEL_ID_GEO_PREFIXES,
+    _check_no_mantle_guardrail_headers,
+    forced_tool_choice_unsupported,
+)
 
 _MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
 
 
 def _get_default_model_profile(model_name: str) -> ModelProfile:
-    default = _MODEL_PROFILES.get(model_name) or {}
-    return default.copy()
+    """Look up the default profile for a model ID."""
+    default = _MODEL_PROFILES.get(model_name)
+    if default is None:
+        prefix, _, rest = model_name.partition(".")
+        if rest and prefix.lower() in MODEL_ID_GEO_PREFIXES:
+            default = _MODEL_PROFILES.get(rest)
+    return (default or {}).copy()
+
+
+def _guardrail_config_to_headers(
+    guardrail_config: dict[str, Any] | None,
+) -> dict[str, str]:
+    """Translate a guardrail_config dict into Bedrock guardrail request headers.
+
+    The native Bedrock ``InvokeModel`` / ``InvokeModelWithResponseStream`` APIs
+    attach guardrails via HTTP headers instead of a request body field, so the
+    Converse-style config is mapped onto those headers here.
+
+    Args:
+        guardrail_config: Dict with ``guardrailIdentifier``,
+            ``guardrailVersion``, and optional ``trace``.
+
+    Returns:
+        Header dict; empty when no guardrail is configured.
+
+    Raises:
+        ValueError: If ``guardrail_config`` is missing
+            ``guardrailIdentifier`` or ``guardrailVersion``.
+    """
+    if not guardrail_config:
+        return {}
+    identifier = guardrail_config.get("guardrailIdentifier")
+    version = guardrail_config.get("guardrailVersion")
+    if not identifier or not version:
+        msg = (
+            "guardrail_config requires both 'guardrailIdentifier' and "
+            "'guardrailVersion'."
+        )
+        raise ValueError(msg)
+    headers: dict[str, str] = {
+        "X-Amzn-Bedrock-GuardrailIdentifier": str(identifier),
+        "X-Amzn-Bedrock-GuardrailVersion": str(version),
+    }
+    if trace := guardrail_config.get("trace"):
+        headers["X-Amzn-Bedrock-Trace"] = str(trace).upper()
+    return headers
 
 
 class ChatAnthropicBedrock(ChatAnthropic):
@@ -110,6 +172,25 @@ class ChatAnthropicBedrock(ChatAnthropic):
     If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
     """
 
+    guardrail_config: dict[str, Any] | None = Field(default=None, alias="guardrails")
+    """Configuration for an Amazon Bedrock Guardrail.
+
+    The native Bedrock ``InvokeModel`` APIs used by the Anthropic SDK attach
+    guardrails as HTTP request headers rather than a request body field, so
+    this config is translated into ``X-Amzn-Bedrock-GuardrailIdentifier``,
+    ``X-Amzn-Bedrock-GuardrailVersion`` and ``X-Amzn-Bedrock-Trace`` headers
+    injected per-request via the SDK's ``extra_headers`` parameter.
+
+    When set at construction, applies to every request as the default.
+    Can be overridden per-request by passing ``guardrail_config=`` as an
+    invoke kwarg (mirroring ``ChatBedrockConverse`` behaviour)::
+
+        model.invoke("hello", guardrail_config={
+            "guardrailIdentifier": "gr-other",
+            "guardrailVersion": "2",
+        })
+    """
+
     @property
     def _llm_type(self) -> str:
         """Return type of chat model."""
@@ -135,6 +216,30 @@ class ChatAnthropicBedrock(ChatAnthropic):
         """
         return ["langchain", "chat_models", "anthropic_bedrock"]
 
+    def _get_request_payload(
+        self,
+        input_: Any,
+        *,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> dict:
+        """Override to inject additional Bedrock configs via ``extra_headers``."""
+
+        req_guardrail = kwargs.pop("guardrail_config", None)
+        guardrail = req_guardrail or self.guardrail_config
+
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+
+        if guardrail:
+            guardrail_headers = _guardrail_config_to_headers(guardrail)
+            existing_extra = payload.get("extra_headers") or {}
+            payload["extra_headers"] = {
+                **existing_extra,
+                **guardrail_headers,
+            }
+
+        return payload
+
     @cached_property
     def _client_params(self) -> dict[str, Any]:
         """Get client parameters for AnthropicBedrock."""
@@ -157,12 +262,22 @@ class ChatAnthropicBedrock(ChatAnthropic):
     @cached_property
     def _client(self) -> Any:  # type: ignore[type-arg]
         """Get synchronous AnthropicBedrock client."""
-        return AnthropicBedrock(**self._client_params)
+        client = AnthropicBedrock(**self._client_params)
+        return client.with_options(
+            default_headers=_tag_user_agent(
+                self._client_params.get("default_headers"), client.user_agent
+            )
+        )
 
     @cached_property
     def _async_client(self) -> Any:  # type: ignore[type-arg]
         """Get asynchronous AnthropicBedrock client."""
-        return AsyncAnthropicBedrock(**self._client_params)
+        client = AsyncAnthropicBedrock(**self._client_params)
+        return client.with_options(
+            default_headers=_tag_user_agent(
+                self._client_params.get("default_headers"), client.user_agent
+            )
+        )
 
     def _get_ls_params(
         self,
@@ -194,8 +309,9 @@ class ChatAnthropicBedrock(ChatAnthropic):
     def _set_model_profile(self) -> Self:
         """Set model profile if not overridden."""
         if self.profile is None:
-            model = re.sub(r"^[A-Za-z]{2}\.", "", self.model)
-            self.profile = _get_default_model_profile(model)
+            self.profile = _get_default_model_profile(self.model)
+        if self.guardrail_config:
+            _guardrail_config_to_headers(self.guardrail_config)
         _add_langchain_aws_version(self)
         return self
 
@@ -257,3 +373,407 @@ class ChatAnthropicBedrock(ChatAnthropic):
             )
 
         return msg, block_start_event
+
+
+_MANTLE_BASE_URL_TEMPLATE = "https://bedrock-mantle.{region}.api.aws/anthropic"
+
+
+class ChatAnthropicMantle(ChatAnthropic):
+    """Anthropic Claude via the Amazon Bedrock Mantle endpoint.
+
+    Amazon Bedrock exposes the native Anthropic Messages API on the
+    ``bedrock-mantle`` endpoint (``bedrock-mantle.{region}.api.aws/anthropic``).
+    Because the wire format is the standard Anthropic Messages API, this
+    integration is a thin subclass of
+    [`ChatAnthropic`](https://docs.langchain.com/oss/python/integrations/chat/anthropic)
+    (mirroring the ``AzureChatOpenAI`` pattern) that only resolves the Bedrock
+    Mantle base URL and authentication; all chat behaviour (tool calling,
+    structured output, streaming, tracing, thinking, multimodal) is inherited
+    from ``ChatAnthropic`` and stays in sync with ``langchain-anthropic``.
+
+    Uses the ``AnthropicBedrockMantle`` clients in the ``anthropic`` SDK, which
+    support both authentication modes Mantle accepts:
+
+    - **Amazon Bedrock API key** (bearer token), from ``bedrock_api_key`` or the
+      ``AWS_BEARER_TOKEN_BEDROCK`` environment variable.
+    - **AWS SigV4** with standard AWS credentials — explicit keys, a named
+      profile, or the default credential chain (environment, instance profile,
+      SSO, etc.).
+
+    Note that if multiple credential sources are provided/available, the
+    ``AnthropicBedrockMantle`` client resolves priority as follows:
+
+    1. Explicit ``bedrock_api_key``
+    2. Explicit ``aws_access_key_id``/``aws_secret_access_key``
+    3. Explicit ``credentials_profile_name``
+    4. ``AWS_BEARER_TOKEN_BEDROCK`` env variable
+    5. Default AWS credential chain (SigV4)
+
+    If you want to explicitly prioritize either API keys or SigV4, use
+    ``auth_mode``. ``auth_mode="api_key"`` generally restores the
+    key-over-credentials precedence used by ``ChatBedrockConverse`` and
+    most of the other boto3-client based integrations.
+
+    See the [Claude Platform docs](https://platform.claude.com/docs/en/about-claude/models/overview)
+    for the latest models, their capabilities, and pricing.
+
+    Example:
+        ```python
+        # pip install "langchain-aws[anthropic]"
+        # export AWS_BEARER_TOKEN_BEDROCK="your-bedrock-api-key"
+        # export AWS_REGION="us-east-1"
+
+        from langchain_aws import ChatAnthropicMantle
+
+        model = ChatAnthropicMantle(
+            model="anthropic.claude-sonnet-5",
+            region_name="us-east-1",
+        )
+        model.invoke("What is 2 + 2?")
+        ```
+
+    Note:
+        This targets the ``bedrock-mantle`` endpoint. For Claude via
+        ``bedrock-runtime`` with AWS SigV4 credentials and invocation logging,
+        use ``ChatAnthropicBedrock`` instead.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    region_name: str | None = None
+    """AWS region for the Bedrock Mantle endpoint, e.g. ``us-east-1``.
+
+    Falls back to the ``AWS_REGION`` or ``AWS_DEFAULT_REGION`` environment
+    variable when not provided. Used to build the default ``base_url``.
+    """
+
+    bedrock_api_key: SecretStr | None = Field(
+        default_factory=secret_from_env(
+            ("AWS_BEARER_TOKEN_BEDROCK", "ANTHROPIC_AWS_API_KEY"), default=None
+        )
+    )
+    """Amazon Bedrock API key used to authenticate to Mantle.
+
+    If not provided, read from the ``AWS_BEARER_TOKEN_BEDROCK`` or
+    ``ANTHROPIC_AWS_API_KEY`` environment variable (in that order). An
+    explicitly passed key always selects bearer authentication; an
+    environment-sourced key is outranked by explicitly passed SigV4
+    credentials. See the class docstring for the full selection order.
+    """
+
+    aws_access_key_id: SecretStr | None = Field(
+        default_factory=secret_from_env("AWS_ACCESS_KEY_ID", default=None)
+    )
+    """AWS access key id.
+
+    If provided, aws_secret_access_key must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_ACCESS_KEY_ID' environment variable.
+
+    """
+
+    aws_secret_access_key: SecretStr | None = Field(
+        default_factory=secret_from_env("AWS_SECRET_ACCESS_KEY", default=None)
+    )
+    """AWS secret_access_key.
+
+    If provided, aws_access_key_id must also be provided.
+    If not specified, the default credential profile or, if on an EC2 instance,
+    credentials from IMDS will be used.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_SECRET_ACCESS_KEY' environment variable.
+    """
+
+    aws_session_token: SecretStr | None = Field(
+        default_factory=secret_from_env("AWS_SESSION_TOKEN", default=None)
+    )
+    """AWS session token.
+
+    If provided, aws_access_key_id and aws_secret_access_key must
+    also be provided. Not required unless using temporary credentials.
+    See: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html
+
+    If not provided, will be read from 'AWS_SESSION_TOKEN' environment variable.
+    """
+
+    credentials_profile_name: str | None = None
+    """AWS profile name from ``~/.aws/credentials`` for SigV4 authentication."""
+
+    auth_mode: Literal["auto", "api_key", "sigv4"] = "auto"
+    """Which authentication mode to use with the Mantle request.
+
+    - ``"auto"`` (default): Allow `AnthropicBedrockMantle` to decide the 
+      credential source priority (see class docstring for details).
+    - ``"api_key"``: always use bearer authentication. Raises if Bedrock
+      API key is unavailable from either `bedrock_api_key`` or the environment.
+    - ``"sigv4"``: always use AWS SigV4. Use this when the process environment 
+      may carry ``AWS_BEARER_TOKEN_BEDROCK`` (e.g. shared containers) but requests 
+      must be signed with the caller's AWS credentials.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _resolve_gateway(cls, values: Any) -> Any:
+        """Resolve explicit endpoints without inheriting LangSmith gateway routing."""
+        if isinstance(values, dict) and not (
+            values.get("base_url") or values.get("anthropic_api_url")
+        ):
+            values["base_url"] = os.getenv("ANTHROPIC_API_URL") or os.getenv(
+                "ANTHROPIC_BASE_URL"
+            )
+        return values
+
+    @model_validator(mode="before")
+    @classmethod
+    def _set_anthropic_api_key(cls, values: Any) -> Any:
+        if isinstance(values, dict) and not values.get("anthropic_api_key"):
+            values["anthropic_api_key"] = ""
+        return values
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_guardrails(cls, values: Any) -> Any:
+        # TODO: remove after Mantle adds guardrails support
+        if isinstance(values, dict):
+            if any(
+                values.get(key) is not None
+                for key in ("guardrail_config", "guardrails")
+            ):
+                raise ValueError(_MANTLE_GUARDRAILS_ERR_MSG)
+            _check_no_mantle_guardrail_headers(values.get("default_headers"))
+        return values
+
+    def _get_request_payload(
+        self,
+        input_: Any,
+        *,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> dict:
+        # TODO: remove after Mantle adds guardrails support
+        if kwargs.get("guardrail_config") is not None:
+            raise ValueError(_MANTLE_GUARDRAILS_ERR_MSG)
+        _check_no_mantle_guardrail_headers(kwargs.get("extra_headers"))
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+
+        if self.profile and self.profile.get("temperature") is False:
+            extra_body = payload.get("extra_body") or {}
+            ignored = []
+            for key in ("temperature", "top_p", "top_k"):
+                top_level = payload.pop(key, None)
+                in_extra_body = extra_body.pop(key, None)
+                if top_level is not None or in_extra_body is not None:
+                    ignored.append(key)
+            if "extra_body" in payload and not extra_body:
+                del payload["extra_body"]
+            if ignored:
+                warnings.warn(
+                    f"Model {self.model} does not support {' or '.join(ignored)}; "
+                    f"ignoring the provided value{'s' if len(ignored) > 1 else ''}.",
+                    stacklevel=2,
+                )
+        return payload
+
+    def bind_tools(
+        self,
+        tools: Sequence[Mapping[str, Any] | type | Callable | BaseTool],
+        *,
+        tool_choice: dict[str, str] | str | None = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, AIMessage]:
+        choice_type = (
+            tool_choice.get("type") if isinstance(tool_choice, dict) else tool_choice
+        )
+        if choice_type not in (None, "auto", "none") and forced_tool_choice_unsupported(
+            self.model
+        ):
+            if "ls_structured_output_format" not in kwargs:
+                warnings.warn(
+                    f"Model {self.model} does not support forced tool_choice; "
+                    "using tool_choice 'auto' instead.",
+                    stacklevel=2,
+                )
+            tool_choice = "auto"
+        return super().bind_tools(tools, tool_choice=tool_choice, **kwargs)
+
+    @model_validator(mode="after")
+    def _validate_auth_mode(self) -> Self:
+        if self.auth_mode == "api_key" and not self.bedrock_api_key:
+            msg = (
+                "auth_mode='api_key' requires a Bedrock API key. Set "
+                "`bedrock_api_key`, or the AWS_BEARER_TOKEN_BEDROCK or "
+                "ANTHROPIC_AWS_API_KEY environment variable."
+            )
+            raise ValueError(msg)
+        if (
+            self.auth_mode == "sigv4"
+            and "bedrock_api_key" in self.model_fields_set
+            and self.bedrock_api_key
+        ):
+            msg = (
+                "auth_mode='sigv4' conflicts with an explicitly provided "
+                "`bedrock_api_key`. Remove one of the two: a bearer key "
+                "read from the environment is ignored under sigv4, but an "
+                "explicit constructor argument is treated as a mistake."
+            )
+            raise ValueError(msg)
+        return self
+
+    @property
+    def _client_params(self) -> dict[str, Any]:
+        """Get client parameters for AnthropicBedrockMantle."""
+        region_name = (
+            self.region_name
+            or os.getenv("AWS_REGION")
+            or os.getenv("AWS_DEFAULT_REGION")
+            or None  # SDK will resolve
+        )
+        client_params: dict[str, Any] = {
+            "aws_region": region_name,
+            "max_retries": self.max_retries,
+            "default_headers": (self.default_headers or None),
+        }
+        if self.anthropic_api_url and "api.anthropic.com" not in self.anthropic_api_url:
+            client_params["base_url"] = self.anthropic_api_url
+        explicit_sigv4_credentials = (
+            "credentials_profile_name" in self.model_fields_set
+            and bool(self.credentials_profile_name)
+        ) or (
+            bool({"aws_access_key_id", "aws_secret_access_key"} & self.model_fields_set)
+            and self.aws_access_key_id is not None
+            and self.aws_secret_access_key is not None
+        )
+        if (
+            self.bedrock_api_key
+            and self.auth_mode != "sigv4"
+            and (
+                self.auth_mode == "api_key"
+                or "bedrock_api_key" in self.model_fields_set
+                or not explicit_sigv4_credentials
+            )
+        ):
+            client_params["api_key"] = self.bedrock_api_key.get_secret_value()
+        if self.auth_mode != "api_key":
+            if self.aws_access_key_id:
+                client_params["aws_access_key"] = (
+                    self.aws_access_key_id.get_secret_value()
+                )
+            if self.aws_secret_access_key:
+                client_params["aws_secret_key"] = (
+                    self.aws_secret_access_key.get_secret_value()
+                )
+            if self.aws_session_token:
+                client_params["aws_session_token"] = (
+                    self.aws_session_token.get_secret_value()
+                )
+            if self.credentials_profile_name:
+                client_params["aws_profile"] = self.credentials_profile_name
+        if (
+            self.default_request_timeout is not None
+            and self.default_request_timeout > 0
+        ):
+            client_params["timeout"] = self.default_request_timeout
+        return client_params
+
+    def _pin_client_auth_mode(self, client: Any) -> Any:
+        if self.auth_mode == "sigv4":
+            if not hasattr(client, "_use_sigv4"):
+                msg = (
+                    "Unable to set `_use_sigv4` on the AnthropicBedrockMantle client, "
+                    "which may not longer expose it. Please pin `anthropic` to a "
+                    "compatible version and file a bug report to the langchain-aws "
+                    "repository."
+                )
+                raise RuntimeError(msg)
+            if not client._use_sigv4:
+                client._use_sigv4 = True
+                client.api_key = None
+        return client
+
+    @cached_property
+    def _client(self) -> Any:  # type: ignore[type-arg]
+        """Get synchronous AnthropicBedrockMantle client."""
+        client = AnthropicBedrockMantle(**self._client_params)
+        client = client.with_options(
+            default_headers=_tag_user_agent(
+                self._client_params.get("default_headers"), client.user_agent
+            )
+        )
+        return self._pin_client_auth_mode(client)
+
+    @cached_property
+    def _async_client(self) -> Any:  # type: ignore[type-arg]
+        """Get asynchronous AnthropicBedrockMantle client."""
+        client = AsyncAnthropicBedrockMantle(**self._client_params)
+        client = client.with_options(
+            default_headers=_tag_user_agent(
+                self._client_params.get("default_headers"), client.user_agent
+            )
+        )
+        return self._pin_client_auth_mode(client)
+
+    @model_validator(mode="after")
+    def _set_model_profile(self) -> Self:
+        """Resolve the model profile and record the langchain-aws version."""
+        if self.profile is None:
+            self.profile = _get_default_model_profile(self.model)
+        _add_langchain_aws_version(self)
+        return self
+
+    @property
+    def _llm_type(self) -> str:
+        """Return type of chat model."""
+        return "anthropic-mantle-chat"
+
+    @property
+    def lc_secrets(self) -> dict[str, str]:
+        """Return a mapping of secret field names to environment variables."""
+        return {
+            "bedrock_api_key": "AWS_BEARER_TOKEN_BEDROCK",
+            "aws_access_key_id": "AWS_ACCESS_KEY_ID",
+            "aws_secret_access_key": "AWS_SECRET_ACCESS_KEY",
+            "aws_session_token": "AWS_SESSION_TOKEN",
+        }
+
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        """Return whether this class is LangChain-serializable.
+
+        ``False`` because this partner class is not registered in
+        ``langchain-core``'s deserialization allowlist, so a dumped instance
+        cannot be round-tripped via ``langchain_core.load.load``. The
+        ``ChatAnthropic`` base returns ``True``, so this override is required.
+        """
+        return False
+
+    @classmethod
+    def get_lc_namespace(cls) -> list[str]:
+        """Get the namespace of the LangChain object.
+
+        Returns:
+            `["langchain", "chat_models", "anthropic_mantle"]`
+        """
+        return ["langchain", "chat_models", "anthropic_mantle"]
+
+    def _get_ls_params(
+        self,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> LangSmithParams:
+        """Get standard params for tracing."""
+        params = self._get_invocation_params(stop=stop, **kwargs)
+        ls_params = LangSmithParams(
+            ls_provider="anthropic-mantle",
+            ls_model_name=params.get("model", self.model),
+            ls_model_type="chat",
+            ls_temperature=params.get("temperature", self.temperature),
+        )
+        if ls_max_tokens := params.get("max_tokens", self.max_tokens):
+            ls_params["ls_max_tokens"] = ls_max_tokens
+        if ls_stop := stop or params.get("stop", None):
+            ls_params["ls_stop"] = ls_stop
+        return ls_params

@@ -11,7 +11,8 @@ import logging
 import time
 import warnings
 from collections import defaultdict
-from typing import Any, cast
+from dataclasses import dataclass
+from typing import Any, Protocol, cast, overload
 
 import boto3
 from botocore.config import Config
@@ -24,6 +25,7 @@ from langgraph.checkpoint.base import (
     RunnableConfig,
     SerializerProtocol,
 )
+from langgraph.checkpoint.serde import types as serde_types
 
 from .constants import (
     EMPTY_CHANNEL_VALUE,
@@ -39,8 +41,23 @@ from .models import (
 
 logger = logging.getLogger(__name__)
 
+
+class _DeltaSnapshotProtocol(Protocol):
+    @property
+    def value(self) -> Any: ...
+
+
 # Union type for all events
 EventType = CheckpointEvent | ChannelDataEvent | WritesEvent
+
+
+@dataclass
+class EventReadResult:
+    """Decoded blobs and whether the configured cap left event data unread."""
+
+    events: list[EventType]
+    truncated: bool = False
+
 
 # Default retry configuration
 DEFAULT_MAX_RETRIES = 3
@@ -51,6 +68,17 @@ DEFAULT_MAX_BACKOFF = 2.0  # 2 seconds
 # https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_CreateEvent.html
 MAX_PAYLOAD_ITEMS_PER_EVENT = 100  # max items in payload array
 MAX_PAYLOAD_BYTES_PER_EVENT = 10_000_000  # 10 MB max event size
+
+
+def merge_client_config(base_config: Config, boto3_kwargs: dict[str, Any]) -> Config:
+    """Handle merging caller-supplied Config into the final boto config."""
+    caller_config: Config | None = boto3_kwargs.pop("config", None)
+    if not isinstance(caller_config, Config):
+        return base_config
+    base_ua = getattr(base_config, "user_agent_extra", "") or ""
+    caller_ua = getattr(caller_config, "user_agent_extra", "") or ""
+    merged = base_config.merge(caller_config)
+    return merged.merge(Config(user_agent_extra=f"{caller_ua} {base_ua}".strip()))
 
 
 class BedrockAgentCoreClientWithRetry:
@@ -252,8 +280,9 @@ class AgentCoreEventClient:
         else:
             self.serializer = serializer
 
-        config = Config(
-            user_agent_extra="x-client-framework:langgraph_agentcore_memory"
+        config = merge_client_config(
+            Config(user_agent_extra="x-client-framework:langgraph_agentcore_memory"),
+            boto3_kwargs,
         )
         raw_client = boto3.client("bedrock-agentcore", config=config, **boto3_kwargs)
         self.client = BedrockAgentCoreClientWithRetry(
@@ -304,13 +333,13 @@ class AgentCoreEventClient:
         chunks = self._chunk_payload(blobs, max_payload_items, max_payload_bytes)
         timestamp = datetime.datetime.now(datetime.timezone.utc)
 
-        for chunk in chunks:
+        for index, chunk in enumerate(chunks):
             payload = [{"blob": b} for b in chunk]
             self.client.create_event(
                 memoryId=self.memory_id,
                 actorId=actor_id,
                 sessionId=session_id,
-                eventTimestamp=timestamp,
+                eventTimestamp=timestamp + datetime.timedelta(milliseconds=index),
                 payload=payload,
             )
 
@@ -367,15 +396,50 @@ class AgentCoreEventClient:
         Args:
             session_id: The session ID to retrieve events for
             actor_id: The actor ID to retrieve events for
-            limit: The maximum number of events to parse from ListEvents
-            max_results: Maximum number of results to retrieve. Defaults to 100.
+            limit: Maximum successfully decoded payload blobs across all pages,
+                or None for no cap. A service event may contain multiple blobs.
+            max_results: Maximum service events per ListEvents page, or None for
+                the service default. Controls page size, not the total read limit.
 
         Returns:
             List of retrieved events
-        """
 
-        if max_results is not None and max_results <= 0:
-            return []
+        """
+        result = self.read_events(session_id, actor_id, limit, max_results)
+        if result.truncated:
+            warnings.warn(
+                f"Stopped retrieving events at limit of {limit}. "
+                "There may be additional checkpoints that were not retrieved. "
+                "Consider increasing the limit parameter, or set None for no "
+                "limit.",
+                UserWarning,
+                stacklevel=2,
+            )
+        return result.events
+
+    def read_events(
+        self,
+        session_id: str,
+        actor_id: str,
+        limit: int | None = None,
+        max_results: int | None = 100,
+    ) -> EventReadResult:
+        """Read decoded blobs with truncation information for checkpoint validation.
+
+        Args:
+            session_id: Session to read.
+            actor_id: Actor to read.
+            limit: Maximum successfully decoded blobs, or None for no cap.
+            max_results: Service events per page, or None for the service default.
+
+        Returns:
+            Decoded blobs and whether more blobs or another page remain. A
+            truncated result does not establish checkpoint completeness or order.
+        """
+        if (max_results is not None and max_results <= 0) or (
+            limit is not None and limit <= 0
+        ):
+            return EventReadResult([])
 
         all_events = []
         next_token = None
@@ -386,17 +450,21 @@ class AgentCoreEventClient:
                 "memoryId": self.memory_id,
                 "actorId": actor_id,
                 "sessionId": session_id,
-                "maxResults": max_results,
                 "includePayloads": True,
             }
+            if max_results is not None:
+                params["maxResults"] = max_results
 
             if next_token:
                 params["nextToken"] = next_token
 
             response = self.client.list_events(**params)
 
-            for event in response.get("events", []):
-                for payload_item in event.get("payload", []):
+            response_events = response.get("events", [])
+            truncated_page = False
+            for event_index, event in enumerate(response_events):
+                payload = event.get("payload", [])
+                for payload_index, payload_item in enumerate(payload):
                     blob = payload_item.get("blob")
                     if blob:
                         try:
@@ -407,6 +475,14 @@ class AgentCoreEventClient:
 
                         if limit is not None and len(all_events) >= limit:
                             limit_reached = True
+                            truncated_page = any(
+                                item.get("blob")
+                                for item in payload[payload_index + 1 :]
+                            ) or any(
+                                item.get("blob")
+                                for remaining in response_events[event_index + 1 :]
+                                for item in remaining.get("payload", [])
+                            )
                             break
 
                 if limit_reached:
@@ -414,20 +490,13 @@ class AgentCoreEventClient:
 
             next_token = response.get("nextToken")
 
-            if limit_reached and next_token:
-                warnings.warn(
-                    f"Stopped retrieving events at limit of {limit}. "
-                    f"There may be additional checkpoints that were not retrieved. "
-                    f"Consider increasing the limit parameter, or set None for no "
-                    f"limit.",
-                    UserWarning,
-                    stacklevel=2,
-                )
+            if limit_reached and (truncated_page or next_token):
+                return EventReadResult(all_events, truncated=True)
 
             if limit_reached or not next_token:
                 break
 
-        return all_events
+        return EventReadResult(all_events)
 
     def delete_events(self, session_id: str, actor_id: str) -> None:
         """Delete all events for a session."""
@@ -462,6 +531,25 @@ class AgentCoreEventClient:
 
 class EventProcessor:
     """Processes events into checkpoint data structures."""
+
+    @staticmethod
+    def missing_channel_versions(
+        checkpoint_event: CheckpointEvent,
+        events: list[EventType],
+    ) -> set[tuple[str, str]]:
+        """Find channel references whose blobs were not retrieved."""
+        present = {
+            (event.channel, str(event.version))
+            for event in events
+            if isinstance(event, ChannelDataEvent)
+        }
+        required = {
+            (channel, str(version))
+            for channel, version in checkpoint_event.checkpoint_data.get(
+                "channel_versions", {}
+            ).items()
+        }
+        return required - present
 
     @staticmethod
     def process_events(
@@ -524,8 +612,8 @@ class EventProcessor:
         channel_values = {}
 
         for channel, version in checkpoint.get("channel_versions", {}).items():
-            if (channel, version) in channel_data:
-                channel_values[channel] = channel_data[(channel, version)]
+            if (channel, str(version)) in channel_data:
+                channel_values[channel] = channel_data[(channel, str(version))]
 
         # Validate if messages are present and no langchain interrupts detected
         # Then patch orphan tool_calls from messages
@@ -555,20 +643,41 @@ class EventProcessor:
         )
 
 
-def patch_orphan_tool_calls(messages: list[Any]) -> list[Any]:
+@overload
+def patch_orphan_tool_calls(
+    messages: _DeltaSnapshotProtocol,
+) -> _DeltaSnapshotProtocol: ...
+
+
+@overload
+def patch_orphan_tool_calls(messages: list[Any]) -> list[Any]: ...
+
+
+@overload
+def patch_orphan_tool_calls(messages: None) -> None: ...
+
+
+def patch_orphan_tool_calls(messages: Any) -> Any:
     """Add placeholder ToolMessages for orphaned tool_calls in AIMessages.
 
     When a checkpoint is saved mid-tool-execution, there may be AIMessages with
     tool_calls that don't have corresponding ToolMessages. This would cause
     Bedrock to throw a ValidationException. This function patches the state by
     adding placeholder ToolMessages with status="error" for each orphaned tool_call.
+    Delta snapshots are returned unchanged because they are incomplete seeds whose
+    pending writes are replayed later.
 
     Args:
-        messages: List of messages from checkpoint channel_values
+        messages: Messages or delta snapshot from checkpoint channel values.
 
     Returns:
-        List of messages with placeholder ToolMessages added for orphaned tool_calls
+        The original delta snapshot, or a message list with placeholder `ToolMessage`
+        objects added for orphaned tool calls.
     """
+    delta_snapshot_type = getattr(serde_types, "_DeltaSnapshot", None)
+    if delta_snapshot_type is not None and isinstance(messages, delta_snapshot_type):
+        return messages
+
     if not messages:
         return messages
 
@@ -605,6 +714,7 @@ def patch_orphan_tool_calls(messages: list[Any]) -> list[Any]:
                             name=tc_name,
                             tool_call_id=tc_id,
                             status="error",
+                            additional_kwargs={"orphan_tool_call_placeholder": True},
                         )
                     )
 
@@ -622,13 +732,13 @@ def convert_langchain_messages_to_event_messages(
     Returns:
         List of AgentCore event tuples (text, role)
     """
-    converted_messages = []
+    converted_messages: list[tuple[str, str]] = []
     for msg in messages:
         # Skip if event already saved
         if msg.additional_kwargs.get("event_id") is not None:
             continue
 
-        text = msg.text()
+        text = msg.text
         if not text.strip():
             continue
 
