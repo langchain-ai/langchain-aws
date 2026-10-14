@@ -483,8 +483,22 @@ class TestAgentCoreMemoryStore:
         self, store, mock_boto_client, sample_memory_record, sample_item_data
     ):
         """Test abatch delegates to batch and preserves result order."""
-        mock_boto_client.get_memory_record.return_value = {
-            "memoryRecord": sample_memory_record
+        mock_boto_client.list_events.return_value = {
+            "events": [
+                {
+                    "payload": [
+                        {
+                            "conversational": {
+                                "content": {"text": "Hello, world!"},
+                                "role": "USER",
+                            }
+                        }
+                    ],
+                    "eventTimestamp": datetime(
+                        2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc
+                    ),
+                }
+            ]
         }
         mock_boto_client.retrieve_memory_records.return_value = {
             "memoryRecordSummaries": [sample_memory_record]
@@ -528,8 +542,22 @@ class TestAgentCoreMemoryStore:
         self, store, mock_boto_client, sample_memory_record, sample_item_data
     ):
         """Test BaseStore's aget/aput/asearch work against the sync client."""
-        mock_boto_client.get_memory_record.return_value = {
-            "memoryRecord": sample_memory_record
+        mock_boto_client.list_events.return_value = {
+            "events": [
+                {
+                    "payload": [
+                        {
+                            "conversational": {
+                                "content": {"text": "Hello, world!"},
+                                "role": "USER",
+                            }
+                        }
+                    ],
+                    "eventTimestamp": datetime(
+                        2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc
+                    ),
+                }
+            ]
         }
         mock_boto_client.retrieve_memory_records.return_value = {
             "memoryRecordSummaries": [sample_memory_record]
@@ -603,9 +631,9 @@ class TestAgentCoreMemoryStore:
 
     async def test_abatch_propagates_client_errors(self, store, mock_boto_client):
         """Test botocore ClientErrors surface unchanged through abatch."""
-        mock_boto_client.get_memory_record.side_effect = ClientError(
+        mock_boto_client.list_events.side_effect = ClientError(
             {"Error": {"Code": "AccessDeniedException", "Message": "denied"}},
-            "GetMemoryRecord",
+            "ListEvents",
         )
 
         with pytest.raises(ClientError) as exc_info:
