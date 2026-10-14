@@ -1,4 +1,6 @@
 import os
+import time
+from datetime import timedelta
 from typing import Any, Dict, Generator, List, Tuple
 from unittest import mock
 
@@ -9,9 +11,19 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from pydantic import SecretStr
 
 from langchain_aws.utils import (
+    _BEDROCK_API_KEY_MAX_TTL_SECONDS,
+    _BedrockApiKeyProvider,
+    _StaticCredentialProvider,
     count_tokens_api_supported_for_model,
     create_aws_client,
+    forced_tool_choice_unsupported,
+    parse_model_provider,
+    reasoning_effort_additional_fields,
+    thinking_disabled_in_params,
+    thinking_enabled_in_params,
+    thinking_forced_tool_use_unsupported,
     thinking_in_params,
+    thinking_on_by_default,
     trim_message_whitespace,
 )
 
@@ -447,9 +459,13 @@ def test_trim_message_whitespace_with_empty_messages() -> None:
         ("us.anthropic.claude-sonnet-4-20250514-v1:0", True),
         ("us.anthropic.claude-sonnet-4-20250514-v1:0", True),
         ("us.anthropic.claude-3-5-sonnet-20240620-v1:0", True),
+        ("us.anthropic.claude-fable-5", False),
+        ("us.anthropic.claude-sonnet-5", False),
+        ("global.anthropic.claude-opus-5", False),
         ("us.anthropic.claude-3-sonnet-20240229-v1:0", False),
         ("us.meta.llama4-scout-17b-instruct-v1:0", False),
         ("us.amazon.nova-pro-v1:0", False),
+        ("xai.grok-4.6", False),
     ],
 )
 def test_count_tokens_api_supported_for_model(
@@ -458,6 +474,145 @@ def test_count_tokens_api_supported_for_model(
     result = count_tokens_api_supported_for_model(model_id)
 
     assert result == expected_result
+
+
+@pytest.mark.parametrize(
+    "model_id,expected_result",
+    [
+        ("anthropic.claude-3-7-sonnet-20250219-v1:0", True),
+        ("us.anthropic.claude-sonnet-4-20250514-v1:0", True),
+        ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", True),
+        ("anthropic.claude-sonnet-4-6", True),
+        ("us.anthropic.claude-opus-4-20250514-v1:0", True),
+        ("anthropic.claude-opus-4-6-v1", True),
+        ("global.anthropic.claude-opus-4-7", True),
+        ("us.anthropic.claude-haiku-4-5-20251001-v1:0", True),
+        ("global.anthropic.claude-opus-4-8", False),
+        ("us.anthropic.claude-sonnet-5", False),
+        ("global.anthropic.claude-opus-5", False),
+        ("global.anthropic.claude-fable-5", False),
+        ("deepseek.v3-v1:0", True),
+        ("deepseek.v3.2", True),
+    ],
+)
+def test_thinking_forced_tool_use_unsupported(
+    model_id: str, expected_result: bool
+) -> None:
+    assert thinking_forced_tool_use_unsupported(model_id) == expected_result
+
+
+@pytest.mark.parametrize(
+    "model_id,expected_result",
+    [
+        ("us.anthropic.claude-fable-5-1", True),
+        ("anthropic.claude-opus-5-5", True),
+        ("us.anthropic.claude-opus-5-5", True),
+        ("global.anthropic.claude-opus-5-5", True),
+        ("anthropic.claude-sonnet-5-5", True),
+        ("global.anthropic.claude-sonnet-5-5", True),
+        ("global.anthropic.claude-opus-5", False),
+        ("global.anthropic.claude-fable-5", False),
+        ("us.anthropic.claude-sonnet-5", False),
+        ("us.anthropic.claude-haiku-5-5", False),
+        ("global.anthropic.claude-opus-4-8", False),
+        ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", False),
+    ],
+)
+def test_forced_tool_choice_unsupported(model_id: str, expected_result: bool) -> None:
+    assert forced_tool_choice_unsupported(model_id) == expected_result
+
+
+@pytest.mark.parametrize(
+    "model_id,params,expected_result",
+    [
+        ("anthropic.claude-sonnet-4-6", {"thinking": {"type": "enabled"}}, True),
+        ("anthropic.claude-sonnet-4-6", {"reasoning_effort": "high"}, False),
+        ("deepseek.v3.2", {"reasoning_effort": "high"}, True),
+        ("deepseek.v3.2", {"reasoning_effort": "low"}, False),
+        ("deepseek.v3.2", {"thinking": {"type": "enabled"}}, False),
+        ("deepseek.v3.2", {}, False),
+    ],
+)
+def test_thinking_enabled_in_params(
+    model_id: str, params: Dict[str, Any], expected_result: bool
+) -> None:
+    assert thinking_enabled_in_params(model_id, params) == expected_result
+
+
+@pytest.mark.parametrize(
+    "model_id,expected_result",
+    [
+        ("us.anthropic.claude-sonnet-5", True),
+        ("global.anthropic.claude-opus-5", True),
+        ("global.anthropic.claude-fable-5", True),
+        ("us.anthropic.claude-haiku-5-5", True),
+        ("global.anthropic.claude-opus-4-8", False),
+        ("anthropic.claude-sonnet-4-6", False),
+        ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", False),
+        ("us.anthropic.claude-haiku-4-5-20251001-v1:0", False),
+    ],
+)
+def test_thinking_on_by_default(model_id: str, expected_result: bool) -> None:
+    assert thinking_on_by_default(model_id) == expected_result
+
+
+@pytest.mark.parametrize(
+    "params,expected_result",
+    [
+        ({"thinking": {"type": "disabled"}}, True),
+        ({"thinking": {"type": "enabled", "budget_tokens": 1024}}, False),
+        ({"thinking": {"type": "adaptive"}}, False),
+        ({}, False),
+    ],
+)
+def test_thinking_disabled_in_params(params: dict, expected_result: bool) -> None:
+    assert thinking_disabled_in_params(params) == expected_result
+
+
+@pytest.mark.parametrize(
+    "base_model,effort,expected_fields",
+    [
+        (
+            "us.anthropic.claude-sonnet-5",
+            "high",
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}},
+        ),
+        (
+            "anthropic.claude-opus-5",
+            "xhigh",
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "xhigh"}},
+        ),
+        (
+            "amazon.nova-2-lite-v1:0",
+            "medium",
+            {"reasoningConfig": {"type": "enabled", "maxReasoningEffort": "medium"}},
+        ),
+        (
+            "openai.gpt-oss-120b-1:0",
+            "low",
+            {"reasoning_effort": "low"},
+        ),
+        (
+            "moonshot.kimi-k2-thinking",
+            "max",
+            {"reasoning_effort": "max"},
+        ),
+        (
+            "moonshotai.kimi-k2.5",
+            "low",
+            {"reasoning_effort": "low"},
+        ),
+        ("amazon.titan-text-express-v1", "high", {}),
+        ("meta.llama3-1-70b-instruct-v1:0", "high", {}),
+        ("openai.gpt-5.6-terra", "medium", {"reasoning": {"effort": "medium"}}),
+        ("openai.gpt-5.6-sol", "none", {"reasoning": {"effort": "none"}}),
+        ("openai.gpt-6-astra", "max", {"reasoning": {"effort": "max"}}),
+    ],
+)
+def test_reasoning_effort_additional_fields(
+    base_model: str, effort: str, expected_fields: dict
+) -> None:
+    assert reasoning_effort_additional_fields(base_model, effort) == expected_fields
 
 
 def test_api_key_uses_token_provider(
@@ -657,6 +812,22 @@ def test_thinking_in_params(params: dict, expected: bool) -> None:
     assert thinking_in_params(params) == expected
 
 
+@pytest.mark.parametrize(
+    "model_id,expected_provider",
+    [
+        ("anthropic.claude-sonnet-5", "anthropic"),
+        ("global.anthropic.claude-fable-5", "anthropic"),
+        ("us-gov.anthropic.claude-haiku-4-5-20251001-v1:0", "anthropic"),
+        ("minimax.minimax-m2.5", "minimax"),
+        ("us.minimax.minimax-m2.5", "minimax"),
+        ("moonshotai.kimi-k2.5", "moonshotai"),
+        ("moonshot.kimi-k2-thinking", "moonshot"),
+    ],
+)
+def test_parse_model_provider(model_id: str, expected_provider: str) -> None:
+    assert parse_model_provider(model_id) == expected_provider
+
+
 @pytest.mark.parametrize("api_key", [SecretStr(""), None])
 def test_empty_or_none_api_key_is_ignored(
     mock_boto3: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
@@ -720,33 +891,64 @@ def test_api_key_overrides_existing_env_var(
 # ---------------------------------------------------------------------------
 
 # Mock the smithy SDK modules so tests work without installing nova-sonic deps
-_mock_config_instance = mock.MagicMock()
 _mock_client_instance = mock.MagicMock()
+_mock_client_instance._ensure_setup = mock.AsyncMock()
 
 
 @pytest.fixture
 def mock_bedrock_runtime_sdk() -> Generator[
-    Tuple[mock.MagicMock, mock.MagicMock], None, None
+    Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock], None, None
 ]:
-    """Mock aws_sdk_bedrock_runtime so create_aws_bedrock_runtime_client works."""
-    mock_config_cls = mock.MagicMock(return_value=_mock_config_instance)
+    """Mock aws_sdk_bedrock_runtime and the smithy transport/identity modules."""
     mock_client_cls = mock.MagicMock(return_value=_mock_client_instance)
+    mock_transport_cls = mock.MagicMock()
+    mock_identity_cls = mock.MagicMock()
+
+    mock_client_module = mock.MagicMock(spec=["AsyncBedrockRuntimeClient"])
+    mock_client_module.AsyncBedrockRuntimeClient = mock_client_cls
+    mock_crt_module = mock.MagicMock(spec=["AWSCRTHTTPClient"])
+    mock_crt_module.AWSCRTHTTPClient = mock_transport_cls
+    mock_identity_module = mock.MagicMock(spec=["AWSCredentialsIdentity"])
+    mock_identity_module.AWSCredentialsIdentity = mock_identity_cls
 
     with (
         mock.patch.dict(
             "sys.modules",
             {
                 "aws_sdk_bedrock_runtime": mock.MagicMock(),
-                "aws_sdk_bedrock_runtime.client": mock.MagicMock(
-                    BedrockRuntimeClient=mock_client_cls
-                ),
-                "aws_sdk_bedrock_runtime.config": mock.MagicMock(
-                    Config=mock_config_cls
-                ),
+                "aws_sdk_bedrock_runtime.client": mock_client_module,
+                "smithy_http": mock.MagicMock(),
+                "smithy_http.aio": mock.MagicMock(),
+                "smithy_http.aio.crt": mock_crt_module,
+                "smithy_aws_core": mock.MagicMock(),
+                "smithy_aws_core.identity": mock.MagicMock(),
+                "smithy_aws_core.identity.components": mock_identity_module,
             },
         ),
     ):
-        yield mock_config_cls, mock_client_cls
+        yield mock_client_cls, mock_transport_cls, mock_identity_cls
+
+
+def _apply_config_plugin(client_cls: mock.MagicMock) -> mock.MagicMock:
+    """Run the client's config plugin against a bare config and return it."""
+    plugins = client_cls.call_args[1]["plugins"]
+    assert len(plugins) == 1
+    config = mock.MagicMock(
+        spec=[
+            "endpoint_uri",
+            "region",
+            "aws_access_key_id",
+            "aws_secret_access_key",
+            "aws_session_token",
+            "aws_credentials_identity_resolver",
+            "transport",
+        ]
+    )
+    config.aws_access_key_id = None
+    config.aws_secret_access_key = None
+    config.aws_credentials_identity_resolver = None
+    plugins[0](config)
+    return config
 
 
 def _create_client(**kwargs: Any) -> Any:
@@ -756,28 +958,30 @@ def _create_client(**kwargs: Any) -> Any:
 
 
 def test_bedrock_runtime_default_no_creds(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
-    """No credentials provided — keys should be None, endpoint built from region."""
-    config_cls, client_cls = mock_bedrock_runtime_sdk
+    """No credentials provided — endpoint built from region, awscrt transport."""
+    client_cls, transport_cls, _ = mock_bedrock_runtime_sdk
 
     with mock.patch.dict(os.environ, {}, clear=True):
-        _create_client(region_name="us-east-1")
+        client = _create_client(region_name="us-east-1")
 
-    config_cls.assert_called_once()
-    call_kwargs = config_cls.call_args[1]
-    assert (
-        call_kwargs["endpoint_uri"] == "https://bedrock-runtime.us-east-1.amazonaws.com"
-    )
-    assert call_kwargs["region"] == "us-east-1"
     client_cls.assert_called_once()
+    assert client == _mock_client_instance
+    _mock_client_instance._ensure_setup.assert_awaited()
+
+    config = _apply_config_plugin(client_cls)
+    assert config.endpoint_uri == "https://bedrock-runtime.us-east-1.amazonaws.com"
+    assert config.region == "us-east-1"
+    transport_cls.assert_called_once()
+    assert config.transport == transport_cls.return_value
 
 
 def test_bedrock_runtime_explicit_keys(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
-    """Explicit access key + secret key are passed through as plain strings."""
-    config_cls, client_cls = mock_bedrock_runtime_sdk
+    """Explicit keys become a credentials identity resolver."""
+    client_cls, _, identity_cls = mock_bedrock_runtime_sdk
 
     with mock.patch.dict(os.environ, {}, clear=True):
         _create_client(
@@ -786,22 +990,24 @@ def test_bedrock_runtime_explicit_keys(
             aws_secret_access_key=SecretStr("SECRET_TEST"),
         )
 
-    config_cls.assert_called_once()
-    call_kwargs = config_cls.call_args[1]
-    assert (
-        call_kwargs["endpoint_uri"] == "https://bedrock-runtime.us-west-2.amazonaws.com"
+    identity_cls.assert_called_once_with(
+        access_key_id="AKIA_TEST",
+        secret_access_key="SECRET_TEST",
+        session_token=None,
     )
-    assert call_kwargs["region"] == "us-west-2"
-    assert call_kwargs["aws_access_key_id"] == "AKIA_TEST"
-    assert call_kwargs["aws_secret_access_key"] == "SECRET_TEST"
-    assert call_kwargs["aws_session_token"] is None
+    config = _apply_config_plugin(client_cls)
+    assert config.endpoint_uri == "https://bedrock-runtime.us-west-2.amazonaws.com"
+    assert config.region == "us-west-2"
+    assert config.aws_credentials_identity_resolver is not None
+    assert config.aws_access_key_id is None
+    assert config.aws_secret_access_key is None
 
 
 def test_bedrock_runtime_explicit_keys_with_session_token(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
     """Session token is forwarded when provided alongside access keys."""
-    config_cls, _ = mock_bedrock_runtime_sdk
+    _, _, identity_cls = mock_bedrock_runtime_sdk
 
     with mock.patch.dict(os.environ, {}, clear=True):
         _create_client(
@@ -811,22 +1017,18 @@ def test_bedrock_runtime_explicit_keys_with_session_token(
             aws_session_token=SecretStr("TOKEN_TEST"),
         )
 
-    config_cls.assert_called_once()
-    call_kwargs = config_cls.call_args[1]
-    assert (
-        call_kwargs["endpoint_uri"] == "https://bedrock-runtime.eu-west-1.amazonaws.com"
+    identity_cls.assert_called_once_with(
+        access_key_id="AKIA_TEST",
+        secret_access_key="SECRET_TEST",
+        session_token="TOKEN_TEST",
     )
-    assert call_kwargs["region"] == "eu-west-1"
-    assert call_kwargs["aws_access_key_id"] == "AKIA_TEST"
-    assert call_kwargs["aws_secret_access_key"] == "SECRET_TEST"
-    assert call_kwargs["aws_session_token"] == "TOKEN_TEST"
 
 
 def test_bedrock_runtime_profile_name(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
     """Profile name resolves credentials via boto3.Session."""
-    config_cls, _ = mock_bedrock_runtime_sdk
+    client_cls, _, identity_cls = mock_bedrock_runtime_sdk
 
     mock_creds = mock.MagicMock()
     mock_creds.access_key = "PROFILE_KEY"
@@ -846,20 +1048,19 @@ def test_bedrock_runtime_profile_name(
         _create_client(credentials_profile_name="my-profile")
 
     session_cls.assert_called_once_with(profile_name="my-profile")
-    config_cls.assert_called_once()
-    call_kwargs = config_cls.call_args[1]
-    assert (
-        call_kwargs["endpoint_uri"]
-        == "https://bedrock-runtime.ap-southeast-1.amazonaws.com"
+    identity_cls.assert_called_once_with(
+        access_key_id="PROFILE_KEY",
+        secret_access_key="PROFILE_SECRET",
+        session_token="PROFILE_TOKEN",
     )
-    assert call_kwargs["region"] == "ap-southeast-1"
-    assert call_kwargs["aws_access_key_id"] == "PROFILE_KEY"
-    assert call_kwargs["aws_secret_access_key"] == "PROFILE_SECRET"
-    assert call_kwargs["aws_session_token"] == "PROFILE_TOKEN"
+    config = _apply_config_plugin(client_cls)
+    assert config.endpoint_uri == "https://bedrock-runtime.ap-southeast-1.amazonaws.com"
+    assert config.region == "ap-southeast-1"
+    assert config.aws_credentials_identity_resolver is not None
 
 
 def test_bedrock_runtime_profile_no_credentials_raises(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
     """Profile that returns no credentials raises ValueError."""
     mock_session = mock.MagicMock()
@@ -882,7 +1083,7 @@ def test_bedrock_runtime_profile_no_credentials_raises(
     ],
 )
 def test_bedrock_runtime_invalid_creds(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
     creds: Dict[str, SecretStr],
 ) -> None:
     """Partial credentials (missing key or secret) raise ValueError."""
@@ -897,10 +1098,10 @@ def test_bedrock_runtime_invalid_creds(
 
 
 def test_bedrock_runtime_custom_endpoint_url(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
     """Custom endpoint_url is passed through without modification."""
-    config_cls, _ = mock_bedrock_runtime_sdk
+    client_cls, _, _ = mock_bedrock_runtime_sdk
 
     with mock.patch.dict(os.environ, {}, clear=True):
         _create_client(
@@ -908,10 +1109,9 @@ def test_bedrock_runtime_custom_endpoint_url(
             endpoint_url="https://custom.endpoint.example.com",
         )
 
-    config_cls.assert_called_once()
-    call_kwargs = config_cls.call_args[1]
-    assert call_kwargs["endpoint_uri"] == "https://custom.endpoint.example.com"
-    assert call_kwargs["region"] == "us-east-1"
+    config = _apply_config_plugin(client_cls)
+    assert config.endpoint_uri == "https://custom.endpoint.example.com"
+    assert config.region == "us-east-1"
 
 
 @pytest.mark.parametrize(
@@ -922,12 +1122,12 @@ def test_bedrock_runtime_custom_endpoint_url(
     ],
 )
 def test_bedrock_runtime_region_from_env(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
     env_var: str,
     env_value: str,
 ) -> None:
     """Region falls back to AWS_REGION / AWS_DEFAULT_REGION env vars."""
-    config_cls, _ = mock_bedrock_runtime_sdk
+    client_cls, _, _ = mock_bedrock_runtime_sdk
 
     env_patch = {env_var: env_value}
     for var in ["AWS_REGION", "AWS_DEFAULT_REGION"]:
@@ -937,16 +1137,16 @@ def test_bedrock_runtime_region_from_env(
     with mock.patch.dict(os.environ, env_patch):
         _create_client()
 
-    call_kwargs = config_cls.call_args[1]
-    assert call_kwargs["region"] == env_value
-    assert env_value in call_kwargs["endpoint_uri"]
+    config = _apply_config_plugin(client_cls)
+    assert config.region == env_value
+    assert env_value in config.endpoint_uri
 
 
 def test_bedrock_runtime_api_key_sets_env(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
-    """api_key sets AWS_BEARER_TOKEN_BEDROCK env var."""
-    config_cls, _ = mock_bedrock_runtime_sdk
+    """api_key sets AWS_BEARER_TOKEN_BEDROCK env var and skips AWS creds."""
+    client_cls, _, identity_cls = mock_bedrock_runtime_sdk
 
     with mock.patch.dict(os.environ, {}, clear=True):
         _create_client(
@@ -955,17 +1155,19 @@ def test_bedrock_runtime_api_key_sets_env(
         )
         assert os.environ.get("AWS_BEARER_TOKEN_BEDROCK") == "my-api-key"
 
-    # When api_key is used, credentials should be None (default chain)
-    call_kwargs = config_cls.call_args[1]
-    assert call_kwargs["aws_access_key_id"] is None
-    assert call_kwargs["aws_secret_access_key"] is None
+    # When api_key is used, no credentials resolver is built
+    identity_cls.assert_not_called()
+    config = _apply_config_plugin(client_cls)
+    assert config.aws_credentials_identity_resolver is None
+    assert config.aws_access_key_id is None
+    assert config.aws_secret_access_key is None
 
 
 def test_bedrock_runtime_api_key_with_creds_warns(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
     """Both api_key and AWS creds logs a warning; api_key wins."""
-    config_cls, _ = mock_bedrock_runtime_sdk
+    client_cls, _, identity_cls = mock_bedrock_runtime_sdk
 
     with (
         mock.patch.dict(os.environ, {}, clear=True),
@@ -981,16 +1183,17 @@ def test_bedrock_runtime_api_key_with_creds_warns(
     mock_logger.warning.assert_called_once()
     assert "Both api_key and AWS credentials" in mock_logger.warning.call_args[0][0]
 
-    # api_key wins — credentials should be None
-    call_kwargs = config_cls.call_args[1]
-    assert call_kwargs["aws_access_key_id"] is None
+    # api_key wins — no credentials resolver is built
+    identity_cls.assert_not_called()
+    config = _apply_config_plugin(client_cls)
+    assert config.aws_credentials_identity_resolver is None
 
 
 def test_bedrock_runtime_session_region_fallback(
-    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock],
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
 ) -> None:
     """When no region_name and profile provides one, use session region."""
-    config_cls, _ = mock_bedrock_runtime_sdk
+    client_cls, _, _ = mock_bedrock_runtime_sdk
 
     mock_creds = mock.MagicMock()
     mock_creds.access_key = "KEY"
@@ -1009,5 +1212,252 @@ def test_bedrock_runtime_session_region_fallback(
     ):
         _create_client(credentials_profile_name="regional-profile")
 
-    call_kwargs = config_cls.call_args[1]
-    assert call_kwargs["region"] == "sa-east-1"
+    config = _apply_config_plugin(client_cls)
+    assert config.region == "sa-east-1"
+
+
+def test_bedrock_runtime_missing_awscrt_raises() -> None:
+    """Missing awscrt transport raises a helpful error."""
+    mock_client_module = mock.MagicMock(spec=["AsyncBedrockRuntimeClient"])
+    mock_client_module.AsyncBedrockRuntimeClient = mock.MagicMock()
+
+    mock_session = mock.MagicMock()
+    mock_session.get_credentials.return_value = None
+
+    with (
+        mock.patch.dict(
+            "sys.modules",
+            {
+                "aws_sdk_bedrock_runtime": mock.MagicMock(),
+                "aws_sdk_bedrock_runtime.client": mock_client_module,
+                "smithy_http": None,
+                "smithy_http.aio": None,
+                "smithy_http.aio.crt": None,
+            },
+        ),
+        mock.patch("boto3.Session", return_value=mock_session),
+        mock.patch.dict(os.environ, {}, clear=True),
+        pytest.raises(ModuleNotFoundError, match="awscrt"),
+    ):
+        _create_client(region_name="us-east-1")
+
+
+def _apply_config_plugin_with_ua(
+    client_cls: mock.MagicMock, existing_ua_extra: str | None = None
+) -> mock.MagicMock:
+    """Run the config plugin against a config that models ``user_agent_extra``."""
+    plugins = client_cls.call_args[1]["plugins"]
+    config = mock.MagicMock(
+        spec=[
+            "endpoint_uri",
+            "region",
+            "aws_access_key_id",
+            "aws_secret_access_key",
+            "aws_session_token",
+            "aws_credentials_identity_resolver",
+            "transport",
+            "user_agent_extra",
+        ]
+    )
+    config.aws_access_key_id = None
+    config.aws_secret_access_key = None
+    config.aws_credentials_identity_resolver = None
+    config.user_agent_extra = existing_ua_extra
+    plugins[0](config)
+    return config
+
+
+def test_bedrock_runtime_user_agent_tagged(
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
+) -> None:
+    """Nova Sonic's smithy config carries the langchain-aws source tag in
+    ``user_agent_extra`` (the SDK appends it to the wire User-Agent)."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    client_cls, _, _ = mock_bedrock_runtime_sdk
+    with mock.patch.dict(os.environ, {}, clear=True):
+        _create_client(region_name="us-east-1")
+
+    config = _apply_config_plugin_with_ua(client_cls)
+    assert config.user_agent_extra == FRAMEWORK_UA_TOKEN
+
+
+def test_bedrock_runtime_user_agent_appends_to_existing(
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
+) -> None:
+    """An existing ``user_agent_extra`` is preserved and the tag appended once."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    client_cls, _, _ = mock_bedrock_runtime_sdk
+    with mock.patch.dict(os.environ, {}, clear=True):
+        _create_client(region_name="us-east-1")
+
+    config = _apply_config_plugin_with_ua(client_cls, existing_ua_extra="app/1.0")
+    assert config.user_agent_extra == f"app/1.0 {FRAMEWORK_UA_TOKEN}"
+
+
+def test_bedrock_runtime_user_agent_idempotent(
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
+) -> None:
+    """The tag is not duplicated if already present in ``user_agent_extra``."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    client_cls, _, _ = mock_bedrock_runtime_sdk
+    with mock.patch.dict(os.environ, {}, clear=True):
+        _create_client(region_name="us-east-1")
+
+    config = _apply_config_plugin_with_ua(
+        client_cls, existing_ua_extra=f"app/1.0 {FRAMEWORK_UA_TOKEN}"
+    )
+    assert config.user_agent_extra == f"app/1.0 {FRAMEWORK_UA_TOKEN}"
+    assert config.user_agent_extra.count(FRAMEWORK_UA_TOKEN) == 1
+
+
+# ---------------------------------------------------------------------------
+# _StaticCredentialProvider / _BedrockApiKeyProvider tests
+# ---------------------------------------------------------------------------
+
+
+def _make_provider(**overrides: Any) -> _BedrockApiKeyProvider:
+    """Build a provider with explicit static creds unless overridden."""
+    params: Dict[str, Any] = {
+        "region": "us-east-1",
+        "aws_access_key_id": "AKIA_TEST",
+        "aws_secret_access_key": "SECRET_TEST",
+    }
+    params.update(overrides)
+    return _BedrockApiKeyProvider(**params)
+
+
+def test_static_credential_provider_load() -> None:
+    creds = object()
+    provider = _StaticCredentialProvider(creds)
+    assert provider.load() is creds
+    assert provider.METHOD == "explicit"
+
+
+def test_bedrock_api_key_provider_generates_and_caches() -> None:
+    with mock.patch(
+        "aws_bedrock_token_generator.provide_token", return_value="tok-1"
+    ) as m_provide:
+        provider = _make_provider(aws_session_token="TOKEN_TEST")
+
+        # First call mints the token.
+        assert provider() == "tok-1"
+        # Second call (well within TTL) returns the cached token, no re-mint.
+        assert provider() == "tok-1"
+        m_provide.assert_called_once()
+
+        kwargs = m_provide.call_args[1]
+        assert kwargs["region"] == "us-east-1"
+        assert kwargs["expiry"] == timedelta(seconds=_BEDROCK_API_KEY_MAX_TTL_SECONDS)
+
+        cred_provider = kwargs["aws_credentials_provider"]
+        assert isinstance(cred_provider, _StaticCredentialProvider)
+        loaded = cred_provider.load()
+        assert loaded.access_key == "AKIA_TEST"
+        assert loaded.secret_key == "SECRET_TEST"
+        assert loaded.token == "TOKEN_TEST"
+
+
+def test_bedrock_api_key_provider_profile_resolution() -> None:
+    fake_creds = object()
+    fake_session = mock.MagicMock()
+    fake_session.get_credentials.return_value = fake_creds
+
+    with (
+        mock.patch(
+            "aws_bedrock_token_generator.provide_token", return_value="tok"
+        ) as m_provide,
+        mock.patch("botocore.session.Session", return_value=fake_session) as m_session,
+    ):
+        provider = _BedrockApiKeyProvider(
+            region="us-west-2", credentials_profile_name="my-profile"
+        )
+        assert provider() == "tok"
+
+    m_session.assert_called_once_with(profile="my-profile")
+    cred_provider = m_provide.call_args[1]["aws_credentials_provider"]
+    assert isinstance(cred_provider, _StaticCredentialProvider)
+    assert cred_provider.load() is fake_creds
+
+
+def test_bedrock_api_key_provider_default_chain_when_unresolvable() -> None:
+    """If botocore can't resolve creds, provider is None (default chain)."""
+    fake_session = mock.MagicMock()
+    fake_session.get_credentials.return_value = None
+
+    with (
+        mock.patch(
+            "aws_bedrock_token_generator.provide_token", return_value="tok"
+        ) as m_provide,
+        mock.patch("botocore.session.Session", return_value=fake_session),
+    ):
+        provider = _BedrockApiKeyProvider(region="us-east-1")
+        assert provider() == "tok"
+
+    assert m_provide.call_args[1]["aws_credentials_provider"] is None
+
+
+def test_bedrock_api_key_provider_refreshes_when_near_expiry() -> None:
+    with mock.patch(
+        "aws_bedrock_token_generator.provide_token",
+        side_effect=["tok-1", "tok-2"],
+    ) as m_provide:
+        provider = _make_provider(ttl_seconds=1000)
+        assert provider() == "tok-1"
+
+        # Force the cached token into the mandatory-refresh window.
+        provider._expires_at = time.monotonic() + 100
+        assert provider() == "tok-2"
+        assert m_provide.call_count == 2
+
+
+def test_bedrock_api_key_provider_caps_ttl_to_cred_lifetime() -> None:
+    with (
+        mock.patch(
+            "aws_bedrock_token_generator.provide_token", return_value="tok"
+        ) as m_provide,
+        mock.patch.object(
+            _BedrockApiKeyProvider,
+            "_credentials_seconds_remaining",
+            return_value=300,
+        ),
+    ):
+        provider = _make_provider(ttl_seconds=10000)
+        provider()
+
+    assert m_provide.call_args[1]["expiry"] == timedelta(seconds=300)
+
+
+def test_bedrock_api_key_provider_advisory_failure_keeps_token() -> None:
+    with mock.patch(
+        "aws_bedrock_token_generator.provide_token",
+        side_effect=["tok-1", RuntimeError("boom")],
+    ):
+        provider = _make_provider(ttl_seconds=1000)
+        assert provider() == "tok-1"
+
+        # Advisory window (needs refresh) but not yet mandatory: 700s remaining.
+        provider._expires_at = time.monotonic() + 700
+        # Refresh fails but is non-mandatory, so the stale token is returned.
+        assert provider() == "tok-1"
+
+
+def test_bedrock_api_key_provider_mandatory_failure_raises() -> None:
+    with mock.patch(
+        "aws_bedrock_token_generator.provide_token",
+        side_effect=["tok-1", RuntimeError("boom")],
+    ):
+        provider = _make_provider(ttl_seconds=1000)
+        assert provider() == "tok-1"
+
+        provider._expires_at = time.monotonic() + 100  # mandatory window
+        with pytest.raises(RuntimeError, match="boom"):
+            provider()
+
+
+async def test_bedrock_api_key_provider_async_call() -> None:
+    with mock.patch("aws_bedrock_token_generator.provide_token", return_value="tok"):
+        provider = _make_provider()
+        assert await provider.async_call() == "tok"

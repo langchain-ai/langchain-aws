@@ -699,6 +699,16 @@ def test_prepare_output_for_openai(openai_response):
     assert result["stop_reason"] is None
 
 
+def test_prepare_output_for_openai_null_content() -> None:
+    """A reply cut off during reasoning has `content: null`; return empty text."""
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {"choices": [{"finish_reason": "length", "message": {"content": None}}]}
+    ).encode()
+    result = LLMInputOutputAdapter.prepare_output("openai", {"body": body})
+    assert result["text"] == ""
+
+
 def test_prepare_output_stream_for_openai(openai_streaming_response) -> None:
     results = [
         chunk.text
@@ -709,6 +719,40 @@ def test_prepare_output_stream_for_openai(openai_streaming_response) -> None:
 
     assert results[0] == "Hello."
     assert results[1] == ""
+
+
+@pytest.mark.parametrize(
+    "provider, expected_key",
+    [("openai", "max_completion_tokens"), ("qwen", "max_tokens")],
+)
+def test_prepare_input_max_tokens_key(provider: str, expected_key: str) -> None:
+    """GPT-5.x/GPT-6 reject `max_tokens`, so openai sends `max_completion_tokens`."""
+    messages = [{"role": "user", "content": "Hi"}]
+    body = LLMInputOutputAdapter.prepare_input(
+        provider=provider, model_kwargs={}, messages=messages, max_tokens=64
+    )
+    assert body == {"messages": messages, expected_key: 64}
+
+
+def test_prepare_output_stream_for_openai_length_keeps_usage() -> None:
+    """A stream cut off at the token limit still reports usage."""
+    body = [
+        {
+            "chunk": {
+                "bytes": json.dumps(
+                    {
+                        "choices": [{"delta": {}, "finish_reason": "length"}],
+                        "amazon-bedrock-invocationMetrics": {
+                            "inputTokenCount": 23,
+                            "outputTokenCount": 16,
+                        },
+                    }
+                ).encode()
+            }
+        }
+    ]
+    chunks = list(LLMInputOutputAdapter.prepare_output_stream("openai", {"body": body}))
+    assert chunks[-1].generation_info["usage_metadata"]["output_tokens"] == 16
 
 
 def test_prepare_output_for_cohere(cohere_response):

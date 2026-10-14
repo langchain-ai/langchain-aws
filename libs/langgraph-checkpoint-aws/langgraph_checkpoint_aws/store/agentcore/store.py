@@ -15,6 +15,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from langchain_core.messages import BaseMessage
+from langchain_core.runnables import run_in_executor
 from langgraph.store.base import (
     BaseStore,
     GetOp,
@@ -29,6 +30,7 @@ from langgraph.store.base import (
 
 from ...checkpoint.agentcore.helpers import (
     convert_langchain_messages_to_event_messages,
+    merge_client_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,6 +48,11 @@ class AgentCoreMemoryStore(BaseStore):
 
     Args:
         memory_id: The AgentCore Memory resource ID
+        hierarchical_search: Perform memory record retrieval using hierarchical
+            search (i.e. sets `namespacePath`), returning the memory records whose
+            namespace falls under the specified path. Defaults to True. If set to
+            False, will instead perform an exact match search (i.e. sets
+            `namespace`) for memory records stored at that precise path.
         **boto3_kwargs: Additional arguments passed to boto3.client()
 
     Example:
@@ -69,12 +76,24 @@ class AgentCoreMemoryStore(BaseStore):
     supports_ttl: bool = False
     ttl_config = None
 
-    def __init__(self, *, memory_id: str, **boto3_kwargs: Any):
+    def __init__(
+        self,
+        *,
+        memory_id: str,
+        hierarchical_search: bool = True,
+        **boto3_kwargs: Any,
+    ):
         self.memory_id = memory_id
+        self.hierarchical_search = hierarchical_search
 
-        config = Config(
-            user_agent_extra="x-client-framework:langgraph_agentcore_memory_store",
-            retries={"max_attempts": 4, "mode": "adaptive"},
+        config = merge_client_config(
+            Config(
+                user_agent_extra=(
+                    "x-client-framework:langgraph_agentcore_memory_store"
+                ),
+                retries={"max_attempts": 4, "mode": "adaptive"},
+            ),
+            boto3_kwargs,
         )
         self.client = boto3.client("bedrock-agentcore", config=config, **boto3_kwargs)
 
@@ -101,10 +120,8 @@ class AgentCoreMemoryStore(BaseStore):
         return results
 
     async def abatch(self, ops: Iterable[Op]) -> list[Result]:
-        """Execute multiple operations asynchronously (not implemented)."""
-        raise NotImplementedError(
-            "AgentCore Memory client does not support async operations yet"
-        )
+        """Execute multiple operations asynchronously."""
+        return await run_in_executor(None, self.batch, list(ops))
 
     def _handle_put(self, op: PutOp) -> None:
         """Handle PutOp by creating conversational events in AgentCore Memory."""
@@ -213,11 +230,16 @@ class AgentCoreMemoryStore(BaseStore):
 
         search_criteria = {"searchQuery": op.query, "topK": op.limit}
 
+        if self.hierarchical_search:
+            namespace_param = {"namespacePath": namespace_str}
+        else:
+            namespace_param = {"namespace": namespace_str}
+
         response = self.client.retrieve_memory_records(
             memoryId=self.memory_id,
-            namespace=namespace_str,
             searchCriteria=search_criteria,
             maxResults=op.limit,
+            **namespace_param,
         )
 
         memory_records = response.get("memoryRecordSummaries", [])

@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 620" width="1000" height="620" font-family="Helvetica, Arial, sans-serif" role="img" aria-label="High level architecture: a LangChain Deep Agent on Amazon Bedrock AgentCore Runtime uses AgentCore Browser and Code Interpreter, emits OpenTelemetry spans through ADOT to CloudWatch, which feed AgentCore Evaluations and a trajectory reader, which feed an improvement loop of Insights, Recommendations and Configuration Bundles">
+  <title>Evaluating a Deep Agent on Amazon Bedrock AgentCore: high level</title>
+  <defs>
+    <marker id="h_g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#5b6472"/></marker>
+    <marker id="h_b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#4d7f97"/></marker>
+    <marker id="h_o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#b8791f"/></marker>
+  </defs>
+  <rect width="1000" height="620" fill="#ffffff"/>
+
+  <text x="40" y="40" font-size="19" font-weight="600" fill="#1c2530">Evaluating a Deep Agent on Amazon Bedrock AgentCore</text>
+  <text x="40" y="62" font-size="13" fill="#5b6472">OpenTelemetry spans are the single source of truth. Both evaluation paths read them.</text>
+
+  <!-- AGENT -->
+  <rect x="40" y="96" width="216" height="176" rx="9" fill="#eef2f7" stroke="#8a97a8" stroke-width="1.6"/>
+  <text x="148" y="122" font-size="13.5" font-weight="600" text-anchor="middle" fill="#1c2530">LangChain Deep Agents</text>
+  <text x="148" y="141" font-size="11" text-anchor="middle" fill="#7a8595">create_deep_agent</text>
+  <line x1="56" y1="152" x2="240" y2="152" stroke="#c3ccd8" stroke-width="1"/>
+  <text x="148" y="171" font-size="12" text-anchor="middle" fill="#4a5563">1 coordinator, task()</text>
+  <text x="148" y="190" font-size="12" text-anchor="middle" fill="#4a5563">3 researcher subagents</text>
+  <text x="148" y="209" font-size="12" text-anchor="middle" fill="#4a5563">1 analyst subagent</text>
+  <line x1="56" y1="222" x2="240" y2="222" stroke="#c3ccd8" stroke-width="1"/>
+  <text x="148" y="241" font-size="12" text-anchor="middle" fill="#4a5563">Amazon Bedrock</text>
+  <text x="148" y="258" font-size="11" text-anchor="middle" fill="#7a8595">Claude Sonnet 4.6</text>
+
+  <!-- TOOLS + HOST -->
+  <rect x="300" y="96" width="196" height="80" rx="8" fill="#e6eef3" stroke="#4d7f97" stroke-width="1.6"/>
+  <text x="398" y="122" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1c2530">AgentCore Browser</text>
+  <text x="398" y="141" font-size="11.5" text-anchor="middle" fill="#4a5563">3 isolated MicroVMs</text>
+  <text x="398" y="159" font-size="11" text-anchor="middle" fill="#7a8595">create_browser_toolkit</text>
+
+  <rect x="300" y="192" width="196" height="80" rx="8" fill="#e6eef3" stroke="#4d7f97" stroke-width="1.6"/>
+  <text x="398" y="218" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1c2530">AgentCore Code Interpreter</text>
+  <text x="398" y="237" font-size="11.5" text-anchor="middle" fill="#4a5563">1 MicroVM</text>
+  <text x="398" y="255" font-size="11" text-anchor="middle" fill="#7a8595">create_code_interpreter_toolkit</text>
+
+  <rect x="40" y="300" width="456" height="58" rx="8" fill="#eef2f7" stroke="#8a97a8" stroke-width="1.6"/>
+  <text x="268" y="324" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1c2530">AgentCore Runtime</text>
+  <text x="268" y="344" font-size="11" text-anchor="middle" fill="#7a8595">code package, entryPoint: opentelemetry-instrument main.py</text>
+
+  <!-- TELEMETRY -->
+  <rect x="546" y="96" width="180" height="102" rx="8" fill="#e6eef3" stroke="#4d7f97" stroke-width="1.6"/>
+  <text x="636" y="122" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1c2530">CloudWatch Logs</text>
+  <text x="636" y="141" font-size="11.5" text-anchor="middle" fill="#4a5563">aws/spans</text>
+  <text x="636" y="160" font-size="11.5" text-anchor="middle" fill="#4a5563">gen_ai.* attributes</text>
+  <text x="636" y="180" font-size="11" text-anchor="middle" fill="#7a8595">via ADOT + Transaction Search</text>
+
+  <rect x="546" y="378" width="180" height="66" rx="8" fill="#f2eef7" stroke="#8a7aa8" stroke-width="1.6" stroke-dasharray="5 3"/>
+  <text x="636" y="402" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1c2530">LangSmith</text>
+  <text x="636" y="420" font-size="11.5" text-anchor="middle" fill="#4a5563">optional, local runs only</text>
+  <text x="636" y="437" font-size="11" text-anchor="middle" fill="#7a8595">not from Runtime</text>
+
+  <!-- EVALUATION -->
+  <rect x="776" y="96" width="184" height="88" rx="8" fill="#e8f0e8" stroke="#5d8a5d" stroke-width="1.6"/>
+  <text x="868" y="121" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1c2530">AgentCore Evaluations</text>
+  <text x="868" y="140" font-size="11.5" text-anchor="middle" fill="#4a5563">Builtin.* evaluators</text>
+  <text x="868" y="158" font-size="11.5" text-anchor="middle" fill="#4a5563">SESSION, TRACE, TOOL_CALL</text>
+  <text x="868" y="176" font-size="11" text-anchor="middle" fill="#7a8595">judges the answer</text>
+
+  <rect x="776" y="204" width="184" height="88" rx="8" fill="#e8f0e8" stroke="#5d8a5d" stroke-width="1.6"/>
+  <text x="868" y="229" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1c2530">Trajectory reader</text>
+  <text x="868" y="248" font-size="11.5" text-anchor="middle" fill="#4a5563">tool calls, concurrency</text>
+  <text x="868" y="266" font-size="11.5" text-anchor="middle" fill="#4a5563">retries, wasted work</text>
+  <text x="868" y="284" font-size="11" text-anchor="middle" fill="#7a8595">judges the work</text>
+
+  <!-- LOOP -->
+  <rect x="40" y="470" width="216" height="66" rx="8" fill="#fbf0dd" stroke="#b8791f" stroke-width="1.6"/>
+  <text x="148" y="494" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1c2530">Configuration Bundles</text>
+  <text x="148" y="513" font-size="11.5" text-anchor="middle" fill="#4a5563">A/B, no redeploy</text>
+  <text x="148" y="529" font-size="11" text-anchor="middle" fill="#7a8595">injected via baggage</text>
+
+  <rect x="316" y="470" width="216" height="66" rx="8" fill="#fbf0dd" stroke="#b8791f" stroke-width="1.6"/>
+  <text x="424" y="494" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1c2530">Recommendations</text>
+  <text x="424" y="513" font-size="11.5" text-anchor="middle" fill="#4a5563">rewrites the prompt</text>
+  <text x="424" y="529" font-size="11" text-anchor="middle" fill="#7a8595">StartRecommendation</text>
+
+  <rect x="592" y="470" width="216" height="66" rx="8" fill="#fbf0dd" stroke="#b8791f" stroke-width="1.6"/>
+  <text x="700" y="494" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1c2530">Batch Insights</text>
+  <text x="700" y="513" font-size="11.5" text-anchor="middle" fill="#4a5563">failure root causes</text>
+  <text x="700" y="529" font-size="11" text-anchor="middle" fill="#7a8595">Builtin.Insight.*</text>
+
+  <!-- arrows: agent to tools -->
+  <line x1="256" y1="136" x2="292" y2="136" stroke="#5b6472" stroke-width="1.8" marker-end="url(#h_g)"/>
+  <line x1="256" y1="232" x2="292" y2="232" stroke="#5b6472" stroke-width="1.8" marker-end="url(#h_g)"/>
+
+  <!-- runtime to spans -->
+  <line x1="496" y1="329" x2="560" y2="329" stroke="#4d7f97" stroke-width="1.8"/>
+  <line x1="560" y1="329" x2="560" y2="206" stroke="#4d7f97" stroke-width="1.8" marker-end="url(#h_b)"/>
+  <text x="516" y="320" font-size="10.5" fill="#4d7f97">ADOT</text>
+  <!-- LangSmith is fed by LOCAL agent runs, not by the deployed Runtime. -->
+  <line x1="148" y1="272" x2="148" y2="288" stroke="#8a7aa8" stroke-width="1.6" stroke-dasharray="5 3"/>
+  <line x1="148" y1="288" x2="672" y2="288" stroke="#8a7aa8" stroke-width="1.6" stroke-dasharray="5 3"/>
+  <line x1="672" y1="288" x2="672" y2="370" stroke="#8a7aa8" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#h_b)"/>
+  <text x="300" y="283" font-size="10.5" fill="#8a7aa8">local runs</text>
+
+  <!-- spans to evaluation -->
+  <line x1="726" y1="140" x2="768" y2="140" stroke="#5b6472" stroke-width="1.8" marker-end="url(#h_g)"/>
+  <line x1="748" y1="168" x2="748" y2="248" stroke="#5b6472" stroke-width="1.8"/>
+  <line x1="726" y1="168" x2="748" y2="168" stroke="#5b6472" stroke-width="1.8"/>
+  <line x1="748" y1="248" x2="768" y2="248" stroke="#5b6472" stroke-width="1.8" marker-end="url(#h_g)"/>
+
+  <!-- evaluation down to loop -->
+  <line x1="868" y1="292" x2="868" y2="442" stroke="#b8791f" stroke-width="1.8"/>
+  <line x1="868" y1="442" x2="700" y2="442" stroke="#b8791f" stroke-width="1.8"/>
+  <line x1="700" y1="442" x2="700" y2="462" stroke="#b8791f" stroke-width="1.8" marker-end="url(#h_o)"/>
+
+  <!-- loop right to left -->
+  <line x1="592" y1="503" x2="540" y2="503" stroke="#b8791f" stroke-width="1.8" marker-end="url(#h_o)"/>
+  <line x1="316" y1="503" x2="264" y2="503" stroke="#b8791f" stroke-width="1.8" marker-end="url(#h_o)"/>
+  <line x1="148" y1="410" x2="148" y2="366" stroke="#b8791f" stroke-width="1.8" marker-end="url(#h_o)"/>
+
+  <!-- legend -->
+  <line x1="40" y1="576" x2="74" y2="576" stroke="#4d7f97" stroke-width="1.8"/>
+  <text x="82" y="580" font-size="12" fill="#4a5563">telemetry</text>
+  <line x1="164" y1="576" x2="198" y2="576" stroke="#5b6472" stroke-width="1.8"/>
+  <text x="206" y="580" font-size="12" fill="#4a5563">measure</text>
+  <line x1="284" y1="576" x2="318" y2="576" stroke="#b8791f" stroke-width="1.8"/>
+  <text x="326" y="580" font-size="12" fill="#4a5563">improve</text>
+  <text x="420" y="580" font-size="12" fill="#5b6472">Evaluations judge the answer. The trajectory reader judges the work.</text>
+</svg>

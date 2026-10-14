@@ -12,8 +12,8 @@ requires-python = ">=3.11,<4.0"
 authors = []
 keywords = ["aws", "bedrock", "agentcore", "langchain", "deepagents", "sandbox", "code-interpreter"]
 dependencies = [
-    "deepagents>=0.1.0",
-    "bedrock-agentcore>=1.1.4",
+    "deepagents>=0.5.6",
+    "bedrock-agentcore>=1.1.5",
     "boto3>=1.42.42",
 ]
 

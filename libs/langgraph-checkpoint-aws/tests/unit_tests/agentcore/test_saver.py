@@ -3,22 +3,29 @@ Unit tests for AgentCore Memory Checkpoint Saver.
 """
 
 import asyncio
+import datetime
 import hashlib
 import json
 import time
+import warnings
 from collections.abc import Iterator
+from typing import Any
 from unittest.mock import ANY, MagicMock, Mock, call, patch
 
 import pytest
 from botocore.exceptions import ClientError
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata, CheckpointTuple
+from langgraph.checkpoint.serde import types as _serde_types
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.constants import TASKS
 
 from langgraph_checkpoint_aws.checkpoint.agentcore.constants import (
     EMPTY_CHANNEL_VALUE,
+    CheckpointReadLimitError,
     EventDecodingError,
+    EventNotFoundError,
     InvalidConfigError,
 )
 from langgraph_checkpoint_aws.checkpoint.agentcore.helpers import (
@@ -26,6 +33,7 @@ from langgraph_checkpoint_aws.checkpoint.agentcore.helpers import (
     BedrockAgentCoreClientWithRetry,
     EventProcessor,
     EventSerializer,
+    EventType,
 )
 from langgraph_checkpoint_aws.checkpoint.agentcore.models import (
     ChannelDataEvent,
@@ -35,6 +43,15 @@ from langgraph_checkpoint_aws.checkpoint.agentcore.models import (
     WritesEvent,
 )
 from langgraph_checkpoint_aws.checkpoint.agentcore.saver import AgentCoreMemorySaver
+
+# `_DeltaSnapshot` only exists on newer langgraph-checkpoint releases, while the
+# package still supports `langgraph-checkpoint>=3.0.0`. Resolve it defensively so
+# collection does not fail on versions that predate it.
+_DeltaSnapshot = getattr(_serde_types, "_DeltaSnapshot", None)
+requires_delta_snapshot = pytest.mark.skipif(
+    _DeltaSnapshot is None,
+    reason="requires a langgraph-checkpoint version that ships _DeltaSnapshot",
+)
 
 # Configure pytest to use anyio for async tests
 pytestmark = pytest.mark.anyio
@@ -91,6 +108,25 @@ def sample_channel_data_event():
 
 
 @pytest.fixture
+def sample_checkpoint_channel_events(
+    sample_checkpoint_event: CheckpointEvent,
+) -> list[ChannelDataEvent]:
+    """Supply every channel referenced by the checkpoint used in read tests."""
+    return [
+        ChannelDataEvent(
+            channel=channel,
+            version=version,
+            value=f"{channel}_value",
+            thread_id=sample_checkpoint_event.thread_id,
+            checkpoint_ns=sample_checkpoint_event.checkpoint_ns,
+        )
+        for channel, version in sample_checkpoint_event.checkpoint_data[
+            "channel_versions"
+        ].items()
+    ]
+
+
+@pytest.fixture
 def sample_writes_event():
     return WritesEvent(
         checkpoint_id="checkpoint_123",
@@ -142,6 +178,34 @@ class TestAgentCoreMemorySaver:
                 "checkpoint_id": "test_checkpoint_id",
             }
         )
+
+    @pytest.fixture
+    def checkpoint_page(
+        self,
+        saver: AgentCoreMemorySaver,
+        mock_boto_client: Mock,
+        runnable_config: RunnableConfig,
+        sample_checkpoint_event: CheckpointEvent,
+        sample_checkpoint_channel_events: list[ChannelDataEvent],
+    ) -> dict[str, Any]:
+        """One service event with channel blobs followed by its checkpoint record."""
+        runnable_config["configurable"].pop("checkpoint_id", None)
+        events: list[EventType] = [
+            *sample_checkpoint_channel_events,
+            sample_checkpoint_event,
+        ]
+        page = {
+            "events": [
+                {
+                    "payload": [
+                        {"blob": saver.serializer.serialize_event(event)}
+                        for event in events
+                    ]
+                }
+            ]
+        }
+        mock_boto_client.list_events.side_effect = [page]
+        return page
 
     @pytest.fixture
     def sample_checkpoint(self):
@@ -263,7 +327,7 @@ class TestAgentCoreMemorySaver:
         mock_boto_client,
         runnable_config,
         sample_checkpoint_event,
-        sample_channel_data_event,
+        sample_checkpoint_channel_events,
     ):
         # Remove specific checkpoint_id from config to get latest
         runnable_config["configurable"].pop("checkpoint_id", None)
@@ -283,11 +347,8 @@ class TestAgentCoreMemorySaver:
                 {
                     "eventId": "event_2",
                     "payload": [
-                        {
-                            "blob": saver.serializer.serialize_event(
-                                sample_channel_data_event
-                            )
-                        }
+                        {"blob": saver.serializer.serialize_event(event)}
+                        for event in sample_checkpoint_channel_events
                     ],
                 },
             ]
@@ -298,11 +359,19 @@ class TestAgentCoreMemorySaver:
         assert isinstance(result, CheckpointTuple)
         assert result.config["configurable"]["checkpoint_id"] == "checkpoint_123"
         assert result.checkpoint["id"] == "checkpoint_123"
+        assert result.checkpoint["channel_values"] == {
+            "default": "default_value",
+            "tasks": "tasks_value",
+        }
         mock_boto_client.list_events.assert_called()
 
-    def test_get_tuple_no_checkpoints(self, saver, mock_boto_client, runnable_config):
+    @pytest.mark.parametrize("limit", [None, 1])
+    def test_get_tuple_no_checkpoints(
+        self, saver, mock_boto_client, runnable_config, limit
+    ):
         # Mock empty list_events response
         mock_boto_client.list_events.return_value = {"events": []}
+        saver.limit = limit
 
         result = saver.get_tuple(runnable_config)
 
@@ -315,6 +384,7 @@ class TestAgentCoreMemorySaver:
         mock_boto_client,
         runnable_config,
         sample_checkpoint_event,
+        sample_checkpoint_channel_events,
     ):
         # Set specific checkpoint_id
         runnable_config["configurable"]["checkpoint_id"] = "checkpoint_123"
@@ -328,7 +398,11 @@ class TestAgentCoreMemorySaver:
                             "blob": saver.serializer.serialize_event(
                                 sample_checkpoint_event
                             )
-                        }
+                        },
+                        *[
+                            {"blob": saver.serializer.serialize_event(event)}
+                            for event in sample_checkpoint_channel_events
+                        ],
                     ],
                 }
             ]
@@ -338,6 +412,10 @@ class TestAgentCoreMemorySaver:
 
         assert isinstance(result, CheckpointTuple)
         assert result.config["configurable"]["checkpoint_id"] == "checkpoint_123"
+        assert result.checkpoint["channel_values"] == {
+            "default": "default_value",
+            "tasks": "tasks_value",
+        }
 
     def test_get_tuple_checkpoint_not_found(
         self, saver, mock_boto_client, runnable_config
@@ -367,6 +445,204 @@ class TestAgentCoreMemorySaver:
         result = saver.get_tuple(runnable_config)
 
         assert result is None
+
+    @pytest.mark.parametrize(
+        "options",
+        [{"limit": 0}, {"limit": -1}, {"max_results": 0}, {"max_results": 101}],
+    )
+    def test_invalid_read_options(self, options: dict[str, Any]) -> None:
+        with pytest.raises(ValueError):
+            AgentCoreMemorySaver("test-memory-id", **options)
+
+    @pytest.mark.parametrize("specific_id", [False, True])
+    def test_capped_read_requires_matching_checkpoint(
+        self,
+        saver: AgentCoreMemorySaver,
+        mock_boto_client: Mock,
+        runnable_config: RunnableConfig,
+        checkpoint_page: dict[str, Any],
+        specific_id: bool,
+    ) -> None:
+        saver.limit = 3 if specific_id else 1
+        if specific_id:
+            runnable_config["configurable"]["checkpoint_id"] = "unread-checkpoint"
+            checkpoint_page["nextToken"] = "older"
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with pytest.raises(CheckpointReadLimitError, match="checkpoint record"):
+                saver.get_tuple(runnable_config)
+        assert mock_boto_client.list_events.call_count == 1
+
+    @pytest.mark.parametrize("limit", [2, None])
+    def test_channel_references_can_require_older_pages(
+        self,
+        saver: AgentCoreMemorySaver,
+        mock_boto_client: Mock,
+        runnable_config: RunnableConfig,
+        checkpoint_page: dict[str, Any],
+        sample_writes_event: WritesEvent,
+        limit: int | None,
+    ) -> None:
+        missing = checkpoint_page["events"][0]["payload"].pop(0)
+        checkpoint_page["nextToken"] = "older"
+        mock_boto_client.list_events.side_effect = [
+            checkpoint_page,
+            {
+                "events": [
+                    {
+                        "payload": [
+                            missing,
+                            {
+                                "blob": saver.serializer.serialize_event(
+                                    sample_writes_event
+                                )
+                            },
+                        ]
+                    }
+                ]
+            },
+        ]
+        saver.limit = limit
+        if limit is not None:
+            with pytest.raises(CheckpointReadLimitError, match="missing 1 referenced"):
+                saver.get_tuple(runnable_config)
+            assert mock_boto_client.list_events.call_count == 1
+        else:
+            result = saver.get_tuple(runnable_config)
+            assert result is not None
+            assert result.checkpoint["channel_values"] == {
+                "default": "default_value",
+                "tasks": "tasks_value",
+            }
+            assert result.pending_writes is not None
+            assert len(result.pending_writes) == 2
+            assert mock_boto_client.list_events.call_args.kwargs["nextToken"] == "older"
+
+    @pytest.mark.parametrize("specific_id", [False, True])
+    def test_complete_channels_allow_truncation_with_warning(
+        self,
+        saver: AgentCoreMemorySaver,
+        mock_boto_client: Mock,
+        runnable_config: RunnableConfig,
+        checkpoint_page: dict[str, Any],
+        sample_writes_event: WritesEvent,
+        specific_id: bool,
+    ) -> None:
+        saver.limit = 3
+        checkpoint_page["nextToken"] = "unread-writes-or-checkpoints"
+        mock_boto_client.list_events.side_effect = [
+            checkpoint_page,
+            {
+                "events": [
+                    {
+                        "payload": [
+                            {
+                                "blob": saver.serializer.serialize_event(
+                                    sample_writes_event
+                                )
+                            }
+                        ]
+                    }
+                ]
+            },
+        ]
+        if specific_id:
+            runnable_config["configurable"]["checkpoint_id"] = "checkpoint_123"
+        with pytest.warns(
+            UserWarning, match="pending writes may be incomplete"
+        ) as caught:
+            result = saver.get_tuple(runnable_config)
+        assert result is not None
+        assert result.checkpoint["id"] == "checkpoint_123"
+        assert result.checkpoint["channel_values"] == {
+            "default": "default_value",
+            "tasks": "tasks_value",
+        }
+        assert result.pending_writes == []
+        assert (
+            "newer checkpoint may exist" in str(caught[0].message)
+        ) is not specific_id
+        assert mock_boto_client.list_events.call_count == 1
+
+    @pytest.mark.parametrize("limit", [3, 4])
+    def test_complete_history_with_finite_limit_does_not_warn(
+        self,
+        saver: AgentCoreMemorySaver,
+        runnable_config: RunnableConfig,
+        checkpoint_page: dict[str, Any],
+        limit: int,
+    ) -> None:
+        saver.limit = limit
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = saver.get_tuple(runnable_config)
+        assert result is not None
+        assert set(result.checkpoint["channel_values"]) == {"default", "tasks"}
+        assert not caught
+
+    @pytest.mark.parametrize("corrupt", [False, True])
+    def test_missing_channel_after_exhaustion_is_a_data_error(
+        self,
+        saver: AgentCoreMemorySaver,
+        runnable_config: RunnableConfig,
+        checkpoint_page: dict[str, Any],
+        corrupt: bool,
+    ) -> None:
+        payload = checkpoint_page["events"][0]["payload"]
+        if corrupt:
+            payload[0]["blob"] = "invalid-json"
+        else:
+            payload.pop(0)
+        with pytest.raises(EventNotFoundError, match="missing 1 referenced"):
+            saver.get_tuple(runnable_config)
+
+    def test_integer_versions_and_empty_channel_markers(
+        self,
+        saver: AgentCoreMemorySaver,
+        runnable_config: RunnableConfig,
+        checkpoint_page: dict[str, Any],
+        sample_checkpoint_event: CheckpointEvent,
+        sample_checkpoint_channel_events: list[ChannelDataEvent],
+    ) -> None:
+        sample_checkpoint_event.checkpoint_data["channel_versions"] = {
+            "default": 1,
+            "tasks": 2,
+        }
+        for index, event in enumerate(sample_checkpoint_channel_events, 1):
+            event.version = str(index)
+        sample_checkpoint_channel_events[1].value = EMPTY_CHANNEL_VALUE
+        events: list[EventType] = [
+            *sample_checkpoint_channel_events,
+            sample_checkpoint_event,
+        ]
+        checkpoint_page["events"][0]["payload"] = [
+            {"blob": saver.serializer.serialize_event(event)} for event in events
+        ]
+        checkpoint_page["nextToken"] = "older"
+        saver.limit = 3
+        with pytest.warns(UserWarning, match="All referenced channel blobs"):
+            result = saver.get_tuple(runnable_config)
+        assert result is not None
+        assert result.checkpoint["channel_values"] == {"default": "default_value"}
+
+    async def test_async_read_propagates_missing_checkpoint_error(
+        self,
+        saver: AgentCoreMemorySaver,
+        runnable_config: RunnableConfig,
+        checkpoint_page: dict[str, Any],
+    ) -> None:
+        saver.limit = 1
+        with pytest.raises(CheckpointReadLimitError):
+            await saver.aget_tuple(runnable_config)
+
+    def test_list_zero_limit_does_not_read_events(
+        self,
+        saver: AgentCoreMemorySaver,
+        mock_boto_client: Mock,
+        runnable_config: RunnableConfig,
+    ) -> None:
+        assert list(saver.list(runnable_config, limit=0)) == []
+        mock_boto_client.list_events.assert_not_called()
 
     def test_list_success(
         self,
@@ -425,6 +701,7 @@ class TestAgentCoreMemorySaver:
         saver,
         mock_boto_client,
         runnable_config,
+        sample_channel_data_event,
     ):
         # Remove specific checkpoint_id from config to list all
         runnable_config["configurable"].pop("checkpoint_id", None)
@@ -449,7 +726,12 @@ class TestAgentCoreMemorySaver:
                 {
                     "eventId": f"event_{i}",
                     "payload": [
-                        {"blob": saver.serializer.serialize_event(checkpoint_event)}
+                        {
+                            "blob": saver.serializer.serialize_event(
+                                sample_channel_data_event
+                            )
+                        },
+                        {"blob": saver.serializer.serialize_event(checkpoint_event)},
                     ],
                 }
             )
@@ -459,6 +741,20 @@ class TestAgentCoreMemorySaver:
         results = list(saver.list(runnable_config, limit=3))
 
         assert len(results) == 3
+        assert [item.checkpoint["id"] for item in results] == [
+            "checkpoint_4",
+            "checkpoint_3",
+            "checkpoint_2",
+        ]
+        filtered = list(
+            saver.list(
+                runnable_config,
+                limit=1,
+                filter={"step": 1},
+                before={"configurable": {"checkpoint_id": "checkpoint_4"}},
+            )
+        )
+        assert [item.checkpoint["id"] for item in filtered] == ["checkpoint_1"]
 
     def test_list_with_before(
         self,
@@ -1173,6 +1469,29 @@ class TestAgentCoreEventClient:
             mock_boto3_client.return_value = mock_boto_client
             yield AgentCoreEventClient("test-memory-id", serializer)
 
+    def test_caller_config_merged_into_client(self, serializer):
+        from botocore.config import Config
+
+        with patch("boto3.client") as mock_boto3_client:
+            AgentCoreEventClient(
+                "test-memory-id",
+                serializer,
+                region_name="us-west-2",
+                config=Config(connect_timeout=5, read_timeout=10),
+            )
+        call_kwargs = mock_boto3_client.call_args[1]
+        merged = call_kwargs["config"]
+        assert call_kwargs["region_name"] == "us-west-2"
+        assert merged.connect_timeout == 5
+        assert merged.read_timeout == 10
+        assert "langgraph_agentcore_memory" in merged.user_agent_extra
+
+    def test_no_caller_config_keeps_default(self, serializer):
+        with patch("boto3.client") as mock_boto3_client:
+            AgentCoreEventClient("test-memory-id", serializer)
+        merged = mock_boto3_client.call_args[1]["config"]
+        assert "langgraph_agentcore_memory" in merged.user_agent_extra
+
     def test_store_blob_event(self, client, mock_boto_client, sample_checkpoint_event):
         client.store_blob_event(sample_checkpoint_event, "session_id", "actor_id")
 
@@ -1370,13 +1689,13 @@ class TestAgentCoreEventClient:
         assert isinstance(event_1, CheckpointEvent)
         assert isinstance(event_2, WritesEvent)
 
-    def test_store_blob_events_batch_uses_same_timestamp(
+    def test_store_blob_events_batch_uses_increasing_timestamps(
         self,
         client,
         mock_boto_client,
         sample_channel_data_event,
     ):
-        """All chunked calls use the same eventTimestamp."""
+        """Chunked calls get strictly increasing timestamps, 1 ms apart."""
         events = [sample_channel_data_event] * 5
         client.store_blob_events_batch(
             events, "session_id", "actor_id", max_payload_items=2
@@ -1387,8 +1706,9 @@ class TestAgentCoreEventClient:
             call_entry[1]["eventTimestamp"]
             for call_entry in mock_boto_client.create_event.call_args_list
         ]
-        # All timestamps should be identical
-        assert timestamps[0] == timestamps[1] == timestamps[2]
+        assert [t - timestamps[0] for t in timestamps] == [
+            datetime.timedelta(milliseconds=i) for i in range(3)
+        ]
 
     def test_store_blob_events_batch_uses_correct_session_and_actor(
         self,
@@ -1514,6 +1834,62 @@ class TestAgentCoreEventClientGetAndDelete:
             mock_boto3_client.return_value = mock_boto_client
             yield AgentCoreEventClient("test-memory-id", serializer)
 
+    @pytest.mark.parametrize("boundary", ["payload", "event", "page"])
+    def test_blob_limit_warns_at_each_truncation_boundary(
+        self,
+        client: AgentCoreEventClient,
+        mock_boto_client: Mock,
+        serializer: EventSerializer,
+        sample_checkpoint_event: CheckpointEvent,
+        boundary: str,
+    ) -> None:
+        blob = {"blob": serializer.serialize_event(sample_checkpoint_event)}
+        response: dict[str, Any] = {"events": [{"payload": [blob]}]}
+        if boundary == "payload":
+            response["events"][0]["payload"].append(blob)
+        elif boundary == "event":
+            response["events"].append({"payload": [blob]})
+        else:
+            response["nextToken"] = "older"
+        mock_boto_client.list_events.side_effect = [response]
+        with pytest.warns(UserWarning, match="Stopped retrieving events"):
+            events = client.get_events("session", "actor", limit=1)
+        assert len(events) == 1
+        assert mock_boto_client.list_events.call_count == 1
+
+    def test_exact_blob_limit_ignores_mixed_payloads_and_omits_none_page_size(
+        self,
+        client: AgentCoreEventClient,
+        mock_boto_client: Mock,
+        serializer: EventSerializer,
+        sample_checkpoint_event: CheckpointEvent,
+    ) -> None:
+        conversation = {"conversational": {"content": {"text": "hi"}, "role": "USER"}}
+        mock_boto_client.list_events.side_effect = [
+            {
+                "events": [
+                    {
+                        "payload": [
+                            {"json": {"content": {"eventType": "activity"}}},
+                            {
+                                "blob": serializer.serialize_event(
+                                    sample_checkpoint_event
+                                )
+                            },
+                            conversation,
+                        ]
+                    },
+                    {"payload": [conversation]},
+                ]
+            }
+        ]
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            events = client.get_events("session", "actor", limit=1, max_results=None)
+        assert len(events) == 1
+        assert not caught
+        assert "maxResults" not in mock_boto_client.list_events.call_args.kwargs
+
     def test_get_events(
         self, client, mock_boto_client, serializer, sample_checkpoint_event
     ):
@@ -1614,6 +1990,25 @@ class TestEventProcessor:
     def processor(self):
         return EventProcessor()
 
+    @pytest.mark.parametrize(
+        "mismatch",
+        [{"channel": "unrelated"}, {"version": "wrong-version"}],
+    )
+    def test_channel_presence_requires_matching_name_and_version(
+        self,
+        processor: EventProcessor,
+        sample_checkpoint_event: CheckpointEvent,
+        sample_checkpoint_channel_events: list[ChannelDataEvent],
+        mismatch: dict[str, str],
+    ) -> None:
+        events: list[EventType] = [
+            sample_checkpoint_channel_events[0].model_copy(update=mismatch),
+            sample_checkpoint_channel_events[1],
+        ]
+        assert processor.missing_channel_versions(sample_checkpoint_event, events) == {
+            ("default", "v1"),
+        }
+
     def test_process_events(
         self,
         processor,
@@ -1676,6 +2071,63 @@ class TestEventProcessor:
         assert tuple_result.checkpoint["id"] == "checkpoint_123"
         assert len(tuple_result.pending_writes) == 1
         assert tuple_result.checkpoint["channel_values"]["default"] == "test_value"
+
+    @requires_delta_snapshot
+    def test_build_checkpoint_tuple_does_not_patch_delta_snapshot_seed(
+        self,
+        processor,
+        sample_checkpoint_event,
+    ):
+        tool_call_id = "tooluse_resolved_by_pending_write"
+        seed = _DeltaSnapshot(
+            [
+                HumanMessage(content="How many libraries?", id="message_1"),
+                AIMessage(
+                    content="",
+                    id="message_2",
+                    tool_calls=[
+                        {"id": tool_call_id, "name": "execute_sql", "args": {}}
+                    ],
+                ),
+            ]
+        )
+        real_tool_result = ToolMessage(
+            content="1234",
+            id="message_3",
+            tool_call_id=tool_call_id,
+        )
+        sample_checkpoint_event.checkpoint_data["channel_versions"]["messages"] = (
+            "messages_v1"
+        )
+        config = CheckpointerConfig(
+            thread_id="test_thread",
+            actor_id="test_actor",
+            checkpoint_ns="test_ns",
+        )
+
+        tuple_result = processor.build_checkpoint_tuple(
+            sample_checkpoint_event,
+            [
+                WriteItem(
+                    task_id="task_1",
+                    channel="messages",
+                    value=real_tool_result,
+                )
+            ],
+            {("messages", "messages_v1"): seed},
+            config,
+        )
+
+        result_seed = tuple_result.checkpoint["channel_values"]["messages"]
+        tool_results = [
+            message for message in result_seed.value if isinstance(message, ToolMessage)
+        ] + [
+            value
+            for _, channel, value in tuple_result.pending_writes
+            if channel == "messages" and isinstance(value, ToolMessage)
+        ]
+        assert result_seed is seed
+        assert [message.tool_call_id for message in tool_results] == [tool_call_id]
 
     def test_build_checkpoint_tuple_with_parent(
         self,

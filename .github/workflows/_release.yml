@@ -77,24 +77,14 @@ jobs:
           echo pkg-name="$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['name'])")" >> $GITHUB_OUTPUT
           echo version="$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")" >> $GITHUB_OUTPUT
 
-  test-pypi-publish:
-    needs:
-      - build
-    uses: ./.github/workflows/_test_release.yml
-    permissions: write-all
-    with:
-      working-directory: ${{ inputs.working-directory }}
-      dangerous-nonmaster-release: ${{ inputs.dangerous-nonmaster-release }}
-    secrets: inherit
-
   pre-release-checks:
     needs:
       - build
-      - test-pypi-publish
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write # Needed for aws-actions/configure-aws-credentials
+      actions: read # Needed for actions/download-artifact
     steps:
       - uses: actions/checkout@v7
 
@@ -116,33 +106,20 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Import published package
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: ${{ inputs.working-directory }}/dist/
+
+      - name: Import dist package
         shell: bash
         working-directory: ${{ inputs.working-directory }}
         env:
           PKG_NAME: ${{ needs.build.outputs.pkg-name }}
           VERSION: ${{ needs.build.outputs.version }}
-        # Here we use:
-        # - The default regular PyPI index as the *primary* index, meaning
-        #   that it takes priority (https://pypi.org/simple)
-        # - The test PyPI index as an extra index, so that any dependencies that
-        #   are not found on test PyPI can be resolved and installed anyway.
-        #   (https://test.pypi.org/simple). This will include the PKG_NAME==VERSION
-        #   package because VERSION will not have been uploaded to regular PyPI yet.
-        # - attempt install again after 5 seconds if it fails because there is
-        #   sometimes a delay in availability on test pypi
+        # Install directly from the locally-built wheel (no index resolution needed).
         run: |
-          uv pip install \
-            --index-strategy unsafe-best-match \
-            --extra-index-url https://test.pypi.org/simple/ \
-            "$PKG_NAME==$VERSION" || \
-          ( \
-            sleep 5 && \
-            uv pip install \
-              --index-strategy unsafe-best-match \
-              --extra-index-url https://test.pypi.org/simple/ \
-              "$PKG_NAME==$VERSION" \
-          )
+          uv pip install dist/*.whl
 
           # Replace all dashes in the package name with underscores,
           # since that's how Python imports packages with dashes in the name.
@@ -154,7 +131,7 @@ jobs:
         run: uv sync --group test --group test_integration
         working-directory: ${{ inputs.working-directory }}
 
-      # Overwrite the local version of the package with the test PyPI version.
+      # Overwrite the local version of the package with the built version
       - name: Import published package (again)
         working-directory: ${{ inputs.working-directory }}
         shell: bash
@@ -162,10 +139,7 @@ jobs:
           PKG_NAME: ${{ needs.build.outputs.pkg-name }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
-          uv pip install \
-            --index-strategy unsafe-best-match \
-            --extra-index-url https://test.pypi.org/simple/ \
-            "$PKG_NAME==$VERSION"
+          uv pip install dist/*.whl
 
       - name: Run unit tests
         run: make tests
@@ -210,6 +184,17 @@ jobs:
 
           make tests
         working-directory: ${{ inputs.working-directory }}
+
+  test-pypi-publish:
+    needs:
+      - build
+      - pre-release-checks
+    uses: ./.github/workflows/_test_release.yml
+    permissions: write-all
+    with:
+      working-directory: ${{ inputs.working-directory }}
+      dangerous-nonmaster-release: ${{ inputs.dangerous-nonmaster-release }}
+    secrets: inherit
 
   publish:
     needs:

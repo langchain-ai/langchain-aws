@@ -2,14 +2,15 @@
 
 This module provides a DynamoDB-backed store implementation that extends
 the BaseStore class from LangGraph. It offers persistent storage with
-hierarchical namespaces and key-value operations without vector search
-capabilities.
+hierarchical namespaces, key-value operations, and optional vector search
+via DynamoDB Vector Index for semantic long-term memory.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
@@ -19,7 +20,6 @@ from typing import Any, TypeVar
 import boto3
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from botocore.config import Config
-from botocore.exceptions import ClientError
 from langchain_core.runnables import run_in_executor
 from langgraph.store.base import (
     BaseStore,
@@ -29,37 +29,50 @@ from langgraph.store.base import (
     Op,
     PutOp,
     Result,
-    SearchItem,
     SearchOp,
     TTLConfig,
 )
 
 from langgraph_checkpoint_aws.checkpoint.dynamodb.utils import create_dynamodb_client
 
-from .exceptions import DynamoDBConnectionError, TableCreationError, ValidationError
+from .exceptions import DynamoDBConnectionError, ValidationError
+from .search import DynamoDBSearchMixin
+from .table import DynamoDBTableSetupMixin
+from .vector import (
+    _DEFAULT_FIELDS,
+    _VECTOR_ATTR,
+    Embeddings,
+    _CallableEmbeddingsAdapter,
+)
 
 _ItemT = TypeVar("_ItemT", bound=Item)
 
 logger = logging.getLogger(__name__)
 
 
-class DynamoDBStore(BaseStore):
+class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
     """DynamoDB-backed store implementation for LangGraph.
 
     This store provides persistent key-value storage using AWS DynamoDB.
     It supports hierarchical namespaces, TTL (time-to-live) for automatic
-    item expiration, and basic filtering capabilities.
+    item expiration, basic filtering, and optional vector semantic search
+    via DynamoDB Vector Index.
+
+    Note: like a global secondary index, the vector index is eventually
+    consistent. A ``search()`` issued immediately after ``put()`` may not
+    include the just-written item until the index catches up.
 
     The store uses a single DynamoDB table with the following schema:
     - PK (Partition Key): Namespace (joined with ':')
     - SK (Sort Key): Item key
     - value: The stored dictionary
+    - embedding: Vector embedding (when index is configured)
     - created_at: ISO format timestamp
     - updated_at: ISO format timestamp
     - expires_at: Unix timestamp for TTL (optional)
 
     Examples:
-        Basic usage:
+        Basic usage (no vector search):
         ```python
         from langgraph_checkpoint_aws import DynamoDBStore
 
@@ -72,14 +85,26 @@ class DynamoDBStore(BaseStore):
         print(item.value)  # {"theme": "dark"}
         ```
 
-        Using context manager:
+        With vector search (long-term semantic memory):
         ```python
         from langgraph_checkpoint_aws import DynamoDBStore
+        from langchain_aws import BedrockEmbeddings
 
-        with DynamoDBStore.from_table_name("my-store-table") as store:
-            store.setup()
-            store.put(("docs",), "doc1", {"text": "Hello"})
-            items = store.search(("docs",))
+        store = DynamoDBStore(
+            table_name="my-memory-table",
+            index={
+                "embed": BedrockEmbeddings(model_id="amazon.titan-embed-text-v2:0"),
+                "dims": 256,
+                "fields": ["text"],  # which value fields to embed
+            },
+        )
+        store.setup()
+
+        # Store a memory
+        store.put(("user", "alice"), "mem1", {"text": "Alice prefers dark mode"})
+
+        # Semantic search across memories
+        results = store.search(("user", "alice"), query="UI preferences")
         ```
 
         With TTL configuration:
@@ -92,14 +117,11 @@ class DynamoDBStore(BaseStore):
             }
         )
         store.setup()
-
-        # Item will expire after 60 minutes
-        store.put(("temp",), "data", {"value": 123})
         ```
 
     Note:
         Make sure to call `setup()` before first use to create the necessary
-        DynamoDB table if it doesn't exist.
+        DynamoDB table and vector index (if configured).
 
     Warning:
         DynamoDB charges are based on read/write capacity and storage.
@@ -118,6 +140,7 @@ class DynamoDBStore(BaseStore):
         endpoint_url: str | None = None,
         boto_config: Config | None = None,
         ttl: TTLConfig | None = None,
+        index: dict[str, Any] | None = None,
         max_read_capacity_units: int | None = None,
         max_write_capacity_units: int | None = None,
     ) -> None:
@@ -132,6 +155,15 @@ class DynamoDBStore(BaseStore):
             endpoint_url: Custom endpoint URL for the DynamoDB service.
             boto_config: Botocore config object.
             ttl: Optional TTL configuration for automatic item expiration.
+            index: Optional vector index configuration for semantic search.
+                Keys:
+                - "embed": Embeddings object (LangChain compatible) or callable.
+                    Must implement embed_documents() and embed_query().
+                - "dims": int — vector dimensions (must match embedding model output).
+                - "fields": list[str] — JSON paths within the value to embed.
+                    Default ["$"] embeds the entire value as JSON text.
+                - "distance_function": str — "COSINE" (default), "EUCLIDEAN",
+                    or "DOT_PRODUCT".
             max_read_capacity_units: Maximum read capacity units for on-demand mode.
                 Only used when creating a new table. Default is 10.
             max_write_capacity_units: Maximum write capacity units for on-demand mode.
@@ -145,7 +177,6 @@ class DynamoDBStore(BaseStore):
 
         # Validate that either boto3_session, region_name, or AWS env vars are set
         if boto3_session is None and region_name is None:
-            # Check for AWS region environment variables
             if not os.environ.get("AWS_DEFAULT_REGION") and not os.environ.get(
                 "AWS_REGION"
             ):
@@ -160,10 +191,50 @@ class DynamoDBStore(BaseStore):
 
         self.table_name = table_name
         self.ttl_config = ttl
-        self.max_read_capacity_units = max_read_capacity_units or 10
-        self.max_write_capacity_units = max_write_capacity_units or 10
+        self.max_read_capacity_units = max_read_capacity_units
+        self.max_write_capacity_units = max_write_capacity_units
         self._type_serializer = TypeSerializer()
         self._type_deserializer = TypeDeserializer()
+
+        # Vector index configuration
+        self._index_config = index
+        self._embeddings: Embeddings | None = None
+        self._dims: int | None = None
+        self._embed_fields: list[str] = _DEFAULT_FIELDS
+        self._distance_function: str = "COSINE"
+
+        if index:
+            embed = index.get("embed")
+            if embed is None:
+                raise ValidationError(
+                    "index config requires 'embed' key with an embeddings object. "
+                    "Example: index={'embed': BedrockEmbeddings(...), 'dims': 256}"
+                )
+            # Support LangGraph's ensure_embeddings pattern
+            if isinstance(embed, Embeddings):
+                self._embeddings = embed
+            elif callable(embed):
+                # Wrap callable in a simple adapter
+                self._embeddings = _CallableEmbeddingsAdapter(embed)
+            else:
+                try:
+                    from langgraph.store.base.embed import ensure_embeddings
+
+                    self._embeddings = ensure_embeddings(embed)
+                except Exception as err:
+                    raise ValidationError(
+                        f"Could not initialize embeddings from: {embed!r}. "
+                        "Provide a LangChain Embeddings object or callable."
+                    ) from err
+
+            self._dims = index.get("dims")
+            if self._dims is None:
+                raise ValidationError(
+                    "index config requires 'dims' key specifying vector dimensions. "
+                    "Example: index={'embed': ..., 'dims': 256}"
+                )
+            self._embed_fields = index.get("fields", _DEFAULT_FIELDS)
+            self._distance_function = index.get("distance_function", "COSINE")
 
         # Initialize DynamoDB client using shared utility
         try:
@@ -188,6 +259,7 @@ class DynamoDBStore(BaseStore):
         endpoint_url: str | None = None,
         boto_config: Config | None = None,
         ttl: TTLConfig | None = None,
+        index: dict[str, Any] | None = None,
         max_read_capacity_units: int | None = None,
         max_write_capacity_units: int | None = None,
     ) -> Iterator[DynamoDBStore]:
@@ -195,25 +267,16 @@ class DynamoDBStore(BaseStore):
 
         Args:
             table_name: Name of the DynamoDB table to use.
-            region_name: AWS region name. If not provided, uses default from
-                AWS config.
+            region_name: AWS region name.
             endpoint_url: Custom endpoint URL for the DynamoDB service.
             boto_config: Botocore config object.
             ttl: Optional TTL configuration for automatic item expiration.
-            max_read_capacity_units: Maximum read capacity units for
-                on-demand mode.
-            max_write_capacity_units: Maximum write capacity units for
-                on-demand mode.
+            index: Optional vector index configuration for semantic search.
+            max_read_capacity_units: Maximum read capacity units.
+            max_write_capacity_units: Maximum write capacity units.
 
         Yields:
             DynamoDBStore: A DynamoDB store instance.
-
-        Example:
-            ```python
-            with DynamoDBStore.from_table_name("my-table") as store:
-                store.setup()
-                store.put(("docs",), "doc1", {"text": "Hello"})
-            ```
         """
         store = cls(
             table_name=table_name,
@@ -221,13 +284,13 @@ class DynamoDBStore(BaseStore):
             endpoint_url=endpoint_url,
             boto_config=boto_config,
             ttl=ttl,
+            index=index,
             max_read_capacity_units=max_read_capacity_units,
             max_write_capacity_units=max_write_capacity_units,
         )
         try:
             yield store
         finally:
-            # No cleanup needed for DynamoDB client
             pass
 
     def _deserialize_item(self, item: dict[str, Any]) -> dict[str, Any]:
@@ -242,92 +305,6 @@ class DynamoDBStore(BaseStore):
                 (e.g., {"PK": "value"}).
         """
         return {k: self._type_deserializer.deserialize(v) for k, v in item.items()}
-
-    def setup(self) -> None:
-        """Set up the DynamoDB table.
-
-        This method creates the DynamoDB table if it doesn't already exist.
-        It configures the table with:
-        - On-demand billing mode
-        - Primary key: PK (partition key) and SK (sort key)
-        - TTL enabled on expires_at attribute (if TTL config provided)
-
-        This should be called before first use of the store.
-
-        Raises:
-            TableCreationError: If table creation fails.
-        """
-        try:
-            self.client.describe_table(TableName=self.table_name)
-            logger.info(f"DynamoDB table '{self.table_name}' already exists.")
-
-            # Enable TTL if configured and not already enabled
-            if self.ttl_config:
-                self._enable_ttl()
-
-        except ClientError as e:
-            if e.response["Error"]["Code"] == "ResourceNotFoundException":
-                # Table doesn't exist, create it
-                logger.info(f"Creating DynamoDB table '{self.table_name}'...")
-                self._create_table()
-            else:
-                raise TableCreationError(
-                    f"Failed to check/create table '{self.table_name}': {e}"
-                ) from e
-
-    def _create_table(self) -> None:
-        """Create the DynamoDB table with appropriate configuration."""
-        try:
-            self.client.create_table(
-                TableName=self.table_name,
-                KeySchema=[
-                    {
-                        "AttributeName": "PK",
-                        "KeyType": "HASH",
-                    },
-                    {
-                        "AttributeName": "SK",
-                        "KeyType": "RANGE",
-                    },
-                ],
-                AttributeDefinitions=[
-                    {"AttributeName": "PK", "AttributeType": "S"},
-                    {"AttributeName": "SK", "AttributeType": "S"},
-                ],
-                BillingMode="PAY_PER_REQUEST",
-                OnDemandThroughput={
-                    "MaxReadRequestUnits": self.max_read_capacity_units,
-                    "MaxWriteRequestUnits": self.max_write_capacity_units,
-                },
-            )
-            # Wait for table to be created using waiter
-            waiter = self.client.get_waiter("table_exists")
-            waiter.wait(TableName=self.table_name)
-            logger.info(f"DynamoDB table '{self.table_name}' created successfully.")
-
-            # Enable TTL if configured
-            if self.ttl_config:
-                self._enable_ttl()
-
-        except Exception as e:
-            raise TableCreationError(
-                f"Failed to create table '{self.table_name}': {e}"
-            ) from e
-
-    def _enable_ttl(self) -> None:
-        """Enable TTL on the DynamoDB table."""
-        try:
-            self.client.update_time_to_live(
-                TableName=self.table_name,
-                TimeToLiveSpecification={
-                    "Enabled": True,
-                    "AttributeName": "expires_at",
-                },
-            )
-            logger.info(f"TTL enabled on table '{self.table_name}'.")
-        except ClientError as e:
-            # TTL might already be enabled or enabling, log but don't fail
-            logger.warning(f"Could not enable TTL on table '{self.table_name}': {e}")
 
     def _construct_composite_key(
         self, namespace: tuple[str, ...], key: str
@@ -389,6 +366,20 @@ class DynamoDBStore(BaseStore):
             created_at=created_at,
             updated_at=updated_at,
         )
+
+    @staticmethod
+    def _parse_ts(value: Any) -> datetime:
+        """Parse an ISO timestamp, tolerating missing/empty values.
+
+        The vector-search projection may omit a timestamp; fall back to epoch
+        rather than raising ValueError on an empty string.
+        """
+        if not value:
+            return datetime.fromtimestamp(0, tz=timezone.utc)
+        try:
+            return datetime.fromisoformat(value)
+        except (ValueError, TypeError):
+            return datetime.fromtimestamp(0, tz=timezone.utc)
 
     def _calculate_expiry(self, ttl_minutes: float | None) -> int | None:
         """Calculate Unix timestamp for TTL expiry.
@@ -480,131 +471,6 @@ class DynamoDBStore(BaseStore):
             self._put_item(op.namespace, op.key, op.value, op.ttl)
         return None
 
-    def _batch_search_op(self, op: SearchOp) -> list[SearchItem]:
-        """Execute a SearchOp operation.
-
-        Args:
-            op: SearchOp operation.
-
-        Returns:
-            List of SearchItem instances.
-        """
-        namespace_str = ":".join(op.namespace_prefix)
-
-        try:
-            # Query items with the namespace prefix
-            response = self.client.query(
-                TableName=self.table_name,
-                KeyConditionExpression="PK = :pk",
-                ExpressionAttributeValues={":pk": {"S": namespace_str}},
-                Limit=op.limit,
-            )
-
-            raw_items = response.get("Items", [])
-            items = [self._deserialize_item(raw) for raw in raw_items]
-
-            # Apply filter if provided
-            if op.filter:
-                items = self._apply_filter(items, op.filter)
-
-            # Apply offset
-            if op.offset > 0:
-                items = items[op.offset :]
-
-            # Convert to SearchItem instances
-            results = [self._map_to_item(item, SearchItem) for item in items]
-
-            # Refresh TTL if configured
-            if op.refresh_ttl and self.ttl_config:
-                for item in items:
-                    self._refresh_ttl(item["PK"], item["SK"])
-
-            return results
-
-        except Exception as e:
-            logger.error(f"Error searching namespace {op.namespace_prefix}: {e}")
-            return []
-
-    def _batch_list_namespaces_op(self, op: ListNamespacesOp) -> list[tuple[str, ...]]:
-        """Execute a ListNamespacesOp operation.
-
-        Args:
-            op: ListNamespacesOp operation.
-
-        Returns:
-            List of namespace tuples.
-        """
-        try:
-            # Scan the table to get all unique namespaces
-            response = self.client.scan(
-                TableName=self.table_name,
-                ProjectionExpression="PK",
-            )
-
-            namespaces_set: set[tuple[str, ...]] = set()
-            for raw_item in response.get("Items", []):
-                item = self._deserialize_item(raw_item)
-                namespace = self._deconstruct_namespace(item["PK"])
-                namespaces_set.add(namespace)
-
-            # Handle pagination if more items exist
-            while "LastEvaluatedKey" in response:
-                response = self.client.scan(
-                    TableName=self.table_name,
-                    ProjectionExpression="PK",
-                    ExclusiveStartKey=response["LastEvaluatedKey"],
-                )
-                for raw_item in response.get("Items", []):
-                    item = self._deserialize_item(raw_item)
-                    namespace = self._deconstruct_namespace(item["PK"])
-                    namespaces_set.add(namespace)
-
-            # Filter namespaces based on match conditions
-            namespaces = list(namespaces_set)
-            filtered = self._filter_namespaces(namespaces, op)
-
-            # Apply limit and offset
-            start = op.offset
-            end = start + op.limit
-            return filtered[start:end]
-
-        except Exception as e:
-            logger.error(f"Error listing namespaces: {e}")
-            return []
-
-    def _filter_namespaces(
-        self,
-        namespaces: list[tuple[str, ...]],
-        op: ListNamespacesOp,
-    ) -> list[tuple[str, ...]]:
-        """Filter namespaces based on operation criteria.
-
-        Args:
-            namespaces: List of namespace tuples.
-            op: ListNamespacesOp with filter criteria.
-
-        Returns:
-            Filtered list of namespaces.
-        """
-        filtered = namespaces
-
-        # Apply match conditions (prefix/suffix)
-        for condition in op.match_conditions or ():
-            if condition.match_type == "prefix":
-                prefix = condition.path
-                filtered = [ns for ns in filtered if ns[: len(prefix)] == prefix]
-            elif condition.match_type == "suffix":
-                suffix = condition.path
-                filtered = [ns for ns in filtered if ns[-len(suffix) :] == suffix]
-
-        # Apply max_depth
-        if op.max_depth is not None:
-            filtered = [ns[: op.max_depth] for ns in filtered]
-            # Remove duplicates after truncation
-            filtered = list(dict.fromkeys(filtered))
-
-        return sorted(filtered)
-
     def _apply_filter(
         self,
         items: list[dict[str, Any]],
@@ -654,7 +520,7 @@ class DynamoDBStore(BaseStore):
         value: dict[str, Any],
         ttl: float | None,
     ) -> None:
-        """Put an item into DynamoDB.
+        """Put an item into DynamoDB, with optional embedding generation.
 
         Args:
             namespace: Namespace tuple.
@@ -665,43 +531,114 @@ class DynamoDBStore(BaseStore):
         composite_key = self._construct_composite_key(namespace, key)
         current_time = datetime.now(timezone.utc).isoformat()
 
-        # Check if item exists to preserve created_at
-        existing_created_at = None
+        # Single atomic write. created_at is set only on first insert via
+        # if_not_exists, so we avoid the previous read-before-write (which
+        # doubled RCU/latency and had a TOCTOU race under concurrent puts).
+        set_parts = [
+            "#value = :value",
+            "updated_at = :updated_at",
+            "created_at = if_not_exists(created_at, :created_at)",
+        ]
+        # A re-put must not resurrect attributes from the previous version of
+        # the item. put_item (full replace) cleared them implicitly; with a
+        # SET-only update a stale expires_at would silently expire the new
+        # value and a stale embedding would rank the item by its old content.
+        remove_parts: list[str] = []
+        ean: dict[str, str] = {"#value": "value"}
+        eav: dict[str, Any] = {
+            ":value": self._type_serializer.serialize(value),
+            ":updated_at": {"S": current_time},
+            ":created_at": {"S": current_time},
+        }
+
+        # Generate and store embedding if vector index is configured
+        if self.has_vector_index:
+            text = self._extract_text_for_embedding(value)
+            if text:
+                assert self._embeddings is not None
+                embedding = self._embeddings.embed_documents([text])[0]
+                if self._dims is not None and len(embedding) != self._dims:
+                    raise ValidationError(
+                        f"Embedding dimension mismatch for {namespace}/{key}: "
+                        f"model returned {len(embedding)} dims but the vector "
+                        f"index is configured for {self._dims}. Set index "
+                        f"'dims' to match the embedding model's output size."
+                    )
+                if not all(math.isfinite(v) for v in embedding):
+                    raise ValidationError(
+                        f"Embedding for {namespace}/{key} contains non-finite "
+                        "values (nan/inf); the DynamoDB N type rejects them."
+                    )
+                ean["#embedding"] = _VECTOR_ATTR
+                eav[":embedding"] = {"L": [{"N": str(v)} for v in embedding]}
+                set_parts.append("#embedding = :embedding")
+            else:
+                # New value has nothing to embed: drop any embedding from a
+                # previous version so semantic search cannot match stale text.
+                logger.warning(
+                    "No text extracted from %s/%s for fields %s; item stored "
+                    "WITHOUT an embedding and will not appear in semantic "
+                    "search results.",
+                    namespace,
+                    key,
+                    self._embed_fields,
+                )
+                ean["#embedding"] = _VECTOR_ATTR
+                remove_parts.append("#embedding")
+
+        # TTL: set when requested, otherwise clear any expiry left by a
+        # previous put so the new value does not inherit a stale deadline.
+        expires_at = self._calculate_expiry(ttl) if ttl is not None else None
+        if expires_at:
+            eav[":expires_at"] = {"N": str(expires_at)}
+            set_parts.append("expires_at = :expires_at")
+        else:
+            remove_parts.append("expires_at")
+
+        update_expression = "SET " + ", ".join(set_parts)
+        if remove_parts:
+            update_expression += " REMOVE " + ", ".join(remove_parts)
+
         try:
-            response = self.client.get_item(
+            self.client.update_item(
                 TableName=self.table_name,
                 Key={
                     "PK": {"S": composite_key[0]},
                     "SK": {"S": composite_key[1]},
                 },
+                UpdateExpression=update_expression,
+                ExpressionAttributeNames=ean,
+                ExpressionAttributeValues=eav,
             )
-            raw_item = response.get("Item")
-            if raw_item:
-                created_at_attr = raw_item.get("created_at")
-                if created_at_attr:
-                    existing_created_at = created_at_attr.get("S")
-        except Exception:
-            pass
-
-        item: dict[str, Any] = {
-            "PK": {"S": composite_key[0]},
-            "SK": {"S": composite_key[1]},
-            "value": self._type_serializer.serialize(value),
-            "created_at": {"S": existing_created_at or current_time},
-            "updated_at": {"S": current_time},
-        }
-
-        # Add TTL if configured
-        if ttl is not None:
-            expires_at = self._calculate_expiry(ttl)
-            if expires_at:
-                item["expires_at"] = {"N": str(expires_at)}
-
-        try:
-            self.client.put_item(TableName=self.table_name, Item=item)
         except Exception as e:
             logger.error(f"Error putting item {namespace}/{key}: {e}")
             raise
+
+    def _extract_text_for_embedding(self, value: dict[str, Any]) -> str:
+        """Extract text from value dict based on configured fields.
+
+        Args:
+            value: The item value dictionary.
+
+        Returns:
+            Text string to embed.
+        """
+        import json
+
+        if self._embed_fields == _DEFAULT_FIELDS or self._embed_fields == ["$"]:
+            # Embed entire value as JSON
+            return json.dumps(value, default=str)
+
+        # Extract specific fields
+        parts = []
+        for field in self._embed_fields:
+            if field in value:
+                v = value[field]
+                # JSON for non-strings, consistent with whole-value mode
+                # (str(dict) would embed Python repr syntax).
+                parts.append(v if isinstance(v, str) else json.dumps(v, default=str))
+
+        return " ".join(parts)
 
     def _delete_item(self, namespace: tuple[str, ...], key: str) -> None:
         """Delete an item from DynamoDB.

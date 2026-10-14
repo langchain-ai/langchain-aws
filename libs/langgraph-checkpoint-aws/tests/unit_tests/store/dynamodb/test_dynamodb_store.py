@@ -90,8 +90,10 @@ class TestDynamoDBStoreInit:
 
             assert store.table_name == "test_table"
             assert store.ttl_config is None
-            assert store.max_read_capacity_units == 10
-            assert store.max_write_capacity_units == 10
+            # Throughput is uncapped unless explicitly requested (previously
+            # defaulted to 10, which throttled real workloads).
+            assert store.max_read_capacity_units is None
+            assert store.max_write_capacity_units is None
 
     def test_init_with_ttl(self, mock_dynamodb_client):
         """Test initialization with TTL config."""
@@ -382,7 +384,10 @@ class TestDynamoDBStoreBatch:
         result = dynamodb_store._batch_put_op(op)
 
         assert result is None
-        dynamodb_store.client.put_item.assert_called_once()
+        # put is now a single atomic update_item (if_not_exists on created_at),
+        # not a read-before-write followed by put_item.
+        dynamodb_store.client.update_item.assert_called_once()
+        dynamodb_store.client.put_item.assert_not_called()
 
     def test_batch_put_op_delete(self, dynamodb_store):
         """Test batch PutOp for delete."""

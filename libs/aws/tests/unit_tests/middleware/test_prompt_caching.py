@@ -1,11 +1,25 @@
 # type:ignore
 
-from unittest.mock import MagicMock
+from types import ModuleType
+from unittest.mock import MagicMock, patch
 
 from langchain_core.messages import AIMessage, HumanMessage
 
 from langchain_aws import ChatBedrock, ChatBedrockConverse
+from langchain_aws.middleware import prompt_caching
 from langchain_aws.middleware.prompt_caching import BedrockPromptCachingMiddleware
+
+
+def test_trace_inputs_are_omitted() -> None:
+    policy = BedrockPromptCachingMiddleware.trace_policy
+    assert policy.process_inputs is not None
+    assert policy.process_inputs({"messages": [HumanMessage("foo")]}) == {}
+
+
+def test_trace_policy_unsupported_langchain() -> None:
+    old_types = ModuleType("langchain.agents.middleware.types")
+    with patch.dict("sys.modules", {"langchain.agents.middleware.types": old_types}):
+        assert prompt_caching._get_trace_policy() is None
 
 
 def test_bedrock_skips_non_chatbedrock() -> None:

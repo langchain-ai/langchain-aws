@@ -18,7 +18,7 @@ from langgraph.checkpoint.base import (
 )
 from langgraph.checkpoint.serde.base import SerializerProtocol
 
-from .base import BaseValkeySaver
+from .base import _PUT_WRITES_MAX_ATTEMPTS, BaseValkeySaver
 
 # Conditional imports for optional dependencies
 try:
@@ -33,7 +33,7 @@ try:
     from valkey import Valkey
     from valkey.asyncio import Valkey as AsyncValkey
     from valkey.connection import ConnectionPool
-    from valkey.exceptions import ValkeyError
+    from valkey.exceptions import ValkeyError, WatchError
 except ImportError as e:
     raise ImportError(
         "The 'valkey' package is required to use ValkeySaver. "
@@ -485,27 +485,31 @@ class ValkeySaver(BaseValkeySaver):
             checkpoint_id = str(configurable["checkpoint_id"])
 
             writes_key = self._make_writes_key(thread_id, checkpoint_ns, checkpoint_id)
-
-            # Use atomic operation to update writes
-            pipe = self.client.pipeline()
-
-            # Get existing writes
-            pipe.get(writes_key)
-            results = pipe.execute()
-            existing_data = results[0]
-
-            existing_writes = orjson.loads(existing_data) if existing_data else []
-
-            # Use base class method to serialize new writes
             new_writes = self._serialize_writes_data(writes, task_id)
-            existing_writes.extend(new_writes)
 
-            # Store updated writes atomically
-            pipe = self.client.pipeline()
-            pipe.set(writes_key, orjson.dumps(existing_writes))
-            if self.ttl:
-                pipe.expire(writes_key, int(self.ttl))
-            pipe.execute()
+            # Read-modify-write the shared writes blob inside a WATCH/MULTI/EXEC
+            # transaction so concurrent tasks writing to the same checkpoint cannot
+            # clobber each other's writes (a lost update). WATCH aborts EXEC if the
+            # key changed since it was read, so we retry on the stale snapshot.
+            with self.client.pipeline() as pipe:
+                for _ in range(_PUT_WRITES_MAX_ATTEMPTS):
+                    try:
+                        pipe.watch(writes_key)
+                        existing_writes = self._parse_writes_blob(pipe.get(writes_key))
+                        merged_writes = self._merge_writes(existing_writes, new_writes)
+                        pipe.multi()
+                        pipe.set(writes_key, orjson.dumps(merged_writes))
+                        if self.ttl:
+                            pipe.expire(writes_key, int(self.ttl))
+                        pipe.execute()
+                        return
+                    except WatchError:
+                        continue
+            msg = (
+                f"put_writes could not commit after {_PUT_WRITES_MAX_ATTEMPTS} "
+                "attempts due to contention on the checkpoint writes key"
+            )
+            raise ValkeyError(msg)
 
         except (ValkeyError, orjson.JSONEncodeError, KeyError) as e:
             logger.error(f"Error in put_writes: {e}")

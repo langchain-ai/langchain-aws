@@ -5,7 +5,7 @@
 import json
 import os
 from contextlib import nullcontext
-from typing import Any, Callable, Dict, Literal, Type, cast
+from typing import Any, Callable, Dict, List, Literal, Type, cast
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -39,6 +39,63 @@ def test_profile() -> None:
 
     model = ChatBedrock(model_id="foo")
     assert model.profile == {}
+
+
+@pytest.mark.parametrize("beta_use_converse_api", [False, True])
+def test_profile_omits_mid_conversation_support(beta_use_converse_api: bool) -> None:
+    """Neither InvokeModel nor Converse can send a system message in place."""
+    model = ChatBedrock(
+        model_id="global.anthropic.claude-sonnet-5-5",
+        region_name="us-west-2",
+        beta_use_converse_api=beta_use_converse_api,
+    )
+    assert model.profile
+    assert "mid_conversation_system_messages" not in model.profile
+    assert "mid_conversation_tools" not in model.profile
+
+
+def test_explicit_profile_keeps_mid_conversation_support() -> None:
+    profile = {
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
+    }
+    model = ChatBedrock(
+        model_id="global.anthropic.claude-sonnet-5-5",
+        region_name="us-west-2",
+        profile=profile,
+    )
+    assert model.profile == profile
+
+
+def test_model_property_returns_model_id() -> None:
+    model_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    from_alias = ChatBedrock(model=model_id, region_name="us-west-2")
+    assert from_alias.model == from_alias.model_id == model_id
+
+    from_field = ChatBedrock(model_id=model_id, region_name="us-west-2")  # type: ignore[call-arg]
+    assert from_field.model == from_field.model_id == model_id
+
+
+def test_model_property_tracks_model_id() -> None:
+    model_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    llm = ChatBedrock(model=model_id, region_name="us-west-2")
+    llm.model_id = "foo.bar"
+    assert llm.model == "foo.bar"
+
+
+def test_model_property_not_serialized() -> None:
+    model_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    llm = ChatBedrock(model=model_id, region_name="us-west-2")
+    serialized = llm.model_dump(by_alias=True)
+    # `model` is the existing alias of the `model_id` field, and the property
+    # adds no additional serialized field.
+    expected_keys = {
+        field.alias or name
+        for name, field in ChatBedrock.model_fields.items()
+        if not field.exclude
+    }
+    assert set(serialized) == expected_keys
+    assert serialized["model"] == model_id
 
 
 def test__merge_messages() -> None:
@@ -203,6 +260,70 @@ def test__format_anthropic_messages_strips_streaming_fields_on_invalid_tool() ->
         "name": "web_search",
         "input": {},
     }
+
+
+def test__format_anthropic_messages_signature_only_thinking_block() -> None:
+    ai = AIMessage(
+        content=[
+            {
+                "type": "thinking",
+                "signature": "sig-abc",
+                "index": 0,
+            },
+            {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "get_weather",
+                "input": {"location": "SF"},
+                "index": 1,
+            },
+        ],
+        tool_calls=[
+            {"name": "get_weather", "id": "toolu_1", "args": {"location": "SF"}}
+        ],
+    )
+    _, formatted = _format_anthropic_messages([HumanMessage("go"), ai])
+    thinking_block = next(
+        b for b in formatted[1]["content"] if b.get("type") == "thinking"
+    )
+    assert thinking_block == {
+        "type": "thinking",
+        "signature": "sig-abc",
+        "thinking": "",
+    }
+
+    ai_with_text = AIMessage(
+        content=[
+            {
+                "type": "thinking",
+                "thinking": "step by step...",
+                "signature": "sig-def",
+                "index": 0,
+            },
+            {"type": "text", "text": "Answer."},
+        ]
+    )
+    _, formatted = _format_anthropic_messages([HumanMessage("go"), ai_with_text])
+    thinking_block = next(
+        b for b in formatted[1]["content"] if b.get("type") == "thinking"
+    )
+    assert thinking_block == {
+        "type": "thinking",
+        "thinking": "step by step...",
+        "signature": "sig-def",
+    }
+
+    ai_redacted = AIMessage(
+        content=[
+            {"type": "redacted_thinking", "data": "opaque", "index": 0},
+            {"type": "text", "text": "Answer."},
+        ]
+    )
+    _, formatted = _format_anthropic_messages([HumanMessage("go"), ai_redacted])
+    redacted_block = next(
+        b for b in formatted[1]["content"] if b.get("type") == "redacted_thinking"
+    )
+    assert redacted_block == {"type": "redacted_thinking", "data": "opaque"}
 
 
 def test__format_anthropic_messages_with_str_content_and_tool_calls() -> None:
@@ -632,6 +753,38 @@ def test_claude_thinking_forced_tool_raises(
         chat.bind_tools([GetWeather], tool_choice=tool_choice)
 
 
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "global.anthropic.claude-opus-4-8",
+        "us.anthropic.claude-sonnet-5",
+        "global.anthropic.claude-fable-5",
+    ],
+)
+@pytest.mark.parametrize(
+    "tool_choice",
+    [
+        "any",
+        "GetWeather",
+        {"type": "tool", "name": "GetWeather"},
+    ],
+)
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_claude_5_thinking_forced_tool_allowed(
+    mock_create_aws_client, model_id, tool_choice
+) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    chat = ChatBedrock(
+        model=model_id,
+        region="us-west-2",
+        model_kwargs={
+            "thinking": {"type": "adaptive"},
+        },
+    )
+    chat_with_tools = chat.bind_tools([GetWeather], tool_choice=tool_choice)
+    assert "tool_choice" in cast(RunnableBinding, chat_with_tools).kwargs
+
+
 @mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
 def test_claude_thinking_tool_choice_auto_ok(mock_create_aws_client) -> None:
     mock_create_aws_client.return_value = MagicMock()
@@ -736,6 +889,26 @@ def test_bind_tools_strict_passed_to_converse_api(
     assert func["strict"] is True
 
 
+@pytest.mark.parametrize(
+    "model_id,forced",
+    [
+        ("us.anthropic.claude-fable-5-1", False),
+        ("global.anthropic.claude-opus-5-5", False),
+        ("global.anthropic.claude-opus-5", True),
+    ],
+)
+@mock.patch("langchain_aws.chat_models.bedrock.create_aws_client")
+def test_with_structured_output_no_forced_tool_choice(
+    mock_create_aws_client: Any, model_id: str, forced: bool
+) -> None:
+    """Models that reject forced tool use get no tool_choice in structured output."""
+    mock_create_aws_client.return_value = MagicMock()
+    chat_model = ChatBedrock(model=model_id, region="us-west-2")
+    structured = chat_model.with_structured_output(GetWeather)
+    bound_kwargs = cast(RunnableBinding, structured.first).kwargs  # type: ignore[attr-defined]
+    assert ("tool_choice" in bound_kwargs) is forced
+
+
 def test_with_structured_output_strict_warns_without_converse_api() -> None:
     chat_model = ChatBedrock(
         model="us.anthropic.claude-sonnet-4-5-20250929-v1:0", region="us-west-2"
@@ -761,6 +934,163 @@ def test_with_structured_output_strict_passed_to_converse_api(
     assert func["strict"] is True
 
 
+def test_with_structured_output_repairs_stringified_list_field() -> None:
+    """A List[Model] field emitted as a JSON string parses successfully (#1221).
+
+    Claude models on Bedrock intermittently re-serialize a declared array
+    field as a JSON string containing the correct value. The structured
+    output chain repairs the encoding before validation.
+    """
+    from typing import List
+    from unittest.mock import patch
+
+    from langchain_core.outputs import ChatGeneration, ChatResult
+
+    class Entry(BaseModel):
+        label: str
+        values: List[int] = Field(default_factory=list)
+
+    class Output(BaseModel):
+        items: List[Entry]
+
+    stringified = '[{"label": "Onboarding", "values": [1001, 1002]}]'
+    message = AIMessage(
+        "",
+        tool_calls=[
+            {
+                "name": "Output",
+                "args": {"items": stringified},
+                "id": "toolu_bdrk_01X",
+                "type": "tool_call",
+            }
+        ],
+    )
+    result = ChatResult(generations=[ChatGeneration(message=message)])
+
+    model = ChatBedrock(
+        model_id="us.anthropic.claude-sonnet-5", region_name="us-east-1"
+    )  # type: ignore[call-arg]
+    structured = model.with_structured_output(
+        Output, include_raw=True, tool_choice="any"
+    )
+    with patch.object(ChatBedrock, "_generate", return_value=result):
+        out = cast(dict, structured.invoke("group the items"))
+
+    assert out["parsing_error"] is None
+    assert out["parsed"] == Output(
+        items=[Entry(label="Onboarding", values=[1001, 1002])]
+    )
+
+
+def test_with_structured_output_streaming_yields_multiple_chunks() -> None:
+    """Structured-output streaming must not collapse to a single chunk."""
+    from langchain_core.messages import AIMessageChunk
+    from langchain_core.outputs import ChatGenerationChunk
+
+    class Answer(BaseModel):
+        answer: str
+        justification: str
+
+    args_json = '{"answer": "Neither", "justification": "Both weigh one pound."}'
+    split = args_json.index("one pound")
+    chunks = [
+        ChatGenerationChunk(
+            message=AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {
+                        "name": "Answer",
+                        "args": args_json[:split],
+                        "id": "toolu_bdrk_01X",
+                        "index": 0,
+                        "type": "tool_call_chunk",
+                    }
+                ],
+            )
+        ),
+        ChatGenerationChunk(
+            message=AIMessageChunk(
+                content="",
+                tool_call_chunks=[
+                    {
+                        "name": None,
+                        "args": args_json[split:],
+                        "id": None,
+                        "index": 0,
+                        "type": "tool_call_chunk",
+                    }
+                ],
+            )
+        ),
+    ]
+
+    model = ChatBedrock(
+        model_id="us.anthropic.claude-sonnet-5",
+        region_name="us-east-1",
+        streaming=True,
+    )  # type: ignore[call-arg]
+    structured = model.with_structured_output(Answer, tool_choice="any")
+    with patch.object(ChatBedrock, "_stream", return_value=iter(chunks)):
+        results = list(structured.stream("bricks or feathers?"))
+
+    assert len(results) > 1
+    assert results[-1] == Answer(
+        answer="Neither", justification="Both weigh one pound."
+    )
+
+
+@mock.patch("langchain_aws.llms.bedrock.create_aws_client")
+def test_structured_output_json_schema_via_converse_passthrough(
+    mock_create_aws_client: Any,
+) -> None:
+    class Entry(BaseModel):
+        label: str
+
+    class Output(BaseModel):
+        items: List[Entry]
+
+    client = MagicMock()
+    client.converse.return_value = {
+        "output": {
+            "message": {
+                "role": "assistant",
+                "content": [{"text": '{"items": [{"label": "a"}]}'}],
+            }
+        },
+        "stopReason": "end_turn",
+        "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+        "metrics": {"latencyMs": 1},
+        "ResponseMetadata": {"RequestId": "r"},
+    }
+    mock_create_aws_client.return_value = client
+
+    llm = ChatBedrock(
+        model="anthropic.claude-sonnet-5",
+        region="us-west-2",
+        beta_use_converse_api=True,
+    )
+    result = llm.with_structured_output(Output, method="json_schema").invoke("hi")
+
+    assert result == Output(items=[Entry(label="a")])
+    sent = client.converse.call_args.kwargs
+    assert "outputConfig" in sent
+    assert "toolConfig" not in sent
+
+
+@mock.patch("langchain_aws.llms.bedrock.create_aws_client")
+def test_structured_output_json_schema_strict_warns(
+    mock_create_aws_client: Any,
+) -> None:
+    mock_create_aws_client.return_value = MagicMock()
+    llm = ChatBedrock(
+        model="anthropic.claude-sonnet-5",
+        region="us-west-2",
+        beta_use_converse_api=True,
+    )
+    with pytest.warns(UserWarning, match="only applies to method='function_calling'"):
+        llm.with_structured_output(GetWeather, method="json_schema", strict=True)
+
+
 def test_standard_tracing_params() -> None:
     llm = ChatBedrock(model_id="foo", region_name="us-west-2")  # type: ignore[call-arg]
     expected = {
@@ -784,6 +1114,33 @@ def test_standard_tracing_params() -> None:
         "ls_model_name": "foo",
         "ls_temperature": 0.1,
     }
+
+    llm = ChatBedrock(model_id="foo", temperature=0, region_name="us-west-2")  # type: ignore[call-arg]
+    assert llm._get_ls_params() == {**expected, "ls_temperature": 0}
+
+    llm = ChatBedrock(model_id="foo", temperature=None, region_name="us-west-2")  # type: ignore[call-arg]
+    assert llm._get_ls_params() == expected
+
+    llm = ChatBedrock(model_id="foo", temperature=0.1, region_name="us-west-2")  # type: ignore[call-arg]
+    assert llm._get_ls_params(temperature=0) == {**expected, "ls_temperature": 0}
+    assert llm._get_ls_params(temperature=None) == expected
+
+
+def test_invocation_params_includes_model() -> None:
+    llm = ChatBedrock(model="us.anthropic.claude-sonnet-5", region="us-west-2")
+    assert llm._get_invocation_params()["model"] == "us.anthropic.claude-sonnet-5"
+
+
+def test_invocation_params_model_prefers_base_model_id() -> None:
+    llm = ChatBedrock(
+        model=(
+            "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/abc"
+        ),
+        base_model="us.anthropic.claude-sonnet-5",
+        provider="anthropic",
+        region="us-west-2",
+    )
+    assert llm._get_invocation_params()["model"] == "us.anthropic.claude-sonnet-5"
 
 
 def test_beta_use_converse_api() -> None:
@@ -2050,6 +2407,63 @@ def test_system_prompt_string_format() -> None:
 
     body = json.loads(mock_client.invoke_model.call_args[1]["body"])
     assert isinstance(body["system"], str)
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "us.anthropic.claude-sonnet-5",
+        "global.anthropic.claude-opus-5",
+        "global.anthropic.claude-fable-5",
+        "us.anthropic.claude-haiku-5-5",
+    ],
+)
+def test_stream_thinking_on_by_default_returns_block_content(model_id: str) -> None:
+    """Default-thinking Claude streams must not mix string and block content."""
+    mock_client = MagicMock()
+
+    def stream_gen():
+        events = [
+            {"type": "message_start", "message": {}},
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "thinking", "thinking": "", "signature": ""},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "signature_delta", "signature": "sig-abc"},
+            },
+            {
+                "type": "content_block_delta",
+                "index": 1,
+                "delta": {"type": "text_delta", "text": "Hello!"},
+            },
+            {"type": "message_stop"},
+        ]
+        for e in events:
+            yield {"chunk": {"bytes": json.dumps(e).encode()}}
+
+    mock_response = MagicMock()
+    mock_response.get.return_value = stream_gen()
+    mock_client.invoke_model_with_response_stream.return_value = mock_response
+
+    llm = ChatBedrock(
+        client=mock_client,
+        model=model_id,
+        region="us-west-2",
+    )
+    full = None
+    for chunk in llm.stream([HumanMessage(content="Hello")]):
+        full = chunk if full is None else full + chunk
+
+    assert isinstance(full.content, list)
+    assert not any(isinstance(b, str) for b in full.content), full.content
+    block_types = [b["type"] for b in full.content]
+    assert "text" in block_types
+    text_blocks = [b for b in full.content_blocks if b["type"] == "text"]
+    assert len(text_blocks) == 1
 
 
 def test_stream_system_prompt_cache_control() -> None:

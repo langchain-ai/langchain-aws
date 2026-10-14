@@ -7,10 +7,15 @@ This module consolidates all Nova tools integration tests including:
 - Streaming behavior
 """
 
+import time
+import warnings
 from typing import Any, Generator
 
 import pytest
+from botocore.exceptions import ReadTimeoutError as BotocoreReadTimeoutError
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from urllib3.connectionpool import HTTPSConnectionPool
+from urllib3.exceptions import ReadTimeoutError as Urllib3ReadTimeoutError
 
 from langchain_aws import ChatBedrockConverse
 from langchain_aws.tools import (
@@ -19,6 +24,82 @@ from langchain_aws.tools import (
 )
 
 MODEL_ID = "us.amazon.nova-2-lite-v1:0"
+NOVA_STREAM_ATTEMPTS = 3
+NOVA_STREAM_BACKOFF_SECONDS = 2.0
+RETRYABLE_STREAM_TIMEOUT_ERRORS = (
+    BotocoreReadTimeoutError,
+    Urllib3ReadTimeoutError,
+)
+
+
+def _stream_with_retries(model_with_tools: Any, prompt: str) -> list[AIMessageChunk]:
+    """Collect a full stream, retrying on transient read timeouts.
+
+    Nova streaming integration tests intermittently fail when a read times out.
+    A mid-stream timeout surfaces as a urllib3 ``ReadTimeoutError`` (raised lazily
+    during event-stream iteration, outside botocore's request error handling),
+    while a timeout on the initial request surfaces as a botocore
+    ``ReadTimeoutError``; both are retried with backoff. Any other error
+    propagates immediately so genuine regressions still fail fast.
+
+    Args:
+        model_with_tools: The tool-bound model to stream from.
+        prompt: The prompt to stream.
+
+    Returns:
+        The streamed chunks from the first successful attempt.
+
+    Raises:
+        BotocoreReadTimeoutError: If every attempt times out at the request level.
+        Urllib3ReadTimeoutError: If every attempt times out mid-stream.
+    """
+    for attempt in range(1, NOVA_STREAM_ATTEMPTS + 1):
+        try:
+            return list(model_with_tools.stream(prompt))
+        except RETRYABLE_STREAM_TIMEOUT_ERRORS as exc:
+            if attempt == NOVA_STREAM_ATTEMPTS:
+                raise
+            warnings.warn(
+                f"Nova stream timed out "
+                f"(attempt {attempt}/{NOVA_STREAM_ATTEMPTS}), "
+                f"retrying in {NOVA_STREAM_BACKOFF_SECONDS}s: {exc}",
+                stacklevel=2,
+            )
+            time.sleep(NOVA_STREAM_BACKOFF_SECONDS)
+
+    msg = "Failed to stream from Nova"
+    raise AssertionError(msg)
+
+
+@pytest.mark.parametrize(
+    "timeout_error",
+    [
+        BotocoreReadTimeoutError(endpoint_url="https://bedrock-runtime.amazonaws.com"),
+        Urllib3ReadTimeoutError(
+            HTTPSConnectionPool(host="bedrock-runtime.amazonaws.com"),
+            "https://bedrock-runtime.amazonaws.com",
+            "Read timed out.",
+        ),
+    ],
+)
+def test_stream_with_retries_handles_read_timeouts(timeout_error: Exception) -> None:
+    """Test streaming retries for timeout exceptions raised by AWS clients."""
+
+    class TimeoutThenSuccessStream:
+        attempts = 0
+
+        def stream(self, prompt: str) -> list[AIMessageChunk]:
+            self.attempts += 1
+            if self.attempts == 1:
+                raise timeout_error
+            return [AIMessageChunk(content=prompt)]
+
+    model_with_tools = TimeoutThenSuccessStream()
+
+    chunks = _stream_with_retries(model_with_tools, "hello")
+
+    assert chunks == [AIMessageChunk(content="hello")]
+    assert model_with_tools.attempts == 2
 
 
 # =============================================================================
@@ -170,9 +251,9 @@ class TestNovaGroundingTool:
         """Test streaming with nova_grounding system tool."""
         model_with_tools = nova_model_reasoning_low.bind_tools([NovaGroundingTool()])
 
-        chunks = []
-        for chunk in model_with_tools.stream("What's the latest news about AI?"):
-            chunks.append(chunk)
+        chunks = _stream_with_retries(
+            model_with_tools, "What's the latest news about AI?"
+        )
 
         # Verify we received chunks
         assert len(chunks) > 0
@@ -328,9 +409,7 @@ class TestNovaCodeInterpreterTool:
         """Test streaming with nova_code_interpreter system tool."""
         model_with_tools = nova_model.bind_tools([NovaCodeInterpreterTool()])
 
-        chunks = []
-        for chunk in model_with_tools.stream("What is 999 * 888?"):
-            chunks.append(chunk)
+        chunks = _stream_with_retries(model_with_tools, "What is 999 * 888?")
 
         # Verify we received chunks
         assert len(chunks) > 0
@@ -563,9 +642,10 @@ class TestNovaStreaming:
         """Test streaming with nova_grounding system tool."""
         model_with_tools = nova_model.bind_tools([NovaGroundingTool()])
 
-        chunks = []
-        for chunk in model_with_tools.stream("What's the latest news about SpaceX?"):
-            chunks.append(chunk)
+        chunks = _stream_with_retries(
+            model_with_tools, "What's the latest news about SpaceX?"
+        )
+        for chunk in chunks:
             # Verify each chunk is an AIMessageChunk
             assert isinstance(chunk, AIMessageChunk)
 
@@ -584,9 +664,10 @@ class TestNovaStreaming:
         """Test streaming with nova_code_interpreter system tool."""
         model_with_tools = nova_model.bind_tools([NovaCodeInterpreterTool()])
 
-        chunks = []
-        for chunk in model_with_tools.stream("Calculate 456 * 789 using Python"):
-            chunks.append(chunk)
+        chunks = _stream_with_retries(
+            model_with_tools, "Calculate 456 * 789 using Python"
+        )
+        for chunk in chunks:
             # Verify each chunk is an AIMessageChunk
             assert isinstance(chunk, AIMessageChunk)
 
@@ -611,12 +692,12 @@ class TestNovaStreaming:
         """Test that reasoning content chunks stream correctly."""
         model_with_tools = nova_model_reasoning_low.bind_tools([NovaGroundingTool()])
 
-        chunks = []
         reasoning_chunks = []
 
-        for chunk in model_with_tools.stream("What are the latest AI breakthroughs?"):
-            chunks.append(chunk)
-
+        chunks = _stream_with_retries(
+            model_with_tools, "What are the latest AI breakthroughs?"
+        )
+        for chunk in chunks:
             # Check if this chunk contains reasoning content
             if hasattr(chunk, "content") and isinstance(chunk.content, list):
                 for block in chunk.content:
@@ -644,14 +725,12 @@ class TestNovaStreaming:
         """Test that tool use and tool result events stream correctly."""
         model_with_tools = nova_model.bind_tools([NovaCodeInterpreterTool()])
 
-        chunks = []
         tool_use_chunks = []
 
-        for chunk in model_with_tools.stream(
-            "Use Python to calculate the square root of 144"
-        ):
-            chunks.append(chunk)
-
+        chunks = _stream_with_retries(
+            model_with_tools, "Use Python to calculate the square root of 144"
+        )
+        for chunk in chunks:
             # Check if this chunk contains tool use content
             if hasattr(chunk, "content") and isinstance(chunk.content, list):
                 for block in chunk.content:
@@ -679,11 +758,10 @@ class TestNovaStreaming:
         """Test accumulating chunks into full message with all content types."""
         model_with_tools = nova_model_reasoning_low.bind_tools([NovaGroundingTool()])
 
-        chunks = []
-        for chunk in model_with_tools.stream(
-            "What is the current population of Tokyo?"
-        ):
-            chunks.append(chunk)
+        chunks = _stream_with_retries(
+            model_with_tools, "What is the current population of Tokyo?"
+        )
+        for chunk in chunks:
             assert isinstance(chunk, AIMessageChunk)
 
         # Verify we received chunks
@@ -719,11 +797,11 @@ class TestNovaStreaming:
             ]
         )
 
-        chunks = []
-        for chunk in model_with_tools.stream(
-            "Search for the current price of Bitcoin and calculate 10% of that value"
-        ):
-            chunks.append(chunk)
+        chunks = _stream_with_retries(
+            model_with_tools,
+            "Search for the current price of Bitcoin and calculate 10% of that value",
+        )
+        for chunk in chunks:
             assert isinstance(chunk, AIMessageChunk)
 
         # Verify we received chunks
@@ -753,9 +831,7 @@ class TestNovaStreaming:
 
             model_with_tools = model.bind_tools([NovaCodeInterpreterTool()])
 
-            chunks = []
-            for chunk in model_with_tools.stream("Calculate 15 factorial"):
-                chunks.append(chunk)
+            chunks = _stream_with_retries(model_with_tools, "Calculate 15 factorial")
 
             # Verify we received chunks
             assert len(chunks) > 0
@@ -780,10 +856,8 @@ class TestNovaStreaming:
         """Test the structure of streaming chunks."""
         model_with_tools = nova_model_reasoning_low.bind_tools([NovaGroundingTool()])
 
-        chunks = []
-        for chunk in model_with_tools.stream("What is the weather in Paris?"):
-            chunks.append(chunk)
-
+        chunks = _stream_with_retries(model_with_tools, "What is the weather in Paris?")
+        for chunk in chunks:
             # Verify chunk structure
             assert isinstance(chunk, AIMessageChunk)
             assert hasattr(chunk, "content")
@@ -800,9 +874,8 @@ class TestNovaStreaming:
             ["nova_grounding", "nova_code_interpreter"]
         )
 
-        chunks = []
-        for chunk in model_with_tools.stream("What is 25 * 25?"):
-            chunks.append(chunk)
+        chunks = _stream_with_retries(model_with_tools, "What is 25 * 25?")
+        for chunk in chunks:
             assert isinstance(chunk, AIMessageChunk)
 
         # Verify we received chunks
@@ -824,9 +897,8 @@ class TestNovaStreaming:
         """Test that empty or minimal chunks are handled correctly."""
         model_with_tools = nova_model.bind_tools([NovaCodeInterpreterTool()])
 
-        chunks = []
-        for chunk in model_with_tools.stream("What is 2 + 2?"):
-            chunks.append(chunk)
+        chunks = _stream_with_retries(model_with_tools, "What is 2 + 2?")
+        for chunk in chunks:
             # Each chunk should be valid even if content is minimal
             assert isinstance(chunk, AIMessageChunk)
 

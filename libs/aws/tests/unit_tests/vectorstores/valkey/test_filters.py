@@ -168,7 +168,6 @@ class TestValkeyText:
 
     def test_text_escaping(self) -> None:
         expr = ValkeyFilter.text("title") == "test-value"
-        # InMemoryDB filters don't escape hyphens in text values
         assert str(expr) == '@title:("test-value")'
 
     def test_none_value(self) -> None:

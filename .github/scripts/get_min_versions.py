@@ -9,7 +9,7 @@ else:
 from packaging.version import parse as parse_version
 import re
 
-MIN_VERSION_LIBS = ["langchain-core"]
+MIN_VERSION_LIBS = ["langchain-core", "deepagents", "bedrock-agentcore"]
 
 SKIP_IF_PULL_REQUEST = ["langchain-core"]
 

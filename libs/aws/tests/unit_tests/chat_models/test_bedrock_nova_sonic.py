@@ -12,7 +12,9 @@ mock_sdk_module = MagicMock()
 mock_sdk_models = MagicMock()
 mock_sdk_config = MagicMock()
 mock_sdk_client = MagicMock()
+mock_sdk_client.AsyncBedrockRuntimeClient.return_value._ensure_setup = AsyncMock()
 mock_smithy = MagicMock()
+mock_smithy_http = MagicMock()
 
 
 @pytest.fixture(autouse=True)
@@ -32,14 +34,17 @@ def _mock_nova_sonic_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setitem(__import__("sys").modules, "smithy_aws_core", mock_smithy)
     monkeypatch.setitem(
-        __import__("sys").modules,
-        "smithy_aws_core.credentials_resolvers",
-        mock_smithy,
+        __import__("sys").modules, "smithy_aws_core.identity", mock_smithy
     )
     monkeypatch.setitem(
         __import__("sys").modules,
-        "smithy_aws_core.credentials_resolvers.environment",
+        "smithy_aws_core.identity.components",
         mock_smithy,
+    )
+    monkeypatch.setitem(__import__("sys").modules, "smithy_http", mock_smithy_http)
+    monkeypatch.setitem(__import__("sys").modules, "smithy_http.aio", mock_smithy_http)
+    monkeypatch.setitem(
+        __import__("sys").modules, "smithy_http.aio.crt", mock_smithy_http
     )
 
 
@@ -51,6 +56,39 @@ def _import_module() -> Any:
 
     importlib.reload(mod)
     return mod
+
+
+def test_model_property_returns_model_id() -> None:
+    model_id = "amazon.nova-2-sonic-v1:0"
+    mod = _import_module()
+    from_alias = mod.ChatBedrockNovaSonic(model=model_id)
+    assert from_alias.model == from_alias.model_id == model_id
+
+    from_field = mod.ChatBedrockNovaSonic(model_id=model_id)
+    assert from_field.model == from_field.model_id == model_id
+
+
+def test_model_property_tracks_model_id() -> None:
+    mod = _import_module()
+    model = mod.ChatBedrockNovaSonic(model="amazon.nova-2-sonic-v1:0")
+    model.model_id = "amazon.nova-sonic-v1:0"
+    assert model.model == "amazon.nova-sonic-v1:0"
+
+
+def test_model_property_not_serialized() -> None:
+    model_id = "amazon.nova-2-sonic-v1:0"
+    mod = _import_module()
+    model = mod.ChatBedrockNovaSonic(model=model_id)
+    serialized = model.model_dump(by_alias=True)
+    # `model` is the existing alias of the `model_id` field, and the property
+    # adds no additional serialized field.
+    expected_keys = {
+        field.alias or name
+        for name, field in mod.ChatBedrockNovaSonic.model_fields.items()
+        if not field.exclude
+    }
+    assert set(serialized) == expected_keys
+    assert serialized["model"] == model_id
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +276,7 @@ class TestBaseChatModelInterface:
             endpointing_sensitivity="HIGH",
         )
         params = model._identifying_params
+        assert params["model"] == "amazon.nova-2-sonic-v1:0"
         assert params["model_id"] == "amazon.nova-2-sonic-v1:0"
         assert params["voice_id"] == "tiffany"
         assert params["max_tokens"] == 1024

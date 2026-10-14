@@ -47,10 +47,7 @@ from langgraph_checkpoint_aws import DynamoDBSaver
 from langgraph.graph import StateGraph
 
 # Initialize checkpointer
-checkpointer = DynamoDBSaver(
-    table_name="my-checkpoints",
-    region_name="us-east-1"
-)
+checkpointer = DynamoDBSaver(table_name="my-checkpoints", region_name="us-east-1")
 
 # Use with LangGraph
 graph = StateGraph(state_schema)
@@ -173,7 +170,7 @@ aws cloudformation describe-stacks \
 checkpointer = DynamoDBSaver(
     table_name="my-checkpoints",
     region_name="us-east-1",
-    s3_offload_config={"bucket_name": "my-checkpoint-bucket"}
+    s3_offload_config={"bucket_name": "my-checkpoint-bucket"},
 )
 ```
 
@@ -183,15 +180,12 @@ checkpointer = DynamoDBSaver(
 import boto3
 
 # Use specific AWS profile from ~/.aws/credentials
-session = boto3.Session(
-    profile_name="production",
-    region_name="us-east-1"
-)
+session = boto3.Session(profile_name="production", region_name="us-east-1")
 
 checkpointer = DynamoDBSaver(
     table_name="my-checkpoints",
     session=session,
-    s3_offload_config={"bucket_name": "my-checkpoint-bucket"}
+    s3_offload_config={"bucket_name": "my-checkpoint-bucket"},
 )
 ```
 
@@ -201,23 +195,23 @@ checkpointer = DynamoDBSaver(
 import boto3
 
 # Assume role for cross-account or elevated permissions
-sts = boto3.client('sts')
+sts = boto3.client("sts")
 assumed_role = sts.assume_role(
-    RoleArn='arn:aws:iam::123456789012:role/CheckpointRole',
-    RoleSessionName='langgraph-session'
+    RoleArn="arn:aws:iam::123456789012:role/CheckpointRole",
+    RoleSessionName="langgraph-session",
 )
 
 session = boto3.Session(
-    aws_access_key_id=assumed_role['Credentials']['AccessKeyId'],
-    aws_secret_access_key=assumed_role['Credentials']['SecretAccessKey'],
-    aws_session_token=assumed_role['Credentials']['SessionToken'],
-    region_name='us-east-1'
+    aws_access_key_id=assumed_role["Credentials"]["AccessKeyId"],
+    aws_secret_access_key=assumed_role["Credentials"]["SecretAccessKey"],
+    aws_session_token=assumed_role["Credentials"]["SessionToken"],
+    region_name="us-east-1",
 )
 
 checkpointer = DynamoDBSaver(
     table_name="my-checkpoints",
     session=session,
-    s3_offload_config={"bucket_name": "my-checkpoint-bucket"}
+    s3_offload_config={"bucket_name": "my-checkpoint-bucket"},
 )
 ```
 
@@ -228,7 +222,7 @@ checkpointer = DynamoDBSaver(
     table_name="my-checkpoints",
     region_name="us-east-1",
     ttl_seconds=86400 * 7,
-    s3_offload_config={"bucket_name": "my-checkpoint-bucket"}
+    s3_offload_config={"bucket_name": "my-checkpoint-bucket"},
 )
 ```
 
@@ -239,7 +233,7 @@ checkpointer = DynamoDBSaver(
     table_name="my-checkpoints",
     region_name="us-east-1",
     enable_checkpoint_compression=True,
-    s3_offload_config={"bucket_name": "my-checkpoint-bucket"}
+    s3_offload_config={"bucket_name": "my-checkpoint-bucket"},
 )
 ```
 
@@ -250,20 +244,16 @@ import boto3
 from botocore.config import Config
 
 # Use dedicated AWS profile for production
-session = boto3.Session(
-    profile_name="production",
-    region_name="us-east-1"
-)
+session = boto3.Session(profile_name="production", region_name="us-east-1")
 
 checkpointer = DynamoDBSaver(
     table_name="prod-checkpoints",
     session=session,
     ttl_seconds=86400 * 30,  # 30 days
     boto_config=Config(
-        retries={"mode": "adaptive", "max_attempts": 6},
-        max_pool_connections=50
+        retries={"mode": "adaptive", "max_attempts": 6}, max_pool_connections=50
     ),
-    s3_offload_config={"bucket_name": "prod-checkpoint-bucket"}
+    s3_offload_config={"bucket_name": "prod-checkpoint-bucket"},
 )
 ```
 
@@ -321,7 +311,7 @@ for checkpoint_tuple in checkpointer.list(config, filter={"source": "user"}):
 config = {
     "configurable": {
         "thread_id": "user-123",
-        "checkpoint_id": "1ef4f797-8335-6ace-8001-1b7f24e6d7fa"
+        "checkpoint_id": "1ef4f797-8335-6ace-8001-1b7f24e6d7fa",
     }
 }
 checkpoint_tuple = checkpointer.get_tuple(config)
@@ -330,12 +320,7 @@ checkpoint_tuple = checkpointer.get_tuple(config)
 ### Use Namespaces
 
 ```python
-config = {
-    "configurable": {
-        "thread_id": "user-123",
-        "checkpoint_ns": "conversation_1"
-    }
-}
+config = {"configurable": {"thread_id": "user-123", "checkpoint_ns": "conversation_1"}}
 result = app.invoke(input_data, config)
 ```
 

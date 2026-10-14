@@ -34,9 +34,10 @@ def process_aws_client_args(
     session_kwargs = {}
     client_kwargs = {}
 
-    # Session parameters
+    # Set the default region for new sessions and the explicit region for each client.
     if region_name is not None:
         session_kwargs["region_name"] = region_name
+        client_kwargs["region_name"] = region_name
 
     # Client parameters
     if endpoint_url is not None:
@@ -57,29 +58,19 @@ def create_client_config(config: Config | None = None) -> Config:
     Returns:
         Config: New config object with combined user agent and retry configuration
     """
-    config_kwargs = {}
-    existing_user_agent = getattr(config, "user_agent_extra", "") if config else ""
+    framework_ua = (
+        f"x-client-framework:langgraph-dynamodb md/sdk_user_agent/{SDK_USER_AGENT}"
+    )
+    base_config = Config(
+        user_agent_extra=framework_ua,
+        retries={"mode": "adaptive", "max_attempts": 5},
+    )
+    if config is None:
+        return base_config
 
-    # Add our user agent to existing one
-    new_user_agent = (
-        f"{existing_user_agent} x-client-framework:langgraph-dynamodb "
-        f"md/sdk_user_agent/{SDK_USER_AGENT}"
-    ).strip()
-
-    # Preserve retries configuration
-    if config is None or not hasattr(config, "retries"):
-        config_kwargs["retries"] = {
-            "mode": "adaptive",
-            "max_attempts": 5,
-        }
-    elif config:
-        config_kwargs["retries"] = config.retries  # type: ignore[attr-defined]
-
-    # Preserve max_pool_connections if provided
-    if config and hasattr(config, "max_pool_connections"):
-        config_kwargs["max_pool_connections"] = config.max_pool_connections
-
-    return Config(user_agent_extra=new_user_agent, **config_kwargs)  # type: ignore[arg-type]
+    existing_user_agent = getattr(config, "user_agent_extra", "") or ""
+    new_user_agent = f"{existing_user_agent} {framework_ua}".strip()
+    return base_config.merge(config).merge(Config(user_agent_extra=new_user_agent))
 
 
 def create_dynamodb_client(
@@ -88,20 +79,16 @@ def create_dynamodb_client(
     endpoint_url: str | None = None,
     boto_config: Config | None = None,
 ) -> "DynamoDBClient":
-    """Create or return a DynamoDB client.
+    """Create a DynamoDB client.
 
     Args:
-        client: Pre-configured DynamoDB client instance
         session: Pre-configured boto3 session instance
         region_name: AWS region name
         endpoint_url: Custom endpoint URL
-        config: Boto3 config object
+        boto_config: Boto3 config object
 
     Returns:
         BaseClient: Configured DynamoDB client
-
-    Raises:
-        ValueError: If provided client is not a DynamoDB client
     """
 
     # Process arguments
@@ -125,10 +112,9 @@ def create_s3_client(
     endpoint_url: str | None = None,
     boto_config: Config | None = None,
 ) -> "S3Client":
-    """Create or return an S3 client.
+    """Create an S3 client.
 
     Args:
-        client: Pre-configured S3 client instance
         session: Pre-configured boto3 session instance
         region_name: AWS region name
         endpoint_url: Custom endpoint URL

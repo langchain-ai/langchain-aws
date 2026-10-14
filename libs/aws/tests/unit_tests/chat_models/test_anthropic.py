@@ -1,16 +1,19 @@
 """ChatAnthropicBedrock tests."""
 
+import re
 from typing import Tuple, Type, cast
 
 import pytest
+from langchain_anthropic.data._profiles import _PROFILES as ANTHROPIC_PROFILES
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_tests.unit_tests import ChatModelUnitTests
 from pydantic import SecretStr
 from pytest import MonkeyPatch
 
 from langchain_aws import ChatAnthropicBedrock
 from langchain_aws.chat_models._anthropic_utils import _create_bedrock_client_params
+from langchain_aws.data._profiles import _PROFILES as BEDROCK_PROFILES
 
 BEDROCK_MODEL_NAME = "anthropic.claude-sonnet-4-6"
 
@@ -168,7 +171,10 @@ def test_chat_anthropic_bedrock_get_request_payload() -> None:
         [HumanMessage(content="Hello")],  # type: ignore[misc]
     )
     assert payload["model"] == BEDROCK_MODEL_NAME
-    assert payload["temperature"] == 0.7
+    temperature = payload.get(
+        "temperature", payload.get("extra_body", {}).get("temperature")
+    )
+    assert temperature == 0.7
     assert payload["max_tokens"] == 1000
     assert "messages" in payload
 
@@ -291,3 +297,271 @@ def test_model_profile(model_name: str) -> None:
     )
     assert model.profile
     assert "max_input_tokens" in model.profile
+
+
+@pytest.mark.parametrize(
+    ("model_name", "system_messages", "tools"),
+    [
+        ("global.anthropic.claude-sonnet-5-5", True, True),
+        ("us.anthropic.claude-opus-5-5", True, True),
+        ("eu.anthropic.claude-haiku-5-5", True, True),
+        ("anthropic.claude-opus-4-8", True, True),
+        ("anthropic.claude-sonnet-5", True, False),
+        ("in.anthropic.claude-sonnet-5", True, False),
+        ("global.anthropic.claude-opus-4-7", None, None),
+        ("anthropic.claude-sonnet-4-6", None, None),
+    ],
+)
+def test_model_profile_mid_conversation_support(
+    model_name: str, system_messages: bool | None, tools: bool | None
+) -> None:
+    """The profile declares which mid-conversation changes Bedrock accepts."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=model_name,
+        region_name="us-east-1",
+    )
+    assert model.profile is not None
+    assert model.profile.get("mid_conversation_system_messages") is system_messages
+    assert model.profile.get("mid_conversation_tools") is tools
+
+
+def test_mid_conversation_support_matches_langchain_anthropic() -> None:
+    """Each Bedrock Claude ID declares what the same model declares first-party.
+
+    Catches a region-prefixed ID added by a profile refresh without its
+    augmentations.
+    """
+    keys = ("mid_conversation_system_messages", "mid_conversation_tools")
+    checked = 0
+    for model_id, profile in BEDROCK_PROFILES.items():
+        _, is_claude, name = model_id.partition("anthropic.")
+        canonical = ANTHROPIC_PROFILES.get(re.sub(r"-v\d+(:\d+)?$", "", name))
+        if not is_claude or canonical is None:
+            continue
+        for key in keys:
+            assert profile.get(key) == canonical.get(key), (model_id, key)
+        checked += 1
+    assert checked
+
+
+def test_mid_conversation_tool_addition_sent_in_place() -> None:
+    """A supported model sends a tool-adding system message where it sits."""
+    tool_addition = {
+        "type": "tool_addition",
+        "tool": {
+            "type": "tool_definition",
+            "definition": {
+                "name": "convert_currency",
+                "description": "Convert an amount between currencies.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"amount": {"type": "number"}},
+                    "required": ["amount"],
+                },
+            },
+        },
+    }
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model="global.anthropic.claude-sonnet-5-5",
+        region_name="us-east-1",
+    )
+    payload = model._get_request_payload(
+        [
+            SystemMessage("You are a finance assistant."),
+            HumanMessage("Convert 10 USD to EUR."),
+            SystemMessage([tool_addition]),
+        ]
+    )
+    assert payload["system"] == "You are a finance assistant."
+    assert payload["messages"][-1] == {"role": "system", "content": [tool_addition]}
+    assert payload["betas"] == ["inline-tools-2026-09-15"]
+
+
+def test_chat_anthropic_bedrock_guardrail_config_sets_headers() -> None:
+    """Test guardrail_config is translated into extra_headers in the payload."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        guardrail_config={
+            "guardrailIdentifier": "gr-abc123",
+            "guardrailVersion": "1",
+            "trace": "enabled",
+        },
+    )
+    payload = model._get_request_payload([HumanMessage(content="hello")], stop=None)
+    headers = payload["extra_headers"]
+    assert headers["X-Amzn-Bedrock-GuardrailIdentifier"] == "gr-abc123"
+    assert headers["X-Amzn-Bedrock-GuardrailVersion"] == "1"
+    assert headers["X-Amzn-Bedrock-Trace"] == "ENABLED"
+
+
+def test_chat_anthropic_bedrock_guardrail_config_without_trace() -> None:
+    """Test the trace header is omitted when `trace` is not configured."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        guardrail_config={
+            "guardrailIdentifier": "gr-abc123",
+            "guardrailVersion": "2",
+        },
+    )
+    payload = model._get_request_payload([HumanMessage(content="hello")], stop=None)
+    headers = payload["extra_headers"]
+    assert headers["X-Amzn-Bedrock-GuardrailVersion"] == "2"
+    assert "X-Amzn-Bedrock-Trace" not in headers
+
+
+def test_chat_anthropic_bedrock_no_guardrail_config_no_headers() -> None:
+    """Test that without guardrail_config no extra_headers are added."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+    )
+    payload = model._get_request_payload([HumanMessage(content="hello")], stop=None)
+    assert "extra_headers" not in payload
+
+
+def test_chat_anthropic_bedrock_guardrail_config_merges_default_headers() -> None:
+    """Test guardrail headers merge with existing extra_headers."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        guardrail_config={
+            "guardrailIdentifier": "gr-abc123",
+            "guardrailVersion": "3",
+        },
+    )
+    payload = model._get_request_payload(
+        [HumanMessage(content="hello")],
+        stop=None,
+        extra_headers={"X-Custom": "keep-me"},
+    )
+    headers = payload["extra_headers"]
+    assert headers["X-Custom"] == "keep-me"
+    assert headers["X-Amzn-Bedrock-GuardrailIdentifier"] == "gr-abc123"
+    assert headers["X-Amzn-Bedrock-GuardrailVersion"] == "3"
+
+
+def test_chat_anthropic_bedrock_guardrail_config_requires_both_keys() -> None:
+    """Test incomplete guardrail_config fails eagerly at construction."""
+    with pytest.raises(ValueError, match="guardrailVersion"):
+        ChatAnthropicBedrock(  # type: ignore[call-arg]
+            model=BEDROCK_MODEL_NAME,
+            region_name="us-east-1",
+            guardrail_config={"guardrailIdentifier": "gr-abc123"},
+        )
+
+
+def test_chat_anthropic_bedrock_guardrails_alias() -> None:
+    """Test the `guardrails` alias for parity with `ChatBedrockConverse`."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        guardrails={
+            "guardrailIdentifier": "gr-abc123",
+            "guardrailVersion": "1",
+        },
+    )
+    assert model.guardrail_config is not None
+    payload = model._get_request_payload([HumanMessage(content="hello")], stop=None)
+    assert payload["extra_headers"]["X-Amzn-Bedrock-GuardrailIdentifier"] == "gr-abc123"
+
+
+def test_chat_anthropic_bedrock_per_request_guardrail_override() -> None:
+    """Test invoke-level guardrail_config overrides the instance default."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        guardrail_config={
+            "guardrailIdentifier": "gr-default",
+            "guardrailVersion": "1",
+        },
+    )
+    payload = model._get_request_payload(
+        [HumanMessage(content="hello")],
+        stop=None,
+        guardrail_config={
+            "guardrailIdentifier": "gr-override",
+            "guardrailVersion": "5",
+            "trace": "disabled",
+        },
+    )
+    headers = payload["extra_headers"]
+    assert headers["X-Amzn-Bedrock-GuardrailIdentifier"] == "gr-override"
+    assert headers["X-Amzn-Bedrock-GuardrailVersion"] == "5"
+    assert headers["X-Amzn-Bedrock-Trace"] == "DISABLED"
+
+
+def test_chat_anthropic_bedrock_per_request_guardrail_no_default() -> None:
+    """Test per-request guardrail works without an instance-level default."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+    )
+    payload = model._get_request_payload(
+        [HumanMessage(content="hello")],
+        stop=None,
+        guardrail_config={
+            "guardrailIdentifier": "gr-adhoc",
+            "guardrailVersion": "3",
+        },
+    )
+    headers = payload["extra_headers"]
+    assert headers["X-Amzn-Bedrock-GuardrailIdentifier"] == "gr-adhoc"
+    assert headers["X-Amzn-Bedrock-GuardrailVersion"] == "3"
+
+
+def test_chat_anthropic_bedrock_per_request_guardrail_validates() -> None:
+    """Test incomplete per-request guardrail_config raises ValueError."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+    )
+    with pytest.raises(ValueError, match="guardrailVersion"):
+        model._get_request_payload(
+            [HumanMessage(content="hello")],
+            stop=None,
+            guardrail_config={"guardrailIdentifier": "gr-abc123"},
+        )
+
+
+def _built_request_ua(client: object) -> str:
+    """Read the wire ``user-agent`` header off an anthropic SDK client."""
+    from anthropic._models import FinalRequestOptions
+
+    req = client._build_request(  # type: ignore[attr-defined]
+        FinalRequestOptions(method="post", url="/v1/messages", json_data={})
+    )
+    return req.headers["user-agent"]
+
+
+def test_chat_anthropic_bedrock_user_agent_tagged() -> None:
+    """The sync/async clients carry the langchain-aws source tag on the wire UA,
+    with the SDK's own ``AnthropicBedrock`` prefix preserved."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        aws_access_key_id=SecretStr("test-key"),
+        aws_secret_access_key=SecretStr("test-secret"),
+    )
+    for client in (model._client, model._async_client):
+        ua = _built_request_ua(client)
+        assert ua.endswith(f" {FRAMEWORK_UA_TOKEN}")
+        assert "AnthropicBedrock/Python" in ua
+
+
+def test_chat_anthropic_bedrock_user_agent_respects_caller_header() -> None:
+    """A caller-supplied ``User-Agent`` gets the tag appended, not overwritten."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        aws_access_key_id=SecretStr("test-key"),
+        aws_secret_access_key=SecretStr("test-secret"),
+        default_headers={"User-Agent": "MyApp/1.0"},
+    )
+    ua = _built_request_ua(model._client)
+    assert ua == f"MyApp/1.0 {FRAMEWORK_UA_TOKEN}"
