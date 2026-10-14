@@ -852,6 +852,7 @@ class TestAgentCoreMemorySaver:
             )
 
         assert "actor_id" in str(exc_info.value)
+
     @pytest.mark.parametrize(
         "options",
         [{"limit": 0}, {"limit": -1}, {"max_results": 0}, {"max_results": 101}],

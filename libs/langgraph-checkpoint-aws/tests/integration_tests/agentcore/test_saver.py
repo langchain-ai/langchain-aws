@@ -437,6 +437,7 @@ class TestAgentCoreMemorySaver:
         finally:
             await memory_saver.adelete_thread(thread_id, actor_id)
 
+
 @dataclass
 class MemoryCase:
     memory_id: str
