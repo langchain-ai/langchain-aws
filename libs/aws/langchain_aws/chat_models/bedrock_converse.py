@@ -184,6 +184,34 @@ MIME_TO_FORMAT = {
 _DictOrPydanticClass = Union[Dict[str, Any], Type[_BM], Type]
 
 
+_THINKING_DISPLAY_UPDATES_BETA = "thinking-display-updates-2026-08-18"
+"""Anthropic beta flag required for ``thinking.display == "updates"``."""
+
+
+def _with_thinking_display(
+    fields: Optional[Dict[str, Any]], display: str, *, force: bool = False
+) -> Dict[str, Any]:
+    """Return a copy of `fields` with ``thinking.display`` set to `display`.
+
+    Merges into any existing ``thinking`` dict (e.g. the one derived from
+    ``reasoning_effort``) instead of replacing it, and defaults to adaptive
+    thinking when none is configured. An explicit ``thinking.display`` already in
+    `fields` wins unless `force` is set. For ``"updates"`` the required beta flag
+    is appended to ``anthropic_beta`` without duplicating existing entries.
+    """
+    merged: Dict[str, Any] = dict(fields or {})
+    thinking = dict(merged.get("thinking") or {"type": "adaptive"})
+    if force or "display" not in thinking:
+        thinking["display"] = display
+    merged["thinking"] = thinking
+    if thinking.get("display") == "updates":
+        betas = list(merged.get("anthropic_beta") or [])
+        if _THINKING_DISPLAY_UPDATES_BETA not in betas:
+            betas.append(_THINKING_DISPLAY_UPDATES_BETA)
+        merged["anthropic_beta"] = betas
+    return merged
+
+
 class ChatBedrockConverse(BaseChatModel):
     """Bedrock chat model integration built on the Bedrock converse API.
 
@@ -669,6 +697,23 @@ class ChatBedrockConverse(BaseChatModel):
     Explicit values already present in ``additional_model_request_fields`` take
     precedence. If the model has no known reasoning-effort translation, a warning
     is emitted and the value is ignored.
+    """
+
+    thinking_display: Optional[Literal["omitted", "summarized", "updates"]] = None
+    """How Claude returns thinking content (sets ``thinking.display``).
+
+    Merged into the ``thinking`` config that ``reasoning_effort`` derives (or an
+    explicit ``thinking`` in ``additional_model_request_fields``) rather than
+    replacing it; adaptive thinking is used if none is configured. With
+    ``"updates"``, text the model writes between tool calls is returned as
+    progress-update ``reasoning_content`` blocks, and the
+    ``thinking-display-updates-2026-08-18`` beta is added to ``anthropic_beta``.
+
+    The effective mode is recorded on ``response_metadata["thinking_display"]`` so
+    progress updates can be told apart from real reasoning (``"summarized"``).
+    An explicit ``thinking.display`` in ``additional_model_request_fields`` takes
+    precedence over this constructor value; a call-time ``thinking_display``
+    overrides both. Only applies to Claude models.
     """
 
     additional_model_response_field_paths: Optional[List[str]] = None
@@ -1178,6 +1223,18 @@ class ChatBedrockConverse(BaseChatModel):
                     **(self.additional_model_request_fields or {}),
                 }
 
+        if self.thinking_display is not None:
+            if "claude" in self._get_base_model():
+                self.additional_model_request_fields = _with_thinking_display(
+                    self.additional_model_request_fields, self.thinking_display
+                )
+            else:
+                warnings.warn(
+                    f"thinking_display is only supported for Claude models; "
+                    f"ignoring for {self._get_base_model()}.",
+                    stacklevel=2,
+                )
+
         # As of 12/03/24:
         # only claude-3/4, mistral-large, and nova models support tool choice:
         # https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ToolChoice.html
@@ -1253,6 +1310,45 @@ class ChatBedrockConverse(BaseChatModel):
         profile.pop("mid_conversation_system_messages", None)
         profile.pop("mid_conversation_tools", None)
         return profile
+
+    def _apply_thinking_display(
+        self,
+        additional_fields: Optional[Dict[str, Any]],
+        call_display: Optional[str],
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """Apply `thinking_display` to request fields and report the effective mode.
+
+        Call-time `additional_fields` replace the instance-level ones wholesale in
+        ``_converse_params``, so the constructor's `thinking_display` is re-applied
+        to them here. Returns the fields to send and the ``thinking.display`` that
+        will actually be in the request (``None`` if unset), which is what gets
+        stamped on ``response_metadata``.
+        """
+        if call_display is not None:
+            if "claude" in self._get_base_model():
+                additional_fields = _with_thinking_display(
+                    additional_fields
+                    if additional_fields is not None
+                    else self.additional_model_request_fields,
+                    call_display,
+                    force=True,
+                )
+            else:
+                warnings.warn(
+                    f"thinking_display is only supported for Claude models; "
+                    f"ignoring for {self._get_base_model()}.",
+                    stacklevel=2,
+                )
+        elif additional_fields is not None and self.thinking_display is not None:
+            if "claude" in self._get_base_model():
+                additional_fields = _with_thinking_display(
+                    additional_fields, self.thinking_display
+                )
+        effective = (
+            additional_fields or self.additional_model_request_fields or {}
+        ).get("thinking")
+        display = effective.get("display") if isinstance(effective, dict) else None
+        return additional_fields, display if isinstance(display, str) else None
 
     def _reasoning_effort_fields(self, effort: str) -> Dict[str, Any]:
         """Validate `effort` against the model profile and translate to request
@@ -1419,6 +1515,9 @@ class ChatBedrockConverse(BaseChatModel):
             effort_fields = self._reasoning_effort_fields(reasoning_effort)
             if effort_fields:
                 additional_fields = {**effort_fields, **(additional_fields or {})}
+        additional_fields, thinking_display = self._apply_thinking_display(
+            additional_fields, filtered_kwargs.pop("thinking_display", None)
+        )
         _apply_response_format(filtered_kwargs)
         cache_control = filtered_kwargs.pop("cache_control", None)
         params = self._converse_params(
@@ -1460,6 +1559,8 @@ class ChatBedrockConverse(BaseChatModel):
             response,
             inline_reasoning_tags=self._inline_reasoning_tags_for_model(),
         )
+        if thinking_display is not None:
+            response_message.response_metadata["thinking_display"] = thinking_display
         response_message.response_metadata["model_provider"] = "bedrock_converse"
         response_message.response_metadata["model_name"] = (
             self.base_model_id or self.model_id
@@ -1498,6 +1599,9 @@ class ChatBedrockConverse(BaseChatModel):
             effort_fields = self._reasoning_effort_fields(reasoning_effort)
             if effort_fields:
                 additional_fields = {**effort_fields, **(additional_fields or {})}
+        additional_fields, thinking_display = self._apply_thinking_display(
+            additional_fields, filtered_kwargs.pop("thinking_display", None)
+        )
         _apply_response_format(filtered_kwargs)
         cache_control = filtered_kwargs.pop("cache_control", None)
         params = self._converse_params(
@@ -1561,6 +1665,10 @@ class ChatBedrockConverse(BaseChatModel):
                         if metadata := response.get("ResponseMetadata"):
                             message_chunk.response_metadata["ResponseMetadata"] = (
                                 metadata
+                            )
+                        if thinking_display is not None:
+                            message_chunk.response_metadata["thinking_display"] = (
+                                thinking_display
                             )
                         added_model_name = True
                     message_chunk.response_metadata["model_provider"] = (
