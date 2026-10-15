@@ -1228,8 +1228,6 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             output_tokens = usage.get("completion_tokens", 0)
             cache_read_input_tokens = usage.get("cache_read_input_tokens", 0)
             cache_write_input_tokens = usage.get("cache_write_input_tokens", 0)
-            # `prompt_tokens` excludes cached tokens; `input_tokens` is the sum of
-            # all input token types, matching ChatBedrockConverse.
             input_tokens = (
                 usage.get("prompt_tokens", 0)
                 + cache_read_input_tokens
