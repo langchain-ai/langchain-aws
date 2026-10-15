@@ -2975,14 +2975,13 @@ def _format_data_content_block(block: dict) -> dict:
                 doc_format = "txt"
             else:
                 doc_format = _mime_type_to_format(mime_type)
+            document_bytes = _b64str_to_bytes(
+                block.get("base64") or block.get("data", "")
+            )
             formatted_block = {
                 "document": {
                     "format": doc_format,
-                    "source": {
-                        "bytes": _b64str_to_bytes(
-                            block.get("base64") or block.get("data", "")
-                        )
-                    },
+                    "source": {"bytes": document_bytes},
                 }
             }
             if citations := block.get("citations"):
@@ -3012,7 +3011,7 @@ def _format_data_content_block(block: dict) -> dict:
                 # across different documents while identical blocks serialize
                 # identically across calls.
                 formatted_block["document"]["name"] = hashlib.sha256(
-                    formatted_block["document"]["source"]["bytes"]
+                    document_bytes
                 ).hexdigest()[:12]
         else:
             error_message = "File data only supported through in-line base64 format."
