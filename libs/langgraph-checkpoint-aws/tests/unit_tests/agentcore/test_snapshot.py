@@ -264,10 +264,12 @@ def test_latest_read_cost_does_not_grow_with_history(
     assert result.pending_writes is not None
     assert (f"task-{history_length}", "result", history_length) in result.pending_writes
     reads = [params for operation, params in service.calls if operation == "ListEvents"]
-    assert len(reads) == 2
+    # Head peek, millisecond tie-break probe (headers only), pending writes.
+    assert len(reads) == 3
     assert reads[0]["sessionId"] == THREAD_ID
     assert reads[0]["maxResults"] == 1
-    assert reads[1]["sessionId"] == writes_session_id(
+    assert reads[1]["includePayloads"] is False
+    assert reads[2]["sessionId"] == writes_session_id(
         THREAD_ID, checkpoint(history_length)["id"]
     )
     assert all(operation == "ListEvents" for operation, _ in service.calls)
@@ -337,7 +339,8 @@ def test_chunked_snapshot_uses_direct_get_event_references(
         result.checkpoint["channel_values"]
         == checkpoint(1, channels=7)["channel_values"]
     )
-    assert [op for op, _ in service.calls].count("ListEvents") == 2
+    # Head peek, millisecond tie-break probe (headers only), pending writes.
+    assert [op for op, _ in service.calls].count("ListEvents") == 3
     assert [op for op, _ in service.calls].count("GetEvent") == 3
 
 
@@ -528,15 +531,17 @@ def test_non_checkpoint_conversations_do_not_force_full_scan(
 
     assert result is not None
     assert result.checkpoint["id"] == checkpoint(19)["id"]
-    # Head peek, one filtered request for the newest commit, pending writes.
-    assert len(service.calls) == 3
-    head, filtered = [
+    # Head peek, one filtered request for the newest commit, the millisecond
+    # tie-break probe (headers only), pending writes.
+    assert len(service.calls) == 4
+    head, filtered, probe = [
         params
         for operation, params in service.calls
         if operation == "ListEvents" and params["sessionId"] == THREAD_ID
     ]
     assert head["maxResults"] == 1 and "filter" not in head
     assert filtered["filter"]["eventMetadata"][0]["left"]["metadataKey"] == "lc_kind"
+    assert probe["includePayloads"] is False
 
 
 def store_legacy_checkpoint(
@@ -1036,6 +1041,103 @@ def test_legacy_thread_under_conversational_events_still_falls_back(
     assert result is not None
     assert result.checkpoint["id"] == checkpoint(2)["id"]
     assert result.checkpoint["channel_values"] == checkpoint(2)["channel_values"]
+
+
+def _truncate_event_timestamps_to_millisecond(service: EventService) -> None:
+    """Mimic AgentCore's millisecond-precision eventTimestamp."""
+    for events in service.events.values():
+        for event in events:
+            ts = event["eventTimestamp"]
+            event["eventTimestamp"] = ts.replace(
+                microsecond=(ts.microsecond // 1000) * 1000
+            )
+
+
+def _save_with_timestamp(
+    saver: AgentCoreMemorySaver, index: int, ts: datetime.datetime
+) -> None:
+    state = checkpoint(index)
+    state["ts"] = ts.isoformat()
+    saver.put(config(), state, metadata(index), state["channel_versions"])
+
+
+def test_millisecond_tie_returns_newest_checkpoint(
+    service: EventService, saver: AgentCoreMemorySaver
+) -> None:
+    base = datetime.datetime(2026, 10, 11, 9, 0, 0, tzinfo=datetime.timezone.utc)
+    _save_with_timestamp(saver, 1, base + datetime.timedelta(microseconds=100))
+    _save_with_timestamp(saver, 2, base + datetime.timedelta(microseconds=900))
+    _truncate_event_timestamps_to_millisecond(service)
+    events = service.events[(ACTOR_ID, THREAD_ID)]
+    assert events[0]["eventTimestamp"] == events[1]["eventTimestamp"]
+    # AgentCore returns same-millisecond events in arbitrary order: the older
+    # commit may come first.
+    events.reverse()
+    service.calls.clear()
+
+    result = saver.get_tuple(config())
+
+    assert result is not None
+    assert result.checkpoint["id"] == checkpoint(2)["id"]
+    probe = [
+        params
+        for op, params in service.calls
+        if op == "ListEvents" and params.get("includePayloads") is False
+    ]
+    assert len(probe) == 1
+    assert probe[0]["filter"]["eventMetadata"][0]["left"]["metadataKey"] == "lc_kind"
+    # The tie is resolved from headers; only the other tied event's payload
+    # is fetched, the head event's payload is reused.
+    assert [op for op, _ in service.calls].count("GetEvent") == 1
+
+
+def test_millisecond_tie_across_pages_picks_highest_id(
+    service: EventService,
+    saver: AgentCoreMemorySaver,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "langgraph_checkpoint_aws.checkpoint.agentcore.snapshot.TIE_BREAK_PAGE_SIZE",
+        2,
+    )
+    base = datetime.datetime(2026, 10, 11, 9, 0, 0, tzinfo=datetime.timezone.utc)
+    for index in range(1, 4):
+        _save_with_timestamp(
+            saver, index, base + datetime.timedelta(microseconds=100 * index)
+        )
+    _truncate_event_timestamps_to_millisecond(service)
+    events = service.events[(ACTOR_ID, THREAD_ID)]
+    assert len({event["eventTimestamp"] for event in events}) == 1
+    # Worst-case order: oldest commit first.
+    events.reverse()
+
+    result = saver.get_tuple(config())
+
+    assert result is not None
+    assert result.checkpoint["id"] == checkpoint(3)["id"]
+
+
+def test_newest_checkpoint_without_tie_skips_payload_refetch(
+    service: EventService, saver: AgentCoreMemorySaver
+) -> None:
+    base = datetime.datetime(2026, 10, 11, 9, 0, 0, tzinfo=datetime.timezone.utc)
+    _save_with_timestamp(saver, 1, base)
+    _save_with_timestamp(saver, 2, base + datetime.timedelta(milliseconds=5))
+    service.calls.clear()
+
+    result = saver.get_tuple(config())
+
+    assert result is not None
+    assert result.checkpoint["id"] == checkpoint(2)["id"]
+    # No tie: the header probe finds a single newest event, so no payload is
+    # fetched beyond the head peek.
+    assert [op for op, _ in service.calls].count("GetEvent") == 0
+    probe = [
+        params
+        for op, params in service.calls
+        if op == "ListEvents" and params.get("includePayloads") is False
+    ]
+    assert len(probe) == 1
 
 
 def test_chunk_timestamps_precede_the_commit_and_are_deterministic(
