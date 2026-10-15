@@ -1,10 +1,10 @@
 import base64
 import copy
 import functools
+import hashlib
 import json
 import logging
 import re
-import uuid
 import warnings
 from operator import itemgetter
 from typing import (
@@ -3004,7 +3004,16 @@ def _format_data_content_block(block: dict) -> dict:
                     "'mime_type': 'application/pdf', 'base64': '...', "
                     "'name': 'my-pdf'}"
                 )
-                formatted_block["document"]["name"] = uuid.uuid4().hex[:12]
+                # Deterministic fallback: the document name is part of the
+                # serialized Converse request, so a per-call random name made
+                # identical messages serialize differently on every request,
+                # which stops a cache point placed after the block from ever
+                # matching. Hashing the document bytes keeps names distinct
+                # across different documents while identical blocks serialize
+                # identically across calls.
+                formatted_block["document"]["name"] = hashlib.sha256(
+                    formatted_block["document"]["source"]["bytes"]
+                ).hexdigest()[:12]
         else:
             error_message = "File data only supported through in-line base64 format."
             raise ValueError(error_message)

@@ -3400,6 +3400,43 @@ def test__lc_content_to_bedrock_text_file_mime_types(
     assert bedrock_content[0]["document"]["format"] == expected_format
 
 
+def test__lc_content_to_bedrock_unnamed_file_block_name_is_stable() -> None:
+    """Identical unnamed file blocks serialize identically across calls.
+
+    The document name is part of the serialized Converse request, so a
+    per-call random fallback regenerated the name on every request and a
+    cache point placed after the block could never match. See #1392.
+    """
+    block = {
+        "type": "file",
+        "base64": base64.b64encode(b"unnamed document payload").decode("utf-8"),
+        "mime_type": "application/pdf",
+    }
+    with pytest.warns(UserWarning, match="may require a filename"):
+        first = _lc_content_to_bedrock([dict(block)])
+        second = _lc_content_to_bedrock([dict(block)])
+    assert first == second
+    assert first[0]["document"]["name"] == second[0]["document"]["name"]
+
+
+def test__lc_content_to_bedrock_unnamed_file_block_name_is_content_unique() -> None:
+    """Different documents get different fallback names."""
+    block = {
+        "type": "file",
+        "base64": base64.b64encode(b"first document payload").decode("utf-8"),
+        "mime_type": "application/pdf",
+    }
+    other = {
+        "type": "file",
+        "base64": base64.b64encode(b"second document payload").decode("utf-8"),
+        "mime_type": "application/pdf",
+    }
+    with pytest.warns(UserWarning, match="may require a filename"):
+        first_name = _lc_content_to_bedrock([dict(block)])[0]["document"]["name"]
+        second_name = _lc_content_to_bedrock([dict(other)])[0]["document"]["name"]
+    assert first_name != second_name
+
+
 def test__lc_content_to_bedrock_text_mime_type_image_still_rejected() -> None:
     with pytest.raises(ValueError, match="Unsupported MIME type"):
         _lc_content_to_bedrock(
