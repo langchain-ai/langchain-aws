@@ -1,9 +1,11 @@
 import json
 import unittest
 from base64 import b64encode
-from typing import List, Union
+from copy import deepcopy
+from typing import Any, List, Union
 from unittest.mock import Mock, patch
 
+import pytest
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -14,13 +16,97 @@ from langchain_core.messages import (
 )
 from langchain_core.tools import tool
 
-from langchain_aws.agents import BedrockInlineAgentsRunnable
+from langchain_aws.agents import BedrockAgentsRunnable, BedrockInlineAgentsRunnable
 from langchain_aws.agents.base import (
     BedrockAgentAction,
     BedrockAgentFinish,
     parse_agent_response,
 )
 from langchain_aws.agents.types import InlineAgentConfiguration
+
+
+@pytest.mark.parametrize(
+    "attributes,expected_attributes",
+    [
+        ({}, {}),
+        (
+            {"session_attributes": {"user_id": "user-1"}},
+            {"sessionAttributes": {"user_id": "user-1"}},
+        ),
+        (
+            {"prompt_session_attributes": {"timezone": "Australia/Sydney"}},
+            {"promptSessionAttributes": {"timezone": "Australia/Sydney"}},
+        ),
+        (
+            {
+                "session_attributes": {"user_id": "user-1"},
+                "prompt_session_attributes": {"timezone": "Australia/Sydney"},
+            },
+            {
+                "sessionAttributes": {"user_id": "user-1"},
+                "promptSessionAttributes": {"timezone": "Australia/Sydney"},
+            },
+        ),
+        (
+            {"session_attributes": {}, "prompt_session_attributes": {}},
+            {"sessionAttributes": {}, "promptSessionAttributes": {}},
+        ),
+        ({"session_attributes": None, "prompt_session_attributes": None}, {}),
+    ],
+    ids=["omitted", "session", "prompt", "both", "empty", "none"],
+)
+@pytest.mark.parametrize("with_tool_result", [False, True])
+def test_bedrock_agent_session_attributes(
+    attributes: dict[str, Any],
+    expected_attributes: dict[str, Any],
+    with_tool_result: bool,
+) -> None:
+    """Forward attributes without discarding return-control session state."""
+    client = Mock()
+    client.invoke_agent.return_value = {
+        "sessionId": "test-session",
+        "completion": [{"chunk": {"bytes": b"done"}}],
+    }
+    runnable = BedrockAgentsRunnable(client=client, agent_id="test-agent")
+    agent_input: dict[str, Any] = {
+        "input": "Hello",
+        "session_id": "test-session",
+        **deepcopy(attributes),
+    }
+    session_state: dict[str, Any] = {}
+    if with_tool_result:
+        agent_input["intermediate_steps"] = [(Mock(), "tool output")]
+        session_state = {
+            "invocationId": "test-invocation",
+            "returnControlInvocationResults": [
+                {
+                    "functionResult": {
+                        "actionGroup": "TestGroup",
+                        "function": "testTool",
+                        "responseBody": {"TEXT": {"body": "tool output"}},
+                    }
+                }
+            ],
+        }
+    original_session_state = deepcopy(session_state)
+    with patch.object(
+        BedrockAgentsRunnable,
+        "_parse_intermediate_steps",
+        return_value=("test-session", session_state),
+    ):
+        result = runnable.invoke(agent_input)
+
+    assert isinstance(result, BedrockAgentFinish)
+    assert result.return_values["output"] == "done"
+    request = client.invoke_agent.call_args.kwargs
+    assert request["sessionId"] == "test-session"
+    expected_session_state = {**original_session_state, **expected_attributes}
+    if expected_session_state:
+        assert request["sessionState"] == expected_session_state
+    else:
+        assert "sessionState" not in request
+    for key, value in attributes.items():
+        assert agent_input[key] == value
 
 
 class TestBedrockAgentResponseParser(unittest.TestCase):
