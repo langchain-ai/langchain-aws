@@ -8897,3 +8897,219 @@ def test__messages_to_bedrock_redacted_reasoning_dropped_when_rejected() -> None
     actual_messages, _ = _messages_to_bedrock(messages, model_id="deepseek.r1-v1:0")
 
     assert actual_messages[1] == {"role": "assistant", "content": [_ANSWER_BLOCK]}
+
+
+_CLAUDE_PROFILE: ModelProfile = {"reasoning_effort_levels": ["low", "medium", "high"]}
+_UPDATES_BETA = "thinking-display-updates-2026-08-18"
+
+
+def _converse_client() -> mock.MagicMock:
+    client = mock.MagicMock()
+    client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+    return client
+
+
+def test_thinking_display_merges_into_reasoning_effort_thinking() -> None:
+    """thinking_display keeps the thinking/effort derived by reasoning_effort."""
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5",
+        region_name="us-east-1",
+        reasoning_effort="low",
+        thinking_display="updates",
+        profile=_CLAUDE_PROFILE,
+    )  # type: ignore[call-arg]
+    assert llm.additional_model_request_fields == {
+        "thinking": {"type": "adaptive", "display": "updates"},
+        "output_config": {"effort": "low"},
+        "anthropic_beta": [_UPDATES_BETA],
+    }
+
+
+def test_thinking_display_non_updates_adds_no_beta() -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5",
+        region_name="us-east-1",
+        reasoning_effort="low",
+        thinking_display="summarized",
+        profile=_CLAUDE_PROFILE,
+    )  # type: ignore[call-arg]
+    fields = llm.additional_model_request_fields or {}
+    assert fields["thinking"]["display"] == "summarized"
+    assert "anthropic_beta" not in fields
+
+
+def test_thinking_display_preserves_existing_betas_without_duplicates() -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5",
+        region_name="us-east-1",
+        thinking_display="updates",
+        additional_model_request_fields={
+            "anthropic_beta": ["other-beta", _UPDATES_BETA]
+        },
+        profile=_CLAUDE_PROFILE,
+    )  # type: ignore[call-arg]
+    fields = llm.additional_model_request_fields or {}
+    assert fields["anthropic_beta"] == ["other-beta", _UPDATES_BETA]
+    assert fields["thinking"] == {"type": "adaptive", "display": "updates"}
+
+
+def test_thinking_display_explicit_thinking_display_wins_over_constructor() -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5",
+        region_name="us-east-1",
+        thinking_display="updates",
+        additional_model_request_fields={
+            "thinking": {"type": "adaptive", "display": "summarized"}
+        },
+        profile=_CLAUDE_PROFILE,
+    )  # type: ignore[call-arg]
+    fields = llm.additional_model_request_fields or {}
+    assert fields["thinking"]["display"] == "summarized"
+    assert "anthropic_beta" not in fields
+
+
+def test_thinking_display_non_claude_warns_and_is_ignored() -> None:
+    with pytest.warns(UserWarning, match="thinking_display is only supported"):
+        llm = ChatBedrockConverse(
+            model="amazon.nova-pro-v1:0",
+            region_name="us-east-1",
+            thinking_display="updates",
+        )  # type: ignore[call-arg]
+    assert "thinking" not in (llm.additional_model_request_fields or {})
+
+
+def test_thinking_display_invoke_request_and_response_metadata() -> None:
+    client = _converse_client()
+    llm = ChatBedrockConverse(
+        client=client,
+        model="us.anthropic.claude-sonnet-5",
+        region_name="us-east-1",
+        reasoning_effort="low",
+        thinking_display="updates",
+        profile=_CLAUDE_PROFILE,
+    )  # type: ignore[call-arg]
+
+    msg = llm.invoke([HumanMessage(content="Hi")])
+
+    sent = client.converse.call_args[1]["additionalModelRequestFields"]
+    assert sent["thinking"] == {"type": "adaptive", "display": "updates"}
+    assert sent["output_config"] == {"effort": "low"}
+    assert sent["anthropic_beta"] == [_UPDATES_BETA]
+    assert msg.response_metadata["thinking_display"] == "updates"
+
+
+def test_thinking_display_absent_when_not_configured() -> None:
+    client = _converse_client()
+    llm = ChatBedrockConverse(
+        client=client,
+        model="us.anthropic.claude-sonnet-5",
+        region_name="us-east-1",
+        reasoning_effort="low",
+        profile=_CLAUDE_PROFILE,
+    )  # type: ignore[call-arg]
+    msg = llm.invoke([HumanMessage(content="Hi")])
+    assert "thinking_display" not in msg.response_metadata
+
+
+def test_thinking_display_call_time_overrides_constructor() -> None:
+    client = _converse_client()
+    llm = ChatBedrockConverse(
+        client=client,
+        model="us.anthropic.claude-sonnet-5",
+        region_name="us-east-1",
+        thinking_display="updates",
+        profile=_CLAUDE_PROFILE,
+    )  # type: ignore[call-arg]
+
+    msg = llm.invoke([HumanMessage(content="Hi")], thinking_display="summarized")
+
+    sent = client.converse.call_args[1]["additionalModelRequestFields"]
+    assert sent["thinking"]["display"] == "summarized"
+    assert msg.response_metadata["thinking_display"] == "summarized"
+
+
+def test_thinking_display_survives_call_time_reasoning_effort() -> None:
+    """Call-time reasoning_effort replaces instance fields; display is re-applied."""
+    client = _converse_client()
+    llm = ChatBedrockConverse(
+        client=client,
+        model="us.anthropic.claude-sonnet-5",
+        region_name="us-east-1",
+        reasoning_effort="low",
+        thinking_display="updates",
+        profile=_CLAUDE_PROFILE,
+    )  # type: ignore[call-arg]
+
+    msg = llm.invoke([HumanMessage(content="Hi")], reasoning_effort="high")
+
+    sent = client.converse.call_args[1]["additionalModelRequestFields"]
+    assert sent["thinking"] == {"type": "adaptive", "display": "updates"}
+    assert sent["output_config"] == {"effort": "high"}
+    assert sent["anthropic_beta"] == [_UPDATES_BETA]
+    assert msg.response_metadata["thinking_display"] == "updates"
+
+
+def test_thinking_display_marker_from_explicit_additional_fields() -> None:
+    """Users setting display via additional_model_request_fields get the marker too."""
+    client = _converse_client()
+    llm = ChatBedrockConverse(
+        client=client,
+        model="us.anthropic.claude-sonnet-5",
+        region_name="us-east-1",
+        additional_model_request_fields={
+            "thinking": {"type": "adaptive", "display": "summarized"}
+        },
+        profile=_CLAUDE_PROFILE,
+    )  # type: ignore[call-arg]
+    msg = llm.invoke([HumanMessage(content="Hi")])
+    assert msg.response_metadata["thinking_display"] == "summarized"
+
+
+def test_thinking_display_stream_response_metadata() -> None:
+    client = mock.MagicMock()
+    client.converse_stream.return_value = {
+        "stream": iter(
+            [
+                {"messageStart": {"role": "assistant"}},
+                {
+                    "contentBlockDelta": {
+                        "contentBlockIndex": 0,
+                        "delta": {"text": "Checking"},
+                    }
+                },
+                {"contentBlockStop": {"contentBlockIndex": 0}},
+                {"messageStop": {"stopReason": "end_turn"}},
+                {
+                    "metadata": {
+                        "usage": {
+                            "inputTokens": 10,
+                            "outputTokens": 5,
+                            "totalTokens": 15,
+                        },
+                        "metrics": {"latencyMs": 1},
+                    }
+                },
+            ]
+        )
+    }
+    llm = ChatBedrockConverse(
+        client=client,
+        model="us.anthropic.claude-sonnet-5",
+        region_name="us-east-1",
+        reasoning_effort="low",
+        thinking_display="updates",
+        profile=_CLAUDE_PROFILE,
+    )  # type: ignore[call-arg]
+
+    chunks = list(llm.stream([HumanMessage(content="Hi")]))
+    aggregated = chunks[0]
+    for chunk in chunks[1:]:
+        aggregated = aggregated + chunk
+
+    sent = client.converse_stream.call_args[1]["additionalModelRequestFields"]
+    assert sent["thinking"] == {"type": "adaptive", "display": "updates"}
+    assert sent["anthropic_beta"] == [_UPDATES_BETA]
+    assert aggregated.response_metadata["thinking_display"] == "updates"
