@@ -49,8 +49,8 @@ class CheckpointerConfig(BaseModel):
                 ``thread_id`` and (normally) ``actor_id``.
             default_actor_id: Fallback actor id used only when ``config`` omits
                 ``actor_id``. Lets a derived subgraph config, which carries
-                ``thread_id`` but not ``actor_id``, inherit the actor from the
-                saver instead of failing.
+                ``thread_id`` but not ``actor_id``, reuse the ``actor_id`` from
+                  the parent graph's read in the same request instead of failing.
 
         Returns:
             The parsed CheckpointerConfig.
