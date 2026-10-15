@@ -3400,6 +3400,55 @@ def test__lc_content_to_bedrock_text_file_mime_types(
     assert bedrock_content[0]["document"]["format"] == expected_format
 
 
+def test__messages_to_bedrock_text_plain_inline_text() -> None:
+    # Reproduces the failing shape from the linked report: a message mixing
+    # text with a plain-text document block built by create_plaintext_block.
+    message = HumanMessage(
+        content_blocks=[
+            {"type": "text", "text": "Summarise this."},
+            {
+                "type": "text-plain",
+                "text": "hello world",
+                "mime_type": "text/plain",
+            },
+        ]
+    )
+    messages, _ = _messages_to_bedrock([message], None, provider="anthropic")
+    assert messages[0]["content"] == [
+        {"text": "Summarise this."},
+        {"document": {"format": "txt", "source": {"text": "hello world"}}},
+    ]
+
+
+def test__lc_content_to_bedrock_text_plain_inline_text() -> None:
+    bedrock_content = _lc_content_to_bedrock(
+        [
+            {
+                "type": "text-plain",
+                "text": "Summarise this.",
+                "mime_type": "text/plain",
+            }
+        ]
+    )
+    assert bedrock_content == [
+        {"document": {"format": "txt", "source": {"text": "Summarise this."}}}
+    ]
+
+
+def test__lc_content_to_bedrock_text_plain_missing_text_rejected() -> None:
+    # A text-plain block without inline text never reaches data-block
+    # formatting; the upstream shape check rejects it with its own message.
+    with pytest.raises(ValueError, match="Unsupported content block type"):
+        _lc_content_to_bedrock(
+            [
+                {
+                    "type": "text-plain",
+                    "mime_type": "text/plain",
+                }
+            ]
+        )
+
+
 def test__lc_content_to_bedrock_text_mime_type_image_still_rejected() -> None:
     with pytest.raises(ValueError, match="Unsupported MIME type"):
         _lc_content_to_bedrock(
