@@ -721,6 +721,36 @@ def test_prepare_output_stream_for_openai(openai_streaming_response) -> None:
     assert results[1] == ""
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "provider, events",
+    [
+        ("mistral", MOCK_STREAMING_RESPONSE_MISTRAL),
+        ("deepseek", MOCK_STREAMING_RESPONSE_DEEPSEEK),
+        ("writer", MOCK_STREAMING_RESPONSE_WRITER),
+        ("qwen", MOCK_STREAMING_RESPONSE_QWEN),
+        ("openai", MOCK_STREAMING_RESPONSE_OPENAI),
+    ],
+)
+async def test_aprepare_output_stream_matches_prepare_output_stream(
+    provider: str, events: list
+) -> None:
+    """The async stream yields the same chunks as the sync one."""
+    expected = list(
+        LLMInputOutputAdapter.prepare_output_stream(provider, {"body": list(events)})
+    )
+
+    chunks = [
+        chunk
+        async for chunk in LLMInputOutputAdapter.aprepare_output_stream(
+            provider, {"body": list(events)}
+        )
+    ]
+
+    assert [c.text for c in chunks] == [c.text for c in expected]
+    assert [c.generation_info for c in chunks] == [c.generation_info for c in expected]
+
+
 @pytest.mark.parametrize(
     "provider, expected_key",
     [("openai", "max_completion_tokens"), ("qwen", "max_tokens")],
