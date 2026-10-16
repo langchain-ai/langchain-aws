@@ -1647,7 +1647,10 @@ class BedrockLLM(LLM, BedrockBase):
         """
 
         if not self.streaming:
-            raise ValueError("Streaming must be set to True for async operations. ")
+            # Same as LLM._acall: run the sync, non-streaming _call in an executor.
+            return await super()._acall(
+                prompt, stop=stop, run_manager=run_manager, **kwargs
+            )
 
         provider = self._get_provider()
         provider_stop_reason_code = self.provider_stop_reason_key_map.get(

@@ -1125,6 +1125,25 @@ def test_stream_closes_response_body_on_exception() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ainvoke_without_streaming(mock_boto3_client: MagicMock) -> None:
+    """ainvoke works with the default streaming=False, like invoke does."""
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {"outputs": [{"text": "Hello there."}]}
+    ).encode()
+    mock_boto3_client.invoke_model.return_value = {
+        "body": body,
+        "ResponseMetadata": {"HTTPHeaders": {}},
+    }
+    llm = BedrockLLM(
+        model_id="mistral.mistral-large-2407-v1:0", region_name="us-west-2"
+    )
+
+    assert await llm.ainvoke("Hi") == "Hello there."
+    mock_boto3_client.invoke_model.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_astream_closes_response_body(
     anthropic_streaming_response_with_close,
 ) -> None:
