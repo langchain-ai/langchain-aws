@@ -700,20 +700,19 @@ class ChatBedrockConverse(BaseChatModel):
     """
 
     thinking_display: Optional[Literal["omitted", "summarized", "updates"]] = None
-    """How Claude returns thinking content (sets ``thinking.display``).
+    """How Claude returns thinking content, sent as ``thinking.display``.
 
-    Merged into the ``thinking`` config that ``reasoning_effort`` derives (or an
-    explicit ``thinking`` in ``additional_model_request_fields``) rather than
-    replacing it; adaptive thinking is used if none is configured. With
-    ``"updates"``, text the model writes between tool calls is returned as
-    progress-update ``reasoning_content`` blocks, and the
-    ``thinking-display-updates-2026-08-18`` beta is added to ``anthropic_beta``.
+    Merged into the existing ``thinking`` config (from ``reasoning_effort`` or
+    ``additional_model_request_fields``) rather than replacing it; adaptive
+    thinking is enabled if none is configured. With ``"updates"``, text written
+    between tool calls is returned as progress-update ``reasoning_content``
+    blocks, and the ``thinking-display-updates-2026-08-18`` beta is added to
+    ``anthropic_beta``.
 
-    The effective mode is recorded on ``response_metadata["thinking_display"]`` so
-    progress updates can be told apart from real reasoning (``"summarized"``).
+    The mode sent is recorded on ``response_metadata["thinking_display"]``.
     An explicit ``thinking.display`` in ``additional_model_request_fields`` takes
-    precedence over this constructor value; a call-time ``thinking_display``
-    overrides both. Only applies to Claude models.
+    precedence; a call-time value overrides both. For non-Claude models, a
+    warning is emitted and the value is ignored.
     """
 
     additional_model_response_field_paths: Optional[List[str]] = None
