@@ -3479,7 +3479,7 @@ def test__messages_to_bedrock_unnamed_file_repeated_in_tool_results() -> None:
         "base64": base64.b64encode(b"tool result payload").decode("utf-8"),
         "mime_type": "application/pdf",
     }
-    messages = [
+    messages: list[BaseMessage] = [
         AIMessage(
             content=[
                 {
