@@ -3437,6 +3437,83 @@ def test__lc_content_to_bedrock_unnamed_file_block_name_is_content_unique() -> N
     assert first_name != second_name
 
 
+def test__messages_to_bedrock_repeated_unnamed_file_gets_unique_stable_names() -> None:
+    """The same unnamed file twice in one request gets distinct, stable names.
+
+    Bedrock rejects a request whose messages contain duplicate document names.
+    """
+    block = {
+        "type": "file",
+        "base64": base64.b64encode(b"unnamed document payload").decode("utf-8"),
+        "mime_type": "application/pdf",
+    }
+    messages = [
+        HumanMessage(content=[dict(block), {"type": "text", "text": "Summarize."}]),
+        AIMessage(content="Done."),
+        HumanMessage(content=[dict(block), {"type": "text", "text": "Again."}]),
+    ]
+
+    def names() -> List[str]:
+        with pytest.warns(UserWarning, match="may require a filename"):
+            bedrock_messages, _ = _messages_to_bedrock(messages)
+        return [
+            b["document"]["name"]
+            for m in bedrock_messages
+            for b in m["content"]
+            if "document" in b
+        ]
+
+    first = names()
+    assert len(set(first)) == 2
+    assert first == names()
+
+
+def test__messages_to_bedrock_unnamed_file_repeated_in_tool_results() -> None:
+    """The same unnamed file in two tool results gets distinct, stable names.
+
+    Tool result content reaches the fallback branch through the nested
+    recursion, so it has to share the request-level counter.
+    """
+    file_block = {
+        "type": "file",
+        "base64": base64.b64encode(b"tool result payload").decode("utf-8"),
+        "mime_type": "application/pdf",
+    }
+    messages = [
+        AIMessage(
+            content=[
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "call_1",
+                    "content": [dict(file_block)],
+                },
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "call_2",
+                    "content": [dict(file_block)],
+                },
+            ]
+        ),
+    ]
+
+    def names() -> List[str]:
+        with pytest.warns(UserWarning, match="may require a filename"):
+            bedrock_messages, _ = _messages_to_bedrock(messages)
+        found = []
+        for m in bedrock_messages:
+            for block in m["content"]:
+                if "toolResult" not in block:
+                    continue
+                for nested in block["toolResult"]["content"]:
+                    if "document" in nested:
+                        found.append(nested["document"]["name"])
+        return found
+
+    first = names()
+    assert len(set(first)) == 2
+    assert first == names()
+
+
 def test__lc_content_to_bedrock_text_mime_type_image_still_rejected() -> None:
     with pytest.raises(ValueError, match="Unsupported MIME type"):
         _lc_content_to_bedrock(

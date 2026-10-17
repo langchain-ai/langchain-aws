@@ -2574,6 +2574,7 @@ def _messages_to_bedrock(
                 sys_param_to_bedrock.append(s)
         bedrock_system.extend(sys_param_to_bedrock)
 
+    fallback_doc_names: Dict[str, int] = {}
     for msg_idx, msg in enumerate(messages):
         # Dropping is scoped to assistant turns: that is where replayed
         # cross-provider history shows up, and where a rejected block would
@@ -2584,6 +2585,7 @@ def _messages_to_bedrock(
             msg.content,
             drop_unsupported=isinstance(msg, AIMessage),
             model_id=model_id,
+            fallback_doc_names=fallback_doc_names,
         )
         if isinstance(msg, HumanMessage):
             # If there's a human, tool, human message sequence, the
@@ -2942,7 +2944,9 @@ def _mime_type_to_format(mime_type: str) -> str:
     )
 
 
-def _format_data_content_block(block: dict) -> dict:
+def _format_data_content_block(
+    block: dict, *, fallback_doc_names: Optional[Dict[str, int]] = None
+) -> dict:
     """Format standard data content block to format expected by Converse API."""
     if block["type"] == "image":
         if "base64" in block or block.get("sourceType") == "base64":
@@ -3010,9 +3014,15 @@ def _format_data_content_block(block: dict) -> dict:
                 # matching. Hashing the document bytes keeps names distinct
                 # across different documents while identical blocks serialize
                 # identically across calls.
-                formatted_block["document"]["name"] = hashlib.sha256(
-                    document_bytes
-                ).hexdigest()[:12]
+                name = hashlib.sha256(document_bytes).hexdigest()[:12]
+                if fallback_doc_names is not None:
+                    # Bedrock rejects duplicate document names in a request, so
+                    # repeats of the same bytes get "-2", "-3", ... suffixes.
+                    count = fallback_doc_names.get(name, 0) + 1
+                    fallback_doc_names[name] = count
+                    if count > 1:
+                        name = f"{name}-{count}"
+                formatted_block["document"]["name"] = name
         else:
             error_message = "File data only supported through in-line base64 format."
             raise ValueError(error_message)
@@ -3139,6 +3149,7 @@ def _lc_content_to_bedrock(
     *,
     drop_unsupported: bool = False,
     model_id: Optional[str] = None,
+    fallback_doc_names: Optional[Dict[str, int]] = None,
 ) -> List[Dict[str, Any]]:
     if isinstance(content, str):
         if not content or content.isspace():
@@ -3158,7 +3169,9 @@ def _lc_content_to_bedrock(
         elif isinstance(block, dict) and is_data_content_block(
             _camel_to_snake_keys(block)
         ):
-            bedrock_content.append(_format_data_content_block(block))
+            bedrock_content.append(
+                _format_data_content_block(block, fallback_doc_names=fallback_doc_names)
+            )
         elif block["type"] == "text":
             if not block["text"] or (
                 isinstance(block["text"], str) and block["text"].isspace()
@@ -3328,6 +3341,7 @@ def _lc_content_to_bedrock(
                                 block["content"],
                                 drop_unsupported=drop_unsupported,
                                 model_id=model_id,
+                                fallback_doc_names=fallback_doc_names,
                             )
                         ),
                         "status": "error" if block.get("isError") else "success",
