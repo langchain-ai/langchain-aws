@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import threading
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -1313,6 +1314,10 @@ class TestSubgraphCheckpoints:
             "value": "start before yes"
         }
 
+    @pytest.mark.skipif(
+        sys.version_info < (3, 11),
+        reason="LangGraph's interrupt() needs Python 3.11+ in an async context",
+    )
     async def test_interrupted_subgraph_run_resumes_after_aflush(self) -> None:
         from langgraph.types import Command
 
