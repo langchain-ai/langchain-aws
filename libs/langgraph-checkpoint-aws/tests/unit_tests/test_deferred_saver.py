@@ -1213,7 +1213,7 @@ class TestNewVersionsMerge:
         )
         deferred.flush()
 
-        assert saver.flushed_versions == [{"b": 1}]
+        assert saver.flushed_versions == [{"a": 1}, {"b": 1}]
 
     def test_failed_flush_merges_into_racing_checkpoint(
         self, memory_saver: MemorySaver
@@ -1260,3 +1260,161 @@ class TestNewVersionsMerge:
 
         deferred.flush()
         assert saver.flushed_versions == [{"a": 1, "b": 1}]
+
+
+def _subgraph_interrupt_graph():
+    from typing import TypedDict
+
+    from langgraph.graph import END, START, StateGraph
+    from langgraph.types import interrupt
+
+    class State(TypedDict):
+        value: str
+
+    def ask(state: State) -> State:
+        return {"value": state["value"] + " " + interrupt("approve?")}
+
+    child = StateGraph(State)
+    child.add_node("ask", ask)
+    child.add_edge(START, "ask")
+    child.add_edge("ask", END)
+
+    parent = StateGraph(State)
+    parent.add_node("before", lambda state: {"value": state["value"] + " before"})
+    parent.add_node("child", child.compile())
+    parent.add_edge(START, "before")
+    parent.add_edge("before", "child")
+    parent.add_edge("child", END)
+    return parent
+
+
+class TestSubgraphCheckpoints:
+    """Subgraph checkpoints buffer per namespace and do not replace the parent's."""
+
+    @pytest.mark.parametrize("batch_writes", [False, True])
+    def test_interrupted_subgraph_run_resumes_after_flush(
+        self, batch_writes: bool
+    ) -> None:
+        from langgraph.types import Command
+
+        saver = _BatchMemorySaver()
+        deferred = DeferredCheckpointSaver(saver, batch_writes=batch_writes)
+        graph = _subgraph_interrupt_graph()
+        config = _make_config(thread_id="t1")
+
+        with deferred.flush_on_exit():
+            graph.compile(checkpointer=deferred).invoke({"value": "start"}, config)
+
+        persisted = graph.compile(checkpointer=saver)
+        state = persisted.get_state(config)
+        assert state.values == {"value": "start before"}
+        assert state.next == ("child",)
+        assert persisted.invoke(Command(resume="yes"), config) == {
+            "value": "start before yes"
+        }
+
+    async def test_interrupted_subgraph_run_resumes_after_aflush(self) -> None:
+        from langgraph.types import Command
+
+        saver = _BatchMemorySaver()
+        deferred = DeferredCheckpointSaver(saver, batch_writes=True)
+        graph = _subgraph_interrupt_graph()
+        config = _make_config(thread_id="t1")
+
+        async with deferred.aflush_on_exit():
+            await graph.compile(checkpointer=deferred).ainvoke(
+                {"value": "start"}, config
+            )
+
+        persisted = graph.compile(checkpointer=saver)
+        assert persisted.get_state(config).next == ("child",)
+        assert await persisted.ainvoke(Command(resume="yes"), config) == {
+            "value": "start before yes"
+        }
+
+    def test_each_namespace_is_served_from_the_buffer(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        deferred = DeferredCheckpointSaver(memory_saver)
+        deferred.put(_make_config(), _make_checkpoint("root"), _make_metadata(), {})
+        deferred.put(
+            _make_config(checkpoint_ns="child:1"),
+            _make_checkpoint("child"),
+            _make_metadata(),
+            {},
+        )
+
+        root = deferred.get_tuple(_make_config())
+        child = deferred.get_tuple(_make_config(checkpoint_ns="child:1"))
+        assert root is not None and root.checkpoint["id"] == "root"
+        assert child is not None and child.checkpoint["id"] == "child"
+
+    def test_flush_returns_the_root_checkpoint_config(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        deferred = DeferredCheckpointSaver(memory_saver)
+        deferred.put(_make_config(), _make_checkpoint("root"), _make_metadata(), {})
+        deferred.put(
+            _make_config(checkpoint_ns="child:1"),
+            _make_checkpoint("child"),
+            _make_metadata(),
+            {},
+        )
+
+        result = deferred.flush()
+        assert result is not None
+        assert result["configurable"]["checkpoint_id"] == "root"
+        assert deferred.is_empty
+
+    def test_failed_flush_keeps_the_unflushed_checkpoint(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        deferred = DeferredCheckpointSaver(memory_saver)
+        deferred.put(_make_config(), _make_checkpoint("root"), _make_metadata(), {})
+        deferred.put(
+            _make_config(checkpoint_ns="child:1"),
+            _make_checkpoint("child"),
+            _make_metadata(),
+            {},
+        )
+        real_put = memory_saver.put
+
+        def fail_on_child(config, *args, **kwargs):
+            if config["configurable"]["checkpoint_ns"] == "child:1":
+                msg = "network error"
+                raise RuntimeError(msg)
+            return real_put(config, *args, **kwargs)
+
+        with patch.object(memory_saver, "put", side_effect=fail_on_child):
+            with pytest.raises(RuntimeError, match="network error"):
+                deferred.flush()
+
+        assert memory_saver.get_tuple(_make_config()) is not None
+        assert deferred.has_buffered_checkpoint
+        deferred.flush()
+        assert memory_saver.get_tuple(_make_config(checkpoint_ns="child:1")) is not None
+        assert deferred.is_empty
+
+    def test_flush_leaves_checkpoints_put_during_it_for_the_next_flush(
+        self, memory_saver: MemorySaver
+    ) -> None:
+        deferred = DeferredCheckpointSaver(memory_saver)
+        deferred.put(_make_config(), _make_checkpoint("root"), _make_metadata(), {})
+        real_put = memory_saver.put
+
+        def put_racing_another_thread(config, *args, **kwargs):
+            deferred.put(
+                _make_config(thread_id="other"),
+                _make_checkpoint("other"),
+                _make_metadata(),
+                {},
+            )
+            return real_put(config, *args, **kwargs)
+
+        with patch.object(memory_saver, "put", side_effect=put_racing_another_thread):
+            deferred.flush()
+
+        assert deferred.has_buffered_checkpoint
+        assert memory_saver.get_tuple(_make_config(thread_id="other")) is None
+        deferred.flush()
+        assert memory_saver.get_tuple(_make_config(thread_id="other")) is not None
