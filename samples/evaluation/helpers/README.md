@@ -7,7 +7,7 @@ span reader are the interesting part of this sample.
 |---|---|---|
 | `agentcore_evals.py` | `Trajectory`, span reader, `Check`, `report` | no, reads OpenTelemetry attributes |
 | `agentcore_deploy.py` | IAM, packaging, S3, runtime create and delete | no |
-| `agentcore_loop.py` | insights, recommendations, configuration bundles | no |
+| `agentcore_loop.py` | recommendations, configuration bundles | no |
 | `edgar_dataset.py` | derives `dataset.json` from tickers, so the answer key is generated | no, it is a data script |
 | `research_agent.py` | the agent, and the answer key computed from `dataset.json` | yes, LangChain Deep Agents |
 | `research_checks.py` | the checks and the traffic scenarios | yes, this agent |

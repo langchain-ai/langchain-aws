@@ -104,8 +104,8 @@ async def invoke(payload, context):
         )
         return {"result": _final_text(result.get("messages", []))}
     except Exception as exc:  # noqa: BLE001
-        # Surface failures. Insights clusters real errors, so swallowing them hides
-        # the signal the improvement loop needs.
+        # Surface failures. Recommendations learn from failed sessions, so swallowing
+        # them hides the signal the improvement loop needs.
         log.exception("invocation failed session=%s", session_id)
         return {"result": "", "error": f"{type(exc).__name__}: {exc}"}
     finally:
