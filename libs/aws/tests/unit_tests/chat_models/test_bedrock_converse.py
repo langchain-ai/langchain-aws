@@ -3438,7 +3438,6 @@ _TWO_READS = AIMessage(
 )
 
 
-@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
 def test__messages_to_bedrock_unnamed_file_name_is_stable_across_requests() -> None:
     data = b"unnamed document payload"
     messages: List[BaseMessage] = [
@@ -3447,7 +3446,8 @@ def test__messages_to_bedrock_unnamed_file_name_is_stable_across_requests() -> N
         )
     ]
 
-    names = _serialized_document_names(messages)
+    with pytest.warns(UserWarning, match="may require a filename"):
+        names = _serialized_document_names(messages)
 
     assert names == [hashlib.sha256(data).hexdigest()[:12]]
     assert _serialized_document_names(messages) == names
@@ -3538,6 +3538,22 @@ def test__messages_to_bedrock_later_repeat_keeps_earlier_names() -> None:
     )
 
     assert after[0] == before[0]
+
+
+@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
+def test__format_data_content_block_outside_a_request_uses_the_bare_hash() -> None:
+    data = b"unnamed document payload"
+    block = {
+        "type": "file",
+        "base64": base64.b64encode(data).decode("utf-8"),
+        "mimeType": "application/pdf",
+    }
+
+    first = _format_data_content_block(block)
+    second = _format_data_content_block(block)
+
+    expected = hashlib.sha256(data).hexdigest()[:12]
+    assert first["document"]["name"] == second["document"]["name"] == expected
 
 
 @pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
