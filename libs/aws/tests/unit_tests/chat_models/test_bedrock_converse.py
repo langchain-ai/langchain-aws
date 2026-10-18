@@ -1,6 +1,7 @@
 """Test chat model integration."""
 
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -3398,6 +3399,158 @@ def test__lc_content_to_bedrock_text_file_mime_types(
         ]
     )
     assert bedrock_content[0]["document"]["format"] == expected_format
+
+
+def _unnamed_file_block(data: bytes = b"unnamed document payload") -> Dict[str, Any]:
+    return {
+        "type": "file",
+        "base64": base64.b64encode(data).decode("utf-8"),
+        "mime_type": "application/pdf",
+    }
+
+
+def _document_names(bedrock_messages: List[Dict[str, Any]]) -> List[str]:
+    names: List[str] = []
+
+    def collect(blocks: List[Dict[str, Any]]) -> None:
+        for block in blocks:
+            if "document" in block:
+                names.append(block["document"]["name"])
+            elif "toolResult" in block:
+                collect(block["toolResult"]["content"])
+
+    for message in bedrock_messages:
+        collect(message["content"])
+    return names
+
+
+def _serialized_document_names(messages: List[BaseMessage]) -> List[str]:
+    bedrock_messages, _ = _messages_to_bedrock(list(messages))
+    return _document_names(bedrock_messages)
+
+
+_TWO_READS = AIMessage(
+    content="",
+    tool_calls=[
+        {"id": "call_a", "name": "read_file", "args": {}},
+        {"id": "call_b", "name": "read_file", "args": {}},
+    ],
+)
+
+
+@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
+def test__messages_to_bedrock_unnamed_file_name_is_stable_across_requests() -> None:
+    data = b"unnamed document payload"
+    messages: List[BaseMessage] = [
+        HumanMessage(
+            content=[_unnamed_file_block(data), {"type": "text", "text": "Hi"}]
+        )
+    ]
+
+    names = _serialized_document_names(messages)
+
+    assert names == [hashlib.sha256(data).hexdigest()[:12]]
+    assert _serialized_document_names(messages) == names
+
+
+@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
+def test__messages_to_bedrock_unnamed_files_with_different_content_differ() -> None:
+    messages: List[BaseMessage] = [
+        HumanMessage(
+            content=[_unnamed_file_block(b"first"), _unnamed_file_block(b"second")]
+        )
+    ]
+
+    first, second = _serialized_document_names(messages)
+
+    assert first != second
+    assert "-" not in first + second
+
+
+@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
+@pytest.mark.parametrize(
+    "messages",
+    [
+        pytest.param(
+            [HumanMessage(content=[_unnamed_file_block(), _unnamed_file_block()])],
+            id="same message",
+        ),
+        pytest.param(
+            [
+                HumanMessage(content=[_unnamed_file_block()]),
+                AIMessage(content="Done."),
+                HumanMessage(content=[_unnamed_file_block()]),
+            ],
+            id="later turn",
+        ),
+        pytest.param(
+            [
+                HumanMessage(content="Read both."),
+                _TWO_READS,
+                ToolMessage(content=[_unnamed_file_block()], tool_call_id="call_a"),
+                ToolMessage(content=[_unnamed_file_block()], tool_call_id="call_b"),
+            ],
+            id="tool messages",
+        ),
+        pytest.param(
+            [
+                HumanMessage(content="Read both."),
+                _TWO_READS,
+                HumanMessage(
+                    content=[
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_a",
+                            "content": [_unnamed_file_block()],
+                        },
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_b",
+                            "content": [_unnamed_file_block()],
+                        },
+                    ]
+                ),
+            ],
+            id="nested tool_result blocks",
+        ),
+    ],
+)
+def test__messages_to_bedrock_repeated_unnamed_file_gets_unique_stable_names(
+    messages: List[BaseMessage],
+) -> None:
+    names = _serialized_document_names(messages)
+
+    assert names == [names[0], f"{names[0]}-2"]
+    assert _serialized_document_names(messages) == names
+
+
+@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
+def test__messages_to_bedrock_later_repeat_keeps_earlier_names() -> None:
+    first_turn = HumanMessage(content=[_unnamed_file_block()])
+
+    before = _serialized_document_names([first_turn])
+    after = _serialized_document_names(
+        [
+            first_turn,
+            AIMessage(content="Done."),
+            HumanMessage(content=[_unnamed_file_block()]),
+        ]
+    )
+
+    assert after[0] == before[0]
+
+
+@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
+def test__messages_to_bedrock_explicit_names_are_unchanged() -> None:
+    named = {**_unnamed_file_block(), "name": "report"}
+    messages: List[BaseMessage] = [
+        HumanMessage(content=[named, _unnamed_file_block(), _unnamed_file_block()])
+    ]
+
+    names = _serialized_document_names(messages)
+
+    assert names[0] == "report"
+    assert names[2] == f"{names[1]}-2"
 
 
 def test__lc_content_to_bedrock_text_mime_type_image_still_rejected() -> None:
