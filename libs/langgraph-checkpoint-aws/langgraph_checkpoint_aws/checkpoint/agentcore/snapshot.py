@@ -49,9 +49,9 @@ def _checkpoint_timestamp(checkpoint: CheckpointEvent) -> datetime.datetime:
             parsed = None
         if parsed is not None:
             if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+                parsed = parsed.replace(tzinfo=datetime.UTC)
             return parsed
-    return datetime.datetime.now(datetime.timezone.utc)
+    return datetime.datetime.now(datetime.UTC)
 
 
 def _metadata_equals(key: str, value: str) -> dict[str, Any]:

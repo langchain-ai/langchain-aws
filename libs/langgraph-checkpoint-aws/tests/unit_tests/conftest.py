@@ -67,7 +67,7 @@ def sample_kms_key_arn():
 
 @pytest.fixture
 def sample_timestamp():
-    return datetime.datetime.now(datetime.timezone.utc)
+    return datetime.datetime.now(datetime.UTC)
 
 
 @pytest.fixture

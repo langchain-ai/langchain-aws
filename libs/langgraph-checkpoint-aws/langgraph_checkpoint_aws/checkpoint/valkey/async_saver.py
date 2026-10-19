@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager
@@ -218,11 +217,11 @@ class AsyncValkeySaver(BaseValkeySaver):
             return checkpoint_info, writes
 
         except (
+            TimeoutError,
             ValkeyError,
             orjson.JSONDecodeError,
             ValueError,
             ConnectionError,
-            asyncio.TimeoutError,
         ) as e:
             logger.error(f"Error retrieving checkpoint data for {checkpoint_id}: {e}")
             return None, []

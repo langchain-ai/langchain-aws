@@ -4,7 +4,7 @@ Unit tests for AgentCore Memory Store.
 
 import asyncio
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import ANY, MagicMock, Mock, patch
 
 import pytest
@@ -85,7 +85,7 @@ class TestAgentCoreMemoryStore:
             "content": {"text": "Hello, world!"},
             "memoryStrategyId": "strategy-123",
             "namespaces": ["test_actor", "test_session"],
-            "createdAt": datetime(2024, 1, 1, tzinfo=timezone.utc),
+            "createdAt": datetime(2024, 1, 1, tzinfo=UTC),
             "score": 0.95,
         }
 

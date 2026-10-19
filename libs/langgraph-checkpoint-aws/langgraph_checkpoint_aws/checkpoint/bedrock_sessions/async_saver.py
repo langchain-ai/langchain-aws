@@ -188,7 +188,7 @@ class AsyncBedrockSessionSaver(BaseCheckpointSaver):
                 session_identifier=thread_id,
                 invocation_identifier=invocation_identifier,
                 invocation_step_id=invocation_step_id,
-                invocation_step_time=datetime.datetime.now(datetime.timezone.utc),
+                invocation_step_time=datetime.datetime.now(datetime.UTC),
                 payload=payload,
             )
         )

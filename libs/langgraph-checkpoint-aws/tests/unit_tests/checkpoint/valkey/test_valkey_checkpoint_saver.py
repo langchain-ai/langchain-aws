@@ -658,7 +658,7 @@ class TestErrorScenarios:
         from unittest.mock import AsyncMock
 
         async_client = AsyncMock()
-        async_client.hgetall.side_effect = asyncio.TimeoutError("Operation timeout")
+        async_client.hgetall.side_effect = TimeoutError("Operation timeout")
 
         # Test that error is properly configured
         async def test_timeout():
