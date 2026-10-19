@@ -1253,6 +1253,31 @@ def test_bedrock_pdf_inputs() -> None:
     _ = model.invoke([message])
 
 
+def test_unnamed_file_inputs_hit_the_cache() -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-5",
+        system=[_LONG_SYSTEM_PROMPT],
+    )
+    unnamed_pdf = {"type": "file", "mime_type": "application/pdf", "base64": PDF_DATA}
+    question = HumanMessage(
+        [
+            unnamed_pdf,
+            {"type": "text", "text": "What is the title of this document?"},
+            ChatBedrockConverse.create_cache_point(),
+        ]
+    )
+    answer = llm.invoke([question])
+    follow_up = HumanMessage(
+        [unnamed_pdf, {"type": "text", "text": "Is this the same document?"}]
+    )
+
+    response = llm.invoke([question, answer, follow_up])
+    assert response.usage_metadata is not None
+    details = response.usage_metadata.get("input_token_details", {})
+    cache_read = details.get("cache_read", 0) or 0
+    assert cache_read > 0, f"Expected cache read on turn 2, got {cache_read}"
+
+
 def test_bedrock_text_file_inputs() -> None:
     model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5")
 
