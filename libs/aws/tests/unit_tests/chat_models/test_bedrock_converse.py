@@ -3448,9 +3448,10 @@ def test__messages_to_bedrock_unnamed_file_name_is_stable_across_requests() -> N
 
     with pytest.warns(UserWarning, match="may require a filename"):
         names = _serialized_document_names(messages)
+        names_again = _serialized_document_names(messages)
 
     assert names == [hashlib.sha256(data).hexdigest()[:12]]
-    assert _serialized_document_names(messages) == names
+    assert names_again == names
 
 
 @pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
