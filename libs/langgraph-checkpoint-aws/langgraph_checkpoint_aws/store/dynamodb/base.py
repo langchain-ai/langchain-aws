@@ -455,7 +455,7 @@ class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
             return None
         except Exception as e:
             logger.error(f"Error getting item {op.namespace}/{op.key}: {e}")
-            return None
+            raise
 
     def _batch_put_op(self, op: PutOp) -> None:
         """Execute a PutOp operation.
@@ -685,6 +685,10 @@ class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
                 UpdateExpression=(
                     "SET expires_at = :expires_at, updated_at = :updated_at"
                 ),
+                # UpdateItem creates a missing item. If another caller deleted
+                # this one after it was read, do not bring back a stub with no
+                # value.
+                ConditionExpression="attribute_exists(PK)",
                 ExpressionAttributeValues={
                     ":expires_at": {"N": str(expires_at)},
                     ":updated_at": {"S": datetime.now(timezone.utc).isoformat()},
