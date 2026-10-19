@@ -65,11 +65,11 @@
   <text x="716" y="494" font-size="11" text-anchor="middle" fill="#1c2530">Evaluate API</text>
   <text x="716" y="510" font-size="9.5" text-anchor="middle" fill="#7a8595">Builtin.* evaluators</text>
 
-  <!-- 8 insights -->
+  <!-- 8 target evaluator -->
   <rect x="836" y="504" width="152" height="52" rx="6" fill="#fbf0dd" stroke="#b8791f" stroke-width="1.4"/>
   <circle cx="848" cy="516" r="9" fill="#b8791f"/><text x="848" y="520" font-size="10" font-weight="600" text-anchor="middle" fill="#fff">8</text>
-  <text x="912" y="524" font-size="11" text-anchor="middle" fill="#1c2530">Batch Insights</text>
-  <text x="912" y="540" font-size="9.5" text-anchor="middle" fill="#7a8595">root causes</text>
+  <text x="912" y="524" font-size="11" text-anchor="middle" fill="#1c2530">Target evaluator</text>
+  <text x="912" y="540" font-size="9.5" text-anchor="middle" fill="#7a8595">scores the traces</text>
 
   <!-- 9 recommendation -->
   <rect x="1004" y="504" width="152" height="52" rx="6" fill="#fbf0dd" stroke="#b8791f" stroke-width="1.4"/>
