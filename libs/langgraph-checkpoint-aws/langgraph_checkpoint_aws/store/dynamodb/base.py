@@ -12,7 +12,7 @@ import asyncio
 import logging
 import math
 import os
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, TypeVar
@@ -517,7 +517,7 @@ class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
         self,
         namespace: tuple[str, ...],
         key: str,
-        value: dict[str, Any],
+        value: Mapping[str, Any],
         ttl: float | None,
     ) -> None:
         """Put an item into DynamoDB, with optional embedding generation.
@@ -614,7 +614,7 @@ class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
             logger.error(f"Error putting item {namespace}/{key}: {e}")
             raise
 
-    def _extract_text_for_embedding(self, value: dict[str, Any]) -> str:
+    def _extract_text_for_embedding(self, value: Mapping[str, Any]) -> str:
         """Extract text from value dict based on configured fields.
 
         Args:
