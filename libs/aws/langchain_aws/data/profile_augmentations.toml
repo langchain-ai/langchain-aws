@@ -72,21 +72,25 @@ mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."anthropic.claude-opus-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."au.anthropic.claude-opus-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."eu.anthropic.claude-opus-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."global.anthropic.claude-opus-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -97,61 +101,73 @@ mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."jp.anthropic.claude-opus-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."us.anthropic.claude-opus-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."anthropic.claude-opus-5-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."au.anthropic.claude-opus-5-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."eu.anthropic.claude-opus-5-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."global.anthropic.claude-opus-5-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."jp.anthropic.claude-opus-5-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."us.anthropic.claude-opus-5-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."anthropic.claude-sonnet-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
 
 [overrides."au.anthropic.claude-sonnet-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
 
 [overrides."eu.anthropic.claude-sonnet-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
 
 [overrides."global.anthropic.claude-sonnet-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
@@ -162,61 +178,73 @@ mid_conversation_system_messages = true
 mid_conversation_tools = false
 
 [overrides."jp.anthropic.claude-sonnet-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
 
 [overrides."us.anthropic.claude-sonnet-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
 
 [overrides."anthropic.claude-sonnet-5-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."eu.anthropic.claude-sonnet-5-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."global.anthropic.claude-sonnet-5-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."us.anthropic.claude-sonnet-5-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."anthropic.claude-haiku-5-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."au.anthropic.claude-haiku-5-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."eu.anthropic.claude-haiku-5-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."global.anthropic.claude-haiku-5-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."jp.anthropic.claude-haiku-5-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."us.anthropic.claude-haiku-5-5"]
+structured_output = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
