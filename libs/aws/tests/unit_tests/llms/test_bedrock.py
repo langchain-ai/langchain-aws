@@ -12,6 +12,7 @@ from langchain_aws.llms.bedrock import (
     ALTERNATION_ERROR,
     LLMInputOutputAdapter,
     _human_assistant_format,
+    _stream_response_to_generation_chunk,
 )
 
 TEST_CASES = {
@@ -1172,3 +1173,22 @@ async def test_astream_closes_response_body_on_exception() -> None:
                 pass
 
     mock_body.close.assert_called_once()
+
+
+def test_stream_keeps_redacted_thinking_block() -> None:
+    chunk = _stream_response_to_generation_chunk(
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "redacted_thinking", "data": "ENCRYPTED"},
+        },
+        provider="anthropic",
+        output_key="completion",
+        messages_api=True,
+        coerce_content_to_string=False,
+    )
+
+    assert isinstance(chunk, AIMessageChunk)
+    assert chunk.content == [
+        {"type": "redacted_thinking", "data": "ENCRYPTED", "index": 0}
+    ]

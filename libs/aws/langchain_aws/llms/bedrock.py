@@ -126,6 +126,16 @@ def _stream_response_to_generation_chunk(
                 content=[content_block],
                 tool_call_chunks=[tc_chunk],  # type: ignore
             )
+        elif (
+            msg_type == "content_block_start"
+            and stream_response["content_block"] is not None
+            and stream_response["content_block"]["type"] == "redacted_thinking"
+        ):
+            # The encrypted payload only arrives on the start event, and the
+            # next request has to carry the block back unchanged.
+            content_block = stream_response["content_block"]
+            content_block["index"] = stream_response["index"]
+            return AIMessageChunk(content=[content_block])
         elif msg_type == "content_block_delta":
             if not stream_response["delta"]:
                 return AIMessageChunk(content="")
