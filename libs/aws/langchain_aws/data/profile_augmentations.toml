@@ -336,13 +336,9 @@ mid_conversation_tools = true
 
 [overrides."global.openai.gpt-6-sol"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
-mid_conversation_system_messages = true
-mid_conversation_tools = true
 
 [overrides."us.openai.gpt-6-sol"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
-mid_conversation_system_messages = true
-mid_conversation_tools = true
 
 [overrides."openai.gpt-6-luna"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
@@ -372,18 +368,12 @@ mid_conversation_tools = true
 
 [overrides."global.openai.gpt-5.6-luna"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
-mid_conversation_system_messages = true
-mid_conversation_tools = true
 
 [overrides."in.openai.gpt-5.6-luna"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
-mid_conversation_system_messages = true
-mid_conversation_tools = true
 
 [overrides."us.openai.gpt-5.6-luna"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
-mid_conversation_system_messages = true
-mid_conversation_tools = true
 
 [overrides."openai.gpt-5.6-sol"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
@@ -392,13 +382,9 @@ mid_conversation_tools = true
 
 [overrides."global.openai.gpt-5.6-sol"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
-mid_conversation_system_messages = true
-mid_conversation_tools = true
 
 [overrides."us.openai.gpt-5.6-sol"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
-mid_conversation_system_messages = true
-mid_conversation_tools = true
 
 [overrides."openai.gpt-5.5"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh"]
