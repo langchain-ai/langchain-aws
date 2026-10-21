@@ -323,7 +323,23 @@ mid_conversation_tools = true
 [overrides."openai.gpt-6-astra"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
+[overrides."global.openai.gpt-6-astra"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
+[overrides."us.openai.gpt-6-astra"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+
 [overrides."openai.gpt-6-sol"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+mid_conversation_system_messages = true
+mid_conversation_tools = true
+
+[overrides."global.openai.gpt-6-sol"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+mid_conversation_system_messages = true
+mid_conversation_tools = true
+
+[overrides."us.openai.gpt-6-sol"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -331,7 +347,22 @@ mid_conversation_tools = true
 [overrides."openai.gpt-6-luna"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
+[overrides."global.openai.gpt-6-luna"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+
+[overrides."us.openai.gpt-6-luna"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+
 [overrides."openai.gpt-5.6-terra"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+
+[overrides."global.openai.gpt-5.6-terra"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+
+[overrides."in.openai.gpt-5.6-terra"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+
+[overrides."us.openai.gpt-5.6-terra"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."openai.gpt-5.6-luna"]
@@ -339,7 +370,32 @@ reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
+[overrides."global.openai.gpt-5.6-luna"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+mid_conversation_system_messages = true
+mid_conversation_tools = true
+
+[overrides."in.openai.gpt-5.6-luna"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+mid_conversation_system_messages = true
+mid_conversation_tools = true
+
+[overrides."us.openai.gpt-5.6-luna"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+mid_conversation_system_messages = true
+mid_conversation_tools = true
+
 [overrides."openai.gpt-5.6-sol"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+mid_conversation_system_messages = true
+mid_conversation_tools = true
+
+[overrides."global.openai.gpt-5.6-sol"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+mid_conversation_system_messages = true
+mid_conversation_tools = true
+
+[overrides."us.openai.gpt-5.6-sol"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -360,10 +416,16 @@ reasoning_effort_levels = ["low", "medium", "high"]
 [overrides."openai.gpt-oss-120b-1:0"]
 reasoning_effort_levels = ["low", "medium", "high"]
 
+[overrides."us-gov.openai.gpt-oss-120b-1:0"]
+reasoning_effort_levels = ["low", "medium", "high"]
+
 [overrides."openai.gpt-oss-20b"]
 reasoning_effort_levels = ["low", "medium", "high"]
 
 [overrides."openai.gpt-oss-20b-1:0"]
+reasoning_effort_levels = ["low", "medium", "high"]
+
+[overrides."us-gov.openai.gpt-oss-20b-1:0"]
 reasoning_effort_levels = ["low", "medium", "high"]
 
 [overrides."moonshot.kimi-k2-thinking"]
@@ -411,14 +473,17 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-opus-4-5-20251101-v1:0"]
+reasoning_effort_levels = ["low", "medium", "high"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-opus-4-6-v1"]
+reasoning_effort_levels = ["low", "medium", "high", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-opus-4-7"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
@@ -431,10 +496,12 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."au.anthropic.claude-opus-4-6-v1"]
+reasoning_effort_levels = ["low", "medium", "high", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."au.anthropic.claude-opus-4-7"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
@@ -447,14 +514,17 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."eu.anthropic.claude-opus-4-5-20251101-v1:0"]
+reasoning_effort_levels = ["low", "medium", "high"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."eu.anthropic.claude-opus-4-6-v1"]
+reasoning_effort_levels = ["low", "medium", "high", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."eu.anthropic.claude-opus-4-7"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
@@ -467,14 +537,17 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-opus-4-5-20251101-v1:0"]
+reasoning_effort_levels = ["low", "medium", "high"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-opus-4-6-v1"]
+reasoning_effort_levels = ["low", "medium", "high", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-opus-4-7"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
@@ -491,6 +564,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."jp.anthropic.claude-opus-4-7"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
@@ -507,14 +581,17 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-opus-4-5-20251101-v1:0"]
+reasoning_effort_levels = ["low", "medium", "high"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-opus-4-6-v1"]
+reasoning_effort_levels = ["low", "medium", "high", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-opus-4-7"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
@@ -538,6 +615,7 @@ image_tool_message = true
 image_tool_message = true
 
 [overrides."eu.amazon.nova-2-lite-v1:0"]
+reasoning_effort_levels = ["low", "medium", "high"]
 image_tool_message = true
 
 [overrides."eu.amazon.nova-lite-v1:0"]
@@ -547,12 +625,15 @@ image_tool_message = true
 image_tool_message = true
 
 [overrides."global.amazon.nova-2-lite-v1:0"]
+reasoning_effort_levels = ["low", "medium", "high"]
 image_tool_message = true
 
 [overrides."jp.amazon.nova-2-lite-v1:0"]
+reasoning_effort_levels = ["low", "medium", "high"]
 image_tool_message = true
 
 [overrides."us.amazon.nova-2-lite-v1:0"]
+reasoning_effort_levels = ["low", "medium", "high"]
 image_tool_message = true
 
 [overrides."us.amazon.nova-lite-v1:0"]
@@ -560,3 +641,42 @@ image_tool_message = true
 
 [overrides."us.amazon.nova-pro-v1:0"]
 image_tool_message = true
+
+[overrides."google.gemma-4-26b-a4b"]
+reasoning_effort_levels = ["none", "high"]
+
+[overrides."google.gemma-4-31b"]
+reasoning_effort_levels = ["none", "high"]
+
+[overrides."google.gemma-4-e2b"]
+reasoning_effort_levels = ["none", "high"]
+
+[overrides."openai.gpt-oss-safeguard-120b"]
+reasoning_effort_levels = ["low", "medium", "high"]
+
+[overrides."openai.gpt-oss-safeguard-20b"]
+reasoning_effort_levels = ["low", "medium", "high"]
+
+[overrides."xai.grok-4.3"]
+reasoning_effort_levels = ["none", "low", "medium", "high"]
+
+[overrides."xai.grok-4.6"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh"]
+
+[overrides."global.xai.grok-4.6"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh"]
+
+[overrides."us.xai.grok-4.6"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh"]
+
+[overrides."global.xai.grok-4.7"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh"]
+
+[overrides."us.xai.grok-4.7"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh"]
+
+[overrides."global.zai.glm-5.3"]
+reasoning_effort_levels = ["none", "low", "high", "max"]
+
+[overrides."us.zai.glm-5.3"]
+reasoning_effort_levels = ["none", "low", "high", "max"]
