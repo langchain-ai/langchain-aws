@@ -13,6 +13,7 @@ import threading
 import time
 from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
 from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
@@ -46,6 +47,13 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Request-scoped (thread/async-task isolated) capture of the (thread_id, actor_id)
+# seen on a read. Lets nested subgraph reads, whose derived config omits actor_id,
+# inherit the actor from the current request's parent read instead of failing.
+_request_actor: ContextVar[tuple[str, str] | None] = ContextVar(
+    "_agentcore_valkey_request_actor", default=None
+)
 
 
 class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
@@ -114,6 +122,22 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
             raise ValueError("max_retries must be non-negative")
         if retry_delay < 0:
             raise ValueError("retry_delay must be non-negative")
+
+    def _resolve_actor_id(self, config: RunnableConfig | None) -> str | None:
+        """Resolve the actor id for a read, scoped to the current request.
+
+        Will capture the (thread_id, actor_id) pair when present and let a later
+        derived subgraph read (which omits actor_id) inherit it. Not yet
+        implemented; returns ``None`` so behavior is unchanged for now.
+
+        Args:
+            config: RunnableConfig for the current read.
+
+        Returns:
+            The resolved actor id, or ``None``.
+        """
+        # TODO(#733): capture on read and resolve for subgraph reads.
+        return None
 
     def _execute_with_retry(self, operation, *args, **kwargs):
         """Execute a Valkey operation with exponential backoff retry logic."""
@@ -385,7 +409,10 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         """Get a checkpoint tuple from Valkey storage."""
         checkpoint_config = cast(
             ValkeyCheckpointerConfig,
-            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config)),
+            ValkeyCheckpointerConfig.from_runnable_config(
+                cast(dict[str, Any], config),
+                default_actor_id=self._resolve_actor_id(config),
+            ),
         )
 
         # Get specific checkpoint or latest
@@ -465,7 +492,10 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
 
         checkpoint_config = cast(
             ValkeyCheckpointerConfig,
-            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config)),
+            ValkeyCheckpointerConfig.from_runnable_config(
+                cast(dict[str, Any], config),
+                default_actor_id=self._resolve_actor_id(config),
+            ),
         )
         before_checkpoint_id = get_checkpoint_id(before) if before else None
 
