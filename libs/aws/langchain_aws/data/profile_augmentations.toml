@@ -662,7 +662,7 @@ reasoning_effort_levels = ["low", "medium", "high", "xhigh"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh"]
 
 [overrides."global.zai.glm-5.3"]
-reasoning_effort_levels = ["none", "low", "high", "max"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."us.zai.glm-5.3"]
-reasoning_effort_levels = ["none", "low", "high", "max"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
