@@ -272,8 +272,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
     },
     "anthropic.claude-opus-4-5-20251101-v1:0": {
         "name": "Claude Opus 4.5",
-        "release_date": "2025-11-01",
-        "last_updated": "2025-11-01",
+        "release_date": "2025-11-24",
+        "last_updated": "2025-11-24",
         "open_weights": False,
         "max_input_tokens": 200000,
         "max_output_tokens": 64000,
@@ -1270,8 +1270,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
     },
     "eu.anthropic.claude-opus-4-5-20251101-v1:0": {
         "name": "Claude Opus 4.5 (EU)",
-        "release_date": "2025-11-01",
-        "last_updated": "2025-11-01",
+        "release_date": "2025-11-24",
+        "last_updated": "2025-11-24",
         "open_weights": False,
         "max_input_tokens": 200000,
         "max_output_tokens": 64000,
@@ -1774,8 +1774,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
     },
     "global.anthropic.claude-opus-4-5-20251101-v1:0": {
         "name": "Claude Opus 4.5 (Global)",
-        "release_date": "2025-11-01",
-        "last_updated": "2025-11-01",
+        "release_date": "2025-11-24",
+        "last_updated": "2025-11-24",
         "open_weights": False,
         "max_input_tokens": 200000,
         "max_output_tokens": 64000,
@@ -4561,8 +4561,8 @@ _PROFILES: dict[str, dict[str, Any]] = {
     },
     "us.anthropic.claude-opus-4-5-20251101-v1:0": {
         "name": "Claude Opus 4.5 (US)",
-        "release_date": "2025-11-01",
-        "last_updated": "2025-11-01",
+        "release_date": "2025-11-24",
+        "last_updated": "2025-11-24",
         "open_weights": False,
         "max_input_tokens": 200000,
         "max_output_tokens": 64000,
