@@ -126,17 +126,46 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
     def _resolve_actor_id(self, config: RunnableConfig | None) -> str | None:
         """Resolve the actor id for a read, scoped to the current request.
 
-        Will capture the (thread_id, actor_id) pair when present and let a later
-        derived subgraph read (which omits actor_id) inherit it. Not yet
-        implemented; returns ``None`` so behavior is unchanged for now.
+        When ``config`` supplies both ``thread_id`` and ``actor_id``, record the
+        pair for the current request context so a later read of a derived subgraph
+        config (which omits ``actor_id``) can inherit it. When ``config`` omits
+        ``actor_id``, fall back to the recorded actor only if it was captured for
+        the same ``thread_id`` **and** the current read is a derived subgraph read
+        (identified by a non-empty ``checkpoint_ns``); otherwise return ``None`` so
+        the caller fails closed.
+
+        Restricting inheritance to non-empty ``checkpoint_ns`` reads is what makes
+        this safe: LangGraph only omits ``actor_id`` on the per-subgraph configs it
+        derives during ``get_state(subgraphs=True)``, and those always carry a
+        non-empty namespace. A top-level read has an empty ``checkpoint_ns``, so an
+        actor-less top-level read (only possible if a caller omits ``actor_id``)
+        fails closed instead of inheriting a possibly stale actor.
+
+        The capture lives in a request-scoped ``ContextVar`` rather than on the
+        saver instance, so a shared multi-tenant saver never resolves a subgraph
+        read to another request's actor.
 
         Args:
             config: RunnableConfig for the current read.
 
         Returns:
-            The resolved actor id, or ``None``.
+            The resolved actor id, or ``None`` if it cannot be resolved from the
+            config or the current request context.
         """
-        # TODO(#733): capture on read and resolve for subgraph reads.
+        configurable = config.get("configurable", {}) if config else {}
+        thread_id = configurable.get("thread_id")
+        actor_id = configurable.get("actor_id")
+        if actor_id:
+            if thread_id:  # only record when we can key the capture by thread
+                _request_actor.set((thread_id, actor_id))
+            return actor_id
+        # Only derived subgraph reads (non-empty checkpoint_ns) may inherit; a
+        # top-level read (empty checkpoint_ns) must carry its own actor_id.
+        if not configurable.get("checkpoint_ns"):
+            return None
+        recorded = _request_actor.get()
+        if recorded is not None and thread_id is not None and recorded[0] == thread_id:
+            return recorded[1]  # returns actor ID as it is the 2nd element in the tuple
         return None
 
     def _execute_with_retry(self, operation, *args, **kwargs):
