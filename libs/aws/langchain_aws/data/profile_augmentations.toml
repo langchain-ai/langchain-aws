@@ -1,228 +1,309 @@
 provider = "amazon-bedrock"
 
-[overrides]
-image_url_inputs = true
-pdf_inputs = true
-pdf_tool_message = true
-image_tool_message = true
-
 [overrides."anthropic.claude-fable-5-1"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."global.anthropic.claude-fable-5-1"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."us.anthropic.claude-fable-5-1"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."anthropic.claude-fable-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."eu.anthropic.claude-fable-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."global.anthropic.claude-fable-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."us.anthropic.claude-fable-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."anthropic.claude-opus-4-8"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."au.anthropic.claude-opus-4-8"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."eu.anthropic.claude-opus-4-8"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."global.anthropic.claude-opus-4-8"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."jp.anthropic.claude-opus-4-8"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."us.anthropic.claude-opus-4-8"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."anthropic.claude-opus-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."au.anthropic.claude-opus-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."eu.anthropic.claude-opus-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."global.anthropic.claude-opus-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."in.anthropic.claude-opus-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."jp.anthropic.claude-opus-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."us.anthropic.claude-opus-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."anthropic.claude-opus-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."au.anthropic.claude-opus-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."eu.anthropic.claude-opus-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."global.anthropic.claude-opus-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."jp.anthropic.claude-opus-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."us.anthropic.claude-opus-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."anthropic.claude-sonnet-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."au.anthropic.claude-sonnet-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."eu.anthropic.claude-sonnet-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."global.anthropic.claude-sonnet-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."in.anthropic.claude-sonnet-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."jp.anthropic.claude-sonnet-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."us.anthropic.claude-sonnet-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."anthropic.claude-sonnet-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."eu.anthropic.claude-sonnet-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."global.anthropic.claude-sonnet-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."us.anthropic.claude-sonnet-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."anthropic.claude-haiku-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."au.anthropic.claude-haiku-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."eu.anthropic.claude-haiku-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."global.anthropic.claude-haiku-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."jp.anthropic.claude-haiku-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."us.anthropic.claude-haiku-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."amazon.nova-2-lite-v1:0"]
 reasoning_effort_levels = ["low", "medium", "high"]
+image_tool_message = true
 
 [overrides."openai.gpt-6.1-sol"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
@@ -293,18 +374,189 @@ reasoning_effort_levels = ["low", "high", "max"]
 
 [overrides."anthropic.claude-sonnet-4-6"]
 reasoning_effort_levels = ["low", "medium", "high", "max"]
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."au.anthropic.claude-sonnet-4-6"]
 reasoning_effort_levels = ["low", "medium", "high", "max"]
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."eu.anthropic.claude-sonnet-4-6"]
 reasoning_effort_levels = ["low", "medium", "high", "max"]
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."global.anthropic.claude-sonnet-4-6"]
 reasoning_effort_levels = ["low", "medium", "high", "max"]
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."jp.anthropic.claude-sonnet-4-6"]
 reasoning_effort_levels = ["low", "medium", "high", "max"]
+pdf_tool_message = true
+image_tool_message = true
 
 [overrides."us.anthropic.claude-sonnet-4-6"]
 reasoning_effort_levels = ["low", "medium", "high", "max"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."anthropic.claude-haiku-4-5-20251001-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."anthropic.claude-opus-4-1-20250805-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."anthropic.claude-opus-4-5-20251101-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."anthropic.claude-opus-4-6-v1"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."anthropic.claude-opus-4-7"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."anthropic.claude-sonnet-4-5-20250929-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."au.anthropic.claude-haiku-4-5-20251001-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."au.anthropic.claude-opus-4-6-v1"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."au.anthropic.claude-opus-4-7"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."au.anthropic.claude-sonnet-4-5-20250929-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."eu.anthropic.claude-haiku-4-5-20251001-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."eu.anthropic.claude-opus-4-5-20251101-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."eu.anthropic.claude-opus-4-6-v1"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."eu.anthropic.claude-opus-4-7"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."eu.anthropic.claude-sonnet-4-5-20250929-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."global.anthropic.claude-haiku-4-5-20251001-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."global.anthropic.claude-opus-4-5-20251101-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."global.anthropic.claude-opus-4-6-v1"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."global.anthropic.claude-opus-4-7"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."global.anthropic.claude-sonnet-4-5-20250929-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."in.anthropic.claude-haiku-4-5-20251001-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."jp.anthropic.claude-haiku-4-5-20251001-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."jp.anthropic.claude-opus-4-7"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."jp.anthropic.claude-sonnet-4-5-20250929-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."us.anthropic.claude-haiku-4-5-20251001-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."us.anthropic.claude-opus-4-1-20250805-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."us.anthropic.claude-opus-4-5-20251101-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."us.anthropic.claude-opus-4-6-v1"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."us.anthropic.claude-opus-4-7"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."us.anthropic.claude-sonnet-4-5-20250929-v1:0"]
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."amazon.nova-lite-v1:0"]
+image_tool_message = true
+
+[overrides."amazon.nova-pro-v1:0"]
+image_tool_message = true
+
+[overrides."apac.amazon.nova-lite-v1:0"]
+image_tool_message = true
+
+[overrides."apac.amazon.nova-pro-v1:0"]
+image_tool_message = true
+
+[overrides."ca.amazon.nova-lite-v1:0"]
+image_tool_message = true
+
+[overrides."eu.amazon.nova-2-lite-v1:0"]
+image_tool_message = true
+
+[overrides."eu.amazon.nova-lite-v1:0"]
+image_tool_message = true
+
+[overrides."eu.amazon.nova-pro-v1:0"]
+image_tool_message = true
+
+[overrides."global.amazon.nova-2-lite-v1:0"]
+image_tool_message = true
+
+[overrides."jp.amazon.nova-2-lite-v1:0"]
+image_tool_message = true
+
+[overrides."us.amazon.nova-2-lite-v1:0"]
+image_tool_message = true
+
+[overrides."us.amazon.nova-lite-v1:0"]
+image_tool_message = true
+
+[overrides."us.amazon.nova-pro-v1:0"]
+image_tool_message = true
