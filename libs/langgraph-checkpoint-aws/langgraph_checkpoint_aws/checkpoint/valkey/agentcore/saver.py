@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from typing import Any, cast
 
-from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import RunnableConfig, run_in_executor
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
     ChannelVersions,
@@ -725,16 +725,15 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
     # ===== Async methods =====
     async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         """Async version of get_tuple."""
-        import asyncio
-
+        # Capture the actor in the async context so a later async subgraph read
+        # inherits it; run_in_executor copies this context into the worker thread.
+        self._resolve_actor_id(config)
         if not self.is_async:
             # For sync clients, run in executor to avoid blocking
-            loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, self.get_tuple, config)
+            return await run_in_executor(None, self.get_tuple, config)
 
         # For async clients, delegate to sync method in executor
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.get_tuple, config)
+        return await run_in_executor(None, self.get_tuple, config)
 
     async def alist(
         self,
@@ -745,15 +744,15 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
         """Async version of list."""
-        import asyncio
+        # Capture the actor in the async context so a later async subgraph read
+        # inherits it; run_in_executor copies this context into the worker thread.
+        self._resolve_actor_id(config)
 
         # Run sync list method in executor and yield results
-        loop = asyncio.get_running_loop()
-
-        def _sync_list():
+        def _sync_list() -> list[CheckpointTuple]:
             return list(self.list(config, filter=filter, before=before, limit=limit))
 
-        items = await loop.run_in_executor(None, _sync_list)
+        items = await run_in_executor(None, _sync_list)
         for item in items:
             yield item
 
