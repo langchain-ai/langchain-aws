@@ -1691,10 +1691,10 @@ requires-dist = [
     { name = "langchain-anthropic", marker = "extra == 'anthropic'", specifier = ">=1.7.6" },
     { name = "langchain-core", specifier = ">=1.6.10" },
     { name = "langchain-openai", marker = "extra == 'openai'", specifier = ">=1.0.0" },
-    { name = "numpy", specifier = ">=1.0.0,<3" },
+    { name = "numpy", specifier = ">=1.0.0" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.106.0" },
     { name = "playwright", marker = "extra == 'tools'", specifier = ">=1.53.0" },
-    { name = "pydantic", specifier = ">=2.10.6,<3" },
+    { name = "pydantic", specifier = ">=2.10.6" },
     { name = "smithy-http", extras = ["awscrt"], marker = "python_full_version >= '3.12' and extra == 'nova-sonic'" },
     { name = "valkey-glide-sync", marker = "extra == 'valkey'", specifier = ">=2.5.2" },
 ]
