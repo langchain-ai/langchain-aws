@@ -26,6 +26,7 @@ from langgraph_checkpoint_aws.checkpoint.agentcore.helpers import (
 from langgraph_checkpoint_aws.store.agentcore.store import (
     STORE_KEY_METADATA,
     AgentCoreMemoryStore,
+    _store_key_metadata_value,
 )
 
 
@@ -85,7 +86,7 @@ class TestAgentCoreMemoryStore:
     @pytest.fixture
     def sample_memory_record(self):
         return {
-            "memoryRecordId": "mem-test-record-12345678901234567890123456789012345",
+            "memoryRecordId": "mem-test-record-1234567890123456789012345678901234",
             "content": {"text": "Hello, world!"},
             "memoryStrategyId": "strategy-123",
             "namespaces": ["test_actor", "test_session"],
@@ -169,7 +170,11 @@ class TestAgentCoreMemoryStore:
                     {
                         "left": {"metadataKey": STORE_KEY_METADATA},
                         "operator": "EQUALS_TO",
-                        "right": {"metadataValue": {"stringValue": op_key}},
+                        "right": {
+                            "metadataValue": {
+                                "stringValue": _store_key_metadata_value(op_key)
+                            }
+                        },
                     }
                 ]
             },
@@ -226,9 +231,10 @@ class TestAgentCoreMemoryStore:
         assert len(call_args["payload"]) == 1
         assert call_args["payload"][0]["conversational"]["role"] == "USER"
 
-        # Verify metadata carries the user key
+        # Verify metadata carries a hashed form of the user key (hashed so it
+        # stays within AgentCore's metadata stringValue constraints)
         assert call_args["metadata"] == {
-            STORE_KEY_METADATA: {"stringValue": "test-key"}
+            STORE_KEY_METADATA: {"stringValue": _store_key_metadata_value("test-key")}
         }
 
     def test_batch_put_op_delete(self, store, mock_boto_client):
@@ -637,7 +643,7 @@ class TestAgentCoreMemoryStore:
         )
 
         with pytest.raises(ClientError) as exc_info:
-            await store.aget(("test_actor", "test_session"), "mem-" + "0" * 40)
+            await store.aget(("test_actor", "test_session"), "test-key")
 
         assert exc_info.value.response["Error"]["Code"] == "AccessDeniedException"
 
@@ -695,14 +701,20 @@ class TestAgentCoreMemoryStore:
         assert exc_info.value.response["Error"]["Code"] == "ThrottlingException"
 
     def test_memory_record_id_format_validation(self, store):
-        """Test that memory record IDs follow the required format."""
-        # This is more of a documentation test to ensure we understand the format
-        test_id = "mem-test-record-12345678901234567890123456789012345"
+        """Test that _is_memory_record_id matches real memoryRecordIds."""
+        from langgraph_checkpoint_aws.store.agentcore.store import (
+            _is_memory_record_id,
+        )
+
+        test_id = "mem-test-record-1234567890123456789012345"
         assert test_id.startswith("mem-")
         assert len(test_id) >= 40  # Minimum length requirement
         assert all(
             c.isalnum() or c in "-_" for c in test_id[4:]
         )  # Valid characters after prefix
+        assert _is_memory_record_id(test_id)
+        # A plain put()-style key must not be mistaken for a memoryRecordId
+        assert not _is_memory_record_id("test-key")
 
     def test_namespace_handling_edge_cases(
         self, store, mock_boto_client, sample_memory_record
@@ -791,7 +803,9 @@ class TestAgentCoreMemoryStore:
         store.batch([put_op])
 
         call_args = mock_boto_client.create_event.call_args[1]
-        assert call_args["metadata"] == {STORE_KEY_METADATA: {"stringValue": "k1"}}
+        assert call_args["metadata"] == {
+            STORE_KEY_METADATA: {"stringValue": _store_key_metadata_value("k1")}
+        }
 
         event_timestamp = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
         mock_boto_client.list_events.return_value = {
@@ -819,6 +833,88 @@ class TestAgentCoreMemoryStore:
         assert item.key == "k1"
         assert "I love hot chocolate!" in item.value["content"]
         assert item.namespace == ("user1", "session1")
+
+    def test_get_op_with_memory_record_id_key_two_part_namespace(
+        self, store, mock_boto_client, sample_memory_record
+    ):
+        """Regression test: get() on a search()-returned key (a memoryRecordId)
+        must look up the memory record directly instead of treating the key as
+        a put()-originated key, even for a 2-part namespace."""
+        mock_boto_client.get_memory_record.return_value = {
+            "memoryRecord": sample_memory_record
+        }
+        memory_record_id = sample_memory_record["memoryRecordId"]
+
+        ops = [GetOp(namespace=("facts", "actor-1"), key=memory_record_id)]
+        results = store.batch(ops)
+
+        assert len(results) == 1
+        item = results[0]
+        assert isinstance(item, Item)
+        assert item.key == memory_record_id
+        assert item.namespace == ("facts", "actor-1")
+        assert item.value["content"] == "Hello, world!"
+        mock_boto_client.get_memory_record.assert_called_once_with(
+            memoryId="test-memory-id",
+            memoryRecordId=memory_record_id,
+            namespace="/facts/actor-1",
+        )
+        # The events API must not be used for a memoryRecordId lookup
+        mock_boto_client.list_events.assert_not_called()
+
+    def test_get_op_with_memory_record_id_key_multi_part_namespace(
+        self, store, mock_boto_client, sample_memory_record
+    ):
+        """Regression test: a >2-part namespace must not raise ValueError when
+        the key is a memoryRecordId, since that path never unpacks the
+        namespace into (actor_id, session_id)."""
+        mock_boto_client.get_memory_record.return_value = {
+            "memoryRecord": sample_memory_record
+        }
+        memory_record_id = sample_memory_record["memoryRecordId"]
+
+        ops = [
+            GetOp(namespace=("summaries", "actors", "actor-1"), key=memory_record_id)
+        ]
+        results = store.batch(ops)
+
+        assert len(results) == 1
+        item = results[0]
+        assert isinstance(item, Item)
+        assert item.namespace == ("summaries", "actors", "actor-1")
+        mock_boto_client.get_memory_record.assert_called_once_with(
+            memoryId="test-memory-id",
+            memoryRecordId=memory_record_id,
+            namespace="/summaries/actors/actor-1",
+        )
+
+    def test_get_op_with_memory_record_id_not_found(self, store, mock_boto_client):
+        """get_memory_record ResourceNotFoundException is treated as absent."""
+        mock_boto_client.get_memory_record.side_effect = ClientError(
+            error_response={"Error": {"Code": "ResourceNotFoundException"}},
+            operation_name="GetMemoryRecord",
+        )
+        memory_record_id = "mem-missing-record-123456789012345678901234567"
+
+        ops = [GetOp(namespace=("facts", "actor-1"), key=memory_record_id)]
+        results = store.batch(ops)
+
+        assert len(results) == 1
+        assert results[0] is None
+
+    def test_get_op_with_memory_record_id_other_error(self, store, mock_boto_client):
+        """Only ResourceNotFoundException is treated as a missing key; any
+        other get_memory_record error (e.g. access denied, throttling) must
+        propagate to the caller instead of being swallowed as None."""
+        mock_boto_client.get_memory_record.side_effect = ClientError(
+            error_response={"Error": {"Code": "AccessDeniedException"}},
+            operation_name="GetMemoryRecord",
+        )
+        memory_record_id = "mem-denied-record-1234567890123456789012345678"
+
+        ops = [GetOp(namespace=("facts", "actor-1"), key=memory_record_id)]
+        with pytest.raises(ClientError):
+            store.batch(ops)
 
     def test_batch_get_op_no_events_returns_none(self, store, mock_boto_client):
         """Test GetOp returns None when list_events returns empty events list."""

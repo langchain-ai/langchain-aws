@@ -5,7 +5,9 @@ This implementation uses the ops pattern and batch function handlers,
 directly calling the AgentCore Memory API for create_event and retrieve_memory_records.
 """
 
+import hashlib
 import logging
+import re
 import uuid
 from collections.abc import Iterable
 from datetime import datetime, timezone
@@ -36,6 +38,31 @@ from ...checkpoint.agentcore.helpers import (
 logger = logging.getLogger(__name__)
 
 STORE_KEY_METADATA = "langgraph_store_key"
+
+# AgentCore memoryRecordId format: "mem-" followed by alphanumeric/"-"/"_"
+# characters, with a total length of 40-50, per the GetMemoryRecord API.
+MEMORY_RECORD_ID_PATTERN = re.compile(r"^mem-[a-zA-Z0-9_-]*$")
+
+
+def _is_memory_record_id(key: str) -> bool:
+    """Return True if `key` looks like an AgentCore memoryRecordId.
+
+    `search()` returns keys sourced from AgentCore's `memoryRecordId`s rather
+    than keys written via `put()`. Those must be routed to `get_memory_record`
+    instead of the events API that `put()`-originated keys use.
+    """
+    return 40 <= len(key) <= 50 and bool(MEMORY_RECORD_ID_PATTERN.match(key))
+
+
+def _store_key_metadata_value(key: str) -> str:
+    """Encode an arbitrary store key within AgentCore metadata constraints.
+
+    AgentCore metadata ``stringValue``s are subject to length and character
+    constraints, so an arbitrary user-provided key cannot be written directly.
+    Hashing keeps the written value within those constraints while remaining
+    deterministic, so a get for the same key can look it up the same way.
+    """
+    return hashlib.sha256(key.encode()).hexdigest()
 
 
 class AgentCoreMemoryStore(BaseStore):
@@ -158,12 +185,24 @@ class AgentCoreMemoryStore(BaseStore):
             sessionId=session_id,
             eventTimestamp=datetime.now(timezone.utc),
             payload=conversational_payloads,
-            metadata={STORE_KEY_METADATA: {"stringValue": op.key}},
+            metadata={
+                STORE_KEY_METADATA: {"stringValue": _store_key_metadata_value(op.key)}
+            },
         )
         logger.debug(f"Created event for message in namespace {op.namespace}")
 
     def _handle_get(self, op: GetOp) -> Result:
         """Handle GetOp by retrieving a stored event from AgentCore Memory."""
+        if _is_memory_record_id(op.key):
+            # `search()` returns keys that are AgentCore memoryRecordIds rather
+            # than keys written via `put()`. Those live under the memory-record
+            # API (not events), and the namespace used by that API is a single
+            # path string rather than the (actor_id, session_id) pair `put()`
+            # expects, so a memoryRecordId key must be looked up directly,
+            # before unpacking the namespace (which would otherwise fail for
+            # namespaces that are not exactly 2 parts).
+            return self._get_memory_record(op)
+
         actor_id, session_id = self._unpack_namespace(op.namespace)
 
         try:
@@ -178,7 +217,11 @@ class AgentCoreMemoryStore(BaseStore):
                         {
                             "left": {"metadataKey": STORE_KEY_METADATA},
                             "operator": "EQUALS_TO",
-                            "right": {"metadataValue": {"stringValue": op.key}},
+                            "right": {
+                                "metadataValue": {
+                                    "stringValue": _store_key_metadata_value(op.key)
+                                }
+                            },
                         }
                     ]
                 },
@@ -219,6 +262,47 @@ class AgentCoreMemoryStore(BaseStore):
         except Exception as e:
             logger.error(f"Failed to get event: {e}")
             raise
+
+    def _get_memory_record(self, op: GetOp) -> Result:
+        """Handle GetOp for a key that is an AgentCore memoryRecordId.
+
+        `search()` returns keys sourced from AgentCore's memory-record API
+        rather than keys written via `put()`, so looking one up means calling
+        `get_memory_record` directly instead of going through the events API
+        that `put()`/`put()`-originated `get()`s use.
+
+        Args:
+            op: The GetOp whose `key` matched `MEMORY_RECORD_ID_PATTERN`.
+
+        Returns:
+            The matching Item, or None if the memory record does not exist.
+        """
+        namespace_str = self._convert_namespace_to_string(op.namespace)
+        try:
+            response = self.client.get_memory_record(
+                memoryId=self.memory_id,
+                memoryRecordId=op.key,
+                namespace=namespace_str,
+            )
+        except ClientError as e:
+            error_code = e.response["Error"]["Code"]
+            if error_code == "ResourceNotFoundException":
+                # Memory resource or record not found — treat as absent key
+                logger.error(
+                    f"Failed to get memory record: {e} - "
+                    f"memory_id={self.memory_id}, memory_record_id={op.key}"
+                )
+                return None
+            logger.error(f"Failed to get memory record: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to get memory record: {e}")
+            raise
+
+        memory_record = response.get("memoryRecord")
+        if not memory_record:
+            return None
+        return self._convert_memory_record_to_item(memory_record, op.namespace)
 
     def _handle_search(self, op: SearchOp) -> Result:
         """Handle SearchOp by retrieving memory records from AgentCore Memory."""
@@ -332,6 +416,34 @@ class AgentCoreMemoryStore(BaseStore):
         if not namespace_tuple:
             return "/"
         return "/" + "/".join(namespace_tuple)
+
+    def _convert_memory_record_to_item(
+        self, memory_record: dict, namespace: tuple[str, ...]
+    ) -> Item:
+        """Convert a single AgentCore memory record to an Item object.
+
+        Args:
+            memory_record: A ``memoryRecord`` as returned by ``get_memory_record``.
+            namespace: The store namespace the record was looked up under.
+
+        Returns:
+            The reconstructed Item, keyed by the record's `memoryRecordId`.
+        """
+        content = memory_record.get("content", {})
+        text = content.get("text", "") if isinstance(content, dict) else str(content)
+        created_at = self._parse_timestamp(memory_record.get("createdAt"))
+
+        return Item(
+            namespace=namespace,
+            key=memory_record.get("memoryRecordId", str(uuid.uuid4())),
+            value={
+                "content": text,
+                "memory_strategy_id": memory_record.get("memoryStrategyId"),
+                "namespaces": memory_record.get("namespaces", []),
+            },
+            created_at=created_at,
+            updated_at=created_at,  # Memory records are not updated
+        )
 
     def _convert_memory_records_to_search_items(
         self, memory_records: list, namespace: tuple[str, ...]
