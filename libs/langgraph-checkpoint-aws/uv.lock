@@ -796,7 +796,7 @@ typing = [
 requires-dist = [
     { name = "boto3", specifier = ">=1.43.64" },
     { name = "langgraph", specifier = ">=1.0.0" },
-    { name = "langgraph-checkpoint", specifier = ">=3.0.0" },
+    { name = "langgraph-checkpoint", specifier = ">=3.0.0,<5.0.0" },
     { name = "orjson", marker = "extra == 'valkey'", specifier = ">=3.11.3" },
     { name = "typing-extensions", marker = "python_full_version < '3.11'", specifier = ">=4.0.0" },
     { name = "valkey", marker = "extra == 'valkey'", specifier = ">=6.0.0rc1,>=6.1.1" },
