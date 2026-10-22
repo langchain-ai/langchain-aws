@@ -275,7 +275,7 @@ class TestBedrockSessionSaver:
         thread_id = "test_thread_id"
         invocation_identifier = "test_invocation_identifier"
         invocation_step_id = "test_invocation_step_id"
-        invocation_step_time = datetime.datetime.now(datetime.timezone.utc)
+        invocation_step_time = datetime.datetime.now(datetime.UTC)
         mock_boto_client.put_invocation_step.return_value = (
             sample_put_invocation_step_response
         )

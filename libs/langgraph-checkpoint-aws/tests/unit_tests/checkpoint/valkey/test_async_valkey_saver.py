@@ -656,9 +656,7 @@ class TestAsyncValkeySaverErrorHandling:
         # Mock pipeline execution to raise TimeoutError
         pipeline_mock = Mock()
         pipeline_mock.get = Mock(return_value=None)
-        pipeline_mock.execute = AsyncMock(
-            side_effect=asyncio.TimeoutError("Operation timeout")
-        )
+        pipeline_mock.execute = AsyncMock(side_effect=TimeoutError("Operation timeout"))
         mock_valkey_client.pipeline.return_value = pipeline_mock
 
         saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)

@@ -4,12 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import Any
-
-try:
-    from typing import NotRequired
-except ImportError:
-    from typing_extensions import NotRequired
+from typing import Any, NotRequired
 
 from langgraph.store.base import (
     BaseStore,

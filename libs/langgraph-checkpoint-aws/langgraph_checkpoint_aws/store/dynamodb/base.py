@@ -14,7 +14,7 @@ import math
 import os
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, TypeVar
 
 import boto3
@@ -375,11 +375,11 @@ class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
         rather than raising ValueError on an empty string.
         """
         if not value:
-            return datetime.fromtimestamp(0, tz=timezone.utc)
+            return datetime.fromtimestamp(0, tz=UTC)
         try:
             return datetime.fromisoformat(value)
         except (ValueError, TypeError):
-            return datetime.fromtimestamp(0, tz=timezone.utc)
+            return datetime.fromtimestamp(0, tz=UTC)
 
     def _calculate_expiry(self, ttl_minutes: float | None) -> int | None:
         """Calculate Unix timestamp for TTL expiry.
@@ -393,9 +393,7 @@ class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
         if ttl_minutes is None:
             return None
         # DynamoDB TTL expects Unix timestamp in seconds
-        expiry_seconds = int(
-            datetime.now(timezone.utc).timestamp() + (ttl_minutes * 60)
-        )
+        expiry_seconds = int(datetime.now(UTC).timestamp() + (ttl_minutes * 60))
         return expiry_seconds
 
     def batch(self, ops: Iterable[Op]) -> list[Result]:
@@ -529,7 +527,7 @@ class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
             ttl: TTL in minutes (optional).
         """
         composite_key = self._construct_composite_key(namespace, key)
-        current_time = datetime.now(timezone.utc).isoformat()
+        current_time = datetime.now(UTC).isoformat()
 
         # Single atomic write. created_at is set only on first insert via
         # if_not_exists, so we avoid the previous read-before-write (which
@@ -691,7 +689,7 @@ class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
                 ConditionExpression="attribute_exists(PK)",
                 ExpressionAttributeValues={
                     ":expires_at": {"N": str(expires_at)},
-                    ":updated_at": {"S": datetime.now(timezone.utc).isoformat()},
+                    ":updated_at": {"S": datetime.now(UTC).isoformat()},
                 },
             )
         except Exception as e:

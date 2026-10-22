@@ -3,7 +3,7 @@
 import os
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -209,13 +209,13 @@ async def test_alist_checkpoints_before_nonexistent(
     config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": checkpoint_ns}}
     checkpoint = {
         "id": "checkpoint-1",
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "channel_values": {"value": 1},
         "channel_versions": {},
         "versions_seen": {},
         "pending_sends": [],
     }
-    metadata = {"timestamp": datetime.now(timezone.utc).isoformat(), "user": "test"}
+    metadata = {"timestamp": datetime.now(UTC).isoformat(), "user": "test"}
     await async_saver.aput(config, checkpoint, metadata, {})  # type: ignore
 
     # List checkpoints before nonexistent checkpoint

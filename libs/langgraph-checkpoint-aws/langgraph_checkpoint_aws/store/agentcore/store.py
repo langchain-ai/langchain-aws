@@ -8,7 +8,7 @@ directly calling the AgentCore Memory API for create_event and retrieve_memory_r
 import logging
 import uuid
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import boto3
@@ -157,7 +157,7 @@ class AgentCoreMemoryStore(BaseStore):
             memoryId=self.memory_id,
             actorId=actor_id,
             sessionId=session_id,
-            eventTimestamp=datetime.now(timezone.utc),
+            eventTimestamp=datetime.now(UTC),
             payload=conversational_payloads,
         )
         logger.debug(f"Created event for message in namespace {op.namespace}")
@@ -240,9 +240,9 @@ class AgentCoreMemoryStore(BaseStore):
             try:
                 created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
             except (ValueError, AttributeError):
-                created_at = datetime.now(timezone.utc)
+                created_at = datetime.now(UTC)
         elif created_at is None:
-            created_at = datetime.now(timezone.utc)
+            created_at = datetime.now(UTC)
 
         return Item(
             namespace=namespace,
@@ -278,9 +278,9 @@ class AgentCoreMemoryStore(BaseStore):
                         created_at.replace("Z", "+00:00")
                     )
                 except (ValueError, AttributeError):
-                    created_at = datetime.now(timezone.utc)
+                    created_at = datetime.now(UTC)
             elif created_at is None:
-                created_at = datetime.now(timezone.utc)
+                created_at = datetime.now(UTC)
 
             search_item = SearchItem(
                 namespace=namespace,
