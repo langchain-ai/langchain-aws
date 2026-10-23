@@ -17,6 +17,9 @@ except (ImportError, AttributeError):
     pytest.skip("Valkey class not available", allow_module_level=True)
 
 from langgraph_checkpoint_aws.checkpoint.valkey import AgentCoreValkeySaver
+from langgraph_checkpoint_aws.checkpoint.valkey.agentcore.models import (
+    ValkeyCheckpointerConfig,
+)
 
 
 class TestAgentCoreValkeySaverIntegration:
@@ -470,22 +473,20 @@ class TestAgentCoreValkeySaverErrorHandling:
             with AgentCoreValkeySaver.from_conn_string(
                 "valkey://localhost:6379/1"
             ) as saver:
-                # Manually insert corrupted data with correct key format
-                # session_id = thread_id + "_" + checkpoint_ns when
-                # checkpoint_ns is not empty
-                corrupt_key = (
-                    "agentcore:checkpoint:test-corrupt_ns:agent:ns:corrupt-checkpoint"
-                )
-                saver.client.set(corrupt_key, "invalid-json-data")
-
+                checkpoint_id = "corrupt-checkpoint"
                 config = {
                     "configurable": {
                         "thread_id": "test-corrupt",
                         "actor_id": "agent",
                         "checkpoint_ns": "ns",
-                        "checkpoint_id": "corrupt-checkpoint",
+                        "checkpoint_id": checkpoint_id,
                     }
                 }
+                corrupt_key = saver._make_checkpoint_key(
+                    ValkeyCheckpointerConfig.model_validate(config["configurable"]),
+                    checkpoint_id,
+                )
+                saver.client.set(corrupt_key, "invalid-json-data")
 
                 # Should handle corrupted data gracefully
                 with pytest.raises(
