@@ -206,13 +206,13 @@ class AgentCoreMemoryStore(BaseStore):
         actor_id, session_id = self._unpack_namespace(op.namespace)
 
         try:
-            response = self.client.list_events(
-                memoryId=self.memory_id,
-                actorId=actor_id,
-                sessionId=session_id,
-                includePayloads=True,
-                maxResults=100,
-                filter={
+            params: dict[str, Any] = {
+                "memoryId": self.memory_id,
+                "actorId": actor_id,
+                "sessionId": session_id,
+                "includePayloads": True,
+                "maxResults": 100,
+                "filter": {
                     "eventMetadata": [
                         {
                             "left": {"metadataKey": STORE_KEY_METADATA},
@@ -225,9 +225,18 @@ class AgentCoreMemoryStore(BaseStore):
                         }
                     ]
                 },
-            )
+            }
+            events: list[dict[str, Any]] = []
 
-            events = response.get("events", [])
+            while True:
+                response = self.client.list_events(**params)
+                events.extend(response.get("events", []))
+
+                next_token = response.get("nextToken")
+                if not next_token:
+                    break
+                params["nextToken"] = next_token
+
             if not events:
                 return None
 

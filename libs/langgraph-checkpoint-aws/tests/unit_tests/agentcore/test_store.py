@@ -964,6 +964,60 @@ class TestAgentCoreMemoryStore:
         assert result.value["content"] == "old message"
         assert result.key == "shared-key"
 
+    def test_batch_get_op_selects_latest_event_across_pages(
+        self,
+        store: AgentCoreMemoryStore,
+        mock_boto_client: MagicMock,
+    ) -> None:
+        """Test GetOp selects the newest event across all response pages."""
+        older_timestamp = datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+        newer_timestamp = datetime(2024, 1, 2, 15, 0, 0, tzinfo=timezone.utc)
+        mock_boto_client.list_events.side_effect = [
+            {
+                "events": [
+                    {
+                        "payload": [
+                            {
+                                "conversational": {
+                                    "content": {"text": "older page"},
+                                    "role": "USER",
+                                }
+                            }
+                        ],
+                        "eventTimestamp": older_timestamp,
+                    }
+                ],
+                "nextToken": "page-2",
+            },
+            {
+                "events": [
+                    {
+                        "payload": [
+                            {
+                                "conversational": {
+                                    "content": {"text": "newer page"},
+                                    "role": "USER",
+                                }
+                            }
+                        ],
+                        "eventTimestamp": newer_timestamp,
+                    }
+                ]
+            },
+        ]
+
+        results = store.batch(
+            [GetOp(namespace=("test_actor", "test_session"), key="shared-key")]
+        )
+
+        result = results[0]
+        assert isinstance(result, Item)
+        assert result.value["content"] == "newer page"
+        assert mock_boto_client.list_events.call_count == 2
+        first_call, second_call = mock_boto_client.list_events.call_args_list
+        assert "nextToken" not in first_call.kwargs
+        assert second_call.kwargs["nextToken"] == "page-2"
+
     def test_get_op_invalid_namespace(self, store, mock_boto_client):
         """Test GetOp with invalid namespace raises ValueError."""
         ops = [GetOp(namespace=("single_element",), key="test-key")]
