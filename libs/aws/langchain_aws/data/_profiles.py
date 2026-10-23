@@ -276,6 +276,11 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+        ],
         "pdf_tool_message": True,
         "image_tool_message": True,
     },
@@ -300,6 +305,12 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "max",
+        ],
         "pdf_tool_message": True,
         "image_tool_message": True,
     },
@@ -324,6 +335,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
         "pdf_tool_message": True,
         "image_tool_message": True,
     },
@@ -714,6 +732,12 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "max",
+        ],
         "pdf_tool_message": True,
         "image_tool_message": True,
     },
@@ -738,6 +762,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
         "pdf_tool_message": True,
         "image_tool_message": True,
     },
@@ -1036,6 +1067,11 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": False,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+        ],
         "image_tool_message": True,
     },
     "eu.amazon.nova-lite-v1:0": {
@@ -1216,6 +1252,11 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+        ],
         "pdf_tool_message": True,
         "image_tool_message": True,
     },
@@ -1240,6 +1281,12 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "max",
+        ],
         "pdf_tool_message": True,
         "image_tool_message": True,
     },
@@ -1264,6 +1311,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
         "pdf_tool_message": True,
         "image_tool_message": True,
     },
@@ -1551,6 +1605,11 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": False,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+        ],
         "image_tool_message": True,
     },
     "global.anthropic.claude-fable-5": {
@@ -1697,6 +1756,11 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+        ],
         "pdf_tool_message": True,
         "image_tool_message": True,
     },
@@ -1721,6 +1785,12 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "max",
+        ],
         "pdf_tool_message": True,
         "image_tool_message": True,
     },
@@ -1745,6 +1815,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
         "pdf_tool_message": True,
         "image_tool_message": True,
     },
@@ -2031,6 +2108,14 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "global.openai.gpt-5.6-sol": {
         "name": "GPT-5.6 Sol (Global)",
@@ -2052,6 +2137,14 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "global.openai.gpt-5.6-terra": {
         "name": "GPT-5.6 Terra (Global)",
@@ -2073,6 +2166,14 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "global.openai.gpt-6-astra": {
         "name": "GPT-6 Astra (Global)",
@@ -2094,6 +2195,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "global.openai.gpt-6-luna": {
         "name": "GPT-6 Luna (Global)",
@@ -2115,6 +2223,14 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "global.openai.gpt-6-sol": {
         "name": "GPT-6 Sol (Global)",
@@ -2136,6 +2252,14 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "global.openai.gpt-6.1-sol": {
         "name": "GPT-6.1 Sol (Global)",
@@ -2187,6 +2311,12 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": False,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+        ],
     },
     "global.xai.grok-4.7": {
         "name": "Grok 4.7 (Global)",
@@ -2209,6 +2339,12 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+        ],
     },
     "global.zai.glm-5.3": {
         "name": "GLM-5.3 (Global)",
@@ -2230,6 +2366,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": False,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "google.gemma-3-12b-it": {
         "name": "Gemma 3 12B IT",
@@ -2317,6 +2460,10 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "none",
+            "high",
+        ],
     },
     "google.gemma-4-31b": {
         "name": "Gemma 4 31B IT",
@@ -2338,6 +2485,10 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "none",
+            "high",
+        ],
     },
     "google.gemma-4-e2b": {
         "name": "Gemma 4 E2B IT",
@@ -2359,6 +2510,10 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "none",
+            "high",
+        ],
     },
     "in.anthropic.claude-haiku-4-5-20251001-v1:0": {
         "name": "Claude Haiku 4.5 (India)",
@@ -2471,6 +2626,14 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "in.openai.gpt-5.6-terra": {
         "name": "GPT-5.6 Terra (India)",
@@ -2493,6 +2656,14 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "jp.amazon.nova-2-lite-v1:0": {
         "name": "Nova 2 Lite (JP)",
@@ -2515,6 +2686,11 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": False,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+        ],
         "image_tool_message": True,
     },
     "jp.anthropic.claude-haiku-4-5-20251001-v1:0": {
@@ -2595,6 +2771,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
         "pdf_tool_message": True,
         "image_tool_message": True,
     },
@@ -3693,6 +3876,11 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": False,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+        ],
     },
     "openai.gpt-oss-safeguard-20b": {
         "name": "GPT OSS Safeguard 20B",
@@ -3714,6 +3902,11 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": False,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+        ],
     },
     "qwen.qwen3-235b-a22b-2507-v1:0": {
         "name": "Qwen3 235B-A22B Instruct 2507",
@@ -3884,6 +4077,11 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": False,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+        ],
     },
     "us-gov.openai.gpt-oss-20b-1:0": {
         "name": "gpt-oss-20b (GovCloud)",
@@ -3905,6 +4103,11 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": False,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+        ],
     },
     "us.amazon.nova-2-lite-v1:0": {
         "name": "Nova 2 Lite (US)",
@@ -3927,6 +4130,11 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": False,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+        ],
         "image_tool_message": True,
     },
     "us.amazon.nova-lite-v1:0": {
@@ -4187,6 +4395,11 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+        ],
         "pdf_tool_message": True,
         "image_tool_message": True,
     },
@@ -4211,6 +4424,12 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "max",
+        ],
         "pdf_tool_message": True,
         "image_tool_message": True,
     },
@@ -4235,6 +4454,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
         "pdf_tool_message": True,
         "image_tool_message": True,
     },
@@ -4674,6 +4900,14 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "us.openai.gpt-5.6-sol": {
         "name": "GPT-5.6 Sol (US)",
@@ -4695,6 +4929,14 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "us.openai.gpt-5.6-terra": {
         "name": "GPT-5.6 Terra (US)",
@@ -4716,6 +4958,14 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "us.openai.gpt-6-astra": {
         "name": "GPT-6 Astra (US)",
@@ -4737,6 +4987,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "us.openai.gpt-6-luna": {
         "name": "GPT-6 Luna (US)",
@@ -4758,6 +5015,14 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "us.openai.gpt-6-sol": {
         "name": "GPT-6 Sol (US)",
@@ -4779,6 +5044,14 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "us.openai.gpt-6.1-sol": {
         "name": "GPT-6.1 Sol (US)",
@@ -4874,6 +5147,12 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": False,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+        ],
     },
     "us.xai.grok-4.7": {
         "name": "Grok 4.7 (US)",
@@ -4896,6 +5175,12 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+        ],
     },
     "us.zai.glm-5.3": {
         "name": "GLM-5.3 (US)",
@@ -4917,6 +5202,13 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": False,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "writer.palmyra-x4-v1:0": {
         "name": "Palmyra X4",
@@ -4982,6 +5274,12 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "none",
+            "low",
+            "medium",
+            "high",
+        ],
     },
     "xai.grok-4.6": {
         "name": "Grok 4.6",
@@ -5003,6 +5301,12 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": True,
+        "reasoning_effort_levels": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+        ],
     },
     "zai.glm-4.7": {
         "name": "GLM-4.7",
