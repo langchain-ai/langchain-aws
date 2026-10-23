@@ -410,6 +410,51 @@ class TestAgentCoreMemoryStoreIntegration:
                 assert item.created_at is not None
                 assert item.updated_at is not None
 
+    def test_search_result_can_be_fetched_by_key(
+        self, store: AgentCoreMemoryStore, actor_id: str
+    ) -> None:
+        """Test retrieving a memory record using a key returned by search().
+
+        The test stores conversational events, waits for AgentCore to create a summary,
+        then calls get() with the search result's namespace and memoryRecordId.
+        """
+        session_id = generate_valid_session_id()
+        messages = [
+            HumanMessage("I really love Croatian food, especially cevapi"),
+            AIMessage("Great choice! Cevapi is a classic Balkan grilled dish"),
+            HumanMessage("I also enjoy Croatian wine, particularly Plavac Mali"),
+            AIMessage("Plavac Mali pairs wonderfully with Dalmatian cuisine"),
+        ]
+
+        for index, message in enumerate(messages):
+            store.put(
+                namespace=(actor_id, session_id),
+                key=f"search_get_{index}",
+                value={"message": message},
+            )
+            time.sleep(1)
+
+        time.sleep(120)
+
+        namespace = ("summaries", "actors", actor_id)
+        search_results = store.search(
+            namespace,
+            query="food preferences Croatian cuisine",
+            limit=5,
+        )
+
+        assert search_results, "Expected AgentCore to produce a memory record"
+
+        search_item = search_results[0]
+        item = store.get(search_item.namespace, search_item.key)
+
+        assert item is not None
+        assert item.key == search_item.key
+        assert item.namespace == search_item.namespace
+        assert item.value["content"] == search_item.value["content"]
+        assert item.created_at is not None
+        assert item.updated_at is not None
+
     def test_batch_operations_with_get(self, store, actor_id, session_id):
         """Test batch operations including GetOp operations."""
         # Put a message with a known key so we can retrieve it via GetOp

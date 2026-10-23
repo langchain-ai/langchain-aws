@@ -857,9 +857,7 @@ class TestAgentCoreMemoryStore:
         mock_boto_client.get_memory_record.assert_called_once_with(
             memoryId="test-memory-id",
             memoryRecordId=memory_record_id,
-            namespace="/facts/actor-1",
         )
-        # The events API must not be used for a memoryRecordId lookup
         mock_boto_client.list_events.assert_not_called()
 
     def test_get_op_with_memory_record_id_key_multi_part_namespace(
@@ -885,7 +883,6 @@ class TestAgentCoreMemoryStore:
         mock_boto_client.get_memory_record.assert_called_once_with(
             memoryId="test-memory-id",
             memoryRecordId=memory_record_id,
-            namespace="/summaries/actors/actor-1",
         )
 
     def test_get_op_with_memory_record_id_not_found(self, store, mock_boto_client):

@@ -277,12 +277,10 @@ class AgentCoreMemoryStore(BaseStore):
         Returns:
             The matching Item, or None if the memory record does not exist.
         """
-        namespace_str = self._convert_namespace_to_string(op.namespace)
         try:
             response = self.client.get_memory_record(
                 memoryId=self.memory_id,
                 memoryRecordId=op.key,
-                namespace=namespace_str,
             )
         except ClientError as e:
             error_code = e.response["Error"]["Code"]
