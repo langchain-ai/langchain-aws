@@ -108,3 +108,44 @@ class TestToolToFunctionRequired:
         assert params["query"]["required"] is True
         for name in ("limit", "verbose", "prefix", "note", "top_k"):
             assert params[name]["required"] is False, name
+
+
+def test_action_groups_sent_to_bedrock_mark_falsy_defaults_optional() -> None:
+    """Functional check: the schema actually sent to Bedrock is correct.
+
+    Goes from a LangChain tool to the ``create_agent_action_group`` request,
+    with a mocked Bedrock client.
+    """
+    from unittest.mock import MagicMock
+
+    from langchain_core.tools import tool
+
+    from langchain_aws.agents.utils import _create_bedrock_action_groups
+
+    @tool("Weather::getWeather")
+    def get_weather(location: str = "", days: int = 0, metric: bool = False) -> str:
+        """Get the weather of a location."""
+        return location
+
+    @tool("Weather::getAlerts")
+    def get_alerts(region: str) -> str:
+        """Get weather alerts for a region."""
+        return region
+
+    bedrock_client = MagicMock()
+    _create_bedrock_action_groups(
+        bedrock_client, agent_id="agent-123", tools=[get_weather, get_alerts]
+    )
+
+    bedrock_client.create_agent_action_group.assert_called_once()
+    kwargs = bedrock_client.create_agent_action_group.call_args.kwargs
+    assert kwargs["actionGroupName"] == "Weather"
+    functions = {f["name"]: f for f in kwargs["functionSchema"]["functions"]}
+
+    weather = functions["getWeather"]["parameters"]
+    assert {name: p["required"] for name, p in weather.items()} == {
+        "location": False,
+        "days": False,
+        "metric": False,
+    }
+    assert functions["getAlerts"]["parameters"]["region"]["required"] is True
