@@ -50,7 +50,9 @@ _BEDROCK_SUPPORTED_BETAS: frozenset[str] = frozenset(
         # `400 {"message": "invalid beta flag"}`.
         "computer-use-2024-10-22",
         "computer-use-2025-01-24",
+        "computer-use-2025-11-24",
         "context-1m-2025-08-07",
+        "context-management-2025-06-27",
         "dev-full-thinking-2025-05-14",
         "effort-2025-11-24",
         "fine-grained-tool-streaming-2025-05-14",
