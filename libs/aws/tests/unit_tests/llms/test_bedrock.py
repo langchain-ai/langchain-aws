@@ -1172,3 +1172,76 @@ async def test_astream_closes_response_body_on_exception() -> None:
                 pass
 
     mock_body.close.assert_called_once()
+
+
+REQUEST_METADATA = {"team": "growth", "environment": "prod"}
+
+
+def test_request_metadata_passed_to_invoke_model() -> None:
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+    ).encode()
+    mock_response.get.side_effect = lambda key, default=None: {
+        "body": mock_response.get.return_value,
+        "ResponseMetadata": {"HTTPHeaders": {}},
+    }.get(key, default)
+    mock_client.invoke_model.return_value = mock_response
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-5-5",
+        region="us-west-2",
+        request_metadata=REQUEST_METADATA,
+    )
+    llm._prepare_input_and_invoke(prompt="Hello")
+
+    call_kwargs = mock_client.invoke_model.call_args.kwargs
+    assert json.loads(call_kwargs["requestMetadata"]) == REQUEST_METADATA
+
+
+def test_request_metadata_passed_to_invoke_model_with_response_stream(
+    anthropic_streaming_response_with_close,
+) -> None:
+    mock_client = MagicMock()
+    mock_client.invoke_model_with_response_stream.return_value = (
+        anthropic_streaming_response_with_close
+    )
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-5-5",
+        region="us-west-2",
+        request_metadata=REQUEST_METADATA,
+    )
+    list(llm._prepare_input_and_invoke_stream(prompt="Hello"))
+
+    call_kwargs = mock_client.invoke_model_with_response_stream.call_args.kwargs
+    assert json.loads(call_kwargs["requestMetadata"]) == REQUEST_METADATA
+
+
+@pytest.mark.asyncio
+async def test_request_metadata_passed_to_async_invoke_model_with_response_stream(
+    anthropic_streaming_response_with_close,
+) -> None:
+    mock_client = MagicMock()
+    mock_client.invoke_model_with_response_stream.return_value = (
+        anthropic_streaming_response_with_close
+    )
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-5-5",
+        region="us-west-2",
+        request_metadata=REQUEST_METADATA,
+    )
+    async for _ in llm._aprepare_input_and_invoke_stream(prompt="Hello"):
+        pass
+
+    call_kwargs = mock_client.invoke_model_with_response_stream.call_args.kwargs
+    assert json.loads(call_kwargs["requestMetadata"]) == REQUEST_METADATA

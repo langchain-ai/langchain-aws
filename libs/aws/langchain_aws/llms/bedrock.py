@@ -901,6 +901,9 @@ class BedrockBase(BaseLanguageModel, ABC):
     If not provided, AWS uses the default tier.
     """
 
+    request_metadata: Optional[Dict[str, str]] = None
+    """Key-Value pairs that you can use to filter invocation logs."""
+
     @property
     def lc_secrets(self) -> Dict[str, str]:
         return {
@@ -1161,6 +1164,8 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         if self.service_tier:
             request_options["serviceTier"] = self.service_tier
+        if self.request_metadata:
+            request_options["requestMetadata"] = json.dumps(self.request_metadata)
 
         if self._guardrails_enabled:
             request_options["guardrailIdentifier"] = self.guardrails.get(  # type: ignore[union-attr]
@@ -1314,6 +1319,8 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         if self.service_tier:
             request_options["serviceTier"] = self.service_tier
+        if self.request_metadata:
+            request_options["requestMetadata"] = json.dumps(self.request_metadata)
 
         if self._guardrails_enabled:
             request_options["guardrailIdentifier"] = self.guardrails.get(  # type: ignore[union-attr]
@@ -1398,14 +1405,18 @@ class BedrockBase(BaseLanguageModel, ABC):
             )
         body = json.dumps(input_body)
 
+        request_options: dict[str, Any] = {
+            "body": body,
+            "modelId": self.model_id,
+            "accept": "application/json",
+            "contentType": "application/json",
+        }
+        if self.request_metadata:
+            request_options["requestMetadata"] = json.dumps(self.request_metadata)
+
         response = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: self.client.invoke_model_with_response_stream(
-                body=body,
-                modelId=self.model_id,
-                accept="application/json",
-                contentType="application/json",
-            ),
+            lambda: self.client.invoke_model_with_response_stream(**request_options),
         )
 
         try:

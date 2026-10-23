@@ -309,6 +309,8 @@ except TableCreationError:
     print("Failed to create DynamoDB table")
 ```
 
+Reads do not hide failures. `get`, `search` and `list_namespaces` (and their async forms) raise the botocore `ClientError` when the DynamoDB read fails, for example on throttling, missing permissions or a missing table, instead of returning `None` or `[]`. A missing item still returns `None` and an empty namespace still returns `[]`. A failed TTL refresh on read is only logged as a warning. A stored item that lacks a required attribute or holds a malformed timestamp raises `KeyError` or `ValueError` when it is mapped to an `Item`.
+
 ## DynamoDB Table Schema
 
 The store uses a single DynamoDB table with the following structure:
