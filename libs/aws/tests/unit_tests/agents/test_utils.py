@@ -81,3 +81,30 @@ class TestNonAsciiPreservation:
         assert isinstance(result.trace_log, str)
         assert self._CJK in result.trace_log
         assert "\\u" not in result.trace_log
+
+
+class TestToolToFunctionRequired:
+    """A parameter is required only when it has no default, whatever the value."""
+
+    def test_falsy_defaults_are_not_required(self) -> None:
+        from langchain_core.tools import tool
+
+        from langchain_aws.agents.utils import _tool_to_function
+
+        @tool
+        def search(
+            query: str,
+            limit: int = 0,
+            verbose: bool = False,
+            prefix: str = "",
+            note: str | None = None,
+            top_k: int = 5,
+        ) -> str:
+            """Search for something."""
+            return query
+
+        params = _tool_to_function(search)["parameters"]
+
+        assert params["query"]["required"] is True
+        for name in ("limit", "verbose", "prefix", "note", "top_k"):
+            assert params[name]["required"] is False, name
