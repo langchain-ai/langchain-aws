@@ -547,6 +547,27 @@ def test_chat_anthropic_bedrock_keeps_supported_betas() -> None:
     assert payload["betas"] == ["context-1m-2025-08-07", "tool-search-tool-2025-10-19"]
 
 
+def test_chat_anthropic_bedrock_keeps_computer_use_and_context_management_betas() -> None:
+    """The 2025-11-24 computer-use and context-management betas pass through.
+
+    Bedrock documents `computer-use-2025-11-24` for Opus 4.5 and
+    `context-management-2025-06-27` for the memory tool on Sonnet 4.5 /
+    Haiku 4.5; dropping them loses the header those tools require.
+    """
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        betas=["computer-use-2025-11-24", "context-management-2025-06-27"],
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        payload = model._get_request_payload([HumanMessage(content="hello")], stop=None)
+    assert payload["betas"] == [
+        "computer-use-2025-11-24",
+        "context-management-2025-06-27",
+    ]
+
+
 def test_chat_anthropic_bedrock_filters_mixed_betas() -> None:
     """Only the unsupported betas are dropped from a mixed list."""
     model = ChatAnthropicBedrock(  # type: ignore[call-arg]
