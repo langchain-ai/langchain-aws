@@ -9113,3 +9113,43 @@ def test_thinking_display_stream_response_metadata() -> None:
     assert sent["thinking"] == {"type": "adaptive", "display": "updates"}
     assert sent["anthropic_beta"] == [_UPDATES_BETA]
     assert aggregated.response_metadata["thinking_display"] == "updates"
+
+
+def test_thinking_display_no_adaptive_support_warns_and_skips() -> None:
+    with pytest.warns(UserWarning, match="does not support adaptive"):
+        llm = ChatBedrockConverse(
+            model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+            region_name="us-east-1",
+            thinking_display="summarized",
+            profile={},
+        )  # type: ignore[call-arg]
+    assert "thinking" not in (llm.additional_model_request_fields or {})
+
+
+def test_thinking_display_keeps_explicit_enabled_thinking() -> None:
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-sonnet-4-20250514-v1:0",
+        region_name="us-east-1",
+        thinking_display="summarized",
+        additional_model_request_fields={
+            "thinking": {"type": "enabled", "budget_tokens": 2000}
+        },
+        profile={},
+    )  # type: ignore[call-arg]
+    fields = llm.additional_model_request_fields or {}
+    assert fields.get("thinking", {}) == {
+        "type": "enabled",
+        "budget_tokens": 2000,
+        "display": "summarized",
+    }
+
+
+def test_thinking_display_with_disabled_thinking_raises() -> None:
+    with pytest.raises(ValueError, match="disabled"):
+        ChatBedrockConverse(
+            model="us.anthropic.claude-sonnet-5",
+            region_name="us-east-1",
+            thinking_display="updates",
+            additional_model_request_fields={"thinking": {"type": "disabled"}},
+            profile=_CLAUDE_PROFILE,
+        )  # type: ignore[call-arg]
