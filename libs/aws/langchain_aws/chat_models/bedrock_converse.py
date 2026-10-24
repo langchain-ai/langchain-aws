@@ -189,18 +189,42 @@ _THINKING_DISPLAY_UPDATES_BETA = "thinking-display-updates-2026-08-18"
 
 
 def _with_thinking_display(
-    fields: Optional[Dict[str, Any]], display: str, *, force: bool = False
+    fields: Optional[Dict[str, Any]],
+    display: str,
+    *,
+    force: bool = False,
+    adaptive_supported: bool = True,
 ) -> Dict[str, Any]:
     """Return a copy of `fields` with ``thinking.display`` set to `display`.
 
     Merges into any existing ``thinking`` dict (e.g. the one derived from
-    ``reasoning_effort``) instead of replacing it, and defaults to adaptive
-    thinking when none is configured. An explicit ``thinking.display`` already in
-    `fields` wins unless `force` is set. For ``"updates"`` the required beta flag
-    is appended to ``anthropic_beta`` without duplicating existing entries.
+    ``reasoning_effort``) instead of replacing it. When none is configured it
+    defaults to adaptive thinking only if `adaptive_supported` is set; otherwise
+    a warning is emitted and `fields` is returned unchanged. Raises
+    ``ValueError`` if thinking is disabled. An explicit ``thinking.display``
+    already in `fields` wins unless `force` is set. For ``"updates"`` the
+    required beta flag is appended to ``anthropic_beta`` without duplicating
+    existing entries.
     """
     merged: Dict[str, Any] = dict(fields or {})
-    thinking = dict(merged.get("thinking") or {"type": "adaptive"})
+    thinking = dict(merged.get("thinking") or {})
+    if not thinking:
+        if not adaptive_supported:
+            warnings.warn(
+                "thinking_display has no effect: thinking is not configured and "
+                "this model does not support adaptive thinking. Set "
+                "`additional_model_request_fields={'thinking': {'type': 'enabled', "
+                "'budget_tokens': ...}}` to use it.",
+                stacklevel=3,
+            )
+            return merged
+        thinking = {"type": "adaptive"}
+    if thinking.get("type") == "disabled":
+        raise ValueError(
+            f"thinking_display={display!r} cannot be used with "
+            "thinking={'type': 'disabled'}: Anthropic rejects `display` when "
+            "thinking is disabled."
+        )
     if force or "display" not in thinking:
         thinking["display"] = display
     merged["thinking"] = thinking
@@ -703,11 +727,14 @@ class ChatBedrockConverse(BaseChatModel):
     """How Claude returns thinking content, sent as ``thinking.display``.
 
     Merged into the existing ``thinking`` config (from ``reasoning_effort`` or
-    ``additional_model_request_fields``) rather than replacing it; adaptive
-    thinking is enabled if none is configured. With ``"updates"``, text written
-    between tool calls is returned as progress-update ``reasoning_content``
-    blocks, and the ``thinking-display-updates-2026-08-18`` beta is added to
-    ``anthropic_beta``.
+    ``additional_model_request_fields``) rather than replacing it. If no
+    ``thinking`` is configured, adaptive thinking is enabled only on models that
+    support it; otherwise a warning is emitted and the value has no effect. An
+    explicit ``thinking`` config (e.g. ``enabled`` with ``budget_tokens``) is kept
+    as is. Combining this with ``thinking={"type": "disabled"}`` raises a
+    ``ValueError``. With ``"updates"``, text written between tool calls is
+    returned as progress-update ``reasoning_content`` blocks, and the
+    ``thinking-display-updates-2026-08-18`` beta is added to ``anthropic_beta``.
 
     The mode sent is recorded on ``response_metadata["thinking_display"]``.
     An explicit ``thinking.display`` in ``additional_model_request_fields`` takes
@@ -1225,7 +1252,9 @@ class ChatBedrockConverse(BaseChatModel):
         if self.thinking_display is not None:
             if "claude" in self._get_base_model():
                 self.additional_model_request_fields = _with_thinking_display(
-                    self.additional_model_request_fields, self.thinking_display
+                    self.additional_model_request_fields,
+                    self.thinking_display,
+                    adaptive_supported=self._supports_adaptive_thinking(),
                 )
             else:
                 warnings.warn(
@@ -1310,6 +1339,9 @@ class ChatBedrockConverse(BaseChatModel):
         profile.pop("mid_conversation_tools", None)
         return profile
 
+    def _supports_adaptive_thinking(self) -> bool:
+        return bool((self.profile or {}).get("reasoning_effort_levels"))
+
     def _apply_thinking_display(
         self,
         additional_fields: Optional[Dict[str, Any]],
@@ -1331,6 +1363,7 @@ class ChatBedrockConverse(BaseChatModel):
                     else self.additional_model_request_fields,
                     call_display,
                     force=True,
+                    adaptive_supported=self._supports_adaptive_thinking(),
                 )
             else:
                 warnings.warn(
@@ -1341,7 +1374,9 @@ class ChatBedrockConverse(BaseChatModel):
         elif additional_fields is not None and self.thinking_display is not None:
             if "claude" in self._get_base_model():
                 additional_fields = _with_thinking_display(
-                    additional_fields, self.thinking_display
+                    additional_fields,
+                    self.thinking_display,
+                    adaptive_supported=self._supports_adaptive_thinking(),
                 )
         effective = (
             additional_fields or self.additional_model_request_fields or {}
