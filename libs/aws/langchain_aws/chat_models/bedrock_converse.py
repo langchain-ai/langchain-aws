@@ -970,6 +970,9 @@ class ChatBedrockConverse(BaseChatModel):
             or
             # xAI Grok models
             (provider == "xai" and "grok" in model_id_lower)
+            or
+            # Z.ai GLM models
+            (provider == "zai" and "glm" in model_id_lower)
         ):
             return True
         elif (
@@ -1193,6 +1196,11 @@ class ChatBedrockConverse(BaseChatModel):
                     self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "grok" in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
+            elif base_model.startswith("zai.glm-"):
+                if base_model.startswith("zai.glm-5.3"):
+                    self.supports_tool_choice_values = ("auto", "any", "tool")
+                else:
+                    self.supports_tool_choice_values = ("auto", "any")
             elif base_model.startswith("openai.gpt-") and "gpt-oss" not in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "llama4" in base_model:
@@ -1236,8 +1244,9 @@ class ChatBedrockConverse(BaseChatModel):
 
     def _resolve_model_profile(self) -> ModelProfile | None:
         """Return the default model profile for this model."""
-        model_id = self._get_base_model()
-        profile = _get_default_model_profile(model_id)
+        profile = _get_default_model_profile(
+            self.model_id
+        ) or _get_default_model_profile(self._get_base_model())
         # The data describes the APIs `ChatAnthropicBedrock`, `ChatAnthropicMantle`
         # and `ChatOpenAIMantle` call. Converse hoists every system message into
         # `system`, so it can't send one in place.
