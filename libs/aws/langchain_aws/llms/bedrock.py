@@ -95,16 +95,79 @@ def _human_assistant_format(input_text: str) -> str:
     return input_text
 
 
+class BedrockStreamError(RuntimeError):
+    """Error event delivered inside a Bedrock streaming response.
+
+    Bedrock can return a successful event stream and then deliver a provider
+    error object (for example Anthropic's ``overloaded_error``) inside a normal
+    ``chunk`` event. The outer event is not a botocore ``EventStreamError``, so
+    the decoded payload has to be checked explicitly.
+    """
+
+    def __init__(
+        self,
+        error: Mapping[str, Any],
+        *,
+        provider_request_id: Optional[str] = None,
+        aws_request_id: Optional[str] = None,
+    ) -> None:
+        """Build the error from a decoded provider error object.
+
+        Args:
+            error: The provider error payload, containing ``type`` and
+                ``message`` keys.
+            provider_request_id: The provider request ID from the stream event.
+            aws_request_id: The AWS request ID from the response metadata.
+        """
+        self.error_type: Optional[str] = error.get("type")
+        self.error_message: Optional[str] = error.get("message")
+        self.provider_request_id = provider_request_id
+        self.aws_request_id = aws_request_id
+
+        details = self.error_message or "Unknown provider error"
+        if self.error_type:
+            details = f"{self.error_type}: {details}"
+        request_ids = [
+            f"{name}={value}"
+            for name, value in (
+                ("provider request_id", provider_request_id),
+                ("aws request_id", aws_request_id),
+            )
+            if value
+        ]
+        suffix = f" ({', '.join(request_ids)})" if request_ids else ""
+        super().__init__(f"Bedrock stream error: {details}{suffix}")
+
+
+def _get_aws_request_id(response: Any) -> Optional[str]:
+    """Return the AWS request ID from a Bedrock response, when present."""
+    if not isinstance(response, Mapping):
+        return None
+    metadata = response.get("ResponseMetadata")
+    if not isinstance(metadata, Mapping):
+        return None
+    request_id = metadata.get("RequestId")
+    return str(request_id) if request_id else None
+
+
 def _stream_response_to_generation_chunk(
     stream_response: Dict[str, Any],
     provider: str,
     output_key: str,
     messages_api: bool,
     coerce_content_to_string: bool,
+    aws_request_id: Optional[str] = None,
 ) -> Union[GenerationChunk, AIMessageChunk, None]:  # type: ignore[return]
     """Convert a stream response to a generation chunk."""
     if messages_api:
         msg_type = stream_response.get("type")
+        if msg_type == "error":
+            error = stream_response.get("error")
+            raise BedrockStreamError(
+                error if isinstance(error, Mapping) else {},
+                provider_request_id=stream_response.get("request_id"),
+                aws_request_id=aws_request_id,
+            )
         if msg_type == "message_start":
             return AIMessageChunk(
                 content="" if coerce_content_to_string else [],
@@ -550,6 +613,8 @@ class LLMInputOutputAdapter:
                 f"Unknown streaming response output key for provider: {provider}"
             )
 
+        aws_request_id = _get_aws_request_id(response)
+
         for event in stream:
             chunk = event.get("chunk")
             if not chunk:
@@ -571,6 +636,7 @@ class LLMInputOutputAdapter:
                 output_key=output_key,
                 messages_api=messages_api,
                 coerce_content_to_string=coerce_content_to_string,
+                aws_request_id=aws_request_id,
             )
             if generation_chunk:
                 yield generation_chunk
@@ -627,6 +693,8 @@ class LLMInputOutputAdapter:
                 f"Unknown streaming response output key for provider: {provider}"
             )
 
+        aws_request_id = _get_aws_request_id(response)
+
         for event in stream:
             chunk = event.get("chunk")
             if not chunk:
@@ -658,6 +726,7 @@ class LLMInputOutputAdapter:
                 output_key=output_key,
                 messages_api=messages_api,
                 coerce_content_to_string=coerce_content_to_string,
+                aws_request_id=aws_request_id,
             )
             if generation_chunk:
                 yield generation_chunk
