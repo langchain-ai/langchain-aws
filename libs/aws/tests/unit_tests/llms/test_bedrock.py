@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessageChunk
 from langchain_aws import BedrockLLM
 from langchain_aws.llms.bedrock import (
     ALTERNATION_ERROR,
+    BedrockStreamError,
     LLMInputOutputAdapter,
     _human_assistant_format,
 )
@@ -1170,6 +1171,140 @@ async def test_astream_closes_response_body_on_exception() -> None:
         with pytest.raises(RuntimeError, match="Test error"):
             async for _ in llm._aprepare_input_and_invoke_stream(prompt="Hello"):
                 pass
+
+    mock_body.close.assert_called_once()
+
+
+ANTHROPIC_ERROR_PAYLOAD = {
+    "type": "error",
+    "error": {"type": "overloaded_error", "message": "Overloaded"},
+    "request_id": "req_example",
+}
+
+
+def _anthropic_error_response() -> dict:
+    """Build a stream response carrying a provider error event."""
+    return {
+        "body": [
+            {
+                "chunk": {
+                    "bytes": json.dumps(ANTHROPIC_ERROR_PAYLOAD).encode(),
+                }
+            }
+        ],
+        "ResponseMetadata": {"RequestId": "aws-req-example"},
+    }
+
+
+def test_prepare_output_stream_raises_on_anthropic_error_event() -> None:
+    """A provider error event in an Anthropic message stream is surfaced."""
+    with pytest.raises(BedrockStreamError) as exc_info:
+        list(
+            LLMInputOutputAdapter.prepare_output_stream(
+                "anthropic",
+                _anthropic_error_response(),
+                messages_api=True,
+            )
+        )
+
+    error = exc_info.value
+    assert error.error_type == "overloaded_error"
+    assert error.error_message == "Overloaded"
+    assert error.provider_request_id == "req_example"
+    assert error.aws_request_id == "aws-req-example"
+    assert "overloaded_error" in str(error)
+    assert "req_example" in str(error)
+
+
+@pytest.mark.asyncio
+async def test_aprepare_output_stream_raises_on_anthropic_error_event() -> None:
+    """The async adapter surfaces a provider error event too."""
+    with pytest.raises(BedrockStreamError) as exc_info:
+        async for _ in LLMInputOutputAdapter.aprepare_output_stream(
+            "anthropic",
+            _anthropic_error_response(),
+            messages_api=True,
+        ):
+            pass
+
+    assert exc_info.value.error_type == "overloaded_error"
+    assert exc_info.value.aws_request_id == "aws-req-example"
+
+
+def test_prepare_output_stream_passes_through_anthropic_events() -> None:
+    """Ordinary Anthropic message events are still converted unchanged."""
+    events = [
+        {"type": "message_start", "message": {"id": "msg_example"}},
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": "Hi"},
+        },
+        {"type": "message_stop"},
+    ]
+    response = {
+        "body": [{"chunk": {"bytes": json.dumps(event).encode()}} for event in events],
+    }
+
+    chunks = list(
+        LLMInputOutputAdapter.prepare_output_stream(
+            "anthropic",
+            response,
+            messages_api=True,
+            coerce_content_to_string=True,
+        )
+    )
+
+    assert [chunk.text for chunk in chunks] == ["", "Hi", ""]
+
+
+def test_stream_closes_response_body_on_provider_error_event() -> None:
+    """A provider error event propagates and closes the underlying stream."""
+    mock_client = MagicMock()
+    mock_body = MagicMock()
+    mock_body.__iter__ = MagicMock(
+        return_value=iter(_anthropic_error_response()["body"])
+    )
+    mock_client.invoke_model_with_response_stream.return_value = {"body": mock_body}
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region="us-west-2",
+    )
+
+    with pytest.raises(BedrockStreamError, match="overloaded_error"):
+        list(
+            llm._prepare_input_and_invoke_stream(
+                messages=[{"role": "user", "content": "Hi"}]
+            )
+        )
+
+    mock_body.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_astream_closes_response_body_on_provider_error_event() -> None:
+    """The async stream surfaces the error and closes the underlying stream."""
+    mock_client = MagicMock()
+    mock_body = MagicMock()
+    mock_body.__iter__ = MagicMock(
+        return_value=iter(_anthropic_error_response()["body"])
+    )
+    mock_client.invoke_model_with_response_stream.return_value = {"body": mock_body}
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region="us-west-2",
+    )
+
+    with pytest.raises(BedrockStreamError, match="overloaded_error"):
+        async for _ in llm._aprepare_input_and_invoke_stream(
+            prompt="Hello",
+            messages=[{"role": "user", "content": "Hi"}],
+        ):
+            pass
 
     mock_body.close.assert_called_once()
 
