@@ -547,7 +547,7 @@ def test_chat_anthropic_bedrock_keeps_supported_betas() -> None:
     assert payload["betas"] == ["context-1m-2025-08-07", "tool-search-tool-2025-10-19"]
 
 
-def test_chat_anthropic_bedrock_keeps_computer_use_and_context_management_betas() -> None:
+def test_chat_anthropic_bedrock_keeps_computer_use_context_betas() -> None:
     """The 2025-11-24 computer-use and context-management betas pass through.
 
     Bedrock documents `computer-use-2025-11-24` for Opus 4.5 and
