@@ -1,10 +1,10 @@
-"""The AgentCore improvement loop: recommendation, config bundles, A/B.
+"""The AgentCore improvement loop: diagnosis, recommendation, config bundles, A/B.
 
-Thin wrappers over the `bedrock-agentcore` data plane so a notebook can run the loop
-in a few lines each. Framework agnostic: everything operates on spans and prompts.
+Thin wrappers over the `bedrock-agentcore` SDK so a notebook can run the loop in a few
+lines each. Framework agnostic: everything operates on spans and prompts.
 
-The loop is: get a prompt rewrite from the agent's own traces, apply it with a
-configuration bundle, and compare arms.
+The loop is: score recent sessions and cluster their failures, get a prompt rewrite
+from the same sessions, apply it with a configuration bundle, and compare arms.
 """
 
 from __future__ import annotations
@@ -14,43 +14,82 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-import boto3
 from bedrock_agentcore.config_bundle import ConfigBundleClient
+from bedrock_agentcore.evaluation import EvaluationClient, RecommendationClient
+from bedrock_agentcore.runtime import WaitConfig
 
 __all__ = [
+    "diagnose",
+    "root_causes",
     "recommend_prompt",
     "Bundle",
     "make_bundle",
 ]
 
 _GOAL_SUCCESS = "arn:aws:bedrock-agentcore:::evaluator/Builtin.GoalSuccessRate"
+_WAIT = WaitConfig(max_wait=30 * 60, poll_interval=30)
 
 
-def _dp(region: str):
-    return boto3.client("bedrock-agentcore", region_name=region)
+def diagnose(
+    *,
+    region: str,
+    service_name: str,
+    log_groups: list[str],
+    session_ids: list[str],
+    lookback_hours: float = 2.0,
+) -> dict:
+    """Score sessions and cluster their failures, in one batch evaluation.
+
+    `Builtin.FailureAnalysis` runs beside `Builtin.GoalSuccessRate` and returns
+    root causes under `insightResults`. Its score is 1.0 when it finds failures, so
+    for it higher is worse. Pass both `aws/spans` and the runtime log group: spans
+    reference log events, so either one alone gives incomplete traces.
+
+    Pass `session_ids`. With only a time range, the service found 2 of 9 sessions
+    that were all in CloudWatch, and the skipped ones were not reported as failed.
+
+    Returns:
+        The GetBatchEvaluation response. Its `batchEvaluationArn` is what chains
+        diagnosis into `recommend_prompt`.
+    """
+    now = datetime.now(timezone.utc)
+    return EvaluationClient(region_name=region).start_batch_evaluation_and_wait(
+        wait_config=_WAIT,
+        batch_evaluation_name=f"diagnose_{int(time.time())}",
+        evaluators=[{"evaluatorId": "Builtin.GoalSuccessRate"},
+                    {"evaluatorId": "Builtin.FailureAnalysis"}],
+        data_source_config={"cloudWatchLogs": {
+            "serviceNames": [service_name],
+            "logGroupNames": log_groups,
+            "filterConfig": {"sessionIds": session_ids, "timeRange": {
+                "startTime": now - timedelta(hours=lookback_hours), "endTime": now}},
+        }},
+        client_token=str(uuid.uuid4()),
+    )
 
 
-def _log_group_arns(region: str, log_groups: list[str]) -> list[str]:
-    account = boto3.client("sts", region_name=region).get_caller_identity()["Account"]
-    return [f"arn:aws:logs:{region}:{account}:log-group:{name}" for name in log_groups]
+def root_causes(detail: dict) -> list[dict]:
+    """Flatten `insightResults` into one row per root cause."""
+    return [
+        {"insight": i["name"], "sessions": i.get("affectedSessionCount", 0),
+         "root_cause": rc["name"], "suggested_fix": rc.get("suggestedFix", "")}
+        for i in detail.get("insightResults") or []
+        for rc in i.get("rootCauses") or []
+    ]
 
 
 def recommend_prompt(
     *,
     region: str,
     current_prompt: str,
-    service_name: str,
-    log_groups: list[str],
-    lookback_hours: float = 6.0,
+    batch_evaluation_arn: str,
     evaluator_arn: str = _GOAL_SUCCESS,
-    timeout_minutes: float = 25.0,
 ) -> tuple[str | None, str]:
     """Ask AgentCore to rewrite a system prompt, targeting `evaluator_arn`.
 
-    The service reads the agent's recent traces straight from CloudWatch, finds where
-    the target evaluator scores it poorly, and returns a revised prompt with an
-    explanation of what it changed. Pass both `aws/spans` and the runtime log group:
-    spans reference log events, so either one alone gives incomplete traces.
+    The service reads the sessions the batch evaluation scored, finds where the
+    target evaluator scores them poorly, and returns a revised prompt with an
+    explanation of what it changed.
 
     The result is read from exactly one path and there is deliberately no fallback
     to "any long string in the response": `recommendationConfig` echoes back the
@@ -65,41 +104,20 @@ def recommend_prompt(
     Returns:
         `(recommended_prompt_or_None, explanation)`.
     """
-    dp = _dp(region)
-    now = datetime.now(timezone.utc)
-    rec = dp.start_recommendation(
+    result = RecommendationClient(region_name=region).start_recommendation_and_wait(
+        wait_config=_WAIT,
         name=f"SpRec{int(time.time())}",
         type="SYSTEM_PROMPT_RECOMMENDATION",
-        recommendationConfig={"systemPromptRecommendationConfig": {
+        recommendation_config={"systemPromptRecommendationConfig": {
             "systemPrompt": {"text": current_prompt},
-            "agentTraces": {"cloudwatchLogs": {
-                "logGroupArns": _log_group_arns(region, log_groups),
-                "serviceNames": [service_name],
-                "startTime": now - timedelta(hours=lookback_hours),
-                "endTime": now,
-            }},
+            "agentTraces": {"batchEvaluation": {"batchEvaluationArn": batch_evaluation_arn}},
             "evaluationConfig": {"evaluators": [{"evaluatorArn": evaluator_arn}]},
         }},
-        clientToken=str(uuid.uuid4()),
+        client_token=str(uuid.uuid4()),
     )
-    rec_id = rec["recommendationId"]
-    print(f"  started {rec_id}")
-
-    deadline = time.time() + timeout_minutes * 60
-    result: dict = {}
-    while time.time() < deadline:
-        result = dp.get_recommendation(recommendationId=rec_id)
-        if result.get("status") in ("COMPLETED", "FAILED"):
-            break
-        time.sleep(30)
-    print(f"  status  {result.get('status')}")
-
-    sp = (result.get("recommendationResult") or {}).get("systemPromptRecommendationResult") or {}
+    sp = result["recommendationResult"]["systemPromptRecommendationResult"]
     prompt = sp.get("recommendedSystemPrompt")
-    echoed = ((result.get("recommendationConfig") or {})
-              .get("systemPromptRecommendationConfig", {})
-              .get("systemPrompt", {}).get("text", ""))
-    if prompt and echoed and prompt.strip() == echoed.strip():
+    if prompt and prompt.strip() == current_prompt.strip():
         print("  WARNING: recommendation is identical to the submitted prompt")
     return prompt, str(sp.get("explanation") or "")
 
