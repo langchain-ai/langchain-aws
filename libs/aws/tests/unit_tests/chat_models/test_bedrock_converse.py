@@ -136,6 +136,27 @@ def test_profile() -> None:
     assert model.profile == {}
 
 
+@mock.patch.dict(
+    "langchain_aws.chat_models.bedrock_converse._MODEL_PROFILES",
+    {
+        "us.zai.glm-test": {"structured_output": True},
+        "zai.glm-test": {"structured_output": False},
+        "us.zai.glm-regional-only": {"reasoning_output": True},
+    },
+)
+@pytest.mark.parametrize(
+    "model_id, expected",
+    [
+        ("us.zai.glm-test", {"structured_output": True}),
+        ("eu.zai.glm-test", {"structured_output": False}),
+        ("us.zai.glm-regional-only", {"reasoning_output": True}),
+    ],
+)
+def test_profile_prefers_exact_model_id(model_id: str, expected: dict) -> None:
+    model = ChatBedrockConverse(model=model_id, region_name="us-west-2")
+    assert model.profile == expected
+
+
 @pytest.mark.parametrize(
     "model_id", ["global.anthropic.claude-sonnet-5-5", "openai.gpt-5.5"]
 )
@@ -439,6 +460,23 @@ def test_xai_supports_tool_choice_values() -> None:
         model="global.xai.grok-4.6", region_name="us-east-1"
     )
     assert chat_model.supports_tool_choice_values == ("auto", "any", "tool")
+
+
+@pytest.mark.parametrize(
+    "model, expected_values",
+    [
+        ("us.zai.glm-5.3", ("auto", "any", "tool")),
+        ("global.zai.glm-5.3", ("auto", "any", "tool")),
+        ("zai.glm-5", ("auto", "any")),
+        ("zai.glm-4.7", ("auto", "any")),
+        ("zai.glm-4.7-flash", ("auto", "any")),
+    ],
+)
+def test_zai_glm_supports_tool_choice_values(
+    model: str, expected_values: tuple[Literal["auto", "any", "tool"], ...]
+) -> None:
+    chat_model = ChatBedrockConverse(model=model, region_name="us-east-1")
+    assert chat_model.supports_tool_choice_values == expected_values
 
 
 @pytest.mark.parametrize(
@@ -1919,6 +1957,8 @@ def test_invocation_params_model_prefers_base_model_id() -> None:
         ("moonshotai.kimi-k2.5", False),
         ("moonshot.kimi-k2-thinking", False),
         ("xai.grok-4.6", False),
+        ("us.zai.glm-5.3", False),
+        ("zai.glm-4.7", False),
     ],
 )
 def test_set_disable_streaming(
@@ -5528,6 +5568,16 @@ def test_reasoning_effort_moonshot_flat() -> None:
         profile={"reasoning_effort_levels": ["low", "high", "max"]},
     )  # type: ignore[call-arg]
     assert llm.additional_model_request_fields == {"reasoning_effort": "max"}
+
+
+def test_reasoning_effort_zai_glm_flat() -> None:
+    """Test reasoning_effort maps to a flat key for Z.ai GLM models."""
+    llm = ChatBedrockConverse(
+        model="us.zai.glm-5.3",
+        region_name="us-east-1",
+        reasoning_effort="xhigh",
+    )  # type: ignore[call-arg]
+    assert llm.additional_model_request_fields == {"reasoning_effort": "xhigh"}
 
 
 def test_reasoning_effort_moonshot_invalid_level_raises() -> None:
