@@ -13,9 +13,10 @@ import threading
 import time
 from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
 from typing import Any, cast
 
-from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import RunnableConfig, run_in_executor
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
     ChannelVersions,
@@ -46,6 +47,13 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Request-scoped (thread/async-task isolated) capture of the (thread_id, actor_id)
+# seen on a read. Lets nested subgraph reads, whose derived config omits actor_id,
+# inherit the actor from the current request's parent read instead of failing.
+_request_actor: ContextVar[tuple[str, str] | None] = ContextVar(
+    "_agentcore_valkey_request_actor", default=None
+)
 
 
 class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
@@ -114,6 +122,51 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
             raise ValueError("max_retries must be non-negative")
         if retry_delay < 0:
             raise ValueError("retry_delay must be non-negative")
+
+    def _resolve_actor_id(self, config: RunnableConfig | None) -> str | None:
+        """Resolve the actor id for a read, scoped to the current request.
+
+        When ``config`` supplies both ``thread_id`` and ``actor_id``, record the
+        pair for the current request context so a later read of a derived subgraph
+        config (which omits ``actor_id``) can inherit it. When ``config`` omits
+        ``actor_id``, fall back to the recorded actor only if it was captured for
+        the same ``thread_id`` **and** the current read is a derived subgraph read
+        (identified by a non-empty ``checkpoint_ns``); otherwise return ``None`` so
+        the caller fails closed.
+
+        Restricting inheritance to non-empty ``checkpoint_ns`` reads is what makes
+        this safe: LangGraph only omits ``actor_id`` on the per-subgraph configs it
+        derives during ``get_state(subgraphs=True)``, and those always carry a
+        non-empty namespace. A top-level read has an empty ``checkpoint_ns``, so an
+        actor-less top-level read (only possible if a caller omits ``actor_id``)
+        fails closed instead of inheriting a possibly stale actor.
+
+        The capture lives in a request-scoped ``ContextVar`` rather than on the
+        saver instance, so a shared multi-tenant saver never resolves a subgraph
+        read to another request's actor.
+
+        Args:
+            config: RunnableConfig for the current read.
+
+        Returns:
+            The resolved actor id, or ``None`` if it cannot be resolved from the
+            config or the current request context.
+        """
+        configurable = config.get("configurable", {}) if config else {}
+        thread_id = configurable.get("thread_id")
+        actor_id = configurable.get("actor_id")
+        if actor_id:
+            if thread_id:  # only record when we can key the capture by thread
+                _request_actor.set((thread_id, actor_id))
+            return actor_id
+        # Only derived subgraph reads (non-empty checkpoint_ns) may inherit; a
+        # top-level read (empty checkpoint_ns) must carry its own actor_id.
+        if not configurable.get("checkpoint_ns"):
+            return None
+        recorded = _request_actor.get()
+        if recorded is not None and thread_id is not None and recorded[0] == thread_id:
+            return recorded[1]  # returns actor ID as it is the 2nd element in the tuple
+        return None
 
     def _execute_with_retry(self, operation, *args, **kwargs):
         """Execute a Valkey operation with exponential backoff retry logic."""
@@ -385,7 +438,10 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         """Get a checkpoint tuple from Valkey storage."""
         checkpoint_config = cast(
             ValkeyCheckpointerConfig,
-            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config)),
+            ValkeyCheckpointerConfig.from_runnable_config(
+                cast(dict[str, Any], config),
+                default_actor_id=self._resolve_actor_id(config),
+            ),
         )
 
         # Get specific checkpoint or latest
@@ -465,7 +521,10 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
 
         checkpoint_config = cast(
             ValkeyCheckpointerConfig,
-            ValkeyCheckpointerConfig.from_runnable_config(cast(dict[str, Any], config)),
+            ValkeyCheckpointerConfig.from_runnable_config(
+                cast(dict[str, Any], config),
+                default_actor_id=self._resolve_actor_id(config),
+            ),
         )
         before_checkpoint_id = get_checkpoint_id(before) if before else None
 
@@ -666,16 +725,15 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
     # ===== Async methods =====
     async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         """Async version of get_tuple."""
-        import asyncio
-
+        # Capture the actor in the async context so a later async subgraph read
+        # inherits it; run_in_executor copies this context into the worker thread.
+        self._resolve_actor_id(config)
         if not self.is_async:
             # For sync clients, run in executor to avoid blocking
-            loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, self.get_tuple, config)
+            return await run_in_executor(None, self.get_tuple, config)
 
         # For async clients, delegate to sync method in executor
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.get_tuple, config)
+        return await run_in_executor(None, self.get_tuple, config)
 
     async def alist(
         self,
@@ -686,15 +744,15 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
         limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
         """Async version of list."""
-        import asyncio
+        # Capture the actor in the async context so a later async subgraph read
+        # inherits it; run_in_executor copies this context into the worker thread.
+        self._resolve_actor_id(config)
 
         # Run sync list method in executor and yield results
-        loop = asyncio.get_running_loop()
-
-        def _sync_list():
+        def _sync_list() -> list[CheckpointTuple]:
             return list(self.list(config, filter=filter, before=before, limit=limit))
 
-        items = await loop.run_in_executor(None, _sync_list)
+        items = await run_in_executor(None, _sync_list)
         for item in items:
             yield item
 

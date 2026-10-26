@@ -1,8 +1,9 @@
 """Integration tests for AgentCore Valkey checkpoint saver."""
 
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, TypedDict, cast
 
 import pytest
 
@@ -10,6 +11,9 @@ pytest.importorskip("valkey")
 pytest.importorskip("orjson")
 
 from langchain_core.runnables import RunnableConfig
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import StateSnapshot
 
 try:
     from valkey import Valkey  # noqa: F401
@@ -499,3 +503,196 @@ class TestAgentCoreValkeySaverErrorHandling:
 
         except Exception:
             pytest.skip("Could not connect to Valkey server")
+
+
+class _SubgraphState(TypedDict):
+    """Minimal state shared by the nested-subgraph test graphs."""
+
+    value: str
+
+
+def _leaf_node(state: _SubgraphState) -> dict[str, str]:
+    """Append a marker to ``value``, identifying the innermost graph node."""
+    return {"value": state["value"] + "-leaf"}
+
+
+def _build_leaf_subgraph() -> CompiledStateGraph:
+    """Build the innermost compiled subgraph with a static breakpoint.
+
+    The breakpoint (``interrupt_before``) pauses execution before the leaf
+    node runs, leaving a pending task at every nesting level so that
+    ``get_state(subgraphs=True)``/``aget_state(subgraphs=True)`` has
+    in-progress subgraph state to traverse. A static breakpoint is used
+    instead of the dynamic ``interrupt()`` function to sidestep an unrelated
+    upstream langgraph/Python 3.10 issue where ``interrupt()`` raises
+    ``RuntimeError: Called get_config outside of a runnable context``.
+    """
+    builder = StateGraph(_SubgraphState)
+    builder.add_node("leaf_node", _leaf_node)
+    builder.add_edge(START, "leaf_node")
+    builder.add_edge("leaf_node", END)
+    return builder.compile(interrupt_before=["leaf_node"])
+
+
+def _build_nested_subgraph(levels: int) -> CompiledStateGraph:
+    """Nest the leaf subgraph ``levels`` deep as compiled subgraph nodes.
+
+    Args:
+        levels: Total number of nested subgraph levels, including the leaf.
+            A value of 1 returns the leaf subgraph unwrapped; a value of 3
+            wraps the leaf twice more, producing three nesting levels.
+
+    Returns:
+        A compiled subgraph nested ``levels`` deep, with no checkpointer of
+        its own (the checkpointer is only attached at the top-level graph).
+    """
+    inner = _build_leaf_subgraph()
+    for depth in range(levels - 1):
+        wrapper = StateGraph(_SubgraphState)
+        wrapper.add_node(f"wrap_{depth}", inner)
+        wrapper.add_edge(START, f"wrap_{depth}")
+        wrapper.add_edge(f"wrap_{depth}", END)
+        inner = wrapper.compile()
+    return inner
+
+
+def _build_graph_with_nested_subgraph(levels: int) -> StateGraph:
+    """Build a top-level graph whose only node is a ``levels``-deep subgraph.
+
+    Args:
+        levels: Number of nested subgraph levels below the top-level graph.
+
+    Returns:
+        An uncompiled ``StateGraph`` ready for ``.compile(checkpointer=...)``.
+    """
+    subgraph = _build_nested_subgraph(levels)
+    top = StateGraph(_SubgraphState)
+    top.add_node("sub", subgraph)
+    top.add_edge(START, "sub")
+    top.add_edge("sub", END)
+    return top
+
+
+def _collect_subgraph_namespaces(
+    snapshot: StateSnapshot, namespaces: list[str] | None = None
+) -> list[str]:
+    """Flatten a ``get_state(subgraphs=True)`` snapshot into its namespaces.
+
+    Args:
+        snapshot: The root (or a nested) state snapshot to walk.
+        namespaces: Accumulator used by the recursive descent; callers
+            should omit this.
+
+    Returns:
+        The ``checkpoint_ns`` value of ``snapshot`` followed by the
+        ``checkpoint_ns`` of every nested subgraph snapshot found in its
+        pending tasks, in traversal order.
+    """
+    if namespaces is None:
+        namespaces = []
+    namespaces.append(snapshot.config["configurable"].get("checkpoint_ns", ""))
+    for task in snapshot.tasks:
+        if task.state and hasattr(task.state, "values"):
+            _collect_subgraph_namespaces(cast(StateSnapshot, task.state), namespaces)
+    return namespaces
+
+
+class TestAgentCoreValkeySaverNestedSubgraphReads:
+    """Integration tests for nested subgraph reads against a real Valkey.
+
+    These exercise the full ``get_state(subgraphs=True)``/
+    ``aget_state(subgraphs=True)`` flow through a real LangGraph graph with
+    nested subgraphs, confirming that reads for the subgraph-shaped configs
+    (non-empty ``checkpoint_ns``, no explicit ``actor_id``) inherit the
+    ``actor_id`` captured from the prior top-level read instead of raising
+    ``InvalidConfigError``.
+    """
+
+    @contextmanager
+    def valkey_saver(self, **kwargs: Any) -> Iterator[AgentCoreValkeySaver]:
+        """Context manager for creating a Valkey saver with cleanup.
+
+        Only connection/setup failures are converted into a skip. Errors
+        raised by the code under test (inside the ``with`` block of a
+        caller) propagate normally so a real test failure is never
+        reported as a skip.
+        """
+        try:
+            saver_cm = AgentCoreValkeySaver.from_conn_string(
+                "valkey://localhost:6379/1",  # Use database 1 for testing
+                **kwargs,
+            )
+            saver = saver_cm.__enter__()
+            test_keys = list(saver.client.keys("agentcore:*test-nested-*"))  # type: ignore[arg-type]
+            if test_keys:
+                saver.client.delete(*test_keys)
+        except Exception as e:
+            pytest.skip(f"Could not connect to Valkey server: {e}")
+            return
+
+        try:
+            yield saver
+        finally:
+            test_keys = list(saver.client.keys("agentcore:*test-nested-*"))  # type: ignore[arg-type]
+            if test_keys:
+                saver.client.delete(*test_keys)
+            saver_cm.__exit__(None, None, None)
+
+    @pytest.mark.parametrize("levels", [1, 3], ids=["single-level", "triple-nested"])
+    def test_sync_get_state_returns_snapshots_for_every_subgraph_level(
+        self, levels: int
+    ) -> None:
+        """Sync ``get_state(subgraphs=True)`` resolves every nesting level.
+
+        Requirements: 2.1, 2.3.
+        """
+        with self.valkey_saver() as saver:
+            thread_id = f"test-nested-sync-{levels}"
+            config: RunnableConfig = {
+                "configurable": {"thread_id": thread_id, "actor_id": "test-agent"}
+            }
+            graph = _build_graph_with_nested_subgraph(levels).compile(
+                checkpointer=saver
+            )
+
+            graph.invoke({"value": "start"}, config)
+            snapshot = graph.get_state(config, subgraphs=True)
+
+            namespaces = _collect_subgraph_namespaces(snapshot)
+            # The top-level snapshot plus one snapshot per nested level.
+            assert len(namespaces) == levels + 1
+            assert namespaces[0] == ""
+            assert all(namespaces[index] for index in range(1, len(namespaces)))
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("levels", [1, 3], ids=["single-level", "triple-nested"])
+    async def test_async_aget_state_returns_snapshots_for_every_subgraph_level(
+        self, levels: int
+    ) -> None:
+        """Async ``aget_state(subgraphs=True)`` resolves every nesting level.
+
+        Confirms the ``run_in_executor`` context-propagation fix: without it,
+        the inherited ``actor_id`` captured by ``_resolve_actor_id`` in the
+        calling async context would not be visible to the worker thread that
+        runs the nested subgraph reads, and this would raise
+        ``InvalidConfigError``.
+
+        Requirements: 2.1, 2.3, 2.4.
+        """
+        with self.valkey_saver() as saver:
+            thread_id = f"test-nested-async-{levels}"
+            config: RunnableConfig = {
+                "configurable": {"thread_id": thread_id, "actor_id": "test-agent"}
+            }
+            graph = _build_graph_with_nested_subgraph(levels).compile(
+                checkpointer=saver
+            )
+
+            await graph.ainvoke({"value": "start"}, config)
+            snapshot = await graph.aget_state(config, subgraphs=True)
+
+            namespaces = _collect_subgraph_namespaces(snapshot)
+            # The top-level snapshot plus one snapshot per nested level.
+            assert len(namespaces) == levels + 1
+            assert namespaces[0] == ""
+            assert all(namespaces[index] for index in range(1, len(namespaces)))
