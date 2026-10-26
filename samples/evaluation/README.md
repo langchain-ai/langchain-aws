@@ -119,7 +119,7 @@ figures yourself. The evaluation code never asks where they came from.
   to take effect: CloudWatch, X-Ray settings, Transaction Search, Enable.
 
 ```bash
-pip install "langchain-aws[tools]>=1.7.6" "deepagents>=0.7.13" "bedrock-agentcore>=1.23.0"
+pip install "langchain-aws[tools]>=1.7.6" "deepagents>=0.7.13" "bedrock-agentcore>=1.25.0"
 ```
 
 ## Optional: LangSmith
