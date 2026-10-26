@@ -602,6 +602,8 @@ def test_thinking_disabled_in_params(params: dict, expected_result: bool) -> Non
             "low",
             {"reasoning_effort": "low"},
         ),
+        ("zai.glm-5.3", "max", {"reasoning_effort": "max"}),
+        ("zai.glm-4.7", "none", {"reasoning_effort": "none"}),
         ("amazon.titan-text-express-v1", "high", {}),
         ("meta.llama3-1-70b-instruct-v1:0", "high", {}),
         ("openai.gpt-5.6-terra", "medium", {"reasoning": {"effort": "medium"}}),

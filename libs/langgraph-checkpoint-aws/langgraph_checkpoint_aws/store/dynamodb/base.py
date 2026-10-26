@@ -12,7 +12,7 @@ import asyncio
 import logging
 import math
 import os
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, TypeVar
@@ -455,7 +455,7 @@ class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
             return None
         except Exception as e:
             logger.error(f"Error getting item {op.namespace}/{op.key}: {e}")
-            return None
+            raise
 
     def _batch_put_op(self, op: PutOp) -> None:
         """Execute a PutOp operation.
@@ -517,7 +517,7 @@ class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
         self,
         namespace: tuple[str, ...],
         key: str,
-        value: dict[str, Any],
+        value: Mapping[str, Any],
         ttl: float | None,
     ) -> None:
         """Put an item into DynamoDB, with optional embedding generation.
@@ -614,7 +614,7 @@ class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
             logger.error(f"Error putting item {namespace}/{key}: {e}")
             raise
 
-    def _extract_text_for_embedding(self, value: dict[str, Any]) -> str:
+    def _extract_text_for_embedding(self, value: Mapping[str, Any]) -> str:
         """Extract text from value dict based on configured fields.
 
         Args:
@@ -685,6 +685,10 @@ class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
                 UpdateExpression=(
                     "SET expires_at = :expires_at, updated_at = :updated_at"
                 ),
+                # UpdateItem creates a missing item. If another caller deleted
+                # this one after it was read, do not bring back a stub with no
+                # value.
+                ConditionExpression="attribute_exists(PK)",
                 ExpressionAttributeValues={
                     ":expires_at": {"N": str(expires_at)},
                     ":updated_at": {"S": datetime.now(timezone.utc).isoformat()},

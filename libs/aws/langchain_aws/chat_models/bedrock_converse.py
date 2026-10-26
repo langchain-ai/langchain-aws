@@ -1,10 +1,10 @@
 import base64
 import copy
 import functools
+import hashlib
 import json
 import logging
 import re
-import uuid
 import warnings
 from operator import itemgetter
 from typing import (
@@ -970,6 +970,9 @@ class ChatBedrockConverse(BaseChatModel):
             or
             # xAI Grok models
             (provider == "xai" and "grok" in model_id_lower)
+            or
+            # Z.ai GLM models
+            (provider == "zai" and "glm" in model_id_lower)
         ):
             return True
         elif (
@@ -1193,6 +1196,11 @@ class ChatBedrockConverse(BaseChatModel):
                     self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "grok" in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
+            elif base_model.startswith("zai.glm-"):
+                if base_model.startswith("zai.glm-5.3"):
+                    self.supports_tool_choice_values = ("auto", "any", "tool")
+                else:
+                    self.supports_tool_choice_values = ("auto", "any")
             elif base_model.startswith("openai.gpt-") and "gpt-oss" not in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "llama4" in base_model:
@@ -1236,8 +1244,9 @@ class ChatBedrockConverse(BaseChatModel):
 
     def _resolve_model_profile(self) -> ModelProfile | None:
         """Return the default model profile for this model."""
-        model_id = self._get_base_model()
-        profile = _get_default_model_profile(model_id)
+        profile = _get_default_model_profile(
+            self.model_id
+        ) or _get_default_model_profile(self._get_base_model())
         # The data describes the APIs `ChatAnthropicBedrock`, `ChatAnthropicMantle`
         # and `ChatOpenAIMantle` call. Converse hoists every system message into
         # `system`, so it can't send one in place.
@@ -2574,6 +2583,7 @@ def _messages_to_bedrock(
                 sys_param_to_bedrock.append(s)
         bedrock_system.extend(sys_param_to_bedrock)
 
+    fallback_document_names: Dict[str, int] = {}
     for msg_idx, msg in enumerate(messages):
         # Dropping is scoped to assistant turns: that is where replayed
         # cross-provider history shows up, and where a rejected block would
@@ -2584,6 +2594,7 @@ def _messages_to_bedrock(
             msg.content,
             drop_unsupported=isinstance(msg, AIMessage),
             model_id=model_id,
+            fallback_document_names=fallback_document_names,
         )
         if isinstance(msg, HumanMessage):
             # If there's a human, tool, human message sequence, the
@@ -2942,7 +2953,35 @@ def _mime_type_to_format(mime_type: str) -> str:
     )
 
 
-def _format_data_content_block(block: dict) -> dict:
+def _fallback_document_name(
+    document_bytes: bytes, fallback_document_names: Optional[Dict[str, int]]
+) -> str:
+    """Name an unnamed document so the same request always serializes the same way.
+
+    Prompt caching matches on the serialized request, so the name is derived from
+    the document bytes rather than generated per call. Bedrock rejects duplicate
+    document names within a request, so repeats of the same bytes get ``-2``,
+    ``-3`` suffixes in order of appearance.
+
+    Args:
+        document_bytes: The raw document content.
+        fallback_document_names: Occurrence counts per name for the request being
+            built. `None` when formatting a single block outside a request.
+
+    Returns:
+        A 12-character hex digest, suffixed when the same bytes already appeared.
+    """
+    name = hashlib.sha256(document_bytes).hexdigest()[:12]
+    if fallback_document_names is None:
+        return name
+    count = fallback_document_names.get(name, 0) + 1
+    fallback_document_names[name] = count
+    return name if count == 1 else f"{name}-{count}"
+
+
+def _format_data_content_block(
+    block: dict, *, fallback_document_names: Optional[Dict[str, int]] = None
+) -> dict:
     """Format standard data content block to format expected by Converse API."""
     if block["type"] == "image":
         if "base64" in block or block.get("sourceType") == "base64":
@@ -2975,14 +3014,13 @@ def _format_data_content_block(block: dict) -> dict:
                 doc_format = "txt"
             else:
                 doc_format = _mime_type_to_format(mime_type)
+            document_bytes = _b64str_to_bytes(
+                block.get("base64") or block.get("data", "")
+            )
             formatted_block = {
                 "document": {
                     "format": doc_format,
-                    "source": {
-                        "bytes": _b64str_to_bytes(
-                            block.get("base64") or block.get("data", "")
-                        )
-                    },
+                    "source": {"bytes": document_bytes},
                 }
             }
             if citations := block.get("citations"):
@@ -3004,7 +3042,9 @@ def _format_data_content_block(block: dict) -> dict:
                     "'mime_type': 'application/pdf', 'base64': '...', "
                     "'name': 'my-pdf'}"
                 )
-                formatted_block["document"]["name"] = uuid.uuid4().hex[:12]
+                formatted_block["document"]["name"] = _fallback_document_name(
+                    document_bytes, fallback_document_names
+                )
         else:
             error_message = "File data only supported through in-line base64 format."
             raise ValueError(error_message)
@@ -3131,6 +3171,7 @@ def _lc_content_to_bedrock(
     *,
     drop_unsupported: bool = False,
     model_id: Optional[str] = None,
+    fallback_document_names: Optional[Dict[str, int]] = None,
 ) -> List[Dict[str, Any]]:
     if isinstance(content, str):
         if not content or content.isspace():
@@ -3150,7 +3191,11 @@ def _lc_content_to_bedrock(
         elif isinstance(block, dict) and is_data_content_block(
             _camel_to_snake_keys(block)
         ):
-            bedrock_content.append(_format_data_content_block(block))
+            bedrock_content.append(
+                _format_data_content_block(
+                    block, fallback_document_names=fallback_document_names
+                )
+            )
         elif block["type"] == "text":
             if not block["text"] or (
                 isinstance(block["text"], str) and block["text"].isspace()
@@ -3320,6 +3365,7 @@ def _lc_content_to_bedrock(
                                 block["content"],
                                 drop_unsupported=drop_unsupported,
                                 model_id=model_id,
+                                fallback_document_names=fallback_document_names,
                             )
                         ),
                         "status": "error" if block.get("isError") else "success",

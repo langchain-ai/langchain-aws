@@ -1,6 +1,7 @@
 """Test chat model integration."""
 
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -133,6 +134,27 @@ def test_profile() -> None:
 
     model = ChatBedrockConverse(model="foo")
     assert model.profile == {}
+
+
+@mock.patch.dict(
+    "langchain_aws.chat_models.bedrock_converse._MODEL_PROFILES",
+    {
+        "us.zai.glm-test": {"structured_output": True},
+        "zai.glm-test": {"structured_output": False},
+        "us.zai.glm-regional-only": {"reasoning_output": True},
+    },
+)
+@pytest.mark.parametrize(
+    "model_id, expected",
+    [
+        ("us.zai.glm-test", {"structured_output": True}),
+        ("eu.zai.glm-test", {"structured_output": False}),
+        ("us.zai.glm-regional-only", {"reasoning_output": True}),
+    ],
+)
+def test_profile_prefers_exact_model_id(model_id: str, expected: dict) -> None:
+    model = ChatBedrockConverse(model=model_id, region_name="us-west-2")
+    assert model.profile == expected
 
 
 @pytest.mark.parametrize(
@@ -438,6 +460,23 @@ def test_xai_supports_tool_choice_values() -> None:
         model="global.xai.grok-4.6", region_name="us-east-1"
     )
     assert chat_model.supports_tool_choice_values == ("auto", "any", "tool")
+
+
+@pytest.mark.parametrize(
+    "model, expected_values",
+    [
+        ("us.zai.glm-5.3", ("auto", "any", "tool")),
+        ("global.zai.glm-5.3", ("auto", "any", "tool")),
+        ("zai.glm-5", ("auto", "any")),
+        ("zai.glm-4.7", ("auto", "any")),
+        ("zai.glm-4.7-flash", ("auto", "any")),
+    ],
+)
+def test_zai_glm_supports_tool_choice_values(
+    model: str, expected_values: tuple[Literal["auto", "any", "tool"], ...]
+) -> None:
+    chat_model = ChatBedrockConverse(model=model, region_name="us-east-1")
+    assert chat_model.supports_tool_choice_values == expected_values
 
 
 @pytest.mark.parametrize(
@@ -1918,6 +1957,8 @@ def test_invocation_params_model_prefers_base_model_id() -> None:
         ("moonshotai.kimi-k2.5", False),
         ("moonshot.kimi-k2-thinking", False),
         ("xai.grok-4.6", False),
+        ("us.zai.glm-5.3", False),
+        ("zai.glm-4.7", False),
     ],
 )
 def test_set_disable_streaming(
@@ -3398,6 +3439,175 @@ def test__lc_content_to_bedrock_text_file_mime_types(
         ]
     )
     assert bedrock_content[0]["document"]["format"] == expected_format
+
+
+def _unnamed_file_block(data: bytes = b"unnamed document payload") -> Dict[str, Any]:
+    return {
+        "type": "file",
+        "base64": base64.b64encode(data).decode("utf-8"),
+        "mime_type": "application/pdf",
+    }
+
+
+def _document_names(bedrock_messages: List[Dict[str, Any]]) -> List[str]:
+    names: List[str] = []
+
+    def collect(blocks: List[Dict[str, Any]]) -> None:
+        for block in blocks:
+            if "document" in block:
+                names.append(block["document"]["name"])
+            elif "toolResult" in block:
+                collect(block["toolResult"]["content"])
+
+    for message in bedrock_messages:
+        collect(message["content"])
+    return names
+
+
+def _serialized_document_names(messages: List[BaseMessage]) -> List[str]:
+    bedrock_messages, _ = _messages_to_bedrock(list(messages))
+    return _document_names(bedrock_messages)
+
+
+_TWO_READS = AIMessage(
+    content="",
+    tool_calls=[
+        {"id": "call_a", "name": "read_file", "args": {}},
+        {"id": "call_b", "name": "read_file", "args": {}},
+    ],
+)
+
+
+def test__messages_to_bedrock_unnamed_file_name_is_stable_across_requests() -> None:
+    data = b"unnamed document payload"
+    messages: List[BaseMessage] = [
+        HumanMessage(
+            content=[_unnamed_file_block(data), {"type": "text", "text": "Hi"}]
+        )
+    ]
+
+    with pytest.warns(UserWarning, match="may require a filename"):
+        names = _serialized_document_names(messages)
+        names_again = _serialized_document_names(messages)
+
+    assert names == [hashlib.sha256(data).hexdigest()[:12]]
+    assert names_again == names
+
+
+@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
+def test__messages_to_bedrock_unnamed_files_with_different_content_differ() -> None:
+    messages: List[BaseMessage] = [
+        HumanMessage(
+            content=[_unnamed_file_block(b"first"), _unnamed_file_block(b"second")]
+        )
+    ]
+
+    first, second = _serialized_document_names(messages)
+
+    assert first != second
+    assert "-" not in first + second
+
+
+@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
+@pytest.mark.parametrize(
+    "messages",
+    [
+        pytest.param(
+            [HumanMessage(content=[_unnamed_file_block(), _unnamed_file_block()])],
+            id="same message",
+        ),
+        pytest.param(
+            [
+                HumanMessage(content=[_unnamed_file_block()]),
+                AIMessage(content="Done."),
+                HumanMessage(content=[_unnamed_file_block()]),
+            ],
+            id="later turn",
+        ),
+        pytest.param(
+            [
+                HumanMessage(content="Read both."),
+                _TWO_READS,
+                ToolMessage(content=[_unnamed_file_block()], tool_call_id="call_a"),
+                ToolMessage(content=[_unnamed_file_block()], tool_call_id="call_b"),
+            ],
+            id="tool messages",
+        ),
+        pytest.param(
+            [
+                HumanMessage(content="Read both."),
+                _TWO_READS,
+                HumanMessage(
+                    content=[
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_a",
+                            "content": [_unnamed_file_block()],
+                        },
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_b",
+                            "content": [_unnamed_file_block()],
+                        },
+                    ]
+                ),
+            ],
+            id="nested tool_result blocks",
+        ),
+    ],
+)
+def test__messages_to_bedrock_repeated_unnamed_file_gets_unique_stable_names(
+    messages: List[BaseMessage],
+) -> None:
+    names = _serialized_document_names(messages)
+
+    assert names == [names[0], f"{names[0]}-2"]
+    assert _serialized_document_names(messages) == names
+
+
+@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
+def test__messages_to_bedrock_later_repeat_keeps_earlier_names() -> None:
+    first_turn = HumanMessage(content=[_unnamed_file_block()])
+
+    before = _serialized_document_names([first_turn])
+    after = _serialized_document_names(
+        [
+            first_turn,
+            AIMessage(content="Done."),
+            HumanMessage(content=[_unnamed_file_block()]),
+        ]
+    )
+
+    assert after[0] == before[0]
+
+
+@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
+def test__format_data_content_block_outside_a_request_uses_the_bare_hash() -> None:
+    data = b"unnamed document payload"
+    block = {
+        "type": "file",
+        "base64": base64.b64encode(data).decode("utf-8"),
+        "mimeType": "application/pdf",
+    }
+
+    first = _format_data_content_block(block)
+    second = _format_data_content_block(block)
+
+    expected = hashlib.sha256(data).hexdigest()[:12]
+    assert first["document"]["name"] == second["document"]["name"] == expected
+
+
+@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
+def test__messages_to_bedrock_explicit_names_are_unchanged() -> None:
+    named = {**_unnamed_file_block(), "name": "report"}
+    messages: List[BaseMessage] = [
+        HumanMessage(content=[named, _unnamed_file_block(), _unnamed_file_block()])
+    ]
+
+    names = _serialized_document_names(messages)
+
+    assert names[0] == "report"
+    assert names[2] == f"{names[1]}-2"
 
 
 def test__lc_content_to_bedrock_text_mime_type_image_still_rejected() -> None:
@@ -5358,6 +5568,16 @@ def test_reasoning_effort_moonshot_flat() -> None:
         profile={"reasoning_effort_levels": ["low", "high", "max"]},
     )  # type: ignore[call-arg]
     assert llm.additional_model_request_fields == {"reasoning_effort": "max"}
+
+
+def test_reasoning_effort_zai_glm_flat() -> None:
+    """Test reasoning_effort maps to a flat key for Z.ai GLM models."""
+    llm = ChatBedrockConverse(
+        model="us.zai.glm-5.3",
+        region_name="us-east-1",
+        reasoning_effort="xhigh",
+    )  # type: ignore[call-arg]
+    assert llm.additional_model_request_fields == {"reasoning_effort": "xhigh"}
 
 
 def test_reasoning_effort_moonshot_invalid_level_raises() -> None:

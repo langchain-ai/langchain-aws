@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator, Iterable
+from collections.abc import AsyncGenerator, Iterable, Mapping
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 
@@ -554,7 +554,7 @@ class AsyncValkeyStore(BaseValkeyStore):
         self,
         namespace: tuple[str, ...],
         key: str,
-        value: dict[str, Any],
+        value: Mapping[str, Any],
         index: Literal[False] | list[str] | None = None,
         *,
         ttl: float | None | NotProvided = NOT_PROVIDED,
@@ -562,7 +562,11 @@ class AsyncValkeyStore(BaseValkeyStore):
         """Put an item in the store."""
         resolved_ttl = _ensure_ttl(self.ttl_config, ttl)
         op = PutOp(
-            namespace=namespace, key=key, value=value, index=index, ttl=resolved_ttl
+            namespace=namespace,
+            key=key,
+            value=dict(value),
+            index=index,
+            ttl=resolved_ttl,
         )
         await self._handle_put_async(op)
 
@@ -689,7 +693,7 @@ class AsyncValkeyStore(BaseValkeyStore):
         self,
         namespace: tuple[str, ...],
         key: str,
-        value: dict[str, Any],
+        value: Mapping[str, Any],
         index: Literal[False] | list[str] | None = None,
         *,
         ttl: float | None | NotProvided = NOT_PROVIDED,
