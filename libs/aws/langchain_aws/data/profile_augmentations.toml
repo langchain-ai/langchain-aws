@@ -238,6 +238,13 @@ mid_conversation_tools = true
 pdf_tool_message = true
 image_tool_message = true
 
+[overrides."au.anthropic.claude-sonnet-5-5"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+mid_conversation_system_messages = true
+mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
+
 [overrides."eu.anthropic.claude-sonnet-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
