@@ -1227,22 +1227,136 @@ def test_context_manager_stops_owned_session_once() -> None:
 
 
 def test_async_context_manager_stops_owned_session() -> None:
+    seen: list[str] = []
+
+    def stop() -> None:
+        import threading
+
+        seen.append(threading.current_thread().name)
+
     async def run() -> MagicMock:
         with patch(
             "bedrock_agentcore.tools.code_interpreter_client.CodeInterpreter"
         ) as ci_cls:
-            async with AgentCoreSandbox.create(region="us-west-2"):
+            ci_cls.return_value.stop.side_effect = stop
+            async with AgentCoreSandbox.create(region="us-west-2") as sandbox:
                 pass
+            assert sandbox.close() is None
             return ci_cls
 
     ci_cls = asyncio.run(run())
     ci_cls.return_value.stop.assert_called_once()
+    assert len(seen) == 1
+    assert seen[0].startswith("agentcore-sandbox")
+
+
+@pytest.mark.parametrize("cleanup", ["direct", "sync", "async"])
+def test_close_retries_after_stop_failure(cleanup: str) -> None:
+    """Every cleanup entry point leaves a failed stop available for retry."""
+    stop_error = ClientError(
+        {"Error": {"Code": "InternalServerException", "Message": "Try again"}},
+        "StopCodeInterpreterSession",
+    )
+    with patch(
+        "bedrock_agentcore.tools.code_interpreter_client.CodeInterpreter"
+    ) as ci_cls:
+        sandbox = AgentCoreSandbox.create(region="us-west-2")
+        stop = ci_cls.return_value.stop
+        stop.side_effect = [stop_error, None]
+
+        with pytest.raises(ClientError) as raised:
+            if cleanup == "direct":
+                sandbox.close()
+            elif cleanup == "sync":
+                with sandbox:
+                    pass
+            else:
+
+                async def run() -> None:
+                    async with sandbox:
+                        pass
+
+                asyncio.run(run())
+
+        assert raised.value is stop_error
+        assert stop.call_count == 1
+        assert sandbox.close() is None
+        assert stop.call_count == 2
+        assert sandbox.close() is None
+        assert stop.call_count == 2
+
+
+def test_close_remains_retryable_after_repeated_stop_failures() -> None:
+    """Each failed attempt propagates once, until a normal return ends cleanup."""
+    errors = [RuntimeError("first stop failed"), RuntimeError("second stop failed")]
+    with patch(
+        "bedrock_agentcore.tools.code_interpreter_client.CodeInterpreter"
+    ) as ci_cls:
+        sandbox = AgentCoreSandbox.create(region="us-west-2")
+        stop = ci_cls.return_value.stop
+        stop.side_effect = [*errors, None]
+
+        for attempt, error in enumerate(errors, start=1):
+            with pytest.raises(RuntimeError) as raised:
+                sandbox.close()
+            assert raised.value is error
+            assert stop.call_count == attempt
+
+        assert sandbox.close() is None
+        assert stop.call_count == 3
+        assert sandbox.close() is None
+        assert stop.call_count == 3
+
+
+@pytest.mark.parametrize("async_exit", [False, True])
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_context_manager_preserves_exceptions(
+    async_exit: bool, cleanup_fails: bool
+) -> None:
+    """Cleanup preserves body errors, or supersedes them with a retryable error."""
+    body_error = ValueError("body failed")
+    stop_error = RuntimeError("stop failed")
+    with patch(
+        "bedrock_agentcore.tools.code_interpreter_client.CodeInterpreter"
+    ) as ci_cls:
+        sandbox = AgentCoreSandbox.create(region="us-west-2")
+        stop = ci_cls.return_value.stop
+        stop.side_effect = [stop_error, None] if cleanup_fails else [None]
+
+        with pytest.raises((ValueError, RuntimeError)) as raised:
+            if async_exit:
+
+                async def run() -> None:
+                    async with sandbox:
+                        raise body_error
+
+                asyncio.run(run())
+            else:
+                with sandbox:
+                    raise body_error
+
+        assert raised.value is (stop_error if cleanup_fails else body_error)
+        if cleanup_fails:
+            assert raised.value.__context__ is body_error
+        assert stop.call_count == 1
+        assert sandbox.close() is None
+        assert stop.call_count == (2 if cleanup_fails else 1)
+        assert sandbox.close() is None
+        assert stop.call_count == (2 if cleanup_fails else 1)
 
 
 def test_caller_supplied_interpreter_is_left_running() -> None:
     sandbox, mock = _make_sandbox()
+    sandbox.close()
     with sandbox:
         pass
+
+    async def run() -> None:
+        async with sandbox:
+            pass
+
+    asyncio.run(run())
+    sandbox.close()
     mock.stop.assert_not_called()
 
 

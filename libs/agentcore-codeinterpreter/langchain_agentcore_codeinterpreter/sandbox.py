@@ -303,10 +303,13 @@ class AgentCoreSandbox(BaseSandbox):
 
         A sandbox built from a caller-supplied interpreter leaves it running,
         since the caller manages that lifecycle.
+
+        Stop errors propagate. After a failed attempt completes, cleanup can
+        be retried by calling this method again.
         """
         if self._owns_interpreter:
-            self._owns_interpreter = False
             self._interpreter.stop()
+            self._owns_interpreter = False
 
     def __enter__(self) -> AgentCoreSandbox:
         return self
