@@ -3,6 +3,7 @@
 import base64
 import json
 import time
+import warnings
 from typing import Any, Literal, Optional, Type
 from uuid import uuid4
 
@@ -326,6 +327,75 @@ def test_multiple_system_messages_anthropic() -> None:
 
     assert isinstance(response, AIMessage)
     assert response.text
+
+
+_FRENCH = SystemMessage(content="From now on, reply only in French.")
+_SKY = HumanMessage(content="What color is the sky on a clear day? One word.")
+
+
+def test_mid_conversation_system_message_in_place() -> None:
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5-5")
+    sent: list[dict] = []
+    converse = model.client.converse
+
+    def record(**kwargs: Any) -> Any:
+        sent.append(kwargs)
+        return converse(**kwargs)
+
+    model.client.converse = record
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        response = model.invoke(
+            [HumanMessage("Hi"), _FRENCH, AIMessage("Bonjour !"), _SKY]
+        )
+    roles = [message["role"] for message in sent[0]["messages"]]
+    assert roles == ["user", "system", "assistant", "user"]
+    assert "bleu" in response.text.lower()
+
+
+def test_mid_conversation_system_message_last_is_hoisted() -> None:
+    """Converse requires the last turn to be a user message."""
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5-5")
+    with pytest.warns(UserWarning, match="non-leading `SystemMessage`"):
+        response = model.invoke([_SKY, _FRENCH])
+    assert response.text
+
+
+def test_mid_conversation_system_message_unsupported_model() -> None:
+    """Models without support hoist the message, as before, without a warning."""
+    model = ChatBedrockConverse(model="us.anthropic.claude-haiku-4-5-20251001-v1:0")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        response = model.invoke(
+            [HumanMessage("Hi"), _FRENCH, AIMessage("Bonjour !"), _SKY]
+        )
+    assert response.text
+
+
+def test_mid_conversation_system_message_keeps_cache() -> None:
+    """An in-place system message after the cache point leaves the prefix cached."""
+    model = ChatBedrockConverse(model="us.anthropic.claude-sonnet-5-5")
+    context = HumanMessage(
+        content=[
+            {"type": "text", "text": _LONG_SYSTEM_PROMPT},
+            {"cachePoint": {"type": "default"}},
+            {"type": "text", "text": "Summarize that in five words."},
+        ]
+    )
+    history = [context, AIMessage("Concise helpful geography expert.")]
+    model.invoke([*history, HumanMessage("Now in three words.")])
+    response = model.invoke(
+        [
+            *history,
+            HumanMessage("Now in three words."),
+            _FRENCH,
+            AIMessage("Expert géographie concis."),
+            HumanMessage("Now in two words."),
+        ]
+    )
+    assert response.usage_metadata is not None
+    details = response.usage_metadata.get("input_token_details", {})
+    assert details.get("cache_read", 0) > 0
 
 
 class ClassifyQuery(BaseModel):

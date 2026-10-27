@@ -158,14 +158,132 @@ def test_profile_prefers_exact_model_id(model_id: str, expected: dict) -> None:
 
 
 @pytest.mark.parametrize(
-    "model_id", ["global.anthropic.claude-sonnet-5-5", "openai.gpt-5.5"]
+    "model_id, system_messages",
+    [("global.anthropic.claude-sonnet-5-5", True), ("openai.gpt-5.5", None)],
 )
-def test_profile_omits_mid_conversation_support(model_id: str) -> None:
-    """Converse moves every system message into `system`."""
+def test_profile_mid_conversation_support(
+    model_id: str, system_messages: Optional[bool]
+) -> None:
     model = ChatBedrockConverse(model=model_id, region_name="us-west-2")
     assert model.profile
-    assert "mid_conversation_system_messages" not in model.profile
+    assert model.profile.get("mid_conversation_system_messages") is system_messages
     assert "mid_conversation_tools" not in model.profile
+
+
+_MID = SystemMessage(content="Reply in French.")
+
+
+@pytest.mark.parametrize(
+    "messages, expected_roles, expected_system",
+    [
+        (
+            [HumanMessage("Hi"), _MID, AIMessage("Bonjour"), HumanMessage("2+2?")],
+            ["user", "system", "assistant", "user"],
+            [],
+        ),
+        (
+            [
+                HumanMessage("Weather?"),
+                AIMessage(
+                    "",
+                    tool_calls=[{"id": "t1", "name": "get_weather", "args": {}}],
+                ),
+                ToolMessage("Sunny", tool_call_id="t1"),
+                _MID,
+                AIMessage("Il fait beau."),
+            ],
+            ["user", "assistant", "user", "system", "assistant"],
+            [],
+        ),
+        (
+            [HumanMessage("Hi"), _MID],
+            ["user"],
+            [{"text": "Reply in French."}],
+        ),
+        # After an AI message: hoisted.
+        (
+            [HumanMessage("Hi"), AIMessage("Hello"), _MID, HumanMessage("2+2?")],
+            ["user", "assistant", "user"],
+            [{"text": "Reply in French."}],
+        ),
+    ],
+)
+def test__messages_to_bedrock_mid_conversation_system(
+    messages: list, expected_roles: list, expected_system: list
+) -> None:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        bedrock_messages, system = _messages_to_bedrock(
+            [SystemMessage(content="Be helpful."), *messages],
+            mid_conversation_system_messages=True,
+        )
+    assert [m["role"] for m in bedrock_messages] == expected_roles
+    assert system == [{"text": "Be helpful."}, *expected_system]
+    hoisted = [w for w in caught if "non-leading `SystemMessage`" in str(w.message)]
+    assert len(hoisted) == (1 if expected_system else 0)
+
+
+def test__messages_to_bedrock_mid_conversation_system_non_text_hoisted() -> None:
+    """A system turn accepts only text and cache points, so others are hoisted."""
+    image_system = SystemMessage(
+        content=[
+            {"type": "text", "text": "Describe it."},
+            {"type": "image", "base64": "iVBORw0KGgo=", "mime_type": "image/png"},
+        ]
+    )
+    with pytest.warns(UserWarning, match="non-leading `SystemMessage`"):
+        bedrock_messages, system = _messages_to_bedrock(
+            [HumanMessage("Hi"), image_system, AIMessage("Ok"), HumanMessage("Go")],
+            mid_conversation_system_messages=True,
+        )
+    assert [m["role"] for m in bedrock_messages] == ["user", "assistant", "user"]
+    assert [next(iter(block)) for block in system] == ["text", "image"]
+
+
+def test__messages_to_bedrock_mid_conversation_system_cache_point() -> None:
+    """A cache point in a system message stays with it in place."""
+    cached = SystemMessage(
+        content=[
+            {"type": "text", "text": "Reply in French."},
+            {"cachePoint": {"type": "default"}},
+        ]
+    )
+    bedrock_messages, _ = _messages_to_bedrock(
+        [HumanMessage("Hi"), cached, AIMessage("Bonjour"), HumanMessage("2+2?")],
+        mid_conversation_system_messages=True,
+    )
+    assert bedrock_messages[1] == {
+        "role": "system",
+        "content": [{"text": "Reply in French."}, {"cachePoint": {"type": "default"}}],
+    }
+
+
+def test__messages_to_bedrock_mid_conversation_system_disabled() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        bedrock_messages, system = _messages_to_bedrock(
+            [HumanMessage("Hi"), _MID, AIMessage("Bonjour"), HumanMessage("2+2?")]
+        )
+    assert [m["role"] for m in bedrock_messages] == ["user", "assistant", "user"]
+    assert system == [{"text": "Reply in French."}]
+
+
+@pytest.mark.parametrize(
+    "model_id, in_place",
+    [("us.anthropic.claude-sonnet-5-5", True), ("openai.gpt-5.5", False)],
+)
+def test_mid_conversation_system_message_follows_profile(
+    model_id: str, in_place: bool
+) -> None:
+    model = ChatBedrockConverse(model=model_id, region_name="us-west-2")
+    assert model._mid_conversation_system_messages is in_place
+    bedrock_messages, system = _messages_to_bedrock(
+        [HumanMessage("Hi"), _MID, AIMessage("Bonjour"), HumanMessage("2+2?")],
+        mid_conversation_system_messages=model._mid_conversation_system_messages,
+    )
+    roles = [m["role"] for m in bedrock_messages]
+    assert ("system" in roles) is in_place
+    assert (system == [{"text": "Reply in French."}]) is not in_place
 
 
 def test_explicit_profile_keeps_mid_conversation_support() -> None:

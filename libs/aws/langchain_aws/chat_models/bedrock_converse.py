@@ -1242,15 +1242,20 @@ class ChatBedrockConverse(BaseChatModel):
         _add_langchain_aws_version(self)
         return self
 
+    @property
+    def _mid_conversation_system_messages(self) -> bool:
+        return bool((self.profile or {}).get("mid_conversation_system_messages"))
+
     def _resolve_model_profile(self) -> ModelProfile | None:
         """Return the default model profile for this model."""
         profile = _get_default_model_profile(
             self.model_id
         ) or _get_default_model_profile(self._get_base_model())
         # The data describes the APIs `ChatAnthropicBedrock`, `ChatAnthropicMantle`
-        # and `ChatOpenAIMantle` call. Converse hoists every system message into
-        # `system`, so it can't send one in place.
-        profile.pop("mid_conversation_system_messages", None)
+        # and `ChatOpenAIMantle` call. Converse accepts an in-place system message
+        # only for Claude, and has no content block for mid-conversation tool changes.
+        if not (self.provider == "anthropic" or "anthropic" in self._get_base_model()):
+            profile.pop("mid_conversation_system_messages", None)
         profile.pop("mid_conversation_tools", None)
         return profile
 
@@ -1404,6 +1409,7 @@ class ChatBedrockConverse(BaseChatModel):
                 self.system,
                 model_id=self._get_base_model(),
                 provider=self.provider,
+                mid_conversation_system_messages=self._mid_conversation_system_messages,
             )
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
@@ -1485,6 +1491,7 @@ class ChatBedrockConverse(BaseChatModel):
                 self.system,
                 model_id=self._get_base_model(),
                 provider=self.provider,
+                mid_conversation_system_messages=self._mid_conversation_system_messages,
             )
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
@@ -2246,6 +2253,7 @@ class ChatBedrockConverse(BaseChatModel):
                     self.system,
                     model_id=self._get_base_model(),
                     provider=self.provider,
+                    mid_conversation_system_messages=self._mid_conversation_system_messages,
                 )
             )
 
@@ -2529,14 +2537,41 @@ def _drop_foreign_reasoning(
     return message.model_copy(update={"content": content})
 
 
+def _next_non_system_is_ai(messages: Sequence[BaseMessage], index: int) -> bool:
+    """Whether the first non-system message after `index` is an AI message."""
+    for message in messages[index + 1 :]:
+        if not isinstance(message, SystemMessage):
+            return isinstance(message, AIMessage)
+    return False
+
+
+def _warn_system_message_hoisted(model_id: Optional[str]) -> None:
+    """Warn that a non-leading system message was hoisted into `system`."""
+    warnings.warn(
+        "A non-leading `SystemMessage` was moved to the top-level `system` field "
+        "and now applies to the entire conversation. Converse sends a system "
+        "message in place only after a human or tool message and before an AI "
+        f"message (model: {model_id!r}).",
+        UserWarning,
+        stacklevel=4,
+    )
+
+
 def _messages_to_bedrock(
     messages: List[BaseMessage],
     system: Optional[List[Union[str, Dict[str, Any]]]] = None,
     *,
     model_id: Optional[str] = None,
     provider: Optional[str] = None,
+    mid_conversation_system_messages: bool = False,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Handle Bedrock converse and Anthropic style content blocks"""
+    """Handle Bedrock converse and Anthropic style content blocks.
+
+    A leading system message goes to `system`. With
+    `mid_conversation_system_messages`, a later one is sent in place where Converse
+    accepts it, after a human or tool message and before an AI message, and is
+    hoisted into `system` otherwise.
+    """
     for idx, message in enumerate(messages):
         if not isinstance(message, AIMessage):
             continue
@@ -2627,7 +2662,19 @@ def _messages_to_bedrock(
                 content = _empty_content_fallback(content)
             bedrock_messages.append({"role": "assistant", "content": content})
         elif isinstance(msg, SystemMessage):
-            bedrock_system.extend(content)
+            if not bedrock_messages:
+                bedrock_system.extend(content)
+            elif (
+                mid_conversation_system_messages
+                and bedrock_messages[-1]["role"] == "user"
+                and _next_non_system_is_ai(messages, msg_idx)
+                and all(set(block) <= {"text", "cachePoint"} for block in content)
+            ):
+                bedrock_messages.append({"role": "system", "content": content})
+            else:
+                if mid_conversation_system_messages:
+                    _warn_system_message_hoisted(model_id)
+                bedrock_system.extend(content)
         elif isinstance(msg, ToolMessage):
             if bedrock_messages and bedrock_messages[-1]["role"] == "user":
                 curr = bedrock_messages.pop()
