@@ -1241,7 +1241,7 @@ def test_async_context_manager_stops_owned_session() -> None:
             ci_cls.return_value.stop.side_effect = stop
             async with AgentCoreSandbox.create(region="us-west-2") as sandbox:
                 pass
-            assert sandbox.close() is None
+            sandbox.close()
             return ci_cls
 
     ci_cls = asyncio.run(run())
@@ -1280,9 +1280,9 @@ def test_close_retries_after_stop_failure(cleanup: str) -> None:
 
         assert raised.value is stop_error
         assert stop.call_count == 1
-        assert sandbox.close() is None
+        sandbox.close()
         assert stop.call_count == 2
-        assert sandbox.close() is None
+        sandbox.close()
         assert stop.call_count == 2
 
 
@@ -1302,9 +1302,9 @@ def test_close_remains_retryable_after_repeated_stop_failures() -> None:
             assert raised.value is error
             assert stop.call_count == attempt
 
-        assert sandbox.close() is None
+        sandbox.close()
         assert stop.call_count == 3
-        assert sandbox.close() is None
+        sandbox.close()
         assert stop.call_count == 3
 
 
@@ -1339,9 +1339,9 @@ def test_context_manager_preserves_exceptions(
         if cleanup_fails:
             assert raised.value.__context__ is body_error
         assert stop.call_count == 1
-        assert sandbox.close() is None
+        sandbox.close()
         assert stop.call_count == (2 if cleanup_fails else 1)
-        assert sandbox.close() is None
+        sandbox.close()
         assert stop.call_count == (2 if cleanup_fails else 1)
 
 
