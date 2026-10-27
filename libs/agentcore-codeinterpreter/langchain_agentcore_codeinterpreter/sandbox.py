@@ -87,6 +87,17 @@ class SessionExpiredError(Exception):
         )
 
 
+def _is_session_ended(exc: ClientError) -> bool:
+    """Check if a ClientError is due to the session expiring/stopping."""
+    error = exc.response.get("Error", {})
+    code, message = error.get("Code", ""), error.get("Message", "")
+    return (
+        code == "ResourceNotFoundException"
+        or (code == "ValidationException" and "is not active" in message)
+        or (code == "ConflictException" and "already terminated" in message)
+    )
+
+
 def _extract_text_from_stream(response: dict[str, Any]) -> tuple[str, int | None]:
     """Extract text output and exit code from a code interpreter response stream.
 
@@ -302,11 +313,17 @@ class AgentCoreSandbox(BaseSandbox):
         """Stop the session if this sandbox started it through :meth:`create`.
 
         A sandbox built from a caller-supplied interpreter leaves it running,
-        since the caller manages that lifecycle.
+        since the caller manages that lifecycle. A session that already ended
+        counts as stopped. Any other stop error propagates, and calling this
+        method again retries the stop.
         """
         if self._owns_interpreter:
+            try:
+                self._interpreter.stop()
+            except ClientError as exc:
+                if not _is_session_ended(exc):
+                    raise
             self._owns_interpreter = False
-            self._interpreter.stop()
 
     def __enter__(self) -> AgentCoreSandbox:
         return self
@@ -445,8 +462,7 @@ class AgentCoreSandbox(BaseSandbox):
         try:
             response = self._interpreter.invoke(method=method, params=params)
         except ClientError as exc:
-            error_code = exc.response.get("Error", {}).get("Code", "")
-            if error_code == "ResourceNotFoundException":
+            if _is_session_ended(exc):
                 raise SessionExpiredError(self.id, exc) from exc
             raise
 
