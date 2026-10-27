@@ -774,6 +774,57 @@ def test_invoke_raises_session_expired_error() -> None:
     assert exc_info.value.session_id == "expired-session"
 
 
+def _make_inactive_sandbox() -> tuple[AgentCoreSandbox, MagicMock]:
+    """Create a sandbox whose session was stopped or timed out."""
+    sandbox, interpreter = _make_sandbox()
+    interpreter.session_id = "ended-session"
+    interpreter.invoke.side_effect = ClientError(
+        {
+            "Error": {
+                "Code": "ValidationException",
+                "Message": "Code interpreter session ended-session is not active",
+            }
+        },
+        "InvokeCodeInterpreter",
+    )
+    return sandbox, interpreter
+
+
+def test_invoke_raises_session_expired_error_for_inactive_session() -> None:
+    sandbox, _ = _make_inactive_sandbox()
+    with pytest.raises(SessionExpiredError) as exc_info:
+        sandbox._invoke(method="executeCommand", params={"command": "echo"})
+    assert exc_info.value.session_id == "ended-session"
+    assert exc_info.value.original.response["Error"]["Code"] == "ValidationException"
+
+
+def test_invoke_reraises_other_validation_errors() -> None:
+    sandbox, mock = _make_sandbox()
+    mock.invoke.side_effect = ClientError(
+        {"Error": {"Code": "ValidationException", "Message": "Invalid file path"}},
+        "InvokeCodeInterpreter",
+    )
+    with pytest.raises(ClientError):
+        sandbox._invoke(method="executeCommand", params={"command": "echo"})
+
+
+def test_execute_reports_inactive_session_as_expired() -> None:
+    sandbox, _ = _make_inactive_sandbox()
+    result = sandbox.execute("echo hi")
+    assert result.exit_code == 1
+    assert "session has expired" in result.output
+
+
+def test_upload_files_logs_inactive_session_as_expired(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    sandbox, _ = _make_inactive_sandbox()
+    with caplog.at_level("ERROR"):
+        responses = sandbox.upload_files([("a.txt", b"x")])
+    assert [r.error for r in responses] == ["permission_denied"]
+    assert "session expired while uploading" in caplog.text
+
+
 def test_invoke_reraises_other_client_errors() -> None:
     """_invoke() should reraise non-ResourceNotFound ClientErrors."""
     sandbox, mock = _make_sandbox()
@@ -1237,6 +1288,57 @@ def test_async_context_manager_stops_owned_session() -> None:
 
     ci_cls = asyncio.run(run())
     ci_cls.return_value.stop.assert_called_once()
+
+
+_ALREADY_TERMINATED = ClientError(
+    {"Error": {"Code": "ConflictException", "Message": "Session already terminated"}},
+    "StopCodeInterpreterSession",
+)
+
+
+@pytest.mark.parametrize("cleanup", ["direct", "sync", "async"])
+def test_close_treats_ended_session_as_stopped(cleanup: str) -> None:
+    """A session that timed out or was stopped elsewhere counts as closed."""
+    with patch(
+        "bedrock_agentcore.tools.code_interpreter_client.CodeInterpreter"
+    ) as ci_cls:
+        sandbox = AgentCoreSandbox.create(region="us-west-2")
+        stop = ci_cls.return_value.stop
+        stop.side_effect = _ALREADY_TERMINATED
+        if cleanup == "direct":
+            sandbox.close()
+        elif cleanup == "sync":
+            with sandbox:
+                pass
+        else:
+
+            async def run() -> None:
+                async with sandbox:
+                    pass
+
+            asyncio.run(run())
+        sandbox.close()
+    stop.assert_called_once()
+
+
+def test_close_retries_after_stop_failure() -> None:
+    """Other stop errors propagate and leave the stop to retry (from #1439)."""
+    transient = ClientError(
+        {"Error": {"Code": "InternalServerException", "Message": "Try again"}},
+        "StopCodeInterpreterSession",
+    )
+    with patch(
+        "bedrock_agentcore.tools.code_interpreter_client.CodeInterpreter"
+    ) as ci_cls:
+        sandbox = AgentCoreSandbox.create(region="us-west-2")
+        stop = ci_cls.return_value.stop
+        stop.side_effect = [transient, None]
+        with pytest.raises(ClientError) as raised:
+            sandbox.close()
+        assert raised.value is transient
+        sandbox.close()
+        sandbox.close()
+    assert stop.call_count == 2
 
 
 def test_caller_supplied_interpreter_is_left_running() -> None:
