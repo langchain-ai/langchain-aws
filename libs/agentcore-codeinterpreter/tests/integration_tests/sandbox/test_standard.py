@@ -18,6 +18,7 @@ from langchain_agentcore_codeinterpreter import AgentCoreSandbox
 _DEEPAGENTS_VERSION = Version(importlib.metadata.version("deepagents"))
 _WRITE_OVERWRITES = _DEEPAGENTS_VERSION >= Version("0.7.0")
 _GLOB_07_BEHAVIOR = _DEEPAGENTS_VERSION >= Version("0.7.7")
+_GREP_USES_RG = _DEEPAGENTS_VERSION >= Version("0.7.25")
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -130,3 +131,13 @@ class TestAgentCoreSandboxStandard(SandboxIntegrationTests):
         self, sandbox_backend: SandboxBackendProtocol, sandbox_test_root: str
     ) -> None:
         super().test_glob_with_question_mark(sandbox_backend, sandbox_test_root)
+
+    @pytest.mark.xfail(
+        _GREP_USES_RG,
+        reason="deepagents>=0.7.25 BaseSandbox.grep runs rg without --no-heading",
+        strict=True,
+    )
+    def test_grep_multiple_matches_per_file(
+        self, sandbox_backend: SandboxBackendProtocol, sandbox_test_root: str
+    ) -> None:
+        super().test_grep_multiple_matches_per_file(sandbox_backend, sandbox_test_root)
