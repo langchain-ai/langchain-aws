@@ -1929,6 +1929,22 @@ def test_invocation_params_model_prefers_base_model_id() -> None:
 
 
 @pytest.mark.parametrize(
+    "model_id, base_model",
+    [
+        ("ca.amazon.nova-lite-v1:0", "amazon.nova-lite-v1:0"),
+        ("in.anthropic.claude-opus-5", "anthropic.claude-opus-5"),
+        ("in.moonshotai.kimi-k3", "moonshotai.kimi-k3"),
+        ("us.anthropic.claude-sonnet-5", "anthropic.claude-sonnet-5"),
+        ("anthropic.claude-sonnet-5", "anthropic.claude-sonnet-5"),
+    ],
+)
+def test_get_base_model_strips_geo_prefix(model_id: str, base_model: str) -> None:
+    llm = ChatBedrockConverse(model=model_id, region_name="us-west-2")
+    assert llm._get_base_model() == base_model
+    assert llm.provider == base_model.split(".")[0]
+
+
+@pytest.mark.parametrize(
     "model_id, disable_streaming",
     [
         ("us.anthropic.claude-haiku-4-5-20251001-v1:0", False),
@@ -1959,6 +1975,9 @@ def test_invocation_params_model_prefers_base_model_id() -> None:
         ("xai.grok-4.6", False),
         ("us.zai.glm-5.3", False),
         ("zai.glm-4.7", False),
+        ("in.anthropic.claude-opus-5", False),
+        ("ca.amazon.nova-lite-v1:0", False),
+        ("in.moonshotai.kimi-k3", False),
     ],
 )
 def test_set_disable_streaming(

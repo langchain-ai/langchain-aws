@@ -86,6 +86,7 @@ from langchain_aws.function_calling import (
 )
 from langchain_aws.tools.nova_tools import NovaSystemTool
 from langchain_aws.utils import (
+    MODEL_ID_GEO_PREFIXES,
     count_tokens_api_supported_for_model,
     create_aws_client,
     forced_tool_choice_unsupported,
@@ -1294,10 +1295,9 @@ class ChatBedrockConverse(BaseChatModel):
 
         # For regional model IDs (e.g., us.anthropic.claude-haiku-4-5-20251001-v1:0),
         # get the base model ID by removing the regional prefix
-        if self.model_id.startswith(
-            ("eu.", "us.", "us-gov.", "apac.", "sa.", "amer.", "global.", "jp.", "au.")
-        ):
-            return self.model_id.partition(".")[2]
+        prefix, _, rest = self.model_id.partition(".")
+        if rest and prefix.lower() in MODEL_ID_GEO_PREFIXES:
+            return rest
 
         return self.model_id
 

@@ -41,7 +41,7 @@ OUTPUT_TYPE = TypeVar(
 )
 
 MODEL_ID_GEO_PREFIXES = frozenset(
-    {"eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp", "au"}
+    {"eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp", "au", "ca", "in"}
 )
 
 
