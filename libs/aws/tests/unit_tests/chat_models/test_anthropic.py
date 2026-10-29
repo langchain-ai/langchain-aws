@@ -1,6 +1,7 @@
 """ChatAnthropicBedrock tests."""
 
 import re
+import warnings
 from typing import Tuple, Type, cast
 
 import pytest
@@ -509,6 +510,113 @@ def test_chat_anthropic_bedrock_per_request_guardrail_no_default() -> None:
     headers = payload["extra_headers"]
     assert headers["X-Amzn-Bedrock-GuardrailIdentifier"] == "gr-adhoc"
     assert headers["X-Amzn-Bedrock-GuardrailVersion"] == "3"
+
+
+def test_chat_anthropic_bedrock_drops_unsupported_beta_from_tool_search() -> None:
+    """Tool-search tools must not forward `advanced-tool-use-2025-11-20`.
+
+    Regression test for #1226: `langchain-anthropic` auto-appends that
+    first-party beta when a tool-search tool is bound, and Bedrock's
+    `InvokeModel` API rejects it with a 400.
+    """
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-west-2",
+    )
+    bound = model.bind_tools(
+        [{"type": "tool_search_tool_regex_20251119", "name": "tool_search_tool_regex"}]
+    )
+    with pytest.warns(UserWarning, match="advanced-tool-use-2025-11-20"):
+        payload = model._get_request_payload(  # type: ignore[attr-defined]
+            [HumanMessage(content="What's the weather in Paris?")],
+            **bound.kwargs,  # type: ignore[attr-defined]
+        )
+    assert "advanced-tool-use-2025-11-20" not in payload.get("betas", [])
+
+
+def test_chat_anthropic_bedrock_keeps_supported_betas() -> None:
+    """Betas Bedrock supports pass through unchanged, without a warning."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        betas=["context-1m-2025-08-07", "tool-search-tool-2025-10-19"],
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        payload = model._get_request_payload([HumanMessage(content="hello")], stop=None)
+    assert payload["betas"] == ["context-1m-2025-08-07", "tool-search-tool-2025-10-19"]
+
+
+def test_chat_anthropic_bedrock_keeps_computer_use_context_betas() -> None:
+    """The 2025-11-24 computer-use and context-management betas pass through.
+
+    Bedrock documents `computer-use-2025-11-24` for Opus 4.5 and
+    `context-management-2025-06-27` for the memory tool on Sonnet 4.5 /
+    Haiku 4.5; dropping them loses the header those tools require.
+    """
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        betas=["computer-use-2025-11-24", "context-management-2025-06-27"],
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        payload = model._get_request_payload([HumanMessage(content="hello")], stop=None)
+    assert payload["betas"] == [
+        "computer-use-2025-11-24",
+        "context-management-2025-06-27",
+    ]
+
+
+def test_chat_anthropic_bedrock_keeps_thinking_binding_beta() -> None:
+    """The thinking-binding-controls beta passes through without a warning.
+
+    Reported on PR #1400: it is passed with adaptive thinking
+    `block_binding` settings on Sonnet/Haiku 5 models, and Bedrock's
+    `InvokeModel` accepts it today; dropping it sends `block_binding`
+    without the beta that enables it.
+    """
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        betas=["thinking-binding-controls-2026-08-01"],
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        payload = model._get_request_payload([HumanMessage(content="hello")], stop=None)
+    assert payload["betas"] == ["thinking-binding-controls-2026-08-01"]
+
+
+def test_chat_anthropic_bedrock_filters_mixed_betas() -> None:
+    """Only the unsupported betas are dropped from a mixed list."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+    )
+    with pytest.warns(UserWarning, match="advanced-tool-use-2025-11-20"):
+        payload = model._get_request_payload(
+            [HumanMessage(content="hello")],
+            stop=None,
+            betas=["advanced-tool-use-2025-11-20", "interleaved-thinking-2025-05-14"],
+        )
+    assert payload["betas"] == ["interleaved-thinking-2025-05-14"]
+
+
+def test_chat_anthropic_bedrock_filters_beta_header() -> None:
+    """An `anthropic-beta` extra header is filtered the same way."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+    )
+    with pytest.warns(UserWarning, match="mcp-client-2025-11-20"):
+        payload = model._get_request_payload(
+            [HumanMessage(content="hello")],
+            stop=None,
+            extra_headers={
+                "anthropic-beta": "computer-use-2025-01-24,mcp-client-2025-11-20"
+            },
+        )
+    assert payload["extra_headers"]["anthropic-beta"] == "computer-use-2025-01-24"
 
 
 def test_chat_anthropic_bedrock_per_request_guardrail_validates() -> None:

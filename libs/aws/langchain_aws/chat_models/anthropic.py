@@ -40,6 +40,51 @@ from langchain_aws.utils import (
 
 _MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
 
+_BEDROCK_SUPPORTED_BETAS: frozenset[str] = frozenset(
+    {
+        # Anthropic betas that Amazon Bedrock's `InvokeModel` API accepts,
+        # per the AWS Bedrock documentation for Claude models. Betas added
+        # automatically by `langchain-anthropic` for the first-party API
+        # (e.g. `advanced-tool-use-2025-11-20`) are not necessarily in this
+        # set; forwarding one makes Bedrock reject the whole request with
+        # `400 {"message": "invalid beta flag"}`.
+        "computer-use-2024-10-22",
+        "computer-use-2025-01-24",
+        "computer-use-2025-11-24",
+        "context-1m-2025-08-07",
+        "context-management-2025-06-27",
+        "dev-full-thinking-2025-05-14",
+        "effort-2025-11-24",
+        "fine-grained-tool-streaming-2025-05-14",
+        # Sent for models whose Bedrock profile declares mid-conversation
+        # tool support (see `test_model_profile_mid_conversation_support`).
+        "inline-tools-2026-09-15",
+        "interleaved-thinking-2025-05-14",
+        "mid-conversation-tool-changes-2026-07-01",
+        "output-128k-2025-02-19",
+        "prompt-caching-2024-07-31",
+        "thinking-binding-controls-2026-08-01",
+        "token-efficient-tools-2025-02-19",
+        "tool-examples-2025-10-29",
+        "tool-search-tool-2025-10-19",
+    }
+)
+"""Betas supported by Bedrock's `InvokeModel` API for Claude models."""
+
+
+def _filter_betas_for_bedrock(betas: Sequence[str]) -> tuple[list[str], list[str]]:
+    """Split `betas` into those Bedrock supports and those it rejects.
+
+    Args:
+        betas: Beta names collected for the request.
+
+    Returns:
+        A `(kept, dropped)` pair, each preserving the input order.
+    """
+    kept = [beta for beta in betas if beta in _BEDROCK_SUPPORTED_BETAS]
+    dropped = [beta for beta in betas if beta not in _BEDROCK_SUPPORTED_BETAS]
+    return kept, dropped
+
 
 def _get_default_model_profile(model_name: str) -> ModelProfile:
     """Look up the default profile for a model ID."""
@@ -229,6 +274,41 @@ class ChatAnthropicBedrock(ChatAnthropic):
         guardrail = req_guardrail or self.guardrail_config
 
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+
+        # Bedrock's `InvokeModel` API rejects betas it does not support with
+        # a 400, while `langchain-anthropic` auto-appends first-party betas
+        # (e.g. `advanced-tool-use-2025-11-20` for tool-search tools) that
+        # Bedrock does not accept. Keep only the supported allowlist.
+        dropped_betas: list[str] = []
+        if betas := payload.get("betas"):
+            kept_betas, dropped = _filter_betas_for_bedrock(list(betas))
+            dropped_betas.extend(dropped)
+            if kept_betas:
+                payload["betas"] = kept_betas
+            else:
+                del payload["betas"]
+        extra_headers = payload.get("extra_headers") or {}
+        if beta_header := extra_headers.get("anthropic-beta"):
+            header_betas = [b.strip() for b in beta_header.split(",") if b.strip()]
+            kept_header, dropped = _filter_betas_for_bedrock(header_betas)
+            dropped_betas.extend(dropped)
+            if kept_header:
+                extra_headers["anthropic-beta"] = ",".join(kept_header)
+                payload["extra_headers"] = extra_headers
+            else:
+                del extra_headers["anthropic-beta"]
+                if extra_headers:
+                    payload["extra_headers"] = extra_headers
+                else:
+                    payload.pop("extra_headers", None)
+        if dropped_betas:
+            warnings.warn(
+                "Dropping beta(s) not supported by Amazon Bedrock's "
+                f"InvokeModel API: {', '.join(sorted(set(dropped_betas)))}. "
+                "See `_BEDROCK_SUPPORTED_BETAS` in langchain-aws for the "
+                "supported allowlist.",
+                stacklevel=2,
+            )
 
         if guardrail:
             guardrail_headers = _guardrail_config_to_headers(guardrail)
