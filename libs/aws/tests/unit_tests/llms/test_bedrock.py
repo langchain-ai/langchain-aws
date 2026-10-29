@@ -820,6 +820,18 @@ def test_prepare_output_for_ai21(ai21_response):
     assert result["stop_reason"] is None
 
 
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "amazon.nova-micro-v1:0",
+        "us.amazon.nova-micro-v1:0",
+    ],
+)
+def test_bedrock_llm_rejects_nova_models(model_id: str) -> None:
+    with pytest.raises(ValueError, match="Amazon Nova models require the messages"):
+        BedrockLLM(model_id=model_id, region_name="us-west-2")
+
+
 def test_standard_tracing_params():
     llm = BedrockLLM(model_id="foo", region_name="us-west-2")
     ls_params = llm._get_ls_params()
