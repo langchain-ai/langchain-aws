@@ -824,6 +824,10 @@ def test_thinking_in_params(params: dict, expected: bool) -> None:
         ("us.minimax.minimax-m2.5", "minimax"),
         ("moonshotai.kimi-k2.5", "moonshotai"),
         ("moonshot.kimi-k2-thinking", "moonshot"),
+        ("ca.amazon.nova-lite-v1:0", "amazon"),
+        ("in.anthropic.claude-opus-5", "anthropic"),
+        ("in.openai.gpt-5.6-terra", "openai"),
+        ("in.moonshotai.kimi-k3", "moonshotai"),
     ],
 )
 def test_parse_model_provider(model_id: str, expected_provider: str) -> None:
