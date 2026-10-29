@@ -63,6 +63,7 @@ _BEDROCK_SUPPORTED_BETAS: frozenset[str] = frozenset(
         "mid-conversation-tool-changes-2026-07-01",
         "output-128k-2025-02-19",
         "prompt-caching-2024-07-31",
+        "thinking-binding-controls-2026-08-01",
         "token-efficient-tools-2025-02-19",
         "tool-examples-2025-10-29",
         "tool-search-tool-2025-10-19",
