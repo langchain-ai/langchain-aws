@@ -302,6 +302,19 @@ def _create_bedrock_action_groups(
         )
 
 
+def _is_required(tool: BaseTool, arg_name: str, arg_details: dict) -> bool:
+    schema = tool.args_schema
+
+    fields = getattr(schema, "model_fields", None)
+    if fields is not None and arg_name in fields:
+        return fields[arg_name].is_required()
+
+    if isinstance(schema, dict):
+        return arg_name in schema.get("required", [])
+
+    return "default" not in arg_details
+
+
 def _tool_to_function(tool: BaseTool) -> dict:
     """Convert LangChain tool to a Bedrock function schema"""
     _, function_name = _get_action_group_and_function_names(tool)
@@ -312,7 +325,7 @@ def _tool_to_function(tool: BaseTool) -> dict:
                 "description", arg_details.get("title", arg_name)
             ),
             "type": arg_details.get("type", "string"),
-            "required": "default" not in arg_details,
+            "required": _is_required(tool, arg_name, arg_details),
         }
     return {
         "description": tool.description,

@@ -109,6 +109,28 @@ class TestToolToFunctionRequired:
         for name in ("limit", "verbose", "prefix", "note", "top_k"):
             assert params[name]["required"] is False, name
 
+    def test_default_factory_is_not_required(self) -> None:
+        from langchain_core.tools import tool
+        from pydantic import Field
+
+        from langchain_aws.agents.utils import _tool_to_function
+
+        @tool
+        def tag_items(
+            item: str,
+            tags: list[str] = Field(default_factory=list),
+            extra: dict[str, str] = Field(default_factory=dict),
+            note: str | None = None,
+        ) -> str:
+            """Tag an item."""
+            return item
+
+        params = _tool_to_function(tag_items)["parameters"]
+
+        assert params["item"]["required"] is True
+        for name in ("tags", "extra", "note"):
+            assert params[name]["required"] is False, name
+
 
 def test_action_groups_sent_to_bedrock_mark_falsy_defaults_optional() -> None:
     """Functional check: the schema actually sent to Bedrock is correct.
