@@ -1,6 +1,7 @@
 provider = "amazon-bedrock"
 
 [overrides."anthropic.claude-fable-5-1"]
+cost = { input = 10, output = 50, cache_read = 0.25, cache_write = 12.5 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -8,6 +9,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-fable-5-1"]
+cost = { input = 10, output = 50, cache_read = 0.25, cache_write = 12.5 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -15,6 +17,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-fable-5-1"]
+cost = { input = 11, output = 55, cache_read = 0.275, cache_write = 13.75 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -22,6 +25,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-fable-5"]
+cost = { input = 10, output = 50, cache_read = 1, cache_write = 12.5 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -29,6 +33,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."eu.anthropic.claude-fable-5"]
+cost = { input = 11, output = 55, cache_read = 1.1, cache_write = 13.75 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -36,6 +41,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-fable-5"]
+cost = { input = 10, output = 50, cache_read = 1, cache_write = 12.5 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -43,6 +49,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-fable-5"]
+cost = { input = 11, output = 55, cache_read = 1.1, cache_write = 13.75 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -50,6 +57,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-opus-4-8"]
+cost = { input = 5, output = 25, cache_read = 0.5, cache_write = 6.25 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -57,6 +65,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."au.anthropic.claude-opus-4-8"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -64,6 +73,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."eu.anthropic.claude-opus-4-8"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -71,6 +81,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-opus-4-8"]
+cost = { input = 5, output = 25, cache_read = 0.5, cache_write = 6.25 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -78,6 +89,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."jp.anthropic.claude-opus-4-8"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -85,6 +97,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-opus-4-8"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -92,6 +105,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-opus-5"]
+cost = { input = 5, output = 25, cache_read = 0.5, cache_write = 6.25 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -99,6 +113,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."au.anthropic.claude-opus-5"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -106,6 +121,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."eu.anthropic.claude-opus-5"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -113,6 +129,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-opus-5"]
+cost = { input = 5, output = 25, cache_read = 0.5, cache_write = 6.25 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -120,6 +137,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."in.anthropic.claude-opus-5"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -127,6 +145,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."jp.anthropic.claude-opus-5"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -134,6 +153,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-opus-5"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -141,6 +161,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-opus-5-5"]
+cost = { input = 4, output = 20, cache_read = 0.2, cache_write = 5 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -148,6 +169,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."au.anthropic.claude-opus-5-5"]
+cost = { input = 4.4, output = 22, cache_read = 0.22, cache_write = 5.5 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -155,6 +177,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."eu.anthropic.claude-opus-5-5"]
+cost = { input = 4.4, output = 22, cache_read = 0.22, cache_write = 5.5 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -162,6 +185,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-opus-5-5"]
+cost = { input = 4, output = 20, cache_read = 0.2, cache_write = 5 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -169,6 +193,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."jp.anthropic.claude-opus-5-5"]
+cost = { input = 4.4, output = 22, cache_read = 0.22, cache_write = 5.5 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -176,6 +201,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-opus-5-5"]
+cost = { input = 4.4, output = 22, cache_read = 0.22, cache_write = 5.5 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -183,6 +209,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-sonnet-5"]
+cost = { input = 2, output = 10, cache_read = 0.2, cache_write = 2.5 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
@@ -190,6 +217,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."au.anthropic.claude-sonnet-5"]
+cost = { input = 2.2, output = 11, cache_read = 0.22, cache_write = 2.75 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
@@ -197,6 +225,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."eu.anthropic.claude-sonnet-5"]
+cost = { input = 2.2, output = 11, cache_read = 0.22, cache_write = 2.75 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
@@ -204,6 +233,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-sonnet-5"]
+cost = { input = 2, output = 10, cache_read = 0.2, cache_write = 2.5 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
@@ -211,6 +241,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."in.anthropic.claude-sonnet-5"]
+cost = { input = 2.2, output = 11, cache_read = 0.22, cache_write = 2.75 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
@@ -218,6 +249,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."jp.anthropic.claude-sonnet-5"]
+cost = { input = 2.2, output = 11, cache_read = 0.22, cache_write = 2.75 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
@@ -225,6 +257,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-sonnet-5"]
+cost = { input = 2.2, output = 11, cache_read = 0.22, cache_write = 2.75 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = false
@@ -232,6 +265,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-sonnet-5-5"]
+cost = { input = 2, output = 10, cache_read = 0.1, cache_write = 2.5 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -239,6 +273,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."au.anthropic.claude-sonnet-5-5"]
+cost = { input = 2.2, output = 11, cache_read = 0.11, cache_write = 2.75 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -246,6 +281,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."eu.anthropic.claude-sonnet-5-5"]
+cost = { input = 2.2, output = 11, cache_read = 0.11, cache_write = 2.75 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -253,6 +289,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-sonnet-5-5"]
+cost = { input = 2, output = 10, cache_read = 0.1, cache_write = 2.5 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -260,6 +297,7 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-sonnet-5-5"]
+cost = { input = 2.2, output = 11, cache_read = 0.11, cache_write = 2.75 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -267,6 +305,9 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-haiku-5-5"]
+cost = { input = 0.1, output = 0.5, cache_read = 0.01, cache_write = 0.125, tiers = [
+  { input = 0.5, output = 2.5, cache_read = 0.05, cache_write = 0.625, tier = { type = "context", size = 100000 } },
+] }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -274,6 +315,9 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."au.anthropic.claude-haiku-5-5"]
+cost = { input = 0.11, output = 0.55, cache_read = 0.011, cache_write = 0.1375, tiers = [
+  { input = 0.55, output = 2.75, cache_read = 0.055, cache_write = 0.6875, tier = { type = "context", size = 100000 } },
+] }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -281,6 +325,9 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."eu.anthropic.claude-haiku-5-5"]
+cost = { input = 0.11, output = 0.55, cache_read = 0.011, cache_write = 0.1375, tiers = [
+  { input = 0.55, output = 2.75, cache_read = 0.055, cache_write = 0.6875, tier = { type = "context", size = 100000 } },
+] }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -288,6 +335,9 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-haiku-5-5"]
+cost = { input = 0.1, output = 0.5, cache_read = 0.01, cache_write = 0.125, tiers = [
+  { input = 0.5, output = 2.5, cache_read = 0.05, cache_write = 0.625, tier = { type = "context", size = 100000 } },
+] }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -295,6 +345,9 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."jp.anthropic.claude-haiku-5-5"]
+cost = { input = 0.11, output = 0.55, cache_read = 0.011, cache_write = 0.1375, tiers = [
+  { input = 0.55, output = 2.75, cache_read = 0.055, cache_write = 0.6875, tier = { type = "context", size = 100000 } },
+] }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -302,6 +355,9 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-haiku-5-5"]
+cost = { input = 0.11, output = 0.55, cache_read = 0.011, cache_write = 0.1375, tiers = [
+  { input = 0.55, output = 2.75, cache_read = 0.055, cache_write = 0.6875, tier = { type = "context", size = 100000 } },
+] }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
@@ -309,367 +365,527 @@ pdf_tool_message = true
 image_tool_message = true
 
 [overrides."amazon.nova-2-lite-v1:0"]
+cost = { input = 0.33, output = 2.75, cache_read = 0.0825, cache_write = 0.33 }
 reasoning_effort_levels = ["low", "medium", "high"]
 image_tool_message = true
 
+[overrides."openai.gpt-6.1-terra"]
+cost = { input = 1.1, output = 5.5, cache_read = 0.055, cache_write = 1.375, tiers = [
+  { input = 2.2, output = 8.25, cache_read = 0.11, cache_write = 2.75, tier = { type = "context", size = 272000 } },
+] }
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+
+[overrides."global.openai.gpt-6.1-terra"]
+cost = { input = 1, output = 5, cache_read = 0.05, cache_write = 1.25, tiers = [
+  { input = 2, output = 7.5, cache_read = 0.1, cache_write = 2.5, tier = { type = "context", size = 272000 } },
+] }
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+
+[overrides."us.openai.gpt-6.1-terra"]
+cost = { input = 1.1, output = 5.5, cache_read = 0.055, cache_write = 1.375, tiers = [
+  { input = 2.2, output = 8.25, cache_read = 0.11, cache_write = 2.75, tier = { type = "context", size = 272000 } },
+] }
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+
 [overrides."openai.gpt-6.1-sol"]
+cost = { input = 2.2, output = 11, cache_read = 0.11, cache_write = 2.75, tiers = [
+  { input = 4.4, output = 16.5, cache_read = 0.22, cache_write = 5.5, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."global.openai.gpt-6.1-sol"]
+cost = { input = 2, output = 10, cache_read = 0.1, cache_write = 2.5, tiers = [
+  { input = 4, output = 15, cache_read = 0.2, cache_write = 5, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."us.openai.gpt-6.1-sol"]
+cost = { input = 2.2, output = 11, cache_read = 0.11, cache_write = 2.75, tiers = [
+  { input = 4.4, output = 16.5, cache_read = 0.22, cache_write = 5.5, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."openai.gpt-6-astra"]
+cost = { input = 11, output = 55, cache_read = 1.1, cache_write = 13.75, tiers = [
+  { input = 22, output = 82.5, cache_read = 2.2, cache_write = 27.5, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."global.openai.gpt-6-astra"]
+cost = { input = 10, output = 50, cache_read = 1, cache_write = 12.5, tiers = [
+  { input = 20, output = 75, cache_read = 2, cache_write = 25, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."us.openai.gpt-6-astra"]
+cost = { input = 11, output = 55, cache_read = 1.1, cache_write = 13.75, tiers = [
+  { input = 22, output = 82.5, cache_read = 2.2, cache_write = 27.5, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."openai.gpt-6-sol"]
+cost = { input = 2.2, output = 11, cache_read = 0.22, cache_write = 2.75, tiers = [
+  { input = 4.4, output = 16.5, cache_read = 0.44, cache_write = 5.5, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."global.openai.gpt-6-sol"]
+cost = { input = 2, output = 10, cache_read = 0.2, cache_write = 2.5, tiers = [
+  { input = 4, output = 15, cache_read = 0.4, cache_write = 5, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."us.openai.gpt-6-sol"]
+cost = { input = 2.2, output = 11, cache_read = 0.22, cache_write = 2.75, tiers = [
+  { input = 4.4, output = 16.5, cache_read = 0.44, cache_write = 5.5, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."openai.gpt-6-luna"]
+cost = { input = 0.11, output = 0.55, cache_read = 0.011, cache_write = 0.1375, tiers = [
+  { input = 0.22, output = 0.825, cache_read = 0.022, cache_write = 0.275, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."global.openai.gpt-6-luna"]
+cost = { input = 0.1, output = 0.5, cache_read = 0.01, cache_write = 0.125, tiers = [
+  { input = 0.2, output = 0.75, cache_read = 0.02, cache_write = 0.25, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."us.openai.gpt-6-luna"]
+cost = { input = 0.11, output = 0.55, cache_read = 0.011, cache_write = 0.1375, tiers = [
+  { input = 0.22, output = 0.825, cache_read = 0.022, cache_write = 0.275, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."openai.gpt-5.6-terra"]
+cost = { input = 2.2, output = 13.2, cache_read = 0.22, cache_write = 2.75, tiers = [
+  { input = 4.4, output = 19.8, cache_read = 0.44, cache_write = 5.5, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."global.openai.gpt-5.6-terra"]
+cost = { input = 2, output = 12, cache_read = 0.2, cache_write = 2.5, tiers = [
+  { input = 4, output = 18, cache_read = 0.4, cache_write = 5, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."in.openai.gpt-5.6-terra"]
+cost = { input = 2.2, output = 13.2, cache_read = 0.22, cache_write = 2.75, tiers = [
+  { input = 4.4, output = 19.8, cache_read = 0.44, cache_write = 5.5, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."us.openai.gpt-5.6-terra"]
+cost = { input = 2.2, output = 13.2, cache_read = 0.22, cache_write = 2.75, tiers = [
+  { input = 4.4, output = 19.8, cache_read = 0.44, cache_write = 5.5, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."openai.gpt-5.6-luna"]
+cost = { input = 0.22, output = 1.32, cache_read = 0.022, cache_write = 0.275, tiers = [
+  { input = 0.44, output = 1.98, cache_read = 0.044, cache_write = 0.55, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."global.openai.gpt-5.6-luna"]
+cost = { input = 0.2, output = 1.2, cache_read = 0.02, cache_write = 0.25, tiers = [
+  { input = 0.4, output = 1.8, cache_read = 0.04, cache_write = 0.5, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."in.openai.gpt-5.6-luna"]
+cost = { input = 0.22, output = 1.32, cache_read = 0.022, cache_write = 0.275, tiers = [
+  { input = 0.44, output = 1.98, cache_read = 0.044, cache_write = 0.55, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."us.openai.gpt-5.6-luna"]
+cost = { input = 0.22, output = 1.32, cache_read = 0.022, cache_write = 0.275, tiers = [
+  { input = 0.44, output = 1.98, cache_read = 0.044, cache_write = 0.55, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."openai.gpt-5.6-sol"]
+cost = { input = 4.4, output = 22, cache_read = 0.44, cache_write = 5.5, tiers = [
+  { input = 8.8, output = 33, cache_read = 0.88, cache_write = 11, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."global.openai.gpt-5.6-sol"]
+cost = { input = 4, output = 20, cache_read = 0.4, cache_write = 5, tiers = [
+  { input = 8, output = 30, cache_read = 0.8, cache_write = 10, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."us.openai.gpt-5.6-sol"]
+cost = { input = 4.4, output = 22, cache_read = 0.44, cache_write = 5.5, tiers = [
+  { input = 8.8, output = 33, cache_read = 0.88, cache_write = 11, tier = { type = "context", size = 272000 } },
+] }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 
 [overrides."openai.gpt-5.5"]
+cost = { input = 5.5, output = 33, cache_read = 0.55 }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."openai.gpt-5.4"]
+cost = { input = 2.75, output = 16.5, cache_read = 0.275 }
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
 [overrides."openai.gpt-oss-120b"]
+cost = { input = 0.15, output = 0.6 }
 reasoning_effort_levels = ["low", "medium", "high"]
 
 [overrides."openai.gpt-oss-120b-1:0"]
+cost = { input = 0.15, output = 0.6 }
 reasoning_effort_levels = ["low", "medium", "high"]
 
 [overrides."us-gov.openai.gpt-oss-120b-1:0"]
+cost = { input = 0.18, output = 0.72 }
 reasoning_effort_levels = ["low", "medium", "high"]
 
 [overrides."openai.gpt-oss-20b"]
+cost = { input = 0.07, output = 0.3 }
 reasoning_effort_levels = ["low", "medium", "high"]
 
 [overrides."openai.gpt-oss-20b-1:0"]
+cost = { input = 0.07, output = 0.3 }
 reasoning_effort_levels = ["low", "medium", "high"]
 
 [overrides."us-gov.openai.gpt-oss-20b-1:0"]
+cost = { input = 0.084, output = 0.36 }
 reasoning_effort_levels = ["low", "medium", "high"]
 
 [overrides."moonshot.kimi-k2-thinking"]
+cost = { input = 0.6, output = 2.5 }
 reasoning_effort_levels = ["low", "high", "max"]
 
 [overrides."moonshotai.kimi-k2.5"]
+cost = { input = 0.6, output = 3 }
 reasoning_effort_levels = ["low", "high", "max"]
 
 [overrides."anthropic.claude-sonnet-4-6"]
+cost = { input = 3.3, output = 16.5, cache_read = 0.33, cache_write = 4.125 }
 reasoning_effort_levels = ["low", "medium", "high", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."au.anthropic.claude-sonnet-4-6"]
+cost = { input = 3.3, output = 16.5, cache_read = 0.33, cache_write = 4.125 }
 reasoning_effort_levels = ["low", "medium", "high", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."eu.anthropic.claude-sonnet-4-6"]
+cost = { input = 3.3, output = 16.5, cache_read = 0.33, cache_write = 4.125 }
 reasoning_effort_levels = ["low", "medium", "high", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-sonnet-4-6"]
+cost = { input = 3, output = 15, cache_read = 0.3, cache_write = 3.75 }
 reasoning_effort_levels = ["low", "medium", "high", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."jp.anthropic.claude-sonnet-4-6"]
+cost = { input = 3.3, output = 16.5, cache_read = 0.33, cache_write = 4.125 }
 reasoning_effort_levels = ["low", "medium", "high", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-sonnet-4-6"]
+cost = { input = 3.3, output = 16.5, cache_read = 0.33, cache_write = 4.125 }
 reasoning_effort_levels = ["low", "medium", "high", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-haiku-4-5-20251001-v1:0"]
+cost = { input = 1, output = 5, cache_read = 0.1, cache_write = 1.25 }
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-opus-4-1-20250805-v1:0"]
+cost = { input = 15, output = 75, cache_read = 1.5, cache_write = 18.75 }
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-opus-4-5-20251101-v1:0"]
+cost = { input = 5, output = 25, cache_read = 0.5, cache_write = 6.25 }
 reasoning_effort_levels = ["low", "medium", "high"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-opus-4-6-v1"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-opus-4-7"]
+cost = { input = 5, output = 25, cache_read = 0.5, cache_write = 6.25 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."anthropic.claude-sonnet-4-5-20250929-v1:0"]
+cost = { input = 3, output = 15, cache_read = 0.3, cache_write = 3.75 }
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."au.anthropic.claude-haiku-4-5-20251001-v1:0"]
+cost = { input = 1.1, output = 5.5, cache_read = 0.11, cache_write = 1.375 }
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."au.anthropic.claude-opus-4-6-v1"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."au.anthropic.claude-opus-4-7"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."au.anthropic.claude-sonnet-4-5-20250929-v1:0"]
+cost = { input = 3.3, output = 16.5, cache_read = 0.33, cache_write = 4.125 }
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."eu.anthropic.claude-haiku-4-5-20251001-v1:0"]
+cost = { input = 1.1, output = 5.5, cache_read = 0.11, cache_write = 1.375 }
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."eu.anthropic.claude-opus-4-5-20251101-v1:0"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."eu.anthropic.claude-opus-4-6-v1"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."eu.anthropic.claude-opus-4-7"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."eu.anthropic.claude-sonnet-4-5-20250929-v1:0"]
+cost = { input = 3.3, output = 16.5, cache_read = 0.33, cache_write = 4.125 }
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-haiku-4-5-20251001-v1:0"]
+cost = { input = 1, output = 5, cache_read = 0.1, cache_write = 1.25 }
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-opus-4-5-20251101-v1:0"]
+cost = { input = 5, output = 25, cache_read = 0.5, cache_write = 6.25 }
 reasoning_effort_levels = ["low", "medium", "high"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-opus-4-6-v1"]
+cost = { input = 5, output = 25, cache_read = 0.5, cache_write = 6.25 }
 reasoning_effort_levels = ["low", "medium", "high", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-opus-4-7"]
+cost = { input = 5, output = 25, cache_read = 0.5, cache_write = 6.25 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."global.anthropic.claude-sonnet-4-5-20250929-v1:0"]
+cost = { input = 3, output = 15, cache_read = 0.3, cache_write = 3.75 }
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."in.anthropic.claude-haiku-4-5-20251001-v1:0"]
+cost = { input = 1.1, output = 5.5, cache_read = 0.11, cache_write = 1.375 }
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."jp.anthropic.claude-haiku-4-5-20251001-v1:0"]
+cost = { input = 1.1, output = 5.5, cache_read = 0.11, cache_write = 1.375 }
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."jp.anthropic.claude-opus-4-7"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."jp.anthropic.claude-sonnet-4-5-20250929-v1:0"]
+cost = { input = 3.3, output = 16.5, cache_read = 0.33, cache_write = 4.125 }
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-haiku-4-5-20251001-v1:0"]
+cost = { input = 1.1, output = 5.5, cache_read = 0.11, cache_write = 1.375 }
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-opus-4-1-20250805-v1:0"]
+cost = { input = 15, output = 75, cache_read = 1.5, cache_write = 18.75 }
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-opus-4-5-20251101-v1:0"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-opus-4-6-v1"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-opus-4-7"]
+cost = { input = 5.5, output = 27.5, cache_read = 0.55, cache_write = 6.875 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."us.anthropic.claude-sonnet-4-5-20250929-v1:0"]
+cost = { input = 3.3, output = 16.5, cache_read = 0.33, cache_write = 4.125 }
 pdf_tool_message = true
 image_tool_message = true
 
 [overrides."amazon.nova-lite-v1:0"]
+cost = { input = 0.06, output = 0.24, cache_read = 0.015, cache_write = 0.06 }
 image_tool_message = true
 
 [overrides."amazon.nova-pro-v1:0"]
+cost = { input = 0.8, output = 3.2, cache_read = 0.2, cache_write = 0.8 }
 image_tool_message = true
 
 [overrides."apac.amazon.nova-lite-v1:0"]
+cost = { input = 0.063, output = 0.252, cache_read = 0.01575, cache_write = 0.063 }
 image_tool_message = true
 
 [overrides."apac.amazon.nova-pro-v1:0"]
+cost = { input = 0.84, output = 3.36, cache_read = 0.21, cache_write = 0.84 }
 image_tool_message = true
 
 [overrides."ca.amazon.nova-lite-v1:0"]
+cost = { input = 0.064, output = 0.256, cache_read = 0.016, cache_write = 0.064 }
 image_tool_message = true
 
 [overrides."eu.amazon.nova-2-lite-v1:0"]
+cost = { input = 0.374, output = 3.157, cache_read = 0.0935, cache_write = 0.374 }
 reasoning_effort_levels = ["low", "medium", "high"]
 image_tool_message = true
 
 [overrides."eu.amazon.nova-lite-v1:0"]
+cost = { input = 0.069, output = 0.276, cache_read = 0.01725, cache_write = 0.069 }
 image_tool_message = true
 
 [overrides."eu.amazon.nova-pro-v1:0"]
+cost = { input = 0.92, output = 3.68, cache_read = 0.23, cache_write = 0.92 }
 image_tool_message = true
 
 [overrides."global.amazon.nova-2-lite-v1:0"]
+cost = { input = 0.3, output = 2.5, cache_read = 0.075, cache_write = 0.3 }
 reasoning_effort_levels = ["low", "medium", "high"]
 image_tool_message = true
 
 [overrides."jp.amazon.nova-2-lite-v1:0"]
+cost = { input = 0.396, output = 3.311, cache_read = 0.099, cache_write = 0.396 }
 reasoning_effort_levels = ["low", "medium", "high"]
 image_tool_message = true
 
 [overrides."us.amazon.nova-2-lite-v1:0"]
+cost = { input = 0.33, output = 2.75, cache_read = 0.0825, cache_write = 0.33 }
 reasoning_effort_levels = ["low", "medium", "high"]
 image_tool_message = true
 
 [overrides."us.amazon.nova-lite-v1:0"]
+cost = { input = 0.06, output = 0.24, cache_read = 0.015, cache_write = 0.06 }
 image_tool_message = true
 
 [overrides."us.amazon.nova-pro-v1:0"]
+cost = { input = 0.8, output = 3.2, cache_read = 0.2, cache_write = 0.8 }
 image_tool_message = true
 
 [overrides."google.gemma-4-26b-a4b"]
+cost = { input = 0.13, output = 0.4 }
 reasoning_effort_levels = ["none", "high"]
 
 [overrides."google.gemma-4-31b"]
+cost = { input = 0.14, output = 0.4 }
 reasoning_effort_levels = ["none", "high"]
 
 [overrides."google.gemma-4-e2b"]
+cost = { input = 0.04, output = 0.08 }
 reasoning_effort_levels = ["none", "high"]
 
 [overrides."openai.gpt-oss-safeguard-120b"]
+cost = { input = 0.15, output = 0.6 }
 reasoning_effort_levels = ["low", "medium", "high"]
 
 [overrides."openai.gpt-oss-safeguard-20b"]
+cost = { input = 0.07, output = 0.2 }
 reasoning_effort_levels = ["low", "medium", "high"]
 
 [overrides."xai.grok-4.3"]
+cost = { input = 1.25, output = 2.5, cache_read = 0.2 }
 reasoning_effort_levels = ["none", "low", "medium", "high"]
 
 [overrides."xai.grok-4.6"]
+cost = { input = 2.2, output = 6.6, cache_read = 0.55 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh"]
 
 [overrides."global.xai.grok-4.6"]
+cost = { input = 2, output = 6, cache_read = 0.5 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh"]
 
 [overrides."us.xai.grok-4.6"]
+cost = { input = 2.2, output = 6.6, cache_read = 0.55 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh"]
 
 [overrides."global.xai.grok-4.7"]
+cost = { input = 2, output = 6, cache_read = 0.5 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh"]
 
 [overrides."us.xai.grok-4.7"]
+cost = { input = 2.2, output = 6.6, cache_read = 0.55 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh"]
 
 [overrides."global.zai.glm-5.3"]
+cost = { input = 1.68, output = 5.28, cache_read = 0.312, cache_write = 2.1 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 
 [overrides."us.zai.glm-5.3"]
+cost = { input = 1.848, output = 5.808, cache_read = 0.3432, cache_write = 2.31 }
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
