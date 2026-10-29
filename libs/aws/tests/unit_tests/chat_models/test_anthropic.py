@@ -568,6 +568,25 @@ def test_chat_anthropic_bedrock_keeps_computer_use_context_betas() -> None:
     ]
 
 
+def test_chat_anthropic_bedrock_keeps_thinking_binding_beta() -> None:
+    """The thinking-binding-controls beta passes through without a warning.
+
+    Reported on PR #1400: it is passed with adaptive thinking
+    `block_binding` settings on Sonnet/Haiku 5 models, and Bedrock's
+    `InvokeModel` accepts it today; dropping it sends `block_binding`
+    without the beta that enables it.
+    """
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        betas=["thinking-binding-controls-2026-08-01"],
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        payload = model._get_request_payload([HumanMessage(content="hello")], stop=None)
+    assert payload["betas"] == ["thinking-binding-controls-2026-08-01"]
+
+
 def test_chat_anthropic_bedrock_filters_mixed_betas() -> None:
     """Only the unsupported betas are dropped from a mixed list."""
     model = ChatAnthropicBedrock(  # type: ignore[call-arg]
