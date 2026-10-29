@@ -565,3 +565,173 @@ def test_chat_anthropic_bedrock_user_agent_respects_caller_header() -> None:
     )
     ua = _built_request_ua(model._client)
     assert ua == f"MyApp/1.0 {FRAMEWORK_UA_TOKEN}"
+
+
+def _bedrock_guardrail_stream_events(
+    stop_extra: dict,
+) -> list:
+    """Build the raw stream events Bedrock sends for a short text reply."""
+    from anthropic.types import (
+        RawContentBlockDeltaEvent,
+        RawContentBlockStartEvent,
+        RawContentBlockStopEvent,
+        RawMessageDeltaEvent,
+        RawMessageStartEvent,
+        RawMessageStopEvent,
+    )
+
+    return [
+        RawMessageStartEvent.model_validate(
+            {
+                "type": "message_start",
+                "message": {
+                    "id": "msg_1",
+                    "type": "message",
+                    "role": "assistant",
+                    "model": "claude",
+                    "content": [],
+                    "stop_reason": None,
+                    "stop_sequence": None,
+                    "usage": {"input_tokens": 5, "output_tokens": 0},
+                },
+            }
+        ),
+        RawContentBlockStartEvent.model_validate(
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "text", "text": ""},
+            }
+        ),
+        RawContentBlockDeltaEvent.model_validate(
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "text_delta", "text": "Sorry, I can't help."},
+            }
+        ),
+        RawContentBlockStopEvent.model_validate(
+            {"type": "content_block_stop", "index": 0}
+        ),
+        RawMessageDeltaEvent.model_validate(
+            {
+                "type": "message_delta",
+                "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+                "usage": {"output_tokens": 6},
+            }
+        ),
+        RawMessageStopEvent.model_validate({"type": "message_stop", **stop_extra}),
+    ]
+
+
+_GUARDRAIL_STOP_EXTRA = {
+    "amazon-bedrock-guardrailAction": "INTERVENED",
+    "amazon-bedrock-trace": {"guardrail": {"actionReason": "Guardrail blocked."}},
+    "amazon-bedrock-invocationMetrics": {"inputTokenCount": 5},
+}
+
+
+class _FakeRawResponse:
+    def __init__(self, events: list) -> None:
+        self._events = events
+
+    def parse(self) -> list:
+        return self._events
+
+
+def test_chat_anthropic_bedrock_stream_includes_guardrail_metadata(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Streaming surfaces the guardrail keys Bedrock sends on message_stop."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        guardrail_config={
+            "guardrailIdentifier": "gr-abc123",
+            "guardrailVersion": "DRAFT",
+            "trace": "enabled",
+        },
+    )
+    events = _bedrock_guardrail_stream_events(_GUARDRAIL_STOP_EXTRA)
+    monkeypatch.setattr(
+        ChatAnthropicBedrock, "_create", lambda self, payload: _FakeRawResponse(events)
+    )
+
+    chunks = list(model.stream("hello"))
+    full = chunks[0]
+    for chunk in chunks[1:]:
+        full = full + chunk
+
+    assert full.content == "Sorry, I can't help."
+    assert full.response_metadata["amazon-bedrock-guardrailAction"] == "INTERVENED"
+    assert full.response_metadata["amazon-bedrock-trace"] == {
+        "guardrail": {"actionReason": "Guardrail blocked."}
+    }
+    assert "amazon-bedrock-invocationMetrics" not in full.response_metadata
+    assert full.response_metadata["stop_reason"] == "end_turn"
+
+
+async def test_chat_anthropic_bedrock_astream_includes_guardrail_metadata(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Async streaming surfaces the guardrail keys sent on message_stop."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+    events = _bedrock_guardrail_stream_events(_GUARDRAIL_STOP_EXTRA)
+
+    class _FakeAsyncStream:
+        def __init__(self, items: list) -> None:
+            self._items = iter(items)
+
+        def __aiter__(self) -> "_FakeAsyncStream":
+            return self
+
+        async def __anext__(self):  # type: ignore[no-untyped-def]
+            try:
+                return next(self._items)
+            except StopIteration:
+                raise StopAsyncIteration
+
+    class _FakeAsyncRawResponse:
+        async def parse(self) -> _FakeAsyncStream:
+            return _FakeAsyncStream(events)
+
+    async def _fake_acreate(self, payload):  # type: ignore[no-untyped-def]
+        return _FakeAsyncRawResponse()
+
+    monkeypatch.setattr(ChatAnthropicBedrock, "_acreate", _fake_acreate)
+
+    full = None
+    async for chunk in model.astream("hello"):
+        full = chunk if full is None else full + chunk
+
+    assert full is not None
+    assert full.response_metadata["amazon-bedrock-guardrailAction"] == "INTERVENED"
+    assert full.response_metadata["amazon-bedrock-trace"] == {
+        "guardrail": {"actionReason": "Guardrail blocked."}
+    }
+
+
+def test_chat_anthropic_bedrock_stream_without_guardrail_metadata(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """A message_stop event without guardrail keys yields no extra chunk."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+    events = _bedrock_guardrail_stream_events({})
+    monkeypatch.setattr(
+        ChatAnthropicBedrock, "_create", lambda self, payload: _FakeRawResponse(events)
+    )
+
+    chunks = list(model.stream("hello"))
+    full = chunks[0]
+    for chunk in chunks[1:]:
+        full = full + chunk
+
+    assert full.content == "Sorry, I can't help."
+    assert "amazon-bedrock-guardrailAction" not in full.response_metadata
+    assert "amazon-bedrock-trace" not in full.response_metadata

@@ -40,6 +40,14 @@ from langchain_aws.utils import (
 
 _MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
 
+# Bedrock adds these keys to the response body when a guardrail is applied.
+# ``invoke`` keeps them in ``response_metadata`` via ``model_dump()``; when
+# streaming, Bedrock sends them on the final ``message_stop`` event only.
+_BEDROCK_GUARDRAIL_RESPONSE_KEYS = (
+    "amazon-bedrock-guardrailAction",
+    "amazon-bedrock-trace",
+)
+
 
 def _get_default_model_profile(model_name: str) -> ModelProfile:
     """Look up the default profile for a model ID."""
@@ -323,11 +331,16 @@ class ChatAnthropicBedrock(ChatAnthropic):
         coerce_content_to_string: bool,
         block_start_event: anthropic.types.RawMessageStreamEvent | None = None,
     ) -> tuple[AIMessageChunk | None, anthropic.types.RawMessageStreamEvent | None]:
-        """Override to capture input_tokens from message_start events.
+        """Override to capture Bedrock-specific data from stream events.
 
         Bedrock reports input_tokens on message_start (not message_delta),
         so we attach usage_metadata to the message_start chunk and zero out
         input_tokens on the message_delta chunk to avoid double-counting.
+
+        Bedrock also sends the guardrail result (``amazon-bedrock-guardrailAction``
+        and ``amazon-bedrock-trace``) on the message_stop event, which
+        ``ChatAnthropic`` ignores. We surface it in ``response_metadata`` so a
+        streamed message carries the same keys as ``invoke``.
         """
         msg, block_start_event = super()._make_message_chunk_from_anthropic_event(
             event,
@@ -335,6 +348,23 @@ class ChatAnthropicBedrock(ChatAnthropic):
             coerce_content_to_string=coerce_content_to_string,
             block_start_event=block_start_event,
         )
+        if event.type == "message_stop":
+            extra = getattr(event, "model_extra", None) or {}
+            guardrail_metadata = {
+                key: extra[key]
+                for key in _BEDROCK_GUARDRAIL_RESPONSE_KEYS
+                if key in extra
+            }
+            if guardrail_metadata:
+                if msg is None:
+                    msg = AIMessageChunk(
+                        content="" if coerce_content_to_string else [],
+                        response_metadata=guardrail_metadata,
+                    )
+                else:
+                    msg.response_metadata.update(guardrail_metadata)
+            return msg, block_start_event
+
         if msg is None or not stream_usage:
             return msg, block_start_event
 
