@@ -414,11 +414,18 @@ class BedrockEmbeddings(BaseModel, Embeddings):
             return data, fmt, "s3"
 
         data_uri_match = re.match(
-            r"^data:(?:image|video|audio)/([a-zA-Z0-9]+);base64,(.+)$", data
+            r"^data:(image|video|audio)/([a-zA-Z0-9]+);base64,(.+)$", data
         )
         if data_uri_match:
-            fmt = data_uri_match.group(1).lower()
-            b64 = data_uri_match.group(2)
+            data_uri_media_type = data_uri_match.group(1)
+            if data_uri_media_type != media_type:
+                msg = (
+                    f"Data URI media type '{data_uri_media_type}' does not match "
+                    f"requested media type '{media_type}'"
+                )
+                raise ValueError(msg)
+            fmt = data_uri_match.group(2).lower()
+            b64 = data_uri_match.group(3)
             return b64, fmt, "inline"
 
         if os.path.isfile(data):
@@ -430,7 +437,7 @@ class BedrockEmbeddings(BaseModel, Embeddings):
 
         # Assume raw base64 string
         try:
-            decoded = base64.b64decode(data)
+            decoded = base64.b64decode(data, validate=True)
             fmt = self._detect_media_format(decoded)
             return data, fmt, "inline"
         except Exception:
