@@ -1,6 +1,7 @@
 """Comprehensive unit tests for DynamoDBSaver."""
 
-from unittest.mock import Mock
+from typing import Any
+from unittest.mock import Mock, patch
 
 import pytest
 from botocore.config import Config
@@ -13,9 +14,17 @@ from conftest import (
     TEST_TASK_ID,
     TEST_THREAD_ID,
     TEST_TTL_SECONDS,
+    build_checkpoint_item,
+    build_write_item,
 )
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.base import empty_checkpoint
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from langgraph_checkpoint_aws import DynamoDBSaver
+from langgraph_checkpoint_aws.checkpoint.dynamodb.serialization import (
+    CheckpointSerializer,
+)
 
 
 class TestDynamoDBSaverInitialization:
@@ -110,6 +119,21 @@ class TestDynamoDBSaverInitialization:
         # Verify S3 has different endpoint
         s3_kwargs = mock_saver_dependencies["create_s3_client"].call_args[1]
         assert s3_kwargs["endpoint_url"] == "http://s3.local:9000"
+
+    def test_init_consistent_read(
+        self, mock_saver_dependencies: dict[str, Mock]
+    ) -> None:
+        """Test consistent_read defaults to False and reaches storage and repo."""
+        storage_cls = mock_saver_dependencies["storage"]
+        repo_cls = mock_saver_dependencies["repo"]
+
+        DynamoDBSaver(table_name=TEST_TABLE_NAME)
+        assert storage_cls.call_args[1]["consistent_read"] is False
+        assert repo_cls.call_args[1]["consistent_read"] is False
+
+        DynamoDBSaver(table_name=TEST_TABLE_NAME, consistent_read=True)
+        assert storage_cls.call_args[1]["consistent_read"] is True
+        assert repo_cls.call_args[1]["consistent_read"] is True
 
 
 class TestDynamoDBSaverGetTuple:
@@ -436,3 +460,101 @@ class TestDynamoDBSaverAsyncList:
         assert [item.checkpoint["id"] for item in result] == ["cp1", "cp2"]
         assert observed_thread_ids, "list_checkpoints was never driven"
         assert all(tid != loop_thread_id for tid in observed_thread_ids)
+
+
+def _build_fake_dynamodb_client() -> Mock:
+    """Build a mock DynamoDB client serving one checkpoint with one pending write.
+
+    Payloads are stored as DynamoDB chunks so every read path issues real
+    ``get_item``/``query``/``batch_get_item`` calls through the saver's
+    repository and storage strategy.
+    """
+    serializer = CheckpointSerializer(JsonPlusSerializer())
+    checkpoint_type, checkpoint_payload, _ = serializer.serialize(
+        {"checkpoint": empty_checkpoint(), "metadata": {"step": 1}}
+    )
+    write_type, write_payload, _ = serializer.serialize({"value": 1})
+
+    checkpoint_item = {**build_checkpoint_item(), "type": {"S": checkpoint_type}}
+    write_item = {**build_write_item(), "type": {"S": write_type}}
+    write_ref_key = write_item["ref_key"]["S"]
+
+    def get_item(**kwargs: Any) -> dict[str, Any]:
+        key = kwargs["Key"]
+        if key["SK"]["S"] != "CHUNK":
+            return {"Item": checkpoint_item}
+        is_write = key["PK"]["S"] == write_ref_key
+        payload = write_payload if is_write else checkpoint_payload
+        return {"Item": {"payload": {"B": payload}}}
+
+    def query(**kwargs: Any) -> dict[str, Any]:
+        pk = kwargs["ExpressionAttributeValues"][":pk"]["S"]
+        return {
+            "Items": [write_item] if pk.startswith("WRITES_") else [checkpoint_item]
+        }
+
+    client = Mock()
+    client.get_item.side_effect = get_item
+    client.query.side_effect = query
+    client.batch_get_item.return_value = {
+        "Responses": {TEST_TABLE_NAME: [checkpoint_item]},
+        "UnprocessedKeys": {},
+    }
+    client.batch_write_item.return_value = {"UnprocessedItems": {}}
+    return client
+
+
+class TestDynamoDBSaverConsistentRead:
+    """Tests that every DynamoDB read honors the consistent_read setting."""
+
+    @pytest.mark.parametrize("consistent_read", [False, True])
+    def test_every_read_uses_configured_consistency(
+        self, consistent_read: bool
+    ) -> None:
+        """Test get_tuple, list, and delete_thread pass ConsistentRead on reads."""
+        mock_client = _build_fake_dynamodb_client()
+        with patch(
+            "langgraph_checkpoint_aws.checkpoint.dynamodb.saver.create_dynamodb_client",
+            return_value=mock_client,
+        ):
+            saver = DynamoDBSaver(
+                table_name=TEST_TABLE_NAME, consistent_read=consistent_read
+            )
+
+        latest_config: RunnableConfig = {
+            "configurable": {
+                "thread_id": TEST_THREAD_ID,
+                "checkpoint_ns": TEST_CHECKPOINT_NS,
+            }
+        }
+        by_id_config: RunnableConfig = {
+            "configurable": {
+                "thread_id": TEST_THREAD_ID,
+                "checkpoint_ns": TEST_CHECKPOINT_NS,
+                "checkpoint_id": TEST_CHECKPOINT_ID,
+            }
+        }
+
+        latest = saver.get_tuple(latest_config)
+        by_id = saver.get_tuple(by_id_config)
+        listed = list(saver.list(latest_config))
+        saver.delete_thread(TEST_THREAD_ID)
+
+        # Confirm the payload chunk and pending-write read paths actually ran
+        for checkpoint_tuple in [latest, by_id, *listed]:
+            assert checkpoint_tuple is not None
+            assert checkpoint_tuple.pending_writes == [
+                (TEST_TASK_ID, TEST_CHANNEL, {"value": 1})
+            ]
+        assert mock_client.batch_get_item.called
+
+        single_reads = (
+            mock_client.get_item.call_args_list + mock_client.query.call_args_list
+        )
+        assert single_reads
+        for read_call in single_reads:
+            assert read_call.kwargs["ConsistentRead"] is consistent_read
+
+        for batch_call in mock_client.batch_get_item.call_args_list:
+            for table_request in batch_call.kwargs["RequestItems"].values():
+                assert table_request["ConsistentRead"] is consistent_read

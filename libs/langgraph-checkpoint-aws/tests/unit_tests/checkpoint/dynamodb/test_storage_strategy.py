@@ -37,6 +37,7 @@ class TestStorageStrategyInitialization:
         assert strategy.s3_client is None
         assert strategy.s3_enabled is False
         assert strategy.ttl_seconds is None
+        assert strategy.consistent_read is False
 
         # With S3 enabled
         strategy = StorageStrategy(
@@ -376,6 +377,23 @@ class TestRetrieveData:
         # Invalid location
         data = strategy.retrieve_data("key", "INVALID")
         assert data is None
+
+    @pytest.mark.parametrize("consistent_read", [False, True])
+    def test_retrieve_from_dynamodb_consistent_read(
+        self, consistent_read: bool
+    ) -> None:
+        """Test chunk reads pass the configured ConsistentRead to get_item."""
+        mock_dynamodb = Mock()
+        mock_dynamodb.get_item.return_value = {"Item": {"payload": {"B": b"data"}}}
+        strategy = StorageStrategy(
+            dynamodb_client=mock_dynamodb,
+            table_name="test_chunks",
+            consistent_read=consistent_read,
+        )
+
+        assert strategy.retrieve_data("chunk_key", "DYNAMODB") == b"data"
+        call_kwargs = mock_dynamodb.get_item.call_args.kwargs
+        assert call_kwargs["ConsistentRead"] is consistent_read
 
     def test_retrieve_error_propagation(self):
         """Test that non-NotFound errors are propagated."""

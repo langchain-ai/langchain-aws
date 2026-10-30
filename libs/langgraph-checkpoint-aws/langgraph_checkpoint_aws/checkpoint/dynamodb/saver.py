@@ -69,6 +69,13 @@ class DynamoDBSaver(BaseCheckpointSaver):
                 "endpoint_url": "http://localhost:4566",
                 "key_prefix": "my-app/langgraph"
             }
+        consistent_read: If True, every DynamoDB read (checkpoint metadata,
+            payload chunks, and pending writes) uses strongly consistent reads,
+            so a checkpoint written by one worker is immediately visible to
+            another worker resuming the same thread. Strongly consistent reads
+            consume twice the read capacity of eventually consistent reads.
+            Does not affect S3-offloaded payloads, which are already strongly
+            consistent.
     """
 
     def __init__(
@@ -81,6 +88,8 @@ class DynamoDBSaver(BaseCheckpointSaver):
         ttl_seconds: int | None = None,
         enable_checkpoint_compression: bool = False,
         s3_offload_config: S3OffloadConfigDict | None = None,
+        *,
+        consistent_read: bool = False,
     ) -> None:
         super().__init__()
 
@@ -131,6 +140,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
             s3_bucket=s3_bucket_name,
             s3_key_prefix=s3_key_prefix,
             ttl_seconds=ttl_seconds,
+            consistent_read=consistent_read,
         )
 
         # Initialize repository
@@ -140,6 +150,7 @@ class DynamoDBSaver(BaseCheckpointSaver):
             serializer=self.serializer,
             storage_strategy=self.storage,
             ttl_seconds=ttl_seconds,
+            consistent_read=consistent_read,
         )
 
     def _get_checkpoint_pending_writes(
