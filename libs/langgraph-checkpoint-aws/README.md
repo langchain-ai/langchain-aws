@@ -442,7 +442,9 @@ DynamoDBSaver(
     boto_config: Optional[Config] = None,  # Botocore config
     ttl_seconds: Optional[int] = None,  # Auto-cleanup after N seconds
     enable_checkpoint_compression: bool = False,  # Enable gzip compression
-    s3_offload_config: Optional[dict] = None  # S3 config for large checkpoints
+    s3_offload_config: Optional[dict] = None,  # S3 config for large checkpoints
+    *,
+    consistent_read: bool = False,  # Strongly consistent reads
 )
 ```
 

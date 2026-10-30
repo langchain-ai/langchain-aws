@@ -278,6 +278,16 @@ checkpointer = DynamoDBSaver(
     - `bucket_name` (str, required) - S3 bucket name
     - `endpoint_url` (str, optional) - Custom S3 endpoint
 
+**Read Consistency:**
+
+- `consistent_read` (bool, keyword-only, default `False`) - Use strongly consistent
+  DynamoDB reads for checkpoints, payload chunks, and pending writes. Enable this
+  when a different worker or process may resume a thread immediately after a
+  checkpoint is written; otherwise the read can return an older checkpoint.
+  Strongly consistent reads consume 2× the read capacity of the default eventually
+  consistent reads. S3-offloaded payloads are unaffected (S3 is already strongly
+  consistent).
+
 ## Usage
 
 ### Thread Management

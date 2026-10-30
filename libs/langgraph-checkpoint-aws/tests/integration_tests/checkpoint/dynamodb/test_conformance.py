@@ -15,6 +15,7 @@ from uuid import uuid4
 import boto3
 import pytest
 from langgraph.checkpoint.conformance import checkpointer_test, validate
+from langgraph.checkpoint.conformance.initializer import RegisteredCheckpointer
 from langgraph.checkpoint.conformance.report import ProgressCallbacks
 
 from langgraph_checkpoint_aws.checkpoint.dynamodb import DynamoDBSaver
@@ -112,11 +113,33 @@ async def dynamodb_checkpointer() -> AsyncGenerator[DynamoDBSaver, None]:
     yield saver
 
 
+@checkpointer_test(
+    name="DynamoDBSaver(consistent_read=True)", lifespan=dynamodb_lifespan
+)
+async def dynamodb_consistent_read_checkpointer() -> AsyncGenerator[
+    DynamoDBSaver, None
+]:
+    os.environ.setdefault("AWS_ACCESS_KEY_ID", "test")
+    os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "test")
+    saver = DynamoDBSaver(
+        table_name=TABLE_NAME,
+        region_name=DYNAMODB_REGION,
+        endpoint_url=DYNAMODB_ENDPOINT,
+        consistent_read=True,
+    )
+    yield saver
+
+
 @pytest.mark.asyncio
-async def test_conformance() -> None:
+@pytest.mark.parametrize(
+    "registered_checkpointer",
+    [dynamodb_checkpointer, dynamodb_consistent_read_checkpointer],
+    ids=["default", "consistent_read"],
+)
+async def test_conformance(registered_checkpointer: RegisteredCheckpointer) -> None:
     _wait_for_dynamodb()
     report = await validate(
-        dynamodb_checkpointer,
+        registered_checkpointer,
         progress=ProgressCallbacks.verbose(),
     )
     report.print_report()
