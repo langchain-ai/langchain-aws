@@ -4,9 +4,10 @@ import re
 from typing import Tuple, Type, cast
 
 import pytest
+from anthropic.types import RawMessageStopEvent
 from langchain_anthropic.data._profiles import _PROFILES as ANTHROPIC_PROFILES
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessageChunk, HumanMessage, SystemMessage
 from langchain_tests.unit_tests import ChatModelUnitTests
 from pydantic import SecretStr
 from pytest import MonkeyPatch
@@ -565,3 +566,84 @@ def test_chat_anthropic_bedrock_user_agent_respects_caller_header() -> None:
     )
     ua = _built_request_ua(model._client)
     assert ua == f"MyApp/1.0 {FRAMEWORK_UA_TOKEN}"
+
+
+def _message_stop_event(**extra: object) -> RawMessageStopEvent:
+    return RawMessageStopEvent.model_validate({"type": "message_stop", **extra})
+
+
+def test_chat_anthropic_bedrock_stream_keeps_guardrail_result() -> None:
+    """The guardrail result on `message_stop` becomes a trailing chunk."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+    )
+    trace = {"guardrail": {"actionReason": "Guardrail blocked."}}
+    event = _message_stop_event(
+        **{
+            "amazon-bedrock-guardrailAction": "INTERVENED",
+            "amazon-bedrock-trace": trace,
+        }
+    )
+
+    chunk, _ = model._make_message_chunk_from_anthropic_event(
+        event, coerce_content_to_string=True
+    )
+
+    assert isinstance(chunk, AIMessageChunk)
+    assert chunk.response_metadata == {
+        "amazon-bedrock-guardrailAction": "INTERVENED",
+        "amazon-bedrock-trace": trace,
+    }
+
+
+def test_chat_anthropic_bedrock_stream_guardrail_result_merges_with_stop_reason() -> (
+    None
+):
+    """The aggregated message keeps `stop_reason` and the guardrail result."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+    )
+    delta = AIMessageChunk(content="", response_metadata={"stop_reason": "end_turn"})
+    event = _message_stop_event(**{"amazon-bedrock-guardrailAction": "INTERVENED"})
+
+    chunk, _ = model._make_message_chunk_from_anthropic_event(
+        event, coerce_content_to_string=True
+    )
+    assert chunk is not None
+    merged = delta + chunk
+
+    assert merged.response_metadata["stop_reason"] == "end_turn"
+    assert merged.response_metadata["amazon-bedrock-guardrailAction"] == "INTERVENED"
+
+
+def test_chat_anthropic_bedrock_stream_guardrail_result_without_stream_usage() -> None:
+    """The guardrail result does not depend on `stream_usage`."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+    )
+    event = _message_stop_event(**{"amazon-bedrock-guardrailAction": "NONE"})
+
+    chunk, _ = model._make_message_chunk_from_anthropic_event(
+        event, stream_usage=False, coerce_content_to_string=False
+    )
+
+    assert chunk is not None
+    assert chunk.content == []
+    assert chunk.response_metadata == {"amazon-bedrock-guardrailAction": "NONE"}
+
+
+def test_chat_anthropic_bedrock_stream_message_stop_without_guardrail_result() -> None:
+    """No guardrail configured: `message_stop` still yields no chunk."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+    )
+
+    chunk, _ = model._make_message_chunk_from_anthropic_event(
+        _message_stop_event(), coerce_content_to_string=True
+    )
+
+    assert chunk is None
