@@ -789,8 +789,11 @@ class AgentCoreSandbox(BaseSandbox):
         )
         result = self.execute(command)
         if result.exit_code != 0:
+            logger.error(
+                "Error assembling uploaded parts of %s: %s", path, result.output
+            )
             self._remove([*absolute, scratch])
-            return f"Failed to assemble '{path}' from parts: {result.output}"
+            return "permission_denied"
         return None
 
     def _remove(self, paths: list[str]) -> None:

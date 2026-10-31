@@ -262,7 +262,10 @@ def test_upload_files_failed_batch_only_fails_its_files() -> None:
 @pytest.mark.usefixtures("small_budget")
 def test_upload_files_splits_oversized_file_and_assembles() -> None:
     """An oversized file is uploaded as blob parts, then joined in the sandbox."""
-    sandbox, mock = _make_sandbox(cwd="/work")
+    sandbox, mock = _make_sandbox(
+        {"stream": [{"result": {"structuredContent": {"exitCode": 0}, "content": []}}]},
+        cwd="/work",
+    )
     content = bytes(range(60))
 
     result = sandbox.upload_files([("/work/big.bin", content)])
@@ -283,15 +286,18 @@ def test_upload_files_assembly_failure_cleans_up() -> None:
 
     def invoke(method: str, params: dict[str, Any]) -> dict[str, Any]:
         if method == "executeCommand" and not params["command"].startswith("rm"):
-            return {"stream": [{"result": {"exitCode": 1, "content": []}}]}
+            return {
+                "stream": [
+                    {"result": {"structuredContent": {"exitCode": 1}, "content": []}}
+                ]
+            }
         return {"stream": []}
 
     mock.invoke.side_effect = invoke
 
     result = sandbox.upload_files([("/work/big.bin", b"z" * 60)])
 
-    assert result[0].error is not None
-    assert "Failed to assemble" in result[0].error
+    assert result[0].error == "permission_denied"
     commands = [c.kwargs["params"]["command"] for c in _calls(mock, "executeCommand")]
     assert commands[-1].startswith("rm -f ")
     assert commands[-1].count(".part-") == 3
