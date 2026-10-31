@@ -41,6 +41,32 @@ def test_profile() -> None:
     assert model.profile == {}
 
 
+@pytest.mark.parametrize("beta_use_converse_api", [False, True])
+def test_profile_omits_mid_conversation_support(beta_use_converse_api: bool) -> None:
+    """Neither InvokeModel nor Converse can send a system message in place."""
+    model = ChatBedrock(
+        model_id="global.anthropic.claude-sonnet-5-5",
+        region_name="us-west-2",
+        beta_use_converse_api=beta_use_converse_api,
+    )
+    assert model.profile
+    assert "mid_conversation_system_messages" not in model.profile
+    assert "mid_conversation_tools" not in model.profile
+
+
+def test_explicit_profile_keeps_mid_conversation_support() -> None:
+    profile = {
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
+    }
+    model = ChatBedrock(
+        model_id="global.anthropic.claude-sonnet-5-5",
+        region_name="us-west-2",
+        profile=profile,
+    )
+    assert model.profile == profile
+
+
 def test_model_property_returns_model_id() -> None:
     model_id = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
     from_alias = ChatBedrock(model=model_id, region_name="us-west-2")
@@ -1260,6 +1286,20 @@ def test_profile_with_application_inference_profile(mock_create_aws_client):
             "ap-southeast-2",
         ),
         (
+            "ca.amazon.nova-lite-v1:0",
+            None,
+            "amazon",
+            nullcontext(),
+            "ca-central-1",
+        ),
+        (
+            "in.anthropic.claude-opus-5",
+            None,
+            "anthropic",
+            nullcontext(),
+            "ap-south-1",
+        ),
+        (
             "global.anthropic.claude-sonnet-4-20250514-v1:0",
             None,
             "anthropic",
@@ -2389,6 +2429,7 @@ def test_system_prompt_string_format() -> None:
         "us.anthropic.claude-sonnet-5",
         "global.anthropic.claude-opus-5",
         "global.anthropic.claude-fable-5",
+        "us.anthropic.claude-haiku-5-5",
     ],
 )
 def test_stream_thinking_on_by_default_returns_block_content(model_id: str) -> None:
@@ -2719,6 +2760,155 @@ def test_stream_cache_control_kwarg_applied() -> None:
         "type": "ephemeral",
         "ttl": "5m",
     }
+
+
+_CACHE_USAGE_CASES = pytest.mark.parametrize(
+    ("cache_read", "cache_write"),
+    [(0, 0), (31426, 0), (0, 2048), (31426, 2048)],
+    ids=["no_cache", "cache_read", "cache_write", "cache_read_and_write"],
+)
+
+
+def _mock_invoke_client_with_cache_usage(cache_read: int, cache_write: int) -> Any:
+    """Mock an `invoke_model` response reporting 726 uncached input tokens."""
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {
+                "input_tokens": 726,
+                "output_tokens": 114,
+                "cache_read_input_tokens": cache_read,
+                "cache_creation_input_tokens": cache_write,
+            },
+            "stop_reason": "end_turn",
+        }
+    ).encode()
+    mock_response.get.side_effect = lambda key, default=None: {
+        "body": mock_response.get.return_value,
+        "ResponseMetadata": {
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "726",
+                "x-amzn-bedrock-output-token-count": "114",
+                "x-amzn-bedrock-cache-read-input-token-count": str(cache_read),
+                "x-amzn-bedrock-cache-write-input-token-count": str(cache_write),
+            }
+        },
+    }.get(key, default)
+    mock_client.invoke_model.return_value = mock_response
+    return mock_client
+
+
+def _mock_stream_client_with_cache_usage(cache_read: int, cache_write: int) -> Any:
+    """Mock an `invoke_model_with_response_stream` response with cache metrics."""
+    mock_client = MagicMock()
+
+    def stream_gen():
+        yield {
+            "chunk": {
+                "bytes": json.dumps(
+                    {
+                        "type": "content_block_delta",
+                        "delta": {"type": "text_delta", "text": "Hello!"},
+                    }
+                ).encode()
+            }
+        }
+        yield {
+            "chunk": {
+                "bytes": json.dumps(
+                    {
+                        "type": "message_stop",
+                        "amazon-bedrock-invocationMetrics": {
+                            "inputTokenCount": 726,
+                            "outputTokenCount": 114,
+                            "cacheReadInputTokenCount": cache_read,
+                            "cacheWriteInputTokenCount": cache_write,
+                        },
+                    }
+                ).encode()
+            }
+        }
+
+    mock_response = MagicMock()
+    mock_response.get.return_value = stream_gen()
+    mock_client.invoke_model_with_response_stream.return_value = mock_response
+    return mock_client
+
+
+@_CACHE_USAGE_CASES
+def test_invoke_usage_metadata_includes_cache_tokens(
+    cache_read: int, cache_write: int
+) -> None:
+    """`input_tokens` sums uncached, cache read and cache write tokens.
+
+    Bedrock reports only the uncached input in `x-amzn-bedrock-input-token-count`.
+    `ChatBedrockConverse` already reports the sum, as `UsageMetadata` documents.
+    """
+    llm = ChatBedrock(
+        client=_mock_invoke_client_with_cache_usage(cache_read, cache_write),
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
+        region_name="us-west-2",
+    )
+
+    usage = llm.invoke([HumanMessage(content="Hi")]).usage_metadata
+
+    assert usage is not None
+    assert usage["input_tokens"] == 726 + cache_read + cache_write
+    assert usage["output_tokens"] == 114
+    assert usage["total_tokens"] == usage["input_tokens"] + usage["output_tokens"]
+    assert usage.get("input_token_details") == {
+        "cache_read": cache_read,
+        "cache_creation": cache_write,
+    }
+
+
+@_CACHE_USAGE_CASES
+def test_stream_usage_metadata_includes_cache_tokens(
+    cache_read: int, cache_write: int
+) -> None:
+    """Streaming reports the same usage as `invoke` for the same cache counts."""
+    llm = ChatBedrock(
+        client=_mock_stream_client_with_cache_usage(cache_read, cache_write),
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
+        region_name="us-west-2",
+    )
+
+    chunks = list(llm.stream([HumanMessage(content="Hi")]))
+    full = chunks[0]
+    for chunk in chunks[1:]:
+        full += chunk
+    usage = full.usage_metadata
+
+    assert usage is not None
+    assert usage["input_tokens"] == 726 + cache_read + cache_write
+    assert usage["output_tokens"] == 114
+    assert usage["total_tokens"] == usage["input_tokens"] + usage["output_tokens"]
+    assert usage.get("input_token_details") == {
+        "cache_read": cache_read,
+        "cache_creation": cache_write,
+    }
+
+
+@pytest.mark.asyncio
+async def test_astream_usage_metadata_includes_cache_tokens() -> None:
+    """Async streaming sums cache tokens into `input_tokens` too."""
+    llm = ChatBedrock(
+        client=_mock_stream_client_with_cache_usage(31426, 2048),
+        model_id="anthropic.claude-haiku-4-5-20251001-v1:0",
+        region_name="us-west-2",
+    )
+
+    full = None
+    async for chunk in llm.astream([HumanMessage(content="Hi")]):
+        full = chunk if full is None else full + chunk
+    assert full is not None
+    usage = full.usage_metadata
+
+    assert usage is not None
+    assert usage["input_tokens"] == 726 + 31426 + 2048
+    assert usage["total_tokens"] == 726 + 31426 + 2048 + 114
 
 
 def test_convert_one_message_to_text_qwen_system() -> None:

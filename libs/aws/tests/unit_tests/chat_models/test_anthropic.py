@@ -1,16 +1,19 @@
 """ChatAnthropicBedrock tests."""
 
+import re
 from typing import Tuple, Type, cast
 
 import pytest
+from langchain_anthropic.data._profiles import _PROFILES as ANTHROPIC_PROFILES
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_tests.unit_tests import ChatModelUnitTests
 from pydantic import SecretStr
 from pytest import MonkeyPatch
 
 from langchain_aws import ChatAnthropicBedrock
 from langchain_aws.chat_models._anthropic_utils import _create_bedrock_client_params
+from langchain_aws.data._profiles import _PROFILES as BEDROCK_PROFILES
 
 BEDROCK_MODEL_NAME = "anthropic.claude-sonnet-4-6"
 
@@ -296,6 +299,84 @@ def test_model_profile(model_name: str) -> None:
     assert "max_input_tokens" in model.profile
 
 
+@pytest.mark.parametrize(
+    ("model_name", "system_messages", "tools"),
+    [
+        ("global.anthropic.claude-sonnet-5-5", True, True),
+        ("us.anthropic.claude-opus-5-5", True, True),
+        ("eu.anthropic.claude-haiku-5-5", True, True),
+        ("anthropic.claude-opus-4-8", True, True),
+        ("anthropic.claude-sonnet-5", True, False),
+        ("in.anthropic.claude-sonnet-5", True, False),
+        ("global.anthropic.claude-opus-4-7", None, None),
+        ("anthropic.claude-sonnet-4-6", None, None),
+    ],
+)
+def test_model_profile_mid_conversation_support(
+    model_name: str, system_messages: bool | None, tools: bool | None
+) -> None:
+    """The profile declares which mid-conversation changes Bedrock accepts."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=model_name,
+        region_name="us-east-1",
+    )
+    assert model.profile is not None
+    assert model.profile.get("mid_conversation_system_messages") is system_messages
+    assert model.profile.get("mid_conversation_tools") is tools
+
+
+def test_mid_conversation_support_matches_langchain_anthropic() -> None:
+    """Each Bedrock Claude ID declares what the same model declares first-party.
+
+    Catches a region-prefixed ID added by a profile refresh without its
+    augmentations.
+    """
+    keys = ("mid_conversation_system_messages", "mid_conversation_tools")
+    checked = 0
+    for model_id, profile in BEDROCK_PROFILES.items():
+        _, is_claude, name = model_id.partition("anthropic.")
+        canonical = ANTHROPIC_PROFILES.get(re.sub(r"-v\d+(:\d+)?$", "", name))
+        if not is_claude or canonical is None:
+            continue
+        for key in keys:
+            assert profile.get(key) == canonical.get(key), (model_id, key)
+        checked += 1
+    assert checked
+
+
+def test_mid_conversation_tool_addition_sent_in_place() -> None:
+    """A supported model sends a tool-adding system message where it sits."""
+    tool_addition = {
+        "type": "tool_addition",
+        "tool": {
+            "type": "tool_definition",
+            "definition": {
+                "name": "convert_currency",
+                "description": "Convert an amount between currencies.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"amount": {"type": "number"}},
+                    "required": ["amount"],
+                },
+            },
+        },
+    }
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model="global.anthropic.claude-sonnet-5-5",
+        region_name="us-east-1",
+    )
+    payload = model._get_request_payload(
+        [
+            SystemMessage("You are a finance assistant."),
+            HumanMessage("Convert 10 USD to EUR."),
+            SystemMessage([tool_addition]),
+        ]
+    )
+    assert payload["system"] == "You are a finance assistant."
+    assert payload["messages"][-1] == {"role": "system", "content": [tool_addition]}
+    assert payload["betas"] == ["inline-tools-2026-09-15"]
+
+
 def test_chat_anthropic_bedrock_guardrail_config_sets_headers() -> None:
     """Test guardrail_config is translated into extra_headers in the payload."""
     model = ChatAnthropicBedrock(  # type: ignore[call-arg]
@@ -442,3 +523,45 @@ def test_chat_anthropic_bedrock_per_request_guardrail_validates() -> None:
             stop=None,
             guardrail_config={"guardrailIdentifier": "gr-abc123"},
         )
+
+
+def _built_request_ua(client: object) -> str:
+    """Read the wire ``user-agent`` header off an anthropic SDK client."""
+    from anthropic._models import FinalRequestOptions
+
+    req = client._build_request(  # type: ignore[attr-defined]
+        FinalRequestOptions(method="post", url="/v1/messages", json_data={})
+    )
+    return req.headers["user-agent"]
+
+
+def test_chat_anthropic_bedrock_user_agent_tagged() -> None:
+    """The sync/async clients carry the langchain-aws source tag on the wire UA,
+    with the SDK's own ``AnthropicBedrock`` prefix preserved."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        aws_access_key_id=SecretStr("test-key"),
+        aws_secret_access_key=SecretStr("test-secret"),
+    )
+    for client in (model._client, model._async_client):
+        ua = _built_request_ua(client)
+        assert ua.endswith(f" {FRAMEWORK_UA_TOKEN}")
+        assert "AnthropicBedrock/Python" in ua
+
+
+def test_chat_anthropic_bedrock_user_agent_respects_caller_header() -> None:
+    """A caller-supplied ``User-Agent`` gets the tag appended, not overwritten."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+        aws_access_key_id=SecretStr("test-key"),
+        aws_secret_access_key=SecretStr("test-secret"),
+        default_headers={"User-Agent": "MyApp/1.0"},
+    )
+    ua = _built_request_ua(model._client)
+    assert ua == f"MyApp/1.0 {FRAMEWORK_UA_TOKEN}"

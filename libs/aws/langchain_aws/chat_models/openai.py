@@ -36,7 +36,7 @@ from langchain_openai.chat_models.base import (
 from pydantic import ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
-from langchain_aws._version import _add_langchain_aws_version
+from langchain_aws._version import _add_langchain_aws_version, _tag_user_agent
 from langchain_aws.data._profiles import _PROFILES
 from langchain_aws.utils import (
     _BEDROCK_API_KEY_MAX_TTL_SECONDS,
@@ -316,6 +316,21 @@ class ChatOpenAIMantle(BaseChatOpenAI):
                     credentials_profile_name=values.get("credentials_profile_name"),
                 )
 
+        # Tag the OpenAI SDK's User-Agent with a langchain-aws source marker so
+        # the call is attributable to this package on the wire ``User-Agent``,
+        # readable by the Mantle backend service. The OpenAI client (used by
+        # ``BaseChatOpenAI``) has no botocore ``user_agent_extra`` hook, so we
+        # stamp its wire UA directly. Its base UA ("OpenAI/Python <version>")
+        # already distinguishes this transport from the boto and anthropic paths,
+        # so no per-class tag is needed. A caller-supplied ``User-Agent`` in
+        # ``default_headers`` is respected.
+        import openai
+
+        base_ua = f"OpenAI/Python {openai.__version__}"
+        values["default_headers"] = _tag_user_agent(
+            values.get("default_headers"), base_ua
+        )
+
         return values
 
     @model_validator(mode="after")
@@ -328,7 +343,13 @@ class ChatOpenAIMantle(BaseChatOpenAI):
     def _resolve_profile(self) -> Self:
         """Populate the model profile from static data unless one was supplied."""
         if not self.profile:
-            self.profile = _get_default_model_profile(self.model_name)
+            profile = _get_default_model_profile(self.model_name)
+            if profile.get("mid_conversation_tools") and not self._use_responses_api(
+                {}
+            ):
+                # Only the Responses API carries an `additional_tools` input item.
+                profile["mid_conversation_tools"] = False
+            self.profile = profile
         return self
 
     @property

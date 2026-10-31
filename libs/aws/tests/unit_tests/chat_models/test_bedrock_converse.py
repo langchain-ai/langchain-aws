@@ -1,6 +1,7 @@
 """Test chat model integration."""
 
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -23,7 +24,7 @@ from unittest import mock
 import botocore.session
 import pytest
 from botocore.model import StructureShape
-from langchain_core.language_models import BaseChatModel
+from langchain_core.language_models import BaseChatModel, ModelProfile
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -49,6 +50,7 @@ from langchain_aws.chat_models.bedrock_converse import (
     _count_cache_points,
     _expand_inline_reasoning,
     _extract_response_metadata,
+    _extract_thinking_tokens,
     _extract_usage_metadata,
     _format_data_content_block,
     _format_tools,
@@ -132,6 +134,169 @@ def test_profile() -> None:
 
     model = ChatBedrockConverse(model="foo")
     assert model.profile == {}
+
+
+@mock.patch.dict(
+    "langchain_aws.chat_models.bedrock_converse._MODEL_PROFILES",
+    {
+        "us.zai.glm-test": {"structured_output": True},
+        "zai.glm-test": {"structured_output": False},
+        "us.zai.glm-regional-only": {"reasoning_output": True},
+    },
+)
+@pytest.mark.parametrize(
+    "model_id, expected",
+    [
+        ("us.zai.glm-test", {"structured_output": True}),
+        ("eu.zai.glm-test", {"structured_output": False}),
+        ("us.zai.glm-regional-only", {"reasoning_output": True}),
+    ],
+)
+def test_profile_prefers_exact_model_id(model_id: str, expected: dict) -> None:
+    model = ChatBedrockConverse(model=model_id, region_name="us-west-2")
+    assert model.profile == expected
+
+
+@pytest.mark.parametrize(
+    "model_id, system_messages",
+    [("global.anthropic.claude-sonnet-5-5", True), ("openai.gpt-5.5", None)],
+)
+def test_profile_mid_conversation_support(
+    model_id: str, system_messages: Optional[bool]
+) -> None:
+    model = ChatBedrockConverse(model=model_id, region_name="us-west-2")
+    assert model.profile
+    assert model.profile.get("mid_conversation_system_messages") is system_messages
+    assert "mid_conversation_tools" not in model.profile
+
+
+_MID = SystemMessage(content="Reply in French.")
+
+
+@pytest.mark.parametrize(
+    "messages, expected_roles, expected_system",
+    [
+        (
+            [HumanMessage("Hi"), _MID, AIMessage("Bonjour"), HumanMessage("2+2?")],
+            ["user", "system", "assistant", "user"],
+            [],
+        ),
+        (
+            [
+                HumanMessage("Weather?"),
+                AIMessage(
+                    "",
+                    tool_calls=[{"id": "t1", "name": "get_weather", "args": {}}],
+                ),
+                ToolMessage("Sunny", tool_call_id="t1"),
+                _MID,
+                AIMessage("Il fait beau."),
+            ],
+            ["user", "assistant", "user", "system", "assistant"],
+            [],
+        ),
+        (
+            [HumanMessage("Hi"), _MID],
+            ["user"],
+            [{"text": "Reply in French."}],
+        ),
+        # After an AI message: hoisted.
+        (
+            [HumanMessage("Hi"), AIMessage("Hello"), _MID, HumanMessage("2+2?")],
+            ["user", "assistant", "user"],
+            [{"text": "Reply in French."}],
+        ),
+    ],
+)
+def test__messages_to_bedrock_mid_conversation_system(
+    messages: list, expected_roles: list, expected_system: list
+) -> None:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        bedrock_messages, system = _messages_to_bedrock(
+            [SystemMessage(content="Be helpful."), *messages],
+            mid_conversation_system_messages=True,
+        )
+    assert [m["role"] for m in bedrock_messages] == expected_roles
+    assert system == [{"text": "Be helpful."}, *expected_system]
+    hoisted = [w for w in caught if "non-leading `SystemMessage`" in str(w.message)]
+    assert len(hoisted) == (1 if expected_system else 0)
+
+
+def test__messages_to_bedrock_mid_conversation_system_non_text_hoisted() -> None:
+    """A system turn accepts only text and cache points, so others are hoisted."""
+    image_system = SystemMessage(
+        content=[
+            {"type": "text", "text": "Describe it."},
+            {"type": "image", "base64": "iVBORw0KGgo=", "mime_type": "image/png"},
+        ]
+    )
+    with pytest.warns(UserWarning, match="non-leading `SystemMessage`"):
+        bedrock_messages, system = _messages_to_bedrock(
+            [HumanMessage("Hi"), image_system, AIMessage("Ok"), HumanMessage("Go")],
+            mid_conversation_system_messages=True,
+        )
+    assert [m["role"] for m in bedrock_messages] == ["user", "assistant", "user"]
+    assert [next(iter(block)) for block in system] == ["text", "image"]
+
+
+def test__messages_to_bedrock_mid_conversation_system_cache_point() -> None:
+    """A cache point in a system message stays with it in place."""
+    cached = SystemMessage(
+        content=[
+            {"type": "text", "text": "Reply in French."},
+            {"cachePoint": {"type": "default"}},
+        ]
+    )
+    bedrock_messages, _ = _messages_to_bedrock(
+        [HumanMessage("Hi"), cached, AIMessage("Bonjour"), HumanMessage("2+2?")],
+        mid_conversation_system_messages=True,
+    )
+    assert bedrock_messages[1] == {
+        "role": "system",
+        "content": [{"text": "Reply in French."}, {"cachePoint": {"type": "default"}}],
+    }
+
+
+def test__messages_to_bedrock_mid_conversation_system_disabled() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        bedrock_messages, system = _messages_to_bedrock(
+            [HumanMessage("Hi"), _MID, AIMessage("Bonjour"), HumanMessage("2+2?")]
+        )
+    assert [m["role"] for m in bedrock_messages] == ["user", "assistant", "user"]
+    assert system == [{"text": "Reply in French."}]
+
+
+@pytest.mark.parametrize(
+    "model_id, in_place",
+    [("us.anthropic.claude-sonnet-5-5", True), ("openai.gpt-5.5", False)],
+)
+def test_mid_conversation_system_message_follows_profile(
+    model_id: str, in_place: bool
+) -> None:
+    model = ChatBedrockConverse(model=model_id, region_name="us-west-2")
+    assert model._mid_conversation_system_messages is in_place
+    bedrock_messages, system = _messages_to_bedrock(
+        [HumanMessage("Hi"), _MID, AIMessage("Bonjour"), HumanMessage("2+2?")],
+        mid_conversation_system_messages=model._mid_conversation_system_messages,
+    )
+    roles = [m["role"] for m in bedrock_messages]
+    assert ("system" in roles) is in_place
+    assert (system == [{"text": "Reply in French."}]) is not in_place
+
+
+def test_explicit_profile_keeps_mid_conversation_support() -> None:
+    profile: ModelProfile = {
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
+    }
+    model = ChatBedrockConverse(
+        model="global.anthropic.claude-sonnet-5-5",
+        region_name="us-west-2",
+        profile=profile,
+    )
+    assert model.profile == profile
 
 
 def test_model_property_returns_model_id() -> None:
@@ -413,6 +578,23 @@ def test_xai_supports_tool_choice_values() -> None:
         model="global.xai.grok-4.6", region_name="us-east-1"
     )
     assert chat_model.supports_tool_choice_values == ("auto", "any", "tool")
+
+
+@pytest.mark.parametrize(
+    "model, expected_values",
+    [
+        ("us.zai.glm-5.3", ("auto", "any", "tool")),
+        ("global.zai.glm-5.3", ("auto", "any", "tool")),
+        ("zai.glm-5", ("auto", "any")),
+        ("zai.glm-4.7", ("auto", "any")),
+        ("zai.glm-4.7-flash", ("auto", "any")),
+    ],
+)
+def test_zai_glm_supports_tool_choice_values(
+    model: str, expected_values: tuple[Literal["auto", "any", "tool"], ...]
+) -> None:
+    chat_model = ChatBedrockConverse(model=model, region_name="us-east-1")
+    assert chat_model.supports_tool_choice_values == expected_values
 
 
 @pytest.mark.parametrize(
@@ -1531,6 +1713,60 @@ def test__messages_to_bedrock_drops_unidentified_invalid_tool_call() -> None:
     ]
 
 
+def test__messages_to_bedrock_replays_streamed_tool_use_with_invalid_json() -> None:
+    """A streamed tool call whose arguments are not valid JSON must replay.
+
+    With the ``fine-grained-tool-streaming`` beta Bedrock does not validate tool
+    input, so the model can send e.g. an unquoted string. The streamed message keeps
+    that raw text in its ``tool_use`` block; replaying it must not raise.
+    """
+    raw = '{"patterns": stand.?alone|incremental}'
+    events: list[dict[str, Any]] = [
+        {
+            "contentBlockStart": {
+                "contentBlockIndex": 0,
+                "start": {"toolUse": {"toolUseId": "toolu_1", "name": "grep"}},
+            }
+        },
+        *(
+            {
+                "contentBlockDelta": {
+                    "contentBlockIndex": 0,
+                    "delta": {"toolUse": {"input": raw[i : i + 8]}},
+                }
+            }
+            for i in range(0, len(raw), 8)
+        ),
+        {"contentBlockStop": {"contentBlockIndex": 0}},
+        {"messageStop": {"stopReason": "tool_use"}},
+    ]
+    chunks = [c for c in map(_parse_stream_event, events) if c is not None]
+    message = chunks[0]
+    for chunk in chunks[1:]:
+        message += chunk
+    assert isinstance(message, AIMessageChunk)
+    assert message.tool_calls == []
+    assert [tc["id"] for tc in message.invalid_tool_calls] == ["toolu_1"]
+
+    actual_messages, _ = _messages_to_bedrock(
+        [
+            HumanMessage("Search the skills"),
+            message,
+            ToolMessage(
+                json.dumps({"INVALID_JSON": raw}),
+                tool_call_id="toolu_1",
+                status="error",
+            ),
+        ]
+    )
+
+    assert actual_messages[1] == {
+        "role": "assistant",
+        "content": [{"toolUse": {"toolUseId": "toolu_1", "name": "grep", "input": {}}}],
+    }
+    assert actual_messages[2]["content"][0]["toolResult"]["toolUseId"] == "toolu_1"
+
+
 def test__messages_to_bedrock_keeps_cache_point_only_tool_result_valid() -> None:
     """Cache points move outside the toolResult, which must not be left empty."""
     messages: list[BaseMessage] = [
@@ -1811,6 +2047,22 @@ def test_invocation_params_model_prefers_base_model_id() -> None:
 
 
 @pytest.mark.parametrize(
+    "model_id, base_model",
+    [
+        ("ca.amazon.nova-lite-v1:0", "amazon.nova-lite-v1:0"),
+        ("in.anthropic.claude-opus-5", "anthropic.claude-opus-5"),
+        ("in.moonshotai.kimi-k3", "moonshotai.kimi-k3"),
+        ("us.anthropic.claude-sonnet-5", "anthropic.claude-sonnet-5"),
+        ("anthropic.claude-sonnet-5", "anthropic.claude-sonnet-5"),
+    ],
+)
+def test_get_base_model_strips_geo_prefix(model_id: str, base_model: str) -> None:
+    llm = ChatBedrockConverse(model=model_id, region_name="us-west-2")
+    assert llm._get_base_model() == base_model
+    assert llm.provider == base_model.split(".")[0]
+
+
+@pytest.mark.parametrize(
     "model_id, disable_streaming",
     [
         ("us.anthropic.claude-haiku-4-5-20251001-v1:0", False),
@@ -1818,6 +2070,7 @@ def test_invocation_params_model_prefers_base_model_id() -> None:
         ("us.anthropic.claude-opus-4-20250514-v1:0", False),
         ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", False),
         ("global.anthropic.claude-opus-5", False),
+        ("global.anthropic.claude-haiku-5-5", False),
         ("us.anthropic.claude-sonnet-5", False),
         ("us.anthropic.claude-fable-5", False),
         ("us.anthropic.claude-3-haiku-20240307-v1:0", False),
@@ -1838,6 +2091,11 @@ def test_invocation_params_model_prefers_base_model_id() -> None:
         ("moonshotai.kimi-k2.5", False),
         ("moonshot.kimi-k2-thinking", False),
         ("xai.grok-4.6", False),
+        ("us.zai.glm-5.3", False),
+        ("zai.glm-4.7", False),
+        ("in.anthropic.claude-opus-5", False),
+        ("ca.amazon.nova-lite-v1:0", False),
+        ("in.moonshotai.kimi-k3", False),
     ],
 )
 def test_set_disable_streaming(
@@ -3294,6 +3552,214 @@ def test__lc_content_to_bedrock_mime_types_invalid() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("mime_type", "expected_format"),
+    [
+        ("text/css", "txt"),
+        ("text/calendar", "txt"),
+        ("application/xml", "txt"),
+        ("text/csv", "csv"),
+        ("text/html", "html"),
+    ],
+)
+def test__lc_content_to_bedrock_text_file_mime_types(
+    mime_type: str, expected_format: str
+) -> None:
+    bedrock_content = _lc_content_to_bedrock(
+        [
+            {
+                "type": "file",
+                "base64": base64.b64encode(b"test_data").decode("utf-8"),
+                "mime_type": mime_type,
+                "filename": "test_file",
+            }
+        ]
+    )
+    assert bedrock_content[0]["document"]["format"] == expected_format
+
+
+def _unnamed_file_block(data: bytes = b"unnamed document payload") -> Dict[str, Any]:
+    return {
+        "type": "file",
+        "base64": base64.b64encode(data).decode("utf-8"),
+        "mime_type": "application/pdf",
+    }
+
+
+def _document_names(bedrock_messages: List[Dict[str, Any]]) -> List[str]:
+    names: List[str] = []
+
+    def collect(blocks: List[Dict[str, Any]]) -> None:
+        for block in blocks:
+            if "document" in block:
+                names.append(block["document"]["name"])
+            elif "toolResult" in block:
+                collect(block["toolResult"]["content"])
+
+    for message in bedrock_messages:
+        collect(message["content"])
+    return names
+
+
+def _serialized_document_names(messages: List[BaseMessage]) -> List[str]:
+    bedrock_messages, _ = _messages_to_bedrock(list(messages))
+    return _document_names(bedrock_messages)
+
+
+_TWO_READS = AIMessage(
+    content="",
+    tool_calls=[
+        {"id": "call_a", "name": "read_file", "args": {}},
+        {"id": "call_b", "name": "read_file", "args": {}},
+    ],
+)
+
+
+def test__messages_to_bedrock_unnamed_file_name_is_stable_across_requests() -> None:
+    data = b"unnamed document payload"
+    messages: List[BaseMessage] = [
+        HumanMessage(
+            content=[_unnamed_file_block(data), {"type": "text", "text": "Hi"}]
+        )
+    ]
+
+    with pytest.warns(UserWarning, match="may require a filename"):
+        names = _serialized_document_names(messages)
+        names_again = _serialized_document_names(messages)
+
+    assert names == [hashlib.sha256(data).hexdigest()[:12]]
+    assert names_again == names
+
+
+@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
+def test__messages_to_bedrock_unnamed_files_with_different_content_differ() -> None:
+    messages: List[BaseMessage] = [
+        HumanMessage(
+            content=[_unnamed_file_block(b"first"), _unnamed_file_block(b"second")]
+        )
+    ]
+
+    first, second = _serialized_document_names(messages)
+
+    assert first != second
+    assert "-" not in first + second
+
+
+@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
+@pytest.mark.parametrize(
+    "messages",
+    [
+        pytest.param(
+            [HumanMessage(content=[_unnamed_file_block(), _unnamed_file_block()])],
+            id="same message",
+        ),
+        pytest.param(
+            [
+                HumanMessage(content=[_unnamed_file_block()]),
+                AIMessage(content="Done."),
+                HumanMessage(content=[_unnamed_file_block()]),
+            ],
+            id="later turn",
+        ),
+        pytest.param(
+            [
+                HumanMessage(content="Read both."),
+                _TWO_READS,
+                ToolMessage(content=[_unnamed_file_block()], tool_call_id="call_a"),
+                ToolMessage(content=[_unnamed_file_block()], tool_call_id="call_b"),
+            ],
+            id="tool messages",
+        ),
+        pytest.param(
+            [
+                HumanMessage(content="Read both."),
+                _TWO_READS,
+                HumanMessage(
+                    content=[
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_a",
+                            "content": [_unnamed_file_block()],
+                        },
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_b",
+                            "content": [_unnamed_file_block()],
+                        },
+                    ]
+                ),
+            ],
+            id="nested tool_result blocks",
+        ),
+    ],
+)
+def test__messages_to_bedrock_repeated_unnamed_file_gets_unique_stable_names(
+    messages: List[BaseMessage],
+) -> None:
+    names = _serialized_document_names(messages)
+
+    assert names == [names[0], f"{names[0]}-2"]
+    assert _serialized_document_names(messages) == names
+
+
+@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
+def test__messages_to_bedrock_later_repeat_keeps_earlier_names() -> None:
+    first_turn = HumanMessage(content=[_unnamed_file_block()])
+
+    before = _serialized_document_names([first_turn])
+    after = _serialized_document_names(
+        [
+            first_turn,
+            AIMessage(content="Done."),
+            HumanMessage(content=[_unnamed_file_block()]),
+        ]
+    )
+
+    assert after[0] == before[0]
+
+
+@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
+def test__format_data_content_block_outside_a_request_uses_the_bare_hash() -> None:
+    data = b"unnamed document payload"
+    block = {
+        "type": "file",
+        "base64": base64.b64encode(data).decode("utf-8"),
+        "mimeType": "application/pdf",
+    }
+
+    first = _format_data_content_block(block)
+    second = _format_data_content_block(block)
+
+    expected = hashlib.sha256(data).hexdigest()[:12]
+    assert first["document"]["name"] == second["document"]["name"] == expected
+
+
+@pytest.mark.filterwarnings("ignore:Bedrock Converse may require a filename")
+def test__messages_to_bedrock_explicit_names_are_unchanged() -> None:
+    named = {**_unnamed_file_block(), "name": "report"}
+    messages: List[BaseMessage] = [
+        HumanMessage(content=[named, _unnamed_file_block(), _unnamed_file_block()])
+    ]
+
+    names = _serialized_document_names(messages)
+
+    assert names[0] == "report"
+    assert names[2] == f"{names[1]}-2"
+
+
+def test__lc_content_to_bedrock_text_mime_type_image_still_rejected() -> None:
+    with pytest.raises(ValueError, match="Unsupported MIME type"):
+        _lc_content_to_bedrock(
+            [
+                {
+                    "type": "image",
+                    "base64": base64.b64encode(b"test_data").decode("utf-8"),
+                    "mime_type": "text/css",
+                }
+            ]
+        )
+
+
 def test__lc_content_to_bedrock_empty_content() -> None:
     content: List[Union[str, Dict[str, Any]]] = []
 
@@ -3515,6 +3981,12 @@ def test__get_base_model() -> None:
         (
             "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile",
             "anthropic.claude-sonnet-5",
+            "anthropic",
+            False,
+        ),
+        (
+            "arn:aws:bedrock:us-west-2:123456789012:application-inference-profile/my-profile",
+            "anthropic.claude-haiku-5-5",
             "anthropic",
             False,
         ),
@@ -5235,6 +5707,16 @@ def test_reasoning_effort_moonshot_flat() -> None:
     assert llm.additional_model_request_fields == {"reasoning_effort": "max"}
 
 
+def test_reasoning_effort_zai_glm_flat() -> None:
+    """Test reasoning_effort maps to a flat key for Z.ai GLM models."""
+    llm = ChatBedrockConverse(
+        model="us.zai.glm-5.3",
+        region_name="us-east-1",
+        reasoning_effort="xhigh",
+    )  # type: ignore[call-arg]
+    assert llm.additional_model_request_fields == {"reasoning_effort": "xhigh"}
+
+
 def test_reasoning_effort_moonshot_invalid_level_raises() -> None:
     """Test a level unsupported by Moonshot's profile (no "medium") raises."""
     with pytest.raises(ValueError, match="reasoning_effort='medium' is not supported"):
@@ -6271,6 +6753,79 @@ def test_closing_stream_early_does_not_report_incomplete_response() -> None:
     stream.close()
 
     transport.close.assert_called_once()
+
+
+_NATIVE_USAGE = {
+    "usage": {"output_tokens": 565, "output_tokens_details": {"thinking_tokens": 562}}
+}
+
+
+@pytest.mark.parametrize(
+    ("additional_fields", "expected"),
+    [
+        (_NATIVE_USAGE, 562),
+        (None, None),
+        ({}, None),
+        ({"usage": {"output_tokens": 3}}, None),
+        ({"usage": {"output_tokens_details": {"thinking_tokens": "562"}}}, None),
+        ({"usage": "not-a-dict"}, None),
+    ],
+)
+def test__extract_thinking_tokens(
+    additional_fields: Optional[Dict[str, Any]], expected: Optional[int]
+) -> None:
+    assert _extract_thinking_tokens(additional_fields) == expected
+
+
+def test_invoke_maps_converse_thinking_tokens_to_reasoning() -> None:
+    client = mock.MagicMock()
+    client.converse.return_value = {
+        "output": {"message": {"role": "assistant", "content": [{"text": "42"}]}},
+        "stopReason": "end_turn",
+        "usage": {"inputTokens": 20, "outputTokens": 565, "totalTokens": 585},
+        "additionalModelResponseFields": _NATIVE_USAGE,
+    }
+    model = ChatBedrockConverse(
+        client=client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+        additional_model_response_field_paths=["/usage"],
+    )
+
+    response = model.invoke("hi")
+
+    assert client.converse.call_args.kwargs["additionalModelResponseFieldPaths"] == [
+        "/usage"
+    ]
+    assert response.usage_metadata is not None
+    assert response.usage_metadata["output_tokens"] == 565
+    assert response.usage_metadata["output_token_details"] == {"reasoning": 562}
+
+
+def test_stream_maps_converse_thinking_tokens_to_reasoning_once() -> None:
+    events = _completion_events()
+    message_stop = next(e for e in events if "messageStop" in e)
+    message_stop["messageStop"]["additionalModelResponseFields"] = _NATIVE_USAGE
+    model, _ = _streaming_model(events)
+
+    chunks = list(model.stream("hi"))
+    merged = sum(chunks[1:], chunks[0])
+
+    assert [
+        c.usage_metadata.get("output_token_details") for c in chunks if c.usage_metadata
+    ] == [{"reasoning": 562}]
+    assert merged.usage_metadata is not None
+    assert merged.usage_metadata["output_tokens"] == 2
+    assert merged.usage_metadata["output_token_details"] == {"reasoning": 562}
+
+
+def test_stream_without_thinking_tokens_has_no_output_token_details() -> None:
+    model, _ = _streaming_model(_completion_events())
+
+    response = model.invoke("hi")
+
+    assert response.usage_metadata is not None
+    assert "output_token_details" not in response.usage_metadata
 
 
 def test_incomplete_stream_reports_error_callback(

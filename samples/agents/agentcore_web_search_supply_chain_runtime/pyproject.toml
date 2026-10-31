@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "SupplyChainWatch"
+version = "0.1.0"
+description = "AgentCore Runtime Application using LangChain/LangGraph"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "aws-opentelemetry-distro ~= 0.18.0",
+    "opentelemetry-instrumentation-langchain >= 0.59.0",
+    "langgraph >= 1.0.2",
+    "langchain >= 1.0.3",
+    "bedrock-agentcore >= 1.24.0",
+    "botocore[crt] >= 1.35.0",
+    "langchain-aws[tools] >= 1.8.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]

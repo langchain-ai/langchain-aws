@@ -784,6 +784,33 @@ def test_prepare_output_for_anthropic(anthropic_response):
     assert result["stop_reason"] is None
 
 
+def test_prepare_output_total_tokens_includes_cache_tokens() -> None:
+    """`total_tokens` counts cache writes as well as cache reads.
+
+    `prompt_tokens` stays the raw uncached count from Bedrock.
+    """
+    body = MagicMock()
+    body.read.return_value = json.dumps(
+        {"content": [{"type": "text", "text": "ok"}], "stop_reason": "end_turn"}
+    ).encode()
+    response = dict(
+        body=body,
+        ResponseMetadata={
+            "HTTPHeaders": {
+                "x-amzn-bedrock-input-token-count": "726",
+                "x-amzn-bedrock-output-token-count": "114",
+                "x-amzn-bedrock-cache-read-input-token-count": "31426",
+                "x-amzn-bedrock-cache-write-input-token-count": "2048",
+            }
+        },
+    )
+
+    result = LLMInputOutputAdapter.prepare_output("anthropic", response)
+
+    assert result["usage"]["prompt_tokens"] == 726
+    assert result["usage"]["total_tokens"] == 726 + 31426 + 2048 + 114
+
+
 def test_prepare_output_for_ai21(ai21_response):
     result = LLMInputOutputAdapter.prepare_output("ai21", ai21_response)
     assert result["text"] == "This is the AI21 output text."
@@ -1144,4 +1171,171 @@ async def test_astream_closes_response_body_on_exception() -> None:
             async for _ in llm._aprepare_input_and_invoke_stream(prompt="Hello"):
                 pass
 
+    mock_body.close.assert_called_once()
+
+
+REQUEST_METADATA = {"team": "growth", "environment": "prod"}
+
+
+def test_request_metadata_passed_to_invoke_model() -> None:
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.get.return_value.read.return_value = json.dumps(
+        {
+            "content": [{"type": "text", "text": "Hello!"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "stop_reason": "end_turn",
+        }
+    ).encode()
+    mock_response.get.side_effect = lambda key, default=None: {
+        "body": mock_response.get.return_value,
+        "ResponseMetadata": {"HTTPHeaders": {}},
+    }.get(key, default)
+    mock_client.invoke_model.return_value = mock_response
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-5-5",
+        region="us-west-2",
+        request_metadata=REQUEST_METADATA,
+    )
+    llm._prepare_input_and_invoke(prompt="Hello")
+
+    call_kwargs = mock_client.invoke_model.call_args.kwargs
+    assert json.loads(call_kwargs["requestMetadata"]) == REQUEST_METADATA
+
+
+def test_request_metadata_passed_to_invoke_model_with_response_stream(
+    anthropic_streaming_response_with_close,
+) -> None:
+    mock_client = MagicMock()
+    mock_client.invoke_model_with_response_stream.return_value = (
+        anthropic_streaming_response_with_close
+    )
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-5-5",
+        region="us-west-2",
+        request_metadata=REQUEST_METADATA,
+    )
+    list(llm._prepare_input_and_invoke_stream(prompt="Hello"))
+
+    call_kwargs = mock_client.invoke_model_with_response_stream.call_args.kwargs
+    assert json.loads(call_kwargs["requestMetadata"]) == REQUEST_METADATA
+
+
+@pytest.mark.asyncio
+async def test_request_metadata_passed_to_async_invoke_model_with_response_stream(
+    anthropic_streaming_response_with_close,
+) -> None:
+    mock_client = MagicMock()
+    mock_client.invoke_model_with_response_stream.return_value = (
+        anthropic_streaming_response_with_close
+    )
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-5-5",
+        region="us-west-2",
+        request_metadata=REQUEST_METADATA,
+    )
+    async for _ in llm._aprepare_input_and_invoke_stream(prompt="Hello"):
+        pass
+
+    call_kwargs = mock_client.invoke_model_with_response_stream.call_args.kwargs
+    assert json.loads(call_kwargs["requestMetadata"]) == REQUEST_METADATA
+
+
+def _anthropic_stream_with_error(error_type: str) -> list:
+    events = [
+        {"type": "message_start", "message": {"usage": {"input_tokens": 3}}},
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": "partial"},
+        },
+        {
+            "type": "error",
+            "error": {"type": error_type, "message": "Overloaded"},
+            "request_id": "req_123",
+        },
+    ]
+    return [{"chunk": {"bytes": json.dumps(e).encode()}} for e in events]
+
+
+@pytest.mark.parametrize(
+    "error_type, code",
+    [
+        ("overloaded_error", "serviceUnavailableException"),
+        ("rate_limit_error", "throttlingException"),
+        ("api_error", "internalServerException"),
+        ("unknown_error", "modelStreamErrorException"),
+    ],
+)
+def test_prepare_output_stream_raises_error_event(error_type: str, code: str) -> None:
+    from botocore.exceptions import EventStreamError
+
+    response = {"body": _anthropic_stream_with_error(error_type)}
+    chunks = []
+    with pytest.raises(EventStreamError) as raised:
+        for chunk in LLMInputOutputAdapter.prepare_output_stream(
+            "anthropic", response, messages_api=True
+        ):
+            chunks.append(chunk)
+    assert len(chunks) == 2
+    assert raised.value.response["Error"]["Code"] == code
+    assert (
+        raised.value.response["Error"]["Message"] == "Overloaded (request_id: req_123)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_aprepare_output_stream_raises_error_event() -> None:
+    from botocore.exceptions import EventStreamError
+
+    response = {"body": _anthropic_stream_with_error("overloaded_error")}
+    with pytest.raises(EventStreamError) as raised:
+        async for _ in LLMInputOutputAdapter.aprepare_output_stream(
+            "anthropic", response, messages_api=True
+        ):
+            pass
+    assert raised.value.response["Error"]["Code"] == "serviceUnavailableException"
+
+
+@pytest.mark.parametrize("error", [None, "Overloaded"])
+def test_prepare_output_stream_raises_malformed_error_event(error: object) -> None:
+    from botocore.exceptions import EventStreamError
+
+    event = {"type": "error", "error": error}
+    response = {"body": [{"chunk": {"bytes": json.dumps(event).encode()}}]}
+    with pytest.raises(EventStreamError) as raised:
+        list(
+            LLMInputOutputAdapter.prepare_output_stream(
+                "anthropic", response, messages_api=True
+            )
+        )
+    assert raised.value.response["Error"]["Code"] == "modelStreamErrorException"
+
+
+def test_stream_closes_response_body_on_error_event() -> None:
+    from botocore.exceptions import EventStreamError
+
+    mock_body = MagicMock()
+    mock_body.__iter__ = MagicMock(
+        return_value=iter(_anthropic_stream_with_error("overloaded_error"))
+    )
+    mock_client = MagicMock()
+    mock_client.invoke_model_with_response_stream.return_value = {"body": mock_body}
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-5-5",
+        region="us-west-2",
+    )
+    with pytest.raises(EventStreamError):
+        list(
+            llm._prepare_input_and_invoke_stream(
+                messages=[{"role": "user", "content": "Hello"}]
+            )
+        )
     mock_body.close.assert_called_once()

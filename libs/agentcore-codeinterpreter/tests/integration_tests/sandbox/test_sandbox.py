@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from langchain_agentcore_codeinterpreter import AgentCoreSandbox
+from langchain_agentcore_codeinterpreter.sandbox import SessionExpiredError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -190,3 +191,42 @@ class TestAgentCoreSandboxIntegration:
             assert glob_result.error is None, glob_result.error
 
         asyncio.run(run())
+
+
+def _ended_sandbox() -> AgentCoreSandbox:
+    """Create a sandbox whose session is then ended manually."""
+    region = os.environ.get(
+        "AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
+    )
+    sandbox = AgentCoreSandbox.create(region=region, session_timeout_seconds=300)
+    interpreter = sandbox._interpreter
+    interpreter.data_plane_client.stop_code_interpreter_session(
+        codeInterpreterIdentifier=interpreter.identifier,
+        sessionId=interpreter.session_id,
+    )
+    return sandbox
+
+
+@pytest.mark.skipif(
+    not os.environ.get("AWS_DEFAULT_REGION") and not os.environ.get("AWS_REGION"),
+    reason=_SKIP_REASON,
+)
+class TestAgentCoreSandboxEndedSession:
+    """The service's answers for an ended session, which the sandbox matches on."""
+
+    def test_ended_session_reports_expiry(self) -> None:
+        sandbox = _ended_sandbox()
+        with pytest.raises(SessionExpiredError):
+            sandbox._invoke(method="executeCommand", params={"command": "echo"})
+        result = sandbox.execute("echo hi")
+        assert result.exit_code == 1
+        assert "session has expired" in result.output
+        sandbox.close()
+
+    def test_close_ended_session(self) -> None:
+        sandbox = _ended_sandbox()
+        sandbox.close()
+        sandbox.close()
+
+        with _ended_sandbox():
+            pass

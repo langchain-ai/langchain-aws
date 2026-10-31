@@ -965,7 +965,13 @@ class ChatBedrock(BaseChatModel, BedrockBase):
     def _resolve_model_profile(self) -> ModelProfile | None:
         """Return the default model profile for this model."""
         model_id = self.base_model_id if self.base_model_id else self.model_id
-        return _get_default_model_profile(model_id)
+        profile = _get_default_model_profile(model_id)
+        # The data describes the APIs `ChatAnthropicBedrock`, `ChatAnthropicMantle`
+        # and `ChatOpenAIMantle` call. This class rejects a non-leading system
+        # message (or hoists it, on Converse), so it can't send one in place.
+        profile.pop("mid_conversation_system_messages", None)
+        profile.pop("mid_conversation_tools", None)
+        return profile
 
     @property
     def lc_attributes(self) -> Dict[str, Any]:
@@ -1225,10 +1231,14 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             )
         # usage metadata
         if usage := llm_output.get("usage"):
-            input_tokens = usage.get("prompt_tokens", 0)
             output_tokens = usage.get("completion_tokens", 0)
             cache_read_input_tokens = usage.get("cache_read_input_tokens", 0)
             cache_write_input_tokens = usage.get("cache_write_input_tokens", 0)
+            input_tokens = (
+                usage.get("prompt_tokens", 0)
+                + cache_read_input_tokens
+                + cache_write_input_tokens
+            )
             usage_metadata = UsageMetadata(
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
@@ -1675,6 +1685,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             kwargs["stop_sequences"] = self.stop_sequences
         if self.service_tier:
             kwargs["service_tier"] = self.service_tier
+        if self.request_metadata:
+            kwargs["request_metadata"] = self.request_metadata
 
         return ChatBedrockConverse(
             client=self.client,

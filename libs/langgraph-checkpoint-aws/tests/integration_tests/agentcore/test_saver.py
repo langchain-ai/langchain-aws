@@ -5,7 +5,7 @@ import string
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 from uuid import uuid4
 
 import pytest
@@ -16,11 +16,54 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.checkpoint.base import Checkpoint, empty_checkpoint, uuid6
 from langgraph.graph import END, START, MessagesState, StateGraph
+from langgraph.types import interrupt
 
 from langgraph_checkpoint_aws.checkpoint.agentcore.constants import (
     CheckpointReadLimitError,
 )
+from langgraph_checkpoint_aws.checkpoint.agentcore.helpers import EventType
+from langgraph_checkpoint_aws.checkpoint.agentcore.models import (
+    CheckpointerConfig,
+    WriteItem,
+    WritesEvent,
+)
 from langgraph_checkpoint_aws.checkpoint.agentcore.saver import AgentCoreMemorySaver
+from langgraph_checkpoint_aws.checkpoint.deferred_saver import PendingWrite
+
+
+class _SubgraphState(TypedDict):
+    value: int
+
+
+def _build_nested_graph(checkpointer, *, subgraph_levels: int):
+    """Compile a parent graph containing ``subgraph_levels`` nested subgraphs.
+
+    The innermost subgraph node interrupts, so after invoking, the parent and
+    every nested subgraph hold persisted state. ``get_state(subgraphs=True)``
+    then walks into each subgraph with a derived config that omits ``actor_id``,
+    which is the exact path that regressed in issue #733.
+
+    LangGraph does not provide a prebuilt nested graph, so (as in the other
+    checkpointer integration tests) it is assembled here with ``StateGraph``.
+    """
+
+    def increment(state: _SubgraphState) -> _SubgraphState:
+        interrupt("pause inside subgraph")
+        return {"value": state["value"] + 1}
+
+    def single_node_graph(node):
+        builder = StateGraph(_SubgraphState)
+        builder.add_node("node", node)
+        builder.add_edge(START, "node")
+        builder.add_edge("node", END)
+        return builder
+
+    # Deepest (interrupting) subgraph, then wrap it into progressively higher
+    # subgraph levels; the parent finally wraps the stack with the checkpointer.
+    node: object = single_node_graph(increment).compile()
+    for _ in range(subgraph_levels - 1):
+        node = single_node_graph(node).compile()
+    return single_node_graph(node).compile(checkpointer=checkpointer)
 
 
 def generate_valid_session_id():
@@ -323,6 +366,77 @@ class TestAgentCoreMemorySaver:
         finally:
             memory_saver.delete_thread(thread_id, actor_id)
 
+    def test_get_state_with_subgraphs_resolves_actor_id(self, memory_saver):
+        """get_state(subgraphs=True) works on a nested graph (issue #733)."""
+        thread_id = generate_valid_session_id()
+        actor_id = generate_valid_actor_id()
+        config = {"configurable": {"thread_id": thread_id, "actor_id": actor_id}}
+
+        try:
+            graph = _build_nested_graph(memory_saver, subgraph_levels=1)
+            # Runs until the subgraph interrupts, persisting parent + subgraph state.
+            graph.invoke({"value": 0}, config)
+
+            # The derived subgraph config drops actor_id; pre-fix this raised
+            # InvalidConfigError. It must now resolve the actor from the parent
+            # read and return the nested state.
+            state = graph.get_state(config, subgraphs=True)
+
+            assert state.tasks, "expected a pending subgraph task"
+            subgraph_state = state.tasks[0].state
+            assert subgraph_state is not None
+            assert "value" in subgraph_state.values
+
+        finally:
+            memory_saver.delete_thread(thread_id, actor_id)
+
+    def test_get_state_with_deeply_nested_subgraphs_resolves_actor_id(
+        self, memory_saver
+    ):
+        """get_state(subgraphs=True) works across 3 nested subgraph levels."""
+        thread_id = generate_valid_session_id()
+        actor_id = generate_valid_actor_id()
+        config = {"configurable": {"thread_id": thread_id, "actor_id": actor_id}}
+
+        try:
+            graph = _build_nested_graph(memory_saver, subgraph_levels=3)
+            graph.invoke({"value": 0}, config)
+
+            # Walk all three nested levels; each derived config omits actor_id and
+            # must resolve it from the request rather than raising.
+            state = graph.get_state(config, subgraphs=True)
+            level_1 = state.tasks[0].state
+            level_2 = level_1.tasks[0].state
+            level_3 = level_2.tasks[0].state
+
+            assert level_3 is not None
+            assert "value" in level_3.values
+
+        finally:
+            memory_saver.delete_thread(thread_id, actor_id)
+
+    async def test_aget_state_with_subgraphs_resolves_actor_id(self, memory_saver):
+        """aget_state(subgraphs=True) resolves the actor across the executor hop."""
+        thread_id = generate_valid_session_id()
+        actor_id = generate_valid_actor_id()
+        config = {"configurable": {"thread_id": thread_id, "actor_id": actor_id}}
+
+        try:
+            graph = _build_nested_graph(memory_saver, subgraph_levels=1)
+            await graph.ainvoke({"value": 0}, config)
+
+            # Exercises the async path: the actor captured on the event loop must
+            # be copied into the executor thread that runs the sync get_tuple.
+            state = await graph.aget_state(config, subgraphs=True)
+
+            assert state.tasks, "expected a pending subgraph task"
+            subgraph_state = state.tasks[0].state
+            assert subgraph_state is not None
+            assert "value" in subgraph_state.values
+
+        finally:
+            await memory_saver.adelete_thread(thread_id, actor_id)
+
 
 @dataclass
 class MemoryCase:
@@ -488,3 +602,72 @@ class TestAgentCoreReadLimits:
         )
         assert len(filtered) == 1
         assert filtered[0].checkpoint["channel_values"]["counter"] == 3
+
+
+class TestAgentCoreChunkedWrites:
+    """Live ordering checks for writes split across multiple CreateEvent calls."""
+
+    def test_chunked_batch_reads_back_in_write_order(
+        self,
+        memory_case: MemoryCase,
+    ) -> None:
+        config = memory_case.config("chunk-order")
+        session_id = CheckpointerConfig.from_runnable_config(dict(config)).session_id
+        client = memory_case.saver().checkpoint_event_client
+        events: list[EventType] = [
+            WritesEvent(
+                checkpoint_id=f"{i:03d}",
+                writes=[WriteItem(task_id="task", channel="channel", value=i)],
+            )
+            for i in range(20)
+        ]
+
+        client.store_blob_events_batch(
+            events, session_id, memory_case.actor, max_payload_items=1
+        )
+
+        stored = client.get_events(session_id, memory_case.actor)
+        order = [int(event.checkpoint_id) for event in stored]  # type: ignore[union-attr]
+        assert order == list(range(20))[::-1]
+
+    def test_large_checkpoint_write_round_trips_with_ordered_chunks(
+        self,
+        memory_case: MemoryCase,
+    ) -> None:
+        config = memory_case.config("large-write")
+        checkpoint_config = CheckpointerConfig.from_runnable_config(dict(config))
+        saver = memory_case.saver()
+        state = make_checkpoint(1, {"counter": 1})
+        write_config: RunnableConfig = {
+            "configurable": {**config["configurable"], "checkpoint_id": state["id"]}
+        }
+        pending = [
+            PendingWrite(write_config, [("result", i)], f"task-{i:03d}", "")
+            for i in range(150)
+        ]
+
+        saver.put_with_writes(
+            config,
+            state,
+            {"source": "loop", "step": 1},
+            state["channel_versions"],
+            pending,
+        )
+
+        raw = saver.checkpoint_event_client.client.list_events(
+            memoryId=memory_case.memory_id,
+            actorId=memory_case.actor,
+            sessionId=checkpoint_config.session_id,
+            includePayloads=False,
+            maxResults=100,
+        )["events"]
+        assert len(raw) == 2
+        assert len({event["eventTimestamp"] for event in raw}) == len(raw)
+
+        restored = saver.get_tuple(config)
+        assert restored is not None
+        assert restored.checkpoint["channel_values"] == state["channel_values"]
+        assert restored.pending_writes is not None
+        assert sorted(restored.pending_writes) == sorted(
+            (f"task-{i:03d}", "result", i) for i in range(150)
+        )

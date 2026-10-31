@@ -513,6 +513,7 @@ def test_thinking_forced_tool_use_unsupported(
         ("global.anthropic.claude-opus-5", False),
         ("global.anthropic.claude-fable-5", False),
         ("us.anthropic.claude-sonnet-5", False),
+        ("us.anthropic.claude-haiku-5-5", False),
         ("global.anthropic.claude-opus-4-8", False),
         ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", False),
     ],
@@ -544,6 +545,7 @@ def test_thinking_enabled_in_params(
         ("us.anthropic.claude-sonnet-5", True),
         ("global.anthropic.claude-opus-5", True),
         ("global.anthropic.claude-fable-5", True),
+        ("us.anthropic.claude-haiku-5-5", True),
         ("global.anthropic.claude-opus-4-8", False),
         ("anthropic.claude-sonnet-4-6", False),
         ("us.anthropic.claude-sonnet-4-5-20250929-v1:0", False),
@@ -600,6 +602,8 @@ def test_thinking_disabled_in_params(params: dict, expected_result: bool) -> Non
             "low",
             {"reasoning_effort": "low"},
         ),
+        ("zai.glm-5.3", "max", {"reasoning_effort": "max"}),
+        ("zai.glm-4.7", "none", {"reasoning_effort": "none"}),
         ("amazon.titan-text-express-v1", "high", {}),
         ("meta.llama3-1-70b-instruct-v1:0", "high", {}),
         ("openai.gpt-5.6-terra", "medium", {"reasoning": {"effort": "medium"}}),
@@ -820,6 +824,10 @@ def test_thinking_in_params(params: dict, expected: bool) -> None:
         ("us.minimax.minimax-m2.5", "minimax"),
         ("moonshotai.kimi-k2.5", "moonshotai"),
         ("moonshot.kimi-k2-thinking", "moonshot"),
+        ("ca.amazon.nova-lite-v1:0", "amazon"),
+        ("in.anthropic.claude-opus-5", "anthropic"),
+        ("in.openai.gpt-5.6-terra", "openai"),
+        ("in.moonshotai.kimi-k3", "moonshotai"),
     ],
 )
 def test_parse_model_provider(model_id: str, expected_provider: str) -> None:
@@ -1238,6 +1246,77 @@ def test_bedrock_runtime_missing_awscrt_raises() -> None:
         pytest.raises(ModuleNotFoundError, match="awscrt"),
     ):
         _create_client(region_name="us-east-1")
+
+
+def _apply_config_plugin_with_ua(
+    client_cls: mock.MagicMock, existing_ua_extra: str | None = None
+) -> mock.MagicMock:
+    """Run the config plugin against a config that models ``user_agent_extra``."""
+    plugins = client_cls.call_args[1]["plugins"]
+    config = mock.MagicMock(
+        spec=[
+            "endpoint_uri",
+            "region",
+            "aws_access_key_id",
+            "aws_secret_access_key",
+            "aws_session_token",
+            "aws_credentials_identity_resolver",
+            "transport",
+            "user_agent_extra",
+        ]
+    )
+    config.aws_access_key_id = None
+    config.aws_secret_access_key = None
+    config.aws_credentials_identity_resolver = None
+    config.user_agent_extra = existing_ua_extra
+    plugins[0](config)
+    return config
+
+
+def test_bedrock_runtime_user_agent_tagged(
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
+) -> None:
+    """Nova Sonic's smithy config carries the langchain-aws source tag in
+    ``user_agent_extra`` (the SDK appends it to the wire User-Agent)."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    client_cls, _, _ = mock_bedrock_runtime_sdk
+    with mock.patch.dict(os.environ, {}, clear=True):
+        _create_client(region_name="us-east-1")
+
+    config = _apply_config_plugin_with_ua(client_cls)
+    assert config.user_agent_extra == FRAMEWORK_UA_TOKEN
+
+
+def test_bedrock_runtime_user_agent_appends_to_existing(
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
+) -> None:
+    """An existing ``user_agent_extra`` is preserved and the tag appended once."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    client_cls, _, _ = mock_bedrock_runtime_sdk
+    with mock.patch.dict(os.environ, {}, clear=True):
+        _create_client(region_name="us-east-1")
+
+    config = _apply_config_plugin_with_ua(client_cls, existing_ua_extra="app/1.0")
+    assert config.user_agent_extra == f"app/1.0 {FRAMEWORK_UA_TOKEN}"
+
+
+def test_bedrock_runtime_user_agent_idempotent(
+    mock_bedrock_runtime_sdk: Tuple[mock.MagicMock, mock.MagicMock, mock.MagicMock],
+) -> None:
+    """The tag is not duplicated if already present in ``user_agent_extra``."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    client_cls, _, _ = mock_bedrock_runtime_sdk
+    with mock.patch.dict(os.environ, {}, clear=True):
+        _create_client(region_name="us-east-1")
+
+    config = _apply_config_plugin_with_ua(
+        client_cls, existing_ua_extra=f"app/1.0 {FRAMEWORK_UA_TOKEN}"
+    )
+    assert config.user_agent_extra == f"app/1.0 {FRAMEWORK_UA_TOKEN}"
+    assert config.user_agent_extra.count(FRAMEWORK_UA_TOKEN) == 1
 
 
 # ---------------------------------------------------------------------------

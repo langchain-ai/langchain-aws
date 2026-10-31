@@ -333,13 +333,13 @@ class AgentCoreEventClient:
         chunks = self._chunk_payload(blobs, max_payload_items, max_payload_bytes)
         timestamp = datetime.datetime.now(datetime.timezone.utc)
 
-        for chunk in chunks:
+        for index, chunk in enumerate(chunks):
             payload = [{"blob": b} for b in chunk]
             self.client.create_event(
                 memoryId=self.memory_id,
                 actorId=actor_id,
                 sessionId=session_id,
-                eventTimestamp=timestamp,
+                eventTimestamp=timestamp + datetime.timedelta(milliseconds=index),
                 payload=payload,
             )
 
@@ -732,13 +732,13 @@ def convert_langchain_messages_to_event_messages(
     Returns:
         List of AgentCore event tuples (text, role)
     """
-    converted_messages = []
+    converted_messages: list[tuple[str, str]] = []
     for msg in messages:
         # Skip if event already saved
         if msg.additional_kwargs.get("event_id") is not None:
             continue
 
-        text = msg.text()
+        text = msg.text
         if not text.strip():
             continue
 

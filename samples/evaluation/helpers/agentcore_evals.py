@@ -14,7 +14,8 @@ works for a local run and a deployed one, and for any instrumented framework.
 
 ## Two sources, one Trajectory
 
-    CloudWatchSpanCollector          deployed runs. Framework agnostic, reads spans.
+    trajectory_from_spans            deployed runs. Framework agnostic, reads spans
+                                     (from the SDK's CloudWatchAgentSpanCollector).
     trajectory_from_langchain_events local runs. LangChain specific, reads events.
 
 Both produce the same `Trajectory`, so a check written once runs against either.
@@ -40,15 +41,15 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
+
+from bedrock_agentcore.evaluation.spans import is_tool_span
 
 __all__ = [
     "ToolCall",
     "Trajectory",
     "trajectory_from_spans",
     "trajectory_from_langchain_events",
-    "CloudWatchSpanCollector",
     "Check",
     "check_all",
     "report",
@@ -61,13 +62,17 @@ _ARG_KEYS = ("gen_ai.tool.call.arguments", "input.value", "traceloop.entity.inpu
 _RESULT_KEYS = ("gen_ai.tool.call.result", "output.value", "traceloop.entity.output")
 
 
-def _is_tool_span(attrs: dict) -> bool:
-    """Whether a span represents a tool execution, under any convention."""
-    return (
-        attrs.get("gen_ai.operation.name") == "execute_tool"
-        or attrs.get("openinference.span.kind") == "TOOL"
-        or attrs.get("traceloop.span.kind") == "tool"
-    )
+def _is_tool_span(span_or_attrs: dict) -> bool:
+    """Whether a span records a tool call.
+
+    Delegates to `bedrock_agentcore.evaluation.spans.is_tool_span`, which is the
+    same three-convention check the SDK's own EvaluationClient uses. It lives in the
+    SDK so that adding a fourth instrumentation convention is one change there
+    rather than a change in every span reader. Accepts either a span document or
+    its attributes, since callers here have both.
+    """
+    span = span_or_attrs if "attributes" in span_or_attrs else {"attributes": span_or_attrs}
+    return is_tool_span(span)
 
 
 def _first(attrs: dict, keys: Iterable[str]) -> Any:
@@ -268,23 +273,23 @@ async def trajectory_from_langchain_events(
     *,
     query: str,
     thread_id: str,
-    recursion_limit: int = 60,
+    recursion_limit: int = 150,
     delegation_tools: frozenset[str] = frozenset({"task"}),
 ) -> tuple[Trajectory, str]:
     """Run a LangChain agent locally and record its trajectory from events.
 
-    THE ONLY FRAMEWORK-SPECIFIC FUNCTION HERE. It exists because in-process span
-    capture does not yield per-tool spans for a deep agent (see module docstring).
-    In production use `CloudWatchSpanCollector` instead, which is framework
-    agnostic and produces the same `Trajectory`.
+    THE ONLY FRAMEWORK-SPECIFIC FUNCTION HERE. It lets notebook 1 measure a local
+    run with no OTEL setup. For a deployed run, read its spans with the SDK's
+    `CloudWatchAgentSpanCollector` and pass them to `trajectory_from_spans`, which is
+    framework agnostic and produces the same `Trajectory`.
 
     `astream_events` is used rather than `ainvoke` because a deep agent's final
     state contains only the coordinator's own tool calls. Subagent-internal calls
     never appear there, so any check about subagent behavior read off `messages`
     is vacuously true.
 
-    `recursion_limit` defaults well above LangGraph's 25: a multi-subagent fan-out
-    that retries anything trips that ceiling and dies mid-run.
+    `recursion_limit` defaults well above LangGraph's 25. Every middleware hook is a
+    graph step, and recent deepagents releases run more of them per turn.
 
     Returns:
         `(trajectory, final_answer)`. On an exception the partial trajectory is
@@ -355,67 +360,6 @@ async def trajectory_from_langchain_events(
                 answer = text
                 break
     return traj, answer
-
-
-class CloudWatchSpanCollector:
-    """Read a deployed session's spans from CloudWatch.
-
-    Defaults to the `aws/spans` log group. That is deliberate: on a
-    zip-deployed runtime spans land there even with
-    `UNIFIED_TRACES_DESTINATION_ENABLED=true`, and pointing at the agent's own log
-    group returns zero spans, which is indistinguishable from an agent that emitted
-    nothing.
-    """
-
-    def __init__(self, region: str, log_group: str = "aws/spans") -> None:
-        import boto3
-
-        self.logs = boto3.client("logs", region_name=region)
-        self.log_group = log_group
-
-    def spans(self, session_id: str, *, lookback_hours: float = 6.0) -> list[dict]:
-        """All spans carrying `session.id == session_id`."""
-        end = datetime.now(timezone.utc)
-        start = end - timedelta(hours=lookback_hours)
-        kwargs: dict[str, Any] = {
-            "logGroupName": self.log_group,
-            "startTime": int(start.timestamp() * 1000),
-            "endTime": int(end.timestamp() * 1000),
-            "filterPattern": f'"{session_id}"',
-            "limit": 1000,
-        }
-        out: list[dict] = []
-        while len(out) < 5000:
-            resp = self.logs.filter_log_events(**kwargs)
-            for ev in resp.get("events", []):
-                try:
-                    doc = json.loads(ev["message"])
-                except (json.JSONDecodeError, KeyError):
-                    continue
-                if (doc.get("attributes") or {}).get("session.id") == session_id:
-                    out.append(doc)
-            token = resp.get("nextToken")
-            if not token:
-                break
-            kwargs["nextToken"] = token
-        return out
-
-    def wait_for_spans(
-        self, session_id: str, *, min_tool_calls: int = 1, max_wait_s: float = 420.0
-    ) -> Trajectory:
-        """Poll until spans are ingested, then return the trajectory.
-
-        Ingestion lags an invocation by minutes. Reading immediately returns an
-        empty trajectory, which looks the same as an agent that made no tool calls.
-        """
-        deadline = time.time() + max_wait_s
-        traj = Trajectory()
-        while time.time() < deadline:
-            traj = trajectory_from_spans(self.spans(session_id))
-            if len(traj.tool_calls) >= min_tool_calls:
-                return traj
-            time.sleep(30)
-        return traj
 
 
 @dataclass

@@ -41,7 +41,7 @@ OUTPUT_TYPE = TypeVar(
 )
 
 MODEL_ID_GEO_PREFIXES = frozenset(
-    {"eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp", "au"}
+    {"eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp", "au", "ca", "in"}
 )
 
 
@@ -493,6 +493,18 @@ def create_aws_bedrock_runtime_client(
             config.region = region_name
         if credentials_resolver is not None:
             config.aws_credentials_identity_resolver = credentials_resolver
+        # Tag the smithy wire User-Agent with a langchain-aws source marker so
+        # Nova Sonic's InvokeModelWithBidirectionalStream calls are attributable
+        # to this package, readable by the Bedrock backend service. This is the
+        # smithy analogue of the botocore user_agent_extra hook in __init__.py:
+        # the SDK appends user_agent_extra verbatim to the wire User-Agent.
+        from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+        existing_ua_extra = getattr(config, "user_agent_extra", None)
+        if not existing_ua_extra:
+            config.user_agent_extra = FRAMEWORK_UA_TOKEN
+        elif FRAMEWORK_UA_TOKEN not in existing_ua_extra:
+            config.user_agent_extra = f"{existing_ua_extra} {FRAMEWORK_UA_TOKEN}"
         old_transport = getattr(config, "transport", None)
         config.transport = AWSCRTHTTPClient()
         _close_transport_soon(old_transport)
@@ -543,7 +555,13 @@ def thinking_disabled_in_params(params: dict) -> bool:
 def thinking_on_by_default(model: str) -> bool:
     """Check if the model runs adaptive thinking without a thinking parameter."""
     return any(
-        x in model for x in ("claude-sonnet-5", "claude-opus-5", "claude-fable-5")
+        x in model
+        for x in (
+            "claude-sonnet-5",
+            "claude-opus-5",
+            "claude-fable-5",
+            "claude-haiku-5",
+        )
     )
 
 
@@ -593,7 +611,7 @@ def reasoning_effort_additional_fields(base_model: str, effort: str) -> Dict[str
         return {"reasoning_effort": effort}
     if model.startswith("openai.gpt-"):
         return {"reasoning": {"effort": effort}}
-    if model.startswith(("moonshot.", "moonshotai.")):
+    if model.startswith(("moonshot.", "moonshotai.", "zai.glm-")):
         return {"reasoning_effort": effort}
     return {}
 

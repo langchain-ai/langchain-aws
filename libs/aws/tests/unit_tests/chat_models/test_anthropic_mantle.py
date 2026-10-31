@@ -402,6 +402,31 @@ def test_model_profile(model_name: str) -> None:
     assert "max_input_tokens" in model.profile
 
 
+@pytest.mark.parametrize(
+    ("model_name", "system_messages", "tools"),
+    [
+        ("anthropic.claude-opus-5-5", True, True),
+        ("anthropic.claude-opus-4-8", True, True),
+        # Not in the profile data; resolved from the bare model ID.
+        ("us-gov.anthropic.claude-opus-5", True, True),
+        ("anthropic.claude-sonnet-5", True, False),
+        ("anthropic.claude-haiku-4-5-20251001-v1:0", None, None),
+    ],
+)
+def test_model_profile_mid_conversation_support(
+    model_name: str, system_messages: bool | None, tools: bool | None
+) -> None:
+    """The profile declares which mid-conversation changes Mantle accepts."""
+    model = ChatAnthropicMantle(  # type: ignore[call-arg]
+        model=model_name,
+        region_name="us-east-1",
+        bedrock_api_key=SecretStr("test-key"),
+    )
+    assert model.profile is not None
+    assert model.profile.get("mid_conversation_system_messages") is system_messages
+    assert model.profile.get("mid_conversation_tools") is tools
+
+
 def test_explicit_profile_is_respected() -> None:
     """An explicitly supplied profile is not overwritten."""
     profile = ModelProfile(max_input_tokens=123)
@@ -495,7 +520,11 @@ def test_forced_tool_choice_downgraded_when_unsupported(
         bedrock_api_key=SecretStr("test-key"),
     )
     tool = {"name": "t", "description": "d", "input_schema": {"type": "object"}}
-    bound = cast(Any, model.bind_tools([tool], tool_choice="any"))
+    if expected == "auto":
+        with pytest.warns(UserWarning, match="does not support forced tool_choice"):
+            bound = cast(Any, model.bind_tools([tool], tool_choice="any"))
+    else:
+        bound = cast(Any, model.bind_tools([tool], tool_choice="any"))
     assert bound.kwargs["tool_choice"]["type"] == expected
 
 
@@ -796,3 +825,32 @@ def test_api_key_snapshot_survives_env_mutation() -> None:
         client = model._client
         assert client._use_sigv4 is False
         assert client.api_key == "key-A"
+
+
+def _mantle_built_request_ua(client: object) -> str:
+    """Read the wire ``user-agent`` header off an AnthropicBedrockMantle client."""
+    from anthropic._models import FinalRequestOptions
+
+    req = client._build_request(  # type: ignore[attr-defined]
+        FinalRequestOptions(method="post", url="/v1/messages", json_data={})
+    )
+    return req.headers["user-agent"]
+
+
+def test_mantle_user_agent_tagged() -> None:
+    """The Mantle clients carry the langchain-aws source tag on the wire UA, with
+    the SDK's own ``AnthropicBedrockMantle`` prefix preserved, and sigv4 pinning
+    survives the tagging copy."""
+    from langchain_aws._version import FRAMEWORK_UA_TOKEN
+
+    model = ChatAnthropicMantle(  # type: ignore[call-arg]
+        model_name=MODEL_NAME,
+        region_name="us-east-1",
+        aws_access_key_id=SecretStr("key-id"),
+        aws_secret_access_key=SecretStr("sec-key"),
+    )
+    for client in (model._client, model._async_client):
+        ua = _mantle_built_request_ua(client)
+        assert ua.endswith(f" {FRAMEWORK_UA_TOKEN}")
+        assert "AnthropicBedrockMantle/Python" in ua
+        assert client._use_sigv4 is True

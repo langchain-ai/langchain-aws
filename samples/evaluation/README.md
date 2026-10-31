@@ -21,7 +21,7 @@ tokens of raw filings.
 | | |
 |---|---|
 | **Frameworks** | LangChain Deep Agents (`create_deep_agent`), LangGraph |
-| **AgentCore features** | Browser, Code Interpreter, Runtime, Evaluations, Insights, Recommendations, Configuration Bundles |
+| **AgentCore features** | Browser, Code Interpreter, Runtime, Evaluations, Recommendations, Configuration Bundles |
 | **Agent pattern** | Coordinator with three parallel browser subagents and one interpreter subagent |
 | **Ground truth** | 10-K statements pinned by SEC EDGAR accession number, with the answer key generated from the XBRL `companyfacts` API |
 | **Complexity** | Beginner to advanced (progressive) |
@@ -52,8 +52,8 @@ evaluation API. Start there if you only have a few minutes.
    after its own children, so the causally correct expectation is the one that fails.
 5. **The built-in evaluators cannot see wasted work.** They scored 1.0 in both arms of an
    A/B where one arm used 16% fewer tool calls.
-6. **A generated fix is a hypothesis.** Which failures the insights job surfaces changes
-   what the recommendation proposes, so you verify rather than trust.
+6. **A generated fix is a hypothesis.** Which sessions score poorly changes what the
+   recommendation proposes, so you verify rather than trust.
 
 ## Layout
 
@@ -119,7 +119,7 @@ figures yourself. The evaluation code never asks where they came from.
   to take effect: CloudWatch, X-Ray settings, Transaction Search, Enable.
 
 ```bash
-pip install "langchain-aws[tools]>=1.7.6" "deepagents>=0.7.13" "bedrock-agentcore>=1.23.0"
+pip install "langchain-aws[tools]>=1.7.6" "deepagents>=0.7.13" "bedrock-agentcore>=1.25.0"
 ```
 
 ## Optional: LangSmith
@@ -145,6 +145,10 @@ Each of these cost real debugging time and is called out in the notebook where i
   cannot confirm an artifact. Use `execute_command "ls -la"`.
 - **`recursion_limit` defaults to 25**, too low for a four-subagent fan-out. Raising it is
   a guard rail, not a fix: an unbounded retry loop will find the new ceiling too.
+- **A browser read can hang with no error.** `page.content()` has no timeout, so one stuck
+  call held the whole run. `helpers/research_agent.py` gives browser tools a 60 s deadline and
+  each research subagent 300 s, following the LangChain fault-tolerance pattern: the missed
+  deadline becomes an error message the model recovers from.
 - **botocore's default connection pool of 10** is too small for a three-way fan-out and
   produces `Connection reset by peer` mid-run.
 - **`EvaluationClient.run` returns a flat `list[dict]`**, not objects. Reading it as

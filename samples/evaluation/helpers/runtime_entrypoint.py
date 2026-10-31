@@ -13,7 +13,7 @@ for the agent working:
 
 import os
 
-from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from bedrock_agentcore.runtime import BedrockAgentCoreApp, BedrockAgentCoreContext
 
 app = BedrockAgentCoreApp()
 log = app.logger
@@ -24,23 +24,16 @@ def _prompt_from_bundle(default: str) -> str:
     """Prefer an attached configuration bundle's prompt over the baked-in one.
 
     Returns `default` when no bundle is attached, which is the normal case outside
-    an A/B test.
+    an A/B test. The SDK resolves the bundle to this runtime's own `configuration`.
     """
     try:
-        from bedrock_agentcore.runtime import BedrockAgentCoreContext
-
-        bundle = BedrockAgentCoreContext.get_config_bundle()
+        prompt = BedrockAgentCoreContext.get_config_bundle().get("system_prompt")
     except Exception as exc:  # noqa: BLE001 - a missing bundle must not break the run
         log.info("no configuration bundle (%s)", exc)
         return default
-    if not bundle:
-        return default
-    config = bundle.get("configuration", bundle) if isinstance(bundle, dict) else {}
-    prompt = config.get("system_prompt") or config.get("systemPrompt")
     if prompt:
         log.info("using bundle system prompt (%d chars)", len(prompt))
-        return prompt
-    return default
+    return prompt or default
 
 
 def _final_text(messages: list) -> str:
@@ -95,15 +88,17 @@ async def invoke(payload, context):
                 # thread_id keys the browser and interpreter sessions, so tying it to
                 # the runtime session keeps one caller's sandboxes together.
                 "configurable": {"thread_id": session_id},
-                # 60 rather than LangGraph's default 25: a four-subagent fan-out that
-                # retries anything trips the default ceiling and dies mid-run.
-                "recursion_limit": 60,
+                # Well above LangGraph's default 25. Every middleware hook is a graph
+                # step, and deepagents 0.7.23 runs more of them per turn than 0.7.13,
+                # so a run that fit in 60 steps there needs more now. A guard against
+                # runaway loops, not a target: a healthy run uses far fewer.
+                "recursion_limit": 150,
             },
         )
         return {"result": _final_text(result.get("messages", []))}
     except Exception as exc:  # noqa: BLE001
-        # Surface failures. Insights clusters real errors, so swallowing them hides
-        # the signal the improvement loop needs.
+        # Surface failures. Recommendations learn from failed sessions, so swallowing
+        # them hides the signal the improvement loop needs.
         log.exception("invocation failed session=%s", session_id)
         return {"result": "", "error": f"{type(exc).__name__}: {exc}"}
     finally:

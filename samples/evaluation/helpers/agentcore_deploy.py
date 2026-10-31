@@ -16,14 +16,12 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import boto3
-from bedrock_agentcore.runtime import AgentCoreRuntimeClient
+from bedrock_agentcore.runtime import AgentCoreRuntimeClient, WaitConfig
 
 __all__ = ["Deployment", "deploy_agent", "delete_deployment"]
 
@@ -74,7 +72,6 @@ class Deployment:
     s3_uri: str
     bucket: str = ""
     key: str = ""
-    extra: dict = field(default_factory=dict)
 
     def save(self, path: str | Path) -> Path:
         """Persist as JSON so a later notebook or session can pick it up."""
@@ -129,6 +126,7 @@ def deploy_agent(
     env: dict[str, str] | None = None,
     work_dir: str | Path = "agentcore_build",
     python_version: str = "3.13",
+    wait_minutes: float = 15.0,
 ) -> Deployment:
     """Package and deploy an agent, returning a `Deployment`.
 
@@ -138,6 +136,8 @@ def deploy_agent(
         modules: Extra `{module_name: source}` written beside the entrypoint.
         data_files: Extra `{filename: text}` written beside the entrypoint, for
             assets the agent reads at run time rather than imports.
+        wait_minutes: How long to wait for READY. The SDK default is 5 minutes,
+            which a first create of a large package can exceed.
         deps: Requirements installed for arm64.
         region: AWS region. Defaults to `AWS_REGION`.
         env: Environment variables for the runtime.
@@ -250,17 +250,17 @@ def deploy_agent(
         "environmentVariables": env or {"AWS_REGION": region},
     }
     # The SDK's *_and_wait helpers poll to READY and raise on a failed state, so
-    # there is no wait loop here to get subtly wrong. Their default timeout is used
-    # rather than a custom one, because WaitConfig has no public import path yet.
-    # Note: this client takes `region`, while ConfigBundleClient takes
-    # `region_name`. integration_source shows up in the SDK user agent.
-    rt = AgentCoreRuntimeClient(region=region, integration_source="langchain")
+    # there is no wait loop here to get subtly wrong.
+    rt = AgentCoreRuntimeClient(region_name=region, integration_source="langchain")
+    wait = WaitConfig(max_wait=int(wait_minutes * 60), poll_interval=10)
     if existing:
-        detail = rt.update_agent_runtime_and_wait(agentRuntimeId=existing, **common)
+        detail = rt.update_agent_runtime_and_wait(
+            agentRuntimeId=existing, wait_config=wait, **common)
         runtime_id = existing
         print(f"  runtime   updated {runtime_id}")
     else:
-        detail = rt.create_agent_runtime_and_wait(agentRuntimeName=name, **common)
+        detail = rt.create_agent_runtime_and_wait(
+            agentRuntimeName=name, wait_config=wait, **common)
         runtime_id = detail["agentRuntimeId"]
         print(f"  runtime   created {runtime_id}")
 
@@ -291,14 +291,11 @@ def delete_deployment(dep: Deployment, *, delete_bucket_object: bool = True) -> 
     iam = boto3.client("iam", region_name=dep.region)
     s3 = boto3.client("s3", region_name=dep.region)
 
-    for label, fn in (
-        ("runtime", lambda: ctrl.delete_agent_runtime(agentRuntimeId=dep.runtime_id)),
-    ):
-        try:
-            fn()
-            print(f"  deleted {label} {dep.runtime_id}")
-        except Exception as exc:  # noqa: BLE001
-            print(f"  {label}: {exc}")
+    try:
+        ctrl.delete_agent_runtime(agentRuntimeId=dep.runtime_id)
+        print(f"  deleted runtime {dep.runtime_id}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  runtime: {exc}")
 
     role_name = dep.role_arn.split("/")[-1]
     try:

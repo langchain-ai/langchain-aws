@@ -1,10 +1,10 @@
 import base64
 import copy
 import functools
+import hashlib
 import json
 import logging
 import re
-import uuid
 import warnings
 from operator import itemgetter
 from typing import (
@@ -47,7 +47,12 @@ from langchain_core.messages import (
     merge_message_runs,
 )
 from langchain_core.messages import content as types
-from langchain_core.messages.ai import AIMessageChunk, InputTokenDetails, UsageMetadata
+from langchain_core.messages.ai import (
+    AIMessageChunk,
+    InputTokenDetails,
+    OutputTokenDetails,
+    UsageMetadata,
+)
 from langchain_core.messages.tool import tool_call as create_tool_call
 from langchain_core.messages.tool import tool_call_chunk
 from langchain_core.output_parsers.base import OutputParserLike
@@ -81,6 +86,7 @@ from langchain_aws.function_calling import (
 )
 from langchain_aws.tools.nova_tools import NovaSystemTool
 from langchain_aws.utils import (
+    MODEL_ID_GEO_PREFIXES,
     count_tokens_api_supported_for_model,
     create_aws_client,
     forced_tool_choice_unsupported,
@@ -943,6 +949,7 @@ class ChatBedrockConverse(BaseChatModel):
                         "claude-fable-5",
                         "claude-opus-5",
                         "claude-sonnet-5",
+                        "claude-haiku-5",
                     ]
                 )
             )
@@ -964,6 +971,9 @@ class ChatBedrockConverse(BaseChatModel):
             or
             # xAI Grok models
             (provider == "xai" and "grok" in model_id_lower)
+            or
+            # Z.ai GLM models
+            (provider == "zai" and "glm" in model_id_lower)
         ):
             return True
         elif (
@@ -1187,6 +1197,11 @@ class ChatBedrockConverse(BaseChatModel):
                     self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "grok" in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
+            elif base_model.startswith("zai.glm-"):
+                if base_model.startswith("zai.glm-5.3"):
+                    self.supports_tool_choice_values = ("auto", "any", "tool")
+                else:
+                    self.supports_tool_choice_values = ("auto", "any")
             elif base_model.startswith("openai.gpt-") and "gpt-oss" not in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "llama4" in base_model:
@@ -1228,10 +1243,22 @@ class ChatBedrockConverse(BaseChatModel):
         _add_langchain_aws_version(self)
         return self
 
+    @property
+    def _mid_conversation_system_messages(self) -> bool:
+        return bool((self.profile or {}).get("mid_conversation_system_messages"))
+
     def _resolve_model_profile(self) -> ModelProfile | None:
         """Return the default model profile for this model."""
-        model_id = self._get_base_model()
-        return _get_default_model_profile(model_id)
+        profile = _get_default_model_profile(
+            self.model_id
+        ) or _get_default_model_profile(self._get_base_model())
+        # The data describes the APIs `ChatAnthropicBedrock`, `ChatAnthropicMantle`
+        # and `ChatOpenAIMantle` call. Converse accepts an in-place system message
+        # only for Claude, and has no content block for mid-conversation tool changes.
+        if not (self.provider == "anthropic" or "anthropic" in self._get_base_model()):
+            profile.pop("mid_conversation_system_messages", None)
+        profile.pop("mid_conversation_tools", None)
+        return profile
 
     def _reasoning_effort_fields(self, effort: str) -> Dict[str, Any]:
         """Validate `effort` against the model profile and translate to request
@@ -1273,10 +1300,9 @@ class ChatBedrockConverse(BaseChatModel):
 
         # For regional model IDs (e.g., us.anthropic.claude-haiku-4-5-20251001-v1:0),
         # get the base model ID by removing the regional prefix
-        if self.model_id.startswith(
-            ("eu.", "us.", "us-gov.", "apac.", "sa.", "amer.", "global.", "jp.", "au.")
-        ):
-            return self.model_id.partition(".")[2]
+        prefix, _, rest = self.model_id.partition(".")
+        if rest and prefix.lower() in MODEL_ID_GEO_PREFIXES:
+            return rest
 
         return self.model_id
 
@@ -1383,6 +1409,7 @@ class ChatBedrockConverse(BaseChatModel):
                 self.system,
                 model_id=self._get_base_model(),
                 provider=self.provider,
+                mid_conversation_system_messages=self._mid_conversation_system_messages,
             )
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
@@ -1464,6 +1491,7 @@ class ChatBedrockConverse(BaseChatModel):
                 self.system,
                 model_id=self._get_base_model(),
                 provider=self.provider,
+                mid_conversation_system_messages=self._mid_conversation_system_messages,
             )
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
@@ -1513,11 +1541,18 @@ class ChatBedrockConverse(BaseChatModel):
             _handle_bedrock_error(e)
         added_model_name = False
         received_message_stop = False
+        reasoning_tokens: Optional[int] = None
         stream = response["stream"]
         try:
             for event in stream:
-                received_message_stop |= "messageStop" in event
-                if message_chunk := _parse_stream_event(event):
+                if "messageStop" in event:
+                    received_message_stop = True
+                    reasoning_tokens = _extract_thinking_tokens(
+                        event["messageStop"].get("additionalModelResponseFields")
+                    )
+                if message_chunk := _parse_stream_event(
+                    event, reasoning_tokens=reasoning_tokens
+                ):
                     if (
                         hasattr(message_chunk, "usage_metadata")
                         and message_chunk.usage_metadata
@@ -2218,6 +2253,7 @@ class ChatBedrockConverse(BaseChatModel):
                     self.system,
                     model_id=self._get_base_model(),
                     provider=self.provider,
+                    mid_conversation_system_messages=self._mid_conversation_system_messages,
                 )
             )
 
@@ -2501,14 +2537,41 @@ def _drop_foreign_reasoning(
     return message.model_copy(update={"content": content})
 
 
+def _next_non_system_is_ai(messages: Sequence[BaseMessage], index: int) -> bool:
+    """Whether the first non-system message after `index` is an AI message."""
+    for message in messages[index + 1 :]:
+        if not isinstance(message, SystemMessage):
+            return isinstance(message, AIMessage)
+    return False
+
+
+def _warn_system_message_hoisted(model_id: Optional[str]) -> None:
+    """Warn that a non-leading system message was hoisted into `system`."""
+    warnings.warn(
+        "A non-leading `SystemMessage` was moved to the top-level `system` field "
+        "and now applies to the entire conversation. Converse sends a system "
+        "message in place only after a human or tool message and before an AI "
+        f"message (model: {model_id!r}).",
+        UserWarning,
+        stacklevel=4,
+    )
+
+
 def _messages_to_bedrock(
     messages: List[BaseMessage],
     system: Optional[List[Union[str, Dict[str, Any]]]] = None,
     *,
     model_id: Optional[str] = None,
     provider: Optional[str] = None,
+    mid_conversation_system_messages: bool = False,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Handle Bedrock converse and Anthropic style content blocks"""
+    """Handle Bedrock converse and Anthropic style content blocks.
+
+    A leading system message goes to `system`. With
+    `mid_conversation_system_messages`, a later one is sent in place where Converse
+    accepts it, after a human or tool message and before an AI message, and is
+    hoisted into `system` otherwise.
+    """
     for idx, message in enumerate(messages):
         if not isinstance(message, AIMessage):
             continue
@@ -2555,6 +2618,7 @@ def _messages_to_bedrock(
                 sys_param_to_bedrock.append(s)
         bedrock_system.extend(sys_param_to_bedrock)
 
+    fallback_document_names: Dict[str, int] = {}
     for msg_idx, msg in enumerate(messages):
         # Dropping is scoped to assistant turns: that is where replayed
         # cross-provider history shows up, and where a rejected block would
@@ -2565,6 +2629,7 @@ def _messages_to_bedrock(
             msg.content,
             drop_unsupported=isinstance(msg, AIMessage),
             model_id=model_id,
+            fallback_document_names=fallback_document_names,
         )
         if isinstance(msg, HumanMessage):
             # If there's a human, tool, human message sequence, the
@@ -2597,7 +2662,19 @@ def _messages_to_bedrock(
                 content = _empty_content_fallback(content)
             bedrock_messages.append({"role": "assistant", "content": content})
         elif isinstance(msg, SystemMessage):
-            bedrock_system.extend(content)
+            if not bedrock_messages:
+                bedrock_system.extend(content)
+            elif (
+                mid_conversation_system_messages
+                and bedrock_messages[-1]["role"] == "user"
+                and _next_non_system_is_ai(messages, msg_idx)
+                and all(set(block) <= {"text", "cachePoint"} for block in content)
+            ):
+                bedrock_messages.append({"role": "system", "content": content})
+            else:
+                if mid_conversation_system_messages:
+                    _warn_system_message_hoisted(model_id)
+                bedrock_system.extend(content)
         elif isinstance(msg, ToolMessage):
             if bedrock_messages and bedrock_messages[-1]["role"] == "user":
                 curr = bedrock_messages.pop()
@@ -2653,7 +2730,19 @@ def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:
     return response_metadata
 
 
-def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
+def _extract_thinking_tokens(
+    additional_fields: Optional[Dict[str, Any]],
+) -> Optional[int]:
+    """Read thinking tokens from `additionalModelResponseFields` (`["/usage"]`)."""
+    usage = (additional_fields or {}).get("usage")
+    details = usage.get("output_tokens_details") if isinstance(usage, dict) else None
+    tokens = details.get("thinking_tokens") if isinstance(details, dict) else None
+    return tokens if isinstance(tokens, int) else None
+
+
+def _extract_usage_metadata(
+    response: Dict[str, Any], *, reasoning_tokens: Optional[int] = None
+) -> UsageMetadata:
     usage_dict = response.pop("usage")
 
     bedrock_input_tokens = usage_dict.get("inputTokens", 0)
@@ -2694,6 +2783,9 @@ def _extract_usage_metadata(response: Dict[str, Any]) -> UsageMetadata:
         ),
         total_tokens=total_tokens,
     )
+    # Thinking tokens are a subset of output_tokens, not additive.
+    if reasoning_tokens is not None:
+        usage["output_token_details"] = OutputTokenDetails(reasoning=reasoning_tokens)
     return usage
 
 
@@ -2797,7 +2889,12 @@ def _parse_response(
         open_tag, close_tag = inline_reasoning_tags
         lc_content = _expand_inline_reasoning(lc_content, open_tag, close_tag)
     tool_calls = _extract_tool_calls(lc_content)
-    usage = _extract_usage_metadata(response)
+    usage = _extract_usage_metadata(
+        response,
+        reasoning_tokens=_extract_thinking_tokens(
+            response.get("additionalModelResponseFields")
+        ),
+    )
     return AIMessage(
         content=_str_if_single_text_block(lc_content),  # type: ignore[arg-type]
         usage_metadata=usage,
@@ -2806,7 +2903,9 @@ def _parse_response(
     )
 
 
-def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
+def _parse_stream_event(
+    event: Dict[str, Any], *, reasoning_tokens: Optional[int] = None
+) -> Optional[BaseMessageChunk]:
     if "messageStart" in event:
         # TODO: needed?
         return (
@@ -2865,7 +2964,9 @@ def _parse_stream_event(event: Dict[str, Any]) -> Optional[BaseMessageChunk]:
         # TODO: snake case response metadata?
         return AIMessageChunk(content="", response_metadata=event["messageStop"])
     elif "metadata" in event:
-        usage = _extract_usage_metadata(event["metadata"])
+        usage = _extract_usage_metadata(
+            event["metadata"], reasoning_tokens=reasoning_tokens
+        )
         return AIMessageChunk(
             content="", response_metadata=event["metadata"], usage_metadata=usage
         )
@@ -2899,7 +3000,35 @@ def _mime_type_to_format(mime_type: str) -> str:
     )
 
 
-def _format_data_content_block(block: dict) -> dict:
+def _fallback_document_name(
+    document_bytes: bytes, fallback_document_names: Optional[Dict[str, int]]
+) -> str:
+    """Name an unnamed document so the same request always serializes the same way.
+
+    Prompt caching matches on the serialized request, so the name is derived from
+    the document bytes rather than generated per call. Bedrock rejects duplicate
+    document names within a request, so repeats of the same bytes get ``-2``,
+    ``-3`` suffixes in order of appearance.
+
+    Args:
+        document_bytes: The raw document content.
+        fallback_document_names: Occurrence counts per name for the request being
+            built. `None` when formatting a single block outside a request.
+
+    Returns:
+        A 12-character hex digest, suffixed when the same bytes already appeared.
+    """
+    name = hashlib.sha256(document_bytes).hexdigest()[:12]
+    if fallback_document_names is None:
+        return name
+    count = fallback_document_names.get(name, 0) + 1
+    fallback_document_names[name] = count
+    return name if count == 1 else f"{name}-{count}"
+
+
+def _format_data_content_block(
+    block: dict, *, fallback_document_names: Optional[Dict[str, int]] = None
+) -> dict:
     """Format standard data content block to format expected by Converse API."""
     if block["type"] == "image":
         if "base64" in block or block.get("sourceType") == "base64":
@@ -2925,14 +3054,20 @@ def _format_data_content_block(block: dict) -> dict:
             if "mimeType" not in block:
                 error_message = "mime_type key is required for base64 data."
                 raise ValueError(error_message)
+            mime_type = block["mimeType"]
+            if mime_type not in MIME_TO_FORMAT and (
+                mime_type.startswith("text/") or mime_type == "application/xml"
+            ):
+                doc_format = "txt"
+            else:
+                doc_format = _mime_type_to_format(mime_type)
+            document_bytes = _b64str_to_bytes(
+                block.get("base64") or block.get("data", "")
+            )
             formatted_block = {
                 "document": {
-                    "format": _mime_type_to_format(block["mimeType"]),
-                    "source": {
-                        "bytes": _b64str_to_bytes(
-                            block.get("base64") or block.get("data", "")
-                        )
-                    },
+                    "format": doc_format,
+                    "source": {"bytes": document_bytes},
                 }
             }
             if citations := block.get("citations"):
@@ -2954,7 +3089,9 @@ def _format_data_content_block(block: dict) -> dict:
                     "'mime_type': 'application/pdf', 'base64': '...', "
                     "'name': 'my-pdf'}"
                 )
-                formatted_block["document"]["name"] = uuid.uuid4().hex[:12]
+                formatted_block["document"]["name"] = _fallback_document_name(
+                    document_bytes, fallback_document_names
+                )
         else:
             error_message = "File data only supported through in-line base64 format."
             raise ValueError(error_message)
@@ -3081,6 +3218,7 @@ def _lc_content_to_bedrock(
     *,
     drop_unsupported: bool = False,
     model_id: Optional[str] = None,
+    fallback_document_names: Optional[Dict[str, int]] = None,
 ) -> List[Dict[str, Any]]:
     if isinstance(content, str):
         if not content or content.isspace():
@@ -3100,7 +3238,11 @@ def _lc_content_to_bedrock(
         elif isinstance(block, dict) and is_data_content_block(
             _camel_to_snake_keys(block)
         ):
-            bedrock_content.append(_format_data_content_block(block))
+            bedrock_content.append(
+                _format_data_content_block(
+                    block, fallback_document_names=fallback_document_names
+                )
+            )
         elif block["type"] == "text":
             if not block["text"] or (
                 isinstance(block["text"], str) and block["text"].isspace()
@@ -3227,9 +3369,7 @@ def _lc_content_to_bedrock(
                     }
                 )
         elif block["type"] == "tool_use":
-            tool_input = block["input"]
-            if isinstance(tool_input, str):
-                tool_input = parse_partial_json(tool_input) if tool_input else {}
+            tool_input = _tool_input_to_bedrock(block["input"])
             bedrock_content.append(
                 {
                     "toolUse": {
@@ -3241,9 +3381,7 @@ def _lc_content_to_bedrock(
             )
         elif block["type"] == "server_tool_use":
             # System tools use toolUse format (same as regular tools)
-            tool_input = block["input"]
-            if isinstance(tool_input, str):
-                tool_input = parse_partial_json(tool_input) if tool_input else {}
+            tool_input = _tool_input_to_bedrock(block["input"])
             bedrock_content.append(
                 {
                     "toolUse": {
@@ -3274,6 +3412,7 @@ def _lc_content_to_bedrock(
                                 block["content"],
                                 drop_unsupported=drop_unsupported,
                                 model_id=model_id,
+                                fallback_document_names=fallback_document_names,
                             )
                         ),
                         "status": "error" if block.get("isError") else "success",
@@ -3804,6 +3943,25 @@ def _str_if_single_text_block(
     if len(content) == 1 and content[0]["type"] == "text":
         return content[0]["text"]
     return content
+
+
+def _tool_input_to_bedrock(tool_input: Any) -> Any:
+    """Return a tool-use input in the form Bedrock accepts on replay.
+
+    A streamed input is the raw argument text. With the fine-grained tool streaming
+    beta Bedrock does not validate it, so it may not parse; such a call is already
+    reported in ``invalid_tool_calls``. Replay it with an empty input, as an
+    ``invalid_tool_call`` block is, so its error result still has a tool use.
+    """
+    if not isinstance(tool_input, str):
+        return tool_input
+    if not tool_input:
+        return {}
+    try:
+        parsed = parse_partial_json(tool_input)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _upsert_tool_calls_to_bedrock_content(
