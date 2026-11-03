@@ -1,5 +1,6 @@
 """ChatOpenAIMantle unit tests."""
 
+import warnings
 from collections.abc import AsyncIterator, Iterator
 from typing import Any, Tuple, Type, cast
 from unittest.mock import MagicMock, patch
@@ -440,8 +441,8 @@ def test_installed_provider_mints_token_when_called() -> None:
 
 
 def _make_model(**kwargs: object) -> ChatOpenAIMantle:
+    kwargs.setdefault("model", MODEL_NAME)
     return ChatOpenAIMantle(
-        model=MODEL_NAME,
         region_name="us-east-1",
         bedrock_api_key=SecretStr("test-key"),
         **kwargs,  # type: ignore[arg-type]
@@ -472,6 +473,48 @@ def test_max_tokens_sent_as_max_completion_tokens() -> None:
     payload = _make_model(max_tokens=64)._get_request_payload("hello")
     assert payload["max_completion_tokens"] == 64
     assert "max_tokens" not in payload
+
+
+@pytest.mark.parametrize("use_responses_api", [False, True])
+def test_unsupported_sampling_params_dropped(use_responses_api: bool) -> None:
+    model = _make_model(
+        model="openai.gpt-6-sol",
+        temperature=0.5,
+        top_p=0.9,
+        use_responses_api=use_responses_api,
+    )
+    assert model.profile and model.profile.get("temperature") is False
+    with pytest.warns(UserWarning, match="does not support temperature or top_p"):
+        payload = model._get_request_payload("hello")
+    assert "temperature" not in payload
+    assert "top_p" not in payload
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"temperature": 1},
+        {"temperature": 0.5, "top_p": 0.9, "reasoning_effort": "none"},
+        {"temperature": 0.5, "top_p": 0.9, "reasoning": {"effort": "none"}},
+    ],
+)
+def test_supported_sampling_params_kept(kwargs: dict) -> None:
+    model = _make_model(model="openai.gpt-6-sol", use_responses_api=True, **kwargs)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        payload = model._get_request_payload("hello")
+    assert payload["temperature"] == kwargs["temperature"]
+    assert payload.get("top_p") == kwargs.get("top_p")
+
+
+@pytest.mark.parametrize("model_name", ["openai.gpt-5.4", "acme.no-profile"])
+def test_sampling_params_kept_when_profile_allows(model_name: str) -> None:
+    model = _make_model(model=model_name, temperature=0.5, top_p=0.9)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        payload = model._get_request_payload("hello")
+    assert payload["temperature"] == 0.5
+    assert payload["top_p"] == 0.9
 
 
 def test_non_guardrail_headers() -> None:
