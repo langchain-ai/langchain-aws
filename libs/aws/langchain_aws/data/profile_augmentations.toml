@@ -327,6 +327,17 @@ reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 
+[overrides."openai.gpt-6.1-terra"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+mid_conversation_system_messages = true
+mid_conversation_tools = true
+
+[overrides."global.openai.gpt-6.1-terra"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+
+[overrides."us.openai.gpt-6.1-terra"]
+reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
+
 [overrides."openai.gpt-6-astra"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 

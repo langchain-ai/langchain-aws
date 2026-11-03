@@ -2344,6 +2344,14 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "global.xai.grok-4.6": {
         "name": "Grok 4.6 (Global)",
@@ -3827,6 +3835,16 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
+        "mid_conversation_system_messages": True,
+        "mid_conversation_tools": True,
     },
     "openai.gpt-oss-120b": {
         "name": "gpt-oss-120b",
@@ -5179,6 +5197,14 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "structured_output": True,
         "attachment": True,
         "temperature": False,
+        "reasoning_effort_levels": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+        ],
     },
     "us.writer.palmyra-x4-v1:0": {
         "name": "Palmyra X4 (US)",

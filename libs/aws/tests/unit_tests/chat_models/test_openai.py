@@ -80,10 +80,13 @@ def test_default_base_url_from_region() -> None:
         ("openai.gpt-5.6-sol", "/openai/v1"),
         ("openai.gpt-oss-120b", "/v1"),
         ("qwen.qwen3-32b", "/v1"),
+        ("google.gemma-4-31b", "/openai/v1"),
+        ("google.gemma-4-e2b", "/openai/v1"),
+        ("xai.grok-4.3", "/openai/v1"),
     ],
 )
 def test_default_base_url_route_by_model(model_name: str, expected_path: str) -> None:
-    """GPT-5.x/GPT-6 default to Mantle's ``/openai/v1`` route, others to ``/v1``."""
+    """GPT-5.x/GPT-6 and the ``/openai/v1`` chat models route there, others ``/v1``."""
     model = ChatOpenAIMantle(
         model=model_name,
         region_name="us-east-1",
@@ -103,6 +106,8 @@ def test_default_base_url_route_by_model(model_name: str, expected_path: str) ->
         ("openai.gpt-6-sol", {"use_responses_api": False}, False),
         ("openai.gpt-oss-120b", {}, None),
         ("qwen.qwen3-32b", {}, None),
+        ("google.gemma-4-31b", {}, None),
+        ("xai.grok-4.3", {}, None),
     ],
 )
 def test_default_use_responses_api_by_model(
