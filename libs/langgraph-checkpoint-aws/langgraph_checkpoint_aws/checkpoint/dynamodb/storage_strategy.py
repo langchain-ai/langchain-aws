@@ -40,6 +40,8 @@ class StorageStrategy:
         s3_bucket: str | None = None,
         s3_key_prefix: str | None = None,
         ttl_seconds: int | None = None,
+        *,
+        consistent_read: bool = False,
     ):
         """Initialize storage strategy.
 
@@ -51,6 +53,8 @@ class StorageStrategy:
             s3_key_prefix: Optional prefix prepended to all S3 keys for
                 bucket-level isolation between applications
             ttl_seconds: Optional TTL in seconds for automatic cleanup
+            consistent_read: If True, chunk payload reads from DynamoDB use
+                strongly consistent reads
         """
         self.dynamodb_client = dynamodb_client
         self.table_name = table_name
@@ -58,6 +62,7 @@ class StorageStrategy:
         self.s3_bucket = s3_bucket
         self.s3_key_prefix = s3_key_prefix.strip("/") if s3_key_prefix else None
         self.ttl_seconds = ttl_seconds
+        self.consistent_read = consistent_read
         self.s3_enabled = s3_client is not None and s3_bucket is not None
 
         # Configure S3 lifecycle policy if TTL is set
@@ -301,6 +306,7 @@ class StorageStrategy:
             TableName=self.table_name,
             Key={"PK": {"S": chunk_key}, "SK": {"S": "CHUNK"}},
             ProjectionExpression="payload",
+            ConsistentRead=self.consistent_read,
         )
 
         if "Item" not in response:
