@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Generator, Iterable
+from collections.abc import Generator, Iterable, Mapping
 from contextlib import contextmanager
 from typing import Any, Literal
 
@@ -414,7 +414,7 @@ class ValkeyStore(BaseValkeyStore):
         self,
         namespace: tuple[str, ...],
         key: str,
-        value: dict[str, Any],
+        value: Mapping[str, Any],
         index: Literal[False] | list[str] | None = None,
         *,
         ttl: float | None | NotProvided = NOT_PROVIDED,
@@ -743,7 +743,7 @@ class ValkeyStore(BaseValkeyStore):
         self,
         namespace: tuple[str, ...],
         key: str,
-        value: dict[str, Any],
+        value: Mapping[str, Any],
         index: Literal[False] | list[str] | None = None,
         *,
         ttl: float | None | NotProvided = NOT_PROVIDED,
@@ -753,7 +753,11 @@ class ValkeyStore(BaseValkeyStore):
 
         resolved_ttl = _ensure_ttl(self.ttl_config, ttl)
         op = PutOp(
-            namespace=namespace, key=key, value=value, index=index, ttl=resolved_ttl
+            namespace=namespace,
+            key=key,
+            value=dict(value),
+            index=index,
+            ttl=resolved_ttl,
         )
         self._handle_put(op)
 

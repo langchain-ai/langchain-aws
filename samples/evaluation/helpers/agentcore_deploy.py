@@ -16,11 +16,9 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import boto3
 from bedrock_agentcore.runtime import AgentCoreRuntimeClient, WaitConfig
@@ -74,7 +72,6 @@ class Deployment:
     s3_uri: str
     bucket: str = ""
     key: str = ""
-    extra: dict = field(default_factory=dict)
 
     def save(self, path: str | Path) -> Path:
         """Persist as JSON so a later notebook or session can pick it up."""
@@ -294,14 +291,11 @@ def delete_deployment(dep: Deployment, *, delete_bucket_object: bool = True) -> 
     iam = boto3.client("iam", region_name=dep.region)
     s3 = boto3.client("s3", region_name=dep.region)
 
-    for label, fn in (
-        ("runtime", lambda: ctrl.delete_agent_runtime(agentRuntimeId=dep.runtime_id)),
-    ):
-        try:
-            fn()
-            print(f"  deleted {label} {dep.runtime_id}")
-        except Exception as exc:  # noqa: BLE001
-            print(f"  {label}: {exc}")
+    try:
+        ctrl.delete_agent_runtime(agentRuntimeId=dep.runtime_id)
+        print(f"  deleted runtime {dep.runtime_id}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  runtime: {exc}")
 
     role_name = dep.role_arn.split("/")[-1]
     try:

@@ -6,6 +6,12 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def disable_openai_socket_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Skip langchain-openai's TCP keepalive probe, which opens a socket."""
+    monkeypatch.setenv("LANGCHAIN_OPENAI_TCP_KEEPALIVE", "0")
+
+
+@pytest.fixture(autouse=True)
 def mock_boto3_client(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """Mock boto3 client creation to prevent network calls in unit tests."""
     mock_client = MagicMock()

@@ -133,6 +133,7 @@ class TestUnifiedRepositoryInitialization:
             storage_strategy=mock_storage,
         )
         assert repo.ttl_seconds is None
+        assert repo.consistent_read is False
 
 
 class TestGetCheckpoint:
@@ -577,6 +578,59 @@ class TestDeleteOperations:
             repo.delete_thread_checkpoints(TEST_THREAD_ID, checkpoint_info)
         except ClientError:
             pass
+
+    def test_delete_checkpoints_retry_keeps_consistent_read(self) -> None:
+        """Test retried UnprocessedKeys requests still ask for consistent reads."""
+        mock_client = Mock()
+        mock_storage = Mock()
+        repo = UnifiedRepository(
+            dynamodb_client=mock_client,
+            table_name=TEST_TABLE_NAME,
+            serializer=Mock(),
+            storage_strategy=mock_storage,
+            consistent_read=True,
+        )
+
+        checkpoint_key = {
+            "PK": {"S": _checkpoint_pk(TEST_THREAD_ID)},
+            "SK": {"S": _checkpoint_sk(TEST_CHECKPOINT_NS, TEST_CHECKPOINT_ID)},
+        }
+        # Unprocessed keys returned without ConsistentRead must not downgrade
+        # the retry to an eventually consistent read.
+        mock_client.batch_get_item.side_effect = [
+            {
+                "Responses": {TEST_TABLE_NAME: []},
+                "UnprocessedKeys": {
+                    TEST_TABLE_NAME: {
+                        "Keys": [checkpoint_key],
+                        "ProjectionExpression": "PK, SK, ref_key, ref_loc",
+                    }
+                },
+            },
+            {
+                "Responses": {
+                    TEST_TABLE_NAME: [
+                        {
+                            **checkpoint_key,
+                            "ref_loc": {"S": "DYNAMODB"},
+                            "ref_key": {"S": "chunk_key"},
+                        }
+                    ]
+                },
+                "UnprocessedKeys": {},
+            },
+        ]
+        mock_storage.batch_delete_data.return_value = {"failed": []}
+        mock_client.batch_write_item.return_value = {"UnprocessedItems": {}}
+
+        repo.delete_thread_checkpoints(
+            TEST_THREAD_ID, [(TEST_CHECKPOINT_NS, TEST_CHECKPOINT_ID)]
+        )
+
+        assert mock_client.batch_get_item.call_count == 2
+        for batch_call in mock_client.batch_get_item.call_args_list:
+            table_request = batch_call.kwargs["RequestItems"][TEST_TABLE_NAME]
+            assert table_request["ConsistentRead"] is True
 
     def test_delete_thread_writes_scenarios(self):
         """Test deleting writes with S3 and multiple items."""

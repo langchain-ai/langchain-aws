@@ -1286,6 +1286,20 @@ def test_profile_with_application_inference_profile(mock_create_aws_client):
             "ap-southeast-2",
         ),
         (
+            "ca.amazon.nova-lite-v1:0",
+            None,
+            "amazon",
+            nullcontext(),
+            "ca-central-1",
+        ),
+        (
+            "in.anthropic.claude-opus-5",
+            None,
+            "anthropic",
+            nullcontext(),
+            "ap-south-1",
+        ),
+        (
             "global.anthropic.claude-sonnet-4-20250514-v1:0",
             None,
             "anthropic",

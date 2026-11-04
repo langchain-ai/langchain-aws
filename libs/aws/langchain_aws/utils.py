@@ -41,7 +41,7 @@ OUTPUT_TYPE = TypeVar(
 )
 
 MODEL_ID_GEO_PREFIXES = frozenset(
-    {"eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp", "au"}
+    {"eu", "us", "us-gov", "apac", "sa", "amer", "global", "jp", "au", "ca", "in"}
 )
 
 
@@ -611,7 +611,7 @@ def reasoning_effort_additional_fields(base_model: str, effort: str) -> Dict[str
         return {"reasoning_effort": effort}
     if model.startswith("openai.gpt-"):
         return {"reasoning": {"effort": effort}}
-    if model.startswith(("moonshot.", "moonshotai.")):
+    if model.startswith(("moonshot.", "moonshotai.", "zai.glm-")):
         return {"reasoning_effort": effort}
     return {}
 

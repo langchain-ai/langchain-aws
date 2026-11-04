@@ -4,6 +4,8 @@ import base64
 import hashlib
 import json
 import time
+from collections.abc import Iterator
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,6 +13,7 @@ import pytest
 pytest.importorskip("valkey")
 pytest.importorskip("orjson")
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import CheckpointTuple
 from valkey.exceptions import ConnectionError, TimeoutError, ValkeyError
 
@@ -21,6 +24,77 @@ from langgraph_checkpoint_aws.checkpoint.valkey.agentcore.models import (
     StoredWrite,
     ValkeyCheckpointerConfig,
 )
+
+
+def _explicit_config(thread_id: str, actor_id: str) -> dict:
+    """Build a top-level config carrying an explicit actor_id."""
+    return {
+        "configurable": {
+            "thread_id": thread_id,
+            "actor_id": actor_id,
+            "checkpoint_ns": "",
+        }
+    }
+
+
+def _subgraph_config(thread_id: str, checkpoint_ns: str) -> dict:
+    """Build a derived subgraph config that omits actor_id.
+
+    Mirrors the shape LangGraph derives during
+    ``get_state(config, subgraphs=True)``: same thread_id, a non-empty
+    checkpoint_ns naming the subgraph, and no actor_id.
+    """
+    return {
+        "configurable": {
+            "thread_id": thread_id,
+            "checkpoint_ns": checkpoint_ns,
+        }
+    }
+
+
+def _stub_stored_checkpoint(
+    mock_valkey_client: MagicMock,
+    *,
+    checkpoint_id: str,
+    thread_id: str,
+    actor_id: str,
+    checkpoint_ns: str,
+    via_list: bool = False,
+) -> None:
+    """Stub a mock Valkey client so a read resolves to one stored checkpoint.
+
+    Mirrors the fixture data built in ``test_get_tuple_latest_checkpoint``: an
+    empty-dict checkpoint/metadata payload, no parent, and no writes, with the
+    given ``actor_id``/``thread_id``/``checkpoint_ns`` baked into the stored
+    record so the caller can assert the resolved actor_id was actually used to
+    locate (and is reflected in) the returned data.
+
+    ``get_tuple`` looks up the latest checkpoint id via ``lindex`` and has no
+    writes lookup to disambiguate, so ``lrange`` can just return ``[]``
+    (empty writes). ``list()`` instead reads the checkpoint-id list via
+    ``lrange`` for the session key, then reads writes via ``lrange`` again
+    for each checkpoint id -- ``via_list=True`` uses ``side_effect`` to return
+    the id list on the first call and no writes on every call after.
+    """
+    empty_dict_json = json.dumps({})
+    empty_dict_b64 = base64.b64encode(empty_dict_json.encode()).decode()
+    stored_checkpoint = StoredCheckpoint(
+        checkpoint_id=checkpoint_id,
+        session_id=thread_id,
+        thread_id=thread_id,
+        actor_id=actor_id,
+        checkpoint_ns=checkpoint_ns,
+        parent_checkpoint_id=None,
+        checkpoint_data={"type": "json", "data": empty_dict_b64},
+        metadata={"type": "json", "data": empty_dict_b64},
+        created_at=time.time(),
+    )
+    mock_valkey_client.get.return_value = stored_checkpoint.model_dump_json()
+    if via_list:
+        mock_valkey_client.lrange.side_effect = [[checkpoint_id.encode()], []]
+    else:
+        mock_valkey_client.lindex.return_value = checkpoint_id.encode()
+        mock_valkey_client.lrange.return_value = []
 
 
 class TestAgentCoreValkeySaver:
@@ -1080,6 +1154,746 @@ class TestAgentCoreValkeySaver:
         assert len(actual_delays) == len(expected_delays)
         for actual, expected in zip(actual_delays, expected_delays, strict=False):
             assert abs(actual - expected) < 0.001
+
+    def test_sync_single_level_subgraph_inherits_actor_id_raises(
+        self, saver, mock_valkey_client
+    ):
+        """Fixed behavior: sync get_tuple at one subgraph level.
+
+        Property 1 (Requirements 2.1, 2.2): a top-level get_tuple call with
+        an explicit actor_id records a capture for "t1", so the follow-up
+        single-level subgraph get_tuple call -- same thread_id, non-empty
+        checkpoint_ns, no actor_id -- now resolves the inherited "agent-1"
+        instead of raising InvalidConfigError, and returns the checkpoint
+        stored under that actor_id.
+        """
+        explicit_config = _explicit_config("t1", "agent-1")
+        saver.get_tuple(explicit_config)
+
+        subgraph_config = _subgraph_config("t1", "child1")
+        _stub_stored_checkpoint(
+            mock_valkey_client,
+            checkpoint_id="checkpoint-child1",
+            thread_id="t1",
+            actor_id="agent-1",
+            checkpoint_ns="child1",
+        )
+        result = saver.get_tuple(subgraph_config)
+        assert isinstance(result, CheckpointTuple)
+        assert result.config["configurable"]["checkpoint_id"] == "checkpoint-child1"  # pyright: ignore[reportTypedDictNotRequiredAccess]
+
+    def test_sync_deeply_nested_subgraph_raises_at_first_level(
+        self, saver, mock_valkey_client
+    ):
+        """Fixed behavior: sync get_tuple across 3+ nested subgraph levels.
+
+        Property 1 (Requirements 2.1, 2.3): after the same top-level
+        capture, every one of three nested checkpoint_ns levels ("child1",
+        "child1|child2", "child1|child2|child3") now resolves the inherited
+        "agent-1" and returns its checkpoint, confirming the fix applies at
+        every nesting level, not just the first.
+        """
+        explicit_config = _explicit_config("t1", "agent-1")
+        saver.get_tuple(explicit_config)
+
+        nested_namespaces = ["child1", "child1|child2", "child1|child2|child3"]
+        for checkpoint_ns in nested_namespaces:
+            subgraph_config = _subgraph_config("t1", checkpoint_ns)
+            checkpoint_id = f"checkpoint-{checkpoint_ns}"
+            _stub_stored_checkpoint(
+                mock_valkey_client,
+                checkpoint_id=checkpoint_id,
+                thread_id="t1",
+                actor_id="agent-1",
+                checkpoint_ns=checkpoint_ns,
+            )
+            result = saver.get_tuple(subgraph_config)
+            assert isinstance(result, CheckpointTuple)
+            assert result.config["configurable"]["checkpoint_id"] == checkpoint_id  # pyright: ignore[reportTypedDictNotRequiredAccess]
+
+    def test_sync_list_subgraph_inherits_actor_id_raises(
+        self, saver, mock_valkey_client
+    ):
+        """Fixed behavior: sync list() for a derived subgraph config.
+
+        Property 1 (Requirements 2.1, 2.2): list() is a generator, so this
+        must be consumed to observe the result. Mirrors the get_tuple fixed
+        behavior through the list() read path -- the inherited actor_id is
+        now resolved and the subgraph's checkpoint is returned instead of
+        raising InvalidConfigError.
+        """
+        explicit_config = _explicit_config("t1", "agent-1")
+        list(saver.list(explicit_config))
+
+        subgraph_config = _subgraph_config("t1", "child1")
+        _stub_stored_checkpoint(
+            mock_valkey_client,
+            checkpoint_id="checkpoint-child1",
+            thread_id="t1",
+            actor_id="agent-1",
+            checkpoint_ns="child1",
+            via_list=True,
+        )
+        results = list(saver.list(subgraph_config))
+        assert len(results) == 1
+        assert isinstance(results[0], CheckpointTuple)
+        assert results[0].config["configurable"]["checkpoint_id"] == "checkpoint-child1"  # pyright: ignore[reportTypedDictNotRequiredAccess]
+        assert results[0].config["configurable"]["actor_id"] == "agent-1"  # pyright: ignore[reportTypedDictNotRequiredAccess]
+
+    @pytest.mark.asyncio
+    async def test_async_aget_tuple_subgraph_inherits_actor_id_raises(
+        self, saver, mock_valkey_client
+    ):
+        """Fixed behavior: async aget_tuple for a derived subgraph config.
+
+        Property 1 (Requirements 2.1, 2.4): aget_tuple now primes
+        _resolve_actor_id in its own async context before dispatching via
+        run_in_executor (which copies that context into the worker thread),
+        so the actor_id captured by the prior explicit-actor read is visible
+        to the nested subgraph read and the checkpoint is returned instead
+        of raising InvalidConfigError.
+        """
+        explicit_config = _explicit_config("t1", "agent-1")
+        await saver.aget_tuple(explicit_config)
+
+        subgraph_config = _subgraph_config("t1", "child1")
+        _stub_stored_checkpoint(
+            mock_valkey_client,
+            checkpoint_id="checkpoint-child1",
+            thread_id="t1",
+            actor_id="agent-1",
+            checkpoint_ns="child1",
+        )
+        result = await saver.aget_tuple(subgraph_config)
+        assert isinstance(result, CheckpointTuple)
+        assert result.config["configurable"]["checkpoint_id"] == "checkpoint-child1"  # pyright: ignore[reportTypedDictNotRequiredAccess]
+
+    @pytest.mark.asyncio
+    async def test_async_alist_subgraph_inherits_actor_id_raises(
+        self, saver, mock_valkey_client
+    ):
+        """Fixed behavior: async alist for a derived subgraph config.
+
+        Property 1 (Requirements 2.1, 2.4): alist dispatches the sync
+        list() generator via run_in_executor after priming
+        _resolve_actor_id in the calling async context, so the inherited
+        actor_id is now visible to the worker thread. alist is an async
+        generator, so it must be consumed (via `async for`) to observe the
+        result.
+        """
+        explicit_config = _explicit_config("t1", "agent-1")
+        async for _ in saver.alist(explicit_config):
+            pass
+
+        subgraph_config = _subgraph_config("t1", "child1")
+        _stub_stored_checkpoint(
+            mock_valkey_client,
+            checkpoint_id="checkpoint-child1",
+            thread_id="t1",
+            actor_id="agent-1",
+            checkpoint_ns="child1",
+            via_list=True,
+        )
+        results = []
+        async for item in saver.alist(subgraph_config):
+            results.append(item)
+        assert len(results) == 1
+        assert isinstance(results[0], CheckpointTuple)
+        assert results[0].config["configurable"]["checkpoint_id"] == "checkpoint-child1"  # pyright: ignore[reportTypedDictNotRequiredAccess]
+        assert results[0].config["configurable"]["actor_id"] == "agent-1"  # pyright: ignore[reportTypedDictNotRequiredAccess]
+
+
+class TestAgentCoreValkeySaverPreservation:
+    """Property 2: Preservation - non-subgraph and unresolvable reads/writes
+    fail closed.
+
+    Observed on UNFIXED code (no ``_resolve_actor_id``/``_request_actor``
+    machinery exists yet, so every one of these cases is either already
+    correct behavior with no capture/fallback involved, or trivially raises
+    because no fallback exists). These tests encode that observed baseline
+    so they can be re-run unchanged after the fix (task 7) to confirm no
+    regressions.
+    """
+
+    @pytest.fixture
+    def mock_valkey_client(self):
+        """Create a mock Valkey client."""
+        client = MagicMock()
+        client.get.return_value = None
+        client.set.return_value = True
+        client.setex.return_value = True
+        client.lpush.return_value = 1
+        client.lrange.return_value = []
+        client.lindex.return_value = None
+        client.rpush.return_value = 1
+        client.delete.return_value = 1
+        client.keys.return_value = []
+        client.expire.return_value = True
+        client.close.return_value = None
+        client.aclose = None
+        client.__aenter__ = None
+        return client
+
+    @pytest.fixture
+    def saver(self, mock_valkey_client):
+        """Create a AgentCoreValkeySaver instance with mocked client."""
+        return AgentCoreValkeySaver(mock_valkey_client, ttl=3600)
+
+    @staticmethod
+    def _top_level_config_missing_actor(thread_id: str) -> dict:
+        """Top-level config (empty checkpoint_ns) with no actor_id."""
+        return {
+            "configurable": {
+                "thread_id": thread_id,
+                "checkpoint_ns": "",
+            }
+        }
+
+    @staticmethod
+    def _write_config(
+        thread_id: str, actor_id: str | None, checkpoint_ns: str = ""
+    ) -> dict:
+        """Build a config shape suitable for put/put_writes, optionally
+        omitting actor_id."""
+        configurable = {
+            "thread_id": thread_id,
+            "checkpoint_ns": checkpoint_ns,
+            "checkpoint_id": "checkpoint-1",
+        }
+        if actor_id is not None:
+            configurable["actor_id"] = actor_id
+        return {"configurable": configurable}
+
+    @staticmethod
+    def _sample_checkpoint() -> dict:
+        return {
+            "id": "checkpoint-1",
+            "ts": "2024-01-01T00:00:00Z",
+            "channel_values": {"messages": [{"role": "user", "content": "Hello"}]},
+            "channel_versions": {"messages": "1.0"},
+        }
+
+    @staticmethod
+    def _new_mock_valkey_client() -> MagicMock:
+        """Build a fresh mock Valkey client.
+
+        Used (instead of the function-scoped ``mock_valkey_client`` fixture)
+        by standalone parametrized tests that construct their own saver
+        instance per case rather than relying on function-scoped fixtures.
+        """
+        client = MagicMock()
+        client.get.return_value = None
+        client.set.return_value = True
+        client.setex.return_value = True
+        client.lpush.return_value = 1
+        client.lrange.return_value = []
+        client.lindex.return_value = None
+        client.rpush.return_value = 1
+        client.delete.return_value = 1
+        client.keys.return_value = []
+        client.expire.return_value = True
+        client.close.return_value = None
+        client.aclose = None
+        client.__aenter__ = None
+        return client
+
+    # -- Explicit Actor Preservation -----------------------------------
+
+    def test_get_tuple_explicit_actor_id_returns_data(self, saver, mock_valkey_client):
+        """get_tuple with an explicit actor_id returns the expected
+        checkpoint data -- no capture/fallback involved."""
+        mock_valkey_client.lindex.return_value = b"checkpoint-1"
+        empty_dict_b64 = base64.b64encode(json.dumps({}).encode()).decode()
+        stored_checkpoint = StoredCheckpoint(
+            checkpoint_id="checkpoint-1",
+            session_id="t1",
+            thread_id="t1",
+            actor_id="agent-1",
+            checkpoint_ns="",
+            parent_checkpoint_id=None,
+            checkpoint_data={"type": "json", "data": empty_dict_b64},
+            metadata={"type": "json", "data": empty_dict_b64},
+            created_at=time.time(),
+        )
+        mock_valkey_client.get.return_value = stored_checkpoint.model_dump_json()
+        mock_valkey_client.lrange.return_value = []
+
+        explicit_config = _explicit_config("t1", "agent-1")
+        result = saver.get_tuple(explicit_config)
+
+        assert result is not None
+        assert result.config["configurable"]["checkpoint_id"] == "checkpoint-1"
+
+    def test_list_explicit_actor_id_returns_data(self, saver, mock_valkey_client):
+        """list() with an explicit actor_id returns the expected checkpoint
+        data -- no capture/fallback involved."""
+        mock_valkey_client.keys.return_value = [b"some:key:checkpoint-1"]
+        empty_dict_b64 = base64.b64encode(json.dumps({}).encode()).decode()
+        stored_checkpoint = StoredCheckpoint(
+            checkpoint_id="checkpoint-1",
+            session_id="t1",
+            thread_id="t1",
+            actor_id="agent-1",
+            checkpoint_ns="",
+            parent_checkpoint_id=None,
+            checkpoint_data={"type": "json", "data": empty_dict_b64},
+            metadata={"type": "json", "data": empty_dict_b64},
+            created_at=time.time(),
+        )
+        mock_valkey_client.get.return_value = stored_checkpoint.model_dump_json()
+        # First lrange call lists session checkpoint ids; second fetches
+        # writes for that checkpoint (empty here).
+        mock_valkey_client.lrange.side_effect = [[b"checkpoint-1"], []]
+
+        explicit_config = _explicit_config("t1", "agent-1")
+        results = list(saver.list(explicit_config))
+
+        assert len(results) == 1
+        assert results[0].config["configurable"]["checkpoint_id"] == "checkpoint-1"
+
+    # -- Top-Level Missing Actor Preservation ---------------------------
+
+    def test_get_tuple_top_level_missing_actor_raises(self, saver):
+        """Top-level read (empty checkpoint_ns) missing actor_id raises,
+        trivially true on unfixed code since no fallback exists yet."""
+        config = self._top_level_config_missing_actor("t1")
+        with pytest.raises(InvalidConfigError):
+            saver.get_tuple(config)
+
+    def test_list_top_level_missing_actor_raises(self, saver):
+        config = self._top_level_config_missing_actor("t1")
+        with pytest.raises(InvalidConfigError):
+            list(saver.list(config))
+
+    @pytest.mark.asyncio
+    async def test_aget_tuple_top_level_missing_actor_raises(self, saver):
+        config = self._top_level_config_missing_actor("t1")
+        with pytest.raises(InvalidConfigError):
+            await saver.aget_tuple(config)
+
+    @pytest.mark.asyncio
+    async def test_alist_top_level_missing_actor_raises(self, saver):
+        config = self._top_level_config_missing_actor("t1")
+        with pytest.raises(InvalidConfigError):
+            async for _ in saver.alist(config):
+                pass
+
+    # -- Mismatched Thread Preservation ----------------------------------
+
+    def test_get_tuple_mismatched_thread_raises(self, saver):
+        """A subgraph-shaped config for a thread_id never seen before
+        raises, regardless of any other thread's prior capture."""
+        explicit_config = _explicit_config("t1", "agent-1")
+        saver.get_tuple(explicit_config)
+
+        subgraph_config = _subgraph_config("t2-never-seen", "child1")
+        with pytest.raises(InvalidConfigError):
+            saver.get_tuple(subgraph_config)
+
+    def test_list_mismatched_thread_raises(self, saver):
+        explicit_config = _explicit_config("t1", "agent-1")
+        list(saver.list(explicit_config))
+
+        subgraph_config = _subgraph_config("t2-never-seen", "child1")
+        with pytest.raises(InvalidConfigError):
+            list(saver.list(subgraph_config))
+
+    # -- Write Path Preservation ------------------------------------------
+
+    def test_put_missing_actor_id_raises(self, saver):
+        config = self._write_config("t1", None)
+        checkpoint = self._sample_checkpoint()
+        metadata = {"user": "test"}
+        new_versions: dict[str, str | int | float] = {"messages": 1.0}
+        with pytest.raises(InvalidConfigError):
+            saver.put(config, checkpoint, metadata, new_versions)
+
+    def test_put_writes_missing_actor_id_raises(self, saver):
+        config = self._write_config("t1", None)
+        writes = [("messages", {"role": "assistant", "content": "hi"})]
+        with pytest.raises(InvalidConfigError):
+            saver.put_writes(config, writes, "task-1")
+
+    @pytest.mark.asyncio
+    async def test_aput_missing_actor_id_raises(self, saver):
+        config = self._write_config("t1", None)
+        checkpoint = self._sample_checkpoint()
+        metadata = {"user": "test"}
+        new_versions: dict[str, str | int | float] = {"messages": 1.0}
+        with pytest.raises(InvalidConfigError):
+            await saver.aput(config, checkpoint, metadata, new_versions)
+
+    @pytest.mark.asyncio
+    async def test_aput_writes_missing_actor_id_raises(self, saver):
+        config = self._write_config("t1", None)
+        writes = [("messages", {"role": "assistant", "content": "hi"})]
+        with pytest.raises(InvalidConfigError):
+            await saver.aput_writes(config, writes, "task-1")
+
+    def test_put_missing_actor_id_raises_immediately_after_read_capture(self, saver):
+        """A write with missing actor_id raises even immediately after a
+        read recorded a capture for the same thread_id -- writes never
+        inherit."""
+        explicit_config = _explicit_config("t1", "agent-1")
+        saver.get_tuple(explicit_config)
+
+        write_config = self._write_config("t1", None, checkpoint_ns="child1")
+        checkpoint = self._sample_checkpoint()
+        metadata = {"user": "test"}
+        new_versions: dict[str, str | int | float] = {"messages": 1.0}
+        with pytest.raises(InvalidConfigError):
+            saver.put(write_config, checkpoint, metadata, new_versions)
+
+    def test_put_writes_missing_actor_id_raises_immediately_after_read_capture(
+        self, saver
+    ):
+        explicit_config = _explicit_config("t1", "agent-1")
+        saver.get_tuple(explicit_config)
+
+        write_config = self._write_config("t1", None, checkpoint_ns="child1")
+        writes = [("messages", {"role": "assistant", "content": "hi"})]
+        with pytest.raises(InvalidConfigError):
+            saver.put_writes(write_config, writes, "task-1")
+
+    # -- Parametrized: fail-closed on missing actor_id ---------------------
+    @pytest.mark.parametrize(
+        "thread_id,actor_id,checkpoint_ns,is_write",
+        [
+            # Empty checkpoint_ns (top-level read) must fail closed even
+            # though a capture exists for an unrelated thread_id.
+            ("t1", "agent-1", "", False),
+            # Non-empty checkpoint_ns (subgraph read) still fails closed
+            # when no capture was recorded for *this* thread_id.
+            ("t1", "agent-1", "child1", False),
+            # Deeply nested checkpoint_ns namespace behaves the same way.
+            ("t1", "agent-1", "child1|child2", False),
+            # Writes never inherit, regardless of checkpoint_ns.
+            ("t1", "agent-1", "", True),
+            ("t1", "agent-1", "child1", True),
+            # Distinct thread_id/actor_id values exercise the same cases.
+            ("t-two", "agent-two", "child1", False),
+            ("t-two", "agent-two", "child1", True),
+        ],
+    )
+    def test_fails_closed_without_capture_when_actor_id_missing(
+        self, thread_id, actor_id, checkpoint_ns, is_write
+    ):
+        """For a (thread_id, actor_id, checkpoint_ns) combination, a
+        read/write omitting actor_id fails closed whenever checkpoint_ns is
+        empty, the operation is a write, or no prior capture exists for
+        thread_id -- regardless of capture state recorded for unrelated
+        threads.
+        """
+        saver = AgentCoreValkeySaver(self._new_mock_valkey_client(), ttl=3600)
+        # Record a capture for an unrelated thread_id so we can assert it
+        # never leaks into this (thread_id, checkpoint_ns) combination.
+        unrelated_thread_id = thread_id + "-unrelated"
+        saver.get_tuple(_explicit_config(unrelated_thread_id, actor_id))
+        if is_write:
+            config = self._write_config(thread_id, None, checkpoint_ns)
+            checkpoint = self._sample_checkpoint()
+            metadata = {"user": "test"}
+            new_versions: dict[str, str | int | float] = {"messages": 1.0}
+            with pytest.raises(InvalidConfigError):
+                saver.put(config, checkpoint, metadata, new_versions)
+        else:
+            config = {
+                "configurable": {
+                    "thread_id": thread_id,
+                    "checkpoint_ns": checkpoint_ns,
+                }
+            }
+            with pytest.raises(InvalidConfigError):
+                saver.get_tuple(config)
+
+    # -- Parametrized: captures never leak across distinct thread_ids ------
+    @pytest.mark.parametrize(
+        "thread_ids",
+        [
+            ["t1", "t2"],
+            ["t1", "t2", "t3"],
+            ["t1", "t2", "t3", "t4", "t5"],
+        ],
+    )
+    def test_captures_never_leak_across_distinct_thread_ids(self, thread_ids):
+        """Interleaved explicit-actor reads across multiple distinct
+        thread_ids never let an *unrelated* thread_id's subgraph read
+        inherit a capture recorded for a different thread_id.
+        Only the most recently captured thread_id may legitimately inherit
+        its own capture on a subsequent subgraph read for that same
+        thread_id -- that is correct same-thread inheritance, not a leak,
+        so it is excluded from this assertion.
+        """
+        saver = AgentCoreValkeySaver(self._new_mock_valkey_client(), ttl=3600)
+        for idx, thread_id in enumerate(thread_ids):
+            saver.get_tuple(_explicit_config(thread_id, f"agent-{idx}"))
+        for thread_id in thread_ids[:-1]:
+            subgraph_config = _subgraph_config(thread_id, "child1")
+            with pytest.raises(InvalidConfigError):
+                saver.get_tuple(subgraph_config)
+
+
+class TestResolveActorId:
+    """Direct unit tests for ``_resolve_actor_id``, called directly rather
+    than through ``get_tuple``/``list``.
+
+    Covers the request-scoped, fail-closed inheritance semantics: explicit
+    ``actor_id`` capture, subgraph inheritance from a matching capture,
+    fail-closed behavior on no/mismatched capture, fail-closed behavior on
+    a top-level config, and a ``None`` config.
+    """
+
+    @pytest.fixture
+    def mock_valkey_client(self) -> MagicMock:
+        """Create a mock Valkey client."""
+        client = MagicMock()
+        client.get.return_value = None
+        client.set.return_value = True
+        client.setex.return_value = True
+        client.lpush.return_value = 1
+        client.lrange.return_value = []
+        client.lindex.return_value = None
+        client.rpush.return_value = 1
+        client.delete.return_value = 1
+        client.keys.return_value = []
+        client.expire.return_value = True
+        client.close.return_value = None
+        client.aclose = None
+        client.__aenter__ = None
+        return client
+
+    @pytest.fixture
+    def saver(self, mock_valkey_client: MagicMock) -> AgentCoreValkeySaver:
+        """Create an AgentCoreValkeySaver instance with a mocked client."""
+        return AgentCoreValkeySaver(mock_valkey_client, ttl=3600)
+
+    @pytest.fixture(autouse=True)
+    def _reset_request_actor(self) -> Iterator[None]:
+        """Isolate the module-level ``_request_actor`` ContextVar per test.
+
+        Without this, a capture set by one test's direct
+        ``_resolve_actor_id`` call could leak into another test running in
+        the same thread/context.
+        """
+        from langgraph_checkpoint_aws.checkpoint.valkey.agentcore.saver import (
+            _request_actor,
+        )
+
+        token = _request_actor.set(None)
+        try:
+            yield
+        finally:
+            _request_actor.reset(token)
+
+    def test_explicit_actor_id_and_thread_id_records_and_returns(
+        self, saver: AgentCoreValkeySaver
+    ) -> None:
+        """Explicit actor_id + thread_id present records the pair into
+        ``_request_actor`` and returns the actor_id."""
+        from langgraph_checkpoint_aws.checkpoint.valkey.agentcore.saver import (
+            _request_actor,
+        )
+
+        config = cast(RunnableConfig, _explicit_config("t1", "agent-1"))
+
+        result = saver._resolve_actor_id(config)
+
+        assert result == "agent-1"
+        assert _request_actor.get() == ("t1", "agent-1")
+
+    def test_subgraph_config_with_matching_capture_inherits_actor_id(
+        self, saver: AgentCoreValkeySaver
+    ) -> None:
+        """Subgraph-shaped config (non-empty checkpoint_ns, no actor_id)
+        with a matching prior capture inherits and returns the recorded
+        actor_id."""
+        saver._resolve_actor_id(cast(RunnableConfig, _explicit_config("t1", "agent-1")))
+
+        result = saver._resolve_actor_id(
+            cast(RunnableConfig, _subgraph_config("t1", "child1"))
+        )
+
+        assert result == "agent-1"
+
+    def test_subgraph_config_with_no_capture_returns_none(
+        self, saver: AgentCoreValkeySaver
+    ) -> None:
+        """Subgraph-shaped config with no prior capture at all returns
+        None."""
+        result = saver._resolve_actor_id(
+            cast(RunnableConfig, _subgraph_config("t1", "child1"))
+        )
+
+        assert result is None
+
+    def test_subgraph_config_with_capture_for_different_thread_returns_none(
+        self, saver: AgentCoreValkeySaver
+    ) -> None:
+        """Subgraph-shaped config with a capture recorded for a different
+        thread_id returns None instead of inheriting it."""
+        saver._resolve_actor_id(cast(RunnableConfig, _explicit_config("t1", "agent-1")))
+
+        result = saver._resolve_actor_id(
+            cast(RunnableConfig, _subgraph_config("t2-other", "child1"))
+        )
+
+        assert result is None
+
+    def test_top_level_config_with_no_actor_id_returns_none_despite_capture(
+        self, saver: AgentCoreValkeySaver
+    ) -> None:
+        """Top-level config (empty checkpoint_ns) with no actor_id returns
+        None regardless of any existing capture for the same thread_id."""
+        saver._resolve_actor_id(cast(RunnableConfig, _explicit_config("t1", "agent-1")))
+        top_level_config_missing_actor = cast(
+            RunnableConfig,
+            {
+                "configurable": {
+                    "thread_id": "t1",
+                    "checkpoint_ns": "",
+                }
+            },
+        )
+
+        result = saver._resolve_actor_id(top_level_config_missing_actor)
+
+        assert result is None
+
+    def test_none_config_returns_none_without_raising(
+        self, saver: AgentCoreValkeySaver
+    ) -> None:
+        """A None config returns None without raising."""
+        result = saver._resolve_actor_id(None)
+
+        assert result is None
+
+
+class TestRunInExecutorContextPropagation:
+    """Regression tests for the ``run_in_executor`` context-propagation fix.
+
+    ``aget_tuple``/``alist`` prime ``_resolve_actor_id`` in their own async
+    context, then dispatch the sync read to a worker thread via
+    ``langchain_core.runnables.run_in_executor``, which copies the calling
+    ``contextvars.Context`` into that thread. A later subgraph read running in
+    the worker thread therefore sees the ``_request_actor`` capture primed in
+    the async context and inherits the actor_id.
+
+    Each test primes the capture **only in the async context** (never inside a
+    worker thread) and then makes a single dispatched subgraph read. This is
+    what makes the test sensitive to the regression: if the dispatch were
+    reverted to a raw ``asyncio.get_running_loop().run_in_executor(...)``, the
+    worker thread would run without the async context's capture, so
+    ``_request_actor.get()`` would be ``None`` there and the subgraph read would
+    raise ``InvalidConfigError`` instead of returning the stored checkpoint.
+
+    Priming inside a worker thread (e.g. by first awaiting an explicit-actor
+    ``aget_tuple``) would NOT be a valid regression test: the default executor
+    reuses its worker thread and a raw dispatch does not reset that thread's
+    context, so a capture left by the first call would leak into the second
+    call's reused worker and mask the bug.
+    """
+
+    @pytest.fixture
+    def mock_valkey_client(self) -> MagicMock:
+        """Create a mock Valkey client."""
+        client = MagicMock()
+        client.get.return_value = None
+        client.set.return_value = True
+        client.setex.return_value = True
+        client.lpush.return_value = 1
+        client.lrange.return_value = []
+        client.lindex.return_value = None
+        client.rpush.return_value = 1
+        client.delete.return_value = 1
+        client.keys.return_value = []
+        client.expire.return_value = True
+        client.close.return_value = None
+        client.aclose = None
+        client.__aenter__ = None
+        return client
+
+    @pytest.fixture
+    def saver(self, mock_valkey_client: MagicMock) -> AgentCoreValkeySaver:
+        """Create an AgentCoreValkeySaver instance with a mocked client."""
+        return AgentCoreValkeySaver(mock_valkey_client, ttl=3600)
+
+    @pytest.fixture(autouse=True)
+    def _reset_request_actor(self) -> Iterator[None]:
+        """Isolate the module-level ``_request_actor`` ContextVar per test.
+
+        Without this, a capture set by one test could leak into another test
+        running in the same thread/context.
+        """
+        from langgraph_checkpoint_aws.checkpoint.valkey.agentcore.saver import (
+            _request_actor,
+        )
+
+        token = _request_actor.set(None)
+        try:
+            yield
+        finally:
+            _request_actor.reset(token)
+
+    @pytest.mark.asyncio
+    async def test_aget_tuple_subgraph_inherits_async_context_actor(
+        self, saver: AgentCoreValkeySaver, mock_valkey_client: MagicMock
+    ) -> None:
+        """``aget_tuple`` copies the async context into the worker thread.
+
+        Prime the actor capture directly in the async context, then make a
+        single ``aget_tuple`` subgraph read. The worker thread running
+        ``get_tuple`` resolves the actor_id only because ``run_in_executor``
+        copied the async context's capture into it; a raw ``asyncio`` executor
+        dispatch would start the worker without that capture and the read would
+        raise ``InvalidConfigError`` instead of returning the stored checkpoint.
+        """
+        explicit_config = cast(RunnableConfig, _explicit_config("t1", "agent-1"))
+        saver._resolve_actor_id(explicit_config)
+
+        _stub_stored_checkpoint(
+            mock_valkey_client,
+            checkpoint_id="checkpoint-child1",
+            thread_id="t1",
+            actor_id="agent-1",
+            checkpoint_ns="child1",
+        )
+        subgraph_config = cast(RunnableConfig, _subgraph_config("t1", "child1"))
+        result = await saver.aget_tuple(subgraph_config)
+
+        assert isinstance(result, CheckpointTuple)
+        assert result.config["configurable"]["checkpoint_id"] == "checkpoint-child1"  # pyright: ignore[reportTypedDictNotRequiredAccess]
+
+    @pytest.mark.asyncio
+    async def test_alist_subgraph_inherits_async_context_actor(
+        self, saver: AgentCoreValkeySaver, mock_valkey_client: MagicMock
+    ) -> None:
+        """``alist`` copies the async context into the worker thread.
+
+        Same regression coverage as the ``aget_tuple`` test above, but through
+        the ``alist`` async-generator dispatch path, which also primes
+        ``_resolve_actor_id`` before handing the sync ``list()`` generator to
+        ``run_in_executor``.
+        """
+        explicit_config = cast(RunnableConfig, _explicit_config("t1", "agent-1"))
+        saver._resolve_actor_id(explicit_config)
+
+        _stub_stored_checkpoint(
+            mock_valkey_client,
+            checkpoint_id="checkpoint-child1",
+            thread_id="t1",
+            actor_id="agent-1",
+            checkpoint_ns="child1",
+            via_list=True,
+        )
+        subgraph_config = cast(RunnableConfig, _subgraph_config("t1", "child1"))
+        results = []
+        async for item in saver.alist(subgraph_config):
+            results.append(item)
+
+        assert len(results) == 1
+        assert isinstance(results[0], CheckpointTuple)
+        assert results[0].config["configurable"]["checkpoint_id"] == "checkpoint-child1"  # pyright: ignore[reportTypedDictNotRequiredAccess]
+        assert results[0].config["configurable"]["actor_id"] == "agent-1"  # pyright: ignore[reportTypedDictNotRequiredAccess]
 
 
 class TestAgentCoreValkeySaverIntegration:

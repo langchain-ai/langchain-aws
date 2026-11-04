@@ -18,6 +18,7 @@ from typing import (
     Union,
 )
 
+from botocore.exceptions import EventStreamError
 from langchain_core.callbacks import (
     AsyncCallbackManagerForLLMRun,
     CallbackManagerForLLMRun,
@@ -95,6 +96,34 @@ def _human_assistant_format(input_text: str) -> str:
     return input_text
 
 
+_ANTHROPIC_TO_BEDROCK_STREAM_ERROR = {
+    "overloaded_error": "serviceUnavailableException",
+    "rate_limit_error": "throttlingException",
+    "api_error": "internalServerException",
+}
+
+
+def _raise_stream_error(stream_response: Dict[str, Any]) -> None:
+    """Raise an Anthropic error event as the exception Bedrock streams raise."""
+    error = stream_response.get("error")
+    if not isinstance(error, Mapping):
+        error = {}
+    message = error.get("message", "")
+    if request_id := stream_response.get("request_id"):
+        message = f"{message} (request_id: {request_id})"
+    raise EventStreamError(
+        {
+            "Error": {
+                "Code": _ANTHROPIC_TO_BEDROCK_STREAM_ERROR.get(
+                    str(error.get("type")), "modelStreamErrorException"
+                ),
+                "Message": message,
+            }
+        },
+        "InvokeModelWithResponseStream",
+    )
+
+
 def _stream_response_to_generation_chunk(
     stream_response: Dict[str, Any],
     provider: str,
@@ -105,6 +134,8 @@ def _stream_response_to_generation_chunk(
     """Convert a stream response to a generation chunk."""
     if messages_api:
         msg_type = stream_response.get("type")
+        if msg_type == "error":
+            _raise_stream_error(stream_response)
         if msg_type == "message_start":
             return AIMessageChunk(
                 content="" if coerce_content_to_string else [],
@@ -901,6 +932,9 @@ class BedrockBase(BaseLanguageModel, ABC):
     If not provided, AWS uses the default tier.
     """
 
+    request_metadata: Optional[Dict[str, str]] = None
+    """Key-Value pairs that you can use to filter invocation logs."""
+
     @property
     def lc_secrets(self) -> Dict[str, str]:
         return {
@@ -1161,6 +1195,8 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         if self.service_tier:
             request_options["serviceTier"] = self.service_tier
+        if self.request_metadata:
+            request_options["requestMetadata"] = json.dumps(self.request_metadata)
 
         if self._guardrails_enabled:
             request_options["guardrailIdentifier"] = self.guardrails.get(  # type: ignore[union-attr]
@@ -1314,6 +1350,8 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         if self.service_tier:
             request_options["serviceTier"] = self.service_tier
+        if self.request_metadata:
+            request_options["requestMetadata"] = json.dumps(self.request_metadata)
 
         if self._guardrails_enabled:
             request_options["guardrailIdentifier"] = self.guardrails.get(  # type: ignore[union-attr]
@@ -1398,14 +1436,18 @@ class BedrockBase(BaseLanguageModel, ABC):
             )
         body = json.dumps(input_body)
 
+        request_options: dict[str, Any] = {
+            "body": body,
+            "modelId": self.model_id,
+            "accept": "application/json",
+            "contentType": "application/json",
+        }
+        if self.request_metadata:
+            request_options["requestMetadata"] = json.dumps(self.request_metadata)
+
         response = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: self.client.invoke_model_with_response_stream(
-                body=body,
-                modelId=self.model_id,
-                accept="application/json",
-                contentType="application/json",
-            ),
+            lambda: self.client.invoke_model_with_response_stream(**request_options),
         )
 
         try:

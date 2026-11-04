@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 try:
@@ -300,7 +301,7 @@ class BaseValkeyStore(BaseStore):
             # Don't raise the error, just log it and continue without search
 
     def _validate_put_operation(
-        self, namespace: tuple[str, ...], value: dict[str, Any] | None
+        self, namespace: tuple[str, ...], value: Mapping[str, Any] | None
     ) -> None:
         """Validate put operation parameters."""
         try:

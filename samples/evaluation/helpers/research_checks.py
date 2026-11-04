@@ -66,12 +66,14 @@ def ranking_line(prefix: str, *labels: str):
         return re.sub(r"\(.*?\)", "", part).strip(" `*_\t").strip()
 
     def check(traj, answer):
-        for line in answer.splitlines():
-            low = line.lower()
+        lines = [ln.lower() for ln in answer.splitlines() if ln.strip()]
+        for i, low in enumerate(lines):
             if prefix.lower() not in low:
                 continue
-            got = [clean(p) for p in low.split(":", 1)[-1].split(">")]
-            got = [g for g in got if g]
+            claim = low.split(prefix.lower(), 1)[1].lstrip(" *_`:")
+            if not clean(claim) and i + 1 < len(lines):
+                claim = lines[i + 1]  # the label was a heading; the order follows it
+            got = [g for g in (clean(p) for p in claim.split(">")) if g]
             if got == want:
                 return True, ""
             return False, f"line says {got}, expected {want}"

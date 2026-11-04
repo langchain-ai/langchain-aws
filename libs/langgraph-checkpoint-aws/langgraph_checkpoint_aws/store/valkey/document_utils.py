@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import struct
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
@@ -123,7 +124,7 @@ class DocumentProcessor:
 
     @staticmethod
     def create_hash_fields(
-        value: dict[str, Any],
+        value: Mapping[str, Any],
         vector: list[float] | None = None,
         index_fields: list[str] | None = None,
     ) -> dict[str, str | bytes]:

@@ -121,7 +121,7 @@ class DynamoDBSearchMixin:
 
         except Exception as e:
             logger.error(f"Error searching namespace {op.namespace_prefix}: {e}")
-            return []
+            raise
 
     def _vector_search(self, op: SearchOp) -> list[SearchItem]:
         """Perform semantic search using DynamoDB SearchVectors.
@@ -279,7 +279,7 @@ class DynamoDBSearchMixin:
 
         except Exception as e:
             logger.error(f"Error listing namespaces: {e}")
-            return []
+            raise
 
     def _filter_namespaces(
         self,

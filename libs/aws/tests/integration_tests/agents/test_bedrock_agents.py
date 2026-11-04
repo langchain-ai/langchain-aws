@@ -19,6 +19,7 @@ from langchain_aws.agents import (
     BedrockAgentsRunnable,
     BedrockInlineAgentsRunnable,
 )
+from langchain_aws.agents.types import _DEFAULT_ACTION_GROUP_NAME
 
 
 def _create_iam_client() -> Any:
@@ -657,3 +658,63 @@ def test_inline_agent():
 
     except Exception as ex:
         raise ex
+
+
+@pytest.mark.skip
+def test_action_group_schema_marks_falsy_defaults_optional():
+    """Create a real agent and read the function schema back from Bedrock.
+
+    Parameters with a default value (even a falsy one such as ``""``, ``0`` or
+    ``False``) must be registered as optional.
+    """
+
+    @tool
+    def get_weather(location: str = "", days: int = 0, metric: bool = False) -> str:
+        """
+        Get the weather of a location
+
+        Args:
+            location: location of the place
+            days: number of forecast days
+            metric: use metric units
+
+        """
+        return f"It is hot and humid in {location}"
+
+    foundation_model = "anthropic.claude-3-sonnet-20240229-v1:0"
+    agent_resource_role_arn = None
+    agent = None
+    try:
+        agent_resource_role_arn = _create_agent_role(
+            agent_region="us-west-2", foundation_model=foundation_model
+        )
+        agent = BedrockAgentsRunnable.create_agent(
+            agent_name="falsy_defaults_agent",
+            agent_resource_role_arn=agent_resource_role_arn,
+            foundation_model=foundation_model,
+            instruction="You are an agent who helps with getting weather.",
+            tools=[get_weather],
+        )
+
+        bedrock_client = boto3.client("bedrock-agent")
+        groups = bedrock_client.list_agent_action_groups(
+            agentId=agent.agent_id, agentVersion="DRAFT"
+        )["actionGroupSummaries"]
+        group = next(
+            g for g in groups if g["actionGroupName"] == _DEFAULT_ACTION_GROUP_NAME
+        )
+        detail = bedrock_client.get_agent_action_group(
+            agentId=agent.agent_id,
+            agentVersion="DRAFT",
+            actionGroupId=group["actionGroupId"],
+        )["agentActionGroup"]
+
+        function = detail["functionSchema"]["functions"][0]
+        assert function["name"] == "get_weather"
+        for name in ("location", "days", "metric"):
+            assert function["parameters"][name]["required"] is False, name
+    finally:
+        if agent_resource_role_arn:
+            _delete_agent_role(agent_resource_role_arn)
+        if agent:
+            _delete_agent(agent.agent_id)

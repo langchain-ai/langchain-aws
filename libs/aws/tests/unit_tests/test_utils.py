@@ -602,6 +602,8 @@ def test_thinking_disabled_in_params(params: dict, expected_result: bool) -> Non
             "low",
             {"reasoning_effort": "low"},
         ),
+        ("zai.glm-5.3", "max", {"reasoning_effort": "max"}),
+        ("zai.glm-4.7", "none", {"reasoning_effort": "none"}),
         ("amazon.titan-text-express-v1", "high", {}),
         ("meta.llama3-1-70b-instruct-v1:0", "high", {}),
         ("openai.gpt-5.6-terra", "medium", {"reasoning": {"effort": "medium"}}),
@@ -822,6 +824,10 @@ def test_thinking_in_params(params: dict, expected: bool) -> None:
         ("us.minimax.minimax-m2.5", "minimax"),
         ("moonshotai.kimi-k2.5", "moonshotai"),
         ("moonshot.kimi-k2-thinking", "moonshot"),
+        ("ca.amazon.nova-lite-v1:0", "amazon"),
+        ("in.anthropic.claude-opus-5", "anthropic"),
+        ("in.openai.gpt-5.6-terra", "openai"),
+        ("in.moonshotai.kimi-k3", "moonshotai"),
     ],
 )
 def test_parse_model_provider(model_id: str, expected_provider: str) -> None:

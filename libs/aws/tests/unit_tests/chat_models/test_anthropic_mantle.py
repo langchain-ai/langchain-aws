@@ -520,7 +520,11 @@ def test_forced_tool_choice_downgraded_when_unsupported(
         bedrock_api_key=SecretStr("test-key"),
     )
     tool = {"name": "t", "description": "d", "input_schema": {"type": "object"}}
-    bound = cast(Any, model.bind_tools([tool], tool_choice="any"))
+    if expected == "auto":
+        with pytest.warns(UserWarning, match="does not support forced tool_choice"):
+            bound = cast(Any, model.bind_tools([tool], tool_choice="any"))
+    else:
+        bound = cast(Any, model.bind_tools([tool], tool_choice="any"))
     assert bound.kwargs["tool_choice"]["type"] == expected
 
 

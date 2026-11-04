@@ -21,7 +21,7 @@ tokens of raw filings.
 | | |
 |---|---|
 | **Frameworks** | LangChain Deep Agents (`create_deep_agent`), LangGraph |
-| **AgentCore features** | Browser, Code Interpreter, Runtime, Evaluations, Insights, Recommendations, Configuration Bundles |
+| **AgentCore features** | Browser, Code Interpreter, Runtime, Evaluations, Recommendations, Configuration Bundles |
 | **Agent pattern** | Coordinator with three parallel browser subagents and one interpreter subagent |
 | **Ground truth** | 10-K statements pinned by SEC EDGAR accession number, with the answer key generated from the XBRL `companyfacts` API |
 | **Complexity** | Beginner to advanced (progressive) |
@@ -52,8 +52,8 @@ evaluation API. Start there if you only have a few minutes.
    after its own children, so the causally correct expectation is the one that fails.
 5. **The built-in evaluators cannot see wasted work.** They scored 1.0 in both arms of an
    A/B where one arm used 16% fewer tool calls.
-6. **A generated fix is a hypothesis.** Which failures the insights job surfaces changes
-   what the recommendation proposes, so you verify rather than trust.
+6. **A generated fix is a hypothesis.** Which sessions score poorly changes what the
+   recommendation proposes, so you verify rather than trust.
 
 ## Layout
 
@@ -119,7 +119,7 @@ figures yourself. The evaluation code never asks where they came from.
   to take effect: CloudWatch, X-Ray settings, Transaction Search, Enable.
 
 ```bash
-pip install "langchain-aws[tools]>=1.7.6" "deepagents>=0.7.13" "bedrock-agentcore>=1.23.0"
+pip install "langchain-aws[tools]>=1.7.6" "deepagents>=0.7.13" "bedrock-agentcore>=1.25.0"
 ```
 
 ## Optional: LangSmith

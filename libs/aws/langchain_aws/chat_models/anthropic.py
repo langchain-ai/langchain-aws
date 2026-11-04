@@ -40,6 +40,9 @@ from langchain_aws.utils import (
 
 _MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
 
+_GUARDRAIL_RESULT_KEYS = ("amazon-bedrock-guardrailAction", "amazon-bedrock-trace")
+"""Guardrail result fields Bedrock adds to an `InvokeModel` response."""
+
 _BEDROCK_SUPPORTED_BETAS: frozenset[str] = frozenset(
     {
         # Anthropic betas that Amazon Bedrock's `InvokeModel` API accepts,
@@ -403,11 +406,17 @@ class ChatAnthropicBedrock(ChatAnthropic):
         coerce_content_to_string: bool,
         block_start_event: anthropic.types.RawMessageStreamEvent | None = None,
     ) -> tuple[AIMessageChunk | None, anthropic.types.RawMessageStreamEvent | None]:
-        """Override to capture input_tokens from message_start events.
+        """Override to capture Bedrock-specific stream metadata.
 
         Bedrock reports input_tokens on message_start (not message_delta),
         so we attach usage_metadata to the message_start chunk and zero out
         input_tokens on the message_delta chunk to avoid double-counting.
+
+        When a guardrail is configured, Bedrock sends its result
+        (`amazon-bedrock-guardrailAction` and `amazon-bedrock-trace`) on the
+        final message_stop event, which `ChatAnthropic` ignores. We surface it as
+        a trailing chunk so streamed responses carry the same `response_metadata`
+        keys as `invoke`.
         """
         msg, block_start_event = super()._make_message_chunk_from_anthropic_event(
             event,
@@ -415,6 +424,17 @@ class ChatAnthropicBedrock(ChatAnthropic):
             coerce_content_to_string=coerce_content_to_string,
             block_start_event=block_start_event,
         )
+        if event.type == "message_stop":
+            extra: dict[str, Any] = event.model_extra or {}
+            guardrail_result = {
+                key: extra[key] for key in _GUARDRAIL_RESULT_KEYS if key in extra
+            }
+            if guardrail_result:
+                msg = AIMessageChunk(
+                    content="" if coerce_content_to_string else [],
+                    response_metadata=guardrail_result,
+                )
+            return msg, block_start_event
         if msg is None or not stream_usage:
             return msg, block_start_event
 
