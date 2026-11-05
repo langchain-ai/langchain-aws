@@ -7,13 +7,17 @@ AWS credential requirements.
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
+import shlex
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.eventstream import InvalidPayloadLength
 from botocore.exceptions import ClientError
 from deepagents.backends.protocol import (
     EditResult,
@@ -543,6 +547,216 @@ def test_download_files_lazy_cwd_detection() -> None:
     assert sandbox._cwd == cwd
     assert results[0].content == b"hello"
     assert results[0].error is None
+
+
+class _FakeFiles:
+    """Interpreter double backed by a dict, with a response size limit.
+
+    Handles the commands large downloads issue (size lookup, chunk encoding,
+    cleanup), and raises ``too_large`` for ``readFiles`` responses whose encoded
+    size exceeds ``limit``: botocore's ``InvalidPayloadLength`` by default.
+    """
+
+    def __init__(
+        self,
+        files: dict[str, bytes],
+        limit: int = 16,
+        too_large: Callable[[int], Exception] = InvalidPayloadLength,
+    ) -> None:
+        self.files = files
+        self.limit = limit
+        self.too_large = too_large
+        self.reads: list[list[str]] = []
+
+    @staticmethod
+    def _result(text: str = "", exit_code: int = 0) -> dict[str, Any]:
+        return {
+            "stream": [
+                {
+                    "result": {
+                        "content": [{"type": "text", "text": text}],
+                        "structuredContent": {"exitCode": exit_code},
+                    }
+                }
+            ]
+        }
+
+    def _rel(self, path: str) -> str:
+        return path.removeprefix("/work/")
+
+    def invoke(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        if method == "readFiles":
+            return self._read(params["paths"])
+        command = params["command"]
+        if command.startswith("for f in "):
+            names = shlex.split(command[len("for f in ") : command.index("; do")])
+            lines = []
+            for name in names:
+                rel = self._rel(name)
+                if any(k.startswith(rel + "/") for k in self.files):
+                    lines.append("-1")
+                elif rel in self.files:
+                    lines.append(str(len(self.files[rel])))
+                else:
+                    lines.append("-")
+            return self._result("\n".join(lines))
+        if command.startswith("tail -c +"):
+            start, src, _, _, _, count, _, _, _, _, dest = shlex.split(command)[2:]
+            data = self.files[self._rel(src)]
+            offset = int(start.lstrip("+")) - 1
+            chunk = data[offset : offset + int(count)]
+            self.files[self._rel(dest)] = base64.b64encode(chunk)
+            return self._result()
+        if command.startswith("rm -f "):
+            for name in shlex.split(command)[2:]:
+                self.files.pop(self._rel(name), None)
+            return self._result()
+        raise AssertionError(f"unexpected command: {command}")
+
+    def _read(self, paths: list[str]) -> dict[str, Any]:
+        self.reads.append(paths)
+        if any(p not in self.files for p in paths):
+            missing = next(p for p in paths if p not in self.files)
+            return {
+                "stream": [
+                    {
+                        "result": {
+                            "isError": True,
+                            "content": [
+                                {"type": "text", "text": f"{missing} not found"}
+                            ],
+                        }
+                    }
+                ]
+            }
+        resources = []
+        size = 0
+        for path in paths:
+            data = self.files[path]
+            try:
+                text = data.decode("utf-8")
+                size += len(json.dumps(text))
+                resource: dict[str, Any] = {"uri": f"file:///{path}", "text": text}
+            except UnicodeDecodeError:
+                size += len(base64.b64encode(data))
+                resource = {"uri": f"file:///{path}", "blob": data}
+            resources.append({"type": "resource", "resource": resource})
+        if size > self.limit:
+            raise self.too_large(size)
+        return {"stream": [{"result": {"content": resources}}]}
+
+
+@pytest.fixture
+def small_read_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Shrink the readFiles budget and chunk size so tests stay small."""
+    monkeypatch.setattr(sandbox_module, "_READ_FILES_BUDGET_BYTES", 10)
+    monkeypatch.setattr(sandbox_module, "_READ_CHUNK_BYTES", 6)
+
+
+def _make_files_sandbox(fake: _FakeFiles) -> AgentCoreSandbox:
+    sandbox, mock = _make_sandbox(cwd="/work")
+    mock.invoke.side_effect = fake.invoke
+    return sandbox
+
+
+def _response_payload_too_large(size: int) -> ClientError:
+    """AgentCore's own cap on the size of a response."""
+    return ClientError(
+        {
+            "Error": {
+                "Code": "ValidationException",
+                "Message": "Response payload too large. Reduce the number or size "
+                "of files in a single call.",
+            }
+        },
+        "InvokeCodeInterpreter",
+    )
+
+
+@pytest.mark.usefixtures("small_read_budget")
+@pytest.mark.parametrize(
+    "too_large", [InvalidPayloadLength, _response_payload_too_large]
+)
+def test_download_files_splits_batch_over_response_limit(
+    too_large: Callable[[int], Exception],
+) -> None:
+    """Files too large to read together are read in separate requests."""
+    fake = _FakeFiles({"a.bin": b"\xff" * 8, "b.bin": b"\xfe" * 8}, too_large=too_large)
+    sandbox = _make_files_sandbox(fake)
+
+    results = sandbox.download_files(["/work/a.bin", "/work/b.bin"])
+
+    assert [r.content for r in results] == [b"\xff" * 8, b"\xfe" * 8]
+    assert [r.error for r in results] == [None, None]
+    assert fake.reads == [["a.bin", "b.bin"], ["a.bin"], ["b.bin"]]
+
+
+@pytest.mark.usefixtures("small_read_budget")
+@pytest.mark.parametrize(
+    "content",
+    [bytes(range(128, 148)), b"\n" * 10],
+    ids=["over-budget-binary", "heavily-escaped-text"],
+)
+def test_download_files_reads_large_file_in_chunks(content: bytes) -> None:
+    """A file too large for one response is read as base64 chunks, then cleaned up."""
+    fake = _FakeFiles({"big": content})
+    sandbox = _make_files_sandbox(fake)
+
+    results = sandbox.download_files(["/work/big"])
+
+    assert results[0].content == content
+    assert results[0].error is None
+    assert set(fake.files) == {"big"}
+
+
+def test_download_files_reports_per_path_failures() -> None:
+    """A missing file or directory fails only itself, not the rest of the batch."""
+    fake = _FakeFiles({"a.txt": b"a", "c.txt": b"c", "dir/x.txt": b"x"})
+    sandbox = _make_files_sandbox(fake)
+
+    results = sandbox.download_files(
+        ["/work/a.txt", "/work/dir", "/work/missing.txt", "/work/c.txt"]
+    )
+
+    assert [r.content for r in results] == [b"a", None, None, b"c"]
+    assert [r.error for r in results] == [
+        None,
+        "is_directory",
+        "file_not_found",
+        None,
+    ]
+
+
+def test_download_files_single_missing_file_makes_one_request() -> None:
+    """A lone missing file needs no fallback."""
+    fake = _FakeFiles({})
+    sandbox = _make_files_sandbox(fake)
+
+    results = sandbox.download_files(["/work/missing.txt"])
+
+    assert results[0].error == "file_not_found"
+    assert fake.reads == [["missing.txt"]]
+
+
+@pytest.mark.usefixtures("small_read_budget")
+def test_download_files_rejects_file_that_changed_size() -> None:
+    """A chunked download that comes up short is an error, not partial data."""
+    fake = _FakeFiles({"big.bin": bytes(range(128, 148))})
+    sandbox, mock = _make_sandbox(cwd="/work")
+
+    def invoke(method: str, params: dict[str, Any]) -> dict[str, Any]:
+        response = fake.invoke(method, params)
+        if method == "executeCommand" and params["command"].startswith("for f in "):
+            fake.files["big.bin"] = fake.files["big.bin"][:-3]
+        return response
+
+    mock.invoke.side_effect = invoke
+
+    results = sandbox.download_files(["/work/big.bin"])
+
+    assert results[0].content is None
+    assert results[0].error == "file_not_found"
+    assert set(fake.files) == {"big.bin"}
 
 
 # ------------------------------------------------------------------
