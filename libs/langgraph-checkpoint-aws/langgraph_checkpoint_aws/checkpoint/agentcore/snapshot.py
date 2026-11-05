@@ -19,6 +19,8 @@ from .models import ChannelDataEvent, CheckpointEvent, WriteItem, WritesEvent
 SNAPSHOT_VERSION = 1
 SNAPSHOT_LAYOUT = "snapshot-v1"
 SNAPSHOT_PAYLOAD_BYTES = MAX_PAYLOAD_BYTES_PER_EVENT - 4096
+# Header page size for the millisecond tie-break probe in get_snapshot.
+TIE_BREAK_PAGE_SIZE = 10
 logger = logging.getLogger(__name__)
 
 
@@ -60,6 +62,29 @@ def _metadata_equals(key: str, value: str) -> dict[str, Any]:
         "operator": "EQUALS_TO",
         "right": {"metadataValue": {"stringValue": value}},
     }
+
+
+def _event_timestamp(event: dict[str, Any]) -> datetime.datetime:
+    """Normalize an AgentCore event timestamp to an aware datetime.
+
+    The service keeps event timestamps at millisecond precision, so two
+    checkpoints saved within the same millisecond share a timestamp.
+    """
+    ts = event.get("eventTimestamp")
+    if isinstance(ts, str):
+        try:
+            parsed = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except ValueError:
+            parsed = None
+        if parsed is not None:
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+            return parsed
+    if isinstance(ts, datetime.datetime):
+        if ts.tzinfo is None:
+            return ts.replace(tzinfo=datetime.timezone.utc)
+        return ts
+    return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
 
 
 class AgentCoreSnapshotClient(AgentCoreEventClient):
@@ -216,6 +241,76 @@ class AgentCoreSnapshotClient(AgentCoreEventClient):
             raise EventNotFoundError(msg)
         return events
 
+    def _newest_checkpoint_event(
+        self,
+        head_event: dict[str, Any],
+        session_id: str,
+        actor_id: str,
+        commit_filter: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Select the newest checkpoint event, breaking millisecond ties by id.
+
+        ListEvents orders by eventTimestamp, but AgentCore keeps timestamps at
+        millisecond precision, so checkpoints saved within the same millisecond
+        come back in arbitrary order. Probe the newest checkpoint headers and,
+        when several share the newest timestamp, load the tied events and keep
+        the highest checkpoint id, mirroring the legacy reader's
+        ``max(checkpoint_id)`` rule.
+
+        Args:
+            head_event: Newest event from the caller's listing, payload included.
+            session_id: Thread's session ID.
+            actor_id: Actor owning the session.
+            commit_filter: Metadata filter matching checkpoint commit events.
+
+        Returns:
+            The event dict, with payload, of the newest checkpoint.
+        """
+        newest = _event_timestamp(head_event)
+        params: dict[str, Any] = {
+            "memoryId": self.memory_id,
+            "actorId": actor_id,
+            "sessionId": session_id,
+            "includePayloads": False,
+            "maxResults": TIE_BREAK_PAGE_SIZE,
+            "filter": {"eventMetadata": [commit_filter]},
+        }
+        tied_ids = [head_event["eventId"]]
+        while True:
+            response = self.client.list_events(**params)
+            events = response.get("events", [])
+            for event in events:
+                if _event_timestamp(event) == newest:
+                    event_id = event["eventId"]
+                    if event_id not in tied_ids:
+                        tied_ids.append(event_id)
+            if not response.get("nextToken"):
+                break
+            if not events or _event_timestamp(events[-1]) < newest:
+                break
+            params["nextToken"] = response["nextToken"]
+        if len(tied_ids) == 1:
+            return head_event
+        newest_event = head_event
+        newest_id = ""
+        for event_id in tied_ids:
+            event = (
+                head_event
+                if event_id == head_event["eventId"]
+                else self.client.get_event(
+                    memoryId=self.memory_id,
+                    actorId=actor_id,
+                    sessionId=session_id,
+                    eventId=event_id,
+                )["event"]
+            )
+            for decoded in self._decode_payload(event):
+                if isinstance(decoded, CheckpointEvent):
+                    if decoded.checkpoint_id > newest_id:
+                        newest_id = decoded.checkpoint_id
+                        newest_event = event
+        return newest_event
+
     def get_snapshot(
         self,
         session_id: str,
@@ -263,6 +358,10 @@ class AgentCoreSnapshotClient(AgentCoreEventClient):
                             legacy_writes.append(decoded)
                     continue
                 if metadata.get("lc_kind", {}).get("stringValue") == "checkpoint":
+                    if checkpoint_id is None:
+                        event = self._newest_checkpoint_event(
+                            event, session_id, actor_id, commit_filter
+                        )
                     return legacy_writes + self._load_snapshot(
                         event, session_id, actor_id
                     )
