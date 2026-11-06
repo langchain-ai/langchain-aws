@@ -1500,6 +1500,12 @@ class BedrockLLM(LLM, BedrockBase):
                 "Please use `from langchain_aws import ChatBedrock` "
                 "instead."
             )
+        if "amazon.nova-" in model_id:
+            raise ValueError(
+                "Amazon Nova models require the messages request format and are not "
+                "supported by this LLM. Please use `from langchain_aws import "
+                "ChatBedrockConverse` instead."
+            )
         return self
 
     @property
