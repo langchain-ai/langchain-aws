@@ -5,7 +5,7 @@ import warnings
 from typing import Tuple, Type, cast
 
 import pytest
-from anthropic.types import RawMessageStopEvent
+from anthropic.types import RawMessageDeltaEvent, RawMessageStopEvent
 from langchain_anthropic.data._profiles import _PROFILES as ANTHROPIC_PROFILES
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessageChunk, HumanMessage, SystemMessage
@@ -744,7 +744,7 @@ def test_chat_anthropic_bedrock_stream_guardrail_result_without_stream_usage() -
 
 
 def test_chat_anthropic_bedrock_stream_message_stop_without_guardrail_result() -> None:
-    """No guardrail configured: `message_stop` still yields no chunk."""
+    """No guardrail configured: `message_stop` yields an empty final chunk."""
     model = ChatAnthropicBedrock(  # type: ignore[call-arg]
         model=BEDROCK_MODEL_NAME,
         region_name="us-east-1",
@@ -754,4 +754,33 @@ def test_chat_anthropic_bedrock_stream_message_stop_without_guardrail_result() -
         _message_stop_event(), coerce_content_to_string=True
     )
 
-    assert chunk is None
+    assert chunk is not None
+    assert chunk.content == ""
+    assert chunk.chunk_position == "last"
+    assert not set(chunk.response_metadata) & {
+        "amazon-bedrock-guardrailAction",
+        "amazon-bedrock-trace",
+    }
+
+
+def test_chat_anthropic_bedrock_stream_message_delta_is_not_last() -> None:
+    """`message_delta` isn't the final chunk: `message_stop` follows on Bedrock."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+    )
+    event = RawMessageDeltaEvent.model_validate(
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+            "usage": {"output_tokens": 3},
+        }
+    )
+
+    chunk, _ = model._make_message_chunk_from_anthropic_event(
+        event, coerce_content_to_string=True
+    )
+
+    assert chunk is not None
+    assert chunk.response_metadata["stop_reason"] == "end_turn"
+    assert chunk.chunk_position is None
