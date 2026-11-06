@@ -9,10 +9,10 @@ license = {text = "MIT"}
 readme = "README.md"
 authors = []
 
-version = "1.9.1"
+version = "1.9.2"
 requires-python = ">=3.10"
 dependencies = [
-    "langchain-core>=1.6.10",
+    "langchain-core>=1.7.6",
     "boto3>=1.43.64",
     "pydantic>=2.10.6",
     "numpy>=1.0.0",
