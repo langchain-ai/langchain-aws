@@ -424,16 +424,18 @@ class ChatAnthropicBedrock(ChatAnthropic):
             coerce_content_to_string=coerce_content_to_string,
             block_start_event=block_start_event,
         )
-        if event.type == "message_stop":
+        if event.type == "message_delta" and msg is not None:
+            msg.chunk_position = None
+        elif event.type == "message_stop":
             extra: dict[str, Any] = event.model_extra or {}
             guardrail_result = {
                 key: extra[key] for key in _GUARDRAIL_RESULT_KEYS if key in extra
             }
-            if guardrail_result:
-                msg = AIMessageChunk(
-                    content="" if coerce_content_to_string else [],
-                    response_metadata=guardrail_result,
-                )
+            msg = AIMessageChunk(
+                content="" if coerce_content_to_string else [],
+                response_metadata=guardrail_result,
+                chunk_position="last",
+            )
             return msg, block_start_event
         if msg is None or not stream_usage:
             return msg, block_start_event
