@@ -1367,6 +1367,33 @@ def test_bedrock_text_file_inputs() -> None:
     assert "red" in response.text.lower()
 
 
+def test_tool_with_many_nullable_params() -> None:
+    properties: dict[str, Any] = {"query": {"type": "string"}}
+    properties.update(
+        {
+            f"opt_{i}": {"anyOf": [{"type": "string"}, {"type": "null"}]}
+            for i in range(20)
+        }
+    )
+    search = {
+        "type": "function",
+        "function": {
+            "name": "search",
+            "description": "Search for records.",
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": ["query"],
+            },
+        },
+    }
+    model = ChatBedrockConverse(model="us.anthropic.claude-haiku-5-5")
+
+    response = model.bind_tools([search]).invoke("Search for 'traces'.")
+
+    assert response.tool_calls[0]["name"] == "search"
+
+
 def test_get_num_tokens_from_messages_integration() -> None:
     chat = ChatBedrockConverse(
         model="us.anthropic.claude-sonnet-4-6",
