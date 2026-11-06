@@ -225,6 +225,7 @@ class TestBedrockNovaStandard(ChatModelIntegrationTests):
         super().test_tool_message_histories_list_content(model, my_adder_tool)
 
 
+@pytest.mark.skip(reason="xAI tests frequently flake due to limited Bedrock capacity")
 class TestBedrockXaiStandard(ChatModelIntegrationTests):
     @property
     def chat_model_class(self) -> Type[BaseChatModel]:
