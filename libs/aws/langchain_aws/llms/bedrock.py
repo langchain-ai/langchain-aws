@@ -1288,7 +1288,8 @@ class BedrockBase(BaseLanguageModel, ABC):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> Iterator[Union[GenerationChunk, AIMessageChunk]]:
-        _model_kwargs = self.model_kwargs or {}
+        # copied, since the stop sequences and the stream flag below are per call
+        _model_kwargs = dict(self.model_kwargs or {})
         provider = self._get_provider()
 
         if stop:
@@ -1398,7 +1399,8 @@ class BedrockBase(BaseLanguageModel, ABC):
         run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> AsyncIterator[Union[GenerationChunk, AIMessageChunk]]:
-        _model_kwargs = self.model_kwargs or {}
+        # copied, since the stop sequences and the stream flag below are per call
+        _model_kwargs = dict(self.model_kwargs or {})
         provider = self._get_provider()
 
         if stop:

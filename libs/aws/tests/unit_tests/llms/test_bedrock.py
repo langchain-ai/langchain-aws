@@ -1174,6 +1174,78 @@ async def test_astream_closes_response_body_on_exception() -> None:
     mock_body.close.assert_called_once()
 
 
+def _streamed_body(mock_client: MagicMock) -> dict:
+    return json.loads(
+        mock_client.invoke_model_with_response_stream.call_args.kwargs["body"]
+    )
+
+
+def test_stream_stop_does_not_carry_over_to_later_calls() -> None:
+    mock_client = MagicMock()
+    mock_client.invoke_model_with_response_stream.side_effect = lambda **kwargs: {
+        "body": iter(MOCK_STREAMING_RESPONSE_ANTHROPIC)
+    }
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-5-5",
+        region="us-west-2",
+        model_kwargs={"top_k": 50},
+    )
+
+    list(llm.stream("Hello", stop=["\nObservation:"]))
+    assert _streamed_body(mock_client)["stop_sequences"] == ["\nObservation:"]
+    assert llm.model_kwargs == {"top_k": 50}
+
+    list(llm.stream("Hello"))
+    assert "stop_sequences" not in _streamed_body(mock_client)
+
+
+@pytest.mark.asyncio
+async def test_astream_stop_does_not_carry_over_to_later_calls() -> None:
+    mock_client = MagicMock()
+    mock_client.invoke_model_with_response_stream.side_effect = lambda **kwargs: {
+        "body": iter(MOCK_STREAMING_RESPONSE_ANTHROPIC)
+    }
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-5-5",
+        region="us-west-2",
+        model_kwargs={"top_k": 50},
+    )
+
+    async for _ in llm.astream("Hello", stop=["\nObservation:"]):
+        pass
+    assert _streamed_body(mock_client)["stop_sequences"] == ["\nObservation:"]
+    assert llm.model_kwargs == {"top_k": 50}
+
+    async for _ in llm.astream("Hello"):
+        pass
+    assert "stop_sequences" not in _streamed_body(mock_client)
+
+
+def test_stream_does_not_add_stream_flag_to_cohere_model_kwargs() -> None:
+    mock_client = MagicMock()
+    mock_client.invoke_model_with_response_stream.return_value = {
+        "body": [
+            {"chunk": {"bytes": b'{"text": "Hi", "is_finished": false}'}},
+            {"chunk": {"bytes": b'{"text": "", "is_finished": true}'}},
+        ]
+    }
+
+    llm = BedrockLLM(
+        client=mock_client,
+        model="cohere.command-text-v14",
+        region="us-west-2",
+        model_kwargs={"p": 0.5},
+    )
+
+    list(llm.stream("Hello"))
+    assert _streamed_body(mock_client)["stream"] is True
+    assert llm.model_kwargs == {"p": 0.5}
+
+
 REQUEST_METADATA = {"team": "growth", "environment": "prod"}
 
 
