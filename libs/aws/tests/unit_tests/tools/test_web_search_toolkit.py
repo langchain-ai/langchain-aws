@@ -492,9 +492,7 @@ class TestSearchApiAndFixedRules:
         toolkit, client = _make_toolkit(model_filters=False)
         tool = toolkit.get_tools()[0]
 
-        assert list(tool.tool_call_schema.model_json_schema()["properties"]) == [
-            "query"
-        ]
+        assert list(tool.args) == ["query"]
         tool.invoke({"query": "openssl advisory"})
         assert client.search.call_args.args == ("openssl advisory",)
         assert client.search.call_args.kwargs["exclude_domains"] is None
