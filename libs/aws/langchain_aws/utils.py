@@ -308,7 +308,10 @@ def _handle_bedrock_error(error: Exception) -> NoReturn:
     retains its existing actionable ValueError behavior.
     """
     if not isinstance(error, (ClientError, EventStreamError)):
-        for botocore_error_type, transport_model_error_type in _BEDROCK_TRANSPORT_ERROR_MAPPING:
+        for (
+            botocore_error_type,
+            transport_model_error_type,
+        ) in _BEDROCK_TRANSPORT_ERROR_MAPPING:
             if isinstance(error, botocore_error_type):
                 mapped_type = _bedrock_model_error_type(
                     type(error), transport_model_error_type
@@ -341,9 +344,7 @@ def _handle_bedrock_error(error: Exception) -> NoReturn:
         mapped_type = _bedrock_invoke_tool_error_type(type(error))
         raise mapped_type(error.response, error.operation_name, message) from error
 
-    model_error_type: Optional[Type[Exception]] = _BEDROCK_ERROR_MAPPING.get(
-        error_code
-    )
+    model_error_type: Optional[Type[Exception]] = _BEDROCK_ERROR_MAPPING.get(error_code)
 
     # ModelErrorException and ModelStreamErrorException may wrap an upstream
     # provider error. Prefer its original status when it is available.
