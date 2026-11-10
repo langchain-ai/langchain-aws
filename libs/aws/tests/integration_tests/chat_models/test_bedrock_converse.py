@@ -917,12 +917,12 @@ def test_guard_last_turn_only_tool_continuation() -> None:
 
 def test_structured_output_thinking_force_tool_use() -> None:
     # Structured output currently relies on forced tool use, which is not supported
-    # when `thinking` is enabled for Claude 3.7. When this test fails, it means that
+    # when `thinking` is enabled. When this test fails, it means that
     # the feature is supported and the workarounds in `with_structured_output` should
     # be removed.
 
     # Instantiate as convenience for getting client
-    llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+    llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-6")
     messages = [
         {
             "role": "user",
@@ -930,7 +930,7 @@ def test_structured_output_thinking_force_tool_use() -> None:
         }
     ]
     params = {
-        "modelId": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "modelId": "us.anthropic.claude-sonnet-4-6",
         "inferenceConfig": {"maxTokens": 5000},
         "toolConfig": {
             "tools": [

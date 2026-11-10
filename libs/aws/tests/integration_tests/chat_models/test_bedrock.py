@@ -336,7 +336,7 @@ def test_bedrock_invoke(chat: ChatBedrock) -> None:
 def test_get_num_tokens_from_messages_integration() -> None:
     """Test get_num_tokens_from_messages with both message formats."""
     chat = ChatBedrock(
-        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model="us.anthropic.claude-sonnet-4-6",
     )
 
     base_messages = [
@@ -347,7 +347,7 @@ def test_get_num_tokens_from_messages_integration() -> None:
     token_count = chat.get_num_tokens_from_messages(base_messages)
 
     assert isinstance(token_count, int)
-    assert token_count == 38
+    assert token_count == 39
 
 
 class GetWeather(BaseModel):
