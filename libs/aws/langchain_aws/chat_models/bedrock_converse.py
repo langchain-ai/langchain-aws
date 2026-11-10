@@ -3229,7 +3229,8 @@ def _lc_content_to_bedrock(
         content = [{"type": "text", "text": EMPTY_CONTENT}]
 
     bedrock_content: List[Dict[str, Any]] = []
-    for block in _snake_to_camel_keys(content):
+    # 'json' holds the data of a tool result, which is sent as it is
+    for block in _snake_to_camel_keys(content, excluded_keys={"json"}):
         if isinstance(block, str):
             bedrock_content.append({"text": block})
         # Assume block is already in bedrock format.

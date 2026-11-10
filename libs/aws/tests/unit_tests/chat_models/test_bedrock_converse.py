@@ -1980,6 +1980,105 @@ def test__bedrock_to_lc() -> None:
     assert expected == actual
 
 
+_TOOL_RESULT_DATA = {
+    "order_id": "A1",
+    "shipTo": {"postal_code": "98101"},
+    "line_items": [{"unit_price": 3}],
+}
+
+
+def test__messages_to_bedrock_keeps_tool_result_json_keys() -> None:
+    messages = [
+        HumanMessage(content="Where is order A1?"),
+        AIMessage(
+            content="",
+            tool_calls=[
+                ToolCall(
+                    name="get_order",
+                    args={"order_id": "A1"},
+                    id="tool_call1",
+                    type="tool_call",
+                ),
+                ToolCall(
+                    name="get_order",
+                    args={"order_id": "A1"},
+                    id="tool_call2",
+                    type="tool_call",
+                ),
+            ],
+        ),
+        ToolMessage(
+            content=[{"type": "json", "json": _TOOL_RESULT_DATA}],
+            tool_call_id="tool_call1",
+        ),
+        HumanMessage(
+            content=[
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "tool_call2",
+                    "content": [{"json": _TOOL_RESULT_DATA}],
+                }
+            ]
+        ),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages[2]["content"] == [
+        {
+            "toolResult": {
+                "content": [{"json": _TOOL_RESULT_DATA}],
+                "toolUseId": "tool_call1",
+                "status": "success",
+            }
+        },
+        {
+            "toolResult": {
+                "toolUseId": "tool_call2",
+                "content": [{"json": _TOOL_RESULT_DATA}],
+                "status": "success",
+            }
+        },
+    ]
+
+
+def test_invoke_sends_tool_result_json_keys_unchanged() -> None:
+    from langchain_core.tools import tool
+
+    @tool
+    def get_order(order_id: str) -> list:
+        """Look up an order."""
+        return [{"type": "json", "json": _TOOL_RESULT_DATA}]
+
+    tool_call = ToolCall(
+        name="get_order", args={"order_id": "A1"}, id="tool_call1", type="tool_call"
+    )
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}},
+        "stopReason": "end_turn",
+        "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+    }
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+
+    llm.bind_tools([get_order]).invoke(
+        [
+            HumanMessage(content="Where is order A1?"),
+            AIMessage(content="", tool_calls=[tool_call]),
+            get_order.invoke(tool_call),
+        ]
+    )
+
+    sent = mocked_client.converse.call_args.kwargs["messages"]
+    assert sent[2]["content"][0]["toolResult"]["content"] == [
+        {"json": _TOOL_RESULT_DATA}
+    ]
+
+
 _CAMEL_SNAKE = [
     ("text", "text"),
     ("toolUseId", "tool_use_id"),
