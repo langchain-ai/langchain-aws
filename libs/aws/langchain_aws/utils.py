@@ -568,7 +568,13 @@ def thinking_on_by_default(model: str) -> bool:
 def forced_tool_choice_unsupported(model: str) -> bool:
     """Check if the model rejects forced tool use (`any` or a named tool)."""
     return any(
-        x in model for x in ("claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5")
+        x in model
+        for x in (
+            "claude-fable-5-1",
+            "claude-fable-5-2",
+            "claude-opus-5-5",
+            "claude-sonnet-5-5",
+        )
     )
 
 
