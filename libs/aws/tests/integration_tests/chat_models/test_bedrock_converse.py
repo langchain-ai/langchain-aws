@@ -225,6 +225,7 @@ class TestBedrockNovaStandard(ChatModelIntegrationTests):
         super().test_tool_message_histories_list_content(model, my_adder_tool)
 
 
+@pytest.mark.skip(reason="xAI tests frequently flake due to limited Bedrock capacity")
 class TestBedrockXaiStandard(ChatModelIntegrationTests):
     @property
     def chat_model_class(self) -> Type[BaseChatModel]:
@@ -916,12 +917,12 @@ def test_guard_last_turn_only_tool_continuation() -> None:
 
 def test_structured_output_thinking_force_tool_use() -> None:
     # Structured output currently relies on forced tool use, which is not supported
-    # when `thinking` is enabled for Claude 3.7. When this test fails, it means that
+    # when `thinking` is enabled. When this test fails, it means that
     # the feature is supported and the workarounds in `with_structured_output` should
     # be removed.
 
     # Instantiate as convenience for getting client
-    llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+    llm = ChatBedrockConverse(model="us.anthropic.claude-sonnet-4-6")
     messages = [
         {
             "role": "user",
@@ -929,7 +930,7 @@ def test_structured_output_thinking_force_tool_use() -> None:
         }
     ]
     params = {
-        "modelId": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "modelId": "us.anthropic.claude-sonnet-4-6",
         "inferenceConfig": {"maxTokens": 5000},
         "toolConfig": {
             "tools": [
@@ -1364,6 +1365,33 @@ def test_bedrock_text_file_inputs() -> None:
     )
     response = model.invoke([message])
     assert "red" in response.text.lower()
+
+
+def test_tool_with_many_nullable_params() -> None:
+    properties: dict[str, Any] = {"query": {"type": "string"}}
+    properties.update(
+        {
+            f"opt_{i}": {"anyOf": [{"type": "string"}, {"type": "null"}]}
+            for i in range(20)
+        }
+    )
+    search = {
+        "type": "function",
+        "function": {
+            "name": "search",
+            "description": "Search for records.",
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": ["query"],
+            },
+        },
+    }
+    model = ChatBedrockConverse(model="us.anthropic.claude-haiku-5-5")
+
+    response = model.bind_tools([search]).invoke("Search for 'traces'.")
+
+    assert response.tool_calls[0]["name"] == "search"
 
 
 def test_get_num_tokens_from_messages_integration() -> None:

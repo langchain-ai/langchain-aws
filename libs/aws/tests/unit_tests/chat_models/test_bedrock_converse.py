@@ -65,7 +65,6 @@ from langchain_aws.chat_models.bedrock_converse import (
     _snake_to_camel,
     _snake_to_camel_keys,
     _split_inline_reasoning,
-    _strip_null_anyof,
     _warn_dropped_block_type,
 )
 from langchain_aws.function_calling import convert_to_anthropic_tool
@@ -1979,6 +1978,105 @@ def test__bedrock_to_lc() -> None:
     ]
     actual = _bedrock_to_lc(bedrock)
     assert expected == actual
+
+
+_TOOL_RESULT_DATA = {
+    "order_id": "A1",
+    "shipTo": {"postal_code": "98101"},
+    "line_items": [{"unit_price": 3}],
+}
+
+
+def test__messages_to_bedrock_keeps_tool_result_json_keys() -> None:
+    messages = [
+        HumanMessage(content="Where is order A1?"),
+        AIMessage(
+            content="",
+            tool_calls=[
+                ToolCall(
+                    name="get_order",
+                    args={"order_id": "A1"},
+                    id="tool_call1",
+                    type="tool_call",
+                ),
+                ToolCall(
+                    name="get_order",
+                    args={"order_id": "A1"},
+                    id="tool_call2",
+                    type="tool_call",
+                ),
+            ],
+        ),
+        ToolMessage(
+            content=[{"type": "json", "json": _TOOL_RESULT_DATA}],
+            tool_call_id="tool_call1",
+        ),
+        HumanMessage(
+            content=[
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "tool_call2",
+                    "content": [{"json": _TOOL_RESULT_DATA}],
+                }
+            ]
+        ),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages[2]["content"] == [
+        {
+            "toolResult": {
+                "content": [{"json": _TOOL_RESULT_DATA}],
+                "toolUseId": "tool_call1",
+                "status": "success",
+            }
+        },
+        {
+            "toolResult": {
+                "toolUseId": "tool_call2",
+                "content": [{"json": _TOOL_RESULT_DATA}],
+                "status": "success",
+            }
+        },
+    ]
+
+
+def test_invoke_sends_tool_result_json_keys_unchanged() -> None:
+    from langchain_core.tools import tool
+
+    @tool
+    def get_order(order_id: str) -> list:
+        """Look up an order."""
+        return [{"type": "json", "json": _TOOL_RESULT_DATA}]
+
+    tool_call = ToolCall(
+        name="get_order", args={"order_id": "A1"}, id="tool_call1", type="tool_call"
+    )
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}},
+        "stopReason": "end_turn",
+        "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+    }
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+
+    llm.bind_tools([get_order]).invoke(
+        [
+            HumanMessage(content="Where is order A1?"),
+            AIMessage(content="", tool_calls=[tool_call]),
+            get_order.invoke(tool_call),
+        ]
+    )
+
+    sent = mocked_client.converse.call_args.kwargs["messages"]
+    assert sent[2]["content"][0]["toolResult"]["content"] == [
+        {"json": _TOOL_RESULT_DATA}
+    ]
 
 
 _CAMEL_SNAKE = [
@@ -8917,97 +9015,31 @@ class TestNonAsciiPreservation:
         assert "\\u" not in schema_str
 
 
-class TestStripNullAnyof:
-    """Tests for _strip_null_anyof."""
+class _SaveCustomer(BaseModel):
+    """Save a customer record."""
 
-    def test_single_non_null_anyof_unwrapped(self) -> None:
-        """anyOf with one non-null branch is unwrapped to the concrete type."""
-        schema = {"anyOf": [{"type": "string"}, {"type": "null"}]}
-        result = _strip_null_anyof(schema)
-        assert result == {"type": "string"}
-
-    def test_multi_type_anyof_preserved(self) -> None:
-        """anyOf with multiple non-null branches is left intact."""
-        schema = {"anyOf": [{"type": "string"}, {"type": "integer"}]}
-        result = _strip_null_anyof(schema)
-        assert result == {"anyOf": [{"type": "string"}, {"type": "integer"}]}
-
-    def test_nested_properties_in_object_schema(self) -> None:
-        """Nullable params inside object properties are unwrapped recursively."""
-        schema = {
-            "type": "object",
-            "properties": {
-                "name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                "count": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
-            },
-        }
-        result = _strip_null_anyof(schema)
-        assert result["properties"]["name"] == {"type": "string"}
-        assert result["properties"]["count"] == {"type": "integer"}
-
-    def test_non_dict_passthrough(self) -> None:
-        """Non-dict values are returned unchanged."""
-        assert _strip_null_anyof("hello") == "hello"
-        assert _strip_null_anyof(42) == 42
-        assert _strip_null_anyof(None) is None
-
-    def test_schema_without_anyof_unchanged(self) -> None:
-        """A schema with no anyOf is returned structurally identical."""
-        schema = {
-            "type": "object",
-            "properties": {
-                "x": {"type": "string"},
-                "y": {"type": "integer"},
-            },
-        }
-        result = _strip_null_anyof(schema)
-        assert result["type"] == "object"
-        assert result["properties"]["x"] == {"type": "string"}
-        assert result["properties"]["y"] == {"type": "integer"}
-
-    def test_all_null_anyof_left_unchanged(self) -> None:
-        """anyOf where all branches are null is left as-is (guards against empty)."""
-        schema = {"anyOf": [{"type": "null"}]}
-        result = _strip_null_anyof(schema)
-        assert "anyOf" in result
-
-    def test_type_array_null_collapsed(self) -> None:
-        """{"type": [X, "null"]} collapses to the concrete type."""
-        assert _strip_null_anyof({"type": ["string", "null"]}) == {"type": "string"}
-
-    def test_type_array_multi_non_null_preserved(self) -> None:
-        """Genuine multi-type unions keep their non-null members."""
-        result = _strip_null_anyof({"type": ["string", "integer", "null"]})
-        assert result == {"type": ["string", "integer"]}
+    first_name: str
+    middle_name: Optional[str] = Field(description="The middle name, or null if none.")
+    nickname: Optional[str] = None
 
 
-def test_format_tools_strips_null_anyof() -> None:
-    """_format_tools removes null anyOf branches from tool parameter schemas."""
-    openai_tool = {
-        "type": "function",
-        "function": {
-            "name": "search",
-            "description": "Search for something",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"},
-                    "limit": {
-                        "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    },
-                    "offset": {"type": ["integer", "null"]},
-                },
-                "required": ["query"],
-            },
-        },
-    }
-    result = _format_tools([openai_tool])
-    assert len(result) == 1
-    tool_spec = cast(Dict[str, Any], result[0]["toolSpec"])
-    input_schema: Dict[str, Any] = tool_spec["inputSchema"]["json"]
-    assert input_schema["properties"]["limit"] == {"type": "integer"}
-    assert input_schema["properties"]["offset"] == {"type": "integer"}
-    assert input_schema["properties"]["query"] == {"type": "string"}
+@pytest.mark.parametrize("strict", [None, True])
+def test_bind_tools_keeps_nullable_params(strict: Optional[bool]) -> None:
+    """Nullable params reach Bedrock as declared, so a model can pass null."""
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-haiku-5-5", region_name="us-east-1"
+    )
+    bound = cast(RunnableBinding, llm.bind_tools([_SaveCustomer], strict=strict))
+
+    tool_spec = cast(
+        Dict[str, Any], _format_tools(bound.kwargs["tools"])[0]["toolSpec"]
+    )
+    properties = tool_spec["inputSchema"]["json"]["properties"]
+
+    nullable = [{"type": "string"}, {"type": "null"}]
+    assert properties["middle_name"]["anyOf"] == nullable
+    assert properties["nickname"]["anyOf"] == nullable
+    assert properties["first_name"] == {"type": "string"}
 
 
 def test__lc_content_to_bedrock_standard_tool_call_block() -> None:
