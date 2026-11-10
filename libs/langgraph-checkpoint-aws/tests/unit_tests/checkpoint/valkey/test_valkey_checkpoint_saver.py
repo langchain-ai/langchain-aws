@@ -412,6 +412,15 @@ class TestValkeySaverUnit:
         assert not fake_valkey_client.exists(thread_key, checkpoint_key, writes_key)
         assert fake_valkey_client.exists(other_key)
 
+    def test_delete_thread_scan_count(self, saver, fake_valkey_client):
+        """delete_thread scans with a COUNT of 1000, not the delete batch size."""
+        with patch.object(
+            fake_valkey_client, "scan_iter", wraps=fake_valkey_client.scan_iter
+        ) as scan_iter:
+            saver.delete_thread("test-thread")
+
+        scan_iter.assert_called_once_with(match="thread:{test-thread}:*", count=1000)
+
     def test_complex_checkpoint_data(self, saver, fake_valkey_client):
         """Test handling complex checkpoint data."""
         complex_checkpoint = {

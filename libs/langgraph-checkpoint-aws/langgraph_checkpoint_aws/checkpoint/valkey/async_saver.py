@@ -18,7 +18,7 @@ from langgraph.checkpoint.base import (
 )
 from langgraph.checkpoint.serde.base import SerializerProtocol
 
-from .base import _PUT_WRITES_MAX_ATTEMPTS, BaseValkeySaver
+from .base import _PUT_WRITES_MAX_ATTEMPTS, _SCAN_COUNT, BaseValkeySaver
 from .utils import aset_client_info, aset_client_name
 
 # Conditional imports for optional dependencies
@@ -566,7 +566,7 @@ class AsyncValkeySaver(BaseValkeySaver):
             pattern = f"thread:{{{thread_id}}}:*"
             thread_keys = [
                 key
-                async for key in self.client.scan_iter(match=pattern, count=batch_size)
+                async for key in self.client.scan_iter(match=pattern, count=_SCAN_COUNT)
             ]
 
             if not thread_keys:

@@ -798,7 +798,7 @@ class TestAsyncValkeySaverAdeleteThread:
 
         await saver.adelete_thread("test-thread")
         mock_valkey_client.scan_iter.assert_called_once_with(
-            match="thread:{test-thread}:*", count=100
+            match="thread:{test-thread}:*", count=1000
         )
         mock_valkey_client.keys.assert_not_called()
         mock_valkey_client.delete.assert_not_called()
