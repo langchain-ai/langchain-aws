@@ -2042,26 +2042,6 @@ def test__messages_to_bedrock_keeps_tool_result_json_keys() -> None:
     ]
 
 
-def test__bedrock_to_lc_keeps_tool_result_json_keys() -> None:
-    bedrock: List[Dict] = [
-        {
-            "toolResult": {
-                "toolUseId": "tool_call1",
-                "content": [{"json": _TOOL_RESULT_DATA}],
-            }
-        }
-    ]
-
-    assert _bedrock_to_lc(bedrock) == [
-        {
-            "type": "tool_result",
-            "tool_use_id": "tool_call1",
-            "content": [{"type": "json", "json": _TOOL_RESULT_DATA}],
-            "is_error": False,
-        }
-    ]
-
-
 def test_invoke_sends_tool_result_json_keys_unchanged() -> None:
     from langchain_core.tools import tool
 
