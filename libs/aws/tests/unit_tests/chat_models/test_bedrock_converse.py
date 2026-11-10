@@ -561,8 +561,8 @@ def test_llama_bind_tools_tool_choice_variants(
     "model,expected_values",
     [
         ("us.deepseek.r1-v1:0", ()),
-        ("deepseek.v3-v1:0", ("auto", "any")),
-        ("deepseek.v3.2", ("auto", "any")),
+        ("deepseek.v3-v1:0", ("auto", "any", "tool")),
+        ("deepseek.v3.2", ("auto", "any", "tool")),
     ],
 )
 def test_deepseek_supports_tool_choice_values(
@@ -584,9 +584,9 @@ def test_xai_supports_tool_choice_values() -> None:
     [
         ("us.zai.glm-5.3", ("auto", "any", "tool")),
         ("global.zai.glm-5.3", ("auto", "any", "tool")),
-        ("zai.glm-5", ("auto", "any")),
-        ("zai.glm-4.7", ("auto", "any")),
-        ("zai.glm-4.7-flash", ("auto", "any")),
+        ("zai.glm-5", ("auto", "any", "tool")),
+        ("zai.glm-4.7", ("auto", "any", "tool")),
+        ("zai.glm-4.7-flash", ("auto", "any", "tool")),
     ],
 )
 def test_zai_glm_supports_tool_choice_values(
@@ -646,8 +646,12 @@ def test_deepseek_v3_bind_tools_tool_choice_variants(model: str) -> None:
         "auto": {}
     }
 
-    with pytest.raises(ValueError):
-        chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+    chat_model_with_tools = chat_model.bind_tools(
+        [GetWeather], tool_choice="GetWeather"
+    )
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "tool": {"name": "GetWeather"}
+    }
 
 
 @pytest.mark.parametrize("model", ["deepseek.v3-v1:0", "deepseek.v3.2"])
