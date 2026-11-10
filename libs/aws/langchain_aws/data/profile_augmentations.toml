@@ -1,5 +1,26 @@
 provider = "amazon-bedrock"
 
+[overrides."anthropic.claude-fable-5-2"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+mid_conversation_system_messages = true
+mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."global.anthropic.claude-fable-5-2"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+mid_conversation_system_messages = true
+mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
+
+[overrides."us.anthropic.claude-fable-5-2"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+mid_conversation_system_messages = true
+mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
+
 [overrides."anthropic.claude-fable-5-1"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
