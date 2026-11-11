@@ -10,7 +10,7 @@ pytest.importorskip("orjson")
 # Now safe to import these
 from datetime import datetime
 from typing import cast
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from langgraph.store.base import (
     GetOp,
@@ -21,6 +21,11 @@ from langgraph.store.base import (
 )
 
 from langgraph_checkpoint_aws import AsyncValkeyStore
+
+
+async def _async_iter(items):
+    for item in items:
+        yield item
 
 
 @pytest.fixture
@@ -34,6 +39,7 @@ def mock_valkey_client():
     client.delete = AsyncMock(return_value=1)
     client.expire = AsyncMock(return_value=True)
     client.keys = AsyncMock(return_value=[])
+    client.scan_iter = MagicMock(side_effect=lambda **kwargs: _async_iter([]))
     client.execute_command = AsyncMock(return_value="OK")
     client.ping = AsyncMock(return_value=True)
     client.sadd = AsyncMock(return_value=1)
@@ -588,13 +594,16 @@ class TestAsyncValkeyStoreListNamespaces:
             b"ns:test:namespace2:key1",
             b"ns:prod:namespace1:key2",
         ]
-        mock_valkey_client.keys.return_value = mock_keys
+        mock_valkey_client.scan_iter.side_effect = lambda **kwargs: _async_iter(
+            mock_keys
+        )
 
         store = AsyncValkeyStore(client=mock_valkey_client)
         results = await store.alist_namespaces(prefix=("test",))
 
         assert isinstance(results, list)
-        mock_valkey_client.keys.assert_called()
+        mock_valkey_client.scan_iter.assert_called()
+        mock_valkey_client.keys.assert_not_called()
 
     async def test_list_namespaces_empty(self, mock_valkey_client):
         """Test listing namespaces with no results."""
@@ -1172,3 +1181,23 @@ class TestAsyncValkeyStoreAdvancedOperations:
 
         # Should handle edge cases gracefully
         assert True
+
+
+async def test_alist_namespaces_does_not_require_keys() -> None:
+    """alist_namespaces works when KEYS is denied by ACLs (-@dangerous)."""
+    fakeredis = pytest.importorskip("fakeredis")
+    from valkey.exceptions import NoPermissionError
+
+    client = fakeredis.FakeAsyncRedis(decode_responses=False)
+    store = AsyncValkeyStore(client=client)
+    await store.aput(("users", "alice"), "profile", {"name": "Alice"})
+    await store.aput(("docs",), "readme", {"text": "hi"})
+
+    async def keys_denied(*_args, **_kwargs):
+        raise NoPermissionError(
+            "this user has no permissions to run the 'keys' command"
+        )
+
+    with patch.object(client, "keys", keys_denied):
+        assert await store.alist_namespaces() == [("docs",), ("users", "alice")]
+        assert await store.alist_namespaces(prefix=("users",)) == [("users", "alice")]
