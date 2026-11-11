@@ -2131,3 +2131,43 @@ class TestAgentCoreValkeySaverIntegration:
             }
         )
         assert retrieved_after_delete is None
+
+
+def test_delete_thread_does_not_require_keys() -> None:
+    """delete_thread works when KEYS is denied by ACLs (-@dangerous)."""
+    fakeredis = pytest.importorskip("fakeredis")
+    from valkey.exceptions import NoPermissionError
+
+    client = fakeredis.FakeStrictRedis(decode_responses=False)
+    saver = AgentCoreValkeySaver(client)
+    config = ValkeyCheckpointerConfig(thread_id="t1", actor_id="a1", checkpoint_ns="")
+    other = ValkeyCheckpointerConfig(thread_id="t2", actor_id="a1", checkpoint_ns="")
+
+    session_key = saver._make_session_checkpoints_key(config)
+    client.rpush(session_key, "cp-1", "cp-2")
+    deleted = [session_key]
+    for checkpoint_id in ("cp-1", "cp-2"):
+        for key in (
+            saver._make_checkpoint_key(config, checkpoint_id),
+            saver._make_writes_key(config, checkpoint_id),
+            saver._make_channel_key(config, "messages", checkpoint_id),
+        ):
+            client.set(key, "x")
+            deleted.append(key)
+    kept = [
+        saver._make_channel_key(other, "messages", "cp-1"),
+        saver._make_channel_key(config, "messages", "cp-3"),
+    ]
+    for key in kept:
+        client.set(key, "x")
+
+    def keys_denied(*_args, **_kwargs):
+        raise NoPermissionError(
+            "this user has no permissions to run the 'keys' command"
+        )
+
+    with patch.object(client, "keys", keys_denied):
+        saver.delete_thread("t1", "a1")
+
+    assert not client.exists(*deleted)
+    assert client.exists(*kept) == len(kept)

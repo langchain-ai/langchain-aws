@@ -320,7 +320,7 @@ class TestValkeyStoreBatchOperations:
 
     def test_batch_list_namespaces_operation(self, mock_valkey_client):
         """Test batch with ListNamespacesOp."""
-        mock_valkey_client.keys.return_value = [
+        mock_valkey_client.scan_iter.return_value = [
             "langgraph:test/key1",
             "langgraph:test/key2",
         ]
@@ -629,7 +629,7 @@ class TestValkeyStoreListOperations:
 
     def test_handle_list_basic(self, mock_valkey_client):
         """Test basic list namespaces operation."""
-        mock_valkey_client.keys.return_value = [
+        mock_valkey_client.scan_iter.return_value = [
             "langgraph:test/key1",
             "langgraph:test/subtest/key2",
             "langgraph:other/key3",
@@ -645,7 +645,7 @@ class TestValkeyStoreListOperations:
 
     def test_handle_list_with_match_conditions(self, mock_valkey_client):
         """Test list namespaces with match conditions."""
-        mock_valkey_client.keys.return_value = [
+        mock_valkey_client.scan_iter.return_value = [
             "langgraph:prefix_test/key1",
             "langgraph:other_suffix/key2",
         ]
@@ -663,7 +663,7 @@ class TestValkeyStoreListOperations:
         """Test _handle_list with suffix match condition."""
         store = ValkeyStore(mock_valkey_client)
 
-        mock_valkey_client.keys.return_value = [
+        mock_valkey_client.scan_iter.return_value = [
             "langgraph:test_suffix/doc1",
             "langgraph:other_suffix/doc2",
             "langgraph:no_match/doc3",
@@ -716,7 +716,7 @@ class TestValkeyStoreListOperations:
 
     def test_handle_list_with_pagination(self, mock_valkey_client):
         """Test list namespaces with pagination."""
-        mock_valkey_client.keys.return_value = [
+        mock_valkey_client.scan_iter.return_value = [
             f"langgraph:ns{i}/key" for i in range(20)
         ]
 
@@ -744,7 +744,7 @@ class TestValkeyStoreListOperations:
         """Test _handle_list with tuple match conditions."""
         store = ValkeyStore(mock_valkey_client)
 
-        mock_valkey_client.keys.return_value = [
+        mock_valkey_client.scan_iter.return_value = [
             "langgraph:test_prefix/doc1",
             "langgraph:other_suffix/doc2",
         ]

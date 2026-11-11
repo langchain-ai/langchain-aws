@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator, Iterable, Mapping
+from collections.abc import AsyncGenerator, AsyncIterator, Iterable, Mapping
 from contextlib import asynccontextmanager
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from langgraph.store.base import (
     NOT_PROVIDED,
@@ -29,6 +29,7 @@ from valkey.connection import ConnectionPool
 
 from ...checkpoint.valkey.utils import aset_client_info, aset_client_name
 from .base import BaseValkeyStore, ValkeyIndexConfig
+from .constants import SCAN_COUNT_BATCH_SIZE
 from .document_utils import DocumentProcessor, FilterProcessor, ScoreCalculator
 from .exceptions import EmbeddingGenerationError
 from .search import AsyncSearchStrategyManager
@@ -218,6 +219,21 @@ class AsyncValkeyStore(BaseValkeyStore):
             return await asyncio.get_event_loop().run_in_executor(
                 None, lambda: method(*args, **kwargs)
             )
+
+    async def _scan_keys(self, pattern: str) -> list[Any]:
+        """Return the keys matching a pattern, using SCAN instead of KEYS."""
+        if self._is_async_client:
+            keys = cast(
+                AsyncIterator[Any],
+                self.client.scan_iter(match=pattern, count=SCAN_COUNT_BATCH_SIZE),
+            )
+            return [key async for key in keys]
+        return await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: list(
+                self.client.scan_iter(match=pattern, count=SCAN_COUNT_BATCH_SIZE)
+            ),
+        )
 
     async def _execute_command(self, *args) -> Any:
         """Execute a command on the async Valkey client."""
@@ -491,7 +507,7 @@ class AsyncValkeyStore(BaseValkeyStore):
             all_keys = []
             for pattern in patterns:
                 try:
-                    keys_result = await self._execute_client_method("keys", pattern)
+                    keys_result = await self._scan_keys(pattern)
                     # Handle ResponseT type for async context
                     keys_result = await self._handle_response_t_async(keys_result)
                     if keys_result is None:
