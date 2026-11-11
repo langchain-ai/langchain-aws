@@ -14,7 +14,7 @@ pytest.importorskip("fakeredis")
 import fakeredis
 import orjson
 from langchain_core.runnables import RunnableConfig
-from valkey.exceptions import ValkeyError
+from valkey.exceptions import NoPermissionError, ValkeyError
 
 from langgraph_checkpoint_aws import AsyncValkeySaver
 from langgraph_checkpoint_aws.checkpoint.valkey.base import BaseValkeySaver
@@ -55,6 +55,16 @@ class MockSerializer:
         return self.loads(serialized)
 
 
+def _scan_results(*keys: Any) -> Mock:
+    """Mock for ``scan_iter``: each call returns an async iterator over keys."""
+
+    async def _iterate(*_args: Any, **_kwargs: Any):
+        for key in keys:
+            yield key
+
+    return Mock(side_effect=_iterate)
+
+
 @pytest.fixture
 def mock_valkey_client():
     """Mock async Valkey client."""
@@ -74,6 +84,7 @@ def mock_valkey_client():
     client.delete.return_value = 1
     client.exists.return_value = False
     client.keys.return_value = []
+    client.scan_iter = _scan_results()
     client.lrange.return_value = []
     client.lpush.return_value = 1
     client.expire.return_value = True
@@ -783,12 +794,13 @@ class TestAsyncValkeySaverAdeleteThread:
     @pytest.mark.asyncio
     async def test_adelete_thread_no_keys(self, mock_valkey_client, mock_serializer):
         """Test adelete_thread when no keys exist."""
-        mock_valkey_client.keys.return_value = []
-
         saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         await saver.adelete_thread("test-thread")
-        mock_valkey_client.keys.assert_called_once()
+        mock_valkey_client.scan_iter.assert_called_once_with(
+            match="thread:{test-thread}:*", count=1000
+        )
+        mock_valkey_client.keys.assert_not_called()
         mock_valkey_client.delete.assert_not_called()
 
     @pytest.mark.asyncio
@@ -797,16 +809,16 @@ class TestAsyncValkeySaverAdeleteThread:
         self, mock_valkey_client, mock_serializer
     ):
         """Test adelete_thread basic functionality."""
-        mock_valkey_client.keys.return_value = [
+        mock_valkey_client.scan_iter = _scan_results(
             "checkpoint:test-thread::",
             "writes:test-thread::",
-        ]
+        )
         mock_valkey_client.delete.return_value = 2
 
         saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         await saver.adelete_thread("test-thread")
-        mock_valkey_client.keys.assert_called_once()
+        mock_valkey_client.scan_iter.assert_called_once()
         mock_valkey_client.delete.assert_called_once()
 
     @pytest.mark.asyncio
@@ -814,12 +826,37 @@ class TestAsyncValkeySaverAdeleteThread:
         self, mock_valkey_client, mock_serializer
     ):
         """Test adelete_thread with ValkeyError."""
-        mock_valkey_client.keys.side_effect = ValkeyError("Valkey error")
+        mock_valkey_client.scan_iter = Mock(side_effect=ValkeyError("Valkey error"))
 
         saver = AsyncValkeySaver(client=mock_valkey_client, serde=mock_serializer)
 
         with pytest.raises(ValkeyError):
             await saver.adelete_thread("test-thread")
+
+    @pytest.mark.asyncio
+    async def test_adelete_thread_does_not_require_keys(self, mock_serializer):
+        """adelete_thread works when KEYS is denied by ACLs (-@dangerous)."""
+        client = fakeredis.FakeAsyncRedis(decode_responses=False)
+        saver = AsyncValkeySaver(client=client, serde=mock_serializer)
+        thread_key = saver._make_thread_key("test-thread", "ns1")
+        checkpoint_key = saver._make_checkpoint_key("test-thread", "ns1", "cp-1")
+        writes_key = saver._make_writes_key("test-thread", "ns1", "cp-1")
+        other_key = saver._make_thread_key("other-thread", "ns1")
+        await client.lpush(thread_key, "cp-1")
+        await client.set(checkpoint_key, "checkpoint")
+        await client.set(writes_key, "writes")
+        await client.lpush(other_key, "cp-2")
+
+        async def keys_denied(*_args: Any, **_kwargs: Any) -> None:
+            raise NoPermissionError(
+                "this user has no permissions to run the 'keys' command"
+            )
+
+        with patch.object(client, "keys", keys_denied):
+            await saver.adelete_thread("test-thread")
+
+        assert not await client.exists(thread_key, checkpoint_key, writes_key)
+        assert await client.exists(other_key)
 
 
 # Additional async tests migrated from test_valkey_simple.py

@@ -18,7 +18,7 @@ from langgraph.checkpoint.base import (
 )
 from langgraph.checkpoint.serde.base import SerializerProtocol
 
-from .base import _PUT_WRITES_MAX_ATTEMPTS, BaseValkeySaver
+from .base import _PUT_WRITES_MAX_ATTEMPTS, _SCAN_COUNT, BaseValkeySaver
 
 # Conditional imports for optional dependencies
 try:
@@ -527,17 +527,20 @@ class ValkeySaver(BaseValkeySaver):
             None
         """
         try:
-            # Find all checkpoint namespaces for this thread
+            # Process in batches to avoid memory issues
+            batch_size = 100
+
+            # Find all checkpoint namespaces for this thread. SCAN rather
+            # than KEYS: KEYS blocks the server and is in the @dangerous ACL
+            # category, commonly denied in production.
             pattern = f"thread:{{{thread_id}}}:*"
-            thread_keys = self.client.keys(pattern)
+            thread_keys = list(self.client.scan_iter(match=pattern, count=_SCAN_COUNT))
 
             if not thread_keys:
                 return
 
             all_keys_to_delete = list(thread_keys)
 
-            # Process in batches to avoid memory issues
-            batch_size = 100
             for thread_key in thread_keys:
                 # Get all checkpoint IDs for this thread/namespace
                 checkpoint_ids = self.client.lrange(thread_key, 0, -1)
