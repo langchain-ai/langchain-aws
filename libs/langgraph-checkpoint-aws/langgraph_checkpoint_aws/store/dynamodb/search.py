@@ -95,21 +95,30 @@ class DynamoDBSearchMixin:
         namespace_str = ":".join(op.namespace_prefix)
 
         try:
-            response = self.client.query(
-                TableName=self.table_name,
-                KeyConditionExpression="PK = :pk",
-                ExpressionAttributeValues={":pk": {"S": namespace_str}},
-                Limit=op.limit + op.offset,
-            )
+            # The filter runs client-side, so keep reading pages until enough
+            # items pass it. Applying Limit before the filter returned too few
+            # items, often none, when the first items read didn't match.
+            needed = op.limit + op.offset
+            query_kwargs: dict[str, Any] = {
+                "TableName": self.table_name,
+                "KeyConditionExpression": "PK = :pk",
+                "ExpressionAttributeValues": {":pk": {"S": namespace_str}},
+            }
+            items: list[dict[str, Any]] = []
+            while len(items) < needed:
+                if not op.filter:
+                    query_kwargs["Limit"] = needed - len(items)
+                response = self.client.query(**query_kwargs)
+                raw_items = response.get("Items", [])
+                page = [self._deserialize_item(raw) for raw in raw_items]
+                if op.filter:
+                    page = self._apply_filter(page, op.filter)
+                items.extend(page)
+                if "LastEvaluatedKey" not in response:
+                    break
+                query_kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
 
-            raw_items = response.get("Items", [])
-            items = [self._deserialize_item(raw) for raw in raw_items]
-
-            if op.filter:
-                items = self._apply_filter(items, op.filter)
-
-            if op.offset > 0:
-                items = items[op.offset :]
+            items = items[op.offset : needed]
 
             results = [self._map_to_item(item, SearchItem) for item in items]
 
