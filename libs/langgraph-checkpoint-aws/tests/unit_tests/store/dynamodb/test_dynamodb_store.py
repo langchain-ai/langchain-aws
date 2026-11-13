@@ -321,6 +321,39 @@ class TestDynamoDBStoreOperations:
         assert deserialized["value"] == {"theme": "dark"}
         assert deserialized["created_at"] == now
 
+    def test_put_and_get_number_values(self, dynamodb_store, mock_dynamodb_client):
+        """Floats can be stored, and numbers read back as int or float."""
+        value = {
+            "score": 0.9,
+            "count": 3,
+            "weights": [0.1, -2.5],
+            "nested": {"ratio": 1.25},
+            "flag": True,
+        }
+
+        dynamodb_store.put(("users", "123"), "prefs", value)
+
+        # Read back exactly what put() wrote, through the real deserializer
+        stored = mock_dynamodb_client.update_item.call_args.kwargs[
+            "ExpressionAttributeValues"
+        ][":value"]
+        now = datetime.now(timezone.utc).isoformat()
+        mock_dynamodb_client.get_item.return_value = {
+            "Item": {
+                "PK": {"S": "users:123"},
+                "SK": {"S": "prefs"},
+                "value": stored,
+                "created_at": {"S": now},
+                "updated_at": {"S": now},
+            }
+        }
+        item = dynamodb_store.get(("users", "123"), "prefs")
+
+        assert item is not None
+        assert item.value == value
+        assert type(item.value["count"]) is int
+        assert type(item.value["score"]) is float
+
     def test_calculate_expiry(self, dynamodb_store):
         """Test TTL expiry calculation."""
         expiry = dynamodb_store._calculate_expiry(60)

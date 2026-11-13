@@ -15,6 +15,7 @@ import os
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, TypeVar
 
 import boto3
@@ -48,6 +49,44 @@ from .vector import (
 _ItemT = TypeVar("_ItemT", bound=Item)
 
 logger = logging.getLogger(__name__)
+
+
+def _floats_to_decimals(value: Any) -> Any:
+    """Return `value` with every float replaced by a `Decimal`.
+
+    boto3's `TypeSerializer` refuses floats, so a value such as
+    `{"score": 0.9}` could not be stored. `repr` gives the shortest string that
+    reads back as the same float, so `0.1` is stored as `0.1` rather than as
+    its binary expansion.
+    """
+    if isinstance(value, float):
+        return Decimal(repr(value))
+    if isinstance(value, Mapping):
+        return {k: _floats_to_decimals(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_floats_to_decimals(v) for v in value]
+    if isinstance(value, (set, frozenset)):
+        return {_floats_to_decimals(v) for v in value}
+    return value
+
+
+def _decimals_to_numbers(value: Any) -> Any:
+    """Return `value` with every `Decimal` replaced by an `int` or a `float`.
+
+    `TypeDeserializer` reads every DynamoDB number as a `Decimal`, which is not
+    JSON serializable and compares unequal to most floats. DynamoDB keeps no
+    distinction between `2` and `2.0`, so a number without a fractional part
+    comes back as an `int`.
+    """
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    if isinstance(value, dict):
+        return {k: _decimals_to_numbers(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_decimals_to_numbers(v) for v in value]
+    if isinstance(value, set):
+        return {_decimals_to_numbers(v) for v in value}
+    return value
 
 
 class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
@@ -302,9 +341,13 @@ class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
 
         Returns:
             Dictionary with Python native values
-                (e.g., {"PK": "value"}).
+                (e.g., {"PK": "value"}). Numbers in the stored item value are
+                returned as `int` or `float` rather than `Decimal`.
         """
-        return {k: self._type_deserializer.deserialize(v) for k, v in item.items()}
+        result = {k: self._type_deserializer.deserialize(v) for k, v in item.items()}
+        if "value" in result:
+            result["value"] = _decimals_to_numbers(result["value"])
+        return result
 
     def _construct_composite_key(
         self, namespace: tuple[str, ...], key: str
@@ -546,7 +589,7 @@ class DynamoDBStore(DynamoDBTableSetupMixin, DynamoDBSearchMixin, BaseStore):
         remove_parts: list[str] = []
         ean: dict[str, str] = {"#value": "value"}
         eav: dict[str, Any] = {
-            ":value": self._type_serializer.serialize(value),
+            ":value": self._type_serializer.serialize(_floats_to_decimals(value)),
             ":updated_at": {"S": current_time},
             ":created_at": {"S": current_time},
         }
