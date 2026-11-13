@@ -7,6 +7,7 @@ Code Interpreter service is available.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 from typing import TYPE_CHECKING, Any
 
@@ -89,6 +90,15 @@ class TestAgentCoreSandboxIntegration:
         results = sandbox.download_files(["binary_test.bin"])
         assert results[0].error is None
         assert results[0].content == content
+
+    def test_download_large_file(self, sandbox: AgentCoreSandbox) -> None:
+        """A file too large for one readFiles response downloads intact."""
+        sandbox.execute("head -c 20000000 /dev/urandom > large_download.bin")
+        digest = sandbox.execute("sha256sum large_download.bin").output.split()[0]
+        results = sandbox.download_files(["large_download.bin"])
+        assert results[0].error is None
+        assert results[0].content is not None
+        assert hashlib.sha256(results[0].content).hexdigest() == digest
 
     def test_session_id(self, sandbox: AgentCoreSandbox) -> None:
         """The sandbox should have a non-empty session ID."""

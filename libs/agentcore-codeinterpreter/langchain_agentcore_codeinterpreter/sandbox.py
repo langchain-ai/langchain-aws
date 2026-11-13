@@ -13,6 +13,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
+from botocore.eventstream import InvalidPayloadLength
 from botocore.exceptions import ClientError
 from deepagents.backends.protocol import (
     EditResult,
@@ -69,6 +70,12 @@ _WRITE_FILES_BUDGET_BYTES = 90_000_000
 # Raw bytes per part when one file must be split; base64 keeps it in budget.
 _PART_BYTES = _WRITE_FILES_BUDGET_BYTES // 4 * 3
 
+# botocore rejects response events over 24 MiB, and ``readFiles`` returns every
+# requested file in one event: blobs base64-encoded, text JSON-escaped (twice
+# the size for newlines). Files up to this size are read together.
+_READ_FILES_BUDGET_BYTES = 10_000_000
+_READ_CHUNK_BYTES = 15_000_000
+
 
 def _write_entry(rel_path: str, content: bytes) -> dict[str, str | bytes]:
     """Build a ``writeFiles`` entry, sending UTF-8 content as text.
@@ -101,20 +108,25 @@ def _encoded_size(entry: dict[str, str | bytes]) -> int:
     return size + 4 * ((len(entry["blob"]) + 2) // 3)
 
 
-def _group_by_budget(sizes: list[tuple[int, int]]) -> list[list[int]]:
+def _group_by_budget(
+    sizes: list[tuple[int, int]], budget: int | None = None
+) -> list[list[int]]:
     """Greedily pack ``(index, size)`` pairs into request-sized groups.
 
     Args:
-        sizes: Entry indices paired with their encoded sizes, each within
+        sizes: Entry indices paired with their sizes, each within ``budget``.
+        budget: Maximum combined size per group. Defaults to
             ``_WRITE_FILES_BUDGET_BYTES``.
 
     Returns:
         Lists of indices whose combined size fits one request.
     """
+    if budget is None:
+        budget = _WRITE_FILES_BUDGET_BYTES
     groups: list[list[int]] = []
-    total = _WRITE_FILES_BUDGET_BYTES
+    total = budget
     for index, size in sizes:
-        if total + size > _WRITE_FILES_BUDGET_BYTES:
+        if total + size > budget:
             groups.append([])
             total = 0
         groups[-1].append(index)
@@ -146,6 +158,23 @@ def _assemble_command(parts: list[str], scratch: str, target: str, size: int) ->
         f": > {tmp} && {appends} && "
         f'test "$(wc -c < {tmp})" -eq {size} && mv -f {tmp} {shlex.quote(target)}'
     )
+
+
+def _is_response_too_large(exc: Exception) -> bool:
+    """Return whether a ``readFiles`` call failed only because of its size.
+
+    Args:
+        exc: Exception raised by the call.
+
+    Returns:
+        ``True`` for botocore's event size limit or AgentCore's response cap.
+    """
+    if isinstance(exc, InvalidPayloadLength):
+        return True
+    if isinstance(exc, ClientError):
+        message = exc.response.get("Error", {}).get("Message", "")
+        return "Response payload too large" in message
+    return False
 
 
 def _normalize_relative_path(path: str) -> str:
@@ -649,7 +678,9 @@ class AgentCoreSandbox(BaseSandbox):
         """Download files from the AgentCore sandbox.
 
         Uses AgentCore's ``readFiles`` API. Supports partial success —
-        individual file downloads may fail without affecting others.
+        individual file downloads may fail without affecting others. Files
+        are read in one request when the response fits; otherwise they are
+        read in smaller batches, and a large file in base64-encoded chunks.
 
         Args:
             paths: List of file paths to download.
@@ -661,10 +692,20 @@ class AgentCoreSandbox(BaseSandbox):
         try:
             self._get_cwd()
             relative_paths = [self._to_relative_path(p) for p in paths]
-            response = self._invoke(
-                method="readFiles", params={"paths": relative_paths}
-            )
+            try:
+                response = self._invoke(
+                    method="readFiles", params={"paths": relative_paths}
+                )
+            except Exception as exc:
+                if not _is_response_too_large(exc):
+                    raise
+                return self._download_separately(paths, relative_paths)
             file_contents = _extract_files_from_stream(response, relative_paths)
+            if len(paths) > 1 and not all(
+                rel in file_contents for rel in relative_paths
+            ):
+                # One missing file fails the whole call, so retry the rest.
+                return self._download_separately(paths, relative_paths)
 
             return [
                 FileDownloadResponse(
@@ -686,6 +727,132 @@ class AgentCoreSandbox(BaseSandbox):
                 FileDownloadResponse(path=path, content=None, error="file_not_found")
                 for path in paths
             ]
+
+    def _download_separately(
+        self, paths: list[str], relative_paths: list[str]
+    ) -> list[FileDownloadResponse]:
+        """Download files that cannot be read in one ``readFiles`` call.
+
+        Args:
+            paths: Caller-provided paths.
+            relative_paths: The same paths relative to the sandbox cwd.
+
+        Returns:
+            One response per path, in order.
+        """
+        cwd = self._get_cwd()
+        sizes = self._file_sizes([f"{cwd}/{rel}" for rel in relative_paths])
+        results: list[FileDownloadResponse | None] = [None] * len(paths)
+        fitting: list[tuple[int, int]] = []
+
+        for i, size in enumerate(sizes):
+            if size is None:
+                results[i] = FileDownloadResponse(
+                    path=paths[i], content=None, error="file_not_found"
+                )
+            elif size < 0:
+                results[i] = FileDownloadResponse(
+                    path=paths[i], content=None, error="is_directory"
+                )
+            elif size <= _READ_FILES_BUDGET_BYTES:
+                fitting.append((i, size))
+
+        for group in _group_by_budget(fitting, _READ_FILES_BUDGET_BYTES):
+            rels = [relative_paths[i] for i in group]
+            try:
+                response = self._invoke(method="readFiles", params={"paths": rels})
+            except Exception as exc:
+                # Heavily escaped text can still exceed the limit; chunk it.
+                if not _is_response_too_large(exc):
+                    raise
+                continue
+            contents = _extract_files_from_stream(response, rels)
+            for i in group:
+                content = contents.get(relative_paths[i])
+                results[i] = FileDownloadResponse(
+                    path=paths[i],
+                    content=content,
+                    error=None if content is not None else "file_not_found",
+                )
+
+        for i, size in enumerate(sizes):
+            if results[i] is None and size is not None:
+                results[i] = self._download_in_chunks(paths[i], relative_paths[i], size)
+        return [result for result in results if result is not None]
+
+    def _file_sizes(self, paths: list[str]) -> list[int | None]:
+        """Look up file sizes in one command.
+
+        Args:
+            paths: Absolute paths in the sandbox.
+
+        Returns:
+            The size of each regular file, ``-1`` for a directory, and
+            ``None`` for a missing path.
+
+        Raises:
+            RuntimeError: If the sizes could not be read.
+        """
+        quoted = " ".join(shlex.quote(p) for p in paths)
+        result = self.execute(
+            f'for f in {quoted}; do if [ -d "$f" ]; then echo -1; '
+            f'elif [ -f "$f" ]; then wc -c < "$f"; else echo -; fi; done'
+        )
+        lines = result.output.split()
+        if result.exit_code != 0 or len(lines) != len(paths):
+            msg = f"Could not read file sizes: {result.output[:200]}"
+            raise RuntimeError(msg)
+        return [None if line == "-" else int(line) for line in lines]
+
+    def _download_in_chunks(
+        self, path: str, rel_path: str, size: int
+    ) -> FileDownloadResponse:
+        """Download a large file as base64-encoded chunks.
+
+        Each chunk is encoded to a scratch file in the sandbox and read back
+        as plain ASCII, so the response size does not depend on the content.
+
+        Args:
+            path: Caller-provided path.
+            rel_path: The path relative to the sandbox cwd.
+            size: Expected file size in bytes.
+
+        Returns:
+            The file contents, or ``file_not_found`` if a chunk could not be
+            read or the file changed size while downloading.
+        """
+        cwd = self._get_cwd()
+        scratch = f".download-{uuid.uuid4().hex}"
+        source = shlex.quote(f"{cwd}/{rel_path}")
+        target = shlex.quote(f"{cwd}/{scratch}")
+        chunks: list[bytes] = []
+        try:
+            for offset in range(0, size, _READ_CHUNK_BYTES):
+                result = self.execute(
+                    f"tail -c +{offset + 1} {source} | "
+                    f"head -c {_READ_CHUNK_BYTES} | base64 -w0 > {target}"
+                )
+                if result.exit_code != 0:
+                    logger.error("Error encoding chunk of %s: %s", path, result.output)
+                    return FileDownloadResponse(
+                        path=path, content=None, error="file_not_found"
+                    )
+                response = self._invoke(method="readFiles", params={"paths": [scratch]})
+                encoded = _extract_files_from_stream(response, [scratch]).get(scratch)
+                if encoded is None:
+                    logger.error("Error reading chunk of %s", path)
+                    return FileDownloadResponse(
+                        path=path, content=None, error="file_not_found"
+                    )
+                chunks.append(base64.b64decode(encoded))
+        finally:
+            self._remove([f"{cwd}/{scratch}"])
+
+        content = b"".join(chunks)
+        if len(content) != size:
+            logger.error("Downloaded %d of %d bytes from %s", len(content), size, path)
+            return FileDownloadResponse(path=path, content=None, error="file_not_found")
+        return FileDownloadResponse(path=path, content=content, error=None)
 
     def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
         """Upload files to the AgentCore sandbox.
@@ -797,7 +964,7 @@ class AgentCoreSandbox(BaseSandbox):
         return None
 
     def _remove(self, paths: list[str]) -> None:
-        """Best-effort removal of leftover upload files.
+        """Best-effort removal of leftover upload and download files.
 
         Args:
             paths: Absolute paths to delete.
