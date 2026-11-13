@@ -2227,7 +2227,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -2256,7 +2256,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -2285,7 +2285,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -2342,7 +2342,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -2371,7 +2371,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -2430,7 +2430,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -2774,7 +2774,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -2804,7 +2804,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -3674,7 +3674,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -3705,7 +3705,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -3737,7 +3737,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -3769,7 +3769,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -3828,7 +3828,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -3858,7 +3858,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -3921,7 +3921,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -5134,7 +5134,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -5163,7 +5163,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -5192,7 +5192,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -5249,7 +5249,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -5278,7 +5278,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
@@ -5337,7 +5337,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_calling": True,
         "structured_output": True,
         "attachment": True,
-        "temperature": False,
+        "temperature": True,
         "reasoning_effort_levels": [
             "none",
             "low",
