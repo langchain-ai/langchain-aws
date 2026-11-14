@@ -462,6 +462,61 @@ class TestDynamoDBStoreBatch:
         assert results[0].key == "doc1"
         assert results[0].value["status"] == "published"
 
+    def test_batch_search_op_filter_reads_pages_until_limit(self, dynamodb_store):
+        """The filter is applied before the limit, across query pages."""
+        now = datetime.now(timezone.utc).isoformat()
+
+        def item(key: str, status: str) -> dict:
+            return _make_dynamo_item("docs", key, {"status": status}, now, now)
+
+        last_key = {"PK": {"S": "docs"}, "SK": {"S": "b"}}
+        dynamodb_store.client.query.side_effect = [
+            {
+                "Items": [item("a", "draft"), item("b", "draft")],
+                "LastEvaluatedKey": last_key,
+            },
+            {
+                "Items": [
+                    item("c", "live"),
+                    item("d", "draft"),
+                    item("e", "live"),
+                    item("f", "live"),
+                ]
+            },
+        ]
+        op = SearchOp(
+            namespace_prefix=("docs",),
+            filter={"status": "live"},
+            limit=2,
+            offset=1,
+            query=None,
+            refresh_ttl=False,
+        )
+
+        results = dynamodb_store._batch_search_op(op)
+
+        assert [r.key for r in results] == ["e", "f"]
+        first_call, second_call = dynamodb_store.client.query.call_args_list
+        # A query Limit caps the items read, not the items that pass the filter
+        assert "Limit" not in first_call.kwargs
+        assert second_call.kwargs["ExclusiveStartKey"] == last_key
+
+    def test_batch_search_op_without_filter_limits_query(self, dynamodb_store):
+        """Without a filter the query still reads only offset + limit items."""
+        dynamodb_store.client.query.return_value = {"Items": []}
+        op = SearchOp(
+            namespace_prefix=("docs",),
+            filter=None,
+            limit=3,
+            offset=2,
+            query=None,
+            refresh_ttl=False,
+        )
+
+        dynamodb_store._batch_search_op(op)
+
+        assert dynamodb_store.client.query.call_args.kwargs["Limit"] == 5
+
     def test_batch_list_namespaces_op(self, dynamodb_store):
         """Test batch ListNamespacesOp."""
         dynamodb_store.client.scan.return_value = {

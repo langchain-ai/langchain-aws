@@ -142,6 +142,23 @@ def test_sync_search_with_filter(store: DynamoDBStore) -> None:
 
 
 @pytest.mark.skipif(not DYNAMODB_AVAILABLE, reason="DynamoDB Local not available")
+def test_sync_search_with_filter_and_limit(store: DynamoDBStore) -> None:
+    """The filter is applied before the limit and offset."""
+    namespace = ("test", "filter_limit")
+    # Sort keys a0-a2 come first in the partition and don't match the filter
+    for i in range(3):
+        store.put(namespace, f"a{i}", {"status": "draft"})
+    for i in range(3):
+        store.put(namespace, f"b{i}", {"status": "published"})
+
+    results = store.search(namespace, filter={"status": "published"}, limit=2)
+    assert [r.key for r in results] == ["b0", "b1"]
+
+    results = store.search(namespace, filter={"status": "published"}, offset=1)
+    assert [r.key for r in results] == ["b1", "b2"]
+
+
+@pytest.mark.skipif(not DYNAMODB_AVAILABLE, reason="DynamoDB Local not available")
 def test_sync_search_with_limit(store: DynamoDBStore) -> None:
     """Test search with limit."""
     for i in range(5):
