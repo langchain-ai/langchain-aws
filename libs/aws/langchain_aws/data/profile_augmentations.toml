@@ -448,124 +448,220 @@ image_tool_message = true
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+pdf_tool_message = true
 
 [overrides."global.openai.gpt-6.1-sol"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
 
 [overrides."us.openai.gpt-6.1-sol"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
 
 [overrides."openai.gpt-6.1-terra"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+pdf_tool_message = true
 
 [overrides."global.openai.gpt-6.1-terra"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
 
 [overrides."us.openai.gpt-6.1-terra"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
 
 [overrides."openai.gpt-6-astra"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+pdf_tool_message = true
 
 [overrides."global.openai.gpt-6-astra"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
 
 [overrides."us.openai.gpt-6-astra"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
 
 [overrides."openai.gpt-6-sol"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+pdf_tool_message = true
 
 [overrides."global.openai.gpt-6-sol"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
 
 [overrides."us.openai.gpt-6-sol"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
 
 [overrides."openai.gpt-6-luna"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+pdf_tool_message = true
 
 [overrides."global.openai.gpt-6-luna"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
 
 [overrides."us.openai.gpt-6-luna"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
 
 [overrides."openai.gpt-5.6-terra"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+pdf_tool_message = true
 
 [overrides."global.openai.gpt-5.6-terra"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
 
 [overrides."in.openai.gpt-5.6-terra"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+pdf_inputs = false
 
 [overrides."us.openai.gpt-5.6-terra"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
 
 [overrides."openai.gpt-5.6-luna"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+pdf_tool_message = true
 
 [overrides."global.openai.gpt-5.6-luna"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
 
 [overrides."in.openai.gpt-5.6-luna"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+pdf_inputs = false
 
 [overrides."us.openai.gpt-5.6-luna"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
 
 [overrides."openai.gpt-5.6-sol"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+pdf_tool_message = true
 
 [overrides."global.openai.gpt-5.6-sol"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
 
 [overrides."us.openai.gpt-5.6-sol"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh", "max"]
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
 
 [overrides."openai.gpt-5.5"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
 temperature = false
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+pdf_tool_message = true
 
 [overrides."openai.gpt-5.4"]
 reasoning_effort_levels = ["none", "low", "medium", "high", "xhigh"]
 mid_conversation_system_messages = true
 mid_conversation_tools = true
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+pdf_tool_message = true
 
 [overrides."openai.gpt-oss-120b"]
 reasoning_effort_levels = ["low", "medium", "high"]
