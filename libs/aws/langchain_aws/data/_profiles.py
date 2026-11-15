@@ -2906,7 +2906,6 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "text_inputs": True,
         "image_inputs": True,
         "audio_inputs": False,
-        "pdf_inputs": False,
         "video_inputs": False,
         "text_outputs": True,
         "image_outputs": False,
@@ -2928,6 +2927,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_call_streaming": True,
         "tool_choice": True,
         "image_tool_message": True,
+        "pdf_inputs": False,
     },
     "in.openai.gpt-5.6-terra": {
         "name": "GPT-5.6 Terra (India)",
@@ -2939,7 +2939,6 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "text_inputs": True,
         "image_inputs": True,
         "audio_inputs": False,
-        "pdf_inputs": False,
         "video_inputs": False,
         "text_outputs": True,
         "image_outputs": False,
@@ -2961,6 +2960,7 @@ _PROFILES: dict[str, dict[str, Any]] = {
         "tool_call_streaming": True,
         "tool_choice": True,
         "image_tool_message": True,
+        "pdf_inputs": False,
     },
     "jp.amazon.nova-2-lite-v1:0": {
         "name": "Nova 2 Lite (JP)",
