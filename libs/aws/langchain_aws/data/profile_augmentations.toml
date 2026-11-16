@@ -988,15 +988,12 @@ image_tool_message = true
 
 [overrides."google.gemma-4-26b-a4b"]
 reasoning_effort_levels = ["none", "high"]
-reasoning_effort_default = "none"
 
 [overrides."google.gemma-4-31b"]
 reasoning_effort_levels = ["none", "high"]
-reasoning_effort_default = "none"
 
 [overrides."google.gemma-4-e2b"]
 reasoning_effort_levels = ["none", "high"]
-reasoning_effort_default = "none"
 
 [overrides."openai.gpt-oss-safeguard-120b"]
 reasoning_effort_levels = ["low", "medium", "high"]
