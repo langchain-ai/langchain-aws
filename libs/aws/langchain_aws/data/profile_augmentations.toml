@@ -1009,15 +1009,15 @@ reasoning_effort_default = "low"
 
 [overrides."xai.grok-4.6"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh"]
-reasoning_effort_default = "high"
+reasoning_effort_default = "low"
 
 [overrides."global.xai.grok-4.6"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh"]
-reasoning_effort_default = "high"
+reasoning_effort_default = "low"
 
 [overrides."us.xai.grok-4.6"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh"]
-reasoning_effort_default = "high"
+reasoning_effort_default = "low"
 
 [overrides."global.xai.grok-4.7"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh"]
