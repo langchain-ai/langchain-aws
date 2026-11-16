@@ -676,3 +676,60 @@ def test_chat_anthropic_bedrock_stream_message_delta_is_not_last() -> None:
     assert chunk is not None
     assert chunk.response_metadata["stop_reason"] == "end_turn"
     assert chunk.chunk_position is None
+
+
+def _message_delta_event(usage: dict) -> RawMessageDeltaEvent:
+    return RawMessageDeltaEvent.model_validate(
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn", "stop_sequence": None},
+            "usage": usage,
+        }
+    )
+
+
+def test_chat_anthropic_bedrock_stream_message_delta_reports_reasoning_tokens() -> None:
+    """Thinking tokens on `message_delta` are reported as reasoning tokens."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+    )
+    event = _message_delta_event(
+        {
+            "input_tokens": 85,
+            "output_tokens": 188,
+            "output_tokens_details": {"thinking_tokens": 180},
+        }
+    )
+
+    chunk, _ = model._make_message_chunk_from_anthropic_event(
+        event, coerce_content_to_string=True
+    )
+
+    assert chunk is not None
+    assert chunk.usage_metadata == {
+        "input_tokens": 0,
+        "output_tokens": 188,
+        "total_tokens": 188,
+        "output_token_details": {"reasoning": 180},
+    }
+
+
+def test_chat_anthropic_bedrock_stream_message_delta_without_reasoning_tokens() -> None:
+    """Without thinking tokens, `message_delta` usage has no output details."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=BEDROCK_MODEL_NAME,
+        region_name="us-east-1",
+    )
+    event = _message_delta_event({"input_tokens": 85, "output_tokens": 188})
+
+    chunk, _ = model._make_message_chunk_from_anthropic_event(
+        event, coerce_content_to_string=True
+    )
+
+    assert chunk is not None
+    assert chunk.usage_metadata == {
+        "input_tokens": 0,
+        "output_tokens": 188,
+        "total_tokens": 188,
+    }
