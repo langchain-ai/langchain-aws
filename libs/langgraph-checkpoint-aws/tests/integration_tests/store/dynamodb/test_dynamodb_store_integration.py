@@ -1,5 +1,6 @@
 """Integration tests for the DynamoDBStore implementation."""
 
+import json
 import os
 import time
 import uuid
@@ -300,6 +301,10 @@ def test_sync_complex_values(store: DynamoDBStore) -> None:
     assert item.value["boolean"] is True
     assert item.value["list"] == [1, 2, 3]
     assert item.value["nested"]["c"]["d"] == "e"
+    assert item.value["float_val"] == 3.14
+    # Numbers come back as int and float rather than Decimal, so the value
+    # survives a JSON round trip unchanged
+    assert json.loads(json.dumps(item.value)) == value
 
 
 @pytest.mark.skipif(not DYNAMODB_AVAILABLE, reason="DynamoDB Local not available")

@@ -390,6 +390,7 @@ Use **Valkey Store** when:
 - **Vector Search Depth**: SearchVectors returns at most the top 100 matches; requests with limit+offset beyond 100 are rejected
 - **Scan Cost**: Listing namespaces uses DynamoDB Scan which can be expensive for large tables
 - **Filter Limitations**: Client-side filtering only (equality checks on value fields)
+- **Numbers**: DynamoDB numbers carry no int or float type, so a float without a fractional part, such as `2.0`, reads back as the int `2`. NaN and infinity can't be stored
 - **No Transactions**: Operations are not transactional across multiple items
 - **Item Size Limit**: DynamoDB has a [400KB limit per item](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-use-s3-too.html). For larger items, consider using S3 or splitting data.
 
