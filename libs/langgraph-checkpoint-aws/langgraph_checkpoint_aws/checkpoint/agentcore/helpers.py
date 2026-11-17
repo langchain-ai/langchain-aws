@@ -19,6 +19,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langgraph.checkpoint.base import (
+    WRITES_IDX_MAP,
     Checkpoint,
     CheckpointMetadata,
     CheckpointTuple,
@@ -40,6 +41,20 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def writes_event_sort_key(event: WritesEvent) -> datetime.datetime:
+    """Chronological sort key for a writes event.
+
+    Events without a service timestamp sort oldest, keeping their
+    relative order (the sort is stable).
+    """
+    timestamp = event.event_timestamp
+    if timestamp is None:
+        return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=datetime.timezone.utc)
+    return timestamp
 
 
 class _DeltaSnapshotProtocol(Protocol):
@@ -469,6 +484,10 @@ class AgentCoreEventClient:
                     if blob:
                         try:
                             parsed_event = self.serializer.deserialize_event(blob)
+                            if isinstance(parsed_event, WritesEvent):
+                                service_timestamp = event.get("eventTimestamp")
+                                if isinstance(service_timestamp, datetime.datetime):
+                                    parsed_event.event_timestamp = service_timestamp
                             all_events.append(parsed_event)
                         except EventDecodingError as e:
                             logger.warning(f"Failed to decode event: {e}")
@@ -562,6 +581,7 @@ class EventProcessor:
         """Process events into organized data structures."""
         checkpoints = {}
         writes_by_checkpoint = defaultdict(list)
+        writes_events_by_checkpoint: dict[str, list[WritesEvent]] = defaultdict(list)
         channel_data_by_version = {}
 
         for event in events:
@@ -569,13 +589,21 @@ class EventProcessor:
                 checkpoints[event.checkpoint_id] = event
 
             elif isinstance(event, WritesEvent):
-                writes_by_checkpoint[event.checkpoint_id].extend(event.writes)
+                writes_events_by_checkpoint[event.checkpoint_id].append(event)
 
             elif isinstance(event, ChannelDataEvent):
                 if event.value != EMPTY_CHANNEL_VALUE:
                     channel_data_by_version[(event.channel, event.version)] = (
                         event.value
                     )
+
+        # ListEvents does not guarantee ordering, so order each
+        # checkpoint's writes events by their service timestamp (stable:
+        # events without a timestamp keep their relative order) before
+        # flattening, so "newest" below means newest in real time.
+        for checkpoint_id, writes_events in writes_events_by_checkpoint.items():
+            for writes_event in sorted(writes_events, key=writes_event_sort_key):
+                writes_by_checkpoint[checkpoint_id].extend(writes_event.writes)
 
         return checkpoints, writes_by_checkpoint, channel_data_by_version
 
@@ -590,6 +618,23 @@ class EventProcessor:
         # Build pending writes
         pending_writes = [
             (write.task_id, write.channel, write.value) for write in writes
+        ]
+        # Special channels (WRITES_IDX_MAP) hold at most one write per
+        # task: a task that writes the channel again replaces its earlier
+        # write, as in the in-memory and Postgres savers. Keep only the
+        # newest such write per (task_id, channel) so a superseded
+        # __interrupt__/__resume__/__error__/__scheduled__ write is not
+        # replayed as pending.
+        last_special_index = {
+            (task_id, channel): index
+            for index, (task_id, channel, _value) in enumerate(pending_writes)
+            if channel in WRITES_IDX_MAP
+        }
+        pending_writes = [
+            write
+            for index, write in enumerate(pending_writes)
+            if write[1] not in WRITES_IDX_MAP
+            or last_special_index[(write[0], write[1])] == index
         ]
         # Check if there are interrupts in pending writes
         has_interrupts = pending_writes and any(
