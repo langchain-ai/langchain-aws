@@ -2609,6 +2609,75 @@ class TestEventProcessor:
 
         assert tuple_result.parent_config is None
 
+    def test_build_checkpoint_tuple_drops_superseded_special_writes(
+        self,
+        processor,
+        sample_checkpoint_event,
+    ):
+        config = CheckpointerConfig(
+            thread_id="test_thread",
+            actor_id="test_actor",
+            checkpoint_ns="test_ns",
+        )
+        writes = [
+            WriteItem(task_id="task_1", channel="__interrupt__", value="Q1?"),
+            WriteItem(task_id="task_1", channel="answers", value="partial"),
+            WriteItem(task_id="task_1", channel="__interrupt__", value="Q2?"),
+            WriteItem(task_id="task_2", channel="__interrupt__", value="other"),
+            WriteItem(task_id="task_1", channel="answers", value="more"),
+        ]
+
+        tuple_result = processor.build_checkpoint_tuple(
+            sample_checkpoint_event, writes, {}, config
+        )
+
+        # Only the newest __interrupt__ per task stays pending; regular
+        # channel writes are never deduplicated.
+        assert tuple_result.pending_writes == [
+            ("task_1", "answers", "partial"),
+            ("task_1", "__interrupt__", "Q2?"),
+            ("task_2", "__interrupt__", "other"),
+            ("task_1", "answers", "more"),
+        ]
+
+    def test_process_events_orders_writes_events_by_timestamp(
+        self,
+        processor,
+        sample_checkpoint_event,
+    ):
+        older = WritesEvent(
+            checkpoint_id="checkpoint_123",
+            writes=[WriteItem(task_id="task_1", channel="__interrupt__", value="Q1?")],
+        )
+        older.event_timestamp = datetime.datetime(
+            2026, 11, 17, 10, 0, tzinfo=datetime.timezone.utc
+        )
+        newer = WritesEvent(
+            checkpoint_id="checkpoint_123",
+            writes=[WriteItem(task_id="task_1", channel="__interrupt__", value="Q2?")],
+        )
+        newer.event_timestamp = datetime.datetime(
+            2026, 11, 17, 10, 1, tzinfo=datetime.timezone.utc
+        )
+        config = CheckpointerConfig(
+            thread_id="test_thread",
+            actor_id="test_actor",
+            checkpoint_ns="test_ns",
+        )
+
+        # ListEvents does not guarantee ordering: feed newest first.
+        checkpoints, writes_by_checkpoint, channel_data = processor.process_events(
+            [sample_checkpoint_event, newer, older]
+        )
+        tuple_result = processor.build_checkpoint_tuple(
+            checkpoints["checkpoint_123"],
+            writes_by_checkpoint["checkpoint_123"],
+            channel_data,
+            config,
+        )
+
+        assert tuple_result.pending_writes == [("task_1", "__interrupt__", "Q2?")]
+
 
 class TestBedrockAgentCoreClientWithRetry:
     """Test suite for BedrockAgentCoreClientWithRetry retry logic."""
