@@ -361,9 +361,8 @@ class AgentCoreMemoryStore(BaseStore):
 
         AgentCore returns timestamps as datetimes via boto3. As a defensive
         fallback, a string ISO-8601 value is parsed (normalizing a trailing
-        "Z" to the "+00:00" UTC offset that ``datetime.fromisoformat`` accepts
-        on Python 3.10), and any value that is not a datetime defaults to the
-        current UTC time.
+        "Z" to the "+00:00" UTC offset), and any value that is not a datetime
+        defaults to the current UTC time.
 
         Args:
             value: The raw timestamp from an event or memory record.

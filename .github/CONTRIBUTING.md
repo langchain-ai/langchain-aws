@@ -28,7 +28,7 @@ This quick start guide explains how to setup the repository locally for developm
 
 This project utilizes [uv](https://docs.astral.sh/uv/) as a dependency manager.
 
-❗Note: *Before installing uv*, if you use `Conda`, create and activate a new Conda env (e.g. `conda create -n langchain python=3.10`)
+❗Note: *Before installing uv*, if you use `Conda`, create and activate a new Conda env (e.g. `conda create -n langchain python=3.11`)
 
 Install uv: **[documentation on how to install it](https://docs.astral.sh/uv/getting-started/installation/)**.
 
