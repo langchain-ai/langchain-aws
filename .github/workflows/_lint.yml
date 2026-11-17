@@ -33,10 +33,10 @@ jobs:
         python-version:
           - "3.12"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Set up Python ${{ matrix.python-version }} + uv
-        uses: "./.github/actions/uv_setup"
+        uses: "$/.github/actions/uv_setup"
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -62,7 +62,7 @@ jobs:
           uv sync --group lint --group typing
 
       - name: Get .mypy_cache to speed up mypy
-        uses: actions/cache@v6
+        uses: actions/cache@v6.1.0
         env:
           SEGMENT_DOWNLOAD_TIMEOUT_MIN: "2"
         with:
@@ -81,7 +81,7 @@ jobs:
           uv sync --group test --group test_integration
 
       - name: Get .mypy_cache_test to speed up mypy
-        uses: actions/cache@v6
+        uses: actions/cache@v6.1.0
         env:
           SEGMENT_DOWNLOAD_TIMEOUT_MIN: "2"
         with:
