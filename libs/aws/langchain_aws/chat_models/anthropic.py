@@ -388,11 +388,15 @@ class ChatAnthropicBedrock(ChatAnthropic):
                 )
         elif event.type == "message_delta" and msg.usage_metadata is not None:
             output_tokens = msg.usage_metadata.get("output_tokens", 0)
-            msg.usage_metadata = UsageMetadata(
+            delta_usage = UsageMetadata(
                 input_tokens=0,
                 output_tokens=output_tokens,
                 total_tokens=output_tokens,
             )
+            # Keep reasoning (thinking) tokens reported by `ChatAnthropic`.
+            if output_token_details := msg.usage_metadata.get("output_token_details"):
+                delta_usage["output_token_details"] = output_token_details
+            msg.usage_metadata = delta_usage
 
         return msg, block_start_event
 
