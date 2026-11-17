@@ -2,6 +2,7 @@
 Data models for AgentCore Memory Checkpoint Saver.
 """
 
+import datetime
 import hashlib
 import logging
 from typing import Any
@@ -122,3 +123,7 @@ class WritesEvent(BaseModel):
     event_type: str = Field(default="writes")
     checkpoint_id: str
     writes: list[WriteItem]
+    # Service-side creation time of the stored event, attached when the
+    # event is read back (ListEvents does not guarantee ordering). Never
+    # serialized into the event blob.
+    event_timestamp: datetime.datetime | None = Field(default=None, exclude=True)
