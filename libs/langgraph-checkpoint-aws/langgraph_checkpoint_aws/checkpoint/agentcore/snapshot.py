@@ -13,6 +13,7 @@ from .helpers import (
     MAX_PAYLOAD_ITEMS_PER_EVENT,
     AgentCoreEventClient,
     EventType,
+    writes_event_sort_key,
 )
 from .models import ChannelDataEvent, CheckpointEvent, WriteItem, WritesEvent
 
@@ -160,11 +161,17 @@ class AgentCoreSnapshotClient(AgentCoreEventClient):
         )
 
     def _decode_payload(self, event: dict[str, Any]) -> list[EventType]:
-        return [
+        decoded = [
             self.serializer.deserialize_event(item["blob"])
             for item in event.get("payload", [])
             if "blob" in item
         ]
+        service_timestamp = event.get("eventTimestamp")
+        if isinstance(service_timestamp, datetime.datetime):
+            for item in decoded:
+                if isinstance(item, WritesEvent):
+                    item.event_timestamp = service_timestamp
+        return decoded
 
     def _load_snapshot(
         self, event: dict[str, Any], session_id: str, actor_id: str
@@ -260,6 +267,9 @@ class AgentCoreSnapshotClient(AgentCoreEventClient):
                         if isinstance(decoded, CheckpointEvent):
                             return None
                         if isinstance(decoded, WritesEvent):
+                            service_timestamp = event.get("eventTimestamp")
+                            if isinstance(service_timestamp, datetime.datetime):
+                                decoded.event_timestamp = service_timestamp
                             legacy_writes.append(decoded)
                     continue
                 if metadata.get("lc_kind", {}).get("stringValue") == "checkpoint":
@@ -311,7 +321,7 @@ class AgentCoreSnapshotClient(AgentCoreEventClient):
         }
         if max_results is not None:
             params["maxResults"] = max_results
-        writes: list[WriteItem] = []
+        writes_events: list[WritesEvent] = []
         while True:
             response = self.client.list_events(**params)
             for raw_event in response.get("events", []):
@@ -324,10 +334,17 @@ class AgentCoreSnapshotClient(AgentCoreEventClient):
                     if event.checkpoint_id != checkpoint_id:
                         msg = "Pending writes belong to a different checkpoint."
                         raise EventDecodingError(msg)
-                    writes.extend(event.writes)
+                    writes_events.append(event)
             if not response.get("nextToken"):
-                return writes
+                break
             params["nextToken"] = response["nextToken"]
+
+        # ListEvents does not guarantee ordering; flatten chronologically
+        # by service timestamp so the newest writes come last.
+        writes: list[WriteItem] = []
+        for writes_event in sorted(writes_events, key=writes_event_sort_key):
+            writes.extend(writes_event.writes)
+        return writes
 
     def delete_events(self, session_id: str, actor_id: str) -> None:
         """Delete the thread and its pending-write sessions, including orphans.
