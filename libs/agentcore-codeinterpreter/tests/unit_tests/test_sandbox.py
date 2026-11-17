@@ -7,11 +7,17 @@ AWS credential requirements.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
+import base64
+import json
+import shlex
+import subprocess
+from collections.abc import Callable, Iterator
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.eventstream import InvalidPayloadLength
 from botocore.exceptions import ClientError
 from deepagents.backends.protocol import (
     EditResult,
@@ -24,6 +30,7 @@ from deepagents.backends.protocol import (
 from deepagents.backends.sandbox import BaseSandbox
 
 from langchain_agentcore_codeinterpreter import AgentCoreSandbox
+from langchain_agentcore_codeinterpreter import sandbox as sandbox_module
 from langchain_agentcore_codeinterpreter.sandbox import (
     _AGENTCORE_EXECUTOR,
     _BASE_GREP_HAS_MAX_COUNT,
@@ -215,6 +222,137 @@ def test_upload_files_handles_session_expiry() -> None:
     sandbox, _ = _make_expired_sandbox()
     result = sandbox.upload_files([("/a.txt", b"data")])
     assert result[0].error == "permission_denied"
+
+
+@pytest.fixture
+def small_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Shrink the writeFiles budget so tests can exercise batching cheaply."""
+    monkeypatch.setattr(sandbox_module, "_WRITE_FILES_BUDGET_BYTES", 40)
+    monkeypatch.setattr(sandbox_module, "_PART_BYTES", 24)
+
+
+def _calls(mock: MagicMock, method: str) -> list[Any]:
+    return [c for c in mock.invoke.call_args_list if c.kwargs["method"] == method]
+
+
+@pytest.mark.usefixtures("small_budget")
+def test_upload_files_batches_requests_within_budget() -> None:
+    """Files exceeding one request's budget together go in separate requests."""
+    sandbox, mock = _make_sandbox()
+    files = [(f"/f{i}.txt", b"x" * 15) for i in range(3)]
+
+    result = sandbox.upload_files(files)
+
+    batches = [c.kwargs["params"]["content"] for c in _calls(mock, "writeFiles")]
+    assert [[e["path"] for e in b] for b in batches] == [
+        ["f0.txt"],
+        ["f1.txt"],
+        ["f2.txt"],
+    ]
+    assert [r.error for r in result] == [None, None, None]
+
+
+@pytest.mark.usefixtures("small_budget")
+def test_upload_files_failed_batch_only_fails_its_files() -> None:
+    """A failing request should not mark files from other requests as failed."""
+    sandbox, mock = _make_sandbox()
+    mock.invoke.side_effect = [{"stream": []}, RuntimeError("boom")]
+
+    result = sandbox.upload_files([("/a.txt", b"x" * 15), ("/b.txt", b"y" * 15)])
+
+    assert [r.error for r in result] == [None, "permission_denied"]
+
+
+@pytest.mark.usefixtures("small_budget")
+def test_upload_files_splits_oversized_file_and_assembles() -> None:
+    """An oversized file is uploaded as blob parts, then joined in the sandbox."""
+    sandbox, mock = _make_sandbox(
+        {"stream": [{"result": {"structuredContent": {"exitCode": 0}, "content": []}}]},
+        cwd="/work",
+    )
+    content = bytes(range(60))
+
+    result = sandbox.upload_files([("/work/big.bin", content)])
+
+    parts = [c.kwargs["params"]["content"] for c in _calls(mock, "writeFiles")]
+    assert all(len(p) == 1 and "blob" in p[0] for p in parts)
+    assert b"".join(p[0]["blob"] for p in parts) == content
+    assert all(p[0]["path"].startswith("big.bin.part-") for p in parts)
+    (command,) = [c.kwargs["params"]["command"] for c in _calls(mock, "executeCommand")]
+    assert command.endswith(" /work/big.bin")
+    assert result[0].error is None
+
+
+@pytest.mark.usefixtures("small_budget")
+def test_upload_files_assembly_failure_cleans_up() -> None:
+    """A failed join returns an error and removes the parts and scratch file."""
+    sandbox, mock = _make_sandbox(cwd="/work")
+
+    def invoke(method: str, params: dict[str, Any]) -> dict[str, Any]:
+        if method == "executeCommand" and not params["command"].startswith("rm"):
+            return {
+                "stream": [
+                    {"result": {"structuredContent": {"exitCode": 1}, "content": []}}
+                ]
+            }
+        return {"stream": []}
+
+    mock.invoke.side_effect = invoke
+
+    result = sandbox.upload_files([("/work/big.bin", b"z" * 60)])
+
+    assert result[0].error == "permission_denied"
+    commands = [c.kwargs["params"]["command"] for c in _calls(mock, "executeCommand")]
+    assert commands[-1].startswith("rm -f ")
+    assert commands[-1].count(".part-") == 3
+    assert ".assembling-" in commands[-1]
+
+
+@pytest.mark.usefixtures("small_budget")
+def test_upload_files_part_failure_removes_written_parts() -> None:
+    """If a part fails to upload, earlier parts are removed and no join runs."""
+    sandbox, mock = _make_sandbox(cwd="/work")
+    mock.invoke.side_effect = [{"stream": []}, RuntimeError("boom"), {"stream": []}]
+
+    result = sandbox.upload_files([("/work/big.bin", b"z" * 60)])
+
+    assert result[0].error == "permission_denied"
+    (command,) = [c.kwargs["params"]["command"] for c in _calls(mock, "executeCommand")]
+    assert command.startswith("rm -f ")
+    assert command.count(".part-") == 1
+
+
+def test_assemble_command_joins_parts(tmp_path: Path) -> None:
+    """The join command should rebuild the file even with shell-hostile names."""
+    chunks = [b"first;", b" $(echo no)", b"'last'"]
+    parts = []
+    for n, chunk in enumerate(chunks):
+        part = tmp_path / f"it's a part {n}"
+        part.write_bytes(chunk)
+        parts.append(str(part))
+    target = tmp_path / "out file"
+    command = sandbox_module._assemble_command(
+        parts, str(tmp_path / "scratch"), str(target), sum(map(len, chunks))
+    )
+
+    subprocess.run(["sh", "-c", command], check=True)
+
+    assert target.read_bytes() == b"".join(chunks)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["out file"]
+
+
+def test_assemble_command_rejects_size_mismatch(tmp_path: Path) -> None:
+    """A size mismatch should fail without replacing the target."""
+    part = tmp_path / "part"
+    part.write_bytes(b"abc")
+    target = tmp_path / "target"
+    target.write_bytes(b"original")
+    command = sandbox_module._assemble_command(
+        [str(part)], str(tmp_path / "scratch"), str(target), 4
+    )
+
+    assert subprocess.run(["sh", "-c", command]).returncode != 0
+    assert target.read_bytes() == b"original"
 
 
 # ------------------------------------------------------------------
@@ -409,6 +547,216 @@ def test_download_files_lazy_cwd_detection() -> None:
     assert sandbox._cwd == cwd
     assert results[0].content == b"hello"
     assert results[0].error is None
+
+
+class _FakeFiles:
+    """Interpreter double backed by a dict, with a response size limit.
+
+    Handles the commands large downloads issue (size lookup, chunk encoding,
+    cleanup), and raises ``too_large`` for ``readFiles`` responses whose encoded
+    size exceeds ``limit``: botocore's ``InvalidPayloadLength`` by default.
+    """
+
+    def __init__(
+        self,
+        files: dict[str, bytes],
+        limit: int = 16,
+        too_large: Callable[[int], Exception] = InvalidPayloadLength,
+    ) -> None:
+        self.files = files
+        self.limit = limit
+        self.too_large = too_large
+        self.reads: list[list[str]] = []
+
+    @staticmethod
+    def _result(text: str = "", exit_code: int = 0) -> dict[str, Any]:
+        return {
+            "stream": [
+                {
+                    "result": {
+                        "content": [{"type": "text", "text": text}],
+                        "structuredContent": {"exitCode": exit_code},
+                    }
+                }
+            ]
+        }
+
+    def _rel(self, path: str) -> str:
+        return path.removeprefix("/work/")
+
+    def invoke(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        if method == "readFiles":
+            return self._read(params["paths"])
+        command = params["command"]
+        if command.startswith("for f in "):
+            names = shlex.split(command[len("for f in ") : command.index("; do")])
+            lines = []
+            for name in names:
+                rel = self._rel(name)
+                if any(k.startswith(rel + "/") for k in self.files):
+                    lines.append("-1")
+                elif rel in self.files:
+                    lines.append(str(len(self.files[rel])))
+                else:
+                    lines.append("-")
+            return self._result("\n".join(lines))
+        if command.startswith("tail -c +"):
+            start, src, _, _, _, count, _, _, _, _, dest = shlex.split(command)[2:]
+            data = self.files[self._rel(src)]
+            offset = int(start.lstrip("+")) - 1
+            chunk = data[offset : offset + int(count)]
+            self.files[self._rel(dest)] = base64.b64encode(chunk)
+            return self._result()
+        if command.startswith("rm -f "):
+            for name in shlex.split(command)[2:]:
+                self.files.pop(self._rel(name), None)
+            return self._result()
+        raise AssertionError(f"unexpected command: {command}")
+
+    def _read(self, paths: list[str]) -> dict[str, Any]:
+        self.reads.append(paths)
+        if any(p not in self.files for p in paths):
+            missing = next(p for p in paths if p not in self.files)
+            return {
+                "stream": [
+                    {
+                        "result": {
+                            "isError": True,
+                            "content": [
+                                {"type": "text", "text": f"{missing} not found"}
+                            ],
+                        }
+                    }
+                ]
+            }
+        resources = []
+        size = 0
+        for path in paths:
+            data = self.files[path]
+            try:
+                text = data.decode("utf-8")
+                size += len(json.dumps(text))
+                resource: dict[str, Any] = {"uri": f"file:///{path}", "text": text}
+            except UnicodeDecodeError:
+                size += len(base64.b64encode(data))
+                resource = {"uri": f"file:///{path}", "blob": data}
+            resources.append({"type": "resource", "resource": resource})
+        if size > self.limit:
+            raise self.too_large(size)
+        return {"stream": [{"result": {"content": resources}}]}
+
+
+@pytest.fixture
+def small_read_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Shrink the readFiles budget and chunk size so tests stay small."""
+    monkeypatch.setattr(sandbox_module, "_READ_FILES_BUDGET_BYTES", 10)
+    monkeypatch.setattr(sandbox_module, "_READ_CHUNK_BYTES", 6)
+
+
+def _make_files_sandbox(fake: _FakeFiles) -> AgentCoreSandbox:
+    sandbox, mock = _make_sandbox(cwd="/work")
+    mock.invoke.side_effect = fake.invoke
+    return sandbox
+
+
+def _response_payload_too_large(size: int) -> ClientError:
+    """AgentCore's own cap on the size of a response."""
+    return ClientError(
+        {
+            "Error": {
+                "Code": "ValidationException",
+                "Message": "Response payload too large. Reduce the number or size "
+                "of files in a single call.",
+            }
+        },
+        "InvokeCodeInterpreter",
+    )
+
+
+@pytest.mark.usefixtures("small_read_budget")
+@pytest.mark.parametrize(
+    "too_large", [InvalidPayloadLength, _response_payload_too_large]
+)
+def test_download_files_splits_batch_over_response_limit(
+    too_large: Callable[[int], Exception],
+) -> None:
+    """Files too large to read together are read in separate requests."""
+    fake = _FakeFiles({"a.bin": b"\xff" * 8, "b.bin": b"\xfe" * 8}, too_large=too_large)
+    sandbox = _make_files_sandbox(fake)
+
+    results = sandbox.download_files(["/work/a.bin", "/work/b.bin"])
+
+    assert [r.content for r in results] == [b"\xff" * 8, b"\xfe" * 8]
+    assert [r.error for r in results] == [None, None]
+    assert fake.reads == [["a.bin", "b.bin"], ["a.bin"], ["b.bin"]]
+
+
+@pytest.mark.usefixtures("small_read_budget")
+@pytest.mark.parametrize(
+    "content",
+    [bytes(range(128, 148)), b"\n" * 10],
+    ids=["over-budget-binary", "heavily-escaped-text"],
+)
+def test_download_files_reads_large_file_in_chunks(content: bytes) -> None:
+    """A file too large for one response is read as base64 chunks, then cleaned up."""
+    fake = _FakeFiles({"big": content})
+    sandbox = _make_files_sandbox(fake)
+
+    results = sandbox.download_files(["/work/big"])
+
+    assert results[0].content == content
+    assert results[0].error is None
+    assert set(fake.files) == {"big"}
+
+
+def test_download_files_reports_per_path_failures() -> None:
+    """A missing file or directory fails only itself, not the rest of the batch."""
+    fake = _FakeFiles({"a.txt": b"a", "c.txt": b"c", "dir/x.txt": b"x"})
+    sandbox = _make_files_sandbox(fake)
+
+    results = sandbox.download_files(
+        ["/work/a.txt", "/work/dir", "/work/missing.txt", "/work/c.txt"]
+    )
+
+    assert [r.content for r in results] == [b"a", None, None, b"c"]
+    assert [r.error for r in results] == [
+        None,
+        "is_directory",
+        "file_not_found",
+        None,
+    ]
+
+
+def test_download_files_single_missing_file_makes_one_request() -> None:
+    """A lone missing file needs no fallback."""
+    fake = _FakeFiles({})
+    sandbox = _make_files_sandbox(fake)
+
+    results = sandbox.download_files(["/work/missing.txt"])
+
+    assert results[0].error == "file_not_found"
+    assert fake.reads == [["missing.txt"]]
+
+
+@pytest.mark.usefixtures("small_read_budget")
+def test_download_files_rejects_file_that_changed_size() -> None:
+    """A chunked download that comes up short is an error, not partial data."""
+    fake = _FakeFiles({"big.bin": bytes(range(128, 148))})
+    sandbox, mock = _make_sandbox(cwd="/work")
+
+    def invoke(method: str, params: dict[str, Any]) -> dict[str, Any]:
+        response = fake.invoke(method, params)
+        if method == "executeCommand" and params["command"].startswith("for f in "):
+            fake.files["big.bin"] = fake.files["big.bin"][:-3]
+        return response
+
+    mock.invoke.side_effect = invoke
+
+    results = sandbox.download_files(["/work/big.bin"])
+
+    assert results[0].content is None
+    assert results[0].error == "file_not_found"
+    assert set(fake.files) == {"big.bin"}
 
 
 # ------------------------------------------------------------------
@@ -772,6 +1120,57 @@ def test_invoke_raises_session_expired_error() -> None:
         sandbox._invoke(method="executeCommand", params={"command": "echo"})
     assert "expired" in str(exc_info.value).lower()
     assert exc_info.value.session_id == "expired-session"
+
+
+def _make_inactive_sandbox() -> tuple[AgentCoreSandbox, MagicMock]:
+    """Create a sandbox whose session was stopped or timed out."""
+    sandbox, interpreter = _make_sandbox()
+    interpreter.session_id = "ended-session"
+    interpreter.invoke.side_effect = ClientError(
+        {
+            "Error": {
+                "Code": "ValidationException",
+                "Message": "Code interpreter session ended-session is not active",
+            }
+        },
+        "InvokeCodeInterpreter",
+    )
+    return sandbox, interpreter
+
+
+def test_invoke_raises_session_expired_error_for_inactive_session() -> None:
+    sandbox, _ = _make_inactive_sandbox()
+    with pytest.raises(SessionExpiredError) as exc_info:
+        sandbox._invoke(method="executeCommand", params={"command": "echo"})
+    assert exc_info.value.session_id == "ended-session"
+    assert exc_info.value.original.response["Error"]["Code"] == "ValidationException"
+
+
+def test_invoke_reraises_other_validation_errors() -> None:
+    sandbox, mock = _make_sandbox()
+    mock.invoke.side_effect = ClientError(
+        {"Error": {"Code": "ValidationException", "Message": "Invalid file path"}},
+        "InvokeCodeInterpreter",
+    )
+    with pytest.raises(ClientError):
+        sandbox._invoke(method="executeCommand", params={"command": "echo"})
+
+
+def test_execute_reports_inactive_session_as_expired() -> None:
+    sandbox, _ = _make_inactive_sandbox()
+    result = sandbox.execute("echo hi")
+    assert result.exit_code == 1
+    assert "session has expired" in result.output
+
+
+def test_upload_files_logs_inactive_session_as_expired(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    sandbox, _ = _make_inactive_sandbox()
+    with caplog.at_level("ERROR"):
+        responses = sandbox.upload_files([("a.txt", b"x")])
+    assert [r.error for r in responses] == ["permission_denied"]
+    assert "session expired while uploading" in caplog.text
 
 
 def test_invoke_reraises_other_client_errors() -> None:
@@ -1237,6 +1636,57 @@ def test_async_context_manager_stops_owned_session() -> None:
 
     ci_cls = asyncio.run(run())
     ci_cls.return_value.stop.assert_called_once()
+
+
+_ALREADY_TERMINATED = ClientError(
+    {"Error": {"Code": "ConflictException", "Message": "Session already terminated"}},
+    "StopCodeInterpreterSession",
+)
+
+
+@pytest.mark.parametrize("cleanup", ["direct", "sync", "async"])
+def test_close_treats_ended_session_as_stopped(cleanup: str) -> None:
+    """A session that timed out or was stopped elsewhere counts as closed."""
+    with patch(
+        "bedrock_agentcore.tools.code_interpreter_client.CodeInterpreter"
+    ) as ci_cls:
+        sandbox = AgentCoreSandbox.create(region="us-west-2")
+        stop = ci_cls.return_value.stop
+        stop.side_effect = _ALREADY_TERMINATED
+        if cleanup == "direct":
+            sandbox.close()
+        elif cleanup == "sync":
+            with sandbox:
+                pass
+        else:
+
+            async def run() -> None:
+                async with sandbox:
+                    pass
+
+            asyncio.run(run())
+        sandbox.close()
+    stop.assert_called_once()
+
+
+def test_close_retries_after_stop_failure() -> None:
+    """Other stop errors propagate and leave the stop to retry (from #1439)."""
+    transient = ClientError(
+        {"Error": {"Code": "InternalServerException", "Message": "Try again"}},
+        "StopCodeInterpreterSession",
+    )
+    with patch(
+        "bedrock_agentcore.tools.code_interpreter_client.CodeInterpreter"
+    ) as ci_cls:
+        sandbox = AgentCoreSandbox.create(region="us-west-2")
+        stop = ci_cls.return_value.stop
+        stop.side_effect = [transient, None]
+        with pytest.raises(ClientError) as raised:
+            sandbox.close()
+        assert raised.value is transient
+        sandbox.close()
+        sandbox.close()
+    assert stop.call_count == 2
 
 
 def test_caller_supplied_interpreter_is_left_running() -> None:

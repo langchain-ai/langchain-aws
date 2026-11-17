@@ -86,6 +86,8 @@ class UnifiedRepository:
         serializer: CheckpointSerializer,
         storage_strategy: StorageStrategy,
         ttl_seconds: int | None = None,
+        *,
+        consistent_read: bool = False,
     ):
         """Initialize unified repository.
 
@@ -95,12 +97,15 @@ class UnifiedRepository:
             serializer: Checkpoint serializer for data serialization
             storage_strategy: Storage strategy for strategic offloading
             ttl_seconds: Optional TTL in seconds for automatic cleanup
+            consistent_read: If True, checkpoint and write metadata reads use
+                strongly consistent reads
         """
         self.dynamodb_client = dynamodb_client
         self.table_name = table_name
         self.serializer = serializer
         self.storage = storage_strategy
         self.ttl_seconds = ttl_seconds
+        self.consistent_read = consistent_read
 
     def _determine_storage_location(self, payload_data: bytes) -> str:
         """Determine storage location based on payload size.
@@ -219,6 +224,7 @@ class UnifiedRepository:
                     Key={"PK": {"S": pk}, "SK": {"S": sk}},
                     ProjectionExpression=projection,
                     ExpressionAttributeNames=expr_attr_names,
+                    ConsistentRead=self.consistent_read,
                 )
                 if "Item" not in response:
                     return None
@@ -249,6 +255,7 @@ class UnifiedRepository:
                     "ProjectionExpression": projection,
                     "ExpressionAttributeNames": expr_attr_names,
                     "ScanIndexForward": False,
+                    "ConsistentRead": self.consistent_read,
                 }
 
                 # Get first result from generator
@@ -416,6 +423,7 @@ class UnifiedRepository:
                 ),
                 "ExpressionAttributeNames": {"#t": "type"},
                 "ScanIndexForward": False,
+                "ConsistentRead": self.consistent_read,
             }
 
             # Key condition and attribute values based on checkpoint_ns presence
@@ -517,6 +525,7 @@ class UnifiedRepository:
                     "task_id, channel, ref_key, ref_loc, #t, compression"
                 ),
                 "ExpressionAttributeNames": {"#t": "type"},  # 'type' is reserved
+                "ConsistentRead": self.consistent_read,
             }
 
             # Paginated query
@@ -770,6 +779,7 @@ class UnifiedRepository:
                 "KeyConditionExpression": "PK = :pk",
                 "ExpressionAttributeValues": {":pk": {"S": pk}},
                 "ProjectionExpression": "SK",
+                "ConsistentRead": self.consistent_read,
             }
 
             # Paginated query
@@ -850,6 +860,7 @@ class UnifiedRepository:
                     "KeyConditionExpression": "PK = :pk",
                     "ExpressionAttributeValues": {":pk": {"S": pk}},
                     "ProjectionExpression": "PK, SK, ref_key, ref_loc",
+                    "ConsistentRead": self.consistent_read,
                 }
 
                 # Paginated query
@@ -907,6 +918,7 @@ class UnifiedRepository:
             keys_and_attrs: KeysAndAttributesTypeDef = {
                 "Keys": batch_keys,
                 "ProjectionExpression": "PK, SK, ref_key, ref_loc",
+                "ConsistentRead": self.consistent_read,
             }
             request_items: dict[str, KeysAndAttributesTypeDef] = {
                 self.table_name: keys_and_attrs
@@ -937,7 +949,10 @@ class UnifiedRepository:
                     unprocessed = response.get("UnprocessedKeys", {})
                     request_items = (
                         {
-                            k: cast("KeysAndAttributesTypeDef", v)
+                            k: cast(
+                                "KeysAndAttributesTypeDef",
+                                {**v, "ConsistentRead": self.consistent_read},
+                            )
                             for k, v in unprocessed.items()
                         }
                         if unprocessed

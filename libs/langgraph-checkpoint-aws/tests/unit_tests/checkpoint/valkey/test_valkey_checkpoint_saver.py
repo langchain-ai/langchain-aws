@@ -14,6 +14,7 @@ import fakeredis
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata, CheckpointTuple
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from valkey.exceptions import NoPermissionError
 
 from langgraph_checkpoint_aws import ValkeySaver
 
@@ -388,6 +389,37 @@ class TestValkeySaverUnit:
         # Verify data was deleted
         assert not fake_valkey_client.exists(thread_key)
         assert not fake_valkey_client.exists(checkpoint_key)
+
+    def test_delete_thread_does_not_require_keys(self, saver, fake_valkey_client):
+        """delete_thread works when KEYS is denied by ACLs (-@dangerous)."""
+        thread_key = saver._make_thread_key("test-thread", "ns1")
+        checkpoint_key = saver._make_checkpoint_key("test-thread", "ns1", "cp-1")
+        writes_key = saver._make_writes_key("test-thread", "ns1", "cp-1")
+        other_key = saver._make_thread_key("other-thread", "ns1")
+        fake_valkey_client.lpush(thread_key, "cp-1")
+        fake_valkey_client.set(checkpoint_key, "checkpoint")
+        fake_valkey_client.set(writes_key, "writes")
+        fake_valkey_client.lpush(other_key, "cp-2")
+
+        def keys_denied(*_args, **_kwargs):
+            raise NoPermissionError(
+                "this user has no permissions to run the 'keys' command"
+            )
+
+        with patch.object(fake_valkey_client, "keys", keys_denied):
+            saver.delete_thread("test-thread")
+
+        assert not fake_valkey_client.exists(thread_key, checkpoint_key, writes_key)
+        assert fake_valkey_client.exists(other_key)
+
+    def test_delete_thread_scan_count(self, saver, fake_valkey_client):
+        """delete_thread scans with a COUNT of 1000, not the delete batch size."""
+        with patch.object(
+            fake_valkey_client, "scan_iter", wraps=fake_valkey_client.scan_iter
+        ) as scan_iter:
+            saver.delete_thread("test-thread")
+
+        scan_iter.assert_called_once_with(match="thread:{test-thread}:*", count=1000)
 
     def test_complex_checkpoint_data(self, saver, fake_valkey_client):
         """Test handling complex checkpoint data."""

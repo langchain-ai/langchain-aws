@@ -401,7 +401,7 @@ class TestValkeyStoreBatchOperations:
 
     def test_batch_list_namespaces_operations(self, mock_valkey_client):
         """Test batch with ListNamespacesOp operations."""
-        mock_valkey_client.keys.return_value = [b"langgraph:test/doc1"]
+        mock_valkey_client.scan_iter.return_value = [b"langgraph:test/doc1"]
 
         store = ValkeyStore(mock_valkey_client)
 
@@ -686,8 +686,7 @@ class TestValkeyStoreListNamespaces:
 
     def test_list_namespaces_with_data(self, mock_valkey_client):
         """Test listing namespaces when namespaces exist."""
-        # Mock keys() method instead of smembers since we use key pattern matching
-        mock_valkey_client.keys.return_value = [
+        mock_valkey_client.scan_iter.return_value = [
             b"langgraph:namespace1/key1",
             b"langgraph:namespace2/key2",
             b"langgraph:namespace3/key3",
@@ -1011,3 +1010,23 @@ class TestValkeyStoreContextManagers:
         except Exception:
             # If it fails due to mocking complexity, that's expected in unit tests
             pass
+
+
+def test_list_namespaces_does_not_require_keys() -> None:
+    """list_namespaces works when KEYS is denied by ACLs (-@dangerous)."""
+    fakeredis = pytest.importorskip("fakeredis")
+    from valkey.exceptions import NoPermissionError
+
+    client = fakeredis.FakeStrictRedis(decode_responses=False)
+    store = ValkeyStore(client=client)
+    store.put(("users", "alice"), "profile", {"name": "Alice"})
+    store.put(("docs",), "readme", {"text": "hi"})
+
+    def keys_denied(*_args, **_kwargs):
+        raise NoPermissionError(
+            "this user has no permissions to run the 'keys' command"
+        )
+
+    with patch.object(client, "keys", keys_denied):
+        assert store.list_namespaces() == [("docs",), ("users", "alice")]
+        assert store.list_namespaces(prefix=("users",)) == [("users", "alice")]

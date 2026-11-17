@@ -1685,6 +1685,8 @@ class ChatBedrock(BaseChatModel, BedrockBase):
             kwargs["stop_sequences"] = self.stop_sequences
         if self.service_tier:
             kwargs["service_tier"] = self.service_tier
+        if self.request_metadata:
+            kwargs["request_metadata"] = self.request_metadata
 
         return ChatBedrockConverse(
             client=self.client,

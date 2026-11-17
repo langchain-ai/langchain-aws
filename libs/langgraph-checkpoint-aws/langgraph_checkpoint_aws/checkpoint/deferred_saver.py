@@ -104,10 +104,10 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
     """Checkpoint saver wrapper that buffers writes and flushes on demand.
 
     Intercepts every ``put()`` and ``put_writes()`` call from the LangGraph
-    runtime, keeping only the latest checkpoint in memory and accumulating
-    all writes.  Nothing is persisted until the user explicitly calls
-    ``flush()`` / ``aflush()`` or uses the ``flush_on_exit()`` /
-    ``aflush_on_exit()`` context managers.
+    runtime, keeping only the latest checkpoint per ``thread_id`` and
+    ``checkpoint_ns`` in memory and accumulating all writes.  Nothing is
+    persisted until the user explicitly calls ``flush()`` / ``aflush()`` or
+    uses the ``flush_on_exit()`` / ``aflush_on_exit()`` context managers.
 
     This reduces API overhead from *O(nodes)* calls per invocation down to a
     single batch, at the cost of mid-workflow fault tolerance.
@@ -145,7 +145,7 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
         self._saver = saver
         self._batch_writes = batch_writes
         self._lock = threading.Lock()
-        self._pending_checkpoint: _PendingCheckpoint | None = None
+        self._pending_checkpoints: dict[tuple[Any, Any], _PendingCheckpoint] = {}
         self._pending_writes: list[_PendingWrite] = []
         self._last_config: RunnableConfig | None = None
 
@@ -158,7 +158,7 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
     def has_buffered_checkpoint(self) -> bool:
         """Whether a checkpoint is currently buffered."""
         with self._lock:
-            return self._pending_checkpoint is not None
+            return bool(self._pending_checkpoints)
 
     @property
     def has_buffered_writes(self) -> bool:
@@ -170,7 +170,7 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
     def is_empty(self) -> bool:
         """Whether the buffer contains no pending data."""
         with self._lock:
-            return self._pending_checkpoint is None and len(self._pending_writes) == 0
+            return not self._pending_checkpoints and len(self._pending_writes) == 0
 
     def put(
         self,
@@ -181,9 +181,11 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
     ) -> RunnableConfig:
         """Buffer a checkpoint instead of persisting immediately.
 
-        Each call overwrites the previously buffered checkpoint — only the
-        latest one is kept.  This is the core optimization: for a 6-node
-        workflow LangGraph calls ``put()`` 6 times, but we only persist once.
+        Each call overwrites the checkpoint buffered for the same ``thread_id``
+        and ``checkpoint_ns``, so a subgraph's checkpoints do not replace its
+        parent's, only keeping the latest one per namespace. This is the core
+        optimization: for a 6-node workflow LangGraph calls ``put()`` 6 times,
+        but we only persist once.
 
         Args:
             config: The runnable config associated with this checkpoint.
@@ -204,9 +206,10 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
                 "checkpoint_id": checkpoint["id"],
             }
         }
+        key = _thread_key(config)
         with self._lock:
-            self._pending_checkpoint = _merge_pending(
-                self._pending_checkpoint,
+            self._pending_checkpoints[key] = _merge_pending(
+                self._pending_checkpoints.get(key),
                 _PendingCheckpoint(
                     config=config,
                     checkpoint=checkpoint,
@@ -293,12 +296,13 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
             A ``CheckpointTuple`` built from buffered data, or ``None`` if
             the buffer doesn't match.
         """
-        if self._pending_checkpoint is None:
+        pending = self._pending_checkpoints.get(_thread_key(config))
+        if pending is None:
             return None
 
-        buf_config = self._pending_checkpoint.config
-        buf_checkpoint = self._pending_checkpoint.checkpoint
-        buf_metadata = self._pending_checkpoint.metadata
+        buf_config = pending.config
+        buf_checkpoint = pending.checkpoint
+        buf_metadata = pending.metadata
 
         # Extract identifiers from the request
         req_thread = config["configurable"].get("thread_id")
@@ -459,9 +463,9 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
         """Persist all buffered data to the underlying saver.
 
         When ``batch_writes=True`` and the saver implements
-        ``SyncBatchFlushable``, the checkpoint and all writes are persisted
+        ``SyncBatchFlushable``, each checkpoint and its writes are persisted
         in a single ``put_with_writes()`` call (fast path).  Otherwise the
-        checkpoint is flushed first, then writes are drained one at a time
+        checkpoints are flushed first, then writes are drained one at a time
         (fallback path).
 
         The lock is never held during network I/O.
@@ -470,8 +474,9 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
         raced in) and the exception is re-raised.
 
         Returns:
-            The config returned by the underlying saver's ``put()`` or
-            ``put_with_writes()``, or ``None`` if no checkpoint was buffered.
+            The config returned by the underlying saver for the root graph's
+            checkpoint (the first one flushed when only subgraph checkpoints
+            were buffered), or ``None`` if no checkpoint was buffered.
 
         Raises:
             Exception: Any exception raised by the underlying saver during
@@ -484,56 +489,67 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
         # --- Fallback path: existing 1 + N behavior ---
         return self._flush_sequential()
 
+    def _restore_checkpoint(self, pending_cp: _PendingCheckpoint) -> None:
+        """Put back a checkpoint whose flush failed, merged into any newer ``put()``.
+
+        Must be called while ``self._lock`` is held.
+        """
+        key = _thread_key(pending_cp.config)
+        newer = self._pending_checkpoints.get(key)
+        self._pending_checkpoints[key] = (
+            pending_cp if newer is None else _merge_pending(pending_cp, newer)
+        )
+
     def _flush_batched(self) -> RunnableConfig | None:
         """Fast path: persist checkpoint + writes in one call."""
         with self._lock:
-            pending_cp = self._pending_checkpoint
+            pending_cps = list(self._pending_checkpoints.values())
             pending_writes = list(self._pending_writes)
-            self._pending_checkpoint = None
+            self._pending_checkpoints.clear()
             self._pending_writes.clear()
 
-        if pending_cp is None:
+        if not pending_cps:
             if pending_writes:
                 with self._lock:
                     self._pending_writes = pending_writes + self._pending_writes
             return None
 
-        public_writes = [
-            PendingWrite(
-                config=w.config,
-                writes=w.writes,
-                task_id=w.task_id,
-                task_path=w.task_path,
-            )
-            for w in pending_writes
-        ]
+        keys = [_thread_key(cp.config) for cp in pending_cps]
+        writes_by_key: dict[tuple[Any, Any], list[_PendingWrite]] = {
+            k: [] for k in keys
+        }
+        for w in pending_writes:
+            writes_by_key.get(_thread_key(w.config), writes_by_key[keys[0]]).append(w)
 
-        try:
-            result_config = self._saver.put_with_writes(  # type: ignore[attr-defined]
-                pending_cp.config,
-                pending_cp.checkpoint,
-                pending_cp.metadata,
-                pending_cp.new_versions,
-                public_writes,
-            )
-        except Exception:
-            with self._lock:
-                if self._pending_checkpoint is None:
-                    self._pending_checkpoint = pending_cp
-                else:
-                    self._pending_checkpoint = _merge_pending(
-                        pending_cp, self._pending_checkpoint
-                    )
-                self._pending_writes = [
-                    _PendingWrite(
-                        config=w.config,
-                        writes=w.writes,
-                        task_id=w.task_id,
-                        task_path=w.task_path,
-                    )
-                    for w in pending_writes
-                ] + self._pending_writes
-            raise
+        result_config: RunnableConfig | None = None
+        for i, pending_cp in enumerate(pending_cps):
+            public_writes = [
+                PendingWrite(
+                    config=w.config,
+                    writes=w.writes,
+                    task_id=w.task_id,
+                    task_path=w.task_path,
+                )
+                for w in writes_by_key[keys[i]]
+            ]
+            try:
+                config = self._saver.put_with_writes(  # type: ignore[attr-defined]
+                    pending_cp.config,
+                    pending_cp.checkpoint,
+                    pending_cp.metadata,
+                    pending_cp.new_versions,
+                    public_writes,
+                )
+            except Exception:
+                with self._lock:
+                    for unflushed in pending_cps[i:]:
+                        self._restore_checkpoint(unflushed)
+                    self._pending_writes = [
+                        w for key in keys[i:] for w in writes_by_key[key]
+                    ] + self._pending_writes
+                raise
+            if result_config is None or keys[i][1] == "":
+                result_config = config
 
         return result_config
 
@@ -542,19 +558,15 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
         result_config: RunnableConfig | None = None
 
         # --- Flush checkpoint ---
-        # We clear _pending_checkpoint before I/O to prevent a concurrent
-        # flush() from double-persisting the same checkpoint.  If the I/O
-        # fails, we restore it — but only when no new put() has written a
-        # newer checkpoint while we were blocked on the network call.
-        # Without this guard, a stale checkpoint would overwrite the fresh
-        # one, silently dropping data.
         with self._lock:
-            pending_cp = self._pending_checkpoint
-            self._pending_checkpoint = None
-
-        if pending_cp is not None:
+            keys = list(self._pending_checkpoints)
+        for key in keys:
+            with self._lock:
+                pending_cp = self._pending_checkpoints.pop(key, None)
+            if pending_cp is None:
+                continue
             try:
-                result_config = self._saver.put(
+                config = self._saver.put(
                     pending_cp.config,
                     pending_cp.checkpoint,
                     pending_cp.metadata,
@@ -562,13 +574,10 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
                 )
             except Exception:
                 with self._lock:
-                    if self._pending_checkpoint is None:
-                        self._pending_checkpoint = pending_cp
-                    else:
-                        self._pending_checkpoint = _merge_pending(
-                            pending_cp, self._pending_checkpoint
-                        )
+                    self._restore_checkpoint(pending_cp)
                 raise
+            if result_config is None or _thread_key(pending_cp.config)[1] == "":
+                result_config = config
 
         # --- Flush writes one at a time ---
         # Unlike the checkpoint, writes use a peek-then-pop pattern: we
@@ -604,8 +613,9 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
         Otherwise falls back to sequential ``aput()`` + N ``aput_writes()``.
 
         Returns:
-            The config returned by the underlying saver, or ``None`` if no
-            checkpoint was buffered.
+            The config returned by the underlying saver for the root graph's
+            checkpoint (the first one flushed when only subgraph checkpoints
+            were buffered), or ``None`` if no checkpoint was buffered.
 
         Raises:
             Exception: Any exception raised by the underlying saver during
@@ -621,53 +631,53 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
     async def _aflush_batched(self) -> RunnableConfig | None:
         """Async fast path: persist checkpoint + writes in one call."""
         with self._lock:
-            pending_cp = self._pending_checkpoint
+            pending_cps = list(self._pending_checkpoints.values())
             pending_writes = list(self._pending_writes)
-            self._pending_checkpoint = None
+            self._pending_checkpoints.clear()
             self._pending_writes.clear()
 
-        if pending_cp is None:
+        if not pending_cps:
             if pending_writes:
                 with self._lock:
                     self._pending_writes = pending_writes + self._pending_writes
             return None
 
-        public_writes = [
-            PendingWrite(
-                config=w.config,
-                writes=w.writes,
-                task_id=w.task_id,
-                task_path=w.task_path,
-            )
-            for w in pending_writes
-        ]
+        keys = [_thread_key(cp.config) for cp in pending_cps]
+        writes_by_key: dict[tuple[Any, Any], list[_PendingWrite]] = {
+            k: [] for k in keys
+        }
+        for w in pending_writes:
+            writes_by_key.get(_thread_key(w.config), writes_by_key[keys[0]]).append(w)
 
-        try:
-            result_config = await self._saver.aput_with_writes(  # type: ignore[attr-defined]
-                pending_cp.config,
-                pending_cp.checkpoint,
-                pending_cp.metadata,
-                pending_cp.new_versions,
-                public_writes,
-            )
-        except Exception:
-            with self._lock:
-                if self._pending_checkpoint is None:
-                    self._pending_checkpoint = pending_cp
-                else:
-                    self._pending_checkpoint = _merge_pending(
-                        pending_cp, self._pending_checkpoint
-                    )
-                self._pending_writes = [
-                    _PendingWrite(
-                        config=w.config,
-                        writes=w.writes,
-                        task_id=w.task_id,
-                        task_path=w.task_path,
-                    )
-                    for w in pending_writes
-                ] + self._pending_writes
-            raise
+        result_config: RunnableConfig | None = None
+        for i, pending_cp in enumerate(pending_cps):
+            public_writes = [
+                PendingWrite(
+                    config=w.config,
+                    writes=w.writes,
+                    task_id=w.task_id,
+                    task_path=w.task_path,
+                )
+                for w in writes_by_key[keys[i]]
+            ]
+            try:
+                config = await self._saver.aput_with_writes(  # type: ignore[attr-defined]
+                    pending_cp.config,
+                    pending_cp.checkpoint,
+                    pending_cp.metadata,
+                    pending_cp.new_versions,
+                    public_writes,
+                )
+            except Exception:
+                with self._lock:
+                    for unflushed in pending_cps[i:]:
+                        self._restore_checkpoint(unflushed)
+                    self._pending_writes = [
+                        w for key in keys[i:] for w in writes_by_key[key]
+                    ] + self._pending_writes
+                raise
+            if result_config is None or keys[i][1] == "":
+                result_config = config
 
         return result_config
 
@@ -677,12 +687,14 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
 
         # --- Flush checkpoint ---
         with self._lock:
-            pending_cp = self._pending_checkpoint
-            self._pending_checkpoint = None
-
-        if pending_cp is not None:
+            keys = list(self._pending_checkpoints)
+        for key in keys:
+            with self._lock:
+                pending_cp = self._pending_checkpoints.pop(key, None)
+            if pending_cp is None:
+                continue
             try:
-                result_config = await self._saver.aput(
+                config = await self._saver.aput(
                     pending_cp.config,
                     pending_cp.checkpoint,
                     pending_cp.metadata,
@@ -690,13 +702,10 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
                 )
             except Exception:
                 with self._lock:
-                    if self._pending_checkpoint is None:
-                        self._pending_checkpoint = pending_cp
-                    else:
-                        self._pending_checkpoint = _merge_pending(
-                            pending_cp, self._pending_checkpoint
-                        )
+                    self._restore_checkpoint(pending_cp)
                 raise
+            if result_config is None or _thread_key(pending_cp.config)[1] == "":
+                result_config = config
 
         # --- Flush writes one at a time ---
         while True:
@@ -762,6 +771,6 @@ class DeferredCheckpointSaver(BaseCheckpointSaver):
         without saving any intermediate state.
         """
         with self._lock:
-            self._pending_checkpoint = None
+            self._pending_checkpoints.clear()
             self._pending_writes.clear()
             self._last_config = None

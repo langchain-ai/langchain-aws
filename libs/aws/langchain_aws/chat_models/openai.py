@@ -9,6 +9,7 @@ structured output, streaming, tracing, multimodal) is inherited unchanged.
 """
 
 import os
+import warnings
 from collections.abc import AsyncIterator, Iterator
 from typing import Any, Literal, NoReturn, cast
 
@@ -48,6 +49,9 @@ from langchain_aws.utils import (
 _MANTLE_BASE_URL_TEMPLATE = "https://bedrock-mantle.{region}.api.aws/v1"
 # Mantle serves GPT-5.x/GPT-6 only under ``/openai/v1`` (gpt-oss only under ``/v1``).
 _MANTLE_OPENAI_BASE_URL_TEMPLATE = "https://bedrock-mantle.{region}.api.aws/openai/v1"
+# Served only on the ``/openai/v1`` passthrough (Chat Completions), per their AWS
+# model cards. On ``/v1`` they answer 400 "model isn't supported on this route".
+_MANTLE_OPENAI_V1_CHAT_MODEL_PREFIXES = ("google.gemma-4", "xai.grok-4.")
 
 _MODEL_PROFILES = cast("ModelProfileRegistry", _PROFILES)
 
@@ -231,7 +235,30 @@ class ChatOpenAIMantle(BaseChatOpenAI):
         # Same as ``ChatOpenAI``: GPT-5.x/GPT-6 reject the deprecated ``max_tokens``.
         if "max_tokens" in payload:
             payload["max_completion_tokens"] = payload.pop("max_tokens")
+        self._drop_unsupported_sampling_params(payload)
         return payload
+
+    def _drop_unsupported_sampling_params(self, payload: dict) -> None:
+        if not self.profile or self.profile.get("temperature") is not False:
+            return
+        effort = payload.get("reasoning_effort") or (
+            payload.get("reasoning") or {}
+        ).get("effort")
+        if effort == "none":
+            return
+        ignored = []
+        if payload.get("temperature") not in (None, 1):
+            del payload["temperature"]
+            ignored.append("temperature")
+        if payload.pop("top_p", None) is not None:
+            ignored.append("top_p")
+        if ignored:
+            warnings.warn(
+                f"Model {self.model_name} does not support {' or '.join(ignored)} "
+                "unless reasoning_effort is 'none'; ignoring the provided "
+                f"value{'s' if len(ignored) > 1 else ''}.",
+                stacklevel=3,
+            )
 
     @model_validator(mode="before")
     @classmethod
@@ -262,6 +289,7 @@ class ChatOpenAIMantle(BaseChatOpenAI):
         is_openai_gpt = model.startswith("openai.gpt-") and not model.startswith(
             "openai.gpt-oss"
         )
+        is_openai_v1_chat = model.startswith(_MANTLE_OPENAI_V1_CHAT_MODEL_PREFIXES)
         if is_openai_gpt and values.get("use_responses_api") is None:
             values["use_responses_api"] = True
 
@@ -280,7 +308,7 @@ class ChatOpenAIMantle(BaseChatOpenAI):
                 raise ValueError(msg)
             template = (
                 _MANTLE_OPENAI_BASE_URL_TEMPLATE
-                if is_openai_gpt
+                if is_openai_gpt or is_openai_v1_chat
                 else _MANTLE_BASE_URL_TEMPLATE
             )
             values["base_url"] = template.format(region=region)

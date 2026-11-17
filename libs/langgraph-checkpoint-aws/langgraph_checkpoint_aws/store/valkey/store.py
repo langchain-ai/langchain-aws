@@ -29,6 +29,7 @@ from valkey.connection import ConnectionPool  # type: ignore[import-untyped]
 # Import AsyncValkeyStore for convenience
 from .async_store import AsyncValkeyStore
 from .base import BaseValkeyStore, ValkeyIndexConfig
+from .constants import SCAN_COUNT_BATCH_SIZE
 from .document_utils import DocumentProcessor
 from .exceptions import EmbeddingGenerationError
 from .search import SearchStrategyManager
@@ -693,7 +694,13 @@ class ValkeyStore(BaseValkeyStore):
             all_keys = []
             for pattern in patterns:
                 try:
-                    keys_result = self.client.keys(pattern)
+                    # SCAN rather than KEYS: KEYS blocks the server and is in
+                    # the @dangerous ACL category, commonly denied in production.
+                    keys_result = list(
+                        self.client.scan_iter(
+                            match=pattern, count=SCAN_COUNT_BATCH_SIZE
+                        )
+                    )
                     # Use base class method to safely parse keys
                     keys = self._safe_parse_keys(keys_result)
                     all_keys.extend(keys)

@@ -46,13 +46,13 @@ jobs:
       actions: write
     name: "make integration_test"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           repository: "${{ inputs.fork }}/langchain-aws"
           ref: "${{ inputs.branch }}"
 
       - name: Set up Python ${{ env.PYTHON_VERSION }} + uv
-        uses: "./.github/actions/uv_setup"
+        uses: "$/.github/actions/uv_setup"
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -61,7 +61,7 @@ jobs:
         run: uv sync --group test --group test_integration
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

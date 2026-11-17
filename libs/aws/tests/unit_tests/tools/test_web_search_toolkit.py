@@ -437,3 +437,131 @@ class TestExports:
         ]
         for name, field in WebSearchInput.model_fields.items():
             assert field.description, f"{name} has no description"
+
+
+class TestSearchApiAndFixedRules:
+    """Tests for the Web Search API route and the rules set on the toolkit."""
+
+    def test_no_gateway_passes_no_gateway_arguments(self) -> None:
+        """With no gateway, the SDK client is built with only the region."""
+        with patch(
+            "langchain_aws.tools.web_search_toolkit.WebSearchClient"
+        ) as client_cls:
+            create_web_search_toolkit(region="us-west-2")
+
+        kwargs = client_cls.call_args.kwargs
+        assert kwargs == {"integration_source": "langchain", "region": "us-west-2"}
+
+    def test_fixed_filters_and_web_search_id_reach_the_client(self) -> None:
+        """Filters and the tool ID set on the toolkit are forwarded to the SDK."""
+        with patch(
+            "langchain_aws.tools.web_search_toolkit.WebSearchClient"
+        ) as client_cls:
+            create_web_search_toolkit(
+                web_search_id="web-search.v1",
+                exclude_domains=["example.com"],
+                include_domains=["a.example"],
+                published_after="2026-11-01T00:00:00Z",
+                published_before="2026-12-01T00:00:00Z",
+            )
+
+        kwargs = client_cls.call_args.kwargs
+        assert kwargs["web_search_id"] == "web-search.v1"
+        assert kwargs["exclude_domains"] == ["example.com"]
+        assert kwargs["include_domains"] == ["a.example"]
+        assert kwargs["published_after"] == "2026-11-01T00:00:00Z"
+        assert kwargs["published_before"] == "2026-12-01T00:00:00Z"
+
+    def test_unset_filters_are_not_forwarded(self) -> None:
+        """An older SDK without the filter arguments keeps working when unused."""
+        with patch(
+            "langchain_aws.tools.web_search_toolkit.WebSearchClient"
+        ) as client_cls:
+            create_web_search_toolkit(gateway_id=GATEWAY_ID)
+
+        assert "exclude_domains" not in client_cls.call_args.kwargs
+        assert "web_search_id" not in client_cls.call_args.kwargs
+
+    def test_filters_with_a_client_raise(self) -> None:
+        """Filters belong on a supplied client, not on the toolkit."""
+        with pytest.raises(ValueError, match="on the client"):
+            WebSearchToolkit(client=MagicMock(), exclude_domains=["example.com"])
+
+    def test_model_filters_false_shows_only_a_query(self) -> None:
+        """The model sees a query argument and nothing else."""
+        toolkit, client = _make_toolkit(model_filters=False)
+        tool = toolkit.get_tools()[0]
+
+        assert list(tool.args) == ["query"]
+        tool.invoke({"query": "openssl advisory"})
+        assert client.search.call_args.args == ("openssl advisory",)
+        assert client.search.call_args.kwargs["exclude_domains"] is None
+
+    def test_max_searches_stops_further_calls(self) -> None:
+        """After the budget, the tool answers with a limit message, not a search."""
+        toolkit, client = _make_toolkit(max_searches=2)
+        tool = toolkit.get_tools()[0]
+
+        for _ in range(3):
+            text = tool.invoke({"query": "q"})
+
+        assert client.search.call_count == 2
+        assert "Search limit of 2 reached" in text
+
+    def test_max_searches_must_be_positive(self) -> None:
+        """A budget below one is rejected."""
+        with pytest.raises(ValueError, match="max_searches"):
+            WebSearchToolkit(client=MagicMock(), max_searches=0)
+
+    def test_return_sources_puts_results_in_the_artifact(self) -> None:
+        """The tool message carries the results as data."""
+        result = WebSearchResult(
+            text="openssl fixed",
+            url="https://openssl.example/a",
+            title="OpenSSL advisory",
+            published_date="2026-11-01T00:00:00Z",
+        )
+        toolkit, _ = _make_toolkit(search_return=_response(result), return_sources=True)
+        tool = toolkit.get_tools()[0]
+
+        message = tool.invoke(
+            {
+                "type": "tool_call",
+                "id": "1",
+                "name": "web_search",
+                "args": {"query": "q"},
+            }
+        )
+
+        assert "OpenSSL advisory" in message.content
+        assert message.artifact[0]["url"] == "https://openssl.example/a"
+        assert message.artifact[0]["published_date"] == "2026-11-01T00:00:00Z"
+        assert message.artifact[0]["text"] == "openssl fixed"
+
+    def test_return_sources_limit_message_has_an_empty_artifact(self) -> None:
+        """A search refused by the budget returns no sources."""
+        toolkit, _ = _make_toolkit(max_searches=1, return_sources=True)
+        tool = toolkit.get_tools()[0]
+        call = {
+            "type": "tool_call",
+            "id": "1",
+            "name": "web_search",
+            "args": {"query": "q"},
+        }
+
+        tool.invoke(call)
+        message = tool.invoke({**call, "id": "2"})
+
+        assert message.artifact == []
+
+
+def test_a_single_domain_string_is_accepted_as_a_list() -> None:
+    """Models often send one domain as a string; the tool forwards it as a list."""
+    toolkit, client = _make_toolkit()
+
+    toolkit.get_tools()[0].invoke(
+        {"query": "q", "include_domains": "openssl.org", "exclude_domains": "x.example"}
+    )
+
+    assert client.search.call_args.kwargs["include_domains"] == ["openssl.org"]
+    assert client.search.call_args.kwargs["exclude_domains"] == ["x.example"]

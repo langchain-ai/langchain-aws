@@ -86,6 +86,7 @@ from langchain_aws.function_calling import (
 )
 from langchain_aws.tools.nova_tools import NovaSystemTool
 from langchain_aws.utils import (
+    MODEL_ID_GEO_PREFIXES,
     count_tokens_api_supported_for_model,
     create_aws_client,
     forced_tool_choice_unsupported,
@@ -970,6 +971,9 @@ class ChatBedrockConverse(BaseChatModel):
             or
             # xAI Grok models
             (provider == "xai" and "grok" in model_id_lower)
+            or
+            # Z.ai GLM models
+            (provider == "zai" and "glm" in model_id_lower)
         ):
             return True
         elif (
@@ -1193,6 +1197,11 @@ class ChatBedrockConverse(BaseChatModel):
                     self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "grok" in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
+            elif base_model.startswith("zai.glm-"):
+                if base_model.startswith("zai.glm-5.3"):
+                    self.supports_tool_choice_values = ("auto", "any", "tool")
+                else:
+                    self.supports_tool_choice_values = ("auto", "any")
             elif base_model.startswith("openai.gpt-") and "gpt-oss" not in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "llama4" in base_model:
@@ -1234,14 +1243,20 @@ class ChatBedrockConverse(BaseChatModel):
         _add_langchain_aws_version(self)
         return self
 
+    @property
+    def _mid_conversation_system_messages(self) -> bool:
+        return bool((self.profile or {}).get("mid_conversation_system_messages"))
+
     def _resolve_model_profile(self) -> ModelProfile | None:
         """Return the default model profile for this model."""
-        model_id = self._get_base_model()
-        profile = _get_default_model_profile(model_id)
+        profile = _get_default_model_profile(
+            self.model_id
+        ) or _get_default_model_profile(self._get_base_model())
         # The data describes the APIs `ChatAnthropicBedrock`, `ChatAnthropicMantle`
-        # and `ChatOpenAIMantle` call. Converse hoists every system message into
-        # `system`, so it can't send one in place.
-        profile.pop("mid_conversation_system_messages", None)
+        # and `ChatOpenAIMantle` call. Converse accepts an in-place system message
+        # only for Claude, and has no content block for mid-conversation tool changes.
+        if not (self.provider == "anthropic" or "anthropic" in self._get_base_model()):
+            profile.pop("mid_conversation_system_messages", None)
         profile.pop("mid_conversation_tools", None)
         return profile
 
@@ -1285,10 +1300,9 @@ class ChatBedrockConverse(BaseChatModel):
 
         # For regional model IDs (e.g., us.anthropic.claude-haiku-4-5-20251001-v1:0),
         # get the base model ID by removing the regional prefix
-        if self.model_id.startswith(
-            ("eu.", "us.", "us-gov.", "apac.", "sa.", "amer.", "global.", "jp.", "au.")
-        ):
-            return self.model_id.partition(".")[2]
+        prefix, _, rest = self.model_id.partition(".")
+        if rest and prefix.lower() in MODEL_ID_GEO_PREFIXES:
+            return rest
 
         return self.model_id
 
@@ -1395,6 +1409,7 @@ class ChatBedrockConverse(BaseChatModel):
                 self.system,
                 model_id=self._get_base_model(),
                 provider=self.provider,
+                mid_conversation_system_messages=self._mid_conversation_system_messages,
             )
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
@@ -1476,6 +1491,7 @@ class ChatBedrockConverse(BaseChatModel):
                 self.system,
                 model_id=self._get_base_model(),
                 provider=self.provider,
+                mid_conversation_system_messages=self._mid_conversation_system_messages,
             )
             if self.guard_last_turn_only:
                 logger.debug("Applying selective guardrail to only the last turn")
@@ -2237,6 +2253,7 @@ class ChatBedrockConverse(BaseChatModel):
                     self.system,
                     model_id=self._get_base_model(),
                     provider=self.provider,
+                    mid_conversation_system_messages=self._mid_conversation_system_messages,
                 )
             )
 
@@ -2520,14 +2537,41 @@ def _drop_foreign_reasoning(
     return message.model_copy(update={"content": content})
 
 
+def _next_non_system_is_ai(messages: Sequence[BaseMessage], index: int) -> bool:
+    """Whether the first non-system message after `index` is an AI message."""
+    for message in messages[index + 1 :]:
+        if not isinstance(message, SystemMessage):
+            return isinstance(message, AIMessage)
+    return False
+
+
+def _warn_system_message_hoisted(model_id: Optional[str]) -> None:
+    """Warn that a non-leading system message was hoisted into `system`."""
+    warnings.warn(
+        "A non-leading `SystemMessage` was moved to the top-level `system` field "
+        "and now applies to the entire conversation. Converse sends a system "
+        "message in place only after a human or tool message and before an AI "
+        f"message (model: {model_id!r}).",
+        UserWarning,
+        stacklevel=4,
+    )
+
+
 def _messages_to_bedrock(
     messages: List[BaseMessage],
     system: Optional[List[Union[str, Dict[str, Any]]]] = None,
     *,
     model_id: Optional[str] = None,
     provider: Optional[str] = None,
+    mid_conversation_system_messages: bool = False,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Handle Bedrock converse and Anthropic style content blocks"""
+    """Handle Bedrock converse and Anthropic style content blocks.
+
+    A leading system message goes to `system`. With
+    `mid_conversation_system_messages`, a later one is sent in place where Converse
+    accepts it, after a human or tool message and before an AI message, and is
+    hoisted into `system` otherwise.
+    """
     for idx, message in enumerate(messages):
         if not isinstance(message, AIMessage):
             continue
@@ -2618,7 +2662,19 @@ def _messages_to_bedrock(
                 content = _empty_content_fallback(content)
             bedrock_messages.append({"role": "assistant", "content": content})
         elif isinstance(msg, SystemMessage):
-            bedrock_system.extend(content)
+            if not bedrock_messages:
+                bedrock_system.extend(content)
+            elif (
+                mid_conversation_system_messages
+                and bedrock_messages[-1]["role"] == "user"
+                and _next_non_system_is_ai(messages, msg_idx)
+                and all(set(block) <= {"text", "cachePoint"} for block in content)
+            ):
+                bedrock_messages.append({"role": "system", "content": content})
+            else:
+                if mid_conversation_system_messages:
+                    _warn_system_message_hoisted(model_id)
+                bedrock_system.extend(content)
         elif isinstance(msg, ToolMessage):
             if bedrock_messages and bedrock_messages[-1]["role"] == "user":
                 curr = bedrock_messages.pop()
@@ -3173,7 +3229,8 @@ def _lc_content_to_bedrock(
         content = [{"type": "text", "text": EMPTY_CONTENT}]
 
     bedrock_content: List[Dict[str, Any]] = []
-    for block in _snake_to_camel_keys(content):
+    # 'json' holds the data of a tool result, which is sent as it is
+    for block in _snake_to_camel_keys(content, excluded_keys={"json"}):
         if isinstance(block, str):
             bedrock_content.append({"text": block})
         # Assume block is already in bedrock format.
@@ -3728,48 +3785,6 @@ def _set_additional_properties_false(schema: dict) -> None:
                 _set_additional_properties_false(sub_schema)
 
 
-def _strip_null_anyof(schema: Any) -> Any:
-    """Recursively strip ``{type: null}`` variants from ``anyOf`` and type arrays.
-
-    Bedrock's Converse API enforces a hard limit of 16 union-typed parameters
-    (``anyOf`` or array types) across all tool schemas in a single request.
-    MCP tools commonly encode optional parameters as either
-    ``anyOf: [{type: X}, {type: null}]`` or ``{type: [X, null]}``, both of
-    which count against the budget.  Stripping the null branch collapses each
-    nullable parameter to its concrete type while preserving correct
-    tool-calling behavior — Bedrock callers can still omit optional parameters
-    without the schema needing to declare them as union types.
-    """
-    if not isinstance(schema, dict):
-        return schema
-    result: Dict[str, Any] = {}
-    for key, value in schema.items():
-        if key == "anyOf" and isinstance(value, list):
-            non_null = [
-                _strip_null_anyof(v)
-                for v in value
-                if not (isinstance(v, dict) and v.get("type") == "null")
-            ]
-            if len(non_null) == 1:
-                # Unwrap single remaining type inline rather than keeping anyOf.
-                result.update(non_null[0])
-                continue
-            result[key] = non_null if non_null else value
-        elif key == "type" and isinstance(value, list):
-            # Collapse {"type": [..., "null"]} the same way as anyOf nullables.
-            non_null = [t for t in value if t != "null"]
-            result[key] = non_null[0] if len(non_null) == 1 else (non_null or value)
-        elif isinstance(value, dict):
-            result[key] = _strip_null_anyof(value)
-        elif isinstance(value, list):
-            result[key] = [
-                _strip_null_anyof(v) if isinstance(v, dict) else v for v in value
-            ]
-        else:
-            result[key] = value
-    return result
-
-
 def _format_tools(
     tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool]],
 ) -> List[Dict[Literal["toolSpec"], Dict[str, Union[Dict[str, Any], str]]]]:
@@ -3782,7 +3797,6 @@ def _format_tools(
                 formatted_tools.append(tool)
             else:
                 spec = convert_to_openai_tool(tool)["function"]
-                spec["parameters"] = _strip_null_anyof(spec["parameters"])
                 spec["inputSchema"] = {"json": spec.pop("parameters")}
                 formatted_tools.append({"toolSpec": spec})
 

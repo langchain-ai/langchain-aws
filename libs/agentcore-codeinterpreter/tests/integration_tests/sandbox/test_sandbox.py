@@ -7,12 +7,14 @@ Code Interpreter service is available.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 from langchain_agentcore_codeinterpreter import AgentCoreSandbox
+from langchain_agentcore_codeinterpreter.sandbox import SessionExpiredError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -88,6 +90,15 @@ class TestAgentCoreSandboxIntegration:
         results = sandbox.download_files(["binary_test.bin"])
         assert results[0].error is None
         assert results[0].content == content
+
+    def test_download_large_file(self, sandbox: AgentCoreSandbox) -> None:
+        """A file too large for one readFiles response downloads intact."""
+        sandbox.execute("head -c 20000000 /dev/urandom > large_download.bin")
+        digest = sandbox.execute("sha256sum large_download.bin").output.split()[0]
+        results = sandbox.download_files(["large_download.bin"])
+        assert results[0].error is None
+        assert results[0].content is not None
+        assert hashlib.sha256(results[0].content).hexdigest() == digest
 
     def test_session_id(self, sandbox: AgentCoreSandbox) -> None:
         """The sandbox should have a non-empty session ID."""
@@ -190,3 +201,42 @@ class TestAgentCoreSandboxIntegration:
             assert glob_result.error is None, glob_result.error
 
         asyncio.run(run())
+
+
+def _ended_sandbox() -> AgentCoreSandbox:
+    """Create a sandbox whose session is then ended manually."""
+    region = os.environ.get(
+        "AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
+    )
+    sandbox = AgentCoreSandbox.create(region=region, session_timeout_seconds=300)
+    interpreter = sandbox._interpreter
+    interpreter.data_plane_client.stop_code_interpreter_session(
+        codeInterpreterIdentifier=interpreter.identifier,
+        sessionId=interpreter.session_id,
+    )
+    return sandbox
+
+
+@pytest.mark.skipif(
+    not os.environ.get("AWS_DEFAULT_REGION") and not os.environ.get("AWS_REGION"),
+    reason=_SKIP_REASON,
+)
+class TestAgentCoreSandboxEndedSession:
+    """The service's answers for an ended session, which the sandbox matches on."""
+
+    def test_ended_session_reports_expiry(self) -> None:
+        sandbox = _ended_sandbox()
+        with pytest.raises(SessionExpiredError):
+            sandbox._invoke(method="executeCommand", params={"command": "echo"})
+        result = sandbox.execute("echo hi")
+        assert result.exit_code == 1
+        assert "session has expired" in result.output
+        sandbox.close()
+
+    def test_close_ended_session(self) -> None:
+        sandbox = _ended_sandbox()
+        sandbox.close()
+        sandbox.close()
+
+        with _ended_sandbox():
+            pass

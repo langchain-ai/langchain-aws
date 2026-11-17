@@ -703,6 +703,49 @@ class TestDeferredCheckpointSaver:
         finally:
             cleanup(thread_id, actor_id)
 
+    def test_interrupted_subgraph_resumes_after_flush(
+        self, saver_and_cleanup: _SaverAndCleanup
+    ) -> None:
+        """A run stopped inside a subgraph resumes from the flushed checkpoints."""
+        from typing import TypedDict
+
+        from langgraph.graph import END, START, StateGraph
+        from langgraph.types import Command, interrupt
+
+        class State(TypedDict):
+            value: str
+
+        child = StateGraph(State)
+        child.add_node(
+            "ask", lambda state: {"value": state["value"] + " " + interrupt("ok?")}
+        )
+        child.add_edge(START, "ask")
+        child.add_edge("ask", END)
+        parent = StateGraph(State)
+        parent.add_node("before", lambda state: {"value": state["value"] + " before"})
+        parent.add_node("child", child.compile())
+        parent.add_edge(START, "before")
+        parent.add_edge("before", "child")
+        parent.add_edge("child", END)
+
+        saver, cleanup, thread_id, actor_id = self._unpack(saver_and_cleanup)
+        deferred = DeferredCheckpointSaver(saver)
+        config: RunnableConfig = {
+            "configurable": {"thread_id": thread_id, "actor_id": actor_id}
+        }
+
+        try:
+            with deferred.flush_on_exit():
+                parent.compile(checkpointer=deferred).invoke({"value": "start"}, config)
+
+            persisted = parent.compile(checkpointer=saver)
+            assert persisted.get_state(config).next == ("child",)
+            assert persisted.invoke(Command(resume="yes"), config) == {
+                "value": "start before yes"
+            }
+        finally:
+            cleanup(thread_id, actor_id)
+
     def test_pending_writes_retrievable_after_flush(
         self, saver_and_cleanup: _SaverAndCleanup
     ) -> None:
