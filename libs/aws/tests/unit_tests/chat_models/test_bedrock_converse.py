@@ -6279,7 +6279,7 @@ def test_service_tier_parameter() -> None:
 
 @pytest.mark.parametrize(
     "service_tier",
-    ["priority", "default", "flex", "reserved"],
+    ["priority", "default", "flex", "reserved", "ultrafast"],
 )
 def test_service_tier_valid_values(service_tier: str) -> None:
     """Test that all valid service_tier values are accepted."""
@@ -6312,6 +6312,37 @@ def test_service_tier_none_not_in_params() -> None:
 
     params = llm._converse_params()
     assert "serviceTier" not in params
+
+
+def test_service_tier_ultrafast_sent_in_additional_fields() -> None:
+    """Converse's serviceTier rejects 'ultrafast', so it goes in the request body."""
+    llm = ChatBedrockConverse(
+        model="us.openai.gpt-6.2-astra",
+        region_name="us-east-1",
+        service_tier="ultrafast",
+        additional_model_request_fields={"reasoning": {"effort": "low"}},
+    )
+
+    params = llm._converse_params()
+    assert "serviceTier" not in params
+    assert params["additionalModelRequestFields"] == {
+        "reasoning": {"effort": "low"},
+        "service_tier": "ultrafast",
+    }
+    assert llm.additional_model_request_fields == {"reasoning": {"effort": "low"}}
+
+
+def test_service_tier_ultrafast_keeps_explicit_body_value() -> None:
+    """A service_tier already set in additional_model_request_fields wins."""
+    llm = ChatBedrockConverse(
+        model="us.openai.gpt-6.2-astra",
+        region_name="us-east-1",
+        service_tier="ultrafast",
+        additional_model_request_fields={"service_tier": "default"},
+    )
+
+    params = llm._converse_params()
+    assert params["additionalModelRequestFields"] == {"service_tier": "default"}
 
 
 def test_temperature_omitted_when_unsupported() -> None:
@@ -6373,6 +6404,27 @@ def test_service_tier_passed_to_converse() -> None:
     # Verify converse was called with serviceTier in the correct format
     call_kwargs = mocked_client.converse.call_args[1]
     assert call_kwargs["serviceTier"] == {"type": "priority"}
+
+
+def test_service_tier_ultrafast_passed_to_converse() -> None:
+    """'ultrafast' reaches converse as additionalModelRequestFields.service_tier."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="us.openai.gpt-6.2-astra",
+        region_name="us-east-1",
+        service_tier="ultrafast",
+    )
+    llm.invoke([HumanMessage(content="Hi")])
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert "serviceTier" not in call_kwargs
+    assert call_kwargs["additionalModelRequestFields"] == {"service_tier": "ultrafast"}
 
 
 def test_service_tier_passed_to_converse_stream() -> None:
