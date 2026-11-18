@@ -65,7 +65,7 @@ class TestAsyncBedrockMemorySaver:
         checkpoint = Checkpoint(
             v=1,
             id=str(uuid6(clock_seq=-2)),
-            ts=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            ts=datetime.datetime.now(datetime.UTC).isoformat(),
             channel_values={"key": "value"},
             channel_versions={},
             versions_seen={},

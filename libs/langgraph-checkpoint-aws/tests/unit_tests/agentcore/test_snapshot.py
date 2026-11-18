@@ -169,7 +169,7 @@ class EventService:
                 {
                     "sessionId": session,
                     "actorId": params["actorId"],
-                    "createdAt": datetime.datetime.now(datetime.timezone.utc),
+                    "createdAt": datetime.datetime.now(datetime.UTC),
                 }
                 for session in sessions[start:end]
             ]
@@ -218,7 +218,7 @@ def checkpoint(index: int, *, channels: int = 2) -> Checkpoint:
     return Checkpoint(
         v=4,
         id=f"{index:032x}",
-        ts=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        ts=datetime.datetime.now(datetime.UTC).isoformat(),
         channel_values=values,
         channel_versions={
             key: str(index) if key == "messages" else "1" for key in values
@@ -515,7 +515,7 @@ def test_non_checkpoint_conversations_do_not_force_full_scan(
             memoryId=MEMORY_ID,
             actorId=ACTOR_ID,
             sessionId=THREAD_ID,
-            eventTimestamp=datetime.datetime.now(datetime.timezone.utc),
+            eventTimestamp=datetime.datetime.now(datetime.UTC),
             payload=[
                 {"conversational": {"content": {"text": "New input"}, "role": "USER"}}
             ],
@@ -1025,7 +1025,7 @@ def test_legacy_thread_under_conversational_events_still_falls_back(
             memoryId=MEMORY_ID,
             actorId=ACTOR_ID,
             sessionId=THREAD_ID,
-            eventTimestamp=datetime.datetime.now(datetime.timezone.utc),
+            eventTimestamp=datetime.datetime.now(datetime.UTC),
             payload=[
                 {"conversational": {"content": {"text": "New input"}, "role": "USER"}}
             ],

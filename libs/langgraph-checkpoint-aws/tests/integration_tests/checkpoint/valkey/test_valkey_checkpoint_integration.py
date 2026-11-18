@@ -4,7 +4,7 @@ import asyncio
 import os
 import uuid
 from collections.abc import Generator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -106,7 +106,7 @@ def test_sync_operations(valkey_url: str) -> None:
         # Test data
         config = {"configurable": {"thread_id": "test-thread", "checkpoint_ns": "test"}}
         checkpoint = {"id": "test-1", "state": {"value": 1}, "versions": {}}
-        metadata = {"timestamp": datetime.now(timezone.utc).isoformat(), "user": "test"}
+        metadata = {"timestamp": datetime.now(UTC).isoformat(), "user": "test"}
         new_versions: dict[str, int] = {}
 
         # Store checkpoint
@@ -140,7 +140,7 @@ def test_sync_shared_pool(valkey_pool: Any) -> None:
         config = {"configurable": {"thread_id": "test-thread", "checkpoint_ns": "test"}}
         checkpoint1 = {"id": "test-1", "state": {"value": 1}, "versions": {}}
         checkpoint2 = {"id": "test-2", "state": {"value": 2}, "versions": {}}
-        metadata = {"timestamp": datetime.now(timezone.utc).isoformat(), "user": "test"}
+        metadata = {"timestamp": datetime.now(UTC).isoformat(), "user": "test"}
         new_versions: dict[str, int] = {}
 
         # Store checkpoints in both savers
@@ -207,13 +207,13 @@ def test_get_tuple_latest_checkpoint_with_data(saver: ValkeySaver) -> None:
     }
     checkpoint = {
         "id": "test-checkpoint-1",
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "channel_values": {"value": 42},
         "channel_versions": {},
         "versions_seen": {},
         "pending_sends": [],
     }
-    metadata = {"timestamp": datetime.now(timezone.utc).isoformat(), "user": "test"}
+    metadata = {"timestamp": datetime.now(UTC).isoformat(), "user": "test"}
     new_versions: dict[str, int] = {}
 
     # Store checkpoint
@@ -246,13 +246,13 @@ def test_list_checkpoints_with_before_filter(saver: ValkeySaver) -> None:
         }
         checkpoint = {
             "id": f"checkpoint-{i}",
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "channel_values": {"value": i},
             "channel_versions": {},
             "versions_seen": {},
             "pending_sends": [],
         }
-        metadata = {"timestamp": datetime.now(timezone.utc).isoformat(), "user": "test"}
+        metadata = {"timestamp": datetime.now(UTC).isoformat(), "user": "test"}
         saver.put(config, checkpoint, metadata, {})  # type: ignore[arg-type]
 
     # List checkpoints before the first one
@@ -290,13 +290,13 @@ def test_list_checkpoints_with_limit(saver: ValkeySaver) -> None:
         }
         checkpoint = {
             "id": f"checkpoint-{i}",
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "channel_values": {"value": i},
             "channel_versions": {},
             "versions_seen": {},
             "pending_sends": [],
         }
-        metadata = {"timestamp": datetime.now(timezone.utc).isoformat(), "user": "test"}
+        metadata = {"timestamp": datetime.now(UTC).isoformat(), "user": "test"}
         saver.put(config, checkpoint, metadata, {})  # type: ignore
 
     # List with limit
@@ -325,14 +325,14 @@ def test_list_checkpoints_with_metadata_filter(saver: ValkeySaver) -> None:
         }
         checkpoint = {
             "id": f"checkpoint-{i}",
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "channel_values": {"value": i},
             "channel_versions": {},
             "versions_seen": {},
             "pending_sends": [],
         }
         metadata = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "user": "test" if i % 2 == 0 else "other",
         }
         saver.put(config, checkpoint, metadata, {})  # type: ignore
@@ -365,13 +365,13 @@ def test_put_writes(saver: ValkeySaver) -> None:
     # First store a checkpoint
     checkpoint = {
         "id": "test-checkpoint",
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "channel_values": {"value": 1},
         "channel_versions": {},
         "versions_seen": {},
         "pending_sends": [],
     }
-    metadata = {"timestamp": datetime.now(timezone.utc).isoformat(), "user": "test"}
+    metadata = {"timestamp": datetime.now(UTC).isoformat(), "user": "test"}
     saver.put(
         {"configurable": {"thread_id": "test-thread-writes", "checkpoint_ns": "test"}},
         checkpoint,  # type: ignore
@@ -406,14 +406,14 @@ def test_delete_thread(saver: ValkeySaver) -> None:
             config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ns}}
             checkpoint = {
                 "id": f"checkpoint-{i}",
-                "ts": datetime.now(timezone.utc).isoformat(),
+                "ts": datetime.now(UTC).isoformat(),
                 "channel_values": {"value": i},
                 "channel_versions": {},
                 "versions_seen": {},
                 "pending_sends": [],
             }
             metadata = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "user": "test",
             }
             saver.put(config, checkpoint, metadata, {})  # type: ignore
@@ -479,13 +479,13 @@ def test_async_methods_not_implemented(saver: ValkeySaver) -> None:
     # Test aput
     checkpoint = {
         "id": "test-checkpoint",
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "channel_values": {"value": 1},
         "channel_versions": {},
         "versions_seen": {},
         "pending_sends": [],
     }
-    metadata = {"timestamp": datetime.now(timezone.utc).isoformat(), "user": "test"}
+    metadata = {"timestamp": datetime.now(UTC).isoformat(), "user": "test"}
 
     with pytest.raises(NotImplementedError) as exc_info:
         asyncio.run(saver.aput(config, checkpoint, metadata, {}))  # type: ignore
@@ -540,13 +540,13 @@ def test_list_checkpoints_before_nonexistent(saver: ValkeySaver) -> None:
     config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": checkpoint_ns}}
     checkpoint = {
         "id": "checkpoint-1",
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "channel_values": {"value": 1},
         "channel_versions": {},
         "versions_seen": {},
         "pending_sends": [],
     }
-    metadata = {"timestamp": datetime.now(timezone.utc).isoformat(), "user": "test"}
+    metadata = {"timestamp": datetime.now(UTC).isoformat(), "user": "test"}
     saver.put(config, checkpoint, metadata, {})  # type: ignore
 
     # List checkpoints before nonexistent checkpoint
