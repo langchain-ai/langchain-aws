@@ -702,17 +702,22 @@ class ChatBedrockConverse(BaseChatModel):
         """,
     )
 
-    service_tier: Optional[Literal["priority", "default", "flex", "reserved"]] = Field(
+    service_tier: Optional[
+        Literal["priority", "default", "flex", "reserved", "ultrafast"]
+    ] = Field(
         default=None,
         description="""Service tier for model invocation.
 
         Specifies the processing tier type used for serving the request.
-        Supported values are 'priority', 'default', 'flex', and 'reserved'.
+        Supported values are 'priority', 'default', 'flex', 'reserved', and
+        'ultrafast'.
 
         - 'priority': Prioritized processing for lower latency
         - 'default': Standard processing tier
         - 'flex': Flexible processing tier with lower cost
         - 'reserved': Reserved capacity for consistent performance
+        - 'ultrafast': Faster output for models that offer it, such as OpenAI's
+          GPT-6 Astra, GPT-6.1 Sol, and GPT-6.2 Astra.
 
         If not provided, AWS uses the default tier.
         """,
@@ -2061,7 +2066,7 @@ class ChatBedrockConverse(BaseChatModel):
         guardrailConfig: Optional[dict] = None,
         performanceConfig: Optional[Mapping[str, Any]] = None,
         serviceTier: Optional[
-            Literal["priority", "default", "flex", "reserved"]
+            Literal["priority", "default", "flex", "reserved", "ultrafast"]
         ] = None,
         requestMetadata: Optional[dict] = None,
         outputConfig: Optional[dict] = None,
@@ -2135,6 +2140,10 @@ class ChatBedrockConverse(BaseChatModel):
             }
         else:
             merged_additional_fields = {}
+
+        if tier == "ultrafast":
+            merged_additional_fields.setdefault("service_tier", tier)
+            tier = None
 
         return _drop_none(
             {
