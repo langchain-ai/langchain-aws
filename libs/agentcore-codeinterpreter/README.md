@@ -6,7 +6,7 @@
 
 Amazon Bedrock AgentCore Code Interpreter sandbox integration for [Deep Agents](https://github.com/langchain-ai/deepagents).
 
-This package provides `AgentCoreSandbox` — a [`SandboxBackendProtocol`](https://docs.langchain.com/oss/deepagents/sandboxes) implementation that wraps AgentCore's [Code Interpreter](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-interpreter-tool.html), a secure, isolated MicroVM environment for executing code. `AgentCoreSandbox.create()` starts a session and stops it when you close the sandbox or leave a `with` block.
+This package provides `AgentCoreSandbox` — a [`SandboxBackendProtocol`](https://docs.langchain.com/oss/python/deepagents/sandboxes) implementation that wraps AgentCore's [Code Interpreter](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/code-interpreter-tool.html), a secure, isolated MicroVM environment for executing code. `AgentCoreSandbox.create()` starts a session and stops it when you close the sandbox or leave a `with` block.
 
 > **Note:** For the LangChain `BaseTool` integration (used with `create_react_agent` and LangGraph agents), see [`langchain-aws[tools]`](https://github.com/langchain-ai/langchain-aws). This package is specifically for the Deep Agents `BaseSandbox` protocol.
 
