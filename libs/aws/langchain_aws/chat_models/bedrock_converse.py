@@ -2735,6 +2735,8 @@ _FINISH_REASONS: Dict[str, str] = {
     "guardrail_intervened": "content_filter",
     "content_filtered": "content_filter",
     "model_context_window_exceeded": "context_exceeded",
+    "malformed_model_output": "error",
+    "malformed_tool_use": "error",
 }
 
 

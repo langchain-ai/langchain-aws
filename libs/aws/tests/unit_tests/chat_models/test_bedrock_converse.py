@@ -6920,7 +6920,8 @@ def test_closing_stream_early_does_not_report_incomplete_response() -> None:
         ("guardrail_intervened", "content_filter"),
         ("content_filtered", "content_filter"),
         ("model_context_window_exceeded", "context_exceeded"),
-        ("malformed_model_output", "other"),
+        ("malformed_model_output", "error"),
+        ("malformed_tool_use", "error"),
         ("some_future_reason", "other"),
     ],
 )
