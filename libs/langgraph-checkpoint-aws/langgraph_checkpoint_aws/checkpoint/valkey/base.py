@@ -28,6 +28,11 @@ from .utils import set_client_info, set_client_name
 # for the same checkpoint concurrently, so this is only ever reached pathologically.
 _PUT_WRITES_MAX_ATTEMPTS = 100
 
+# COUNT hint for the SCAN that finds a thread's keys in delete_thread. SCAN
+# walks the whole keyspace, roughly one round trip per COUNT keys, so a small
+# value is slow on large instances; 1000 matches ValkeyStore's scans.
+_SCAN_COUNT = 1000
+
 logger = logging.getLogger(__name__)
 
 

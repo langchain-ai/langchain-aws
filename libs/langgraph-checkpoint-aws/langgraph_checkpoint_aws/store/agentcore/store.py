@@ -10,7 +10,7 @@ import logging
 import re
 import uuid
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import boto3
@@ -183,7 +183,7 @@ class AgentCoreMemoryStore(BaseStore):
             memoryId=self.memory_id,
             actorId=actor_id,
             sessionId=session_id,
-            eventTimestamp=datetime.now(timezone.utc),
+            eventTimestamp=datetime.now(UTC),
             payload=conversational_payloads,
             metadata={
                 STORE_KEY_METADATA: {"stringValue": _store_key_metadata_value(op.key)}
@@ -249,7 +249,7 @@ class AgentCoreMemoryStore(BaseStore):
                     event.get("eventTimestamp")
                     # Fallback for events missing a timestamp: an oldest-possible,
                     # UTC-aware value so they never win and comparisons stay typed.
-                    or datetime.min.replace(tzinfo=timezone.utc)
+                    or datetime.min.replace(tzinfo=UTC)
                 ),
             )
             return self._convert_event_to_item(latest_event, op.namespace, op.key)
@@ -361,9 +361,8 @@ class AgentCoreMemoryStore(BaseStore):
 
         AgentCore returns timestamps as datetimes via boto3. As a defensive
         fallback, a string ISO-8601 value is parsed (normalizing a trailing
-        "Z" to the "+00:00" UTC offset that ``datetime.fromisoformat`` accepts
-        on Python 3.10), and any value that is not a datetime defaults to the
-        current UTC time.
+        "Z" to the "+00:00" UTC offset), and any value that is not a datetime
+        defaults to the current UTC time.
 
         Args:
             value: The raw timestamp from an event or memory record.
@@ -378,7 +377,7 @@ class AgentCoreMemoryStore(BaseStore):
             except (ValueError, AttributeError):
                 value = None
         if not isinstance(value, datetime):
-            value = datetime.now(timezone.utc)
+            value = datetime.now(UTC)
         return value
 
     def _convert_event_to_item(
@@ -474,9 +473,9 @@ class AgentCoreMemoryStore(BaseStore):
                         created_at.replace("Z", "+00:00")
                     )
                 except (ValueError, AttributeError):
-                    created_at = datetime.now(timezone.utc)
+                    created_at = datetime.now(UTC)
             elif created_at is None:
-                created_at = datetime.now(timezone.utc)
+                created_at = datetime.now(UTC)
 
             search_item = SearchItem(
                 namespace=namespace,

@@ -302,7 +302,7 @@ class AgentCoreEventClient:
             memoryId=self.memory_id,
             actorId=actor_id,
             sessionId=session_id,
-            eventTimestamp=datetime.datetime.now(datetime.timezone.utc),
+            eventTimestamp=datetime.datetime.now(datetime.UTC),
             payload=[{"blob": serialized}],
         )
 
@@ -331,7 +331,7 @@ class AgentCoreEventClient:
         """
         blobs = [self.serializer.serialize_event(event) for event in events]
         chunks = self._chunk_payload(blobs, max_payload_items, max_payload_bytes)
-        timestamp = datetime.datetime.now(datetime.timezone.utc)
+        timestamp = datetime.datetime.now(datetime.UTC)
 
         for index, chunk in enumerate(chunks):
             payload = [{"blob": b} for b in chunk]

@@ -505,6 +505,8 @@ def test_thinking_forced_tool_use_unsupported(
     "model_id,expected_result",
     [
         ("us.anthropic.claude-fable-5-1", True),
+        ("anthropic.claude-fable-5-2", True),
+        ("global.anthropic.claude-fable-5-2", True),
         ("anthropic.claude-opus-5-5", True),
         ("us.anthropic.claude-opus-5-5", True),
         ("global.anthropic.claude-opus-5-5", True),

@@ -41,7 +41,7 @@ def _make_checkpoint(
     return Checkpoint(
         v=1,
         id=str(uuid6(clock_seq=-2)),
-        ts=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        ts=datetime.datetime.now(datetime.UTC).isoformat(),
         channel_values=channel_values or {"messages": ["test message"]},
         channel_versions=channel_versions or {"messages": "v1"},
         versions_seen={"node1": {"messages": "v1"}},

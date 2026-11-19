@@ -702,17 +702,22 @@ class ChatBedrockConverse(BaseChatModel):
         """,
     )
 
-    service_tier: Optional[Literal["priority", "default", "flex", "reserved"]] = Field(
+    service_tier: Optional[
+        Literal["priority", "default", "flex", "reserved", "ultrafast"]
+    ] = Field(
         default=None,
         description="""Service tier for model invocation.
 
         Specifies the processing tier type used for serving the request.
-        Supported values are 'priority', 'default', 'flex', and 'reserved'.
+        Supported values are 'priority', 'default', 'flex', 'reserved', and
+        'ultrafast'.
 
         - 'priority': Prioritized processing for lower latency
         - 'default': Standard processing tier
         - 'flex': Flexible processing tier with lower cost
         - 'reserved': Reserved capacity for consistent performance
+        - 'ultrafast': Faster output for models that offer it, such as OpenAI's
+          GPT-6 Astra, GPT-6.1 Sol, and GPT-6.2 Astra.
 
         If not provided, AWS uses the default tier.
         """,
@@ -1198,10 +1203,7 @@ class ChatBedrockConverse(BaseChatModel):
             elif "grok" in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
             elif base_model.startswith("zai.glm-"):
-                if base_model.startswith("zai.glm-5.3"):
-                    self.supports_tool_choice_values = ("auto", "any", "tool")
-                else:
-                    self.supports_tool_choice_values = ("auto", "any")
+                self.supports_tool_choice_values = ("auto", "any", "tool")
             elif base_model.startswith("openai.gpt-") and "gpt-oss" not in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "llama4" in base_model:
@@ -1226,7 +1228,7 @@ class ChatBedrockConverse(BaseChatModel):
                 ):
                     self.supports_tool_choice_values = ("auto",)
                 else:
-                    self.supports_tool_choice_values = ("auto", "any")
+                    self.supports_tool_choice_values = ("auto", "any", "tool")
             else:
                 self.supports_tool_choice_values = ()
 
@@ -2061,7 +2063,7 @@ class ChatBedrockConverse(BaseChatModel):
         guardrailConfig: Optional[dict] = None,
         performanceConfig: Optional[Mapping[str, Any]] = None,
         serviceTier: Optional[
-            Literal["priority", "default", "flex", "reserved"]
+            Literal["priority", "default", "flex", "reserved", "ultrafast"]
         ] = None,
         requestMetadata: Optional[dict] = None,
         outputConfig: Optional[dict] = None,
@@ -2135,6 +2137,10 @@ class ChatBedrockConverse(BaseChatModel):
             }
         else:
             merged_additional_fields = {}
+
+        if tier == "ultrafast":
+            merged_additional_fields.setdefault("service_tier", tier)
+            tier = None
 
         return _drop_none(
             {
@@ -3229,7 +3235,8 @@ def _lc_content_to_bedrock(
         content = [{"type": "text", "text": EMPTY_CONTENT}]
 
     bedrock_content: List[Dict[str, Any]] = []
-    for block in _snake_to_camel_keys(content):
+    # 'json' holds the data of a tool result, which is sent as it is
+    for block in _snake_to_camel_keys(content, excluded_keys={"json"}):
         if isinstance(block, str):
             bedrock_content.append({"text": block})
         # Assume block is already in bedrock format.
@@ -3784,48 +3791,6 @@ def _set_additional_properties_false(schema: dict) -> None:
                 _set_additional_properties_false(sub_schema)
 
 
-def _strip_null_anyof(schema: Any) -> Any:
-    """Recursively strip ``{type: null}`` variants from ``anyOf`` and type arrays.
-
-    Bedrock's Converse API enforces a hard limit of 16 union-typed parameters
-    (``anyOf`` or array types) across all tool schemas in a single request.
-    MCP tools commonly encode optional parameters as either
-    ``anyOf: [{type: X}, {type: null}]`` or ``{type: [X, null]}``, both of
-    which count against the budget.  Stripping the null branch collapses each
-    nullable parameter to its concrete type while preserving correct
-    tool-calling behavior — Bedrock callers can still omit optional parameters
-    without the schema needing to declare them as union types.
-    """
-    if not isinstance(schema, dict):
-        return schema
-    result: Dict[str, Any] = {}
-    for key, value in schema.items():
-        if key == "anyOf" and isinstance(value, list):
-            non_null = [
-                _strip_null_anyof(v)
-                for v in value
-                if not (isinstance(v, dict) and v.get("type") == "null")
-            ]
-            if len(non_null) == 1:
-                # Unwrap single remaining type inline rather than keeping anyOf.
-                result.update(non_null[0])
-                continue
-            result[key] = non_null if non_null else value
-        elif key == "type" and isinstance(value, list):
-            # Collapse {"type": [..., "null"]} the same way as anyOf nullables.
-            non_null = [t for t in value if t != "null"]
-            result[key] = non_null[0] if len(non_null) == 1 else (non_null or value)
-        elif isinstance(value, dict):
-            result[key] = _strip_null_anyof(value)
-        elif isinstance(value, list):
-            result[key] = [
-                _strip_null_anyof(v) if isinstance(v, dict) else v for v in value
-            ]
-        else:
-            result[key] = value
-    return result
-
-
 def _format_tools(
     tools: Sequence[Union[Dict[str, Any], TypeBaseModel, Callable, BaseTool]],
 ) -> List[Dict[Literal["toolSpec"], Dict[str, Union[Dict[str, Any], str]]]]:
@@ -3838,7 +3803,6 @@ def _format_tools(
                 formatted_tools.append(tool)
             else:
                 spec = convert_to_openai_tool(tool)["function"]
-                spec["parameters"] = _strip_null_anyof(spec["parameters"])
                 spec["inputSchema"] = {"json": spec.pop("parameters")}
                 formatted_tools.append({"toolSpec": spec})
 

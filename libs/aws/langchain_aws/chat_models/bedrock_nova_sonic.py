@@ -204,7 +204,7 @@ class NovaSonicSession:
             msg = "Session is already active."
             raise RuntimeError(msg)
 
-        from aws_sdk_bedrock_runtime.client import (
+        from aws_sdk_bedrock_runtime.models import (
             InvokeModelWithBidirectionalStreamOperationInput,
         )
 

@@ -3,7 +3,7 @@
 import asyncio
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 
 import pytest
@@ -37,7 +37,7 @@ def _make_dynamo_item(
     updated_at: str | None = None,
 ) -> dict:
     """Build a DynamoDB client-format item with type annotations."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     serialized_value: dict = {}
     for k, v in value.items():
         if isinstance(v, str):
@@ -287,7 +287,7 @@ class TestDynamoDBStoreOperations:
 
     def test_map_to_item(self, dynamodb_store):
         """Test mapping deserialized DynamoDB item to Item."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result_dict = {
             "PK": "users:123",
             "SK": "prefs",
@@ -305,7 +305,7 @@ class TestDynamoDBStoreOperations:
 
     def test_deserialize_item(self, dynamodb_store):
         """Test deserializing a DynamoDB client item."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         raw_item = {
             "PK": {"S": "users:123"},
             "SK": {"S": "prefs"},
@@ -326,7 +326,7 @@ class TestDynamoDBStoreOperations:
         expiry = dynamodb_store._calculate_expiry(60)
 
         assert expiry is not None
-        assert expiry > datetime.now(timezone.utc).timestamp()
+        assert expiry > datetime.now(UTC).timestamp()
 
     def test_calculate_expiry_none(self, dynamodb_store):
         """Test TTL expiry calculation with None."""
@@ -340,7 +340,7 @@ class TestDynamoDBStoreBatch:
 
     def test_batch_get_op(self, dynamodb_store):
         """Test batch GetOp."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         dynamodb_store.client.get_item.return_value = {
             "Item": _make_dynamo_item("users:123", "prefs", {"theme": "dark"}, now, now)
         }
@@ -407,7 +407,7 @@ class TestDynamoDBStoreBatch:
 
     def test_batch_search_op(self, dynamodb_store):
         """Test batch SearchOp."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         dynamodb_store.client.query.return_value = {
             "Items": [_make_dynamo_item("docs", "doc1", {"text": "Hello"}, now, now)]
         }
@@ -428,7 +428,7 @@ class TestDynamoDBStoreBatch:
 
     def test_batch_search_op_with_filter(self, dynamodb_store):
         """Test batch SearchOp with filter."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         dynamodb_store.client.query.return_value = {
             "Items": [
                 _make_dynamo_item(

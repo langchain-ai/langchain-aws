@@ -4,7 +4,7 @@ Unit tests for AgentCore Memory Store.
 
 import asyncio
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import ANY, MagicMock, Mock, patch
 
 import pytest
@@ -90,7 +90,7 @@ class TestAgentCoreMemoryStore:
             "content": {"text": "Hello, world!"},
             "memoryStrategyId": "strategy-123",
             "namespaces": ["test_actor", "test_session"],
-            "createdAt": datetime(2024, 1, 1, tzinfo=timezone.utc),
+            "createdAt": datetime(2024, 1, 1, tzinfo=UTC),
             "score": 0.95,
         }
 
@@ -129,7 +129,7 @@ class TestAgentCoreMemoryStore:
 
     def test_batch_get_op_success(self, store, mock_boto_client):
         """Test successful GetOp operation via list_events."""
-        event_timestamp = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        event_timestamp = datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC)
         mock_boto_client.list_events.return_value = {
             "events": [
                 {
@@ -435,7 +435,7 @@ class TestAgentCoreMemoryStore:
         self, store, mock_boto_client, sample_memory_record, sample_item_data
     ):
         """Test batch with mixed operation types."""
-        event_timestamp = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        event_timestamp = datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC)
         mock_boto_client.list_events.return_value = {
             "events": [
                 {
@@ -500,9 +500,7 @@ class TestAgentCoreMemoryStore:
                             }
                         }
                     ],
-                    "eventTimestamp": datetime(
-                        2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc
-                    ),
+                    "eventTimestamp": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
                 }
             ]
         }
@@ -559,9 +557,7 @@ class TestAgentCoreMemoryStore:
                             }
                         }
                     ],
-                    "eventTimestamp": datetime(
-                        2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc
-                    ),
+                    "eventTimestamp": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
                 }
             ]
         }
@@ -772,11 +768,11 @@ class TestAgentCoreMemoryStore:
     def test_parse_timestamp_string_with_z(self, store):
         """Test _parse_timestamp with ISO string ending in Z."""
         result = store._parse_timestamp("2024-01-01T12:00:00Z")
-        assert result == datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        assert result == datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     def test_parse_timestamp_datetime_passthrough(self, store):
         """Test _parse_timestamp returns the same datetime object."""
-        dt = datetime(2025, 6, 15, 9, 30, 0, tzinfo=timezone.utc)
+        dt = datetime(2025, 6, 15, 9, 30, 0, tzinfo=UTC)
         result = store._parse_timestamp(dt)
         assert result is dt  # identity: same object returned, no copy
 
@@ -785,9 +781,9 @@ class TestAgentCoreMemoryStore:
         result_none = store._parse_timestamp(None)
         result_invalid = store._parse_timestamp("not-a-date")
         assert isinstance(result_none, datetime)
-        assert result_none.tzinfo == timezone.utc
+        assert result_none.tzinfo == UTC
         assert isinstance(result_invalid, datetime)
-        assert result_invalid.tzinfo == timezone.utc
+        assert result_invalid.tzinfo == UTC
 
     def test_put_get_roundtrip(self, store, mock_boto_client):
         """Regression test for #708: put→get round-trip returns stored value."""
@@ -807,7 +803,7 @@ class TestAgentCoreMemoryStore:
             STORE_KEY_METADATA: {"stringValue": _store_key_metadata_value("k1")}
         }
 
-        event_timestamp = datetime(2024, 6, 15, 12, 0, 0, tzinfo=timezone.utc)
+        event_timestamp = datetime(2024, 6, 15, 12, 0, 0, tzinfo=UTC)
         mock_boto_client.list_events.return_value = {
             "events": [
                 {
@@ -925,8 +921,8 @@ class TestAgentCoreMemoryStore:
 
     def test_batch_get_op_selects_latest_event(self, store, mock_boto_client):
         """Test GetOp selects the most recent event (last-write-wins)."""
-        older_timestamp = datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
-        newer_timestamp = datetime(2024, 1, 2, 15, 0, 0, tzinfo=timezone.utc)
+        older_timestamp = datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC)
+        newer_timestamp = datetime(2024, 1, 2, 15, 0, 0, tzinfo=UTC)
 
         mock_boto_client.list_events.return_value = {
             "events": [
@@ -970,8 +966,8 @@ class TestAgentCoreMemoryStore:
         mock_boto_client: MagicMock,
     ) -> None:
         """Test GetOp selects the newest event across all response pages."""
-        older_timestamp = datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
-        newer_timestamp = datetime(2024, 1, 2, 15, 0, 0, tzinfo=timezone.utc)
+        older_timestamp = datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC)
+        newer_timestamp = datetime(2024, 1, 2, 15, 0, 0, tzinfo=UTC)
         mock_boto_client.list_events.side_effect = [
             {
                 "events": [
@@ -1038,7 +1034,7 @@ class TestAgentCoreMemoryStore:
                     }
                 }
             ],
-            "eventTimestamp": datetime(2024, 3, 10, 8, 0, 0, tzinfo=timezone.utc),
+            "eventTimestamp": datetime(2024, 3, 10, 8, 0, 0, tzinfo=UTC),
         }
 
         item = store._convert_event_to_item(event, ("actor1", "sess1"), "my-key")
@@ -1048,8 +1044,8 @@ class TestAgentCoreMemoryStore:
         assert item.namespace == ("actor1", "sess1")
         assert item.value["content"] == "Hello there"
         assert item.value["messages"] == [{"text": "Hello there", "role": "USER"}]
-        assert item.created_at == datetime(2024, 3, 10, 8, 0, 0, tzinfo=timezone.utc)
-        assert item.updated_at == datetime(2024, 3, 10, 8, 0, 0, tzinfo=timezone.utc)
+        assert item.created_at == datetime(2024, 3, 10, 8, 0, 0, tzinfo=UTC)
+        assert item.updated_at == datetime(2024, 3, 10, 8, 0, 0, tzinfo=UTC)
 
     def test_convert_event_to_item_multiple_payloads(self, store):
         """Test _convert_event_to_item joins multiple payload entries."""
@@ -1068,7 +1064,7 @@ class TestAgentCoreMemoryStore:
                     }
                 },
             ],
-            "eventTimestamp": datetime(2024, 5, 1, 12, 0, 0, tzinfo=timezone.utc),
+            "eventTimestamp": datetime(2024, 5, 1, 12, 0, 0, tzinfo=UTC),
         }
 
         item = store._convert_event_to_item(event, ("a", "b"), "k2")
@@ -1083,7 +1079,7 @@ class TestAgentCoreMemoryStore:
         """Test _convert_event_to_item with an empty payload list."""
         event = {
             "payload": [],
-            "eventTimestamp": datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+            "eventTimestamp": datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC),
         }
 
         item = store._convert_event_to_item(event, ("x", "y"), "k3")

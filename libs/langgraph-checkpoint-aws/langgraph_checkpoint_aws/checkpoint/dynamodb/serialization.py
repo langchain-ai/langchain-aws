@@ -10,7 +10,7 @@ from langgraph.checkpoint.serde.base import SerializerProtocol
 logger = logging.getLogger(__name__)
 
 
-class CompressionType(str, Enum):
+class CompressionType(str, Enum):  # noqa: UP042
     """Compression types for checkpoint data."""
 
     GZIP = "gzip"

@@ -34,6 +34,7 @@ from valkey.exceptions import ConnectionError, TimeoutError, ValkeyError
 
 from ...agentcore.constants import InvalidConfigError
 from ...agentcore.helpers import EventSerializer
+from ..base import _SCAN_COUNT
 from ..utils import (
     aset_client_info,
     set_client_info,
@@ -700,9 +701,11 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
 
         # Delete all checkpoint-related keys
         keys_to_delete = [session_key]
+        thread_checkpoint_ids = set()
 
         for checkpoint_id_bytes in checkpoint_ids:  # type: ignore[union-attr]
             checkpoint_id = checkpoint_id_bytes.decode()
+            thread_checkpoint_ids.add(checkpoint_id)
 
             # Add checkpoint key
             checkpoint_key = self._make_checkpoint_key(temp_config, checkpoint_id)
@@ -712,11 +715,20 @@ class AgentCoreValkeySaver(BaseCheckpointSaver[str]):
             writes_key = self._make_writes_key(temp_config, checkpoint_id)
             keys_to_delete.append(writes_key)
 
-            # Add channel keys (use pattern matching)
-            channel_pattern = f"{temp_config.channel_key_prefix}:*:{checkpoint_id}"
-            channel_keys = self.client.keys(channel_pattern)
-            if isinstance(channel_keys, list):  # Ensure it's a list for sync client
-                keys_to_delete.extend(channel_keys)
+        # Add channel keys, which end in their checkpoint ID, with a SCAN over the
+        # thread's channel prefix rather than KEYS per checkpoint (as KEYS blocks
+        # the server and is in the @dangerous ACL category, commonly denied in
+        # production)
+        if thread_checkpoint_ids and not self.is_async:
+            channel_pattern = f"{temp_config.channel_key_prefix}:*"
+            channel_keys = cast(
+                Iterator[Any],
+                self.client.scan_iter(match=channel_pattern, count=_SCAN_COUNT),
+            )
+            for key in channel_keys:
+                key_str = key.decode() if isinstance(key, bytes) else key
+                if key_str.rsplit(":", 1)[-1] in thread_checkpoint_ids:
+                    keys_to_delete.append(key)
 
         # Delete all keys in batch
         if keys_to_delete:

@@ -65,7 +65,6 @@ from langchain_aws.chat_models.bedrock_converse import (
     _snake_to_camel,
     _snake_to_camel_keys,
     _split_inline_reasoning,
-    _strip_null_anyof,
     _warn_dropped_block_type,
 )
 from langchain_aws.function_calling import convert_to_anthropic_tool
@@ -562,8 +561,8 @@ def test_llama_bind_tools_tool_choice_variants(
     "model,expected_values",
     [
         ("us.deepseek.r1-v1:0", ()),
-        ("deepseek.v3-v1:0", ("auto", "any")),
-        ("deepseek.v3.2", ("auto", "any")),
+        ("deepseek.v3-v1:0", ("auto", "any", "tool")),
+        ("deepseek.v3.2", ("auto", "any", "tool")),
     ],
 )
 def test_deepseek_supports_tool_choice_values(
@@ -585,9 +584,9 @@ def test_xai_supports_tool_choice_values() -> None:
     [
         ("us.zai.glm-5.3", ("auto", "any", "tool")),
         ("global.zai.glm-5.3", ("auto", "any", "tool")),
-        ("zai.glm-5", ("auto", "any")),
-        ("zai.glm-4.7", ("auto", "any")),
-        ("zai.glm-4.7-flash", ("auto", "any")),
+        ("zai.glm-5", ("auto", "any", "tool")),
+        ("zai.glm-4.7", ("auto", "any", "tool")),
+        ("zai.glm-4.7-flash", ("auto", "any", "tool")),
     ],
 )
 def test_zai_glm_supports_tool_choice_values(
@@ -647,8 +646,12 @@ def test_deepseek_v3_bind_tools_tool_choice_variants(model: str) -> None:
         "auto": {}
     }
 
-    with pytest.raises(ValueError):
-        chat_model.bind_tools([GetWeather], tool_choice="GetWeather")
+    chat_model_with_tools = chat_model.bind_tools(
+        [GetWeather], tool_choice="GetWeather"
+    )
+    assert cast(RunnableBinding, chat_model_with_tools).kwargs["tool_choice"] == {
+        "tool": {"name": "GetWeather"}
+    }
 
 
 @pytest.mark.parametrize("model", ["deepseek.v3-v1:0", "deepseek.v3.2"])
@@ -1979,6 +1982,105 @@ def test__bedrock_to_lc() -> None:
     ]
     actual = _bedrock_to_lc(bedrock)
     assert expected == actual
+
+
+_TOOL_RESULT_DATA = {
+    "order_id": "A1",
+    "shipTo": {"postal_code": "98101"},
+    "line_items": [{"unit_price": 3}],
+}
+
+
+def test__messages_to_bedrock_keeps_tool_result_json_keys() -> None:
+    messages = [
+        HumanMessage(content="Where is order A1?"),
+        AIMessage(
+            content="",
+            tool_calls=[
+                ToolCall(
+                    name="get_order",
+                    args={"order_id": "A1"},
+                    id="tool_call1",
+                    type="tool_call",
+                ),
+                ToolCall(
+                    name="get_order",
+                    args={"order_id": "A1"},
+                    id="tool_call2",
+                    type="tool_call",
+                ),
+            ],
+        ),
+        ToolMessage(
+            content=[{"type": "json", "json": _TOOL_RESULT_DATA}],
+            tool_call_id="tool_call1",
+        ),
+        HumanMessage(
+            content=[
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "tool_call2",
+                    "content": [{"json": _TOOL_RESULT_DATA}],
+                }
+            ]
+        ),
+    ]
+
+    actual_messages, _ = _messages_to_bedrock(messages)
+
+    assert actual_messages[2]["content"] == [
+        {
+            "toolResult": {
+                "content": [{"json": _TOOL_RESULT_DATA}],
+                "toolUseId": "tool_call1",
+                "status": "success",
+            }
+        },
+        {
+            "toolResult": {
+                "toolUseId": "tool_call2",
+                "content": [{"json": _TOOL_RESULT_DATA}],
+                "status": "success",
+            }
+        },
+    ]
+
+
+def test_invoke_sends_tool_result_json_keys_unchanged() -> None:
+    from langchain_core.tools import tool
+
+    @tool
+    def get_order(order_id: str) -> list:
+        """Look up an order."""
+        return [{"type": "json", "json": _TOOL_RESULT_DATA}]
+
+    tool_call = ToolCall(
+        name="get_order", args={"order_id": "A1"}, id="tool_call1", type="tool_call"
+    )
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"role": "assistant", "content": [{"text": "ok"}]}},
+        "stopReason": "end_turn",
+        "usage": {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+    }
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="anthropic.claude-3-sonnet-20240229-v1:0",
+        region_name="us-west-2",
+    )
+
+    llm.bind_tools([get_order]).invoke(
+        [
+            HumanMessage(content="Where is order A1?"),
+            AIMessage(content="", tool_calls=[tool_call]),
+            get_order.invoke(tool_call),
+        ]
+    )
+
+    sent = mocked_client.converse.call_args.kwargs["messages"]
+    assert sent[2]["content"][0]["toolResult"]["content"] == [
+        {"json": _TOOL_RESULT_DATA}
+    ]
 
 
 _CAMEL_SNAKE = [
@@ -6181,7 +6283,7 @@ def test_service_tier_parameter() -> None:
 
 @pytest.mark.parametrize(
     "service_tier",
-    ["priority", "default", "flex", "reserved"],
+    ["priority", "default", "flex", "reserved", "ultrafast"],
 )
 def test_service_tier_valid_values(service_tier: str) -> None:
     """Test that all valid service_tier values are accepted."""
@@ -6214,6 +6316,37 @@ def test_service_tier_none_not_in_params() -> None:
 
     params = llm._converse_params()
     assert "serviceTier" not in params
+
+
+def test_service_tier_ultrafast_sent_in_additional_fields() -> None:
+    """Converse's serviceTier rejects 'ultrafast', so it goes in the request body."""
+    llm = ChatBedrockConverse(
+        model="us.openai.gpt-6.2-astra",
+        region_name="us-east-1",
+        service_tier="ultrafast",
+        additional_model_request_fields={"reasoning": {"effort": "low"}},
+    )
+
+    params = llm._converse_params()
+    assert "serviceTier" not in params
+    assert params["additionalModelRequestFields"] == {
+        "reasoning": {"effort": "low"},
+        "service_tier": "ultrafast",
+    }
+    assert llm.additional_model_request_fields == {"reasoning": {"effort": "low"}}
+
+
+def test_service_tier_ultrafast_keeps_explicit_body_value() -> None:
+    """A service_tier already set in additional_model_request_fields wins."""
+    llm = ChatBedrockConverse(
+        model="us.openai.gpt-6.2-astra",
+        region_name="us-east-1",
+        service_tier="ultrafast",
+        additional_model_request_fields={"service_tier": "default"},
+    )
+
+    params = llm._converse_params()
+    assert params["additionalModelRequestFields"] == {"service_tier": "default"}
 
 
 def test_temperature_omitted_when_unsupported() -> None:
@@ -6275,6 +6408,27 @@ def test_service_tier_passed_to_converse() -> None:
     # Verify converse was called with serviceTier in the correct format
     call_kwargs = mocked_client.converse.call_args[1]
     assert call_kwargs["serviceTier"] == {"type": "priority"}
+
+
+def test_service_tier_ultrafast_passed_to_converse() -> None:
+    """'ultrafast' reaches converse as additionalModelRequestFields.service_tier."""
+    mocked_client = mock.MagicMock()
+    mocked_client.converse.return_value = {
+        "output": {"message": {"content": [{"text": "Hello!"}]}},
+        "usage": {"inputTokens": 10, "outputTokens": 5, "totalTokens": 15},
+    }
+
+    llm = ChatBedrockConverse(
+        client=mocked_client,
+        model="us.openai.gpt-6.2-astra",
+        region_name="us-east-1",
+        service_tier="ultrafast",
+    )
+    llm.invoke([HumanMessage(content="Hi")])
+
+    call_kwargs = mocked_client.converse.call_args[1]
+    assert "serviceTier" not in call_kwargs
+    assert call_kwargs["additionalModelRequestFields"] == {"service_tier": "ultrafast"}
 
 
 def test_service_tier_passed_to_converse_stream() -> None:
@@ -8917,97 +9071,31 @@ class TestNonAsciiPreservation:
         assert "\\u" not in schema_str
 
 
-class TestStripNullAnyof:
-    """Tests for _strip_null_anyof."""
+class _SaveCustomer(BaseModel):
+    """Save a customer record."""
 
-    def test_single_non_null_anyof_unwrapped(self) -> None:
-        """anyOf with one non-null branch is unwrapped to the concrete type."""
-        schema = {"anyOf": [{"type": "string"}, {"type": "null"}]}
-        result = _strip_null_anyof(schema)
-        assert result == {"type": "string"}
-
-    def test_multi_type_anyof_preserved(self) -> None:
-        """anyOf with multiple non-null branches is left intact."""
-        schema = {"anyOf": [{"type": "string"}, {"type": "integer"}]}
-        result = _strip_null_anyof(schema)
-        assert result == {"anyOf": [{"type": "string"}, {"type": "integer"}]}
-
-    def test_nested_properties_in_object_schema(self) -> None:
-        """Nullable params inside object properties are unwrapped recursively."""
-        schema = {
-            "type": "object",
-            "properties": {
-                "name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                "count": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
-            },
-        }
-        result = _strip_null_anyof(schema)
-        assert result["properties"]["name"] == {"type": "string"}
-        assert result["properties"]["count"] == {"type": "integer"}
-
-    def test_non_dict_passthrough(self) -> None:
-        """Non-dict values are returned unchanged."""
-        assert _strip_null_anyof("hello") == "hello"
-        assert _strip_null_anyof(42) == 42
-        assert _strip_null_anyof(None) is None
-
-    def test_schema_without_anyof_unchanged(self) -> None:
-        """A schema with no anyOf is returned structurally identical."""
-        schema = {
-            "type": "object",
-            "properties": {
-                "x": {"type": "string"},
-                "y": {"type": "integer"},
-            },
-        }
-        result = _strip_null_anyof(schema)
-        assert result["type"] == "object"
-        assert result["properties"]["x"] == {"type": "string"}
-        assert result["properties"]["y"] == {"type": "integer"}
-
-    def test_all_null_anyof_left_unchanged(self) -> None:
-        """anyOf where all branches are null is left as-is (guards against empty)."""
-        schema = {"anyOf": [{"type": "null"}]}
-        result = _strip_null_anyof(schema)
-        assert "anyOf" in result
-
-    def test_type_array_null_collapsed(self) -> None:
-        """{"type": [X, "null"]} collapses to the concrete type."""
-        assert _strip_null_anyof({"type": ["string", "null"]}) == {"type": "string"}
-
-    def test_type_array_multi_non_null_preserved(self) -> None:
-        """Genuine multi-type unions keep their non-null members."""
-        result = _strip_null_anyof({"type": ["string", "integer", "null"]})
-        assert result == {"type": ["string", "integer"]}
+    first_name: str
+    middle_name: Optional[str] = Field(description="The middle name, or null if none.")
+    nickname: Optional[str] = None
 
 
-def test_format_tools_strips_null_anyof() -> None:
-    """_format_tools removes null anyOf branches from tool parameter schemas."""
-    openai_tool = {
-        "type": "function",
-        "function": {
-            "name": "search",
-            "description": "Search for something",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"},
-                    "limit": {
-                        "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    },
-                    "offset": {"type": ["integer", "null"]},
-                },
-                "required": ["query"],
-            },
-        },
-    }
-    result = _format_tools([openai_tool])
-    assert len(result) == 1
-    tool_spec = cast(Dict[str, Any], result[0]["toolSpec"])
-    input_schema: Dict[str, Any] = tool_spec["inputSchema"]["json"]
-    assert input_schema["properties"]["limit"] == {"type": "integer"}
-    assert input_schema["properties"]["offset"] == {"type": "integer"}
-    assert input_schema["properties"]["query"] == {"type": "string"}
+@pytest.mark.parametrize("strict", [None, True])
+def test_bind_tools_keeps_nullable_params(strict: Optional[bool]) -> None:
+    """Nullable params reach Bedrock as declared, so a model can pass null."""
+    llm = ChatBedrockConverse(
+        model="us.anthropic.claude-haiku-5-5", region_name="us-east-1"
+    )
+    bound = cast(RunnableBinding, llm.bind_tools([_SaveCustomer], strict=strict))
+
+    tool_spec = cast(
+        Dict[str, Any], _format_tools(bound.kwargs["tools"])[0]["toolSpec"]
+    )
+    properties = tool_spec["inputSchema"]["json"]["properties"]
+
+    nullable = [{"type": "string"}, {"type": "null"}]
+    assert properties["middle_name"]["anyOf"] == nullable
+    assert properties["nickname"]["anyOf"] == nullable
+    assert properties["first_name"] == {"type": "string"}
 
 
 def test__lc_content_to_bedrock_standard_tool_call_block() -> None:

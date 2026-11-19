@@ -250,7 +250,7 @@ class TestAsyncBedrockSessionSaver:
 
         # Act
         with patch("datetime.datetime") as mock_datetime:
-            invocation_step_time = datetime.datetime.now(datetime.timezone.utc)
+            invocation_step_time = datetime.datetime.now(datetime.UTC)
             mock_datetime.now.return_value = invocation_step_time
             await session_saver._save_invocation_step(
                 thread_id,

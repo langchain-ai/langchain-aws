@@ -1,5 +1,6 @@
 import re
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import (
     Any,
     Callable,
@@ -132,6 +133,14 @@ class DocumentAttributeValue(BaseModel, extra="allow"):  # type: ignore[call-arg
     """The string list value."""
     StringValue: Optional[str] = None
     """The string value."""
+
+    @field_validator("DateValue", mode="before")
+    @classmethod
+    def _date_to_iso_string(cls, value: Any) -> Any:
+        # boto3 parses Kendra dates into datetime objects
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return value
 
     @property
     def value(self) -> DocumentAttributeValueType:

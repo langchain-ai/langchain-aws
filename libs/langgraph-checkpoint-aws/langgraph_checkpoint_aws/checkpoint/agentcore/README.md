@@ -22,7 +22,7 @@ pip install langgraph-checkpoint-aws
 ## Requirements
 
 ```text
-Python >=3.10
+Python >=3.11
 langgraph >=1.0.0
 boto3 >=1.43.64
 ```
