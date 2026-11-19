@@ -2727,11 +2727,33 @@ def _messages_to_bedrock(
     return bedrock_messages, bedrock_system
 
 
+_FINISH_REASONS: Dict[str, str] = {
+    "end_turn": "stop",
+    "stop_sequence": "stop",
+    "max_tokens": "length",
+    "tool_use": "tool_call",
+    "guardrail_intervened": "content_filter",
+    "content_filtered": "content_filter",
+    "model_context_window_exceeded": "context_exceeded",
+}
+
+
+def _finish_reason_fields(stop_reason: Optional[str]) -> Dict[str, str]:
+    """Map Converse `stopReason` onto the shared finish fields."""
+    if not stop_reason:
+        return {}
+    return {
+        "finish_reason": stop_reason,
+        "normalized_finish_reason": _FINISH_REASONS.get(stop_reason, "other"),
+    }
+
+
 def _extract_response_metadata(response: Dict[str, Any]) -> Dict[str, Any]:
     response_metadata = response
     # response_metadata only supports string, list or dict
     if "metrics" in response and "latencyMs" in response["metrics"]:
         response_metadata["metrics"]["latencyMs"] = [response["metrics"]["latencyMs"]]
+    response_metadata.update(_finish_reason_fields(response.get("stopReason")))
 
     return response_metadata
 
@@ -2968,7 +2990,13 @@ def _parse_stream_event(
         return AIMessageChunk(content=[])
     elif "messageStop" in event:
         # TODO: snake case response metadata?
-        return AIMessageChunk(content="", response_metadata=event["messageStop"])
+        return AIMessageChunk(
+            content="",
+            response_metadata={
+                **event["messageStop"],
+                **_finish_reason_fields(event["messageStop"].get("stopReason")),
+            },
+        )
     elif "metadata" in event:
         usage = _extract_usage_metadata(
             event["metadata"], reasoning_tokens=reasoning_tokens
