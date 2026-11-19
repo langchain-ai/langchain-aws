@@ -364,12 +364,19 @@ def create_aws_bedrock_runtime_client(
         ValueError: If credentials are incomplete or invalid.
     """
     try:
-        from aws_sdk_bedrock_runtime.client import AsyncBedrockRuntimeClient
-    except ImportError as e:
-        raise ModuleNotFoundError(
-            "Could not import aws-sdk-bedrock-runtime >= 0.10. "
-            'Please install it via: pip install -U "langchain-aws[nova-sonic]"'
-        ) from e
+        from aws_sdk_bedrock_runtime.aio.client import (  # type: ignore[import-not-found,unused-ignore]
+            AsyncBedrockRuntimeClient,
+        )
+    except ImportError:
+        try:
+            from aws_sdk_bedrock_runtime.client import (  # type: ignore[attr-defined,no-redef,unused-ignore]
+                AsyncBedrockRuntimeClient,
+            )
+        except ImportError as e:
+            raise ModuleNotFoundError(
+                "Could not import aws-sdk-bedrock-runtime >= 0.10. "
+                'Please install it via: pip install -U "langchain-aws[nova-sonic]"'
+            ) from e
 
     region_name = (
         region_name or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
