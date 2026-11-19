@@ -499,6 +499,42 @@ tool_call_streaming = true
 tool_choice = true
 image_tool_message = true
 
+[overrides."openai.gpt-6.2-astra"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+
+[overrides."global.openai.gpt-6.2-astra"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+
+[overrides."us.openai.gpt-6.2-astra"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+
+[overrides."openai.gpt-6.2-sol"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+
+[overrides."global.openai.gpt-6.2-sol"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+
+[overrides."us.openai.gpt-6.2-sol"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+tool_call_streaming = true
+tool_choice = true
+image_tool_message = true
+
 [overrides."openai.gpt-6-astra"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 reasoning_effort_default = "medium"
