@@ -646,54 +646,16 @@ class LLMInputOutputAdapter:
         messages_api: bool = False,
         coerce_content_to_string: bool = False,
     ) -> AsyncIterator[Union[GenerationChunk, AIMessageChunk]]:
-        stream = response.get("body")
-
-        if not stream:
-            return
-
-        output_key = cls.provider_to_output_key_map.get(provider, None)
-
-        if not output_key:
-            raise ValueError(
-                f"Unknown streaming response output key for provider: {provider}"
-            )
-
-        for event in stream:
-            chunk = event.get("chunk")
-            if not chunk:
-                continue
-
-            chunk_obj = json.loads(chunk.get("bytes").decode())
-
-            if provider == "cohere" and (
-                chunk_obj["is_finished"] or chunk_obj[output_key] == "<EOS_TOKEN>"
-            ):
-                return
-
-            if (
-                provider == "mistral"
-                and chunk_obj.get(output_key, [{}])[0].get("stop_reason", "") == "stop"
-            ):
-                return
-
-            elif provider in ("qwen", "openai") and (
-                chunk_obj.get(output_key, [{}])[0].get("finish_reason")
-                in ("stop", "length")
-            ):
-                yield _get_invocation_metrics_chunk(chunk_obj)
-                return
-
-            generation_chunk = _stream_response_to_generation_chunk(
-                chunk_obj,
-                provider=provider,
-                output_key=output_key,
-                messages_api=messages_api,
-                coerce_content_to_string=coerce_content_to_string,
-            )
-            if generation_chunk:
-                yield generation_chunk
-            else:
-                continue
+        # The body is the same synchronous botocore EventStream in both paths, so
+        # reuse the sync parser instead of keeping a second copy of its end rules.
+        for chunk in cls.prepare_output_stream(
+            provider,
+            response,
+            stop,
+            messages_api=messages_api,
+            coerce_content_to_string=coerce_content_to_string,
+        ):
+            yield chunk
 
 
 class BedrockBase(BaseLanguageModel, ABC):

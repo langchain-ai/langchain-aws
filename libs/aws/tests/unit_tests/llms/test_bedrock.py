@@ -1,7 +1,7 @@
 # type:ignore
 
 import json
-from typing import AsyncGenerator, Dict
+from typing import AsyncGenerator, Dict, Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1334,6 +1334,81 @@ def _anthropic_stream_with_error(error_type: str) -> list:
         },
     ]
     return [{"chunk": {"bytes": json.dumps(e).encode()}} for e in events]
+
+
+def _stream_events(*events: dict) -> list:
+    return [{"chunk": {"bytes": json.dumps(e).encode()}} for e in events]
+
+
+_USAGE = {"inputTokenCount": 5, "outputTokenCount": 3}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "provider, messages_api, events, text, output_tokens",
+    [
+        (
+            "mistral",
+            False,
+            _stream_events(
+                {"outputs": [{"text": "Hello", "stop_reason": None}]},
+                {
+                    "outputs": [{"text": " world.", "stop_reason": "stop"}],
+                    "amazon-bedrock-invocationMetrics": _USAGE,
+                },
+            ),
+            "Hello world.",
+            3,
+        ),
+        (
+            "meta",
+            False,
+            _stream_events(
+                {"generation": "Hello", "stop_reason": None},
+                {
+                    "generation": " world.",
+                    "stop_reason": "stop",
+                    "amazon-bedrock-invocationMetrics": _USAGE,
+                },
+            ),
+            "Hello world.",
+            3,
+        ),
+        (
+            "anthropic",
+            True,
+            _stream_events(
+                {
+                    "type": "content_block_delta",
+                    "index": 0,
+                    "delta": {"type": "text_delta", "text": "Hello world."},
+                },
+                {"type": "message_stop", "amazon-bedrock-invocationMetrics": _USAGE},
+            ),
+            "Hello world.",
+            3,
+        ),
+        ("writer", False, MOCK_STREAMING_RESPONSE_WRITER, "Hello.", None),
+        ("openai", False, MOCK_STREAMING_RESPONSE_OPENAI, "Hello.", 87),
+    ],
+)
+async def test_aprepare_output_stream_keeps_last_chunk_and_usage(
+    provider: str,
+    messages_api: bool,
+    events: list,
+    text: str,
+    output_tokens: Optional[int],
+) -> None:
+    chunks = [
+        chunk
+        async for chunk in LLMInputOutputAdapter.aprepare_output_stream(
+            provider, {"body": list(events)}, messages_api=messages_api
+        )
+    ]
+
+    assert "".join(c.text for c in chunks) == text
+    usage = (chunks[-1].generation_info or {}).get("usage_metadata", {})
+    assert usage.get("output_tokens") == output_tokens
 
 
 @pytest.mark.parametrize(
