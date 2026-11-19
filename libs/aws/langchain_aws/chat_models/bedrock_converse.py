@@ -1203,10 +1203,7 @@ class ChatBedrockConverse(BaseChatModel):
             elif "grok" in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
             elif base_model.startswith("zai.glm-"):
-                if base_model.startswith("zai.glm-5.3"):
-                    self.supports_tool_choice_values = ("auto", "any", "tool")
-                else:
-                    self.supports_tool_choice_values = ("auto", "any")
+                self.supports_tool_choice_values = ("auto", "any", "tool")
             elif base_model.startswith("openai.gpt-") and "gpt-oss" not in base_model:
                 self.supports_tool_choice_values = ("auto", "any", "tool")
             elif "llama4" in base_model:
@@ -1231,7 +1228,7 @@ class ChatBedrockConverse(BaseChatModel):
                 ):
                     self.supports_tool_choice_values = ("auto",)
                 else:
-                    self.supports_tool_choice_values = ("auto", "any")
+                    self.supports_tool_choice_values = ("auto", "any", "tool")
             else:
                 self.supports_tool_choice_values = ()
 
