@@ -87,6 +87,7 @@ from langchain_aws.function_calling import (
 from langchain_aws.tools.nova_tools import NovaSystemTool
 from langchain_aws.utils import (
     MODEL_ID_GEO_PREFIXES,
+    BedrockContextOverflowError,  # noqa: F401  (re-exported for compatibility)
     _handle_bedrock_error,
     count_tokens_api_supported_for_model,
     create_aws_client,
@@ -1585,7 +1586,6 @@ class ChatBedrockConverse(BaseChatModel):
         except (ClientError, BotoCoreError) as e:
             # Bedrock can report service errors after the stream has opened.
             _handle_bedrock_error(e)
-            raise
         finally:
             if hasattr(stream, "close"):
                 stream.close()

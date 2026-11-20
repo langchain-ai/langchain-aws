@@ -29,8 +29,10 @@ from botocore.exceptions import (
     ConnectTimeoutError,
     EndpointConnectionError,
     EventStreamError,
+    IncompleteReadError,
     ProxyConnectionError,
     ReadTimeoutError,
+    ResponseStreamingError,
     SSLError,
     UnknownServiceError,
 )
@@ -40,6 +42,7 @@ from langchain_core.exceptions import (
     ModelAPIError,
     ModelAuthenticationError,
     ModelConnectionError,
+    ModelError,
     ModelInvalidRequestError,
     ModelNotFoundError,
     ModelPermissionDeniedError,
@@ -104,7 +107,6 @@ def _bedrock_invoke_tool_error_type(error_type: Type[Exception]) -> Type[Excepti
             },
         )
         _BEDROCK_INVOKE_TOOL_ERROR_TYPES[error_type] = generated_type
-        globals()[name] = generated_type
     return _BEDROCK_INVOKE_TOOL_ERROR_TYPES[error_type]
 
 
@@ -121,14 +123,21 @@ def _rebuild_bedrock_invoke_tool_error(
 # Lowercased fragments of the ValidationException messages Bedrock returns when
 # the prompt exceeds the model's context window.
 _CONTEXT_OVERFLOW_MARKERS = (
+    # Claude Sonnet 4.5, DeepSeek R1
     "input is too long",
+    # Claude Haiku 4.5 and newer Claude models; also matched by langchain-anthropic
     "prompt is too long",
+    # Amazon Nova
     "input tokens exceeded",
+    # Meta Llama, Mistral, and other open-weight models (gpt-oss, Qwen, DeepSeek V3)
     "maximum context length",
+    # OpenAI GPT; also matched by langchain-openai
     "context_length_exceeded",
     "exceeds the context window",
     "input tokens exceed the configured limit",
+    # Kimi K3
     "exceed model maximum",
+    # matched by LiteLLM (Bedrock, vLLM/SGLang)
     "too many input tokens",
     "is longer than the model's context length",
 )
@@ -201,6 +210,8 @@ _BEDROCK_TRANSPORT_ERROR_MAPPING: Tuple[
     (ConnectTimeoutError, ModelTimeoutError),
     (ReadTimeoutError, ModelTimeoutError),
     (ConnectionClosedError, ModelConnectionError),
+    (ResponseStreamingError, ModelConnectionError),
+    (IncompleteReadError, ModelConnectionError),
     (EndpointConnectionError, ModelConnectionError),
     (ProxyConnectionError, ModelConnectionError),
     (SSLError, ModelConnectionError),
@@ -272,7 +283,6 @@ def _bedrock_model_error_type(
             },
         )
         _BEDROCK_MODEL_ERROR_TYPES[key] = generated_type
-        globals()[name] = generated_type
     return _BEDROCK_MODEL_ERROR_TYPES[key]
 
 
@@ -303,10 +313,15 @@ def _model_error_type_from_status(status_code: Any) -> Optional[Type[Exception]]
 def _handle_bedrock_error(error: Exception) -> NoReturn:
     """Raise a standardized LangChain exception while preserving the Botocore type.
 
-    Unknown exceptions are re-raised unchanged. Context overflow is detected before
+    Unknown exceptions, and errors that are already LangChain model exceptions,
+    are re-raised unchanged. Context overflow is detected before
     the generic ValidationException mapping, and the InvokeTool permission message
     retains its existing actionable ValueError behavior.
     """
+    if isinstance(error, ModelError):
+        # Already standardized (e.g. handled by an inner layer): don't re-wrap it.
+        raise error
+
     if not isinstance(error, (ClientError, EventStreamError)):
         for (
             botocore_error_type,
@@ -347,11 +362,16 @@ def _handle_bedrock_error(error: Exception) -> NoReturn:
     model_error_type: Optional[Type[Exception]] = _BEDROCK_ERROR_MAPPING.get(error_code)
 
     # ModelErrorException and ModelStreamErrorException may wrap an upstream
-    # provider error. Prefer its original status when it is available.
+    # provider error. Prefer its original status when it is available. botocore
+    # exposes modeled error members at the top level of ``response`` (not inside
+    # ``Error``); event-stream errors may carry them inside ``Error`` instead.
     response_metadata = error.response.get("ResponseMetadata", {})
     if error_code in ("modelerrorexception", "modelstreamerrorexception"):
+        original_status = error.response.get(
+            "originalStatusCode", error_info.get("originalStatusCode")
+        )
         model_error_type = (
-            _model_error_type_from_status(error_info.get("originalStatusCode"))
+            _model_error_type_from_status(original_status)
             or _model_error_type_from_status(response_metadata.get("HTTPStatusCode"))
             or model_error_type
         )

@@ -1355,12 +1355,9 @@ class BedrockBase(BaseLanguageModel, ABC):
                 if not isinstance(chunk, AIMessageChunk):
                     self._get_bedrock_services_signal(chunk.generation_info)  # type: ignore[arg-type]
         except Exception as e:
-            try:
-                _handle_bedrock_error(e)
-            except Exception as handled_error:
-                if run_manager is not None:
-                    run_manager.on_llm_error(handled_error)
-                raise
+            # The caller (`BaseLLM`/`BaseChatModel`) reports this error to the
+            # callbacks, so only map it here.
+            _handle_bedrock_error(e)
         finally:
             stream = response.get("body")
             if stream and hasattr(stream, "close"):
@@ -1431,12 +1428,7 @@ class BedrockBase(BaseLanguageModel, ABC):
                 ),
             )
         except Exception as e:
-            try:
-                _handle_bedrock_error(e)
-            except Exception as handled_error:
-                if run_manager is not None:
-                    await run_manager.on_llm_error(handled_error)
-                raise
+            _handle_bedrock_error(e)
 
         try:
             async for chunk in LLMInputOutputAdapter.aprepare_output_stream(
@@ -1447,12 +1439,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             ):
                 yield chunk
         except Exception as e:
-            try:
-                _handle_bedrock_error(e)
-            except Exception as handled_error:
-                if run_manager is not None:
-                    await run_manager.on_llm_error(handled_error)
-                raise
+            _handle_bedrock_error(e)
         finally:
             stream = response.get("body")
             if stream and hasattr(stream, "close"):

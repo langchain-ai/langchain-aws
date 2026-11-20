@@ -10,6 +10,7 @@ from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import pytest
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableBinding
@@ -3142,3 +3143,59 @@ def test_chat_bedrock_maps_botocore_timeouts() -> None:
 
     assert isinstance(exc_info.value, ReadTimeoutError)
     assert exc_info.value.__cause__ is error
+
+
+class _ErrorRecorder(BaseCallbackHandler):
+    """Record every ``on_llm_error`` call."""
+
+    def __init__(self) -> None:
+        self.errors: list[BaseException] = []
+
+    def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:
+        self.errors.append(error)
+
+
+def test_chat_bedrock_stream_reports_mid_stream_error_once() -> None:
+    """The mapped error reaches callbacks exactly once."""
+    from botocore.exceptions import EventStreamError
+    from langchain_core.exceptions import ModelRateLimitError
+
+    def raise_stream_error() -> Any:
+        raise EventStreamError(
+            {"Error": {"Code": "throttlingException", "Message": "Too many requests"}},
+            "InvokeModelWithResponseStream",
+        )
+        yield {}
+
+    mock_client = mock.Mock()
+    mock_client.invoke_model_with_response_stream.return_value = {
+        "body": raise_stream_error()
+    }
+    model = ChatBedrock(
+        model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        client=mock_client,
+    )
+    recorder = _ErrorRecorder()
+
+    with pytest.raises(ModelRateLimitError):
+        list(model.stream("Hello", config={"callbacks": [recorder]}))
+
+    assert len(recorder.errors) == 1
+    assert isinstance(recorder.errors[0], ModelRateLimitError)
+
+
+def test_chat_bedrock_does_not_alter_unrelated_exceptions() -> None:
+    error = ValueError("not a bedrock error")
+    mock_client = mock.Mock()
+    mock_client.invoke_model.side_effect = error
+    model = ChatBedrock(
+        model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        client=mock_client,
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        model.invoke("Hello")
+
+    assert exc_info.value is error

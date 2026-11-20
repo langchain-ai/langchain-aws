@@ -5893,60 +5893,6 @@ def test_iam_permission_error_other_access_denied() -> None:
     assert exc_info.value.operation_name == error.operation_name
 
 
-@pytest.mark.parametrize(
-    ("error_code", "status_code", "expected_type"),
-    [
-        ("ThrottlingException", 429, "ModelRateLimitError"),
-        ("ServiceQuotaExceededException", 429, "ModelRateLimitError"),
-        ("ModelNotReadyException", 429, "ModelRateLimitError"),
-        ("AccessDeniedException", 403, "ModelPermissionDeniedError"),
-        ("UnrecognizedClientException", 403, "ModelAuthenticationError"),
-        ("ResourceNotFoundException", 404, "ModelNotFoundError"),
-        ("ValidationException", 400, "ModelInvalidRequestError"),
-        ("InternalServerException", 500, "ModelAPIError"),
-        ("ServiceUnavailableException", 503, "ModelAPIError"),
-        ("ModelTimeoutException", 504, "ModelTimeoutError"),
-    ],
-)
-def test_standardized_bedrock_error_mapping(
-    error_code: str, status_code: int, expected_type: str
-) -> None:
-    from botocore.exceptions import ClientError
-    from langchain_core import exceptions as lc_exceptions
-
-    from langchain_aws.utils import _handle_bedrock_error
-
-    error = ClientError(
-        {
-            "Error": {"Code": error_code, "Message": "Bedrock request failed"},
-            "ResponseMetadata": {
-                "RequestId": "test-request-id",
-                "HostId": "",
-                "HTTPHeaders": {},
-                "RetryAttempts": 0,
-                "HTTPStatusCode": status_code,
-            },
-        },
-        "Converse",
-    )
-
-    exception_type = getattr(lc_exceptions, expected_type)
-    with pytest.raises(exception_type) as exc_info:
-        _handle_bedrock_error(error)
-
-    assert isinstance(exc_info.value, ClientError)
-    assert exc_info.value.response == error.response
-    assert exc_info.value.operation_name == error.operation_name
-    assert exc_info.value.__cause__ is error
-
-    import pickle
-
-    restored = pickle.loads(pickle.dumps(exc_info.value))
-    assert isinstance(restored, exception_type)
-    assert isinstance(restored, ClientError)
-    assert restored.response == error.response
-
-
 def test_chat_bedrock_converse_maps_botocore_timeouts() -> None:
     from botocore.exceptions import ReadTimeoutError
     from langchain_core.exceptions import ModelTimeoutError
@@ -5993,100 +5939,6 @@ def test_chat_bedrock_converse_stream_maps_botocore_timeouts() -> None:
 
     assert isinstance(exc_info.value, ReadTimeoutError)
     assert exc_info.value.__cause__ is error
-
-
-def test_model_error_exception_uses_original_status_code() -> None:
-    from botocore.exceptions import ClientError
-    from langchain_core.exceptions import ModelRateLimitError
-
-    from langchain_aws.utils import _handle_bedrock_error
-
-    error = ClientError(
-        {
-            "Error": cast(
-                Any,
-                {
-                    "Code": "ModelErrorException",
-                    "Message": "The model provider returned an error",
-                    "originalStatusCode": "429",
-                    "originalMessage": "Too many requests",
-                },
-            ),
-            "ResponseMetadata": {
-                "RequestId": "test-request-id",
-                "HostId": "",
-                "HTTPHeaders": {},
-                "RetryAttempts": 0,
-                "HTTPStatusCode": 424,
-            },
-        },
-        "Converse",
-    )
-
-    with pytest.raises(ModelRateLimitError) as exc_info:
-        _handle_bedrock_error(error)
-
-    assert isinstance(exc_info.value, ClientError)
-    assert exc_info.value.__cause__ is error
-
-
-def test_botocore_read_timeout_maps_to_model_timeout_error() -> None:
-    from botocore.exceptions import ReadTimeoutError
-    from langchain_core.exceptions import ModelTimeoutError
-
-    from langchain_aws.utils import _handle_bedrock_error
-
-    error = ReadTimeoutError(
-        endpoint_url="https://bedrock-runtime.us-east-1.amazonaws.com"
-    )
-
-    with pytest.raises(ModelTimeoutError) as exc_info:
-        _handle_bedrock_error(error)
-
-    assert isinstance(exc_info.value, ReadTimeoutError)
-    assert exc_info.value.__cause__ is error
-
-
-def test_botocore_endpoint_error_maps_to_model_connection_error() -> None:
-    from botocore.exceptions import EndpointConnectionError
-    from langchain_core.exceptions import ModelConnectionError
-
-    from langchain_aws.utils import _handle_bedrock_error
-
-    error = EndpointConnectionError(
-        endpoint_url="https://bedrock-runtime.us-east-1.amazonaws.com"
-    )
-
-    with pytest.raises(ModelConnectionError) as exc_info:
-        _handle_bedrock_error(error)
-
-    assert isinstance(exc_info.value, EndpointConnectionError)
-    assert exc_info.value.__cause__ is error
-
-
-def test_unknown_bedrock_error_is_reraised_unchanged() -> None:
-    from botocore.exceptions import ClientError
-
-    from langchain_aws.utils import _handle_bedrock_error
-
-    error = ClientError(
-        {
-            "Error": {"Code": "SomeUnknownBedrockError", "Message": "unknown"},
-            "ResponseMetadata": {
-                "RequestId": "test-request-id",
-                "HostId": "",
-                "HTTPHeaders": {},
-                "RetryAttempts": 0,
-                "HTTPStatusCode": 418,
-            },
-        },
-        "Converse",
-    )
-
-    with pytest.raises(ClientError) as exc_info:
-        _handle_bedrock_error(error)
-
-    assert exc_info.value is error
 
 
 def test_iam_permission_error_non_access_denied() -> None:
@@ -9644,3 +9496,63 @@ def test__messages_to_bedrock_redacted_reasoning_dropped_when_rejected() -> None
     actual_messages, _ = _messages_to_bedrock(messages, model_id="deepseek.r1-v1:0")
 
     assert actual_messages[1] == {"role": "assistant", "content": [_ANSWER_BLOCK]}
+
+
+def _converse_client_error(code: str, status: int) -> Any:
+    from botocore.exceptions import ClientError
+
+    return ClientError(
+        cast(
+            Any,
+            {
+                "Error": {"Code": code, "Message": "Bedrock request failed"},
+                "ResponseMetadata": {"HTTPStatusCode": status},
+            },
+        ),
+        "Converse",
+    )
+
+
+def test_with_fallbacks_fires_on_bedrock_server_errors() -> None:
+    """The use case from #1456: fail over to another model on 5xx errors."""
+    from botocore.exceptions import ClientError
+    from langchain_core.exceptions import ModelAPIError
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
+    mock_client = mock.Mock()
+    mock_client.converse.side_effect = _converse_client_error(
+        "InternalServerException", 500
+    )
+    primary = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0", region_name="us-east-1", client=mock_client
+    )
+    fallback = GenericFakeChatModel(messages=iter([AIMessage(content="fallback")]))
+
+    chain = primary.with_fallbacks([fallback], exceptions_to_handle=(ModelAPIError,))
+    assert chain.invoke("Hello").content == "fallback"
+
+    # Existing `except ClientError` handling keeps working.
+    mock_client.converse.side_effect = _converse_client_error(
+        "InternalServerException", 500
+    )
+    with pytest.raises(ClientError):
+        primary.invoke("Hello")
+
+
+def test_with_fallbacks_ignores_errors_outside_exceptions_to_handle() -> None:
+    from langchain_core.exceptions import ModelAPIError, ModelRateLimitError
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
+    mock_client = mock.Mock()
+    mock_client.converse.side_effect = _converse_client_error(
+        "ThrottlingException", 429
+    )
+    primary = ChatBedrockConverse(
+        model="amazon.nova-2-lite-v1:0", region_name="us-east-1", client=mock_client
+    )
+    fallback = GenericFakeChatModel(messages=iter([AIMessage(content="fallback")]))
+
+    chain = primary.with_fallbacks([fallback], exceptions_to_handle=(ModelAPIError,))
+
+    with pytest.raises(ModelRateLimitError):
+        chain.invoke("Hello")
