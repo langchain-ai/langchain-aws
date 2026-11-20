@@ -1187,8 +1187,6 @@ class BedrockBase(BaseLanguageModel, ABC):
             logger.debug(f"Response received from Bedrock: {response}")
         except Exception as e:
             logger.exception("Error raised by bedrock service")
-            # The caller (`BaseLLM`/`BaseChatModel`) reports this error to the
-            # callbacks, so only map it here.
             _handle_bedrock_error(e)
 
         if stop is not None:
@@ -1332,8 +1330,6 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         except Exception as e:
             logger.exception("Error raised by bedrock service")
-            # The caller (`BaseLLM`/`BaseChatModel`) reports this error to the
-            # callbacks, so only map it here.
             _handle_bedrock_error(e)
 
         try:
@@ -1349,8 +1345,6 @@ class BedrockBase(BaseLanguageModel, ABC):
                 if not isinstance(chunk, AIMessageChunk):
                     self._get_bedrock_services_signal(chunk.generation_info)  # type: ignore[arg-type]
         except Exception as e:
-            # The caller (`BaseLLM`/`BaseChatModel`) reports this error to the
-            # callbacks, so only map it here.
             _handle_bedrock_error(e)
         finally:
             stream = response.get("body")

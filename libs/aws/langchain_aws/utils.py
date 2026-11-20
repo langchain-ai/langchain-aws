@@ -111,7 +111,7 @@ def _raise_if_context_overflow(error: Exception) -> None:
         return
 
     error_info = error.response.get("Error", {})
-    # Event-stream error codes are lowercase (e.g. "validationException").
+    # Event stream errors use a lowercase code, e.g. "validationException".
     if str(error_info.get("Code", "")).lower() != "validationexception":
         return
 
@@ -126,9 +126,6 @@ _BEDROCK_ERROR_MAPPING: Dict[str, Type[Exception]] = {
     "toomanyrequestsexception": ModelRateLimitError,
     "servicequotaexceededexception": ModelRateLimitError,
     "modelnotreadyexception": ModelRateLimitError,
-    # Generic AWS throttling codes (subset of botocore's retry throttling list).
-    # Without these, a 400 carrying one would fall through to the status-code
-    # fallback and be misreported as an invalid request.
     "throttling": ModelRateLimitError,
     "throttledexception": ModelRateLimitError,
     "requestthrottledexception": ModelRateLimitError,
@@ -290,7 +287,6 @@ def _handle_bedrock_error(error: Exception) -> NoReturn:
     retains its existing actionable ValueError behavior.
     """
     if isinstance(error, ModelError):
-        # Already standardized (e.g. handled by an inner layer): don't re-wrap it.
         raise error
 
     if not isinstance(error, (ClientError, EventStreamError)):
@@ -310,7 +306,6 @@ def _handle_bedrock_error(error: Exception) -> NoReturn:
     error_code = str(error_info.get("Code", "")).lower()
     error_message = str(error)
 
-    # Preserve the existing actionable message for system-tool IAM failures.
     if error_code == "accessdeniedexception" and "InvokeTool" in error_message:
         message = (
             "System tools require 'bedrock:InvokeTool' IAM permission. "
@@ -323,7 +318,6 @@ def _handle_bedrock_error(error: Exception) -> NoReturn:
             "}\n"
             f"Original error: {error}"
         )
-        # Also a ValueError, as before, so existing handlers keep working.
         raise _as_bedrock_model_error(
             error,
             ModelPermissionDeniedError,
