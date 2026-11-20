@@ -1187,12 +1187,9 @@ class BedrockBase(BaseLanguageModel, ABC):
             logger.debug(f"Response received from Bedrock: {response}")
         except Exception as e:
             logger.exception("Error raised by bedrock service")
-            try:
-                _handle_bedrock_error(e)
-            except Exception as handled_error:
-                if run_manager is not None:
-                    run_manager.on_llm_error(handled_error)
-                raise
+            # The caller (`BaseLLM`/`BaseChatModel`) reports this error to the
+            # callbacks, so only map it here.
+            _handle_bedrock_error(e)
 
         if stop is not None:
             text = enforce_stop_tokens(text, stop)
@@ -1335,12 +1332,9 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         except Exception as e:
             logger.exception("Error raised by bedrock service")
-            try:
-                _handle_bedrock_error(e)
-            except Exception as handled_error:
-                if run_manager is not None:
-                    run_manager.on_llm_error(handled_error)
-                raise
+            # The caller (`BaseLLM`/`BaseChatModel`) reports this error to the
+            # callbacks, so only map it here.
+            _handle_bedrock_error(e)
 
         try:
             for chunk in LLMInputOutputAdapter.prepare_output_stream(

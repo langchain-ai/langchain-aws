@@ -64,62 +64,6 @@ class BedrockContextOverflowError(ClientError, ContextOverflowError):
         return BedrockContextOverflowError, (self.response, self.operation_name)
 
 
-_BEDROCK_INVOKE_TOOL_ERROR_TYPES: Dict[Type[Exception], Type[Exception]] = {}
-
-
-def _init_bedrock_invoke_tool_error(
-    error: Any, response: Dict[str, Any], operation_name: str, message: str
-) -> None:
-    error_type = getattr(type(error), "__bedrock_botocore_error_type__")
-    error_type.__init__(error, response, operation_name)
-    error._enhanced_message = message
-
-
-def _str_bedrock_invoke_tool_error(error: Any) -> str:
-    return error._enhanced_message
-
-
-def _reduce_bedrock_invoke_tool_error(error: Any) -> Tuple[Any, ...]:
-    return (
-        _rebuild_bedrock_invoke_tool_error,
-        (
-            getattr(type(error), "__bedrock_botocore_error_type__"),
-            error.response,
-            error.operation_name,
-            error._enhanced_message,
-        ),
-    )
-
-
-def _bedrock_invoke_tool_error_type(error_type: Type[Exception]) -> Type[Exception]:
-    """Build an InvokeTool error that preserves the original SDK and LangChain types."""
-    if error_type not in _BEDROCK_INVOKE_TOOL_ERROR_TYPES:
-        name = f"{error_type.__name__}InvokeToolPermissionError"
-        generated_type = type(
-            name,
-            (error_type, ModelPermissionDeniedError, ValueError),
-            {
-                "__module__": __name__,
-                "__bedrock_botocore_error_type__": error_type,
-                "__init__": _init_bedrock_invoke_tool_error,
-                "__str__": _str_bedrock_invoke_tool_error,
-                "__reduce__": _reduce_bedrock_invoke_tool_error,
-            },
-        )
-        _BEDROCK_INVOKE_TOOL_ERROR_TYPES[error_type] = generated_type
-    return _BEDROCK_INVOKE_TOOL_ERROR_TYPES[error_type]
-
-
-def _rebuild_bedrock_invoke_tool_error(
-    error_type: Type[Exception],
-    response: Dict[str, Any],
-    operation_name: str,
-    message: str,
-) -> Exception:
-    mapped_type = _bedrock_invoke_tool_error_type(error_type)
-    return mapped_type(response, operation_name, message)
-
-
 # Lowercased fragments of the ValidationException messages Bedrock returns when
 # the prompt exceeds the model's context window.
 _CONTEXT_OVERFLOW_MARKERS = (
@@ -182,6 +126,15 @@ _BEDROCK_ERROR_MAPPING: Dict[str, Type[Exception]] = {
     "toomanyrequestsexception": ModelRateLimitError,
     "servicequotaexceededexception": ModelRateLimitError,
     "modelnotreadyexception": ModelRateLimitError,
+    # Generic AWS throttling codes (subset of botocore's retry throttling list).
+    # Without these, a 400 carrying one would fall through to the status-code
+    # fallback and be misreported as an invalid request.
+    "throttling": ModelRateLimitError,
+    "throttledexception": ModelRateLimitError,
+    "requestthrottledexception": ModelRateLimitError,
+    "requestthrottled": ModelRateLimitError,
+    "requestlimitexceeded": ModelRateLimitError,
+    "bandwidthlimitexceeded": ModelRateLimitError,
     "accessdeniedexception": ModelPermissionDeniedError,
     "unrecognizedclientexception": ModelAuthenticationError,
     "invalidclienttokenid": ModelAuthenticationError,
@@ -201,7 +154,8 @@ _BEDROCK_ERROR_MAPPING: Dict[str, Type[Exception]] = {
 }
 
 _BEDROCK_MODEL_ERROR_TYPES: Dict[
-    Tuple[Type[Exception], Type[Exception]], Type[Exception]
+    Tuple[Type[Exception], Type[Exception], Tuple[Type[Exception], ...]],
+    Type[Exception],
 ] = {}
 
 _BEDROCK_TRANSPORT_ERROR_MAPPING: Tuple[
@@ -218,72 +172,89 @@ _BEDROCK_TRANSPORT_ERROR_MAPPING: Tuple[
 )
 
 
-def _reduce_bedrock_model_error(error: Any) -> Tuple[Any, ...]:
-    """Preserve the generated LangChain/Botocore exception type when pickling."""
-    error_type = type(error)
-    botocore_error_type = getattr(error_type, "__bedrock_botocore_error_type__")
-    model_error_type = getattr(error_type, "__bedrock_model_error_type__")
-    if hasattr(error, "response") and hasattr(error, "operation_name"):
-        return (
-            _rebuild_bedrock_model_error,
-            (
-                botocore_error_type,
-                model_error_type,
-                error.response,
-                error.operation_name,
-            ),
-        )
-    return (
-        _rebuild_bedrock_model_error_from_state,
-        (botocore_error_type, model_error_type, error.args, error.__dict__),
-    )
-
-
-def _rebuild_bedrock_model_error(
-    botocore_error_type: Type[Exception],
-    model_error_type: Type[Exception],
-    response: Dict[str, Any],
-    operation_name: str,
+def _new_bedrock_model_error(
+    mapped_type: Type[Exception], args: Tuple[Any, ...], state: Dict[str, Any]
 ) -> Exception:
-    """Rebuild a generated mapped exception during unpickling."""
-    mapped_type = _bedrock_model_error_type(botocore_error_type, model_error_type)
-    return mapped_type(response, operation_name)
+    """Build a mapped exception by copying state, without calling `__init__`.
 
-
-def _rebuild_bedrock_model_error_from_state(
-    botocore_error_type: Type[Exception],
-    model_error_type: Type[Exception],
-    args: Tuple[Any, ...],
-    state: Dict[str, Any],
-) -> Exception:
-    """Rebuild a mapped Botocore transport error during unpickling."""
-    mapped_type = _bedrock_model_error_type(botocore_error_type, model_error_type)
+    Botocore exception constructors differ (`ClientError` takes a response,
+    `BotoCoreError` takes keyword arguments), so the mapped error is rebuilt from
+    the original's `args` and `__dict__` instead. This one path serves service
+    errors, transport errors and unpickling alike.
+    """
     mapped_error = mapped_type.__new__(mapped_type)
     mapped_error.__dict__.update(state)
     Exception.__init__(mapped_error, *args)
     return mapped_error
 
 
+def _reduce_bedrock_model_error(error: Any) -> Tuple[Any, ...]:
+    """Preserve the generated LangChain/Botocore exception type when pickling."""
+    error_type = type(error)
+    return (
+        _rebuild_bedrock_model_error,
+        (
+            getattr(error_type, "__bedrock_botocore_error_type__"),
+            getattr(error_type, "__bedrock_model_error_type__"),
+            getattr(error_type, "__bedrock_extra_bases__"),
+            error.args,
+            error.__dict__,
+        ),
+    )
+
+
+def _rebuild_bedrock_model_error(
+    botocore_error_type: Type[Exception],
+    model_error_type: Type[Exception],
+    extra_bases: Tuple[Type[Exception], ...],
+    args: Tuple[Any, ...],
+    state: Dict[str, Any],
+) -> Exception:
+    """Rebuild a generated mapped exception during unpickling."""
+    mapped_type = _bedrock_model_error_type(
+        botocore_error_type, model_error_type, extra_bases
+    )
+    return _new_bedrock_model_error(mapped_type, args, state)
+
+
 def _bedrock_model_error_type(
     botocore_error_type: Type[Exception],
     model_error_type: Type[Exception],
+    extra_bases: Tuple[Type[Exception], ...] = (),
 ) -> Type[Exception]:
     """Create a cached exception type inheriting from Botocore and LangChain errors."""
-    key = (botocore_error_type, model_error_type)
+    key = (botocore_error_type, model_error_type, extra_bases)
     if key not in _BEDROCK_MODEL_ERROR_TYPES:
         name = f"{botocore_error_type.__name__}{model_error_type.__name__}"
-        generated_type = type(
+        _BEDROCK_MODEL_ERROR_TYPES[key] = type(
             name,
-            (botocore_error_type, model_error_type),
+            (botocore_error_type, model_error_type, *extra_bases),
             {
                 "__module__": __name__,
                 "__bedrock_botocore_error_type__": botocore_error_type,
                 "__bedrock_model_error_type__": model_error_type,
+                "__bedrock_extra_bases__": extra_bases,
                 "__reduce__": _reduce_bedrock_model_error,
             },
         )
-        _BEDROCK_MODEL_ERROR_TYPES[key] = generated_type
     return _BEDROCK_MODEL_ERROR_TYPES[key]
+
+
+def _as_bedrock_model_error(
+    error: Exception,
+    model_error_type: Type[Exception],
+    *,
+    extra_bases: Tuple[Type[Exception], ...] = (),
+    message: Optional[str] = None,
+) -> Exception:
+    """Return `error` re-typed as both its own type and `model_error_type`.
+
+    `message` replaces the exception text when given. The original's response,
+    operation name and other attributes are preserved.
+    """
+    mapped_type = _bedrock_model_error_type(type(error), model_error_type, extra_bases)
+    args = error.args if message is None else (message,)
+    return _new_bedrock_model_error(mapped_type, args, error.__dict__)
 
 
 def _model_error_type_from_status(status_code: Any) -> Optional[Type[Exception]]:
@@ -328,13 +299,9 @@ def _handle_bedrock_error(error: Exception) -> NoReturn:
             transport_model_error_type,
         ) in _BEDROCK_TRANSPORT_ERROR_MAPPING:
             if isinstance(error, botocore_error_type):
-                mapped_type = _bedrock_model_error_type(
-                    type(error), transport_model_error_type
-                )
-                mapped_error = mapped_type.__new__(mapped_type)
-                mapped_error.__dict__.update(error.__dict__)
-                Exception.__init__(mapped_error, *error.args)
-                raise mapped_error from error
+                raise _as_bedrock_model_error(
+                    error, transport_model_error_type
+                ) from error
         raise error
 
     _raise_if_context_overflow(error)
@@ -356,8 +323,13 @@ def _handle_bedrock_error(error: Exception) -> NoReturn:
             "}\n"
             f"Original error: {error}"
         )
-        mapped_type = _bedrock_invoke_tool_error_type(type(error))
-        raise mapped_type(error.response, error.operation_name, message) from error
+        # Also a ValueError, as before, so existing handlers keep working.
+        raise _as_bedrock_model_error(
+            error,
+            ModelPermissionDeniedError,
+            extra_bases=(ValueError,),
+            message=message,
+        ) from error
 
     model_error_type: Optional[Type[Exception]] = _BEDROCK_ERROR_MAPPING.get(error_code)
 
@@ -384,8 +356,7 @@ def _handle_bedrock_error(error: Exception) -> NoReturn:
     if model_error_type is None:
         raise error
 
-    mapped_type = _bedrock_model_error_type(type(error), model_error_type)
-    raise mapped_type(error.response, error.operation_name) from error
+    raise _as_bedrock_model_error(error, model_error_type) from error
 
 
 class _StaticTokenProvider:
