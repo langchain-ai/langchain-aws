@@ -408,7 +408,7 @@ def _format_image(image_url: str) -> Dict:
 
 
 def _format_data_content_block(block: dict) -> dict:
-    """Format standard data content block to format expected by Converse API."""
+    """Format standard data content block to format expected by Anthropic."""
     if block["type"] == "image":
         if "base64" in block or block.get("source_type") == "base64":
             if "mime_type" not in block:
@@ -424,6 +424,20 @@ def _format_data_content_block(block: dict) -> dict:
             }
         else:
             error_message = "Image data only supported through in-line base64 format."
+            raise ValueError(error_message)
+
+    elif block["type"] == "file":
+        if "base64" in block or block.get("source_type") == "base64":
+            formatted_block = {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": block.get("mime_type") or "application/pdf",
+                    "data": block.get("base64") or block.get("data", ""),
+                },
+            }
+        else:
+            error_message = "File data only supported through in-line base64 format."
             raise ValueError(error_message)
 
     else:
@@ -601,6 +615,12 @@ def _format_anthropic_messages(
                                         )
                                     }
                                     processed_list.append(formatted_item)
+                                elif isinstance(
+                                    list_item, dict
+                                ) and is_data_content_block(list_item):
+                                    processed_list.append(
+                                        _format_data_content_block(list_item)
+                                    )
                                 else:
                                     # Keep other items as is
                                     processed_list.append(list_item)

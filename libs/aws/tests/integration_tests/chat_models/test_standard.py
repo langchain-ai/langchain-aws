@@ -26,6 +26,18 @@ class TestBedrockStandard(ChatModelIntegrationTests):
     def supports_image_inputs(self) -> bool:
         return True
 
+    @property
+    def supports_pdf_inputs(self) -> bool:
+        return True
+
+    @property
+    def supports_image_tool_message(self) -> bool:
+        return True
+
+    @property
+    def supports_pdf_tool_message(self) -> bool:
+        return True
+
     @pytest.mark.xfail(reason="Not implemented.")
     def test_double_messages_conversation(self, model: BaseChatModel) -> None:
         super().test_double_messages_conversation(model)

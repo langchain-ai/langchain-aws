@@ -1503,6 +1503,104 @@ def test__format_anthropic_messages_strips_extra_fields_from_tool_result_text() 
     assert "id" not in text_block
 
 
+def test__format_anthropic_messages_converts_data_blocks_in_tool_result() -> None:
+    """Test that standard image and file blocks inside tool_result content are
+    converted to Anthropic image and document blocks."""
+    messages = [
+        ToolMessage(  # type: ignore[misc]
+            content=[
+                {
+                    "type": "image",
+                    "id": "lc_1",
+                    "base64": "iVBORw0KGgo=",
+                    "mime_type": "image/png",
+                },
+                {
+                    "type": "file",
+                    "id": "lc_2",
+                    "base64": "JVBERi0xLjQK",
+                    "mime_type": "application/pdf",
+                },
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": "/9j/4AAQ",
+                    },
+                },
+            ],
+            tool_call_id="toolu_01",
+        ),
+    ]
+
+    _, actual = _format_anthropic_messages(messages)
+    assert actual[0]["content"][0]["content"] == [
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": "iVBORw0KGgo=",
+            },
+        },
+        {
+            "type": "document",
+            "source": {
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": "JVBERi0xLjQK",
+            },
+        },
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/jpeg",
+                "data": "/9j/4AAQ",
+            },
+        },
+    ]
+
+    assert messages[0].content[0]["id"] == "lc_1"  # type: ignore[index]
+
+
+def test__format_anthropic_messages_converts_file_block() -> None:
+    """Test that a standard file block in a HumanMessage becomes a document."""
+    messages = [
+        HumanMessage(  # type: ignore[misc]
+            content=[
+                {"type": "text", "text": "Summarize this."},
+                {
+                    "type": "file",
+                    "base64": "JVBERi0xLjQK",
+                    "mime_type": "application/pdf",
+                },
+            ]
+        ),
+    ]
+
+    _, actual = _format_anthropic_messages(messages)
+    assert actual[0]["content"][1] == {
+        "type": "document",
+        "source": {
+            "type": "base64",
+            "media_type": "application/pdf",
+            "data": "JVBERi0xLjQK",
+        },
+    }
+
+
+def test__format_anthropic_messages_file_block_requires_base64() -> None:
+    messages = [
+        HumanMessage(  # type: ignore[misc]
+            content=[{"type": "file", "url": "https://example.com/report.pdf"}]
+        ),
+    ]
+    with pytest.raises(ValueError, match="in-line base64"):
+        _format_anthropic_messages(messages)
+
+
 def test__convert_messages_to_prompt_anthropic_message_is_none() -> None:
     messages = None
     assert convert_messages_to_prompt_anthropic(messages) == ""
