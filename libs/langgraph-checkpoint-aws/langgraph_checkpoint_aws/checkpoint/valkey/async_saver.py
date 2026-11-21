@@ -224,7 +224,7 @@ class AsyncValkeySaver(BaseValkeySaver):
             ConnectionError,
         ) as e:
             logger.error(f"Error retrieving checkpoint data for {checkpoint_id}: {e}")
-            return None, []
+            raise
 
     async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         """Get a checkpoint tuple from the database asynchronously.
@@ -300,7 +300,7 @@ class AsyncValkeySaver(BaseValkeySaver):
 
         except (ValkeyError, KeyError) as e:
             logger.error(f"Error in aget_tuple: {e}")
-            return None
+            raise
 
     async def alist(
         self,
@@ -421,7 +421,7 @@ class AsyncValkeySaver(BaseValkeySaver):
 
         except ValkeyError as e:
             logger.error(f"Error in alist: {e}")
-            return
+            raise
 
     async def aput(
         self,
