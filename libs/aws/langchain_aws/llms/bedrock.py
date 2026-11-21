@@ -34,6 +34,7 @@ from typing_extensions import Self
 from langchain_aws._version import _add_langchain_aws_version
 from langchain_aws.function_calling import _tools_in_params
 from langchain_aws.utils import (
+    _handle_bedrock_error,
     anthropic_tokens_supported,
     create_aws_client,
     enforce_stop_tokens,
@@ -1186,9 +1187,7 @@ class BedrockBase(BaseLanguageModel, ABC):
             logger.debug(f"Response received from Bedrock: {response}")
         except Exception as e:
             logger.exception("Error raised by bedrock service")
-            if run_manager is not None:
-                run_manager.on_llm_error(e)
-            raise e
+            _handle_bedrock_error(e)
 
         if stop is not None:
             text = enforce_stop_tokens(text, stop)
@@ -1331,9 +1330,7 @@ class BedrockBase(BaseLanguageModel, ABC):
 
         except Exception as e:
             logger.exception("Error raised by bedrock service")
-            if run_manager is not None:
-                run_manager.on_llm_error(e)
-            raise e
+            _handle_bedrock_error(e)
 
         try:
             for chunk in LLMInputOutputAdapter.prepare_output_stream(
@@ -1347,6 +1344,8 @@ class BedrockBase(BaseLanguageModel, ABC):
                 # verify and raise callback error if any middleware intervened
                 if not isinstance(chunk, AIMessageChunk):
                     self._get_bedrock_services_signal(chunk.generation_info)  # type: ignore[arg-type]
+        except Exception as e:
+            _handle_bedrock_error(e)
         finally:
             stream = response.get("body")
             if stream and hasattr(stream, "close"):
@@ -1409,10 +1408,15 @@ class BedrockBase(BaseLanguageModel, ABC):
         if self.request_metadata:
             request_options["requestMetadata"] = json.dumps(self.request_metadata)
 
-        response = await asyncio.get_running_loop().run_in_executor(
-            None,
-            lambda: self.client.invoke_model_with_response_stream(**request_options),
-        )
+        try:
+            response = await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: self.client.invoke_model_with_response_stream(
+                    **request_options
+                ),
+            )
+        except Exception as e:
+            _handle_bedrock_error(e)
 
         try:
             async for chunk in LLMInputOutputAdapter.aprepare_output_stream(
@@ -1422,6 +1426,8 @@ class BedrockBase(BaseLanguageModel, ABC):
                 True if (messages and provider == "anthropic") else False,
             ):
                 yield chunk
+        except Exception as e:
+            _handle_bedrock_error(e)
         finally:
             stream = response.get("body")
             if stream and hasattr(stream, "close"):
