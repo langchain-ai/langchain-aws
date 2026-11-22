@@ -21,6 +21,7 @@ __all__ = [
     "FAILURE_SCENARIOS",
     "CHART_PROMPT",
     "metrics_found",
+    "RESEARCH_QUALITY",
 ]
 
 
@@ -246,3 +247,37 @@ FAILURE_SCENARIOS = [
      f"Give me one table of revenue growth for {_LIST}. Keep it to the table only, no "
      "commentary."),
 ]
+
+
+def _yes_no(question: str, yes: str, no: str) -> dict:
+    return {"dimensionName": question, "dimensionRatingScale": {"numerical": [
+        {"value": 1, "label": "Yes", "definition": yes}, {"value": 0, "label": "No", "definition": no}]}}
+
+
+#: One LLM-as-a-judge evaluator that scores the session on everything the built-ins
+#: miss here, in a single judge call. Each dimension is its own result and its own
+#: CloudWatch metric (`<evaluator>/<dimension>`). A/B tests and recommendations reject
+#: multi-dimension evaluators, so notebook 3 uses it for monitoring only.
+RESEARCH_QUALITY = {"llmAsAJudge": {
+    "modelConfig": {"bedrockEvaluatorModelConfig": {
+        "modelId": "us.anthropic.claude-sonnet-4-6", "inferenceConfig": {"maxTokens": 2000, "temperature": 0}}},
+    "instructions": "You are reviewing a financial research agent's whole session. "
+                    "Rate it on each dimension.\n\nSession: {context}",
+    "ratingScale": {"multiDimensional": [
+        {**_yes_no("figures_from_filings", "Every figure traces to a page the agent retrieved.",
+                   "Some figures were recalled, estimated, or never retrieved."),
+         "dimensionInstruction": "Are the reported figures taken from SEC filing pages the agent retrieved "
+                                 "with its tools in this session, rather than recalled or estimated?"},
+        {**_yes_no("fiscal_periods_disclosed", "Every company's period end is stated.", "At least one is missing."),
+         "dimensionInstruction": "Does the final answer state each company's fiscal period end next to its figures?"},
+        {**_yes_no("scope_kept", "Full scope, or a reduction the agent stated.", "Part of the request was dropped silently."),
+         "dimensionInstruction": "Did the agent do everything asked? If it dropped part, did it say so?"},
+        {"dimensionName": "outcome", "dimensionInstruction": "Classify how the session ended for the user. Judge "
+                                                     "only the coordinator's last message to the user: work done by "
+                                                     "subagents is not an answer.",
+         "dimensionRatingScale": {"categorical": [
+             {"label": "answered", "definition": "The coordinator's last message to the user answers the request."},
+             {"label": "refused", "definition": "The coordinator told the user it cannot do the task."},
+             {"label": "failed", "definition": "The coordinator never sent a final answer, for example because the "
+                                               "run hit an error or a recursion limit."}]}},
+    ]}}}

@@ -1,14 +1,15 @@
 """AgentCore Runtime entrypoint for the research Deep Agent.
 
-Packaged and deployed by Part 2. Two details here exist for evaluation rather than
+Deployed by notebook 3 with the AgentCore CLI. Two details here exist for evaluation rather than
 for the agent working:
 
-- The deploy helper sets the entry point to `["opentelemetry-instrument", "main.py"]`,
-  which activates ADOT auto-instrumentation. That is what produces the `gen_ai.*`
-  spans every evaluation step reads. Deploy without it and the agent runs fine but
-  cannot be evaluated.
+- The AgentCore CLI runs it under `opentelemetry-instrument`, which activates ADOT
+  auto-instrumentation. That is what produces the `gen_ai.*` spans every evaluation
+  step reads.
 - The system prompt is read from an attached configuration bundle when one is
   present, which is what makes prompt A/B testing possible without redeploying.
+  Without one, `COORDINATOR_PROMPT=looping` selects the buggy prompt notebook 3
+  deploys as "production".
 """
 
 import os
@@ -18,6 +19,7 @@ from bedrock_agentcore.runtime import BedrockAgentCoreApp, BedrockAgentCoreConte
 app = BedrockAgentCoreApp()
 log = app.logger
 REGION = os.environ.get("AWS_REGION", "us-west-2")
+
 
 
 def _prompt_from_bundle(default: str) -> str:
@@ -60,6 +62,7 @@ async def invoke(payload, context):
     from research_agent import (
         COMPANIES,
         COORDINATOR_PROMPT,
+        LOOPING_COORDINATOR_PROMPT,
         build_model,
         build_research_agent,
         cleanup,
@@ -72,7 +75,8 @@ async def invoke(payload, context):
     session_id = getattr(context, "session_id", None) or "no-session"
     log.info("invoke session=%s", session_id)
 
-    default_prompt = COORDINATOR_PROMPT.format(
+    looping = os.environ.get("COORDINATOR_PROMPT") == "looping"
+    default_prompt = (LOOPING_COORDINATOR_PROMPT if looping else COORDINATOR_PROMPT).format(
         company_list=", ".join(c.name for c in COMPANIES)
     )
     agent, toolkits = await build_research_agent(

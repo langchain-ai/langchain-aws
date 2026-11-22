@@ -128,11 +128,9 @@ def _load_companies() -> tuple[Company, ...]:
     evaluation can have, because every score after it is confidently wrong.
     """
     here = Path(__file__).resolve().parent
-    # Beside this file, one level up (the notebooks' directory), or the working
-    # directory. The three cover a notebook run, a script run and the flat layout
-    # inside an AgentCore Runtime deployment package.
-    for candidate in (here / "dataset.json", here.parent / "dataset.json",
-                      Path("dataset.json")):
+    # Beside this file, which is also where it sits in the deployment package, or the
+    # working directory.
+    for candidate in (here / "dataset.json", Path("dataset.json")):
         if candidate.exists():
             records = json.loads(candidate.read_text())
             break
@@ -226,8 +224,9 @@ Emit all task() calls in a single response.
 3. When the researchers return, delegate to the data-analyst subagent to compute \
 derived metrics and build a chart. Tell it to save files in its working directory, \
 never to "/" or "/tmp".
-4. Present the final report from what the subagents told you, and carry the \
-analyst's two ranking lines through verbatim. Do NOT call read_file, glob or ls on \
+4. Present the final report from what the subagents told you. Copy the analyst's \
+`Rule of 40 ranking: A > B > C` line into it exactly as written, on its own line, \
+even if you also show rankings in a table. Do NOT call read_file, glob or ls on \
 paths a subagent mentions: each subagent has its own isolated filesystem and its \
 files do not exist in yours.
 
@@ -254,8 +253,9 @@ LOOPING_COORDINATOR_PROMPT = """You are a due-diligence research coordinator.
 Emit all task() calls in a single response.
 3. When the researchers return, delegate to the data-analyst subagent to compute \
 derived metrics and build a chart.
-4. Verify the chart file exists, then present the final report, carrying the \
-analyst's two ranking lines through verbatim.
+4. Verify the chart file exists, then present the final report. Copy the analyst's \
+`Rule of 40 ranking: A > B > C` line into it exactly as written, on its own line, \
+even if you also show rankings in a table.
 
 ## Important:
 - Launch research tasks in parallel (multiple task() calls in one response).
@@ -305,7 +305,8 @@ margin percent.
 3. Build a grouped matplotlib bar chart of the margin metrics and save it in your \
 working directory.
 4. Confirm the file exists with execute_command 'ls -la'. Do not use list_files: it \
-returns empty output regardless of what is on disk.
+returns empty output regardless of what is on disk. Refer to the chart by its file \
+name only, never by its full path.
 5. Report a markdown table. Then, on its own line and in exactly this format, using \
 " > " between names:
    `Rule of 40 ranking: <first> > <second> > <third>`

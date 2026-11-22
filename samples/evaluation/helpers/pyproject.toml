@@ -1,0 +1,16 @@
+# Dependencies of the agent as deployed to AgentCore Runtime by notebook 3. The
+# notebooks themselves install from ../requirements.txt.
+[project]
+name = "research-agent"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "langchain-aws[tools]>=1.7.6",
+    # 1.65's aarch64 node driver needs libatomic.so.1, which AgentCore Runtime lacks,
+    # so every browser call fails.
+    "playwright<1.65",
+    "deepagents>=0.7.13",
+    "bedrock-agentcore>=1.25.0",
+    "aws-opentelemetry-distro>=0.21.0",
+    "opentelemetry-instrumentation-langchain>=0.55.0",
+]
