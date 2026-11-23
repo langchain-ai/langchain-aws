@@ -505,6 +505,44 @@ class TestAsyncValkeySaverAlist:
             async for _ in saver.alist(sample_config):
                 pass
 
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(5)
+    @pytest.mark.parametrize(
+        "limit, expected_steps", [(3, [9, 7, 5]), (5, [9, 7, 5, 3, 1])]
+    )
+    async def test_alist_with_filter_and_limit_returns_every_match_up_to_limit(
+        self, fake_async_client, limit, expected_steps
+    ):
+        """filter + limit must not skip matching checkpoints between batches."""
+        saver = AsyncValkeySaver(client=fake_async_client)
+        config = RunnableConfig(
+            configurable={"thread_id": "test-thread", "checkpoint_ns": ""}
+        )
+        for i in range(10):
+            checkpoint = {
+                "v": 1,
+                "id": f"id{i:02d}",
+                "ts": f"2024-01-01T00:00:{i:02d}+00:00",
+                "channel_values": {},
+                "channel_versions": {},
+                "versions_seen": {},
+            }
+            source = "loop" if i % 2 else "input"
+            config = await saver.aput(
+                config, checkpoint, {"source": source, "step": i}, {}
+            )
+
+        listed = [
+            c
+            async for c in saver.alist(
+                RunnableConfig(configurable={"thread_id": "test-thread"}),
+                filter={"source": "loop"},
+                limit=limit,
+            )
+        ]
+
+        assert [c.metadata["step"] for c in listed] == expected_steps
+
 
 class TestAsyncValkeySaverPut:
     """Test aput method."""

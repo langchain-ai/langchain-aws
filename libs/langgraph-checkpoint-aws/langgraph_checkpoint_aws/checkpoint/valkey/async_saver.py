@@ -417,7 +417,7 @@ class AsyncValkeySaver(BaseValkeySaver):
                         )
                         continue
 
-                start_idx += batch_size
+                start_idx += len(checkpoint_ids)
 
         except ValkeyError as e:
             logger.error(f"Error in alist: {e}")
