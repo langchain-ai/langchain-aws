@@ -1,15 +1,23 @@
 """ChatAnthropicBedrock tests."""
 
 import re
-from typing import Tuple, Type, cast
+import warnings
+from typing import Any, Tuple, Type, cast
+from unittest.mock import patch
 
 import pytest
 from anthropic.types import RawMessageDeltaEvent, RawMessageStopEvent
 from langchain_anthropic.data._profiles import _PROFILES as ANTHROPIC_PROFILES
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessageChunk, HumanMessage, SystemMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    HumanMessage,
+    SystemMessage,
+)
+from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_tests.unit_tests import ChatModelUnitTests
-from pydantic import SecretStr
+from pydantic import BaseModel, SecretStr
 from pytest import MonkeyPatch
 
 from langchain_aws import ChatAnthropicBedrock
@@ -733,3 +741,50 @@ def test_chat_anthropic_bedrock_stream_message_delta_without_reasoning_tokens() 
         "output_tokens": 188,
         "total_tokens": 188,
     }
+
+
+@pytest.mark.parametrize(
+    ("model_id", "expected"),
+    [
+        ("global.anthropic.claude-sonnet-5-5", "auto"),
+        ("anthropic.claude-sonnet-5-5", "auto"),
+        ("anthropic.claude-opus-5-5", "auto"),
+        ("anthropic.claude-sonnet-4-6", "any"),
+    ],
+)
+def test_chat_anthropic_bedrock_forced_tool_choice_downgraded_when_unsupported(
+    model_id: str, expected: str
+) -> None:
+    """Forced tool_choice becomes auto for models that reject it."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=model_id,
+        region_name="us-east-1",
+    )
+    tool = {"name": "t", "description": "d", "input_schema": {"type": "object"}}
+    if expected == "auto":
+        with pytest.warns(UserWarning, match="does not support forced tool_choice"):
+            bound = cast(Any, model.bind_tools([tool], tool_choice="any"))
+    else:
+        bound = cast(Any, model.bind_tools([tool], tool_choice="any"))
+    assert bound.kwargs["tool_choice"]["type"] == expected
+
+
+def test_chat_anthropic_bedrock_structured_output_downgrade_is_quiet() -> None:
+    """Routed Sonnet 5.5 structured output downgrades named tool_choice quietly."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model="global.anthropic.claude-sonnet-5-5",
+        region_name="us-east-1",
+        max_tokens=64,
+    )
+
+    class Answer(BaseModel):
+        value: int
+
+    reply = ChatResult(generations=[ChatGeneration(message=AIMessage(content="42"))])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with patch.object(
+            ChatAnthropicBedrock, "_generate", return_value=reply
+        ) as generate:
+            model.with_structured_output(Answer, include_raw=True).invoke("6 * 7?")
+    assert generate.call_args.kwargs.get("tool_choice") == {"type": "auto"}

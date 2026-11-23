@@ -243,6 +243,41 @@ class ChatAnthropicBedrock(ChatAnthropic):
 
         return payload
 
+    def bind_tools(
+        self,
+        tools: Sequence[Mapping[str, Any] | type | Callable | BaseTool],
+        *,
+        tool_choice: dict[str, str] | str | None = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, AIMessage]:
+        """Bind tool-like objects to `ChatAnthropicBedrock`.
+
+        Downgrades forced `tool_choice` values to `'auto'` for models whose
+        Bedrock inference profile rejects forced tool use.
+
+        Args:
+            tools: A list of tool definitions to bind to this chat model.
+            tool_choice: Which tool to require the model to call.
+            **kwargs: Additional parameters forwarded to `ChatAnthropic.bind_tools`.
+
+        Returns:
+            A `Runnable` binding the formatted tools to this chat model.
+        """
+        choice_type = (
+            tool_choice.get("type") if isinstance(tool_choice, dict) else tool_choice
+        )
+        if choice_type not in (None, "auto", "none") and forced_tool_choice_unsupported(
+            self.model
+        ):
+            if "ls_structured_output_format" not in kwargs:
+                warnings.warn(
+                    f"Model {self.model} does not support forced tool_choice; "
+                    "using tool_choice 'auto' instead.",
+                    stacklevel=2,
+                )
+            tool_choice = "auto"
+        return super().bind_tools(tools, tool_choice=tool_choice, **kwargs)
+
     @cached_property
     def _client_params(self) -> dict[str, Any]:
         """Get client parameters for AnthropicBedrock."""
