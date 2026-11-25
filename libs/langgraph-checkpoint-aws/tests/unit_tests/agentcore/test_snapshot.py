@@ -5,7 +5,7 @@ import json
 from collections import defaultdict
 from collections.abc import Iterator
 from copy import deepcopy
-from typing import Any
+from typing import Any, Literal, TypedDict
 from unittest.mock import patch
 
 import pytest
@@ -15,7 +15,7 @@ from botocore.stub import Stubber
 from botocore.validate import validate_parameters
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.base import Checkpoint, CheckpointMetadata
+from langgraph.checkpoint.base import WRITES_IDX_MAP, Checkpoint, CheckpointMetadata
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.types import Command, interrupt
 
@@ -1061,3 +1061,154 @@ def test_chunk_timestamps_precede_the_commit_and_are_deterministic(
     retried = [params for op, params in service.calls if op == "CreateEvent"]
     assert [p["clientToken"] for p in retried] == [p["clientToken"] for p in creates]
     assert [p["eventTimestamp"] for p in retried] == stamps
+
+
+@pytest.mark.parametrize("checkpoint_format", ["legacy", "snapshot"])
+def test_nested_subgraph_multiple_interrupts_resume(
+    service: EventService, checkpoint_format: Literal["legacy", "snapshot"]
+) -> None:
+    """Sequential subgraph interrupts resume cleanly without stale pending writes."""
+
+    class SubgraphState(TypedDict, total=False):
+        answers: list[str]
+
+    def ask(state: SubgraphState) -> SubgraphState:
+        answers = state.get("answers") or []
+        return {"answers": [*answers, interrupt(f"Q{len(answers) + 1}?")]}
+
+    inner = StateGraph(SubgraphState)
+    inner.add_node("ask", ask)
+    inner.add_edge(START, "ask")
+    inner.add_conditional_edges(
+        "ask", lambda s: "ask" if len(s["answers"]) < 3 else END
+    )
+    agent = inner.compile(checkpointer=True)
+
+    outer = StateGraph(SubgraphState)
+    outer.add_node("node", lambda s: {"answers": agent.invoke({})["answers"]})
+    outer.add_edge(START, "node")
+    outer.add_edge("node", END)
+
+    checkpointer = AgentCoreMemorySaver(
+        MEMORY_ID,
+        checkpoint_format=checkpoint_format,
+    )
+    graph = outer.compile(checkpointer=checkpointer)
+    thread_cfg = config(thread_id=f"nested-{checkpoint_format}")
+
+    graph.invoke({}, thread_cfg)
+    graph.invoke(Command(resume="A1"), thread_cfg)
+    graph.invoke(Command(resume="A2"), thread_cfg)
+    final = graph.invoke(Command(resume="A3"), thread_cfg)
+
+    assert final == {"answers": ["A1", "A2", "A3"]}
+
+
+def _save_full_checkpoint(checkpointer: AgentCoreMemorySaver) -> RunnableConfig:
+    state = checkpoint(1)
+    return checkpointer.put(config(), state, metadata(1), state["channel_versions"])
+
+
+@pytest.mark.parametrize("checkpoint_format", ["legacy", "snapshot"])
+@pytest.mark.parametrize("channel", list(WRITES_IDX_MAP))
+def test_special_writes_keep_newest_regardless_of_list_events_order(
+    service: EventService,
+    checkpoint_format: Literal["legacy", "snapshot"],
+    channel: str,
+) -> None:
+    """WRITES_IDX_MAP channels keep the newest write per task regardless of order."""
+    checkpointer = AgentCoreMemorySaver(
+        MEMORY_ID,
+        checkpoint_format=checkpoint_format,
+    )
+    saved = _save_full_checkpoint(checkpointer)
+    checkpointer.put_writes(saved, [(channel, "first")], "task-1")
+    checkpointer.put_writes(saved, [(channel, "second")], "task-1")
+
+    session_key = (
+        ACTOR_ID,
+        writes_session_id(THREAD_ID, checkpoint(1)["id"])
+        if checkpoint_format == "snapshot"
+        else THREAD_ID,
+    )
+    t1 = datetime.datetime(2026, 1, 1, 0, 0, 1, tzinfo=datetime.UTC)
+    t2 = datetime.datetime(2026, 1, 1, 0, 0, 2, tzinfo=datetime.UTC)
+    # EventService inserts newest events at index 0.
+    service.events[session_key][1]["eventTimestamp"] = t1
+    service.events[session_key][0]["eventTimestamp"] = t2
+
+    for reverse_order in (False, True):
+        if reverse_order:
+            # Reverse to oldest-first to prove ordering relies on eventTimestamp.
+            service.events[session_key].reverse()
+
+        tup = checkpointer.get_tuple(config())
+        assert tup is not None
+        assert tup.pending_writes == [("task-1", channel, "second")]
+        listed = list(checkpointer.list(config()))
+        assert len(listed) == 1
+        assert listed[0].pending_writes == [("task-1", channel, "second")]
+
+
+def test_snapshot_inline_special_write_superseded_by_later_put_writes(
+    service: EventService,
+) -> None:
+    """Later put_writes supersedes inline special writes even on equal or skewed ts."""
+    saver = AgentCoreMemorySaver(MEMORY_ID, checkpoint_format="snapshot")
+    deferred = DeferredCheckpointSaver(saver, batch_writes=True)
+    state = checkpoint(1)
+    saved = deferred.put(config(), state, metadata(1), state["channel_versions"])
+    deferred.put_writes(saved, [("__interrupt__", "v1")], "task-1")
+    deferred.flush()
+
+    same_ts = service.events[(ACTOR_ID, THREAD_ID)][0]["eventTimestamp"]
+    saver.put_writes(saved, [("__interrupt__", "v2")], "task-1")
+    w_session = writes_session_id(THREAD_ID, state["id"])
+    for write_ts in (same_ts, same_ts - datetime.timedelta(milliseconds=100)):
+        service.events[(ACTOR_ID, w_session)][0]["eventTimestamp"] = write_ts
+        tup = saver.get_tuple(config())
+        assert tup is not None
+        assert tup.pending_writes == [("task-1", "__interrupt__", "v2")]
+
+
+@pytest.mark.parametrize("checkpoint_format", ["legacy", "snapshot"])
+def test_parallel_tasks_preserve_separate_interrupts(
+    service: EventService, checkpoint_format: Literal["legacy", "snapshot"]
+) -> None:
+    """Parallel tasks keep one current special write per task_id."""
+    checkpointer = AgentCoreMemorySaver(
+        MEMORY_ID,
+        checkpoint_format=checkpoint_format,
+    )
+    saved = _save_full_checkpoint(checkpointer)
+    checkpointer.put_writes(saved, [("__interrupt__", "a-v1")], "task-a")
+    checkpointer.put_writes(saved, [("__interrupt__", "b-v1")], "task-b")
+    checkpointer.put_writes(saved, [("__interrupt__", "a-v2")], "task-a")
+
+    tup = checkpointer.get_tuple(config())
+    assert tup is not None
+    assert sorted(tup.pending_writes or []) == [
+        ("task-a", "__interrupt__", "a-v2"),
+        ("task-b", "__interrupt__", "b-v1"),
+    ]
+
+
+@pytest.mark.parametrize("checkpoint_format", ["legacy", "snapshot"])
+def test_normal_writes_preserve_multiple_items_and_are_idempotent(
+    service: EventService, checkpoint_format: Literal["legacy", "snapshot"]
+) -> None:
+    """Multi-write batch on a channel keeps all items; retries are idempotent."""
+    checkpointer = AgentCoreMemorySaver(
+        MEMORY_ID,
+        checkpoint_format=checkpoint_format,
+    )
+    saved = _save_full_checkpoint(checkpointer)
+    checkpointer.put_writes(saved, [("ch", "v1"), ("ch", "v2")], "task-1")
+    checkpointer.put_writes(saved, [("ch", "v_retry")], "task-1")
+
+    tup = checkpointer.get_tuple(config())
+    assert tup is not None
+    assert tup.pending_writes == [
+        ("task-1", "ch", "v1"),
+        ("task-1", "ch", "v2"),
+    ]

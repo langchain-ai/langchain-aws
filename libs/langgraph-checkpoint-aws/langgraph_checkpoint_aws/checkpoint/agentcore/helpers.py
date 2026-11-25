@@ -19,6 +19,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langgraph.checkpoint.base import (
+    WRITES_IDX_MAP,
     Checkpoint,
     CheckpointMetadata,
     CheckpointTuple,
@@ -68,6 +69,89 @@ DEFAULT_MAX_BACKOFF = 2.0  # 2 seconds
 # https://docs.aws.amazon.com/bedrock-agentcore/latest/APIReference/API_CreateEvent.html
 MAX_PAYLOAD_ITEMS_PER_EVENT = 100  # max items in payload array
 MAX_PAYLOAD_BYTES_PER_EVENT = 10_000_000  # 10 MB max event size
+
+_MIN_UTC = datetime.datetime.min.replace(tzinfo=datetime.UTC)
+_SOURCE_RANK_INLINE = 0
+_SOURCE_RANK_POST_COMMIT = 1
+
+
+def _parse_event_timestamp(raw_ts: Any) -> datetime.datetime | None:
+    """Normalize an AgentCore ``eventTimestamp`` value to UTC."""
+    if isinstance(raw_ts, datetime.datetime):
+        parsed = raw_ts
+    elif isinstance(raw_ts, str):
+        try:
+            parsed = datetime.datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+    return (
+        parsed.replace(tzinfo=datetime.UTC)
+        if parsed.tzinfo is None
+        else parsed.astimezone(datetime.UTC)
+    )
+
+
+def _tag_writes_event(
+    event: WritesEvent,
+    *,
+    event_timestamp: datetime.datetime | None,
+    source_rank: int,
+    service_event_index: int | None,
+    payload_index: int,
+) -> None:
+    """Attach read-time ordering metadata to each decoded ``WriteItem``."""
+    for write_index, write in enumerate(event.writes):
+        write._event_timestamp = event_timestamp
+        write._source_rank = source_rank
+        write._service_event_index = service_event_index
+        write._payload_index = payload_index
+        write._write_index = write_index
+
+
+def _order_writes(writes: list[WriteItem]) -> list[WriteItem]:
+    """Order writes chronologically when read-time event metadata is present."""
+    if not any(
+        w._service_event_index is not None or w._event_timestamp is not None
+        for w in writes
+    ):
+        return writes
+
+    def _sort_key(
+        item: tuple[int, WriteItem],
+    ) -> tuple[int, int, datetime.datetime, int, int, int, int]:
+        pos, write = item
+        return (
+            write._source_rank,
+            1 if write._event_timestamp is not None else 0,
+            write._event_timestamp or _MIN_UTC,
+            -write._service_event_index
+            if write._service_event_index is not None
+            else 0,
+            write._payload_index,
+            write._write_index if write._write_index is not None else pos,
+            pos,
+        )
+
+    return [write for _, write in sorted(enumerate(writes), key=_sort_key)]
+
+
+def _resolve_pending_writes(
+    writes: list[WriteItem],
+) -> list[tuple[str, str, Any]]:
+    """Apply LangGraph write semantics so newer special writes supersede old ones."""
+    ordered = _order_writes(writes)
+    resolved: dict[tuple[str, int] | tuple[str, str, int], tuple[str, str, Any]] = {}
+    for pos, write in enumerate(ordered):
+        entry = (write.task_id, write.channel, write.value)
+        if write.channel in WRITES_IDX_MAP:
+            resolved[(write.task_id, WRITES_IDX_MAP[write.channel])] = entry
+        elif write._write_index is not None:
+            resolved.setdefault((write.task_id, write._write_index), entry)
+        else:
+            resolved[(write.task_id, write.channel, pos)] = entry
+    return list(resolved.values())
 
 
 def merge_client_config(base_config: Config, boto3_kwargs: dict[str, Any]) -> Config:
@@ -444,6 +528,7 @@ class AgentCoreEventClient:
         all_events = []
         next_token = None
         limit_reached = False
+        service_event_index = 0
 
         while True:
             params = {
@@ -463,12 +548,21 @@ class AgentCoreEventClient:
             response_events = response.get("events", [])
             truncated_page = False
             for event_index, event in enumerate(response_events):
+                event_ts = _parse_event_timestamp(event.get("eventTimestamp"))
                 payload = event.get("payload", [])
                 for payload_index, payload_item in enumerate(payload):
                     blob = payload_item.get("blob")
                     if blob:
                         try:
                             parsed_event = self.serializer.deserialize_event(blob)
+                            if isinstance(parsed_event, WritesEvent):
+                                _tag_writes_event(
+                                    parsed_event,
+                                    event_timestamp=event_ts,
+                                    source_rank=_SOURCE_RANK_INLINE,
+                                    service_event_index=service_event_index,
+                                    payload_index=payload_index,
+                                )
                             all_events.append(parsed_event)
                         except EventDecodingError as e:
                             logger.warning(f"Failed to decode event: {e}")
@@ -485,6 +579,7 @@ class AgentCoreEventClient:
                             )
                             break
 
+                service_event_index += 1
                 if limit_reached:
                     break
 
@@ -588,9 +683,7 @@ class EventProcessor:
     ) -> CheckpointTuple:
         """Build a CheckpointTuple from processed data."""
         # Build pending writes
-        pending_writes = [
-            (write.task_id, write.channel, write.value) for write in writes
-        ]
+        pending_writes = _resolve_pending_writes(writes)
         # Check if there are interrupts in pending writes
         has_interrupts = pending_writes and any(
             write[1] == "__interrupt__" and write[2] for write in pending_writes

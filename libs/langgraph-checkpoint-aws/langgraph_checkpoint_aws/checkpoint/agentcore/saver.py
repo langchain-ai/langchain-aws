@@ -291,7 +291,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
             )
 
         # Build and return checkpoint tuple
-        writes = writes_by_checkpoint.get(checkpoint_event.checkpoint_id, [])
+        writes = list(writes_by_checkpoint.get(checkpoint_event.checkpoint_id, []))
         if isinstance(self.checkpoint_event_client, AgentCoreSnapshotClient):
             writes.extend(
                 self.checkpoint_event_client.get_pending_writes(
@@ -370,7 +370,7 @@ class AgentCoreMemorySaver(BaseCheckpointSaver[str]):
                 break
 
             self._check_read_format(checkpoint_event)
-            writes = writes_by_checkpoint.get(checkpoint_id, [])
+            writes = list(writes_by_checkpoint.get(checkpoint_id, []))
             if isinstance(self.checkpoint_event_client, AgentCoreSnapshotClient):
                 writes.extend(
                     self.checkpoint_event_client.get_pending_writes(

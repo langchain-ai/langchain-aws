@@ -9,10 +9,14 @@ from uuid import NAMESPACE_OID, uuid5
 
 from .constants import EventDecodingError, EventNotFoundError
 from .helpers import (
+    _SOURCE_RANK_INLINE,
+    _SOURCE_RANK_POST_COMMIT,
     MAX_PAYLOAD_BYTES_PER_EVENT,
     MAX_PAYLOAD_ITEMS_PER_EVENT,
     AgentCoreEventClient,
     EventType,
+    _parse_event_timestamp,
+    _tag_writes_event,
 )
 from .models import ChannelDataEvent, CheckpointEvent, WriteItem, WritesEvent
 
@@ -159,17 +163,36 @@ class AgentCoreSnapshotClient(AgentCoreEventClient):
             final_chunk, session_id, actor_id, checkpoint, "checkpoint"
         )
 
-    def _decode_payload(self, event: dict[str, Any]) -> list[EventType]:
-        return [
-            self.serializer.deserialize_event(item["blob"])
-            for item in event.get("payload", [])
-            if "blob" in item
-        ]
+    def _decode_payload(
+        self,
+        event: dict[str, Any],
+        *,
+        source_rank: int = _SOURCE_RANK_INLINE,
+        service_event_index: int | None = None,
+    ) -> list[EventType]:
+        event_ts = _parse_event_timestamp(event.get("eventTimestamp"))
+        decoded_events: list[EventType] = []
+        for payload_index, item in enumerate(event.get("payload", [])):
+            if "blob" not in item:
+                continue
+            decoded = self.serializer.deserialize_event(item["blob"])
+            if isinstance(decoded, WritesEvent):
+                _tag_writes_event(
+                    decoded,
+                    event_timestamp=event_ts,
+                    source_rank=source_rank,
+                    service_event_index=service_event_index,
+                    payload_index=payload_index,
+                )
+            decoded_events.append(decoded)
+        return decoded_events
 
     def _load_snapshot(
         self, event: dict[str, Any], session_id: str, actor_id: str
     ) -> list[EventType]:
-        events = self._decode_payload(event)
+        events = self._decode_payload(
+            event, source_rank=_SOURCE_RANK_INLINE, service_event_index=0
+        )
         checkpoints = [e for e in events if isinstance(e, CheckpointEvent)]
         if len(checkpoints) != 1 or checkpoints[0].snapshot_version != SNAPSHOT_VERSION:
             msg = "Invalid or unsupported AgentCore checkpoint snapshot."
@@ -183,7 +206,8 @@ class AgentCoreSnapshotClient(AgentCoreEventClient):
             msg = "Checkpoint metadata does not match the snapshot payload."
             raise EventDecodingError(msg)
         expected_metadata = self._metadata(checkpoint.checkpoint_id, "checkpoint_data")
-        for event_id in checkpoint.chunk_event_ids:
+        chunk_count = len(checkpoint.chunk_event_ids)
+        for chunk_idx, event_id in enumerate(checkpoint.chunk_event_ids):
             response = self.client.get_event(
                 memoryId=self.memory_id,
                 actorId=actor_id,
@@ -197,7 +221,11 @@ class AgentCoreSnapshotClient(AgentCoreEventClient):
             ):
                 msg = f"Unexpected metadata for checkpoint chunk {event_id}."
                 raise EventDecodingError(msg)
-            chunk_events = self._decode_payload(chunk)
+            chunk_events = self._decode_payload(
+                chunk,
+                source_rank=_SOURCE_RANK_INLINE,
+                service_event_index=chunk_count - chunk_idx,
+            )
             if any(isinstance(item, CheckpointEvent) for item in chunk_events):
                 msg = f"Unexpected checkpoint in data chunk {event_id}."
                 raise EventDecodingError(msg)
@@ -243,12 +271,14 @@ class AgentCoreSnapshotClient(AgentCoreEventClient):
             }
         legacy_writes: list[EventType] = []
         legacy_blobs_seen = False
+        legacy_service_index = 0
         while True:
             response = self.client.list_events(**params)
             for event in response.get("events", []):
                 metadata = event.get("metadata", {})
                 if metadata.get("lc_layout", {}).get("stringValue") != SNAPSHOT_LAYOUT:
-                    for item in event.get("payload", []):
+                    event_ts = _parse_event_timestamp(event.get("eventTimestamp"))
+                    for payload_index, item in enumerate(event.get("payload", [])):
                         if "blob" not in item:
                             continue
                         legacy_blobs_seen = True
@@ -260,7 +290,15 @@ class AgentCoreSnapshotClient(AgentCoreEventClient):
                         if isinstance(decoded, CheckpointEvent):
                             return None
                         if isinstance(decoded, WritesEvent):
+                            _tag_writes_event(
+                                decoded,
+                                event_timestamp=event_ts,
+                                source_rank=_SOURCE_RANK_POST_COMMIT,
+                                service_event_index=legacy_service_index,
+                                payload_index=payload_index,
+                            )
                             legacy_writes.append(decoded)
+                    legacy_service_index += 1
                     continue
                 if metadata.get("lc_kind", {}).get("stringValue") == "checkpoint":
                     return legacy_writes + self._load_snapshot(
@@ -312,10 +350,15 @@ class AgentCoreSnapshotClient(AgentCoreEventClient):
         if max_results is not None:
             params["maxResults"] = max_results
         writes: list[WriteItem] = []
+        service_event_index = 0
         while True:
             response = self.client.list_events(**params)
             for raw_event in response.get("events", []):
-                for event in self._decode_payload(raw_event):
+                for event in self._decode_payload(
+                    raw_event,
+                    source_rank=_SOURCE_RANK_POST_COMMIT,
+                    service_event_index=service_event_index,
+                ):
                     if not isinstance(event, WritesEvent):
                         msg = (
                             "Unexpected event in a checkpoint's pending-write session."
@@ -325,6 +368,7 @@ class AgentCoreSnapshotClient(AgentCoreEventClient):
                         msg = "Pending writes belong to a different checkpoint."
                         raise EventDecodingError(msg)
                     writes.extend(event.writes)
+                service_event_index += 1
             if not response.get("nextToken"):
                 return writes
             params["nextToken"] = response["nextToken"]

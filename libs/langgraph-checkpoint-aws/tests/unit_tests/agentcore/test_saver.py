@@ -2609,6 +2609,66 @@ class TestEventProcessor:
 
         assert tuple_result.parent_config is None
 
+    def test_build_checkpoint_tuple_deduplicates_special_writes(
+        self,
+        processor: EventProcessor,
+        sample_checkpoint_event: CheckpointEvent,
+    ) -> None:
+        writes = [
+            WriteItem(task_id="t1", channel="__interrupt__", value=["old"]),
+            WriteItem(task_id="t2", channel="__interrupt__", value=["other"]),
+            WriteItem(task_id="t1", channel="__interrupt__", value=["new"]),
+            WriteItem(task_id="t1", channel="__resume__", value="r1"),
+            WriteItem(task_id="t1", channel="__resume__", value="r2"),
+            WriteItem(task_id="t1", channel="messages", value="m1"),
+            WriteItem(task_id="t1", channel="messages", value="m2"),
+        ]
+        cfg = CheckpointerConfig(
+            thread_id="test_thread",
+            actor_id="test_actor",
+            checkpoint_ns="test_ns",
+        )
+        tuple_result = processor.build_checkpoint_tuple(
+            sample_checkpoint_event, writes, {("default", "v1"): "ok"}, cfg
+        )
+        assert tuple_result.pending_writes == [
+            ("t1", "__interrupt__", ["new"]),
+            ("t2", "__interrupt__", ["other"]),
+            ("t1", "__resume__", "r2"),
+            ("t1", "messages", "m1"),
+            ("t1", "messages", "m2"),
+        ]
+
+    def test_build_checkpoint_tuple_superseded_interrupt_allows_orphan_patching(
+        self,
+        processor: EventProcessor,
+        sample_checkpoint_event: CheckpointEvent,
+    ) -> None:
+        orphan_ai = AIMessage(
+            content="",
+            tool_calls=[{"id": "tc-1", "name": "lookup", "args": {}}],
+        )
+        sample_checkpoint_event.checkpoint_data["channel_versions"]["messages"] = "v1"
+        writes = [
+            WriteItem(task_id="t1", channel="__interrupt__", value=["pending"]),
+            WriteItem(task_id="t1", channel="__interrupt__", value=[]),
+        ]
+        cfg = CheckpointerConfig(
+            thread_id="test_thread",
+            actor_id="test_actor",
+            checkpoint_ns="test_ns",
+        )
+        tuple_result = processor.build_checkpoint_tuple(
+            sample_checkpoint_event,
+            writes,
+            {("messages", "v1"): [orphan_ai]},
+            cfg,
+        )
+        msgs = tuple_result.checkpoint["channel_values"]["messages"]
+        assert len(msgs) == 2
+        assert isinstance(msgs[1], ToolMessage)
+        assert msgs[1].tool_call_id == "tc-1"
+
 
 class TestBedrockAgentCoreClientWithRetry:
     """Test suite for BedrockAgentCoreClientWithRetry retry logic."""
