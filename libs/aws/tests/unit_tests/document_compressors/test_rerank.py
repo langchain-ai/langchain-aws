@@ -1,6 +1,8 @@
 from unittest.mock import MagicMock, patch
 
+import botocore.session
 import pytest
+from botocore.stub import Stubber
 from langchain_core.documents import Document
 
 from langchain_aws.document_compressors.rerank import BedrockRerank
@@ -155,3 +157,33 @@ def test_rerank_top_n_override_also_clamped(
     ]["numberOfResults"]
     assert actual_num_results == 2
     assert len(results) == 2
+
+
+def test_rerank_top_n_none_returns_every_document() -> None:
+    # boto3.client is mocked in conftest; a real botocore client validates params.
+    client = botocore.session.get_session().create_client(
+        "bedrock-agent-runtime",
+        region_name="us-east-1",
+        aws_access_key_id="testing",
+        aws_secret_access_key="testing",
+    )
+    reranker = BedrockRerank(
+        model_arn="arn:aws:bedrock:us-west-2::foundation-model/amazon.rerank-v1:0",
+        top_n=None,
+        client=client,
+    )
+    documents = [Document(page_content="Doc 1"), Document(page_content="Doc 2")]
+
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "rerank",
+            {
+                "results": [
+                    {"index": 1, "relevanceScore": 0.9},
+                    {"index": 0, "relevanceScore": 0.4},
+                ]
+            },
+        )
+        compressed = reranker.compress_documents(documents, query="test query")
+
+    assert [doc.page_content for doc in compressed] == ["Doc 2", "Doc 1"]
